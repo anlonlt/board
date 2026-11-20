@@ -77,13 +77,22 @@ def verdict(words: list[str], never_add=(), allow_add=()) -> str | None:
             return f"a recursive rm outside /tmp ({' '.join(outside[:3]) or 'targets from stdin'})"
         return None
 
+    if cmd == "find":
+        if "-delete" in args:
+            outside = [a for a in args if not a.startswith("-") and not a.startswith("/tmp/")]
+            if outside or not any(a.startswith("/tmp/") for a in args):
+                return "find -delete outside /tmp"
+        return None
+
     if cmd == "git":
         i = 0
         while i < len(args) and args[i].startswith("-"):
-            i += 2 if args[i] in ("-C", "-c") else 1
+            i += 2 if args[i] in ("-C", "-c", "--git-dir", "--work-tree", "--namespace") else 1
         if i >= len(args):
             return None
         sub, rest = args[i], args[i + 1:]
+        if sub == "branch" and ("-D" in rest or ("--delete" in rest and "--force" in rest)):
+            return "git branch -D (force-deleting a branch)"
         if sub == "clean" and not ({"-n", "--dry-run"} & set(rest)) and not any(
                 a.startswith("-") and not a.startswith("--") and "n" in a for a in rest):
             return "git clean"

@@ -115,5 +115,16 @@ with tempfile.TemporaryDirectory() as d:
     check("hybrid SessionStart automatically briefs new agy discussions on git_watch.py and skills",
           r_ss.returncode == 0 and "MODE (hybrid)" in r_ss.stdout and "git_watch.py" in r_ss.stdout)
 
+    # 1-command --bootstrap seeds _orchestrator and KIT-installed into local SQLite DB
+    t_boot = os.path.join(d, "boot")
+    os.makedirs(t_boot)
+    rc, out = inst(t_boot, "--project", "QuickApp", "--no-survey", "bootstrap test", "--bootstrap")
+    sys.path.insert(0, os.path.join(HERE, "kit", "board"))
+    import board_server as _bs
+    st = _bs.BoardStore(os.path.join(t_boot, ".kit", "board_data"))
+    check("1-command --bootstrap seeds _orchestrator and KIT-installed into SQLite",
+          rc == 0 and st.get_doc("posts", "_orchestrator")["exists"] and st.get_doc("posts", "KIT-installed")["exists"])
+    st.close()
+
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

@@ -48,11 +48,13 @@ with tempfile.TemporaryDirectory() as d:
 
     B = lambda c: {"hookEventName": "PreToolUse", "toolCall": {"name": "run_command", "args": {"CommandLine": c}}}
     for c in ["rm -rf src", "git clean -fd", "git reset --hard HEAD~1", "git push --force", "git push origin +main",
-              "git push origin --delete feature", "git add release.keystore", "bash -c 'rm -r build'", "ls | xargs rm -rf"]:
+              "git push origin --delete feature", "git add release.keystore", "bash -c 'rm -r build'", "ls | xargs rm -rf",
+              "git branch -D feature", "find src -name '*.py' -delete", "git --git-dir .git reset --hard"]:
         rc, out, _ = run("kit_guard.py", B(c), proj)
         check("guard refuses: " + c, rc == 0 and out.get("decision") == "deny")
     for c in ["rm -rf /tmp/x", "git commit -m 'never rm -rf src'", "git clean -n", "git push -u origin main",
-              "git add dev-debug.keystore", "git reset --soft HEAD~1", "rm file.txt"]:
+              "git add dev-debug.keystore", "git reset --soft HEAD~1", "rm file.txt",
+              "git branch -d merged-feature", "find /tmp/scratch -delete"]:
         rc, out, _ = run("kit_guard.py", B(c), proj)
         check("guard allows: " + c, rc == 0 and out.get("decision") == "allow")
 

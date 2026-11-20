@@ -148,10 +148,44 @@ with tempfile.TemporaryDirectory() as tmp:
               and store.get_doc("comments", "mc-1")["data"].get("text") == "seeded comment")
         check("seed_from_mirror skips existing docs on rerun without --force-seed",
               info2["imported"] == 0 and info2["skipped"] == 2)
+
+        # 8. Monotonic changes log (zero sync holes)
+        rc, out, _ = cli(url, "changes", "--since", "0")
+        ch = json.loads(out) if rc == 0 else {}
+        check("changes --since 0 returns monotonic change log",
+              rc == 0 and ch.get("latest_seq", 0) >= 5 and len(ch.get("changes", [])) >= 5)
+        rc2, out2, _ = cli(url, "changes", "--since", str(ch.get("latest_seq", 0)))
+        check("changes --since latest_seq returns empty list", rc2 == 0 and json.loads(out2).get("changes") == [])
     finally:
         srv.shutdown()
         srv.server_close()
         store.close()
+
+    # 9. Token authentication (blocks unauthorized Wi-Fi/LAN access)
+    srv_a, store_a = board_server.start_server(tmp, "127.0.0.1", 0, token="secret123")
+    url_a = "http://127.0.0.1:%d" % srv_a.server_address[1]
+    ta = threading.Thread(target=srv_a.serve_forever, daemon=True)
+    ta.start()
+    try:
+        rc_no, _, err_no = cli(url_a, "list", "posts")
+        check("token auth: rejects request without token (401)", rc_no != 0 and "401" in err_no)
+        rc_ok, out_ok, _ = cli(url_a, "--token", "secret123", "list", "posts")
+        check("token auth: accepts request with --token", rc_ok == 0 and "docs" in out_ok)
+        # /?token=... sets HttpOnly cookie and redirects to /
+        class NoRedir(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+        opener = urllib.request.build_opener(NoRedir)
+        try:
+            opener.open(url_a + "/?token=secret123")
+            got_cookie = False
+        except urllib.error.HTTPError as e:
+            got_cookie = e.code == 302 and "kit_token=secret123" in (e.headers.get("Set-Cookie") or "")
+        check("token auth: /?token=... sets HttpOnly cookie and redirects (302)", got_cookie)
+    finally:
+        srv_a.shutdown()
+        srv_a.server_close()
+        store_a.close()
 
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

@@ -9,6 +9,7 @@ Serves .kit/board.html with an injected window.claude shim (/_shim.js) backed by
 """
 import argparse
 import hashlib
+import hmac
 import json
 import mimetypes
 import os
@@ -21,6 +22,7 @@ import time
 import urllib.parse
 import uuid
 from datetime import datetime, timezone
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SHIM_JS = r"""(function () {
@@ -318,6 +320,16 @@ class BoardStore:
             "  replies TEXT NOT NULL DEFAULT '[]'"
             ")"
         )
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS changes ("
+            "  seq INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "  collection TEXT NOT NULL,"
+            "  doc_id TEXT NOT NULL,"
+            "  op TEXT NOT NULL,"
+            "  version INTEGER NOT NULL,"
+            "  at TEXT NOT NULL"
+            ")"
+        )
         self.conn.commit()
         self.sse_clients = set()
         self.sse_lock = threading.Lock()
@@ -371,6 +383,22 @@ class BoardStore:
         next_cursor = str(start + lim) if (start + lim) < len(docs) else None
         return {"docs": page, "next_cursor": next_cursor, "total": len(docs)}
 
+    def _record_change(self, collection, doc_id, op, version, now):
+        self.conn.execute(
+            "INSERT INTO changes(collection, doc_id, op, version, at) VALUES (?, ?, ?, ?, ?)",
+            (collection, doc_id, op, version, now),
+        )
+
+    def list_changes(self, since=0, limit=1000):
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT seq, collection, doc_id, op, version, at FROM changes WHERE seq>? ORDER BY seq ASC LIMIT ?",
+                (int(since or 0), max(1, int(limit or 1000))),
+            ).fetchall()
+            latest = self.conn.execute("SELECT COALESCE(MAX(seq), 0) FROM changes").fetchone()[0]
+        items = [{"seq": r[0], "collection": r[1], "doc_id": r[2], "op": r[3], "version": r[4], "at": r[5]} for r in rows]
+        return {"changes": items, "latest_seq": latest}
+
     def set_doc(self, collection, doc_id, data, if_version=None):
         now = utc_now()
         with self.lock:
@@ -387,6 +415,7 @@ class BoardStore:
                 "ON CONFLICT(collection, doc_id) DO UPDATE SET version=excluded.version, data=excluded.data, updated_at=excluded.updated_at",
                 (collection, doc_id, new_ver, json.dumps(data, ensure_ascii=False), now),
             )
+            self._record_change(collection, doc_id, "set", new_ver, now)
             self.conn.commit()
         self.notify_sse(collection, doc_id)
         return {"id": doc_id, "version": new_ver, "data": data}, None
@@ -409,11 +438,13 @@ class BoardStore:
                 "ON CONFLICT(collection, doc_id) DO UPDATE SET version=excluded.version, data=excluded.data, updated_at=excluded.updated_at",
                 (collection, doc_id, new_ver, json.dumps(cur_data, ensure_ascii=False), now),
             )
+            self._record_change(collection, doc_id, "update", new_ver, now)
             self.conn.commit()
         self.notify_sse(collection, doc_id)
         return {"id": doc_id, "version": new_ver, "data": cur_data}, None
 
     def str_replace(self, collection, doc_id, field, old_str, new_str, if_version=None):
+        now = utc_now()
         with self.lock:
             row = self.conn.execute(
                 "SELECT version, data FROM docs WHERE collection=? AND doc_id=?",
@@ -432,8 +463,9 @@ class BoardStore:
             new_ver = cur_ver + 1
             self.conn.execute(
                 "UPDATE docs SET version=?, data=?, updated_at=? WHERE collection=? AND doc_id=?",
-                (new_ver, json.dumps(cur_data, ensure_ascii=False), utc_now(), collection, doc_id),
+                (new_ver, json.dumps(cur_data, ensure_ascii=False), now, collection, doc_id),
             )
+            self._record_change(collection, doc_id, "str_replace", new_ver, now)
             self.conn.commit()
         self.notify_sse(collection, doc_id)
         return {"id": doc_id, "version": new_ver, "data": cur_data}, None
@@ -538,7 +570,7 @@ class BoardStore:
         return {"thread_id": thread_id, "replies": replies, "status": "replied"}
 
 
-def make_handler(root_dir, store):
+def make_handler(root_dir, store, token=None):
     html_path = os.path.join(root_dir, ".kit", "board.html")
 
     class Handler(BaseHTTPRequestHandler):
@@ -546,6 +578,37 @@ def make_handler(root_dir, store):
 
         def log_message(self, fmt, *args):
             pass  # keep daemon stdout/stderr quiet
+
+        def _check_auth(self, parsed):
+            if not token:
+                return True, False
+            qs = urllib.parse.parse_qs(parsed.query)
+            qtok = (qs.get("token") or [""])[0]
+            if qtok and hmac.compare_digest(qtok, token):
+                return True, True
+            hdr = self.headers.get("X-Kit-Token") or ""
+            if hdr and hmac.compare_digest(hdr, token):
+                return True, False
+            auth = self.headers.get("Authorization") or ""
+            if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:].strip(), token):
+                return True, False
+            raw_cookie = self.headers.get("Cookie") or ""
+            if raw_cookie:
+                c = SimpleCookie()
+                try:
+                    c.load(raw_cookie)
+                    if "kit_token" in c and hmac.compare_digest(c["kit_token"].value, token):
+                        return True, False
+                except Exception:
+                    pass
+            return False, False
+
+        def _require_auth(self, parsed):
+            ok, set_cookie = self._check_auth(parsed)
+            if ok:
+                return set_cookie
+            self._send_json(401, {"error": "unauthorized", "code": "unauthorized"})
+            return None
 
         def _send_json(self, code, obj):
             raw = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -565,6 +628,21 @@ def make_handler(root_dir, store):
             parsed = urllib.parse.urlsplit(self.path)
             path = parsed.path
             qs = urllib.parse.parse_qs(parsed.query)
+
+            if path == "/_api/health":
+                self._send_json(200, {"ok": True, "pid": os.getpid(), "auth": bool(token)})
+                return
+
+            set_cookie = self._require_auth(parsed)
+            if set_cookie is None:
+                return
+            if set_cookie and path in ("/", "/index.html"):
+                self.send_response(302)
+                self.send_header("Set-Cookie", "kit_token=%s; Path=/; HttpOnly; SameSite=Lax" % token)
+                self.send_header("Location", "/")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
 
             if path in ("/", "/index.html"):
                 if not os.path.isfile(html_path):
@@ -597,8 +675,10 @@ def make_handler(root_dir, store):
                 self.wfile.write(raw)
                 return
 
-            if path == "/_api/health":
-                self._send_json(200, {"ok": True, "pid": os.getpid(), "root": root_dir})
+            if path == "/_api/changes":
+                since = int((qs.get("since") or ["0"])[0])
+                limit = int((qs.get("limit") or ["1000"])[0])
+                self._send_json(200, store.list_changes(since=since, limit=limit))
                 return
 
             if path == "/_api/events":
@@ -692,6 +772,8 @@ def make_handler(root_dir, store):
 
         def do_PUT(self):
             parsed = urllib.parse.urlsplit(self.path)
+            if self._require_auth(parsed) is None:
+                return
             path = parsed.path
             try:
                 body = self._read_json()
@@ -716,6 +798,8 @@ def make_handler(root_dir, store):
 
         def do_PATCH(self):
             parsed = urllib.parse.urlsplit(self.path)
+            if self._require_auth(parsed) is None:
+                return
             path = parsed.path
             try:
                 body = self._read_json()
@@ -740,6 +824,8 @@ def make_handler(root_dir, store):
 
         def do_POST(self):
             parsed = urllib.parse.urlsplit(self.path)
+            if self._require_auth(parsed) is None:
+                return
             path = parsed.path
 
             if path == "/_api/blobs":
@@ -872,10 +958,10 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
     return {"ref": ref, "imported": imported, "skipped": skipped}
 
 
-def start_server(root_dir, host="127.0.0.1", port=8765):
+def start_server(root_dir, host="127.0.0.1", port=8765, token=None):
     data_dir = os.path.join(root_dir, ".kit", "board_data")
     store = BoardStore(data_dir)
-    srv = ThreadingHTTPServer((host, port), make_handler(root_dir, store))
+    srv = ThreadingHTTPServer((host, port), make_handler(root_dir, store, token=token))
     srv.daemon_threads = True
     return srv, store
 
@@ -885,12 +971,14 @@ def main(argv=None):
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--root", default=None, help="Project root (default: parent of .kit/)")
+    ap.add_argument("--token", default=None, help="Require auth token (or set $KIT_BOARD_TOKEN)")
     ap.add_argument("--seed-from-mirror", action="store_true", help="Import posts/comments from git board-mirror on startup")
     ap.add_argument("--mirror-branch", default=None, help="Override mirror branch name (default from .kit/config.json)")
     ap.add_argument("--force-seed", action="store_true", help="Overwrite existing local SQLite docs when seeding")
     a = ap.parse_args(argv)
     root = os.path.abspath(a.root) if a.root else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    srv, store = start_server(root, a.host, a.port)
+    tok = a.token or os.environ.get("KIT_BOARD_TOKEN") or None
+    srv, store = start_server(root, a.host, a.port, token=tok)
     if a.seed_from_mirror:
         info = seed_from_mirror(root, store, branch=a.mirror_branch, force=a.force_seed)
         print("seeded from %s: %d imported, %d skipped" % (info["ref"] or "(none)", info["imported"], info["skipped"]), flush=True)

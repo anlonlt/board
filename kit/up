@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Shortest launcher for the agy board kit: run `./.kit/up` inside your project repo.
-# Starts the local board server (if not running), prints your phone URL(s), and opens
-# `agy --mode auto` directly into the orchestrator + clerk.
+# Shortest launcher for the board kit: run your one-word command (e.g. `harmonize`) or `./.kit/up`.
+# Starts the local board server (with token auth + optional mirror seed), prints your phone URL(s),
+# and opens `agy --mode auto` directly into the orchestrator + clerk.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,22 +19,30 @@ for arg in "$@"; do
 done
 
 if [ "$HYBRID" -eq 0 ]; then
+  mkdir -p .kit/board_data
+  TOK_FILE=".kit/board_data/token"
+  if [ ! -f "$TOK_FILE" ]; then
+    python3 -I -c 'import secrets; print(secrets.token_hex(16))' > "$TOK_FILE"
+    chmod 600 "$TOK_FILE"
+  fi
+  TOK="$(cat "$TOK_FILE")"
+  export KIT_BOARD_TOKEN="$TOK"
+
   if ! curl -sf "http://127.0.0.1:${PORT}/_api/health" >/dev/null 2>&1; then
     SEED=""
     [ ! -f ".kit/board_data/board.db" ] && SEED="--seed-from-mirror"
-    mkdir -p .kit/board_data
-    nohup python3 -I .kit/board_server.py --host 0.0.0.0 --port "$PORT" --root "$ROOT" $SEED >/tmp/kit-board-${PORT}.log 2>&1 &
+    nohup python3 -I .kit/board_server.py --host 0.0.0.0 --port "$PORT" --root "$ROOT" --token "$TOK" $SEED >/tmp/kit-board-${PORT}.log 2>&1 &
     for _ in 1 2 3 4 5 6 7 8 9 10; do
       curl -sf "http://127.0.0.1:${PORT}/_api/health" >/dev/null 2>&1 && break
       sleep 0.2
     done
   fi
-  echo "Board (local):  http://127.0.0.1:${PORT}/"
+  echo "Board (local):  http://127.0.0.1:${PORT}/?token=${TOK}"
   if command -v tailscale >/dev/null 2>&1; then
     TS_IP="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
-    [ -n "$TS_IP" ] && echo "Board (phone):  http://${TS_IP}:${PORT}/"
+    [ -n "$TS_IP" ] && echo "Board (phone):  http://${TS_IP}:${PORT}/?token=${TOK}"
     TS_DNS="$(tailscale serve status 2>/dev/null | grep -oE 'https://[^ ]+' | head -n 1 || true)"
-    [ -n "$TS_DNS" ] && echo "Board (HTTPS):  ${TS_DNS}"
+    [ -n "$TS_DNS" ] && echo "Board (HTTPS):  ${TS_DNS}?token=${TOK}"
   fi
   PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Also launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md if not already running."
 else

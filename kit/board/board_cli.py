@@ -40,9 +40,21 @@ def default_url():
     return "http://127.0.0.1:8765"
 
 
-def req(base, method, path, body=None, headers=None, timeout=60):
+def default_token():
+    if os.environ.get("KIT_BOARD_TOKEN"):
+        return os.environ["KIT_BOARD_TOKEN"].strip()
+    tp = os.path.join(ROOT, ".kit", "board_data", "token")
+    try:
+        return open(tp, encoding="utf-8").read().strip() or None
+    except OSError:
+        return None
+
+
+def req(base, method, path, body=None, headers=None, timeout=60, token=None):
     url = base.rstrip("/") + path
     hdrs = dict(headers or {})
+    if token:
+        hdrs.setdefault("X-Kit-Token", token)
     data = None
     if body is not None:
         if isinstance(body, (bytes, bytearray)):
@@ -89,6 +101,7 @@ def write_out(out_dir, collection, doc_id, data):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Local board CLI for agy")
     ap.add_argument("--url", default=None, help="Board server URL (default: from .kit/config.json)")
+    ap.add_argument("--token", default=None, help="Auth token (default: $KIT_BOARD_TOKEN or .kit/board_data/token)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("get")
@@ -137,6 +150,10 @@ def main(argv=None):
     p.add_argument("--data")
     p.add_argument("--file")
 
+    p = sub.add_parser("changes")
+    p.add_argument("--since", type=int, default=0)
+    p.add_argument("--limit", type=int, default=1000)
+
     pc = sub.add_parser("comments")
     csub = pc.add_subparsers(dest="ccmd", required=True)
     pw = csub.add_parser("watch")
@@ -162,9 +179,16 @@ def main(argv=None):
 
     a = ap.parse_args(argv)
     base = (a.url or default_url()).rstrip("/")
+    tok = a.token if a.token is not None else default_token()
+    call = lambda m, p, body=None, headers=None, timeout=60: req(base, m, p, body=body, headers=headers, timeout=timeout, token=tok)
+
+    if a.cmd == "changes":
+        res = call("GET", "/_api/changes?since=%d&limit=%d" % (a.since, a.limit))
+        print(json.dumps(res, ensure_ascii=False))
+        return 0
 
     if a.cmd == "get":
-        res = req(base, "GET", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)))
+        res = call("GET", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)))
         if a.out_dir and res.get("exists"):
             path = write_out(a.out_dir, a.collection, a.doc_id, res["data"])
             print(json.dumps({"exists": True, "id": a.doc_id, "version": res["version"], "path": path}))
@@ -180,7 +204,7 @@ def main(argv=None):
                 qs["order_by"] = a.order_by
                 qs["dir"] = a.dir
         path = "/_api/db/%s?%s" % (urllib.parse.quote(a.collection), urllib.parse.urlencode(qs))
-        res = req(base, "GET", path)
+        res = call("GET", path)
         docs = res.get("docs") or []
         if a.out_dir:
             summary = []
@@ -196,7 +220,7 @@ def main(argv=None):
         payload = {"data": load_json_arg(a.data, a.file)}
         if a.if_version is not None:
             payload["if_version"] = a.if_version
-        res = req(base, "PUT", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
+        res = call("PUT", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
         print(json.dumps({"id": res["id"], "version": res["version"]}))
         return 0
 
@@ -204,7 +228,7 @@ def main(argv=None):
         payload = {"data": load_json_arg(a.data, a.file)}
         if a.if_version is not None:
             payload["if_version"] = a.if_version
-        res = req(base, "PATCH", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
+        res = call("PATCH", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
         print(json.dumps({"id": res["id"], "version": res["version"]}))
         return 0
 
@@ -212,7 +236,7 @@ def main(argv=None):
         payload = {"field": a.field, "old_str": a.old, "new_str": a.new}
         if a.if_version is not None:
             payload["if_version"] = a.if_version
-        res = req(base, "POST", "/_api/db/%s/%s/str_replace" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
+        res = call("POST", "/_api/db/%s/%s/str_replace" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
         print(json.dumps({"id": res["id"], "version": res["version"]}))
         return 0
 
@@ -220,28 +244,28 @@ def main(argv=None):
         writes = load_json_arg(a.data, a.file)
         if isinstance(writes, list):
             writes = {"writes": writes}
-        res = req(base, "POST", "/_api/db/batch", writes)
+        res = call("POST", "/_api/db/batch", writes)
         print(json.dumps(res, ensure_ascii=False))
         return 0
 
     if a.cmd == "comments":
         if a.ccmd == "watch":
             if a.list or (not a.on and not a.off):
-                res = req(base, "GET", "/_api/comments/status")
+                res = call("GET", "/_api/comments/status")
             else:
-                res = req(base, "POST", "/_api/comments/watch", {"watcher": a.watcher, "on": not a.off})
+                res = call("POST", "/_api/comments/watch", {"watcher": a.watcher, "on": not a.off})
             print(json.dumps(res, ensure_ascii=False))
             return 0
         if a.ccmd == "wait":
-            res = req(base, "GET", "/_api/comments/wait?timeout=%d" % a.timeout, timeout=a.timeout + 15)
+            res = call("GET", "/_api/comments/wait?timeout=%d" % a.timeout, timeout=a.timeout + 15)
             print(json.dumps(res, ensure_ascii=False))
             return 0
         if a.ccmd == "read":
-            res = req(base, "GET", "/_api/comments/threads/" + urllib.parse.quote(a.thread_id))
+            res = call("GET", "/_api/comments/threads/" + urllib.parse.quote(a.thread_id))
             print(json.dumps(res, ensure_ascii=False))
             return 0
         if a.ccmd == "reply":
-            res = req(base, "POST", "/_api/comments/threads/%s/reply" % urllib.parse.quote(a.thread_id), {"text": a.text})
+            res = call("POST", "/_api/comments/threads/%s/reply" % urllib.parse.quote(a.thread_id), {"text": a.text})
             print(json.dumps(res, ensure_ascii=False))
             return 0
 
@@ -250,11 +274,11 @@ def main(argv=None):
             raw = open(a.path, "rb").read()
             ctype = mimetypes.guess_type(a.path)[0] or "application/octet-stream"
             hdrs = {"Content-Type": ctype, "X-Filename": urllib.parse.quote(os.path.basename(a.path))}
-            res = req(base, "POST", "/_api/blobs", raw, headers=hdrs)
+            res = call("POST", "/_api/blobs", raw, headers=hdrs)
             print(json.dumps(res, ensure_ascii=False))
             return 0
         if a.acmd == "read":
-            raw = req(base, "GET", "/_blob/" + urllib.parse.quote(a.blob_id))
+            raw = call("GET", "/_blob/" + urllib.parse.quote(a.blob_id))
             os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
             with open(a.out, "wb") as fh:
                 fh.write(raw)

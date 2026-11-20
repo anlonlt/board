@@ -337,6 +337,7 @@ def main(argv=None):
     ap.add_argument("--mode", choices=["local", "hybrid"], help="local: localhost board_server; hybrid: Claude Artifact + git_watch.py")
     ap.add_argument("--cmd", help="one-word terminal command installed in ~/.local/bin/<cmd> (default: project slug)")
     ap.add_argument("--no-cmd", action="store_true", help="skip installing the ~/.local/bin/<cmd> shortcut")
+    ap.add_argument("--bootstrap", action="store_true", help="1-command bootstrap: pre-seed _orchestrator & KIT-installed into local SQLite DB")
     ap.add_argument("--main-branch")
     ap.add_argument("--trunk-push", choices=["yes", "no"], help="the owner's standing permission to push the trunk")
     ap.add_argument("--survey", help="step 0's report (survey/<date>/report.md): required at the first install")
@@ -435,6 +436,27 @@ def main(argv=None):
         merge_hooks(t, a.dry_run, ins.log, parts["board"])
         if c["kit"].get("cmd"):
             install_cmd(t, c["kit"]["cmd"], a.dry_run, ins.log)
+    if a.bootstrap and parts["board"] and not a.dry_run:
+        from datetime import datetime, timezone
+        import board_server as _bs  # already on sys.path via kit/board
+        store = _bs.BoardStore(os.path.join(t, ".kit", "board_data"))
+        try:
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if not store.get_doc("posts", "_orchestrator").get("exists"):
+                store.set_doc("posts", "_orchestrator", {
+                    "title": "Ask the orchestrator", "column": "info", "part": "orchestrator",
+                    "priority": 3, "created_at": now,
+                    "body": "Write here for anything that is not about one post.",
+                })
+            if not store.get_doc("posts", "KIT-installed").get("exists"):
+                store.set_doc("posts", "KIT-installed", {
+                    "title": "The board kit is installed", "column": "info", "part": "KIT",
+                    "priority": 2, "created_at": now,
+                    "body": "Bootstrapped by `install.py --bootstrap`.\n\nRun `%s` from any terminal to start the board, orchestrator, and clerk." % (c["kit"].get("cmd") or "./.kit/up"),
+                })
+            ins.log.append("bootstrap: seeded _orchestrator and KIT-installed in .kit/board_data/board.db")
+        finally:
+            store.close()
     if want_claude:
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"])
     import subprocess
