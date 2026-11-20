@@ -19,6 +19,7 @@ keys sorted), board/sync.json (the cursor and a log of syncs).
     python3 -I scripts/kit.py since <ISO>
     python3 -I scripts/kit.py session <post>
     python3 -I scripts/kit.py reads [--at ISO]         # prints the board reads one sync needs
+    python3 -I scripts/kit.py welcome [--runtime agy|claude|arena|generic] [--post]
 
 STATE SEMANTICS:
 - Comment `read` / `read_at` represents "delivered/read by the watching agent (e.g. agy clerk)", independent of the
@@ -609,6 +610,213 @@ def publish(m, url=None, db_path=None, branch=None, token=None, at=None):
     return {"sha": sha, "received": rec, "status": "published"}
 
 
+# ---------------------------------------------------------------- runtime welcomes
+WELCOME_RUNTIMES = ("agy", "claude", "arena", "generic")
+
+_RUNTIME_LABELS = {
+    "agy": "agy local",
+    "claude": "Claude Code Web",
+    "arena": "Arena / embedded preview",
+    "generic": "local CLI",
+}
+
+
+def welcome_comment_id(runtime):
+    if runtime not in WELCOME_RUNTIMES:
+        raise ValueError("Unsupported runtime %r (expected one of %s)" % (runtime, ", ".join(WELCOME_RUNTIMES)))
+    return "welcome-%s-1" % runtime
+
+
+def _resolve_memory_dir(explicit=None):
+    if explicit:
+        return explicit if os.path.isabs(explicit) else os.path.join(ROOT, explicit)
+    cfg_md = (CONFIG.get("kit") or {}).get("memory_dir")
+    if cfg_md:
+        return cfg_md if os.path.isabs(cfg_md) else os.path.join(ROOT, cfg_md)
+    for cand in (".board/memory", ".story"):
+        p = os.path.join(ROOT, cand)
+        if os.path.isdir(p):
+            return p
+    return os.path.join(ROOT, ".board", "memory")
+
+
+def _read_welcome_memory(memory_dir):
+    """Read state/*.md (title, priority, Next:, Blocked by:, Runs in:) and awaits.md bullets."""
+    projects = []
+    state_dir = os.path.join(memory_dir, "state")
+    if os.path.isdir(state_dir):
+        for path in sorted(glob.glob(os.path.join(state_dir, "*.md"))):
+            wid = os.path.basename(path)[:-3]
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    text = fh.read()
+            except OSError:
+                continue
+            title = next((line[2:].strip() for line in text.splitlines() if line.startswith("# ")), wid)
+            nxt = next((line[5:].strip() for line in text.splitlines() if line.startswith("Next:")), "")
+            pm = re.search(r"^Priority:\s*([123])", text, re.M)
+            prio = int(pm.group(1)) if pm else 2
+            bm = re.search(r"^Blocked by:\s*(.+)$", text, re.M | re.I)
+            blockers = [b.strip() for b in bm.group(1).split(",") if b.strip() and b.strip().lower() != "none"] if bm else []
+            rm = re.search(r"^Runs in:\s*(.+)$", text, re.M | re.I)
+            runner = rm.group(1).strip() if rm else ""
+            projects.append({
+                "id": wid,
+                "title": title,
+                "next": nxt,
+                "priority": prio,
+                "blocked_by": blockers,
+                "runner": runner,
+            })
+    projects.sort(key=lambda p: (p["priority"], p["id"]))
+
+    awaits = []
+    awaits_ids = set()
+    awaits_path = os.path.join(memory_dir, "awaits.md")
+    if os.path.isfile(awaits_path):
+        try:
+            with open(awaits_path, encoding="utf-8") as fh:
+                for line in fh:
+                    s = line.strip()
+                    if s.startswith("- ") or s.startswith("* "):
+                        item = s[2:].strip()
+                        if item:
+                            awaits.append(item)
+                            m_id = re.match(r"^\[([^\]]+)\]", item)
+                            if m_id:
+                                awaits_ids.add(m_id.group(1).strip())
+        except OSError:
+            pass
+    return projects, awaits, awaits_ids
+
+
+def _runtime_capability_lines(runtime, board_url, cmd, mem_rel):
+    if runtime == "agy":
+        return [
+            "- **Local board + phone access:** served by `board_server.py` at `%s` with Tailscale/PWA access (Android Private DNS / NextDNS users: use the direct Tailscale IP link if `*.ts.net` does not resolve)." % board_url,
+            "- **One-word launcher:** type `%s` in any terminal to start the board, print your link, and launch `agy --mode auto` with `kit_guard.py` (unattended mode — destructive commands stay blocked)." % cmd,
+            "- **Live forwarding & parallel workers:** a `flash_lite` clerk auto-forwards your comments, 👍 Likes, and tapped answers; parallel git-worktree subagents (`Workspace=\"share\"`) isolate each part's edits.",
+            "- **Warm Git sync:** `kit.py receive` / `kit.py publish` sync board state cleanly with other runtimes.",
+        ]
+    if runtime == "claude":
+        return [
+            "- **Cloud Artifact board:** hosted on `claude.ai` (`%s`) with `window.storage` persistence." % board_url,
+            "- **Auto-wakeup on comment:** comments and 👍 Likes wake the clerk/orchestrator automatically.",
+            "- **Cloud subagents & hybrid bridge:** remote subagents run parts in parallel, and the `board-mirror` Git bridge (`kit.py sync` / `git_watch.py`) connects local computer runners.",
+        ]
+    if runtime == "arena":
+        return [
+            "- **Embedded preview mode:** runs `board_server.py --embed-mode` (`KIT_EMBED_PREVIEW=1`) at `%s` with cookie-independent `X-Kit-Token` unlock and 5s change polling for sandboxed preview iframes." % board_url,
+            "- **Pull-on-turn (no background clerk / no auto-wake):** your comments and 👍 Likes save to the board immediately, but there is no background watcher or automatic wakeup — ping the Arena chat whenever you want the agent to read new comments and reply.",
+            "- **Handoff:** warm Git sync (`kit.py receive` / `kit.py publish`) when a remote is configured, or a downloadable patch/zip when the sandbox has no push credentials.",
+        ]
+    return [
+        "- **Local board server:** served by `board_server.py` at `%s`, driven via `board_cli.py` (manual or polled)." % board_url,
+        "- **Memory & handoff:** project state lives in `%s/`, and warm Git sync (`kit.py receive` / `kit.py publish`) shares board state across runtimes." % mem_rel,
+    ]
+
+
+def _runtime_setup_line(runtime):
+    if runtime == "agy":
+        return "Local `computer` runner is ready out of the box in this `agy` session (clerk active, worktree subagents available)."
+    if runtime == "claude":
+        return "`cloud` runner is ready in Claude Code Web; connect a `computer` runner via `board-mirror` + `git_watch.py` if local execution is needed."
+    if runtime == "arena":
+        return "Embedded preview (`--embed-mode`) is active; pull-on-turn workflow is ready (reply in Arena chat to trigger the next turn)."
+    return "Local CLI runner (`board_cli.py`) is ready; poll or run `kit.py` commands between turns."
+
+
+def render_welcome(runtime=None, project=None, board_url=None, memory_dir=None, cmd=None, talk=None):
+    """Render a two-layer (universal + runtime-specific) welcome message for _orchestrator."""
+    rt = runtime or (CONFIG.get("kit") or {}).get("runtime") or "agy"
+    if rt == "both":
+        rt = "agy"
+    if rt not in WELCOME_RUNTIMES:
+        raise ValueError("Unsupported runtime %r (expected one of %s)" % (rt, ", ".join(WELCOME_RUNTIMES)))
+    proj = project or CONFIG.get("project") or os.path.basename(ROOT)
+    url = _resolve_board_url(board_url)
+    mdir = _resolve_memory_dir(memory_dir)
+    mem_rel = os.path.relpath(mdir, ROOT) if os.path.commonpath([os.path.abspath(mdir), os.path.abspath(ROOT)]) == os.path.abspath(ROOT) else mdir
+    launcher = cmd or (CONFIG.get("kit") or {}).get("cmd") or "./.kit/up"
+    projects, awaits, awaits_ids = _read_welcome_memory(mdir)
+
+    lines = [
+        "# Welcome to the %s board (%s)" % (proj, _RUNTIME_LABELS[rt]),
+        "",
+        "## 1. What the board does",
+        "- Columns: **`todo`** (for you to do), **`question`** (choices for you), **`info`** (reports & news), and **`done`** (finished).",
+        "- Commenting under any post reaches the agent that wrote it and replies come back in that thread; `question` posts support one-tap answers; priorities run `P1`–`P3`.",
+        "- The **\"Where we are\"** card at the top tracks every workstream, and this **`_orchestrator`** thread (\"Ask the orchestrator\") is for anything not tied to one post.",
+        "",
+        "## 2. How this runtime works (`%s`)" % rt,
+    ]
+    lines.extend(_runtime_capability_lines(rt, url, launcher, mem_rel))
+
+    lines.extend(["", "## 3. Everything open now"])
+    if projects:
+        for p in projects:
+            nxt = p["next"] or "(no next step recorded)"
+            extra = " _(blocked by: %s)_" % ", ".join(p["blocked_by"]) if p["blocked_by"] else ""
+            lines.append("- **%s** (`P%d`): %s%s" % (p["title"], p["priority"], nxt, extra))
+    else:
+        lines.append("- No open workstreams recorded in `%s/state/` yet." % mem_rel)
+    if awaits:
+        lines.append("")
+        lines.append("**Waiting on you (`awaits.md`):**")
+        for item in awaits:
+            lines.append("- %s" % item)
+
+    lines.extend([
+        "",
+        "## 4. Setup & runners",
+        "- " + _runtime_setup_line(rt),
+        "",
+        "## 5. What can run now",
+    ])
+    runnable = [p for p in projects if p["next"] and not p["blocked_by"] and p["id"] not in awaits_ids]
+    if runnable:
+        for p in runnable:
+            lines.append("- **%s** (`P%d`): %s" % (p["title"], p["priority"], p["next"]))
+    else:
+        lines.append("- Ready for your next instruction — tell me which task to start.")
+    lines.extend(["", "A 👍 on this message launches them all; or tell me which."])
+    return "\n".join(lines) + "\n"
+
+
+def post_welcome(runtime=None, url=None, token=None, project=None, memory_dir=None, cmd=None, talk=None, at=None):
+    """Render and idempotently post welcome-<runtime>-1 under _orchestrator."""
+    rt = runtime or (CONFIG.get("kit") or {}).get("runtime") or "agy"
+    if rt == "both":
+        rt = "agy"
+    cid = welcome_comment_id(rt)
+    text = render_welcome(runtime=rt, project=project, board_url=url, memory_dir=memory_dir, cmd=cmd, talk=talk)
+    burl = _resolve_board_url(url)
+    tok = _resolve_board_token(token)
+    existing = _board_request(burl, "doc/comments/" + urllib.parse.quote(cid, safe=""), token=tok)
+    if existing.get("exists"):
+        return {"id": cid, "runtime": rt, "posted": False, "status": "already exists", "version": existing.get("version")}
+    doc = {
+        "post_id": "_orchestrator",
+        "from": "orchestrator",
+        "runtime": rt,
+        "text": text,
+        "created_at": at or zstamp(datetime.now(timezone.utc)),
+    }
+    try:
+        res = _board_request(
+            burl,
+            "db/comments/" + urllib.parse.quote(cid, safe=""),
+            {"data": doc, "if_version": 0},
+            token=tok,
+            method="PUT",
+        )
+        return {"id": cid, "runtime": rt, "posted": True, "status": "posted", "version": res.get("version")}
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            return {"id": cid, "runtime": rt, "posted": False, "status": "already exists"}
+        raise
+
+
 # ---------------------------------------------------------------- init / commit
 def git(m, *args):
     return subprocess.run(["git", "-C", m] + list(args), capture_output=True, text=True)
@@ -656,6 +864,16 @@ def main(argv=None):
     s = sp.add_parser("since"); s.add_argument("t")
     s = sp.add_parser("session"); s.add_argument("post")
     s = sp.add_parser("reads"); s.add_argument("--at")
+    s = sp.add_parser("welcome")
+    s.add_argument("--runtime", choices=WELCOME_RUNTIMES, default=None)
+    s.add_argument("--post", action="store_true", help="Post welcome-<runtime>-1 under _orchestrator (idempotent)")
+    s.add_argument("--board-url", default=None)
+    s.add_argument("--token", default=None)
+    s.add_argument("--project", default=None)
+    s.add_argument("--memory-dir", default=None)
+    s.add_argument("--launcher", dest="launcher", default=None, help="Override one-word launcher command")
+    s.add_argument("--talk", default=None)
+    s.add_argument("--at", default=None)
     a = ap.parse_args(argv)
     if a.config:
         configure(a.config)
@@ -696,6 +914,19 @@ def main(argv=None):
         except Conflict as e:
             print("publish conflict: " + str(e), file=sys.stderr)
             return 2
+    if a.cmd == "welcome":
+        if a.post:
+            res = post_welcome(
+                runtime=a.runtime, url=a.board_url, token=a.token, project=a.project,
+                memory_dir=a.memory_dir, cmd=a.launcher, talk=a.talk, at=a.at,
+            )
+            print(json.dumps(res, ensure_ascii=False))
+        else:
+            print(render_welcome(
+                runtime=a.runtime, project=a.project, board_url=a.board_url,
+                memory_dir=a.memory_dir, cmd=a.launcher, talk=a.talk,
+            ), end="")
+        return 0
     if a.cmd == "diff":
         ds = diff(m, a.dump, a.window)
         for kind, coll, i, k in ds:

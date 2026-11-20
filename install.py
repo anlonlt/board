@@ -359,7 +359,7 @@ def main(argv=None):
     ap.add_argument("--talk", help="the language to talk to the owner in (default English)")
     ap.add_argument("--board-url", help="override board URL (default http://127.0.0.1:<port> in local mode)")
     ap.add_argument("--board-port", type=int, help="local board server port (default 8765)")
-    ap.add_argument("--runtime", choices=["agy", "claude", "both"], help="which harness configs to install (default agy)")
+    ap.add_argument("--runtime", choices=["agy", "claude", "arena", "generic", "both"], help="which harness configs to install (default agy)")
     ap.add_argument("--mode", choices=["local", "hybrid"], help="local: localhost board_server; hybrid: Claude Artifact + git_watch.py")
     ap.add_argument("--cmd", help="one-word terminal command installed in ~/.local/bin/<cmd> (default: project slug)")
     ap.add_argument("--no-cmd", action="store_true", help="skip installing the ~/.local/bin/<cmd> shortcut")
@@ -455,7 +455,8 @@ def main(argv=None):
             ins.put(".kit/runner.md", render(rd("kit", "claude", "runner.template.md"), c))
             ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "claude", "ORCHESTRATOR.template.md"), c))
         else:
-            ins.put(".kit/orchestrator.md", render(rd("kit", "orchestrator.template.md"), c))
+            orch_tpl = rd("kit", "arena", "orchestrator.template.md") if rt == "arena" else rd("kit", "orchestrator.template.md")
+            ins.put(".kit/orchestrator.md", render(orch_tpl, c))
             ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
             ins.put(".kit/runner.md", render(rd("kit", "runner.template.md"), c))
             ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
@@ -516,6 +517,8 @@ def main(argv=None):
         print("next: the memory is installed (no board): import the project's state into %s (README § Import), commit, push; then --setup-done" % mdir)
     elif claude_only:
         print("next: publish .kit/board.html as a claude.ai Artifact, rerun with --board-url <url>, then README § Install (Claude Code Web)")
+    elif rt == "arena":
+        print("next: start the embedded preview board server (`python3 -I .kit/board_server.py --embed-mode`), open %s, then post `python3 -I .kit/kit.py welcome --runtime arena --post`" % c.get("board_url", "http://127.0.0.1:8765"))
     else:
         print("next: start the local board server (`python3 -I .kit/board_server.py`), open %s, then README step 4" % c.get("board_url", "http://127.0.0.1:8765"))
     return 0

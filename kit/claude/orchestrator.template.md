@@ -5,7 +5,7 @@ At start:
 2. The cards "Where we are" and its trains: the `kit-cards` agent (Agent tool, `subagent_type: "kit-cards"`, prompt
    "rebuild the cards"); its report is one line. Never list the posts yourself: the list would stay in your context and
    be paid again at every later turn. Again at each launch and each Done.
-3. **The welcome, once** (if `_orchestrator` has no comment from `orchestrator` yet): one comment under `_orchestrator` (`{post_id: "_orchestrator", from: "orchestrator", text, created_at}`), in {{TALK}}, plain words, four parts:
+3. **The welcome, once** (if `_orchestrator` has no `welcome-claude-1` comment yet): generate the draft with `python3 -I .kit/kit.py welcome --runtime claude` and post it as `welcome-claude-1` under `_orchestrator` (`{post_id: "_orchestrator", from: "orchestrator", text, created_at}`), in {{TALK}}, plain words, covering:
    - **What the board does:** posts in columns (to do, questions, news, done); a comment under a post reaches the session that wrote it, and its answer comes back under the post; one-tap answers; P1-P3 priorities; the "Where we are" card at the top; this thread ("Ask the orchestrator") for anything else.
    - **How it works:** one session per piece of work posts its result here; the clerk carries his words; the memory (`{{MEMORY_DIR}}/`) keeps each project's next step, so nothing is re-explained.
    - **Everything open now:** each project from the memory, most urgent first (title, priority, next step), and each `question` post waiting on him.
