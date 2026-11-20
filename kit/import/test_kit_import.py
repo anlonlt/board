@@ -25,4 +25,20 @@ with tempfile.TemporaryDirectory() as d:
     r = run()
     check("a rerun keeps an edited state and adds no duplicate await", "KEPT" in r.stdout and "my edit" in open(os.path.join(d, ".story", "state", "weekly-bulletin.md")).read()
           and open(os.path.join(d, ".story", "awaits.md")).read().count("new layout?") == 1)
+
+    # issue #2 (a real chat export): ids as a list of objects, chats as objects, a default outside the options,
+    # the state handed over as the artifact's HTML, a French default ending with a period
+    st2 = {"projects": [{"id": "flux", "title": "Flux", "next": "tester", "ids": [{"name": "liste", "value": "Demandes"}, "Site RH"],
+           "chats": [{"date": "2026-11-18", "title": "Flux RH"}],
+           "waiting": [{"text": "Publier ?", "default": "On attend lundi.", "options": ["Oui", "Non"]}]}]}
+    hf = os.path.join(d, "a.html")
+    open(hf, "w").write('<!doctype html><pre id="kit-state">' + json.dumps(st2).replace('"', "&quot;") + "</pre>")
+    r = subprocess.run([sys.executable, "-I", os.path.join(d, ".kit", "kit_import.py"), hf, "--out", os.path.join(d, "o2"),
+                        "--now", "2026-11-20T00:00:00Z"], capture_output=True, text=True)
+    check("#2: the artifact's HTML is read, ids list and chat objects do not crash", r.returncode == 0)
+    s2 = open(os.path.join(d, ".story", "state", "flux.md")).read() if r.returncode == 0 else ""
+    check("#2: ids and chats written as text", "liste: Demandes" in s2 and "Site RH" in s2 and "2026-11-18 · Flux RH" in s2)
+    q2 = json.load(open(os.path.join(d, "o2", "posts", "Q-flux-1.json"))) if r.returncode == 0 else {}
+    check("#2: a default outside the options marks no option", q2.get("options") == ["Oui", "Non"] and "default_option" not in q2)
+    check("#2: no English added, no double period", q2.get("body") == "Publier ?\n\n→ On attend lundi")
 print("%d failed" % fails); sys.exit(1 if fails else 0)

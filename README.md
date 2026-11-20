@@ -68,11 +68,19 @@ Your chats hold your projects' state; the kit's memory and board start empty. Tw
 1. **In a new claude.ai chat**, paste the block of `step0/export-chat.md`. Claude goes through your chats, fills one
    private artifact "kit state" (per project: next step, where it stands, decisions, ids, what waits for you), shows it
    to you for corrections, and gives you one line for Claude Code.
-2. **For Claude, in the project's session** (after Install): `Artifact` `read` the link; save the JSON inside its
-   `<pre id="kit-state">` as `/tmp/kit-state.json`; `python3 -I .kit/kit_import.py /tmp/kit-state.json --session <the
+2. **For Claude, in the project's session** (after Install): `Artifact` `read` the link (it saves the page as a file);
+   `python3 -I .kit/kit_import.py <that file> --session <the
    orchestrator's session id>`; it writes `.story/state/<project>.md`, `.story/awaits.md`, `.story/preferences.md`
    (never over a file it did not create) and prints an `ArtifactData` `batch` of posts: one per project (`info`) and one
    one-tap `question` per thing waiting for you. Send it to the board (50 writes per call), commit `.story`, push.
+
+## Update (a newer kit into a project that has it)
+
+For Claude, in the project's session: `git -C /tmp/board-kit pull` (or step 1's clone), then step 2's command again
+with no options (`python3 -I /tmp/board-kit/install.py .`): it keeps `.kit/config.json`, updates only the files the kit
+wrote and nobody changed since (`KEPT` lists the others), and merges any new hook line. If `.kit/board.html` changed,
+republish it to the board's url (`Artifact` `publish` with `url`, no `capabilities`: the page keeps its own). Commit,
+push. The guard keeps refusing `git reset --hard`, `git clean` and force pushes on purpose: undo with `git revert`.
 
 ## Feedback (a complaint or a dev report, to anlonlt/board)
 
