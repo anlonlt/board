@@ -7,8 +7,10 @@
 
 - **Repository seen:** `victorcheng28/board`, a public fork of `anlonlt/board`. Permissions reported by the REST API:
   push, maintain, admin.
-- **Branch:** none created yet (working copy on `main`).
-- **Commit / push / pull request:** not attempted yet. Reported below when done.
+- **Branch:** `step0/survey-2026-11-20`.
+- **Commit:** worked on the first try.
+- **Push to the fork:** worked on the first try.
+- **Pull request:** not opened yet. It waits for the chat's reports.
 
 ### How access was obtained (it took several tries)
 
