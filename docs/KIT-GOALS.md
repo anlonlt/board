@@ -86,4 +86,9 @@ Step 0 answers four questions, then recommends; the install takes exactly that (
 | more parts than the owner can launch and check by hand (about 3 or more at once) | everything: + orchestrator, cards, consultant | "to optimize my use of it in parallel"; "it should do it itself" |
 | work outside code | + the runners it needs | Microsoft 365 through Chrome |
 
+**Not served by a kit part:** typing "continue" (84 of the friend's 288 messages) is a limit of the chat itself; a
+Claude Code session runs a step to its end without it, so the answer is where the work runs (§ Runners), not a part.
+The old reports (PR #1, issue #3) predate § 3's questions on parallel sessions and away answers: a survey run now
+measures both.
+
 Each line of the survey's recommendation quotes the goal it serves, so the owner sees why, and can say no.
