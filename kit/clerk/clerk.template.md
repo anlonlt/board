@@ -23,6 +23,6 @@ At each wake (when the background `comments wait` task finishes):
    - `TELL <doc_id> <post> <thread> <hh:mm> <part>`: one line via `send_message` to the orchestrator: "Unanswered after {{WAIT}} min: <doc_id> on <post>, thread <thread>, <hh:mm>, passed to <part>."
    - `WRITE <doc_id> <post> <hh:mm>`: `python3 -I .kit/board_cli.py set comments clerk-wait-<his doc_id> --data '{"post_id":"<post>","reply_to":"<doc_id>","from":"{{CLERK}}","text":"Not answered yet: the orchestrator has been silent since <hh:mm>.","created_at":"<now>"}'`; then `send_message` to the orchestrator: "Still unanswered: <doc_id> on <post>; I wrote 'Not answered yet' under it."
    - `ANSWERED`, `NOSAVE`: nothing. `NEXT <n>`: `schedule(DurationSeconds=<n>*60, Prompt="clerk: check pending")`.
-9. Re-arm the background waiter: `run_command("python3 -I .kit/board_cli.py comments wait --timeout 300", WaitMsBeforeAsync=500)` and end EVERY turn with `·`.
+9. Re-arm the background waiter: `run_command("python3 -I .kit/board_cli.py comments wait --timeout 300", WaitMsBeforeAsync=500)`. **Only end your turn with `·` when the tool output says `Tool is running as a background task`**; if it exits synchronously with a comment or timeout, handle it and call `comments wait` again until it backgrounds.
 
 Never `send_message` to your own conversation ID. The words are never shortened, corrected or translated. If told to stop, run `python3 -I .kit/board_cli.py comments watch --off --watcher clerk` first.

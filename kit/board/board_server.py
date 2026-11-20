@@ -624,7 +624,8 @@ class BoardStore:
         while True:
             with self.lock:
                 row = self.conn.execute(
-                    "SELECT thread_id, anchor, text, status, created_at, replies FROM threads WHERE dispatched=0 ORDER BY created_at ASC LIMIT 1"
+                    "SELECT thread_id, anchor, text, status, created_at, replies FROM threads WHERE dispatched=0 AND status=? ORDER BY created_at ASC LIMIT 1",
+                    ("sent to you — awaiting reply",),
                 ).fetchone()
                 if row:
                     self.conn.execute("UPDATE threads SET dispatched=1 WHERE thread_id=?", (row[0],))
@@ -670,7 +671,7 @@ class BoardStore:
             replies = json.loads(row[0])
             replies.append({"text": text, "created_at": now})
             self.conn.execute(
-                "UPDATE threads SET replies=?, status=? WHERE thread_id=?",
+                "UPDATE threads SET replies=?, status=?, dispatched=1 WHERE thread_id=?",
                 (json.dumps(replies, ensure_ascii=False), "replied", thread_id),
             )
             self.conn.commit()

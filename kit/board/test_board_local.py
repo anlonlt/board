@@ -130,6 +130,12 @@ with tempfile.TemporaryDirectory() as tmp:
         rc, out, _ = cli(url, "comments", "read", sent["thread_id"])
         check("comments read returns replies", rc == 0 and len(json.loads(out).get("replies", [])) == 1)
 
+        # 6b. Replied threads are never popped by wait_comment (prevents clerk synchronous-exit stall)
+        sent2 = store.send_comment({"id": "p-title"}, "[post P-1] already replied")
+        store.reply_thread(sent2["thread_id"], "Passed to P-1.")
+        w_replied = store.wait_comment(timeout=0.2)
+        check("wait_comment skips already-replied threads", w_replied.get("event") == "timeout")
+
         # 7. seed_from_mirror (failover from Claude Code Web's board-mirror branch)
         mrepo = os.path.join(tmp, "mrepo")
         subprocess.run(["git", "init", "-q", "-b", "board-mirror", mrepo], check=True)
