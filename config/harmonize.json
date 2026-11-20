@@ -1,0 +1,18 @@
+{
+  "project": "harmonize",
+  "language": {"talk": "en", "chat_with_owner": "fr", "code_and_docs": "en"},
+  "board_url": "https://claude.ai/artifact/Ek79P6H3WTPJjJVYPe9rsf",
+  "fields": {
+    "author": "from", "owner": "owner", "clerk": "clerk", "reviewer": "consultant",
+    "post": "post_id", "reply_to": "reply_to", "created": "created_at",
+    "later_flags": ["read", "read_at", "delivered"],
+    "later_stamps": ["read_at", "delivered_at", "arrived_at", "updated_at"],
+    "post_updated": "updated_at", "post_moved": "done_at", "review_kind": ["kind", "review"]
+  },
+  "shell_buckets": [
+    {"name": "Bash: board files (dump / out_dir)", "all": ["posts/|comments/|board-|answer-delay|clerk-pending|\\.json", "scratch|/tmp|board|dump|export"]},
+    {"name": "Bash: ORCHESTRATION.md", "all": ["ORCHESTRATION"]},
+    {"name": "Bash: git", "all": ["git (push|pull|commit|merge|log|status|fetch)|end-session"]}
+  ],
+  "mirror": {"branch": "board-mirror", "path": "../board-mirror", "overlap_hours": 1}
+}
