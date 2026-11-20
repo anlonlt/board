@@ -148,6 +148,20 @@ with tempfile.TemporaryDirectory() as tmp:
               and store.get_doc("comments", "mc-1")["data"].get("text") == "seeded comment")
         check("seed_from_mirror skips existing docs on rerun without --force-seed",
               info2["imported"] == 0 and info2["skipped"] == 2)
+        seen_doc = store.get_doc("data/users/owner", "board-seen")
+        check("seed_from_mirror seeds data/users/owner/board-seen for imported posts",
+              seen_doc["exists"] and "M-1" in (seen_doc["data"].get("posts") or {})
+              and seen_doc["data"]["posts"]["M-1"].get("sig") == board_server._post_sig(store.get_doc("posts", "M-1")["data"]))
+
+        # 7b. Unlimited GET /_api/db/<coll> returns >1000 docs (no silent truncation)
+        for i in range(1005):
+            store.set_doc("bulk", "doc-%04d" % i, {"i": i})
+        bulk_all = json.loads(urllib.request.urlopen(url + "/_api/db/bulk").read().decode("utf-8"))
+        bulk_lim = json.loads(urllib.request.urlopen(url + "/_api/db/bulk?limit=10").read().decode("utf-8"))
+        check("GET /_api/db/<coll> without limit returns all >1000 docs",
+              len(bulk_all["docs"]) == 1005 and bulk_all["next_cursor"] is None)
+        check("GET /_api/db/<coll>?limit=10 honors explicit limit",
+              len(bulk_lim["docs"]) == 10 and bulk_lim["next_cursor"] == "10")
 
         # 8. Monotonic changes log (zero sync holes)
         rc, out, _ = cli(url, "changes", "--since", "0")

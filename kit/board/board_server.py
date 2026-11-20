@@ -443,7 +443,7 @@ class BoardStore:
             return {"exists": False, "id": doc_id, "version": 0, "data": {}}
         return {"exists": True, "id": doc_id, "version": row[0], "data": json.loads(row[1])}
 
-    def list_docs(self, collection, where=None, order_by=None, direction="asc", limit=1000, cursor=0):
+    def list_docs(self, collection, where=None, order_by=None, direction="asc", limit=None, cursor=0):
         with self.lock:
             rows = self.conn.execute(
                 "SELECT doc_id, version, data FROM docs WHERE collection=? ORDER BY doc_id ASC",
@@ -459,9 +459,13 @@ class BoardStore:
             rev = str(direction).lower() == "desc"
             docs.sort(key=lambda x: str(x["data"].get(order_by) or ""), reverse=rev)
         start = max(0, int(cursor or 0))
-        lim = max(1, int(limit or 1000))
-        page = docs[start:start + lim]
-        next_cursor = str(start + lim) if (start + lim) < len(docs) else None
+        if limit is None:
+            page = docs[start:]
+            next_cursor = None
+        else:
+            lim = max(1, int(limit))
+            page = docs[start:start + lim]
+            next_cursor = str(start + lim) if (start + lim) < len(docs) else None
         return {"docs": page, "next_cursor": next_cursor, "total": len(docs)}
 
     def _record_change(self, collection, doc_id, op, version, now):
@@ -910,7 +914,7 @@ def make_handler(root_dir, store, token=None, notify_url=None):
                     where = json.loads(qs["where"][0]) if "where" in qs else None
                     order_by = (qs.get("order_by") or [None])[0]
                     direction = (qs.get("dir") or ["asc"])[0]
-                    limit = int((qs.get("limit") or ["1000"])[0])
+                    limit = int(qs["limit"][0]) if "limit" in qs and qs["limit"][0] else None
                     cursor = int((qs.get("cursor") or ["0"])[0])
                     self._send_json(200, store.list_docs(rest[0], where=where, order_by=order_by, direction=direction, limit=limit, cursor=cursor))
                     return
@@ -1064,12 +1068,44 @@ def make_handler(root_dir, store, token=None, notify_url=None):
     return Handler
 
 
+def _base36(n):
+    chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+    if n == 0:
+        return "0"
+    out = []
+    while n > 0:
+        n, r = divmod(n, 36)
+        out.append(chars[r])
+    return "".join(reversed(out))
+
+
+def _post_sig(q):
+    """Match board.html sigOf(q) bit-for-bit (UTF-16 DJB2 hash + base36 length)."""
+    def s(v):
+        return v if isinstance(v, str) else ""
+    imgs = [s(x) for x in q.get("images")] if isinstance(q.get("images"), list) else []
+    caps = [s(x) for x in q.get("captions")] if isinstance(q.get("captions"), list) else []
+    t = "\x01".join([s(q.get("title")), s(q.get("body")), s(q.get("column")), ",".join(imgs), "\x02".join(caps)])
+    raw = t.encode("utf-16-le")
+    n_units = len(raw) // 2
+    h = 5381
+    for i in range(0, len(raw), 2):
+        code = raw[i] | (raw[i + 1] << 8)
+        h = ((h * 33) ^ code) & 0xFFFFFFFF
+    return _base36(h) + "." + _base36(n_units)
+
+
 def seed_from_mirror(root_dir, store, branch=None, force=False):
     """Import board/posts/*.json and board/comments/*.json from git mirror branch into SQLite.
 
-    Reads directly from git objects (origin/<branch>, falling back to <branch>) without modifying
-    the working tree. Existing docs in SQLite are preserved unless force=True.
+    Reads directly from git objects (origin/<branch>, falling back to <branch>) in one `git archive`
+    packfile fetch without modifying the working tree. Existing docs in SQLite are preserved unless
+    force=True. Also imports board/seen.json if present and seeds data/users/owner/board-seen for
+    imported historical posts so they do not appear unread on first boot.
     """
+    import io
+    import tarfile
+
     if not branch:
         cfg_path = os.path.join(root_dir, ".kit", "config.json")
         try:
@@ -1080,7 +1116,8 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
     def git(*a):
         return subprocess.run(["git", "-C", root_dir] + list(a), capture_output=True, text=True, timeout=60)
 
-    git("fetch", "-q", "origin", branch)
+    # Explicit refspec ensures single-branch clones populate refs/remotes/origin/<branch>.
+    git("fetch", "-q", "origin", "%s:refs/remotes/origin/%s" % (branch, branch))
     ref = None
     for cand in ("origin/" + branch, branch):
         if git("rev-parse", "--verify", "--quiet", cand).returncode == 0:
@@ -1088,29 +1125,66 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
             break
     if not ref:
         return {"ref": None, "imported": 0, "skipped": 0}
-    r = git("ls-tree", "-r", "--name-only", ref, "board/posts", "board/comments")
-    if r.returncode != 0:
+    arc = subprocess.run(
+        ["git", "-C", root_dir, "archive", "--format=tar", ref, "board"],
+        capture_output=True,
+        timeout=180,
+    )
+    if arc.returncode != 0 or not arc.stdout:
         return {"ref": ref, "imported": 0, "skipped": 0}
+
     imported = skipped = 0
-    for path in r.stdout.splitlines():
-        if not path.endswith(".json"):
+    sync_cursor = ""
+    mirror_seen = {}
+    imported_posts = {}
+    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
+        for member in tf.getmembers():
+            if not member.isfile() or not member.name.endswith(".json"):
+                continue
+            name = member.name.lstrip("./")
+            parts = name.split("/")
+            fobj = tf.extractfile(member)
+            if fobj is None:
+                continue
+            try:
+                data = json.loads(fobj.read().decode("utf-8"))
+            except (UnicodeDecodeError, ValueError):
+                continue
+            if name == "board/sync.json" and isinstance(data, dict):
+                sync_cursor = str(data.get("cursor") or "")
+                continue
+            if name == "board/seen.json" and isinstance(data, dict):
+                mirror_seen = data.get("posts") if isinstance(data.get("posts"), dict) else data
+                continue
+            if len(parts) != 3 or parts[0] != "board" or parts[1] not in ("posts", "comments"):
+                continue
+            coll, doc_id = parts[1], parts[2][:-5]
+            if not force and store.get_doc(coll, doc_id).get("exists"):
+                skipped += 1
+                continue
+            store.set_doc(coll, doc_id, data)
+            imported += 1
+            if coll == "posts":
+                imported_posts[doc_id] = data
+
+    # Preserve/seed notification read state so historical mirror posts don't flood as unread.
+    cur_seen = store.get_doc("data/users/owner", "board-seen")
+    seen_posts = dict(((cur_seen.get("data") or {}).get("posts") or {}))
+    seen_changed = False
+    for pid, entry in mirror_seen.items():
+        if isinstance(entry, dict) and (force or pid not in seen_posts):
+            seen_posts[pid] = entry
+            seen_changed = True
+    for pid, pdata in imported_posts.items():
+        if pid in ("_dashboard", "_trains"):
             continue
-        parts = path.split("/")
-        if len(parts) != 3 or parts[1] not in ("posts", "comments"):
-            continue
-        coll, doc_id = parts[1], parts[2][:-5]
-        if not force and store.get_doc(coll, doc_id).get("exists"):
-            skipped += 1
-            continue
-        raw = git("show", "%s:%s" % (ref, path))
-        if raw.returncode != 0:
-            continue
-        try:
-            data = json.loads(raw.stdout)
-        except ValueError:
-            continue
-        store.set_doc(coll, doc_id, data)
-        imported += 1
+        if pid not in seen_posts:
+            at = sync_cursor or str(pdata.get("updated_at") or pdata.get("created_at") or utc_now())
+            seen_posts[pid] = {"at": at, "sig": _post_sig(pdata), "bt": at}
+            seen_changed = True
+    if seen_changed:
+        store.set_doc("data/users/owner", "board-seen", {"posts": seen_posts})
+
     return {"ref": ref, "imported": imported, "skipped": skipped}
 
 
