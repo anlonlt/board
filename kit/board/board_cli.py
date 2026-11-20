@@ -165,8 +165,11 @@ def main(argv=None):
     pw.add_argument("--watcher", default="clerk")
     pwt = csub.add_parser("wait")
     pwt.add_argument("--timeout", type=int, default=300)
+    pwt.add_argument("--lease", type=float, default=None, help="Lease seconds before unacknowledged thread re-queues (default 60)")
     pr = csub.add_parser("read")
     pr.add_argument("thread_id")
+    pack = csub.add_parser("ack")
+    pack.add_argument("thread_id")
     prp = csub.add_parser("reply")
     prp.add_argument("thread_id")
     prp.add_argument("--text", required=True)
@@ -274,11 +277,18 @@ def main(argv=None):
             print(json.dumps(res, ensure_ascii=False))
             return 0
         if a.ccmd == "wait":
-            res = call("GET", "/_api/comments/wait?timeout=%d" % a.timeout, timeout=a.timeout + 15)
+            q = "timeout=%d" % a.timeout
+            if a.lease is not None:
+                q += "&lease=%s" % a.lease
+            res = call("GET", "/_api/comments/wait?" + q, timeout=a.timeout + 15)
             print(json.dumps(res, ensure_ascii=False))
             return 0
         if a.ccmd == "read":
             res = call("GET", "/_api/comments/threads/" + urllib.parse.quote(a.thread_id))
+            print(json.dumps(res, ensure_ascii=False))
+            return 0
+        if a.ccmd == "ack":
+            res = call("POST", "/_api/comments/threads/%s/ack" % urllib.parse.quote(a.thread_id), {})
             print(json.dumps(res, ensure_ascii=False))
             return 0
         if a.ccmd == "reply":

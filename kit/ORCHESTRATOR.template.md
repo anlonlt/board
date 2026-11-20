@@ -12,10 +12,7 @@ Your prompt is `.kit/orchestrator.md`: you ensure the local board server (`.kit/
 
 ## 3. Reading the board (through `kit`, never whole dumps)
 The local board server (`.kit/board_data/board.db`) is the live inbox; `.kit/kit.py` keeps a git copy of it on the branch `{{MIRROR_BRANCH}}` (worktree `{{MIRROR_PATH}}`, never the main branch) and answers in hundreds of characters.
-1. Once per clone: `python3 -I .kit/kit.py init`. The first sync is full:
-   `python3 -I .kit/board_cli.py list posts --limit 1000 --out-dir /tmp/kd` and
-   `python3 -I .kit/board_cli.py list comments --limit 1000 --out-dir /tmp/kd`, then
-   `python3 -I .kit/kit.py sync /tmp/kd --at <UTC time taken before the reads> --full --commit`.
+1. Once per clone: `python3 -I .kit/kit.py init`. In local SQLite mode, sync directly in one O(delta) step with `python3 -I .kit/kit.py sync-db --commit` (or dump via `board_cli.py list posts --limit 1000 --out-dir /tmp/kd` and `board_cli.py list comments --limit 1000 --out-dir /tmp/kd`, then `python3 -I .kit/kit.py sync /tmp/kd --at <UTC time taken before the reads> --full --commit`).
 2. Each later sync: `python3 -I .kit/kit.py reads` prints the reads (posts in full; comments by stamp since the last sync minus an hour). Run them with `board_cli.py` `--out-dir` into a fresh D, then `kit.py sync D --at <time before the reads> --commit`, and `kit.py push` now and then.
 3. Lookups: `kit.py post <id> [--head N]` (a post and its comments, one line each), `kit.py open` (the owner's comments with words and no answer), `kit.py since <ISO>` (every change), `kit.py session <post>` (who wrote it).
 4. A gate before anything relies on the copy: `kit.py diff D` against a full dump taken the same minute must print `0 differences`. Delegate a full dump to a subagent (its output never enters your context).

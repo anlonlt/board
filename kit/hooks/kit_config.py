@@ -16,11 +16,15 @@ def project_dir(data=None):
     if env and os.path.isdir(env):
         return env
     here = os.getcwd()
-    # agy runs hooks with cwd = .agents/ (the directory containing hooks.json)
-    if os.path.basename(here) in (".agents", ".agent", "_agents", "_agent"):
-        parent = os.path.dirname(here)
-        if os.path.isdir(os.path.join(parent, ".kit")):
-            return parent
+    # agy / claude may run hooks from inside .agents/ or .claude/
+    cur = here
+    for _ in range(4):
+        if os.path.isdir(os.path.join(cur, ".kit")):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
     return here
 
 
@@ -40,6 +44,19 @@ def limit(name, default, data=None):
 def in_setup(data=None):
     """README steps 1-8: install.py sets kit.setup at the first install, --setup-done clears it."""
     return bool(config(data).get("kit", {}).get("setup"))
+
+
+def is_claude_payload(data=None):
+    """True when stdin payload came from Claude Code (or runtime is claude without agy fields)."""
+    if isinstance(data, dict):
+        if "hook_event_name" in data or "tool_input" in data or "stop_hook_active" in data or "prompt" in data:
+            return True
+        if ("hookEventName" in data or "toolCall" in data or "lastUserInput" in data or "terminationReason" in data
+                or "conversationId" in data or "conversation_id" in data or "workspacePaths" in data):
+            return False
+    if os.environ.get("CLAUDE_PROJECT_DIR") and not os.environ.get("KIT_PROJECT_DIR"):
+        return True
+    return config(data).get("kit", {}).get("runtime") == "claude"
 
 
 def memory_dir(data=None):

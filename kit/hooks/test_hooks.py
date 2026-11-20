@@ -51,12 +51,15 @@ with tempfile.TemporaryDirectory() as d:
               "git push origin --delete feature", "git add release.keystore", "bash -c 'rm -r build'", "ls | xargs rm -rf",
               "git branch -D feature", "find src -name '*.py' -delete", "git --git-dir .git reset --hard",
               "rm -rf /tmp/../home/user/project", "find . -exec rm -rf {} \\;", "find . -execdir rm {} +",
-              "find . -ok sh -c 'rm -rf {}' \\;"]:
+              "find . -ok sh -c 'rm -rf {}' \\;",
+              "python3 -c \"import shutil; shutil.rmtree('src')\"",
+              "node -e \"fs.rmSync('src', {recursive: true})\""]:
         rc, out, _ = run("kit_guard.py", B(c), proj)
         check("guard refuses: " + c, rc == 0 and out.get("decision") == "deny")
     for c in ["rm -rf /tmp/x", "git commit -m 'never rm -rf src'", "git clean -n", "git push -u origin main",
               "git add dev-debug.keystore", "git reset --soft HEAD~1", "rm file.txt",
-              "git branch -d merged-feature", "find /tmp/scratch -delete", "find /tmp/scratch -exec rm -rf {} \\;"]:
+              "git branch -d merged-feature", "find /tmp/scratch -delete", "find /tmp/scratch -exec rm -rf {} \\;",
+              "python3 -c \"import shutil; shutil.rmtree('/tmp/scratch')\""]:
         rc, out, _ = run("kit_guard.py", B(c), proj)
         check("guard allows: " + c, rc == 0 and out.get("decision") == "allow")
 
@@ -205,6 +208,15 @@ with tempfile.TemporaryDirectory() as d:
     check("stop: a turn a session or timer opened must end with ·", run("kit_say_it_once.py", St(f3, "s3"), proj)[1].get("decision") == "continue")
     check("stop: · passes", run("kit_say_it_once.py", St(transcript(40, "·", human=False), "s4"), proj)[1].get("decision") == "allow")
 
+    # chat_verbose mode allows long human chat answers and skips PreInvocation length reminder
+    cfgp_v = os.path.join(proj, ".kit", "config.json")
+    cv = json.load(open(cfgp_v)); cv["kit"]["limits"]["chat_verbose"] = True; json.dump(cv, open(cfgp_v, "w"))
+    check("say: chat_verbose allows long answer to human in chat",
+          run("kit_say_it_once.py", St(transcript(45, "x" * 500, human=True), "s4v"), proj)[1].get("decision") == "allow")
+    check("say: chat_verbose skips PreInvocation length reminder",
+          injected_text(run("kit_say_it_once.py", {"hookEventName": "PreInvocation", "conversationId": "pv-" + RUN, "lastUserInput": "verbose hi"}, proj)[1]) == "")
+    cv["kit"]["limits"]["chat_verbose"] = False; json.dump(cv, open(cfgp_v, "w"))
+
     # Setup turns: while kit.setup is true, stop hooks and reminders stay quiet; guard still refuses.
     cfgp = os.path.join(proj, ".kit", "config.json")
     c = json.load(open(cfgp)); c["kit"]["setup"] = True; json.dump(c, open(cfgp, "w"))
@@ -235,6 +247,44 @@ with tempfile.TemporaryDirectory() as d:
     git(proj, "push", "-q", "-u", "origin", "HEAD")
     rc_pu, out_pu, _ = run("kit_stop.py", {"hookEventName": "Stop", "conversationId": "noup2-" + RUN, "terminationReason": "NO_TOOL_CALL", "lastUserInput": "t6"}, proj)
     check("stop: allows after pushing branch with upstream", out_pu.get("decision") == "allow")
+
+    # Claude Code Web hook contract compatibility (exit 2 + stderr on refusal, hookSpecificOutput, plain stdout SessionStart)
+    def run_claude(hook, data):
+        env = dict(os.environ, CLAUDE_PROJECT_DIR=proj)
+        r = subprocess.run([sys.executable, "-I", os.path.join(HERE, hook)], input=json.dumps(data),
+                           capture_output=True, text=True, env=env, timeout=30)
+        return r.returncode, r.stdout, r.stderr
+
+    rc_cg, _, err_cg = run_claude("kit_guard.py", {"tool_input": {"command": "rm -rf src"}})
+    check("claude hook: guard refuses with exit 2 and stderr", rc_cg == 2 and "REFUSED" in err_cg)
+    rc_cg_ok, out_cg_ok, _ = run_claude("kit_guard.py", {"tool_input": {"command": "rm -rf /tmp/x"}})
+    check("claude hook: guard allows with exit 0", rc_cg_ok == 0 and out_cg_ok.strip() == "")
+    rc_cs, out_cs, _ = run_claude("kit_session_start.py", {"hook_event_name": "SessionStart"})
+    check("claude hook: SessionStart prints plain text stdout",
+          rc_cs == 0 and "app: ship the login screen" in out_cs and not out_cs.lstrip().startswith("{"))
+    rc_ct, out_ct, _ = run_claude("kit_board_typing.py", {"hook_event_name": "UserPromptSubmit", "prompt": "Board comment from the owner on your post P1-x, thread t, 10:00, verbatim: \"a\""})
+    check("claude hook: board_typing emits hookSpecificOutput with ArtifactData",
+          rc_ct == 0 and "hookSpecificOutput" in out_ct and "ArtifactData" in out_ct)
+    rc_csay, _, err_csay = run_claude("kit_say_it_once.py", {"hook_event_name": "PreToolUse", "tool_input": {"message": "x" * 51}})
+    check("claude hook: say_it_once PreToolUse refuses long message with exit 2", rc_csay == 2 and "REFUSED" in err_csay)
+    rc_cup, out_cup, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "UserPromptSubmit", "prompt": "hi"})
+    check("claude hook: say_it_once UserPromptSubmit emits hookSpecificOutput", rc_cup == 0 and "hookSpecificOutput" in out_cup and "123" in out_cup)
+    rc_cpt, out_cpt, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse"})
+    check("claude hook: say_it_once PostToolUse emits hookSpecificOutput with ·", rc_cpt == 0 and "hookSpecificOutput" in out_cpt and "·" in out_cpt)
+    cf_t = os.path.join(d, "claude-t.jsonl")
+    with open(cf_t, "w") as fh:
+        fh.write(json.dumps({"type": "user", "uuid": "cu1", "origin": {"kind": "human"}, "message": {"content": "go"}}) + "\n")
+        fh.write(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "x" * 200}]}}) + "\n")
+    rc_cst, _, err_cst = run_claude("kit_say_it_once.py", {"hook_event_name": "Stop", "transcript_path": cf_t, "session_id": "cs1-" + RUN})
+    check("claude hook: say_it_once Stop parses Claude transcript and blocks with exit 2", rc_cst == 2 and "French" in err_cst)
+    rc_cst2, _, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "Stop", "transcript_path": cf_t, "session_id": "cs1-" + RUN})
+    check("claude hook: say_it_once Stop passes on second try", rc_cst2 == 0)
+    with open(os.path.join(proj, "f.txt"), "w") as fh:
+        fh.write("dirty-claude")
+    rc_cstop1, _, err_cstop1 = run_claude("kit_stop.py", {"hook_event_name": "Stop"})
+    rc_cstop2, _, _ = run_claude("kit_stop.py", {"hook_event_name": "Stop", "stop_hook_active": True})
+    check("claude hook: kit_stop blocks with exit 2 on dirty tree and honors stop_hook_active",
+          rc_cstop1 == 2 and "Before stopping" in err_cstop1 and rc_cstop2 == 0)
 
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

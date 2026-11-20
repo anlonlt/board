@@ -9,16 +9,20 @@ much gets disabled). Output follows agy's PreToolUse JSON contract: {"decision":
 import fnmatch
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kit_config import config, project_dir  # noqa: E402
+from kit_config import config, is_claude_payload, project_dir  # noqa: E402
 
 OPERATORS = {";", "&&", "||", "|", "&", "(", ")", "|&", ";;", "\n"}
 WRAPPERS = {"sudo", "command", "env", "nohup", "time", "exec", "builtin"}
 DESTRUCTIVE_EXEC = {"rm", "unlink", "shred", "sh", "bash", "zsh", "dash"}
+INLINE_TREE_DELETE_RE = re.compile(
+    r"\b(?:shutil\.rmtree|fs\.rmSync|fs\.rmdirSync|fs\.promises\.rm|FileUtils\.rm_rf)\s*\(\s*(?:(['\"])([^'\"]*)\1)?"
+)
 
 
 def _is_under_tmp(path: str, cwd: str | None = None) -> bool:
@@ -119,6 +123,18 @@ def verdict(words: list[str], never_add=(), allow_add=(), cwd: str | None = None
         return None
     if cmd in ("bash", "sh", "zsh") and args and not args[0].startswith("-"):
         return verdict(args, never_add, allow_add, cwd=cwd)
+
+    if cmd.startswith(("python", "pypy")) or cmd in ("node", "nodejs", "bun", "deno", "ruby", "perl"):
+        for flag in ("-c", "-e", "--eval"):
+            if flag in args:
+                i = args.index(flag)
+                if i + 1 < len(args):
+                    code = args[i + 1]
+                    for m in INLINE_TREE_DELETE_RE.finditer(code):
+                        target = m.group(2) or ""
+                        if not _is_under_tmp(target, cwd):
+                            return f"inline {cmd} {flag} recursive delete outside /tmp ({target or 'dynamic target'})"
+                break
 
     if cmd == "rm":
         flags, targets, after_dd = [], [], False
@@ -238,6 +254,7 @@ def main() -> int:
     except (ValueError, OSError):
         print(json.dumps({"decision": "allow"}))
         return 0
+    claude = is_claude_payload(data)
     g = config(data).get("kit", {}).get("guard", {})
     never_add = g.get("never_add", [])
     allow_add = g.get("allow_add", [])
@@ -246,16 +263,21 @@ def main() -> int:
     command = args.get("CommandLine") or args.get("command") or (data.get("tool_input") or {}).get("command") or ""
     reason = check(command, never_add, allow_add, cwd=project_dir(data))
     if not reason:
-        print(json.dumps({"decision": "allow"}))
+        if not claude:
+            print(json.dumps({"decision": "allow"}))
         return 0
+    hook_path = ".claude/hooks/kit/kit_guard.py" if claude else ".agents/hooks/kit/kit_guard.py"
     msg = (
         f"REFUSED: {reason}.\n\n"
-        "The kit's guard (.agents/hooks/kit/kit_guard.py): work lost to a deletion cannot be recovered. The ways out:\n"
+        f"The kit's guard ({hook_path}): work lost to a deletion cannot be recovered. The ways out:\n"
         "  - a tracked file or folder: git rm <path>, in a commit of its own;\n"
         "  - a commit to undo: git revert <commit> (history stays; nothing is forced);\n"
         "  - scratch files: keep them under /tmp, where rm -r is allowed.\n"
         "If the owner explicitly asked for this exact command, say so and ask them to run it."
     )
+    if claude:
+        print(msg, file=sys.stderr)
+        return 2
     print(json.dumps({"decision": "deny", "reason": msg}, ensure_ascii=False))
     return 0
 

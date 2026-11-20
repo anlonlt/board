@@ -15,7 +15,7 @@ import tempfile
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kit_config import config, memory_dir, project_dir  # noqa: E402
+from kit_config import config, is_claude_payload, memory_dir, project_dir  # noqa: E402
 
 
 def git(root, *a):
@@ -106,6 +106,9 @@ def main():
         fh.write("# Before compaction, %s\n\nbranch: %s\n\n## last commits\n%s\n\n## changed\n%s\n" % (
             datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), git(root, "branch", "--show-current"),
             git(root, "log", "--oneline", "-8"), git(root, "status", "--short") or "(nothing)"))
+
+    if is_claude_payload(data):
+        return 0
 
     term = str(data.get("terminationReason") or "")
     if term == "USER_CANCELED":

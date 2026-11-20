@@ -218,6 +218,36 @@ with tempfile.TemporaryDirectory() as tmp:
         w_replied = store.wait_comment(timeout=0.2)
         check("wait_comment skips already-replied threads", w_replied.get("event") == "timeout")
 
+        # 6c. Comment lease & ack: unacknowledged comment re-queues after lease expires; acked comment does not
+        sent_lease = store.send_comment({"id": "p-title"}, "[post P-1] lease test")
+        w_l1 = store.wait_comment(timeout=0.5, lease_sec=0.2)
+        w_l_busy = store.wait_comment(timeout=0.05, lease_sec=0.2)
+        time.sleep(0.25)
+        w_l2 = store.wait_comment(timeout=0.5, lease_sec=0.2)
+        rc_ack, out_ack, _ = cli(url, "comments", "ack", sent_lease["thread_id"])
+        w_l3 = store.wait_comment(timeout=0.1, lease_sec=0.01)
+        check("wait_comment re-queues unacknowledged thread after lease expiry and stops after ack",
+              w_l1.get("thread_id") == sent_lease["thread_id"]
+              and w_l_busy.get("event") == "timeout"
+              and w_l2.get("thread_id") == sent_lease["thread_id"]
+              and rc_ack == 0 and json.loads(out_ack).get("dispatched") == 1
+              and w_l3.get("event") == "timeout")
+
+        # 6d. Auto-updated_at on post update/str_replace & changes table pruning
+        p1_doc = store.get_doc("posts", "P-1")["data"]
+        check("post update and str_replace auto-stamp updated_at", bool(p1_doc.get("updated_at")))
+        check("shim uses MutationObserver for enhancePostSheet", "MutationObserver" in shim)
+        old_max = store.MAX_CHANGES_LOG
+        store.MAX_CHANGES_LOG = 50
+        try:
+            for i in range(120):
+                store.set_doc("prune_test", "d-%d" % i, {"i": i})
+            ch_pruned = store.list_changes(since=0, limit=1000)
+            check("changes table prunes old sequences beyond MAX_CHANGES_LOG",
+                  len(ch_pruned["changes"]) <= 150 and ch_pruned["changes"][0]["seq"] > 1)
+        finally:
+            store.MAX_CHANGES_LOG = old_max
+
         # 7. seed_from_mirror (failover from Claude Code Web's board-mirror branch)
         mrepo = os.path.join(tmp, "mrepo")
         subprocess.run(["git", "init", "-q", "-b", "board-mirror", mrepo], check=True)

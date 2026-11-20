@@ -123,6 +123,26 @@ try:
     case("config: the stamps a sync reads by", kit.STAMPS == ("created_at", "seen_at"), kit.STAMPS)
     case("config: the overlap", "2026-11-19T11:00:00Z" in "\n".join(kit.reads(m)), kit.reads(m))
     case("config: open follows the owner's name (none of 'owner' counts now)", kit.open_(m).startswith("nothing"), kit.open_(m))
+
+    # 7. sync-db (direct SQLite full + O(delta) sync via changes table)
+    import sqlite3
+    db_file = os.path.join(tmp, "board.db")
+    conn = sqlite3.connect(db_file)
+    conn.execute("CREATE TABLE docs (collection TEXT, doc_id TEXT, version INTEGER, data TEXT, updated_at TEXT, PRIMARY KEY (collection, doc_id))")
+    conn.execute("CREATE TABLE changes (seq INTEGER PRIMARY KEY AUTOINCREMENT, collection TEXT, doc_id TEXT, op TEXT, version INTEGER, at TEXT)")
+    conn.execute("INSERT INTO docs VALUES ('posts', 'DB-1', 1, ?, '2026-11-20T00:00:00Z')", (json.dumps({"title": "One", "column": "info", "created_at": "2026-11-20T00:00:00Z"}),))
+    conn.execute("INSERT INTO changes(collection, doc_id, op, version, at) VALUES ('posts', 'DB-1', 'set', 1, '2026-11-20T00:00:00Z')")
+    conn.commit()
+    m_db = os.path.join(tmp, "mirror_db")
+    r_db1 = kit.sync_db(m_db, db_path=db_file, at="2026-11-20T00:01:00Z")
+    conn.execute("INSERT INTO docs VALUES ('comments', 'c-db1', 1, ?, '2026-11-20T00:02:00Z')", (json.dumps({"post_id": "DB-1", "from": "boss", "text": "delta comment", "created_at": "2026-11-20T00:02:00Z"}),))
+    conn.execute("INSERT INTO changes(collection, doc_id, op, version, at) VALUES ('comments', 'c-db1', 'set', 1, '2026-11-20T00:02:00Z')")
+    conn.commit()
+    r_db2 = kit.sync_db(m_db, db_path=db_file, at="2026-11-20T00:03:00Z")
+    conn.close()
+    case("sync-db: initial bootstrap + incremental delta sync from SQLite changes table",
+         r_db1 == (1, 0, 0, 0, 0) and r_db2 == (0, 0, 1, 0, 0) and "c-db1" in kit.load_dir(m_db + "/board", "comments"),
+         (r_db1, r_db2))
 finally:
     shutil.rmtree(tmp)
 

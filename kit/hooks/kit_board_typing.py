@@ -8,6 +8,9 @@ import re
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from kit_config import is_claude_payload  # noqa: E402
+
 PAT = re.compile(r"Board comment from the owner on your post (\S+?),")
 
 
@@ -17,10 +20,17 @@ def main():
     except (ValueError, OSError):
         print("{}")
         return 0
-    prompt = str(data.get("lastUserInput") or "")
+    claude = is_claude_payload(data)
+    prompt = str(data.get("lastUserInput") or data.get("prompt") or "")
     m = PAT.search(prompt)
     if not m:
-        print("{}")
+        if not claude:
+            print("{}")
+        return 0
+    if claude:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
+              "TYPING: before you write the answer, `ArtifactData` `set` `typing/%s` {from: \"<your part>\", at: <now>} "
+              "(.kit/BOARD.md § Comments); the owner sees dots until your comment lands." % m.group(1)}}))
         return 0
     cid = str(data.get("conversationId") or "x")
     h = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]

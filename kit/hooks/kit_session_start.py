@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kit_config import config, memory_dir, project_dir  # noqa: E402
+from kit_config import config, is_claude_payload, memory_dir, project_dir  # noqa: E402
 
 
 def first(path, prefix):
@@ -33,6 +33,7 @@ def main():
     except (ValueError, OSError):
         data = {}
     c, root = config(data), project_dir(data)
+    claude = is_claude_payload(data)
     k = c.get("kit", {})
     out = []
     if k.get("setup"):
@@ -40,14 +41,18 @@ def main():
                    "`install.py . --setup-done`.")
     url = c.get("board_url")
     mode = k.get("mode", "local")
-    if mode == "hybrid":
+    if mode == "hybrid" and not claude:
         out.append("MODE (hybrid): Claude Code Web owns the claude.ai Artifact board (%s); git (`board-mirror` + `.story/`) "
                    "is the bridge. Listen for new cards/comments from git with `python3 -I .kit/git_watch.py --runner computer` "
                    "(no local board server or Tailscale needed). Skills: `story`, `board`." % (url or "see .kit/config.json"))
     elif url:
-        out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s, CLI `.kit/board_cli.py`), "
-                   "made at turn 1 and updated in full. Every chat turn then ends with a single \"·\"; to the orchestrator: "
-                   "\"Done. Check post <id>.\" Skills: `story`, `board`." % url)
+        if claude:
+            out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s), made at turn 1 and "
+                       "updated in full. Every chat turn then ends with a single \"·\"; to the orchestrator: \"Done. Check post <id>.\"" % url)
+        else:
+            out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s, CLI `.kit/board_cli.py`), "
+                       "made at turn 1 and updated in full. Every chat turn then ends with a single \"·\"; to the orchestrator: "
+                       "\"Done. Check post <id>.\" Skills: `story`, `board`." % url)
     talk = c.get("language", {}).get("talk")
     if talk:
         out.append("LANGUAGE: talk to the owner in %s." % talk)
@@ -94,6 +99,10 @@ def main():
     if ls:
         out.append("LESSONS (%d): grep -ril '<word>' %s/lessons/" % (len(ls), mrel))
     msg = "\n".join(out)
+    if claude:
+        if msg:
+            print(msg)
+        return 0
     if msg:
         print(json.dumps({"injectSteps": [{"systemMessage": {"systemMessage": msg}}]}, ensure_ascii=False))
     else:

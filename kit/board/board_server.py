@@ -352,7 +352,24 @@ SHIM_JS = r"""(function () {
       }
     }
   }
-  setInterval(enhancePostSheet, 600);
+  if (typeof MutationObserver !== "undefined" && typeof document !== "undefined") {
+    var _kitMoTimer = null;
+    var _kitMo = new MutationObserver(function () {
+      if (_kitMoTimer) return;
+      _kitMoTimer = setTimeout(function () { _kitMoTimer = null; enhancePostSheet(); }, 50);
+    });
+    var _attachMo = function () {
+      var target = document.getElementById("sheet") || document.body || document.documentElement;
+      if (target) {
+        _kitMo.observe(target, { attributes: true, childList: true, subtree: true, attributeFilter: ["hidden"] });
+        enhancePostSheet();
+      }
+    };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", _attachMo);
+    else _attachMo();
+  } else {
+    setInterval(enhancePostSheet, 600);
+  }
 })();
 """
 
@@ -402,6 +419,9 @@ def match_where(doc, clauses):
 
 
 class BoardStore:
+    MAX_CHANGES_LOG = 10000
+    COMMENT_LEASE_SEC = 60.0
+
     def __init__(self, data_dir):
         self.data_dir = os.path.abspath(data_dir)
         self.blob_dir = os.path.join(self.data_dir, "blobs")
@@ -410,6 +430,11 @@ class BoardStore:
         self.lock = threading.RLock()
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL")
+        self._has_json1 = True
+        try:
+            self.conn.execute("SELECT json_extract('{\"a\":1}', '$.a')").fetchone()
+        except sqlite3.OperationalError:
+            self._has_json1 = False
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS docs ("
             "  collection TEXT NOT NULL,"
@@ -420,6 +445,17 @@ class BoardStore:
             "  PRIMARY KEY (collection, doc_id)"
             ")"
         )
+        if self._has_json1:
+            for idx_sql in (
+                "CREATE INDEX IF NOT EXISTS idx_docs_post_id ON docs(collection, json_extract(data, '$.post_id'))",
+                "CREATE INDEX IF NOT EXISTS idx_docs_thread_id ON docs(collection, json_extract(data, '$.thread_id'))",
+                "CREATE INDEX IF NOT EXISTS idx_docs_column ON docs(collection, json_extract(data, '$.column'))",
+                "CREATE INDEX IF NOT EXISTS idx_docs_created_at ON docs(collection, json_extract(data, '$.created_at'))",
+            ):
+                try:
+                    self.conn.execute(idx_sql)
+                except sqlite3.OperationalError:
+                    pass
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS threads ("
             "  thread_id TEXT PRIMARY KEY,"
@@ -428,9 +464,14 @@ class BoardStore:
             "  status TEXT NOT NULL,"
             "  created_at TEXT NOT NULL,"
             "  dispatched INTEGER NOT NULL DEFAULT 0,"
+            "  dispatched_at REAL NOT NULL DEFAULT 0,"
             "  replies TEXT NOT NULL DEFAULT '[]'"
             ")"
         )
+        try:
+            self.conn.execute("ALTER TABLE threads ADD COLUMN dispatched_at REAL NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS changes ("
             "  seq INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -473,11 +514,35 @@ class BoardStore:
             return {"exists": False, "id": doc_id, "version": 0, "data": {}}
         return {"exists": True, "id": doc_id, "version": row[0], "data": json.loads(row[1])}
 
+    def _sql_where_pushdown(self, where):
+        """Translate safe simple where clauses into SQLite json_extract predicates."""
+        if not self._has_json1 or not where:
+            return "", []
+        sql_parts = []
+        params = []
+        for clause in where:
+            if not isinstance(clause, (list, tuple)) or len(clause) != 3:
+                continue
+            field, op, val = clause
+            if not isinstance(field, str) or not re.match(r"^[A-Za-z0-9_]+$", field):
+                continue
+            jpath = "$." + field
+            if op == "==" and isinstance(val, (str, int, float)) and not isinstance(val, bool):
+                sql_parts.append("json_extract(data, ?) = ?")
+                params.extend([jpath, val])
+            elif op in (">", ">=", "<", "<=") and isinstance(val, (str, int, float)) and not isinstance(val, bool):
+                sql_parts.append("json_extract(data, ?) %s ?" % op)
+                params.extend([jpath, val])
+        if not sql_parts:
+            return "", []
+        return " AND " + " AND ".join(sql_parts), params
+
     def list_docs(self, collection, where=None, order_by=None, direction="asc", limit=None, cursor=0):
+        extra_sql, extra_params = self._sql_where_pushdown(where)
         with self.lock:
             rows = self.conn.execute(
-                "SELECT doc_id, version, data FROM docs WHERE collection=? ORDER BY doc_id ASC",
-                (collection,),
+                "SELECT doc_id, version, data FROM docs WHERE collection=?" + extra_sql + " ORDER BY doc_id ASC",
+                [collection] + extra_params,
             ).fetchall()
         docs = []
         for doc_id, ver, raw in rows:
@@ -499,10 +564,13 @@ class BoardStore:
         return {"docs": page, "next_cursor": next_cursor, "total": len(docs)}
 
     def _record_change(self, collection, doc_id, op, version, now):
-        self.conn.execute(
+        cur = self.conn.execute(
             "INSERT INTO changes(collection, doc_id, op, version, at) VALUES (?, ?, ?, ?, ?)",
             (collection, doc_id, op, version, now),
         )
+        seq = cur.lastrowid or 0
+        if self.MAX_CHANGES_LOG and seq > self.MAX_CHANGES_LOG and (seq % 100 == 0 or self.MAX_CHANGES_LOG < 200):
+            self.conn.execute("DELETE FROM changes WHERE seq <= ?", (seq - self.MAX_CHANGES_LOG,))
 
     def list_changes(self, since=0, limit=1000):
         with self.lock:
@@ -516,6 +584,16 @@ class BoardStore:
 
     def comment_counts(self):
         """Compact per-post comment counts for fast board scaling at 1,000+ comments."""
+        if self._has_json1:
+            with self.lock:
+                rows = self.conn.execute(
+                    "SELECT json_extract(data, '$.post_id') AS pid, COUNT(*), MAX(COALESCE(json_extract(data, '$.created_at'), '')) "
+                    "FROM docs WHERE collection='comments' "
+                    "AND COALESCE(json_extract(data, '$.removed'), 0) = 0 "
+                    "AND COALESCE(json_extract(data, '$.post_id'), '') != '' "
+                    "GROUP BY pid"
+                ).fetchall()
+            return {"counts": {str(r[0]): {"total": int(r[1]), "latest_at": str(r[2] or "")} for r in rows if r[0]}}
         with self.lock:
             rows = self.conn.execute("SELECT data FROM docs WHERE collection='comments'").fetchall()
         counts = {}
@@ -536,6 +614,13 @@ class BoardStore:
                 cur["latest_at"] = at
         return {"counts": counts}
 
+    def _ack_thread_if_seen(self, collection, data):
+        if collection == "comments" and isinstance(data, dict) and data.get("read") and data.get("thread_id"):
+            self.conn.execute(
+                "UPDATE threads SET dispatched=1, dispatched_at=0 WHERE thread_id=?",
+                (str(data["thread_id"]),),
+            )
+
     def set_doc(self, collection, doc_id, data, if_version=None):
         now = utc_now()
         with self.lock:
@@ -552,6 +637,7 @@ class BoardStore:
                 "ON CONFLICT(collection, doc_id) DO UPDATE SET version=excluded.version, data=excluded.data, updated_at=excluded.updated_at",
                 (collection, doc_id, new_ver, json.dumps(data, ensure_ascii=False), now),
             )
+            self._ack_thread_if_seen(collection, data)
             self._record_change(collection, doc_id, "set", new_ver, now)
             self.conn.commit()
         self.notify_sse(collection, doc_id)
@@ -575,12 +661,15 @@ class BoardStore:
                     else:
                         dst[k] = v
             _deep_merge(cur_data, patch)
+            if collection == "posts" and isinstance(patch, dict) and "updated_at" not in patch:
+                cur_data["updated_at"] = now
             new_ver = cur_ver + 1
             self.conn.execute(
                 "INSERT INTO docs(collection, doc_id, version, data, updated_at) VALUES (?, ?, ?, ?, ?) "
                 "ON CONFLICT(collection, doc_id) DO UPDATE SET version=excluded.version, data=excluded.data, updated_at=excluded.updated_at",
                 (collection, doc_id, new_ver, json.dumps(cur_data, ensure_ascii=False), now),
             )
+            self._ack_thread_if_seen(collection, cur_data)
             self._record_change(collection, doc_id, "update", new_ver, now)
             self.conn.commit()
         self.notify_sse(collection, doc_id)
@@ -603,6 +692,8 @@ class BoardStore:
             if not isinstance(val, str) or old_str not in val:
                 return None, "old_str_not_found"
             cur_data[field] = val.replace(old_str, new_str, 1)
+            if collection == "posts":
+                cur_data["updated_at"] = now
             new_ver = cur_ver + 1
             self.conn.execute(
                 "UPDATE docs SET version=?, data=?, updated_at=? WHERE collection=? AND doc_id=?",
@@ -657,13 +748,17 @@ class BoardStore:
                                     _deep_merge(dst[k], v)
                                 else:
                                     dst[k] = v
-                        _deep_merge(cur_data, w.get("data", {}))
+                        patch = w.get("data", {})
+                        _deep_merge(cur_data, patch)
+                        if coll == "posts" and isinstance(patch, dict) and "updated_at" not in patch:
+                            cur_data["updated_at"] = now
                         new_ver = cur_ver + 1
                         self.conn.execute(
                             "INSERT INTO docs(collection, doc_id, version, data, updated_at) VALUES (?, ?, ?, ?, ?) "
                             "ON CONFLICT(collection, doc_id) DO UPDATE SET version=excluded.version, data=excluded.data, updated_at=excluded.updated_at",
                             (coll, doc_id, new_ver, json.dumps(cur_data, ensure_ascii=False), now),
                         )
+                        self._ack_thread_if_seen(coll, cur_data)
                         self._record_change(coll, doc_id, "update", new_ver, now)
                     elif op == "str_replace":
                         row = self.conn.execute(
@@ -683,6 +778,8 @@ class BoardStore:
                             self.conn.rollback()
                             return None, ("conflict", doc_id, "old_str_not_found")
                         cur_data[w["field"]] = val.replace(w["old_str"], w["new_str"], 1)
+                        if coll == "posts":
+                            cur_data["updated_at"] = now
                         new_ver = cur_ver + 1
                         self.conn.execute(
                             "UPDATE docs SET version=?, data=?, updated_at=? WHERE collection=? AND doc_id=?",
@@ -745,16 +842,23 @@ class BoardStore:
             self.comment_cond.notify_all()
         return {"thread_id": tid, "created_at": now}
 
-    def wait_comment(self, timeout=300):
+    def wait_comment(self, timeout=300, lease_sec=None):
+        lease = float(self.COMMENT_LEASE_SEC if lease_sec is None else lease_sec)
         deadline = time.monotonic() + max(0.1, float(timeout))
         while True:
+            now_ts = time.time()
             with self.lock:
                 row = self.conn.execute(
-                    "SELECT thread_id, anchor, text, status, created_at, replies FROM threads WHERE dispatched=0 AND status=? ORDER BY created_at ASC LIMIT 1",
-                    ("sent to you — awaiting reply",),
+                    "SELECT thread_id, anchor, text, status, created_at, replies FROM threads "
+                    "WHERE status=? AND (dispatched=0 OR (dispatched=2 AND dispatched_at > 0 AND (? - dispatched_at) >= ?)) "
+                    "ORDER BY created_at ASC LIMIT 1",
+                    ("sent to you — awaiting reply", now_ts, lease),
                 ).fetchone()
                 if row:
-                    self.conn.execute("UPDATE threads SET dispatched=1 WHERE thread_id=?", (row[0],))
+                    self.conn.execute(
+                        "UPDATE threads SET dispatched=2, dispatched_at=? WHERE thread_id=?",
+                        (now_ts, row[0]),
+                    )
                     self.conn.commit()
                     return {
                         "event": "comment",
@@ -770,6 +874,15 @@ class BoardStore:
                 return {"event": "timeout"}
             with self.comment_cond:
                 self.comment_cond.wait(timeout=min(rem, 5.0))
+
+    def ack_thread(self, thread_id):
+        with self.lock:
+            row = self.conn.execute("SELECT thread_id, status FROM threads WHERE thread_id=?", (thread_id,)).fetchone()
+            if not row:
+                return None
+            self.conn.execute("UPDATE threads SET dispatched=1, dispatched_at=0 WHERE thread_id=?", (thread_id,))
+            self.conn.commit()
+            return {"thread_id": row[0], "status": row[1], "dispatched": 1}
 
     def get_thread(self, thread_id):
         with self.lock:
@@ -797,7 +910,7 @@ class BoardStore:
             replies = json.loads(row[0])
             replies.append({"text": text, "created_at": now})
             self.conn.execute(
-                "UPDATE threads SET replies=?, status=?, dispatched=1 WHERE thread_id=?",
+                "UPDATE threads SET replies=?, status=?, dispatched=1, dispatched_at=0 WHERE thread_id=?",
                 (json.dumps(replies, ensure_ascii=False), "replied", thread_id),
             )
             self.conn.commit()
@@ -1154,7 +1267,8 @@ def make_handler(root_dir, store, token=None, notify_url=None):
 
             if path == "/_api/comments/wait":
                 timeout = float((qs.get("timeout") or ["300"])[0])
-                res = store.wait_comment(timeout=timeout)
+                lease = float(qs["lease"][0]) if "lease" in qs and qs["lease"][0] else None
+                res = store.wait_comment(timeout=timeout, lease_sec=lease)
                 self._send_json(200, res)
                 return
 
@@ -1306,6 +1420,15 @@ def make_handler(root_dir, store, token=None, notify_url=None):
 
             if path == "/_api/comments/send":
                 res = store.send_comment(body.get("anchor"), str(body.get("text") or ""))
+                self._send_json(200, res)
+                return
+
+            if path.startswith("/_api/comments/threads/") and path.endswith("/ack"):
+                tid = urllib.parse.unquote(path[len("/_api/comments/threads/"):-len("/ack")].strip("/"))
+                res = store.ack_thread(tid)
+                if not res:
+                    self._send_json(404, {"error": "thread not found"})
+                    return
                 self._send_json(200, res)
                 return
 

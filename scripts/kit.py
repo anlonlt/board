@@ -143,6 +143,82 @@ def sync(m, d, at, full=False):
     return pw, sum(i not in posts for i in old_p), new, changed, removed
 
 
+def sync_db(m, db_path=None, at=None, full=False):
+    """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full)."""
+    import sqlite3
+    import tempfile
+
+    db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    if not os.path.isfile(db):
+        raise SystemExit("kit sync-db: %s does not exist" % db)
+    now = at or zstamp(datetime.now(timezone.utc))
+    st = read_state(m)
+    last_seq = int(st.get("db_seq") or 0)
+    conn = sqlite3.connect(db, timeout=5)
+    try:
+        latest_seq = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM changes").fetchone()[0]
+        min_seq = conn.execute("SELECT COALESCE(MIN(seq), 0) FROM changes").fetchone()[0]
+        can_delta = (not full) and bool(st.get("cursor")) and last_seq > 0 and (min_seq == 0 or last_seq >= min_seq - 1)
+        if not can_delta:
+            tmp = tempfile.mkdtemp(prefix="kit-sync-db-")
+            try:
+                for coll in ("posts", "comments"):
+                    os.makedirs(os.path.join(tmp, coll), exist_ok=True)
+                    for doc_id, raw in conn.execute("SELECT doc_id, data FROM docs WHERE collection=?", (coll,)):
+                        write_doc(os.path.join(tmp, coll, doc_id + ".json"), json.loads(raw))
+                res = sync(m, tmp, now, full=True)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+            st2 = read_state(m)
+            st2["db_seq"] = latest_seq
+            write_doc(os.path.join(m, "board", "sync.json"), st2)
+            return res
+
+        rows = conn.execute(
+            "SELECT DISTINCT collection, doc_id FROM changes WHERE seq>? AND collection IN ('posts', 'comments')",
+            (last_seq,),
+        ).fetchall()
+        pdir, cdir = os.path.join(m, "board", "posts"), os.path.join(m, "board", "comments")
+        old_p, old_c = load_dir(m + "/board", "posts"), load_dir(m + "/board", "comments")
+        pw = pr = new = changed = removed = 0
+        for coll, doc_id in rows:
+            r = conn.execute("SELECT data FROM docs WHERE collection=? AND doc_id=?", (coll, doc_id)).fetchone()
+            if coll == "posts":
+                target = os.path.join(pdir, doc_id + ".json")
+                if not r:
+                    if doc_id in old_p and os.path.exists(target):
+                        os.remove(target)
+                        pr += 1
+                else:
+                    doc = json.loads(r[0])
+                    if old_p.get(doc_id) != doc:
+                        write_doc(target, doc)
+                        pw += 1
+            elif coll == "comments":
+                target = os.path.join(cdir, doc_id + ".json")
+                if not r:
+                    if doc_id in old_c and os.path.exists(target):
+                        os.remove(target)
+                        removed += 1
+                else:
+                    doc = json.loads(r[0])
+                    if doc_id not in old_c:
+                        new += 1
+                        write_doc(target, doc)
+                    elif old_c[doc_id] != doc:
+                        changed += 1
+                        write_doc(target, doc)
+        st["cursor"] = now
+        st["db_seq"] = latest_seq
+        st["log"].append({"at": now, "full": False, "db_seq": latest_seq, "posts": len(old_p) - pr,
+                          "posts_written": pw, "posts_removed": pr, "comments_read": len(rows),
+                          "new": new, "changed": changed, "removed": removed})
+        write_doc(os.path.join(m, "board", "sync.json"), st)
+        return pw, pr, new, changed, removed
+    finally:
+        conn.close()
+
+
 def reads(m, at=None):
     """The ArtifactData reads one sync needs, as lines (the agent runs them with out_dir)."""
     st = read_state(m)
@@ -320,6 +396,8 @@ def main(argv=None):
     sp.add_parser("push")
     s = sp.add_parser("sync"); s.add_argument("dir"); s.add_argument("--at", required=True)
     s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true")
+    s = sp.add_parser("sync-db"); s.add_argument("--db", default=None); s.add_argument("--at", default=None)
+    s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true")
     s = sp.add_parser("diff"); s.add_argument("dump"); s.add_argument("--window", nargs=2)
     s = sp.add_parser("post"); s.add_argument("id"); s.add_argument("--head", type=int)
     s = sp.add_parser("open"); s.add_argument("--since", default="2000-01-01")
@@ -342,6 +420,13 @@ def main(argv=None):
         print("sync %s: posts %d written, %d removed; comments %d new, %d changed, %d removed" % ((a.at,) + r))
         if a.commit:
             print(commit(m, "kit sync %s%s" % (a.at, " (full)" if a.full else "")))
+        return 0
+    if a.cmd == "sync-db":
+        at_val = a.at or zstamp(datetime.now(timezone.utc))
+        r = sync_db(m, db_path=a.db, at=at_val, full=a.full)
+        print("sync-db %s: posts %d written, %d removed; comments %d new, %d changed, %d removed" % ((at_val,) + r))
+        if a.commit:
+            print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
         return 0
     if a.cmd == "diff":
         ds = diff(m, a.dump, a.window)
