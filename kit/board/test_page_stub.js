@@ -15,7 +15,12 @@
   function fire() { subs.forEach(([c, f]) => f(snap(c))); }
   const q = (coll) => ({ orderBy: () => q(coll), where: () => q(coll), limit: () => q(coll),
     onSnapshot: (f) => { subs.push([coll, f]); setTimeout(() => f(snap(coll)), 0); return () => {}; } });
-  const db = { collection: q, doc: (path) => ({
+  let n = 0;
+  const docRef = (path) => ({ id: path.split("/").pop(),
+    update: async (o) => { window.__writes.push([path, o]); }, set: async (o) => { window.__writes.push([path, o]); } });
+  const coll = (c) => Object.assign(q(c), { doc: (id) => docRef(c + "/" + (id || "new" + (++n))),
+    add: async (o) => { window.__writes.push([c + "/new" + (++n), o]); return { id: "new" + n }; } });
+  const db = { collection: coll, doc: (path) => ({
     update: async (o) => { window.__writes.push([path, o]); const [c, id] = path.split("/"); if (store[c]) { store[c][id] = Object.assign({}, store[c][id], o); fire(); } },
     set: async (o) => { window.__writes.push([path, o]); }, onSnapshot: (f) => { setTimeout(() => f({ exists: false, metadata: { fromCache: false } }), 0); return () => {}; } }) };
   window.confirm = () => true;
