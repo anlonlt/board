@@ -1,69 +1,52 @@
 #!/usr/bin/env python3
-"""Install the kit into a project: python3 install.py <project dir> --project "<Name>" --survey <step 0 report>
-                                     [--talk English] [--board-url URL] [--main-branch <trunk>] [--dry-run]
-                                     [--no-board | --no-clerk | --no-orchestrator | --parts memory,board,...]
-                                     [--setup-done]
-
-Step 0 comes first (docs/KIT-GOALS.md, README § Step 0): a first install needs the survey's report (`--survey PATH`),
-or `--no-survey "<why>"`, recorded in the config. The parts it installs are the report's recommendation: `memory`
-(always: .story, the story skill, the start/stop/compact/guard hooks, end_session.py), `board` (the page, its rules,
-kit.py, the cards, the say-it-once and typing hooks), `clerk`, `orchestrator` (with the consultant and runners); a
-clerk or an orchestrator needs the board. The trunk is origin's HEAD unless `--main-branch` names one, and a branch
-missing on origin stops the install. A translation is `.kit/strings.json` (kit/board/strings.py), applied at every
-install, so the page is never edited by hand. Until `--setup-done` (README step 8), the stop hooks stay quiet.
+"""Install the board kit for agy on a computer:
+    python3 install.py <project dir> --project "<Name>" --survey <step 0 report>
+                       [--talk English] [--board-url URL] [--board-port 8765] [--main-branch <trunk>] [--dry-run]
+                       [--no-board | --no-clerk | --no-orchestrator | --parts memory,board,...]
+                       [--setup-done]
 
 Copies, renders and merges; never deletes, never replaces what it did not write:
-  .kit/            config.json (written once, then only the fields you pass change), kit.py, clerk_pending.py,
-                   board.html (the page to publish), clerk.md (the clerk's prompt), BOARD.md, ORCHESTRATOR.md,
-                   manifest.json (what the kit wrote, with hashes)
-  .claude/hooks/kit/   the generic hooks and their self-test
-  .claude/skills/story, .claude/skills/board   (skipped, and said, when the project has its own file there)
-  .claude/settings.json   the kit's hook lines MERGED in: every existing line kept, a kit line added only if absent
-  .story/          state/, issues/, lessons/, awaits.md, if absent
-A file the kit wrote before is updated only if nobody changed it since (its hash is in the manifest); otherwise it is
-left alone and listed. Run it again with --board-url once the page is published: the url goes into every file.
+  .kit/               config.json, kit.py, board_server.py, board_cli.py, clerk_pending.py,
+                      board.html, clerk.md, BOARD.md, ORCHESTRATOR.md, orchestrator.md,
+                      consultant.md, runner.md, agents/kit-cards.md, manifest.json
+  .agents/hooks/kit/  the agy lifecycle hooks and their self-test
+  .agents/hooks.json  the kit's `kit-board` hook block MERGED in (other named hooks kept untouched)
+  .agents/skills/story, .agents/skills/board   (skipped if the project has its own file there)
+  .story/             state/, issues/, lessons/, awaits.md, if absent
 """
 import argparse
 import hashlib
 import json
 import os
 import re
-import shutil
 import sys
 
 KIT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(KIT, "kit", "board"))
 import strings as page_strings  # noqa: E402
+
 PARTS = ("memory", "board", "clerk", "orchestrator")
 MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "test_hooks.py"}
 HOOKS = ["kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
          "kit_say_it_once.py", "kit_board_typing.py", "test_hooks.py"]
-CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.claude/hooks/kit/%s"'
-SETTINGS = [  # (event, matcher or None, hook file); the say-it-once and typing lines belong to the board
-    ("SessionStart", None, "kit_session_start.py"),
-    ("PreToolUse", "Bash", "kit_guard.py"),
-    ("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage", "kit_say_it_once.py"),
-    ("PostToolUse", "ArtifactData|mcp__claude-code-remote__send_message", "kit_say_it_once.py"),
-    ("UserPromptSubmit", None, "kit_say_it_once.py"),
-    ("UserPromptSubmit", None, "kit_board_typing.py"),
-    ("Stop", None, "kit_stop.py"),
-    ("Stop", None, "kit_say_it_once.py"),
-    ("PreCompact", None, "kit_pre_compact.py"),
-]
+# agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
+CMD = "python3 -I hooks/kit/%s"
+
 DEFAULT_KIT = {
+    "runtime": "agy-local",
     "talk_language": "English",
     "limits": {"message_chars": 600, "done_message_chars": 240, "chat_answer_chars": 600},
     "guard": {"never_add": ["*.keystore", "*.jks", "*.pem", ".env", "keystore.properties"], "allow_add": []},
     "session_start_lines": [],
     "clerk": {"wait_minutes": 5, "context_limit_k": 200},
-    # Each role's model and effort, as Harmonize runs them (2026-11-20): the clerk only forwards (Haiku, low); the
-    # orchestrator and the parts think (Opus, medium); the cards agent runs scripts (Sonnet, its file's frontmatter).
-    "roles": {"orchestrator": {"model": "claude-opus-5-5", "effort": "medium"},
-              "clerk": {"model": "claude-haiku-5-5", "effort": "low"},
-              "part": {"model": "claude-opus-5-5", "effort": "medium"},
-              "consultant": {"model": "claude-fable-5-2", "effort": "medium"}},
+    # agy subagent model tiers: clerk only forwards (flash_lite), cards runs scripts (flash),
+    # orchestrator/parts inherit the session model, consultant uses pro.
+    "roles": {"orchestrator": {"model": "inherit", "effort": "medium"},
+              "clerk": {"model": "flash_lite", "effort": "low"},
+              "part": {"model": "inherit", "effort": "medium"},
+              "consultant": {"model": "pro", "effort": "medium"},
+              "cards": {"model": "flash", "effort": "low"}},
     "main_branch": "main",
-    # The owner's standing permission for sessions to push the trunk (asked once, README step 2: --trunk-push).
     "trunk_push": False,
 }
 
@@ -122,15 +105,17 @@ def load_config(t, a):
     for key, v in DEFAULT_KIT.items():
         k.setdefault(key, v)
     if first:
-        k["setup"] = True  # the stop hooks stay quiet until README step 8 runs --setup-done (issue #3 item 5)
-        k["main_branch"] = None  # detected below unless --main-branch names it
-    for role, v in DEFAULT_KIT["roles"].items():  # a role added to the kit after this project's install
+        k["setup"] = True
+        k["main_branch"] = None
+    for role, v in DEFAULT_KIT["roles"].items():
         k["roles"].setdefault(role, v)
     if a.project:
         c["project"] = a.project
     c.setdefault("project", os.path.basename(t))
     if a.board_url:
         c["board_url"] = a.board_url
+    elif a.board_port:
+        c["board_url"] = "http://127.0.0.1:%d" % a.board_port
     if a.talk:
         c.setdefault("language", {})["talk"] = a.talk
     c.setdefault("language", {}).setdefault("talk", k["talk_language"])
@@ -150,6 +135,8 @@ def load_config(t, a):
     if not parts["board"]:
         parts["clerk"] = parts["orchestrator"] = False
     k["parts"] = parts
+    if parts["board"] and not c.get("board_url"):
+        c["board_url"] = "http://127.0.0.1:%d" % (a.board_port or 8765)
     if a.survey:
         k["survey"] = a.survey
     elif a.no_survey:
@@ -164,11 +151,13 @@ def load_config(t, a):
 
 
 def trunk(t, k, named, log):
-    """origin's HEAD unless named; a named or detected branch missing on origin stops the install (issue #3 item 3)."""
+    """origin's HEAD unless named; a named or detected branch missing on origin stops the install."""
     import subprocess
+
     def git(*a):
         r = subprocess.run(["git", "-C", t] + list(a), capture_output=True, text=True, timeout=60)
         return r.returncode, r.stdout
+
     rc, url = git("remote", "get-url", "origin")
     if rc:
         k["main_branch"] = k.get("main_branch") or "main"
@@ -196,7 +185,7 @@ def slug(s):
 def render(text, c):
     k = c["kit"]
     vals = {"PROJECT": c["project"], "SLUG": slug(c["project"]),
-            "BOARD_URL": c.get("board_url") or "(not published yet: README step 3)",
+            "BOARD_URL": c.get("board_url") or "http://127.0.0.1:8765",
             "TALK": c["language"]["talk"], "MAIN_BRANCH": k["main_branch"],
             "WAIT": str(k["clerk"]["wait_minutes"]), "CONTEXT_K": str(k["clerk"]["context_limit_k"]),
             "CLERK": c.get("fields", {}).get("clerk", "clerk"),
@@ -213,30 +202,52 @@ def render(text, c):
     return text
 
 
-def merge_settings(t, dry, log, board=True):
-    p = os.path.join(t, ".claude", "settings.json")
+def build_agy_hooks(board=True):
+    """Build the agy `.agents/hooks.json` spec for the kit-board named hook."""
+    spec = {
+        "SessionStart": [{"type": "command", "command": CMD % "kit_session_start.py"}],
+        "PreToolUse": [
+            {"matcher": "run_command", "hooks": [{"type": "command", "command": CMD % "kit_guard.py"}]},
+        ],
+        "Stop": [
+            {"type": "command", "command": CMD % "kit_stop.py"},
+            {"type": "command", "command": CMD % "kit_pre_compact.py"},
+        ],
+    }
+    if board:
+        spec["PreToolUse"].append(
+            {"matcher": "send_message", "hooks": [{"type": "command", "command": CMD % "kit_say_it_once.py"}]}
+        )
+        spec["PostToolUse"] = [
+            {"matcher": "send_message|run_command", "hooks": [{"type": "command", "command": CMD % "kit_say_it_once.py"}]}
+        ]
+        spec["PreInvocation"] = [
+            {"type": "command", "command": CMD % "kit_say_it_once.py"},
+            {"type": "command", "command": CMD % "kit_board_typing.py"},
+        ]
+        spec["PostInvocation"] = [
+            {"type": "command", "command": CMD % "kit_say_it_once.py"},
+        ]
+        spec["Stop"].append({"type": "command", "command": CMD % "kit_say_it_once.py"})
+    return spec
+
+
+def merge_hooks(t, dry, log, board=True):
+    p = os.path.join(t, ".agents", "hooks.json")
     s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
-    hooks = s.setdefault("hooks", {})
-    added = 0
-    for ev, matcher, f in SETTINGS:
-        if not board and f not in MEMORY_HOOKS:
-            continue
-        cmd = CMD % f
-        groups = hooks.setdefault(ev, [])
-        if any(h.get("command") == cmd for g in groups for h in g.get("hooks", []) if (g.get("matcher") or None) == matcher):
-            continue
-        g = {"hooks": [{"type": "command", "command": cmd}]}
-        if matcher:
-            g = {"matcher": matcher, **g}
-        groups.append(g)
-        added += 1
-    if added:
-        log.append("settings.json: %d kit hook lines merged in (existing lines kept)" % added)
-        if not dry:
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            with open(p, "w", encoding="utf-8") as fh:
-                json.dump(s, fh, indent=2, ensure_ascii=False)
-                fh.write("\n")
+    desired = build_agy_hooks(board=board)
+    if s.get("kit-board") == desired:
+        return
+    s["kit-board"] = desired
+    count = (len(desired.get("SessionStart", [])) + len(desired.get("PreToolUse", []))
+             + len(desired.get("PostToolUse", [])) + len(desired.get("PreInvocation", []))
+             + len(desired.get("PostInvocation", [])) + len(desired.get("Stop", [])))
+    log.append(".agents/hooks.json: kit-board hook block merged in (%d handlers; other hooks kept)" % count)
+    if not dry:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(s, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
 
 
 def main(argv=None):
@@ -244,7 +255,8 @@ def main(argv=None):
     ap.add_argument("target")
     ap.add_argument("--project")
     ap.add_argument("--talk", help="the language to talk to the owner in (default English)")
-    ap.add_argument("--board-url")
+    ap.add_argument("--board-url", help="override board URL (default http://127.0.0.1:<port>)")
+    ap.add_argument("--board-port", type=int, help="local board server port (default 8765)")
     ap.add_argument("--main-branch")
     ap.add_argument("--trunk-push", choices=["yes", "no"], help="the owner's standing permission to push the trunk")
     ap.add_argument("--survey", help="step 0's report (survey/<date>/report.md): required at the first install")
@@ -284,13 +296,15 @@ def main(argv=None):
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     for h in HOOKS:
         if parts["board"] or h in MEMORY_HOOKS:
-            ins.put(".claude/hooks/kit/" + h, rd("kit", "hooks", h))
-    ins.put(".claude/skills/story/SKILL.md", rd("kit", "skills", "story", "SKILL.md"))
+            ins.put(".agents/hooks/kit/" + h, rd("kit", "hooks", h))
+    ins.put(".agents/skills/story/SKILL.md", rd("kit", "skills", "story", "SKILL.md"))
     if parts["board"]:
         ins.put(".kit/kit.py", rd("scripts", "kit.py"))
+        ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))
+        ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
         page = rd("kit", "board", "board.template.html")
         sp = os.path.join(t, ".kit", "strings.json")
-        if os.path.exists(sp):  # the owner's language, from the string table (issue #3 item 4)
+        if os.path.exists(sp):
             tr = json.load(open(sp, encoding="utf-8"))
             page, used, missing = page_strings.apply(page, page_strings.load_table(), tr.get("strings") or {})
             notes.append("page: %d strings in %s, %d untranslated (.kit/strings.json; add them there, never in the page)" % (used, tr.get("language", "?"), len(missing)))
@@ -299,8 +313,8 @@ def main(argv=None):
         ins.put(".kit/strings.py", rd("kit", "board", "strings.py"))
         ins.put(".kit/kit_cards.py", rd("kit", "board", "kit_cards.py"))
         ins.put(".kit/BOARD.md", render(rd("kit", "board", "BOARD.template.md"), c))
-        ins.put(".claude/agents/kit-cards.md", rd("kit", "agents", "kit-cards.md"))
-        ins.put(".claude/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
+        ins.put(".kit/agents/kit-cards.md", rd("kit", "agents", "kit-cards.md"))
+        ins.put(".agents/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
     if parts["clerk"]:
         ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
         ins.put(".kit/clerk.md", render(rd("kit", "clerk", "clerk.template.md"), c))
@@ -316,13 +330,13 @@ def main(argv=None):
         ins.put(".story/awaits.md", "# What awaits the owner\n\n")
     gi = os.path.join(t, ".gitignore")
     cur = open(gi, encoding="utf-8").read() if os.path.exists(gi) else ""
-    if ".story/before-compaction.md" not in cur:
-        ins.log.append(".gitignore: + .story/before-compaction.md")
+    gi_add = [x for x in (".story/before-compaction.md", ".kit/board_data/") if x not in cur]
+    if gi_add:
+        ins.log.append(".gitignore: + " + ", ".join(gi_add))
         if not a.dry_run:
-            open(gi, "a", encoding="utf-8").write(("" if cur.endswith("\n") or not cur else "\n") + ".story/before-compaction.md\n")
-    merge_settings(t, a.dry_run, ins.log, parts["board"])
-    # Which kit this is (2026-11-20: a session said "the kit was never updated" while it was): the kit's commit, kept in
-    # the manifest and printed, to compare with `git ls-remote https://github.com/anlonlt/board main`.
+            prefix = "" if cur.endswith("\n") or not cur else "\n"
+            open(gi, "a", encoding="utf-8").write(prefix + "\n".join(gi_add) + "\n")
+    merge_hooks(t, a.dry_run, ins.log, parts["board"])
     import subprocess
     r = subprocess.run(["git", "-C", KIT, "log", "-1", "--format=%h %cI"], capture_output=True, text=True)
     kit_at = r.stdout.strip() or "unknown (not a git clone)"
@@ -338,8 +352,7 @@ def main(argv=None):
     if not parts["board"]:
         print("next: the memory is installed (no board): import the project's state into .story (README § Import), commit, push; then --setup-done")
     else:
-        print("next: %s" % ("README step 3: publish .kit/board.html" if not c.get("board_url") else "README step 4: the first posts, then step 5: %s" % (
-            " and ".join(x for x in ("the orchestrator", "the clerk") if parts[x.split()[-1]]) or "README step 6")))
+        print("next: start the local board server (`python3 -I .kit/board_server.py`), open %s, then README step 4" % c.get("board_url", "http://127.0.0.1:8765"))
     return 0
 
 

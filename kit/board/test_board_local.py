@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""Tests for the local agy board server (board_server.py) and CLI (board_cli.py).
+
+    python3 -I kit/board/test_board_local.py
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import board_server  # noqa: E402
+
+fails = 0
+
+
+def check(name, ok):
+    global fails
+    print(("ok   " if ok else "FAIL ") + name)
+    fails += not ok
+
+
+def cli(url, *args):
+    r = subprocess.run(
+        [sys.executable, "-I", os.path.join(HERE, "board_cli.py"), "--url", url] + list(args),
+        capture_output=True, text=True,
+    )
+    return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+
+with tempfile.TemporaryDirectory() as tmp:
+    os.makedirs(os.path.join(tmp, ".kit"), exist_ok=True)
+    with open(os.path.join(tmp, ".kit", "board.html"), "w", encoding="utf-8") as fh:
+        fh.write("<!doctype html><html><head><title>Board</title></head><body>ok</body></html>")
+
+    srv, store = board_server.start_server(tmp, "127.0.0.1", 0)
+    port = srv.server_address[1]
+    url = "http://127.0.0.1:%d" % port
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        # 1. HTML + shim injection + health
+        html = urllib.request.urlopen(url + "/").read().decode("utf-8")
+        check("board.html served with /_shim.js injected", '<script src="/_shim.js"></script>' in html)
+        shim = urllib.request.urlopen(url + "/_shim.js").read().decode("utf-8")
+        check("shim exposes window.claude.use", "window.claude" in shim)
+        health = json.loads(urllib.request.urlopen(url + "/_api/health").read().decode("utf-8"))
+        check("health endpoint ok", health.get("ok") is True)
+
+        # 2. Set, get, update, str-replace, optimistic concurrency (if_version)
+        rc, out, _ = cli(url, "set", "posts", "P-1", "--data", json.dumps({
+            "title": "First", "body": "Line 1\nLine 2", "column": "info", "created_at": "2026-11-20T00:00:00Z", "priority": 1
+        }))
+        res = json.loads(out) if rc == 0 else {}
+        check("set post returns version 1", rc == 0 and res.get("version") == 1)
+
+        rc, out, _ = cli(url, "update", "posts", "P-1", "--data", '{"priority": 2}', "--if-version", "1")
+        check("update with matching if_version succeeds (v2)", rc == 0 and json.loads(out).get("version") == 2)
+
+        rc, _, err = cli(url, "update", "posts", "P-1", "--data", '{"priority": 3}', "--if-version", "1")
+        check("update with stale if_version fails with 409", rc != 0 and "409" in err)
+
+        rc, out, _ = cli(url, "str-replace", "posts", "P-1", "--field", "body", "--old", "Line 1", "--new", "Top\nLine 1", "--if-version", "2")
+        check("str-replace updates body (v3)", rc == 0 and json.loads(out).get("version") == 3)
+
+        # 3. Get / list / query with --out-dir produces flat JSON files
+        out_dir = os.path.join(tmp, "dump")
+        rc, out, _ = cli(url, "get", "posts", "P-1", "--out-dir", out_dir)
+        saved = json.load(open(os.path.join(out_dir, "posts", "P-1.json"), encoding="utf-8"))
+        check("get --out-dir writes flat doc JSON", rc == 0 and saved.get("body", "").startswith("Top\nLine 1") and saved.get("priority") == 2)
+
+        # 4. Batch writes
+        batch = [
+            {"op": "set", "collection": "posts", "doc_id": "_orchestrator", "data": {"title": "Ask", "column": "info", "created_at": "2026-11-20T00:01:00Z"}},
+            {"op": "set", "collection": "comments", "doc_id": "c-1", "data": {"post_id": "P-1", "from": "owner", "text": "hello", "created_at": "2026-11-20T00:02:00Z"}},
+        ]
+        rc, out, _ = cli(url, "batch", "--data", json.dumps(batch))
+        check("batch writes posts and comments", rc == 0 and json.loads(out).get("ok") is True)
+
+        rc, out, _ = cli(url, "query", "comments", "--where", '[["post_id","==","P-1"]]', "--out-dir", out_dir)
+        check("query comments with where + out-dir", rc == 0 and json.loads(out).get("count") == 1 and os.path.isfile(os.path.join(out_dir, "comments", "c-1.json")))
+
+        # 5. Blobs upload & read
+        blob_src = os.path.join(tmp, "pic.txt")
+        open(blob_src, "wb").write(b"hello-blob-bytes")
+        rc, out, _ = cli(url, "asset", "upload", blob_src)
+        bid = json.loads(out).get("id") if rc == 0 else ""
+        check("asset upload returns 32-hex id", rc == 0 and len(bid) == 32)
+        blob_dst = os.path.join(tmp, "pic_out.txt")
+        rc, _, _ = cli(url, "asset", "read", bid, "--out", blob_dst)
+        check("asset read downloads exact bytes", rc == 0 and open(blob_dst, "rb").read() == b"hello-blob-bytes")
+
+        # 6. Comments watch, send, long-poll wait, read, reply
+        rc, out, _ = cli(url, "comments", "watch", "--list")
+        check("before watch: status is no_session", rc == 0 and json.loads(out).get("status") == "no_session")
+
+        rc, out, _ = cli(url, "comments", "watch", "--on", "--watcher", "clerk-1")
+        check("watch --on registers clerk", rc == 0 and json.loads(out).get("watching") is True)
+
+        rc, out, _ = cli(url, "comments", "watch", "--list")
+        check("after watch: status is available", rc == 0 and json.loads(out).get("status") == "available")
+
+        # Simulate browser sending a comment while clerk waits
+        wait_res = {}
+        def waiter():
+            wait_res["r"] = cli(url, "comments", "wait", "--timeout", "10")
+        wt = threading.Thread(target=waiter)
+        wt.start()
+        time.sleep(0.15)
+        req_send = urllib.request.Request(
+            url + "/_api/comments/send",
+            data=json.dumps({"anchor": {"id": "p-title"}, "text": "[post P-1] test comment"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        sent = json.loads(urllib.request.urlopen(req_send).read().decode("utf-8"))
+        wt.join(timeout=5)
+        wrc, wout, _ = wait_res["r"]
+        wdata = json.loads(wout) if wrc == 0 else {}
+        check("comments wait wakes immediately with thread_id and text", wrc == 0 and wdata.get("thread_id") == sent["thread_id"] and "[post P-1] test comment" in wdata.get("text", ""))
+
+        rc, out, _ = cli(url, "comments", "reply", sent["thread_id"], "--text", "Passed to P-1.")
+        check("comments reply updates thread status", rc == 0 and json.loads(out).get("status") == "replied")
+
+        rc, out, _ = cli(url, "comments", "read", sent["thread_id"])
+        check("comments read returns replies", rc == 0 and len(json.loads(out).get("replies", [])) == 1)
+    finally:
+        srv.shutdown()
+        srv.server_close()
+        store.close()
+
+print("%d failed" % fails)
+sys.exit(1 if fails else 0)

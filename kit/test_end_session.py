@@ -10,6 +10,8 @@ def g(d, *a):
     return subprocess.run(["git", "-C", d, "-c", "user.name=t", "-c", "user.email=t@t"] + list(a), capture_output=True, text=True)
 def clone(origin, d, perm=True):
     subprocess.run(["git", "clone", "-q", origin, d], capture_output=True)
+    g(d, "config", "user.name", "t")
+    g(d, "config", "user.email", "t@t")
     os.makedirs(os.path.join(d, ".kit"), exist_ok=True)
     shutil.copy(os.path.join(HERE, "end_session.py"), os.path.join(d, ".kit"))
     json.dump({"kit": {"main_branch": "main", "trunk_push": perm}}, open(os.path.join(d, ".kit", "config.json"), "w"))

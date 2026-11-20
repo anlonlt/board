@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""SessionStart: serves the memory instead of hoping it is read (origin: anlonlt/harmonize session-start.sh).
+"""agy SessionStart: serves the memory instead of hoping it is read.
 
-Prints: the board rule (one place per result), the project's own lines (`kit.session_start_lines` in .kit/config.json),
-whether this clone is behind its remote, each workstream's `Next:` line from .story/state/*.md, how many points await
-the owner (.story/awaits.md lines starting "- "), open issues' titles (.story/issues/*.md without "Status: closed"),
-and the lessons' count. Plain stdout: Claude Code adds it to the session's context.
+Injects a systemMessage with: the board rule (one place per result), the project's own lines
+(`kit.session_start_lines` in .kit/config.json), whether this clone is behind its remote, each
+workstream's `Next:` line from .story/state/*.md, how many points await the owner (.story/awaits.md),
+open issues' titles, and the lessons' count.
 """
 import glob
+import json
 import os
 import subprocess
 import sys
@@ -27,7 +28,11 @@ def first(path, prefix):
 
 
 def main():
-    c, root = config(), project_dir()
+    try:
+        data = json.load(sys.stdin)
+    except (ValueError, OSError):
+        data = {}
+    c, root = config(data), project_dir(data)
     k = c.get("kit", {})
     out = []
     if k.get("setup"):
@@ -80,7 +85,11 @@ def main():
     ls = glob.glob(os.path.join(root, ".story", "lessons", "*.md"))
     if ls:
         out.append("LESSONS (%d): grep -ril '<word>' .story/lessons/" % len(ls))
-    print("\n".join(out))
+    msg = "\n".join(out)
+    if msg:
+        print(json.dumps({"injectSteps": [{"systemMessage": {"systemMessage": msg}}]}, ensure_ascii=False))
+    else:
+        print("{}")
     return 0
 
 

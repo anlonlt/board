@@ -37,8 +37,14 @@ def survey(d):
 
 
 def hooks_of(t):
-    s = json.load(open(os.path.join(t, ".claude", "settings.json")))
-    return [h["command"] for ev in s["hooks"].values() for g in ev for h in g["hooks"]]
+    s = json.load(open(os.path.join(t, ".agents", "hooks.json")))
+    kb = s.get("kit-board", {})
+    cmds = []
+    for ev in ("SessionStart", "PreInvocation", "PostInvocation", "Stop"):
+        cmds += [h["command"] for h in kb.get(ev, [])]
+    for ev in ("PreToolUse", "PostToolUse"):
+        cmds += [h["command"] for g in kb.get(ev, []) for h in g.get("hooks", [])]
+    return cmds
 
 
 with tempfile.TemporaryDirectory() as d:

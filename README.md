@@ -27,91 +27,45 @@ The kit answers problems people actually had. Install a part only where its prob
 
 Step 0 measures which of these the project has, and recommends; the install takes only what it recommends.
 
-## Install (Claude Code on the web, any repository)
+## Install (`agy` on a computer, any repository)
 
-Open a Claude Code session on **your** repository (https://claude.ai/code) and paste this one line:
+Open an `agy` session in **your** repository on this computer and paste this one line:
 
-> Install the board kit: read https://github.com/anlonlt/board/blob/main/README.md § "Install" and do every step for this repository.
+> Install the board kit: read README.md § "Install" and do every step for this repository.
 
 The hooks' "end your turn with ·" reminder is about chat turns: your step reports go in the post.
-Steps marked **YOU** need a person (no agent can start a comment on a page: only a person's tap does); Claude says each one, with its link, when it gets there. Everything else is Claude's.
+Steps marked **YOU** need a person; `agy` says each one, with its local URL, when it gets there. Everything else is `agy`'s.
 
-**Before installing, two checks** (from the first outside survey, PR #1):
-- **Private by default.** The kit keeps the project's state, posts and comments in the project's OWN repository
-  (`.story/`, branch `board-mirror`), never in `anlonlt/board`. If the project touches people's data (a school, clients),
-  that repository must be private. The board page itself is private to its owner until shared.
-- **Work that is not code.** If the work lives elsewhere (Microsoft 365, a website driven through the browser
-  extension), the repository holds the work's STATE (decisions, ids, next steps, what waits for approval), not the
-  work. Check first that the tools the work needs answer from a Claude Code session (its connectors; the browser
-  extension only reaches a computer attached to the session): if they do not, the kit gives memory and the board,
-  and the actions stay in chat.
+**How `agy` on a computer replaces Claude Code on the web (same functionality, zero external dependencies):**
+- **Hooks & Skills:** installed into `.agents/hooks.json` (`kit-board` named hook), `.agents/hooks/kit/*.py` (speaking `agy`'s camelCase JSON stdin/stdout contract), and `.agents/skills/{story,board}/SKILL.md`.
+- **Board UI & Data Store:** `.kit/board_server.py` serves `.kit/board.html` locally (default `http://127.0.0.1:8765`, or LAN/Tailscale via `--host 0.0.0.0`) with an injected `window.claude` shim (`/_shim.js`) backed by SQLite (`.kit/board_data/board.db`, gitignored) + Server-Sent Events (`/_api/events`) + local blob storage (`/_blob/<id>`).
+- **Board Tools:** `.kit/board_cli.py` replaces `ArtifactData`, `ArtifactComments`, and `Artifact` (`get`/`list`/`query` with `--out-dir`, `set`/`update`/`str-replace` with `--if-version`, `batch`, `comments watch/wait/read/reply`, `asset upload/read`).
+- **Multi-Session Orchestration & Timers:** `invoke_subagent` (with `Workspace: "share"` for parallel worktrees), `define_subagent` (`kit-cards`), `send_message`, `manage_subagents`, `schedule` (`DurationSeconds` / `CronExpression`), and `run_command(IsDaemon=true)`.
 
-**For Claude, in the project's session.** Do the steps in order; report each step's outcome in one line.
+**For `agy`, in the project's session.** Do the steps in order; report each step's outcome in one line.
 
-0. **Step 0 first, always** (whatever the project's state: new, mid-way, full of docs): run the survey,
-   `step0/survey-code.md` (a Claude Code project) or `step0/survey-chat.md` (chats only), from the kit's clone of step 1.
-   Its first question is the scope (one board for all projects, or this one); its report ends with a recommendation
-   per part, each with the goal it serves (`docs/KIT-GOALS.md`). Show it to the owner; his yes or changes decide the
-   parts. `install.py` refuses a first install without the report.
-1. **Get the kit** (public repository, no token; always a fresh `git clone`/`git pull`, never a cached `raw.githubusercontent.com/.../main/...` link: it can serve an older copy for minutes): `git clone --depth 1 https://github.com/anlonlt/board /tmp/board-kit`
-   (if `/tmp/board-kit` exists, `git -C /tmp/board-kit pull`).
-2. **Install it** into the project root: `python3 -I /tmp/board-kit/install.py . --project "<the project's name>"
-   --talk "<the language the owner writes to you in>" --survey survey/<date>/report.md` plus the parts step 0
-   recommended: `--no-board` (memory and hooks only; then skip to the Import and step 8), `--no-clerk`,
-   `--no-orchestrator` (nothing: all). The trunk is origin's default branch (`git ls-remote --symref origin HEAD`);
-   `--main-branch <name>` names another, and a branch missing on origin stops the install.
+0. **Step 0 first, always:** run the survey (`step0/survey-code.md` or `step0/survey-chat.md`). Show its report to the owner; his yes or changes decide the parts. `install.py` refuses a first install without `--survey <path>` (or `--no-survey "<why>"`).
+1. **Get the kit:** `git clone --depth 1 -b agy-local https://github.com/anlonlt/board /tmp/board-kit` (or use your local checkout).
+2. **Install it** into the project root: `python3 -I /tmp/board-kit/install.py . --project "<the project's name>" --talk "<language>" --survey survey/<date>/report.md` plus optional `--board-port 8765` and the parts step 0 recommended (`--no-board`, `--no-clerk`, `--no-orchestrator`).
    It never deletes and never replaces a file it did not write: it lists what it wrote, and `KEPT` for what it left alone.
-   Your `.claude/settings.json` keeps every line it had (re-indented); the kit's hook lines are merged in.
-   Check: `python3 -I .claude/hooks/kit/test_hooks.py` ends `0 failed`.
-   **Ask the owner once:** "Every session ends by merging its work onto `<main branch>` and pushing it, never forced
-   (a conflict stops it). Do you give that standing permission?" Yes: rerun with `--trunk-push yes`. No: sessions push
-   only their own branch. Either way each session ends with `python3 -I .kit/end_session.py`.
-3. **Translate, then publish the board** (with a board only). If the owner's language (`--talk`) is not English:
-   `python3 -I .kit/strings.py template .kit/strings.json`, fill in each English string's translation (about 140 short
-   lines, a few KB; never edit `.kit/board.html` itself), rerun step 2's command with no options: it applies the table
-   and prints how many strings are left. Text that goes to Claude (`Answer: `, the Like lines) stays English on purpose.
-   **Publish** (the Artifact tool asks you to `Read` the whole 145 KB file first, and to load the skill `artifact-capabilities` before passing `capabilities`: both are expected): `Artifact` `publish`, `file_path` `.kit/board.html`, `icon` `board`, `capabilities`
-   `{"assets": {}, "comments": {}, "db": {}, "user": {}, "downloads": true}`. Then rerun step 2's command with
-   `--board-url <the url it returned>` (the url goes into the prompts and the rules). **Then stop this session's own
-   watch on the page** (`ArtifactComments` `watch` with `url` and `on: false`): publishing makes the publisher listen to its
-   comments, and only the clerk must. Commit
-   `.kit .claude .story .gitignore` and push.
-4. **Post your first two posts** in one `ArtifactData` `batch` (`.kit/BOARD.md` § Post; `created_at` from `date -u +%Y-%m-%dT%H:%M:%SZ`):
-   `_orchestrator`: `{title: "Ask the orchestrator", column: "info", part: "orchestrator", priority: 3, created_at,
-   body: "Write here for anything that is not about one post."}` (no `session_id` yet: the orchestrator writes its own);
-   `KIT-installed`: `{title: "The board kit is installed", column: "info", part: "KIT", priority: 2, session_id: <this
-   session's id>, created_at, body: <what step 2 wrote and kept>}`.
-5. **Start the orchestrator, then the clerk** (only those installed: `.kit/orchestrator.md`, `.kit/clerk.md`; without a
-   clerk, each session reads its post's comments at its next turn, and step 6's test comment is read by this session), each with `create_session` (`source_url` the repository's GitHub url,
-   `source_revision` the branch of step 2, the prompt pasted inline after reading it):
-   - the orchestrator: `prompt` the whole text of `.kit/orchestrator.md`, `title` "orchestrator", `model` and `effort`
-     from `.kit/config.json` `kit.roles.orchestrator` (default Opus, medium). It writes its id into
-     `_orchestrator`, builds the "Where we are" card from the memory, and posts its welcome under "Ask the
-     orchestrator": what the board does, how it works, everything open, and what can run on its own at the same time
-     (one 👍 launches it all);
-   - the clerk: `prompt` the whole text of `.kit/clerk.md`, `title` "board clerk", `model` and `effort` from
-     `kit.roles.clerk` (default Haiku, **low**: it only forwards; more effort costs more at every wake and helps nothing). It
-     answers "board clerk ready, watching" to the orchestrator.
-   If `create_session` is not available here, tell the owner: **YOU:** open https://claude.ai/code twice on this
-   repository and paste `.kit/orchestrator.md` into one session and `.kit/clerk.md` into the other.
-6. **YOU, the first comment:** open the board's url, open the post `KIT-installed`, write "test" in its comment box
-   and send it. The clerk passes it to this session ("Board comment from the owner on your post KIT-installed …"),
-   marks it "✓ Seen" and replies "Passed to …" in the thread. Answer it under the post (`.kit/BOARD.md` § Comments).
-7. **The board's copy in git** (`.kit/ORCHESTRATOR.md` § 3; run it now, and again after step 6's comment):
-   `python3 -I .kit/kit.py init` (a worktree NEXT TO the project, `../<project>-board-mirror`, on a new branch
-   `board-mirror` that is never merged into main); `date -u +%Y-%m-%dT%H:%M:%SZ` (T0); `ArtifactData` `list` `posts` and
-   `list` `comments` (`query.limit` 1000) with `out_dir` `/tmp/kd` (empty; short paths cost fewer tokens);
-   `python3 -I .kit/kit.py sync /tmp/kd --at <T0> --full --commit`; `python3 -I .kit/kit.py open` lists comments of the owner's still unanswered,
-   `kit.py post KIT-installed` shows the post and its comments; `kit.py push` pushes that branch (`board-mirror`) to your repository: it is the only branch the kit creates.
-8. **Report**, then end the setup: `python3 -I /tmp/board-kit/install.py . --setup-done` (until then the stop hooks
-   stay quiet, so they do not fight the install's own turns), commit, push. With a board, the report goes in the body of `KIT-installed` (`update`): each step's outcome, every step that needed the owner, anything that failed with
-   its exact message. From now on every session posts there at turn 1 (the SessionStart hook says so).
-9. **Tell the person what now**, as your last chat message, in their language (`.kit/config.json` `language.talk`):
-   (1) where the work can run: their runners (README § Runners) as step 0 or the import found them, each with its
-   one-time setup still to do; and the test for a connector: "ask me to read one of your connector's files here; if it
-   answers, that work can run here (a `cloud` runner)"; (2) the Import: "open a new claude.ai chat and paste the block at
-   https://github.com/anlonlt/board/blob/main/step0/export-chat.md , then paste back here the line it gives you";
-   (3) where the board is: its link.
+   Your `.agents/hooks.json` keeps every other named hook; `kit-board` is merged in.
+   Check: `python3 -I .agents/hooks/kit/test_hooks.py` ends `0 failed`.
+   **Ask the owner once:** "Every session ends by merging its work onto `<main branch>` and pushing it, never forced (a conflict stops it). Do you give that standing permission?" Yes: rerun with `--trunk-push yes`. No: sessions push only their own branch. Either way each session ends with `python3 -I .kit/end_session.py`.
+3. **Translate (if non-English), then start the local board server** (with a board only):
+   - If `--talk` is not English: `python3 -I .kit/strings.py template .kit/strings.json`, fill in translations, rerun step 2 with no options.
+   - Start the local board server as a background daemon (`run_command` with `CommandLine: "python3 -I .kit/board_server.py"`, `IsDaemon: true`, `WaitMsBeforeAsync: 1000`). Verify `curl -sf http://127.0.0.1:8765/_api/health`.
+   - Commit `.kit .agents .story .gitignore` and push.
+4. **Post your first two posts** in one `board_cli.py batch` (`.kit/BOARD.md` § Post; `created_at` from `date -u +%Y-%m-%dT%H:%M:%SZ`):
+   `_orchestrator` (`{title: "Ask the orchestrator", column: "info", part: "orchestrator", priority: 3, created_at, body: "Write here for anything that is not about one post."}`) and
+   `KIT-installed` (`{title: "The board kit is installed", column: "info", part: "KIT", priority: 2, session_id: "<your conversationId>", created_at, body: "<what step 2 wrote and kept>"}`).
+5. **Start the orchestrator and the clerk** (only those installed):
+   - Launch the clerk via `invoke_subagent(TypeName="self", Role="Board Clerk", Model="flash_lite", Workspace="inherit", Prompt=<text of .kit/clerk.md>)`. It registers `comments watch --on`, listens in the background with `board_cli.py comments wait`, and notifies the orchestrator.
+   - Run the orchestrator (in this session or via `invoke_subagent`) with `.kit/orchestrator.md`: it writes its conversation ID into `_orchestrator`, builds "Where we are" via `kit-cards`, and posts its welcome under `_orchestrator`.
+6. **YOU, the first comment:** open the board's URL (e.g. `http://127.0.0.1:8765`) in your browser, open `KIT-installed`, write "test" in its comment box and send it. The clerk wakes immediately, passes it to this session via `send_message`, marks it "✓ Seen" and replies "Passed to …". Answer it under the post (`board_cli.py set comments ...`).
+7. **The board's copy in git** (`.kit/ORCHESTRATOR.md` § 3):
+   `python3 -I .kit/kit.py init`; `T0=$(date -u +%Y-%m-%dT%H:%M:%SZ)`; `python3 -I .kit/board_cli.py list posts --limit 1000 --out-dir /tmp/kd`; `python3 -I .kit/board_cli.py list comments --limit 1000 --out-dir /tmp/kd`; `python3 -I .kit/kit.py sync /tmp/kd --at "$T0" --full --commit`; `python3 -I .kit/kit.py post KIT-installed`; `python3 -I .kit/kit.py push`.
+8. **Report**, then end the setup: `python3 -I /tmp/board-kit/install.py . --setup-done`, commit, push. Update `KIT-installed` (`board_cli.py update`) with each step's outcome.
+9. **Tell the person what now**, in their language (`language.talk`): their local board URL (`http://127.0.0.1:8765`), what runners are ready (`computer` is ready immediately on this machine), and how to import existing state.
 
 ## Import (your project's history into the kit)
 

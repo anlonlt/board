@@ -1,14 +1,31 @@
-"""The kit's config, read by every hook: $CLAUDE_PROJECT_DIR/.kit/config.json (else the current directory's)."""
+"""The kit's config, read by every hook: resolved from agy stdin (`cwd` / `workspacePaths`),
+$KIT_PROJECT_DIR / $CLAUDE_PROJECT_DIR, parent of .agents/, or current directory."""
 import json
 import os
 
 
-def project_dir():
-    return os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+def project_dir(data=None):
+    if isinstance(data, dict):
+        cwd = data.get("cwd")
+        if cwd and os.path.isdir(cwd):
+            return cwd
+        wps = data.get("workspacePaths") or []
+        if wps and isinstance(wps[0], str) and os.path.isdir(wps[0]):
+            return wps[0]
+    env = os.environ.get("KIT_PROJECT_DIR") or os.environ.get("CLAUDE_PROJECT_DIR")
+    if env and os.path.isdir(env):
+        return env
+    here = os.getcwd()
+    # agy runs hooks with cwd = .agents/ (the directory containing hooks.json)
+    if os.path.basename(here) in (".agents", ".agent", "_agents", "_agent"):
+        parent = os.path.dirname(here)
+        if os.path.isdir(os.path.join(parent, ".kit")):
+            return parent
+    return here
 
 
-def config():
-    p = os.path.join(project_dir(), ".kit", "config.json")
+def config(data=None):
+    p = os.path.join(project_dir(data), ".kit", "config.json")
     try:
         with open(p, encoding="utf-8") as fh:
             return json.load(fh)
@@ -16,10 +33,10 @@ def config():
         return {}
 
 
-def limit(name, default):
-    return int(config().get("kit", {}).get("limits", {}).get(name, default))
+def limit(name, default, data=None):
+    return int(config(data).get("kit", {}).get("limits", {}).get(name, default))
 
 
-def in_setup():
-    """README steps 1-8 (issue #3 item 5): install.py sets kit.setup at the first install, --setup-done clears it."""
-    return bool(config().get("kit", {}).get("setup"))
+def in_setup(data=None):
+    """README steps 1-8: install.py sets kit.setup at the first install, --setup-done clears it."""
+    return bool(config(data).get("kit", {}).get("setup"))
