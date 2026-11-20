@@ -37,8 +37,18 @@ with tempfile.TemporaryDirectory() as d:
                         "--now", "2026-11-20T00:00:00Z"], capture_output=True, text=True)
     check("#2: the artifact's HTML is read, ids list and chat objects do not crash", r.returncode == 0)
     s2 = open(os.path.join(d, ".story", "state", "flux.md")).read() if r.returncode == 0 else ""
-    check("#2: ids and chats written as text", "liste: Demandes" in s2 and "Site RH" in s2 and "2026-11-18 · Flux RH" in s2)
+    check("#2: ids and chats written as text", "liste: Demandes" in s2 and "\n- Site RH\n" in s2 and "2026-11-18 · Flux RH" in s2)
     q2 = json.load(open(os.path.join(d, "o2", "posts", "Q-flux-1.json"))) if r.returncode == 0 else {}
     check("#2: a default outside the options marks no option", q2.get("options") == ["Oui", "Non"] and "default_option" not in q2)
     check("#2: no English added, no double period", q2.get("body") == "Publier ?\n\n→ On attend lundi")
+
+    # issue #2, the survey's needs: what he approved once, what must never be touched, what the export could not read
+    st3 = {"approved": ["editer la liste test"], "never": ["envoyer de vrais courriels"], "unread": ["avant le 14 octobre"],
+           "projects": [{"id": "p3", "title": "P3", "next": "x"}]}
+    f3 = os.path.join(d, "s3.json"); json.dump(st3, open(f3, "w"))
+    os.remove(os.path.join(d, ".story", "preferences.md"))
+    subprocess.run([sys.executable, "-I", os.path.join(d, ".kit", "kit_import.py"), f3, "--out", os.path.join(d, "o3")], capture_output=True)
+    pf = open(os.path.join(d, ".story", "preferences.md")).read() if os.path.exists(os.path.join(d, ".story", "preferences.md")) else ""
+    check("#2: approvals, never and unread reach the memory", "Approved once (do not ask again): editer la liste test" in pf
+          and "Never without the owner: envoyer de vrais courriels" in pf and "Not read by the import: avant le 14 octobre" in pf)
 print("%d failed" % fails); sys.exit(1 if fails else 0)

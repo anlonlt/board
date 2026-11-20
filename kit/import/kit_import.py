@@ -4,7 +4,7 @@
     python3 -I .kit/kit_import.py STATE.json [--out DIR] [--now ISO] [--update]
 
 STATE.json, or the artifact's HTML saved by `Artifact` `read` (the JSON in its <pre id="kit-state">), written by the chat side, `step0/export-chat.md`, inside a claude.ai artifact):
-  {"owner_language": "French",
+  {"owner_language": "French", "unread": [...], "approved": [...], "never": [...],
    "preferences": ["short steps", "ask before any real action"],
    "projects": [{"id": "bulletin", "title": "Weekly bulletin", "next": "draft the 24 Nov edition",
                  "where": ["published every Friday on the intranet"], "decisions": ["no emojis"],
@@ -62,7 +62,7 @@ def normalise(p):
                 rest = [str(v) for kk, v in x.items() if v != k]
                 d[str(k)] = " · ".join(rest)
             else:
-                d[str(i)] = _text(x)
+                d[_text(x)] = ""  # a bare name: the name is the id
         ids = d
     p["ids"] = {str(k): _text(v) for k, v in ids.items()}
     for f in ("where", "decisions", "chats"):
@@ -88,7 +88,7 @@ def state_md(p):
     if p.get("decisions"):
         out += ["", "## Decisions"] + ["- " + d for d in p["decisions"]]
     if p.get("ids"):
-        out += ["", "## Ids"] + ["- %s: %s" % (k, v) for k, v in p["ids"].items()]
+        out += ["", "## Ids"] + [("- %s: %s" % (k, v)) if v else "- " + k for k, v in p["ids"].items()]
     if p.get("chats"):
         out += ["", "## Imported from chats"] + ["- " + c for c in p["chats"]]
     return "\n".join(out) + "\n"
@@ -114,8 +114,12 @@ def run(state, out, now, update, session=""):
         os.makedirs(sd, exist_ok=True)
         open(aw, "w", encoding="utf-8").write(cur)
         log.append("awaits.md: +%d" % added)
-    if state.get("preferences"):
-        put(os.path.join(sd, "preferences.md"), "# Standing preferences\n\n" + "".join("- %s\n" % x for x in state["preferences"]), update, log)
+    lists = [(k, [_text(x) for x in (state.get(k) or [])]) for k in ("preferences", "approved", "never", "unread")]
+    if any(v for _, v in lists):
+        heads = {"preferences": "", "approved": "Approved once (do not ask again): ", "never": "Never without the owner: ",
+                 "unread": "Not read by the import: "}
+        text = "# Standing preferences\n\n" + "".join("- %s%s\n" % (heads[k], x) for k, v in lists for x in v)
+        put(os.path.join(sd, "preferences.md"), text, update, log)
     pd = os.path.join(out, "posts")
     os.makedirs(pd, exist_ok=True)
     for p in state.get("projects", []):
