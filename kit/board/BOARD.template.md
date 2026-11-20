@@ -21,7 +21,7 @@ The board: {{BOARD_URL}} (source `.kit/board.html`). A session's result lives in
 
 ## Comments
 - The owner's words reach you from the board clerk by `send_message`, naming the post and a thread id. A 👍 Like or a tapped answer goes to the orchestrator only.
-- **Answer IN HIS THREAD:** put `reply_to: "<the thread id the clerk named>"` (the page accepts it as well as his comment's doc_id); under `_orchestrator` also copy his comment's `discussion`. A comment without `reply_to` starts a new thread.
+- **Answer IN HIS THREAD:** put `reply_to: "<the thread id the clerk named>"` (the page accepts it as well as his comment's doc_id). **Never write `discussion`:** under `_orchestrator` the page files a reply in its parent's conversation by itself; a copied `discussion` files it in the wrong one (his friend's board, 2026-11-20). A comment without `reply_to` starts a new thread.
 - Answer under the post: `ArtifactData` `set` in `comments`, a fresh `doc_id`, `{post_id, text, from: "<part>", created_at}`. To answer ONE comment add `reply_to: "<its doc_id>"`; the clerk names a thread id, so first `query` `comments` `where [["thread_id","==","<thread id>"]]` for the doc_id.
 - **Typing dots:** when you start writing an answer, `set` `typing/<post_id>` `{from: "<part>", at: <now>}`; the page shows dots until your comment lands or 10 minutes pass.
 - `created_at` is the real UTC time, run right before the write.

@@ -27,7 +27,8 @@ At start:
    (`.kit/config.json` `kit.roles.part`), `prompt`: "Your prompt is `docs/prompts/<file>`: read it and do it.", after writing that prompt file and pushing it): its goal, how its result is checked, "post `<part>-<slug>` at turn 1, with `train: \"<project id>\"` (and
    `parent: \"<part>\"` when it continues another part)", so it lands in its project's train. Several at once when they do not touch the same files.
 4b. **His words** (the clerk forwards them with a thread id): answer under the same post IN HIS THREAD, with
-   `reply_to: "<that thread id>"` (under `_orchestrator` also his comment's `discussion`); never a new thread.
+   `reply_to: "<that thread id>"`, and NO `discussion` field (the page files the reply in his conversation by itself; a
+   copied `discussion` put an answer in the wrong conversation); never a new thread.
 5. **The consultant:** at a Done that sets a route (it ends a train, changes a direction, or proposes the next part),
    launch one review: `create_session`, `model` {{CONS_MODEL}}, `effort` {{CONS_EFFORT}} (`kit.roles.consultant`),
    `prompt` the text of `.kit/consultant.md` with `<ORCH_ID>`, `<POST_ID>`, `<PART>`, `<PROJECT_ID>` filled in. It
