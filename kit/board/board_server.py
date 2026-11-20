@@ -95,10 +95,15 @@ SHIM_JS = r"""(function () {
     }
   }
 
+  var lastSeq = 0;
+  function refreshAllSubs() {
+    subs.forEach(function (s) { refreshSub(s); });
+  }
   function connectEvents() {
     if (es) return;
     try {
       es = new EventSource("/_api/events");
+      es.onopen = function () { refreshAllSubs(); };
       es.addEventListener("change", function (ev) {
         var info = {};
         try { info = JSON.parse(ev.data || "{}"); } catch (e) {}
@@ -117,6 +122,29 @@ SHIM_JS = r"""(function () {
         }
       };
     } catch (e) {}
+  }
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) { connectEvents(); refreshAllSubs(); }
+    });
+  }
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", function () { connectEvents(); refreshAllSubs(); });
+    setInterval(function () {
+      if (typeof document !== "undefined" && document.hidden) return;
+      api("GET", "/_api/changes?since=" + lastSeq + "&limit=50").then(function (res) {
+        if (!res || typeof res.latest_seq !== "number") return;
+        if (lastSeq > 0 && res.latest_seq > lastSeq && (res.changes || []).length) {
+          var cols = {};
+          res.changes.forEach(function (c) { if (c.collection) cols[c.collection] = true; });
+          subs.forEach(function (s) {
+            if (s.kind === "coll" && cols[s.coll]) refreshSub(s);
+            else if (s.kind === "doc") refreshSub(s);
+          });
+        }
+        lastSeq = res.latest_seq;
+      }, function () {});
+    }, 5000);
   }
 
   function makeQuery(coll, where, orderBy, limit) {
@@ -828,7 +856,7 @@ PWA_SW_JS = (
     'self.addEventListener("install", function(e) { self.skipWaiting(); });\n'
     'self.addEventListener("activate", function(e) { e.waitUntil(self.clients.claim()); });\n'
     'self.addEventListener("fetch", function(e) {\n'
-    '  if (e.request.method !== "GET") return;\n'
+    '  if (e.request.method !== "GET" || e.request.url.indexOf("/_api/events") >= 0) return;\n'
     '  e.respondWith(fetch(e.request));\n'
     '});\n'
 )
@@ -960,7 +988,7 @@ def make_handler(root_dir, store, token=None, notify_url=None):
                 return
             if set_cookie and path in ("/", "/index.html"):
                 proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
-                cookie = "kit_token=%s; Path=/; HttpOnly; SameSite=Lax" % token
+                cookie = "kit_token=%s; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax" % token
                 if proto == "https":
                     cookie += "; Secure"
                 self.send_response(302)
