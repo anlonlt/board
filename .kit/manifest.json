@@ -1,0 +1,22 @@
+{
+ ".claude/hooks/kit/kit_board_typing.py": "eb77f1d64a85d63fb6db3def626f7c00aa15122b2f6d7ea1846ee532c63e7d86",
+ ".claude/hooks/kit/kit_config.py": "cc26041853f9feb7838fa4af4feba802244cf38a9985ea8af3ea2c34e589906e",
+ ".claude/hooks/kit/kit_guard.py": "51411c5ce58de9d1db6da105cd196caf7d814e5feb56a7cf8e95bed2fba43c48",
+ ".claude/hooks/kit/kit_pre_compact.py": "f806c04e25e6ef43dc4a75d40b0566507397a9988fb0536bb2d75543530ee277",
+ ".claude/hooks/kit/kit_say_it_once.py": "208b99d26bd8d65e25e2910a5ec28aca5c734b22102a312113096fc7384e74ce",
+ ".claude/hooks/kit/kit_session_start.py": "62d67710989c1e86886fb5012e4b9f44dcb293f90d0ee10ab16db21470f18d80",
+ ".claude/hooks/kit/kit_stop.py": "c32c1fd00517df1039539deb1ee46e971cece688211d68c4101be43db2fd4b59",
+ ".claude/hooks/kit/test_hooks.py": "5a329e747ab83d11a1bb9c806ac13531fa592722b43d17e2f50ad5e70b2e0be9",
+ ".claude/skills/board/SKILL.md": "bddf80993409c41a098794751ab6526f07a2001523f389c8694f2005f5671815",
+ ".claude/skills/story/SKILL.md": "1140351b4cf4dd14ff166a2f303675cd377403073fae32a4859c5d05b7dbd190",
+ ".kit/BOARD.md": "47a48c77cae60fa9e10326bf30cef63608131884cfe0f6f1c4b19cd794576d61",
+ ".kit/ORCHESTRATOR.md": "0e4e0ea3f9c92ebaa721f50f227d9cd7c10b176e30b0b595ba23c832c9719784",
+ ".kit/board.html": "ce24cef420df40c4d6a6fd9c48e9725c02bc92ebf916d029aa7e2589312c17bc",
+ ".kit/clerk.md": "62b2eecdc1913a6d0c5b746f12c1f186e8bade63490770e6339ffde1bd8ee4f3",
+ ".kit/clerk_pending.py": "d697e63223d6b2679af6094b3c0c1fbed7941ffd9d5f61ae15d0116140e59e6b",
+ ".kit/kit.py": "7fdeeecb86698b55d83e37cd6666a57cc4a68fd675d322f1ea4126d5d8a6aded",
+ ".story/awaits.md": "336d946c01b2b0b491e88b22c056b6f1cd14b474fc089ffa4b4b92b7ae857045",
+ ".story/issues/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+ ".story/lessons/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+ ".story/state/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

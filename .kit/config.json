@@ -1,0 +1,63 @@
+{
+ "project": "Tide Clock",
+ "language": {
+  "talk": "English"
+ },
+ "board_url": "https://claude.ai/artifact/Etco5hYbtiiSHtV53saYB7",
+ "fields": {
+  "author": "from",
+  "owner": "owner",
+  "clerk": "clerk",
+  "reviewer": "reviewer",
+  "post": "post_id",
+  "reply_to": "reply_to",
+  "created": "created_at",
+  "later_flags": [],
+  "later_stamps": [
+   "updated_at"
+  ],
+  "post_updated": "updated_at",
+  "post_moved": "done_at",
+  "review_kind": [
+   "kind",
+   "review"
+  ]
+ },
+ "shell_buckets": [
+  {
+   "name": "Bash: git",
+   "all": [
+    "git (push|pull|commit|merge|log|status|fetch)"
+   ]
+  }
+ ],
+ "mirror": {
+  "branch": "board-mirror",
+  "path": "../tide-clock-board-mirror",
+  "overlap_hours": 1
+ },
+ "kit": {
+  "talk_language": "English",
+  "limits": {
+   "message_chars": 600,
+   "done_message_chars": 240,
+   "chat_answer_chars": 600
+  },
+  "guard": {
+   "never_add": [
+    "*.keystore",
+    "*.jks",
+    "*.pem",
+    ".env",
+    "keystore.properties"
+   ],
+   "allow_add": []
+  },
+  "session_start_lines": [],
+  "clerk": {
+   "wait_minutes": 5,
+   "context_limit_k": 200
+  },
+  "main_branch": "test-install"
+ }
+}

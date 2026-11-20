@@ -1,6 +1,97 @@
 {
-  "permissions": {"allow": ["Bash(python3 tide.py)"]},
+  "permissions": {
+    "allow": [
+      "Bash(python3 tide.py)"
+    ]
+  },
   "hooks": {
-    "PostToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": "python3 -m py_compile tide.py"}]}]
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -m py_compile tide.py"
+          }
+        ]
+      },
+      {
+        "matcher": "ArtifactData|mcp__claude-code-remote__send_message",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_say_it_once.py\""
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_session_start.py\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_guard.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__claude-code-remote__send_message|SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_say_it_once.py\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_say_it_once.py\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_board_typing.py\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_stop.py\""
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_pre_compact.py\""
+          }
+        ]
+      }
+    ]
   }
 }
