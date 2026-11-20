@@ -11,7 +11,7 @@
 
 <p align="center">
   <img alt="Zero Dependencies" src="https://img.shields.io/badge/dependencies-zero%20(Python%203%20stdlib)-2f7a4f?style=flat-square" />
-  <img alt="Clients" src="https://img.shields.io/badge/works%20with-agy%20%7C%20Claude%20Code-e8894a?style=flat-square" />
+  <img alt="Clients" src="https://img.shields.io/badge/works%20with-agy%20%7C%20Claude%20Code%20%7C%20Arena%20%7C%20CLI-e8894a?style=flat-square" />
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20Mobile-2b6c9e?style=flat-square" />
   <img alt="Private by Default" src="https://img.shields.io/badge/privacy-your%20private%20repo-6a4fb3?style=flat-square" />
   <img alt="Tests" src="https://img.shields.io/badge/test%20suites-12%20passing-2f7a4f?style=flat-square" />
@@ -130,10 +130,15 @@ It starts the board server (seeding from `board-mirror` if needed), prints your 
 ## Install
 
 > [!TIP]
-> **One-line install:** open a session in your project repository and paste:
+> **Universal one-line install (works on `agy`, Claude Code Web, LMArena / E2B, Codex, Cursor, and any coding agent):**
+> Open a session in your project repository and paste this direct link (no extra instructions needed):
 > ```text
-> Install the board kit: read https://github.com/anlonlt/board/blob/agy-local/README.md § "Install" and do every step for this repository.
+> https://github.com/anlonlt/board/blob/agy-local/README.md
 > ```
+> **For the agent reading this page:** auto-detect which environment you are running in and follow the matching install section below:
+> - **Antigravity (`agy`) on a local computer:** follow **Install (`agy` — default)** right below.
+> - **Claude Code Web (`claude.ai/code` with Artifacts):** follow **Install (Claude Code Web — `--runtime claude`)** below.
+> - **LMArena / E2B / sandboxed preview iframe / Codex / Cursor / generic CLI agent:** follow **Install (LMArena / Sandbox / Generic Agent — `--runtime arena`)** below (skips the Step-0 survey in sandbox demos, enables `--preview --embed-mode`, auto-bootstraps `_orchestrator` + watcher, and uses `inbox` / `reply` + the 30-min live listener).
 
 The hooks' "end your turn with `·`" reminder is about chat turns: your step reports go in the post.
 Steps marked **YOU** need a person; the agent prints each one with its direct link when it gets there. Everything else runs automatically.
@@ -209,6 +214,50 @@ Open a Claude Code Web session on **your** repository (`https://claude.ai/code`)
 
 </details>
 
+<details>
+<summary><strong>Install (LMArena / Sandbox / Generic Agent — <code>--runtime arena</code>)</strong></summary>
+
+For **LMArena (Agent Mode)**, **E2B / Codespaces preview iframes**, **Codex**, **Cursor**, or any CLI agent without `agy` hooks or `claude.ai` Artifacts:
+
+1. **Get the kit (pin a reviewed commit or tag):**
+   ```bash
+   git clone --branch agy-local https://github.com/anlonlt/board /tmp/board-kit
+   ```
+2. **Install out of the box** (skips Step-0 survey for sandbox/preview setups, auto-bootstraps `_orchestrator` + `KIT-installed`, and writes root `AGENTS.md` + `.kit/orchestrator.md`; add `--demo` to seed sample 4-lane cards & memory in an empty sandbox):
+   ```bash
+   python3 -I /tmp/board-kit/install.py . \
+     --runtime arena \
+     --project "<the project's name>" \
+     --talk "<language>" \
+     --no-survey "sandbox/arena runtime install" \
+     --setup-done
+   ```
+   *(Pass `--demo` on a blank demo repo to populate sample `.board/memory/`, 4-lane cards, `_dashboard`, and `_trains`. Use `--runtime generic` if running locally outside a preview iframe.)*
+3. **Start the board server in sandbox preview + embedded mode:**
+   ```bash
+   python3 -I .kit/board_server.py --host 0.0.0.0 --port 8765 --preview --embed-mode
+   ```
+   - `--preview`: allows `0.0.0.0` without `--token` behind a trusted sandbox reverse proxy, auto-seeds `posts/_orchestrator` on an empty DB, and auto-registers the default watcher (so comments never stall on `no_session`).
+   - `--embed-mode`: enables cookie-independent `X-Kit-Token` unlock, 5-second visibility-aware polling, and iframe-aware **Share** fallback (Copy Markdown modal + `GET /_api/export`).
+   - *(Outside a trusted sandbox — e.g. on LAN/Tailscale — omit `--preview` and pass `--token <secret>`.)*
+4. **Post the idempotent runtime welcome once** (explains the universal board workflow + Arena's exact capabilities & limits under `_orchestrator` as `welcome-arena-1`):
+   ```bash
+   python3 -I .kit/kit.py welcome --runtime arena --post
+   ```
+5. **Operate the board (one-command inbox + reply + 30-min live listener):**
+   - Check unread owner comments, 👍 likes, and one-tap answers in one call:
+     ```bash
+     python3 -I .kit/board_cli.py inbox
+     ```
+   - Reply in-thread (marks the owner's comment `read: true`, acks its thread, and posts with `reply_to`):
+     ```bash
+     python3 -I .kit/board_cli.py reply <post_id> --comment-id <owner_comment_id> --text "..."
+     ```
+   - **Live listener during an active turn:** after replying, block on `python3 -I .kit/board_cli.py comments wait --timeout 1750` (~29 min, inside Arena's 1800 s bash limit) so incoming board comments wake you immediately without needing `.` in chat. Once a turn ends, there is no 0-token background wake across turn boundaries — the owner sends `.` in chat to start the next turn.
+   - **Warm Git handoff (when a Git `origin` remote is configured):** run `python3 -I .kit/kit.py receive` before starting and `python3 -I .kit/kit.py publish` when done (atomic batch apply + monotonic `board-seen` merge + conflict rollback). Without remote push credentials, use the board's **Share** button (Copy Markdown / `/_api/export`) or export a git patch/zip.
+
+</details>
+
 ---
 
 ## Runners
@@ -263,14 +312,9 @@ python3 -I /tmp/board-kit/install.py .
 | `scripts/mirror_holes.py` | Audits a board dump for fields written later without stamps |
 | `scripts/token_probe.py` | Measures exact token cost of a read from transcript usage |
 
-Run all 12 test suites:
+Run the unified regression suite (`python3 scripts/run_all_tests.py` — 6 suites / 154+ checks, 0 failures):
 ```bash
-for t in test_install.py test_install_bd11.py kit/board/test_board_local.py \
-         kit/board/test_strings.py kit/test_git_watch.py kit/import/test_kit_import.py \
-         kit/board/test_kit_cards.py kit/test_end_session.py kit/hooks/test_hooks.py \
-         kit/clerk/test_clerk_pending.py scripts/test_kit.py scripts/test_survey_scripts.py; do
-  python3 -I "$t"
-done
+python3 scripts/run_all_tests.py
 ```
 
 </details>
