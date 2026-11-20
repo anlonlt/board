@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
-"""Install the kit into a project: python3 install.py <project dir> --project "<Name>" [--talk English]
-                                     [--board-url URL] [--main-branch main] [--dry-run]
+"""Install the kit into a project: python3 install.py <project dir> --project "<Name>" --survey <step 0 report>
+                                     [--talk English] [--board-url URL] [--main-branch <trunk>] [--dry-run]
+                                     [--no-board | --no-clerk | --no-orchestrator | --parts memory,board,...]
+                                     [--setup-done]
+
+Step 0 comes first (docs/KIT-GOALS.md, README § Step 0): a first install needs the survey's report (`--survey PATH`),
+or `--no-survey "<why>"`, recorded in the config. The parts it installs are the report's recommendation: `memory`
+(always: .story, the story skill, the start/stop/compact/guard hooks, end_session.py), `board` (the page, its rules,
+kit.py, the cards, the say-it-once and typing hooks), `clerk`, `orchestrator` (with the consultant and runners); a
+clerk or an orchestrator needs the board. The trunk is origin's HEAD unless `--main-branch` names one, and a branch
+missing on origin stops the install. A translation is `.kit/strings.json` (kit/board/strings.py), applied at every
+install, so the page is never edited by hand. Until `--setup-done` (README step 8), the stop hooks stay quiet.
 
 Copies, renders and merges; never deletes, never replaces what it did not write:
   .kit/            config.json (written once, then only the fields you pass change), kit.py, clerk_pending.py,
@@ -22,10 +32,14 @@ import shutil
 import sys
 
 KIT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(KIT, "kit", "board"))
+import strings as page_strings  # noqa: E402
+PARTS = ("memory", "board", "clerk", "orchestrator")
+MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "test_hooks.py"}
 HOOKS = ["kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
          "kit_say_it_once.py", "kit_board_typing.py", "test_hooks.py"]
 CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.claude/hooks/kit/%s"'
-SETTINGS = [  # (event, matcher or None, hook file)
+SETTINGS = [  # (event, matcher or None, hook file); the say-it-once and typing lines belong to the board
     ("SessionStart", None, "kit_session_start.py"),
     ("PreToolUse", "Bash", "kit_guard.py"),
     ("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage", "kit_say_it_once.py"),
@@ -104,8 +118,12 @@ def load_config(t, a):
         c["mirror"] = {"branch": "board-mirror", "path": "../%s-board-mirror" % slug(a.project or os.path.basename(t)),
                        "overlap_hours": 1}
     k = c.setdefault("kit", {})
+    first = not os.path.exists(p)
     for key, v in DEFAULT_KIT.items():
         k.setdefault(key, v)
+    if first:
+        k["setup"] = True  # the stop hooks stay quiet until README step 8 runs --setup-done (issue #3 item 5)
+        k["main_branch"] = None  # detected below unless --main-branch names it
     for role, v in DEFAULT_KIT["roles"].items():  # a role added to the kit after this project's install
         k["roles"].setdefault(role, v)
     if a.project:
@@ -116,11 +134,59 @@ def load_config(t, a):
     if a.talk:
         c.setdefault("language", {})["talk"] = a.talk
     c.setdefault("language", {}).setdefault("talk", k["talk_language"])
+    parts = k.get("parts") or {p: True for p in PARTS}
+    if a.parts:
+        want = [x.strip() for x in a.parts.split(",") if x.strip()]
+        bad = [x for x in want if x not in PARTS]
+        if bad or "memory" not in want:
+            raise SystemExit("install: --parts takes %s, and always memory (got %s)" % (",".join(PARTS), a.parts))
+        parts = {p: p in want for p in PARTS}
+    if a.no_board:
+        parts["board"] = False
+    if a.no_clerk:
+        parts["clerk"] = False
+    if a.no_orchestrator:
+        parts["orchestrator"] = False
+    if not parts["board"]:
+        parts["clerk"] = parts["orchestrator"] = False
+    k["parts"] = parts
+    if a.survey:
+        k["survey"] = a.survey
+    elif a.no_survey:
+        k["survey"] = "skipped: " + a.no_survey
+    if a.setup_done:
+        k["setup"] = False
     if a.main_branch:
         k["main_branch"] = a.main_branch
     if a.trunk_push:
         k["trunk_push"] = a.trunk_push == "yes"
     return c
+
+
+def trunk(t, k, named, log):
+    """origin's HEAD unless named; a named or detected branch missing on origin stops the install (issue #3 item 3)."""
+    import subprocess
+    def git(*a):
+        r = subprocess.run(["git", "-C", t] + list(a), capture_output=True, text=True, timeout=60)
+        return r.returncode, r.stdout
+    rc, url = git("remote", "get-url", "origin")
+    if rc:
+        k["main_branch"] = k.get("main_branch") or "main"
+        log.append("trunk: %s (UNCHECKED: no git remote 'origin' here; pass --main-branch)" % k["main_branch"])
+        return
+    if not k.get("main_branch"):
+        rc, out = git("ls-remote", "--symref", "origin", "HEAD")
+        m = re.search(r"ref: refs/heads/(\S+)\s+HEAD", out)
+        if rc or not m:
+            raise SystemExit("install: could not read origin's default branch (git ls-remote --symref origin HEAD); "
+                             "pass --main-branch <the branch sessions start from>")
+        k["main_branch"] = m.group(1)
+        log.append("trunk: %s (origin's HEAD)" % k["main_branch"])
+    if named or log is not None:
+        rc, out = git("ls-remote", "--heads", "origin", k["main_branch"])
+        if rc or not out.strip():
+            raise SystemExit("install: the trunk '%s' does not exist on origin (git ls-remote --heads origin %s is empty); "
+                             "name an existing branch with --main-branch" % (k["main_branch"], k["main_branch"]))
 
 
 def slug(s):
@@ -147,12 +213,14 @@ def render(text, c):
     return text
 
 
-def merge_settings(t, dry, log):
+def merge_settings(t, dry, log, board=True):
     p = os.path.join(t, ".claude", "settings.json")
     s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
     hooks = s.setdefault("hooks", {})
     added = 0
     for ev, matcher, f in SETTINGS:
+        if not board and f not in MEMORY_HOOKS:
+            continue
         cmd = CMD % f
         groups = hooks.setdefault(ev, [])
         if any(h.get("command") == cmd for g in groups for h in g.get("hooks", []) if (g.get("matcher") or None) == matcher):
@@ -179,13 +247,30 @@ def main(argv=None):
     ap.add_argument("--board-url")
     ap.add_argument("--main-branch")
     ap.add_argument("--trunk-push", choices=["yes", "no"], help="the owner's standing permission to push the trunk")
+    ap.add_argument("--survey", help="step 0's report (survey/<date>/report.md): required at the first install")
+    ap.add_argument("--no-survey", metavar="WHY", help="install without step 0 (the reason is recorded)")
+    ap.add_argument("--parts", help="comma list among memory,board,clerk,orchestrator (memory always)")
+    ap.add_argument("--no-board", action="store_true", help="memory and its hooks only (no page, clerk, orchestrator)")
+    ap.add_argument("--no-clerk", action="store_true")
+    ap.add_argument("--no-orchestrator", action="store_true")
+    ap.add_argument("--setup-done", action="store_true", help="README step 8: the install is reported; hooks speak again")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     t = os.path.abspath(a.target)
     if not os.path.isdir(t):
         raise SystemExit("install: %s is not a directory" % t)
+    first = not os.path.exists(os.path.join(t, ".kit", "config.json"))
+    if first and not (a.survey or a.no_survey):
+        raise SystemExit("install: step 0 first. Run the survey (step0/survey-code.md or step0/survey-chat.md) and pass "
+                         "its report with --survey survey/<date>/report.md; its recommendation says which parts to install "
+                         "(--no-board, --no-clerk, --no-orchestrator). Only if the owner declines step 0: --no-survey \"<why>\".")
+    if a.survey and not os.path.isfile(a.survey):
+        raise SystemExit("install: --survey %s: no such file" % a.survey)
     c = load_config(t, a)
     ins = Installer(t, a.dry_run)
+    trunk(t, c["kit"], a.main_branch, ins.log if (first or a.main_branch) else None) if (first or a.main_branch) else None
+    parts = c["kit"]["parts"]
+    notes = []
     cfg = json.dumps(c, indent=1, ensure_ascii=False) + "\n"
     p = os.path.join(t, ".kit", "config.json")
     if not os.path.exists(p) or open(p, encoding="utf-8").read() != cfg:
@@ -195,23 +280,35 @@ def main(argv=None):
             os.makedirs(os.path.dirname(p), exist_ok=True)
             open(p, "w", encoding="utf-8").write(cfg)
     rd = lambda *x: open(os.path.join(KIT, *x), encoding="utf-8").read()
-    ins.put(".kit/kit.py", rd("scripts", "kit.py"))
-    ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
-    ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
-    ins.put(".kit/board.html", render(rd("kit", "board", "board.template.html"), c))
-    ins.put(".kit/clerk.md", render(rd("kit", "clerk", "clerk.template.md"), c))
-    ins.put(".kit/orchestrator.md", render(rd("kit", "orchestrator.template.md"), c))
-    ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
-    ins.put(".kit/runner.md", render(rd("kit", "runner.template.md"), c))
-    ins.put(".kit/kit_cards.py", rd("kit", "board", "kit_cards.py"))
-    ins.put(".kit/BOARD.md", render(rd("kit", "board", "BOARD.template.md"), c))
-    ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
+    ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     for h in HOOKS:
-        ins.put(".claude/hooks/kit/" + h, rd("kit", "hooks", h))
-    ins.put(".claude/agents/kit-cards.md", rd("kit", "agents", "kit-cards.md"))
-    for s in ("story", "board"):
-        ins.put(".claude/skills/%s/SKILL.md" % s, rd("kit", "skills", s, "SKILL.md"))
+        if parts["board"] or h in MEMORY_HOOKS:
+            ins.put(".claude/hooks/kit/" + h, rd("kit", "hooks", h))
+    ins.put(".claude/skills/story/SKILL.md", rd("kit", "skills", "story", "SKILL.md"))
+    if parts["board"]:
+        ins.put(".kit/kit.py", rd("scripts", "kit.py"))
+        page = rd("kit", "board", "board.template.html")
+        sp = os.path.join(t, ".kit", "strings.json")
+        if os.path.exists(sp):  # the owner's language, from the string table (issue #3 item 4)
+            tr = json.load(open(sp, encoding="utf-8"))
+            page, used, missing = page_strings.apply(page, page_strings.load_table(), tr.get("strings") or {})
+            notes.append("page: %d strings in %s, %d untranslated (.kit/strings.json; add them there, never in the page)" % (used, tr.get("language", "?"), len(missing)))
+        ins.put(".kit/board.html", render(page, c))
+        ins.put(".kit/strings.en.json", rd("kit", "board", "strings.en.json"))
+        ins.put(".kit/strings.py", rd("kit", "board", "strings.py"))
+        ins.put(".kit/kit_cards.py", rd("kit", "board", "kit_cards.py"))
+        ins.put(".kit/BOARD.md", render(rd("kit", "board", "BOARD.template.md"), c))
+        ins.put(".claude/agents/kit-cards.md", rd("kit", "agents", "kit-cards.md"))
+        ins.put(".claude/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
+    if parts["clerk"]:
+        ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
+        ins.put(".kit/clerk.md", render(rd("kit", "clerk", "clerk.template.md"), c))
+    if parts["orchestrator"]:
+        ins.put(".kit/orchestrator.md", render(rd("kit", "orchestrator.template.md"), c))
+        ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
+        ins.put(".kit/runner.md", render(rd("kit", "runner.template.md"), c))
+        ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
     for d in ("state", "issues", "lessons"):
         if not os.path.isdir(os.path.join(t, ".story", d)):
             ins.put(".story/%s/.gitkeep" % d, "")
@@ -223,7 +320,7 @@ def main(argv=None):
         ins.log.append(".gitignore: + .story/before-compaction.md")
         if not a.dry_run:
             open(gi, "a", encoding="utf-8").write(("" if cur.endswith("\n") or not cur else "\n") + ".story/before-compaction.md\n")
-    merge_settings(t, a.dry_run, ins.log)
+    merge_settings(t, a.dry_run, ins.log, parts["board"])
     # Which kit this is (2026-11-20: a session said "the kit was never updated" while it was): the kit's commit, kept in
     # the manifest and printed, to compare with `git ls-remote https://github.com/anlonlt/board main`.
     import subprocess
@@ -235,9 +332,14 @@ def main(argv=None):
     print("\n".join(ins.log + ins.kept) if ins.log + ins.kept else "", end="\n" if ins.log + ins.kept else "")
     if not ins.log:
         print("nothing to change")
-    if c["language"]["talk"].lower() not in ("en", "english"):
-        print("translate: .kit/board.html is in English; translate what the person sees into %s before publishing (README step 3)" % c["language"]["talk"])
-    print("next: %s" % ("README step 3: publish .kit/board.html" if not c.get("board_url") else "README step 4: the first posts, then step 5: the orchestrator and the clerk"))
+    print("\n".join(notes)) if notes else None
+    if parts["board"] and c["language"]["talk"].lower() not in ("en", "english") and not os.path.exists(os.path.join(t, ".kit", "strings.json")):
+        print("translate: `python3 -I .kit/strings.py template .kit/strings.json`, fill in %s, rerun this install (README step 3)" % c["language"]["talk"])
+    if not parts["board"]:
+        print("next: the memory is installed (no board): import the project's state into .story (README § Import), commit, push; then --setup-done")
+    else:
+        print("next: %s" % ("README step 3: publish .kit/board.html" if not c.get("board_url") else "README step 4: the first posts, then step 5: %s" % (
+            " and ".join(x for x in ("the orchestrator", "the clerk") if parts[x.split()[-1]]) or "README step 6")))
     return 0
 
 

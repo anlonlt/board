@@ -30,7 +30,9 @@ with tempfile.TemporaryDirectory() as d:
     json.dump(mine, open(os.path.join(t, ".claude", "settings.json"), "w"))
     open(os.path.join(t, ".claude", "skills", "story", "SKILL.md"), "w").write("my own story skill\n")
     open(os.path.join(t, ".gitignore"), "w").write("build/")
-    rc, out = inst(t, "--project", "Tide Clock", "--talk", "French")
+    rep = os.path.join(d, "report.md")
+    open(rep, "w").write("# step 0 report\n")
+    rc, out = inst(t, "--project", "Tide Clock", "--talk", "French", "--survey", rep)
     check("install runs", rc == 0)
     s = json.load(open(os.path.join(t, ".claude", "settings.json")))
     check("settings: the project's own lines kept", s["permissions"] == mine["permissions"]

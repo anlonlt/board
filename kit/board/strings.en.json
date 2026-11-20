@@ -1,0 +1,566 @@
+[
+ {
+  "en": "{{PROJECT}} board",
+  "kind": "html"
+ },
+ {
+  "en": "Claude Code sessions working on {{PROJECT}} post here: things for you to do, questions waiting on you, news, and finished work. Each session follows",
+  "kind": "html"
+ },
+ {
+  "en": "&larr; Board",
+  "kind": "html"
+ },
+ {
+  "en": "Newest first",
+  "kind": "html"
+ },
+ {
+  "en": "By priority",
+  "kind": "html"
+ },
+ {
+  "en": "Select posts",
+  "kind": "html"
+ },
+ {
+  "en": "Connecting to the board...",
+  "kind": "html"
+ },
+ {
+  "en": "Ask the orchestrator",
+  "kind": "html"
+ },
+ {
+  "en": "Waiting for you",
+  "kind": "html"
+ },
+ {
+  "en": "Where we are",
+  "kind": "html"
+ },
+ {
+  "en": "All trains",
+  "kind": "html"
+ },
+ {
+  "en": "Only the trains still moving",
+  "kind": "html"
+ },
+ {
+  "en": "0 selected",
+  "kind": "html"
+ },
+ {
+  "en": "Move to Done",
+  "kind": "html"
+ },
+ {
+  "en": "Export as Markdown",
+  "kind": "html"
+ },
+ {
+  "en": "Cancel",
+  "kind": "html"
+ },
+ {
+  "en": "No posts yet.",
+  "kind": "html"
+ },
+ {
+  "en": "in the repository. Open a post to read it in full, comment on it or on one of its images, and your comment is sent to the session that wrote it.",
+  "kind": "html"
+ },
+ {
+  "en": "Share",
+  "kind": "html"
+ },
+ {
+  "en": "Remove from the board",
+  "kind": "html"
+ },
+ {
+  "en": "Picture size",
+  "kind": "html"
+ },
+ {
+  "en": "Auto",
+  "kind": "html"
+ },
+ {
+  "en": "Comments on the post",
+  "kind": "html"
+ },
+ {
+  "en": "Your comment goes to the session that wrote this post. Write @o in it to ask the orchestrator instead.",
+  "kind": "html"
+ },
+ {
+  "en": "Attach a picture or a file",
+  "kind": "html"
+ },
+ {
+  "en": "Up to 20 MB each: pictures, video, PDF, text. Not zip, audio or APK.",
+  "kind": "html"
+ },
+ {
+  "en": "Send comment",
+  "kind": "html"
+ },
+ {
+  "en": "Undo",
+  "kind": "html"
+ },
+ {
+  "en": "Image",
+  "kind": "html"
+ },
+ {
+  "en": "Close",
+  "kind": "html"
+ },
+ {
+  "en": "Search posts or a part",
+  "kind": "attr"
+ },
+ {
+  "en": "Search posts",
+  "kind": "attr"
+ },
+ {
+  "en": "Order of the posts",
+  "kind": "attr"
+ },
+ {
+  "en": "Write to the orchestrator: a question, a correction, anything",
+  "kind": "attr"
+ },
+ {
+  "en": "Save this post and its comments as a Markdown file",
+  "kind": "attr"
+ },
+ {
+  "en": "The pictures before",
+  "kind": "attr"
+ },
+ {
+  "en": "The next pictures",
+  "kind": "attr"
+ },
+ {
+  "en": "Write a comment",
+  "kind": "attr"
+ },
+ {
+  "en": "Image",
+  "kind": "attr"
+ },
+ {
+  "en": "For you to do",
+  "kind": "js"
+ },
+ {
+  "en": "Waiting on you",
+  "kind": "js"
+ },
+ {
+  "en": "News",
+  "kind": "js"
+ },
+ {
+  "en": "Done",
+  "kind": "js"
+ },
+ {
+  "en": "Orchestrator changes",
+  "kind": "js"
+ },
+ {
+  "en": "New discussion",
+  "kind": "js"
+ },
+ {
+  "en": "A session",
+  "kind": "js"
+ },
+ {
+  "en": "Loading...",
+  "kind": "js"
+ },
+ {
+  "en": " wait on you · ",
+  "kind": "js"
+ },
+ {
+  "en": "Open the post ›",
+  "kind": "js"
+ },
+ {
+  "en": "Nothing listed for this row in Waiting for you.",
+  "kind": "js"
+ },
+ {
+  "en": "Train ",
+  "kind": "js"
+ },
+ {
+  "en": "For: ",
+  "kind": "js"
+ },
+ {
+  "en": "Show everything",
+  "kind": "js"
+ },
+ {
+  "en": "Nothing waits on you.",
+  "kind": "js"
+ },
+ {
+  "en": "Everything else that waits on you (",
+  "kind": "js"
+ },
+ {
+  "en": "  · also after ",
+  "kind": "js"
+ },
+ {
+  "en": "Prompt: `",
+  "kind": "js"
+ },
+ {
+  "en": "Session: `",
+  "kind": "js"
+ },
+ {
+  "en": "Store: ",
+  "kind": "js"
+ },
+ {
+  "en": "No prompt, session or store on record.",
+  "kind": "js"
+ },
+ {
+  "en": " Open the post ›",
+  "kind": "js"
+ },
+ {
+  "en": " trains · ",
+  "kind": "js"
+ },
+ {
+  "en": "On their own (",
+  "kind": "js"
+ },
+ {
+  "en": "No train is moving.",
+  "kind": "js"
+ },
+ {
+  "en": "The orchestrator's thread is not there yet.",
+  "kind": "js"
+ },
+ {
+  "en": "A new answer",
+  "kind": "js"
+ },
+ {
+  "en": "Select posts",
+  "kind": "js"
+ },
+ {
+  "en": " posts moved to Done.",
+  "kind": "js"
+ },
+ {
+  "en": "New since you last opened it",
+  "kind": "js"
+ },
+ {
+  "en": "(untitled)",
+  "kind": "js"
+ },
+ {
+  "en": "\\u2713 reviewed",
+  "kind": "js"
+ },
+ {
+  "en": "Orchestrator",
+  "kind": "js"
+ },
+ {
+  "en": "post `",
+  "kind": "js"
+ },
+ {
+  "en": "**Options:** ",
+  "kind": "js"
+ },
+ {
+  "en": "Picture ",
+  "kind": "js"
+ },
+ {
+  "en": " liked the post (",
+  "kind": "js"
+ },
+ {
+  "en": " · on picture ",
+  "kind": "js"
+ },
+ {
+  "en": " · seen",
+  "kind": "js"
+ },
+ {
+  "en": " posts\\n*Exported ",
+  "kind": "js"
+ },
+ {
+  "en": "Saved ",
+  "kind": "js"
+ },
+ {
+  "en": "Could not save the file (",
+  "kind": "js"
+ },
+ {
+  "en": "\\uD83D\\uDC4D Like",
+  "kind": "js"
+ },
+ {
+  "en": "Approve without writing",
+  "kind": "js"
+ },
+ {
+  "en": "\\uD83D\\uDC4D Liked",
+  "kind": "js"
+ },
+ {
+  "en": "Something here has not been on your screen yet",
+  "kind": "js"
+ },
+ {
+  "en": "\\u2190 Board",
+  "kind": "js"
+ },
+ {
+  "en": "Discussions",
+  "kind": "js"
+ },
+ {
+  "en": "Comments on the post",
+  "kind": "js"
+ },
+ {
+  "en": "Your message goes to the orchestrator, in this discussion.",
+  "kind": "js"
+ },
+ {
+  "en": "Your comment goes to the session that wrote this post. Write @o in it to ask the orchestrator instead.",
+  "kind": "js"
+ },
+ {
+  "en": "Move to Done",
+  "kind": "js"
+ },
+ {
+  "en": "Priority",
+  "kind": "js"
+ },
+ {
+  "en": "Third",
+  "kind": "js"
+ },
+ {
+  "en": "Comment on this picture",
+  "kind": "js"
+ },
+ {
+  "en": "Comment on picture ",
+  "kind": "js"
+ },
+ {
+  "en": "Send",
+  "kind": "js"
+ },
+ {
+  "en": "Show picture ",
+  "kind": "js"
+ },
+ {
+  "en": "Pictures ",
+  "kind": "js"
+ },
+ {
+  "en": "Picture size in this post, on ",
+  "kind": "js"
+ },
+ {
+  "en": "Auto",
+  "kind": "js"
+ },
+ {
+  "en": "\\uD83D\\uDC4D orchestrator: taking care of it",
+  "kind": "js"
+ },
+ {
+  "en": "Sending to Claude...",
+  "kind": "js"
+ },
+ {
+  "en": "Sent to Claude",
+  "kind": "js"
+ },
+ {
+  "en": "\\u2713 Seen",
+  "kind": "js"
+ },
+ {
+  "en": "Passed on at ",
+  "kind": "js"
+ },
+ {
+  "en": "Passed on",
+  "kind": "js"
+ },
+ {
+  "en": "Send to Claude again",
+  "kind": "js"
+ },
+ {
+  "en": "Remove",
+  "kind": "js"
+ },
+ {
+  "en": "Continued in ",
+  "kind": "js"
+ },
+ {
+  "en": "Reply",
+  "kind": "js"
+ },
+ {
+  "en": "Where this began: ",
+  "kind": "js"
+ },
+ {
+  "en": "No discussion yet.",
+  "kind": "js"
+ },
+ {
+  "en": "Hide ",
+  "kind": "js"
+ },
+ {
+  "en": "No comments on the post as a whole yet.",
+  "kind": "js"
+ },
+ {
+  "en": "Write your first message below.",
+  "kind": "js"
+ },
+ {
+  "en": "New above \\u2191",
+  "kind": "js"
+ },
+ {
+  "en": "Answer with one tap:",
+  "kind": "js"
+ },
+ {
+  "en": "Image",
+  "kind": "js"
+ },
+ {
+  "en": "Remove ",
+  "kind": "js"
+ },
+ {
+  "en": " from the board? It stays in the project's history.",
+  "kind": "js"
+ },
+ {
+  "en": "Could not move the post: ",
+  "kind": "js"
+ },
+ {
+  "en": "no Claude session can receive it right now",
+  "kind": "js"
+ },
+ {
+  "en": "only editors of the board can send to Claude",
+  "kind": "js"
+ },
+ {
+  "en": "no Claude session is watching the board",
+  "kind": "js"
+ },
+ {
+  "en": "sending to Claude is off in this view",
+  "kind": "js"
+ },
+ {
+  "en": "sending to Claude is not available in this view",
+  "kind": "js"
+ },
+ {
+  "en": " (uploading...)",
+  "kind": "js"
+ },
+ {
+  "en": "over 20 MB, not sent",
+  "kind": "js"
+ },
+ {
+  "en": "not uploaded (",
+  "kind": "js"
+ },
+ {
+  "en": "Replying to ",
+  "kind": "js"
+ },
+ {
+  "en": "Cancel the reply",
+  "kind": "js"
+ },
+ {
+  "en": "Wait: a file is still uploading.",
+  "kind": "js"
+ },
+ {
+  "en": "The board's storage is not available in this view.",
+  "kind": "js"
+ },
+ {
+  "en": "Sending...",
+  "kind": "js"
+ },
+ {
+  "en": "Not saved and not sent. Your text is still in the box.",
+  "kind": "js"
+ },
+ {
+  "en": "The board can't be reached yet.",
+  "kind": "js"
+ },
+ {
+  "en": "Open this board on claude.ai to see its posts.",
+  "kind": "js"
+ },
+ {
+  "en": "Sign in on claude.ai to see the board.",
+  "kind": "js"
+ },
+ {
+  "en": "Live",
+  "kind": "js"
+ },
+ {
+  "en": "The board stopped updating (",
+  "kind": "js"
+ },
+ {
+  "en": "). Reload to reconnect.",
+  "kind": "js"
+ }
+]

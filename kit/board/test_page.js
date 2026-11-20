@@ -4,7 +4,7 @@ const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path'), os = require('os');
 (async () => {
   const here = __dirname;
-  let html = fs.readFileSync(path.join(here, 'board.template.html'), 'utf8').replace(/\{\{[A-Z_]+\}\}/g, 'Test');
+  let html = fs.readFileSync(process.env.KIT_PAGE || path.join(here, 'board.template.html'), 'utf8').replace(/\{\{[A-Z_]+\}\}/g, 'Test');
   html = html.replace('<script>', '<script>' + fs.readFileSync(path.join(here, 'test_page_stub.js'), 'utf8') + '</script><script>');
   const f = path.join(os.tmpdir(), 'kit-test-page.html'); fs.writeFileSync(f, html);
   const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1200, height: 900 } });
