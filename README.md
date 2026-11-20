@@ -56,6 +56,11 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
    `kit.py post KIT-installed` shows the post and its comments; `kit.py push` pushes that branch (`board-mirror`) to your repository: it is the only branch the kit creates.
 8. **Report** in the body of `KIT-installed` (`update`): each step's outcome, every step that needed the owner, anything that failed with
    its exact message. From now on every session posts there at turn 1 (the SessionStart hook says so).
+9. **Tell the person what now**, as your last chat message, in their language (`.kit/config.json` `language.talk`):
+   (1) the connector test: "ask me to read one of your Microsoft 365 / Google / other connector files here; if it
+   answers, your work can move here"; (2) the Import: "open a new claude.ai chat and paste the block at
+   https://github.com/anlonlt/board/blob/main/step0/export-chat.md , then paste back here the line it gives you";
+   (3) where the board is: its link.
 
 ## Import (your claude.ai chats into the kit)
 
