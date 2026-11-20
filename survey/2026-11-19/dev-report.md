@@ -65,6 +65,7 @@ Characters are counted, not tokens; no usage data is visible in chat.
 - **Recovery, first try:** the chat Claude, which holds the reports, tried to push both files to the same branch through claude.ai's GitHub connector: refused, `403 Resource not accessible by integration` (the connector has no write access to the fork).
 - **Recovery, second try:** since Claude Code can read the user's claude.ai artifacts (it listed them), the chat Claude published the filled block (instructions + both reports) as a private claude.ai artifact, and the user gave Claude Code a one-line instruction to read it and finish.
 - **Fix:** hand the reports to Claude Code as a claude.ai artifact (or a file in the fork) rather than as a 14,000-character paste; never show the user the unfilled template, only the filled block; have Claude Code refuse to run if the block still contains `<Report 1>`. A GitHub connector in the chat is not enough on its own: it needs write access to the fork.
+- **Not anticipated (the assisting Claude's error, flagged by the user):** the assisting Claude should have planned this hand-off before Part 5: checked whether the GitHub connector could write to the fork, and used the artifact route from the start, instead of a 14,000-character paste. The user had to go through a failed Claude Code run, a failed connector push and a third attempt before the reports could land.
 
 ## Part 5 — pull request
 
