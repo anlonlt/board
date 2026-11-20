@@ -100,4 +100,21 @@ with tempfile.TemporaryDirectory() as d:
     check("runners: listed with kind, reach and setup; a project names its runner; the others are said",
           "**laptop** (computer)" in w7 and "**teams** (chat)" in w7 and "Runs in: laptop (computer runner" in rn
           and "RN -> laptop" in r7.stdout and "RC" not in r7.stdout.split("not in a cloud session")[-1])
+    # issue #3 item 2: a project built in Claude Code; its state comes from the repository and the session transcripts
+    # (step0/import-code.md writes this JSON), the repository's own docs stay the source of truth, and with no board
+    # (--no-posts) only the memory is written.
+    st8 = {"source": "claude-code", "projects": [{"id": "landing", "title": "Landing", "next": "his verdict on the phone",
+           "sources": ["docs/HANDOFF-landing.md § 13", "session_01ABC (2026-07-12, blocked)"],
+           "source_of_truth": ["docs/HANDOFF-landing.md"],
+           "waiting": [{"text": "the landing on the phone: keep or adjust?", "default": "keep", "options": ["keep", "adjust"]}]}]}
+    f8 = os.path.join(d, "s8.json"); json.dump(st8, open(f8, "w"))
+    r8 = subprocess.run([sys.executable, "-I", os.path.join(d, ".kit", "kit_import.py"), f8, "--out", os.path.join(d, "o8"), "--no-posts"],
+                        capture_output=True, text=True)
+    s8 = open(os.path.join(d, ".story", "state", "landing.md")).read() if os.path.exists(os.path.join(d, ".story", "state", "landing.md")) else ""
+    check("code import: the sources (files, sessions) and the docs that stay the source of truth are in the state file",
+          "## Imported from the repository and sessions" in s8 and "session_01ABC" in s8
+          and "## Source of truth (read it; this file only points)" in s8 and "docs/HANDOFF-landing.md" in s8)
+    check("code import: the waiting item reaches awaits.md", "landing on the phone" in open(os.path.join(d, ".story", "awaits.md")).read())
+    check("code import --no-posts: no post written, no batch printed",
+          r8.returncode == 0 and not os.path.exists(os.path.join(d, "o8", "posts")) and '"op": "set"' not in r8.stdout)
 print("%d failed" % fails); sys.exit(1 if fails else 0)

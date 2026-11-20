@@ -31,6 +31,10 @@ You are running **step 0 of a workflow kit: the survey**, by yourself. The user 
 organisations, vendors or accounts; they end in a PUBLIC repository) and ask for ONE go-ahead. Accept the first
 yes, even a short or cut one; never ask again. Check your own tool list before saying a tool is missing.
 
+**Part 0, first question (issue #3 item 6):** from the chats, list the projects you see, then ask, in the same
+message as the go-ahead: "One board for all your projects, or one per project?" Survey and import only what is in
+scope.
+
 **Part 0: language.** From the user's recent chats, find the language they write in and any language they ask
 Claude to answer in (custom instructions, "answer in …"). Write everything after this in that language. Record it
 (and any split, e.g. "talks French, writes code and docs in English") for the config. If the chats disagree, say
@@ -122,7 +126,17 @@ names Part 4's failing step, and the guide resumes there. Add the outcome to the
 
 **Report 1: the survey** (for the user and the owner, in the user's language): a table of part · what they do ·
 where it lives · copies of the same fact · cost or friction · seen / inferred / unknown. The 3 largest costs with
-numbers, the facts kept twice, what a kit could take over, what it should not touch, and the language setting.
+numbers, the facts kept twice, what a kit could take over, what it should not touch, the language setting, and the
+recommendation below.
+
+**The recommendation** (the last section of Report 1; issue #3 item 7): read `docs/KIT-GOALS.md` of the kit (§ 1
+the goals and problems as people said them, § 2 each part's problem, evidence, cost and when it is NOT worth it, § 3
+the table). Answer § 3's four questions from your measures: scope, how many chats ran in parallel, whether the
+user answers later or from a phone, what work runs outside code. Then one line per part (memory, hooks, import, board,
+clerk, orchestrator with cards and consultant, runners): **install / later / no**, the measure that decided it, and
+the goal it serves, quoted from KIT-GOALS § 1 (or "none of the goals is present here"). End with the install command
+it gives (`--no-board`, `--no-clerk`, `--no-orchestrator`, or nothing for all). Never recommend a part whose
+problem you did not find in this project.
 
 **Report 2: the dev report** (for whoever improves this step, in English; complete, it is why the test exists):
 - Tools you had (chat history, code, any session or chat creation); chats reached, oldest date, calls made, limits hit.

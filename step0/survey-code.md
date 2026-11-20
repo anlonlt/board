@@ -16,13 +16,17 @@ only into a new folder `survey/<YYYY-MM-DD>/` of the kit's fork and the proposed
 first (the reports end in a public repository, anonymised: no names of people, organisations or accounts); accept
 the first yes.
 
+**Part 0, first question, before any measuring (issue #3 item 6):** "One board for all your projects, or one for
+this project (`<repo>`)?" (one board: every repository's sessions are surveyed and imported; one project: only the
+sessions whose source repository is this one, from `get_session`). Record the answer for the config and the import.
+
 **Part 0: language.** From the user's messages in their recent sessions (`list_sessions` mine, then `list_events`
 kinds user, one page each) and the repository's CLAUDE.md, find the language they talk in and the one the project is
 written in. Use theirs from now on; record both for the config.
 
 **Part 1: survey, alone (measure, do not ask).** Grade every answer measured / inferred (from what) / unknown (what
 would settle it). Never estimate tokens from characters; when only characters exist, say so.
-1. Roles: which sessions exist (`list_sessions`: coordinators, workers, clerks, reviewers, helpers), what each writes and reads.
+1. Roles: which sessions exist (`list_sessions`, kept to the scope of Part 0: coordinators, workers, clerks, reviewers, helpers), what each writes and reads.
 2. Stores: repo docs, memory folders, a board's database (dump it with `out_dir` if one exists), data stores, scheduled tasks (`list_triggers`), transcripts; sizes.
 3. Channels: board comments, `send_message`, hooks' injected text, timers, pushes; how a result reaches the user.
 4. Hooks: `.claude/settings.json` and each script: its job, generic or project-bound.
@@ -59,7 +63,18 @@ repository is attached): give the user `https://github.com/anlonlt/board/compare
 say "click Create pull request".
 
 **Report 1** (the user's language): roles, stores, channels, hooks, rules, facts kept twice, the 3 largest costs in
-measured tokens, what the kit would take over, what it must not touch.
+measured tokens, what the kit would take over, what it must not touch, and the recommendation below.
+
+**The recommendation** (the last section of Report 1; issue #3 item 7): read `docs/KIT-GOALS.md` of the kit (§ 1
+the goals and problems as people said them, § 2 each part's problem, evidence, cost and when it is NOT worth it, § 3
+the table). Answer § 3's four questions from your measures: scope, how many sessions ran in parallel, whether the
+user answers later or from a phone, what work runs outside code. Then one line per part (memory, hooks, import, board,
+clerk, orchestrator with cards and consultant, runners): **install / later / no**, the measure that decided it, and
+the goal it serves, quoted from KIT-GOALS § 1 (or "none of the goals is present here"). End with the install command
+it gives (`--no-board`, `--no-clerk`, `--no-orchestrator`, or nothing for all). Never recommend a part whose
+problem you did not find in this project.
+
+**Part 6: the import** (when the recommendation installs the memory): `step0/import-code.md`, after Install.
 **Report 2, the dev report** (English, complete): each question with its sources, grade after Part 1 and Part 2,
 and what would settle it; every script run, its exact command and output summary, every error verbatim; Part 3's
 outcome; Part 4-5's outcome and how many user messages they took; what you assumed; what the kit's scripts could not

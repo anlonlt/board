@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""kit import: a person's state, gathered from their claude.ai chats, into the project's memory and board.
+"""kit import: a person's state, gathered from their claude.ai chats (step0/export-chat.md) or from a Claude Code
+project's repository and session transcripts (step0/import-code.md), into the project's memory and board.
 
-    python3 -I .kit/kit_import.py STATE.json [--out DIR] [--now ISO] [--update]
+    python3 -I .kit/kit_import.py STATE.json [--out DIR] [--now ISO] [--update] [--no-posts]
+
+A Claude Code state names, per project, `sources` (the files and sessions it was read from) and `source_of_truth` (the
+repository's own docs that stay authoritative: the state file points to them). --no-posts: memory only (no board).
 
 STATE.json, or the artifact's HTML saved by `Artifact` `read` (the JSON in its <pre id="kit-state">), written by the chat side, `step0/export-chat.md`, inside a claude.ai artifact):
   {"owner_language": "French", "unread": [...], "approved": [...], "never": [...],
@@ -76,7 +80,7 @@ def normalise(p):
         ppl = {(x.get("role") or str(i)) if isinstance(x, dict) else str(i): _text({k: v for k, v in x.items() if k != "role"}) if isinstance(x, dict) else _text(x)
                for i, x in enumerate(ppl, 1)}
     p["people"] = {str(k): _text(v) for k, v in ppl.items()}
-    for f in ("where", "decisions", "chats", "resume", "technical", "accounts", "tests", "risks", "lessons", "needs_me"):
+    for f in ("where", "decisions", "chats", "sources", "source_of_truth", "resume", "technical", "accounts", "tests", "risks", "lessons", "needs_me"):
         v = p.get(f) or []
         p[f] = [_text(x) for x in (v if isinstance(v, list) else [v])]
     w = p.get("waiting") or []
@@ -142,12 +146,16 @@ def state_md(p):
             out += ["", "## " + head] + ["- " + x for x in p[key]]
     if p.get("people"):
         out += ["", "## People (role: who)"] + ["- %s: %s" % (k, v) for k, v in p["people"].items()]
+    if p.get("source_of_truth"):
+        out += ["", "## Source of truth (read it; this file only points)"] + ["- " + c for c in p["source_of_truth"]]
+    if p.get("sources"):
+        out += ["", "## Imported from the repository and sessions"] + ["- " + c for c in p["sources"]]
     if p.get("chats"):
         out += ["", "## Imported from chats"] + ["- " + c for c in p["chats"]]
     return "\n".join(out) + "\n"
 
 
-def run(state, out, now, update, session=""):
+def run(state, out, now, update, session="", posts=True):
     log, writes = [], []
     sd = os.path.join(ROOT, ".story")
     wr = (state.get("workflow") or {}).get("runners") if isinstance(state.get("workflow"), dict) else None
@@ -187,8 +195,9 @@ def run(state, out, now, update, session=""):
     if off:
         log.append("not in a cloud session (their runner must be set up, README § Runners): " + ", ".join(off))
     pd = os.path.join(out, "posts")
-    os.makedirs(pd, exist_ok=True)
-    for p in state.get("projects", []):
+    if posts:
+        os.makedirs(pd, exist_ok=True)
+    for p in (state.get("projects", []) if posts else []):
         body = state_md(p).split("\n", 1)[1]
         docs = [("P-" + p["id"], {"title": p.get("title", p["id"]), "column": "info", "part": "P-" + p["id"], "priority": p["priority"],
                                    "body": body, "created_at": now, "session_id": session})]
@@ -219,10 +228,14 @@ def main(argv=None):
     ap.add_argument("--now", default=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
     ap.add_argument("--session", default="", help="the session_id the posts name (the orchestrator's)")
     ap.add_argument("--update", action="store_true", help="rewrite state files the import wrote before")
+    ap.add_argument("--no-posts", action="store_true", help="memory only: no board posts (an install without the board)")
     a = ap.parse_args(argv)
     state = load_state(a.state)
-    log, writes = run(state, a.out, a.now, a.update, a.session)
+    log, writes = run(state, a.out, a.now, a.update, a.session, posts=not a.no_posts)
     print("\n".join(log))
+    if a.no_posts:
+        print("no posts (--no-posts): the memory is written; commit .story and push")
+        return 0
     print("writes (ArtifactData batch, up to 50 per call; posts that exist need if_version):")
     print(json.dumps(writes))
     return 0

@@ -4,6 +4,29 @@ A workflow kit for working with Claude Code: git as the one store, a board (a cl
 carries your comments to the session that wrote the post, a lookup reader (`kit.py`), a memory (`.story/`) and a few
 hooks. Its design and measured inventory come from the Harmonize project (`anlonlt/harmonize`, `docs/WORKFLOW-KIT.md`).
 
+## Why (read this first; the detail, with every quote and number, is `docs/KIT-GOALS.md`)
+
+The kit answers problems people actually had. Install a part only where its problem is present:
+
+- **Claude forgets between sessions or chats** ("Pas de mémoire entre conversations"; "comme la dernière fois"; next
+  steps and things waiting on the owner scattered across hand-over docs). → **the memory** (`.story/`: each
+  workstream's next step, one list of what waits on the owner, printed at every start) **and the import** that fills
+  it. Worth it for everyone: install it first.
+- **Work gets lost or broken by a session** ("The previous source of this app was lost to an agent deleting it";
+  unpushed work in a reclaimed container; "Why are there branches ? Shouldn't everything be merged to main ?").
+  → **the hooks** (guard, stop, compact) and `end_session.py`. Worth it for everyone.
+- **Several sessions at once, and the owner answers later or from his phone** ("triple tokens, replying in chat, to
+  you, and in the board"; "an at a glance card"). → **the board** (one post per result, one-tap answers) and **the
+  clerk** (carries each comment to the session that wrote the post). Measured in Harmonize: his median wait 0.8 min;
+  tokens about even with chat, not fewer. **Not worth it for one session at a time** with the owner in its chat: the
+  chat already is the channel (issue #3: a first reply in 57 s).
+- **More parallel work than the owner can launch and check by hand** ("to optimize my use of it in parallel"; "If it
+  notifies such things, it should do it itself"). → **the orchestrator**, its cards and its consultant. The most
+  expensive part (one orchestrator: $24.88 in 5 h): only for parallel work.
+- **Work outside code** (Microsoft 365 through Claude in Chrome). → **runners** (§ Runners).
+
+Step 0 measures which of these the project has, and recommends; the install takes only what it recommends.
+
 ## Install (Claude Code on the web, any repository)
 
 Open a Claude Code session on **your** repository (https://claude.ai/code) and paste this one line:
@@ -25,20 +48,28 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
 
 **For Claude, in the project's session.** Do the steps in order; report each step's outcome in one line.
 
+0. **Step 0 first, always** (whatever the project's state: new, mid-way, full of docs): run the survey,
+   `step0/survey-code.md` (a Claude Code project) or `step0/survey-chat.md` (chats only), from the kit's clone of step 1.
+   Its first question is the scope (one board for all projects, or this one); its report ends with a recommendation
+   per part, each with the goal it serves (`docs/KIT-GOALS.md`). Show it to the owner; his yes or changes decide the
+   parts. `install.py` refuses a first install without the report.
 1. **Get the kit** (public repository, no token; always a fresh `git clone`/`git pull`, never a cached `raw.githubusercontent.com/.../main/...` link: it can serve an older copy for minutes): `git clone --depth 1 https://github.com/anlonlt/board /tmp/board-kit`
    (if `/tmp/board-kit` exists, `git -C /tmp/board-kit pull`).
 2. **Install it** into the project root: `python3 -I /tmp/board-kit/install.py . --project "<the project's name>"
-   --talk "<the language the owner writes to you in>"` (add `--main-branch <name>` when your sessions start from another branch than `main`: the branch the clerk will read; usually GitHub's default).
+   --talk "<the language the owner writes to you in>" --survey survey/<date>/report.md` plus the parts step 0
+   recommended: `--no-board` (memory and hooks only; then skip to the Import and step 8), `--no-clerk`,
+   `--no-orchestrator` (nothing: all). The trunk is origin's default branch (`git ls-remote --symref origin HEAD`);
+   `--main-branch <name>` names another, and a branch missing on origin stops the install.
    It never deletes and never replaces a file it did not write: it lists what it wrote, and `KEPT` for what it left alone.
    Your `.claude/settings.json` keeps every line it had (re-indented); the kit's hook lines are merged in.
    Check: `python3 -I .claude/hooks/kit/test_hooks.py` ends `0 failed`.
    **Ask the owner once:** "Every session ends by merging its work onto `<main branch>` and pushing it, never forced
    (a conflict stops it). Do you give that standing permission?" Yes: rerun with `--trunk-push yes`. No: sessions push
    only their own branch. Either way each session ends with `python3 -I .kit/end_session.py`.
-3. **Translate, then publish the board.** If the owner's language (`--talk`) is not English, translate first
-   every text the person SEES in `.kit/board.html` (headings, buttons, labels, placeholders, `aria-label`s, the status
-   and empty-state lines, the strings the script shows), with Edit, never touching ids, class names, field names,
-   `"owner"`/`"viewer"`, `Answer: `, or code. Then open the page once after publishing and fix any line left in English.
+3. **Translate, then publish the board** (with a board only). If the owner's language (`--talk`) is not English:
+   `python3 -I .kit/strings.py template .kit/strings.json`, fill in each English string's translation (about 140 short
+   lines, a few KB; never edit `.kit/board.html` itself), rerun step 2's command with no options: it applies the table
+   and prints how many strings are left. Text that goes to Claude (`Answer: `, the Like lines) stays English on purpose.
    **Publish** (the Artifact tool asks you to `Read` the whole 145 KB file first, and to load the skill `artifact-capabilities` before passing `capabilities`: both are expected): `Artifact` `publish`, `file_path` `.kit/board.html`, `icon` `board`, `capabilities`
    `{"assets": {}, "comments": {}, "db": {}, "user": {}, "downloads": true}`. Then rerun step 2's command with
    `--board-url <the url it returned>` (the url goes into the prompts and the rules). **Then stop this session's own
@@ -50,7 +81,8 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
    body: "Write here for anything that is not about one post."}` (no `session_id` yet: the orchestrator writes its own);
    `KIT-installed`: `{title: "The board kit is installed", column: "info", part: "KIT", priority: 2, session_id: <this
    session's id>, created_at, body: <what step 2 wrote and kept>}`.
-5. **Start the orchestrator, then the clerk**, each with `create_session` (`source_url` the repository's GitHub url,
+5. **Start the orchestrator, then the clerk** (only those installed: `.kit/orchestrator.md`, `.kit/clerk.md`; without a
+   clerk, each session reads its post's comments at its next turn, and step 6's test comment is read by this session), each with `create_session` (`source_url` the repository's GitHub url,
    `source_revision` the branch of step 2, the prompt pasted inline after reading it):
    - the orchestrator: `prompt` the whole text of `.kit/orchestrator.md`, `title` "orchestrator", `model` and `effort`
      from `.kit/config.json` `kit.roles.orchestrator` (default Opus, medium). It writes its id into
@@ -71,7 +103,8 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
    `list` `comments` (`query.limit` 1000) with `out_dir` `/tmp/kd` (empty; short paths cost fewer tokens);
    `python3 -I .kit/kit.py sync /tmp/kd --at <T0> --full --commit`; `python3 -I .kit/kit.py open` lists comments of the owner's still unanswered,
    `kit.py post KIT-installed` shows the post and its comments; `kit.py push` pushes that branch (`board-mirror`) to your repository: it is the only branch the kit creates.
-8. **Report** in the body of `KIT-installed` (`update`): each step's outcome, every step that needed the owner, anything that failed with
+8. **Report**, then end the setup: `python3 -I /tmp/board-kit/install.py . --setup-done` (until then the stop hooks
+   stay quiet, so they do not fight the install's own turns), commit, push. With a board, the report goes in the body of `KIT-installed` (`update`): each step's outcome, every step that needed the owner, anything that failed with
    its exact message. From now on every session posts there at turn 1 (the SessionStart hook says so).
 9. **Tell the person what now**, as your last chat message, in their language (`.kit/config.json` `language.talk`):
    (1) where the work can run: their runners (README § Runners) as step 0 or the import found them, each with its
@@ -80,9 +113,11 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
    https://github.com/anlonlt/board/blob/main/step0/export-chat.md , then paste back here the line it gives you";
    (3) where the board is: its link.
 
-## Import (your claude.ai chats into the kit)
+## Import (your project's history into the kit)
 
-Your chats hold your projects' state; the kit's memory and board start empty. Two steps:
+The kit's memory and board start empty. **A Claude Code project** already holds its state in its repository and its
+sessions' transcripts: `step0/import-code.md` (step 0's last part; no chat export; `--no-posts` without a board).
+**Chats** hold the state of a chat-only user's projects. Two steps:
 1. **In a new claude.ai chat**, paste the block of `step0/export-chat.md`. Claude goes through your chats, fills one
    private artifact "kit state" (per project: next step, where it stands, decisions, ids, what waits for you), shows it
    to you for corrections, and gives you one line for Claude Code.
@@ -138,12 +173,13 @@ the memory `.story/` and skills `story`, `board`; hooks: `kit_guard` (refuses `r
 `kit_stop` (no stop with unpushed work, once), `kit_pre_compact`, `kit_say_it_once` (message limits), `kit_board_typing`.
 Every limit and name is in `.kit/config.json`. The orchestrator's guide: `.kit/ORCHESTRATOR.md`.
 
-Tests of the kit itself: `python3 -I test_install.py`, `python3 -I kit/import/test_kit_import.py`, `python3 -I kit/board/test_kit_cards.py`, `python3 -I kit/test_end_session.py`, `python3 -I kit/hooks/test_hooks.py`,
+Tests of the kit itself: `python3 -I test_install.py`, `python3 -I test_install_bd11.py`, `python3 -I kit/board/test_strings.py`, `python3 -I kit/import/test_kit_import.py`, `python3 -I kit/board/test_kit_cards.py`, `python3 -I kit/test_end_session.py`, `python3 -I kit/hooks/test_hooks.py`,
 `python3 -I kit/clerk/test_clerk_pending.py`, `python3 -I scripts/test_kit.py` (+ `scripts/kit_mutations.py`).
 
-## Step 0: the survey
+## Step 0: the survey (Install step 0)
 
-Before anything is installed, the kit surveys how a person works with Claude today, then adapts to it.
+Before anything is installed, the kit surveys how a person works with Claude today, then recommends which parts to
+install, each with the goal it serves (`docs/KIT-GOALS.md` § 3).
 
 - **Chat-only users** (Claude on claude.ai): `step0/survey-chat.md`. Paste its block into a new chat; Claude reads
   your past chats itself, guides you through the GitHub set-up with direct links, and ends with a pull request to
