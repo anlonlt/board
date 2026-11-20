@@ -108,7 +108,8 @@ The hand-off (in the artifact):
 > contain them; remove them (the fork is public). Show the user the two files and wait for their yes before the
 > first commit. Commit, push with `-u`. A session cannot open a pull request into `anlonlt/board` (only its own
 > repository is attached; test 1 #11): give the user the compare link
-> `https://github.com/anlonlt/board/compare/main...<login>:board:<branch>` and say "click Create pull request". Reply
+> `https://github.com/anlonlt/board/compare/main...<login>:board:<branch>` (`<login>`: their GitHub username, from
+> `curl -s https://api.github.com/user` or the fork's url; never leave it empty: test 2 gave "main...:board:…", a dead link) and say "click Create pull request". Reply
 > with that link.
 > <Report 1>  <Report 2>
 

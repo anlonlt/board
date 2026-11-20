@@ -57,6 +57,10 @@ with tempfile.TemporaryDirectory() as d:
     check("the consultant's prompt installed, the orchestrator launches it at its level",
           os.path.exists(os.path.join(t, ".kit", "consultant.md")) and "claude-fable-5-2" in orch and "consultant.md" in orch)
     check("the kit's commit recorded", "_kit_commit" in json.load(open(os.path.join(t, ".kit", "manifest.json"))))
+    cw = open(os.path.join(t, ".kit", "chrome-worker.md"), encoding="utf-8").read()
+    check("the Chrome worker's prompt: pulls chrome cards, answers from chrome, in the owner's language",
+          '"part","==","chrome"' in cw and 'from: "chrome"' in cw and "French" in cw)
+    check("the orchestrator posts browser steps as Chrome cards", 'part: "chrome"' in orch)
     check("the kit-cards agent installed", os.path.exists(os.path.join(t, ".claude", "agents", "kit-cards.md")))
     check("the orchestrator calls the agent, never lists posts itself", "kit-cards" in orch and "list` `posts`" not in orch)
     check("a kit file edited by the project is kept", "my note" in open(os.path.join(t, ".kit", "BOARD.md")).read() and "KEPT" in out)

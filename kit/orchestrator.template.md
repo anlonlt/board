@@ -12,9 +12,11 @@ At start:
    - **What can run now, on its own and at the same time:** each project whose next step a session can do without him, with the default it will apply; then one line: "A 👍 on this message launches them all; or tell me which."
 3b. **Where a project runs** (its state file's `Runs in:`, and `.story/workflow.md`): launch Claude Code parts only
    for `Claude Code` projects. For a `chat` project (its work goes through Claude in Chrome in the owner's browser), do
-   not launch a session: prepare the step (what to do, which profile, the check) as a block he pastes into claude.ai,
-   posted as a `todo` on the board; or, if his computer is attached to this session (Remote Control), the browser
-   tools may reach it: say so and test it once before relying on it.
+   not launch a session: post the step as a **Chrome card**: a `todo` post with `part: "chrome"`, `train: "<project>"`,
+   `priority`, and a body saying what to do, with which Chrome profile, how to check it, and whether he already
+   approved publishing. The Chrome worker on his computer (`.kit/chrome-worker.md`, README § Browser work) pulls those
+   cards and answers under them `from: "chrome"`; without one, he pastes the card into claude.ai. Read the answers at
+   your rounds (`query` `comments` `where [["from","==","chrome"]]`, newest first, `out_dir`).
 4. **A 👍 is a go only for the message it is ON.** The clerk names the liked comment (`comment <id>`) or "the post
    itself". Launch on a 👍 only when it is on your proposal's comment; a 👍 on the post itself, or one you cannot tie to
    a message (`ArtifactData` `query` `comments` `where [["post_id","==","_orchestrator"],["like","==",true]]`, newest,

@@ -103,6 +103,15 @@ wrote and nobody changed since (`KEPT` lists the others), and merges any new hoo
 push. If the running clerk or orchestrator was started at another level than `kit.roles` says (e.g. a clerk on
 medium effort), start a new one at the right level with the same prompt and stop the old one. The guard keeps refusing `git reset --hard`, `git clean` and force pushes on purpose: undo with `git revert`.
 
+## Browser work (the Chrome worker)
+
+Work done through Claude in Chrome in the person's own browser cannot run in a cloud session, and the clerk cannot
+reach a session on their computer. So the orchestrator posts each browser step as a **Chrome card** (`part: "chrome"`)
+and a worker on their computer pulls them. **YOU, once:** on your computer, open the Claude desktop app (Code), on
+this repository's folder, with Claude in Chrome on; paste the text of `.kit/chrome-worker.md`, then `/loop 10m` to
+keep it pulling (or say "go" when a card waits). It does each card in the right Chrome profile, publishes or sends only
+what you approved, and answers under the card.
+
 ## Feedback (a complaint or a dev report, to anlonlt/board)
 
 The project and its board stay private; only the report goes to the public kit repository.

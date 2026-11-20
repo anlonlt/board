@@ -197,6 +197,7 @@ def main(argv=None):
     ins.put(".kit/clerk.md", render(rd("kit", "clerk", "clerk.template.md"), c))
     ins.put(".kit/orchestrator.md", render(rd("kit", "orchestrator.template.md"), c))
     ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
+    ins.put(".kit/chrome-worker.md", render(rd("kit", "chrome-worker.template.md"), c))
     ins.put(".kit/kit_cards.py", rd("kit", "board", "kit_cards.py"))
     ins.put(".kit/BOARD.md", render(rd("kit", "board", "BOARD.template.md"), c))
     ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
