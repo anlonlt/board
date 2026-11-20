@@ -96,5 +96,21 @@ with tempfile.TemporaryDirectory() as d:
     check("stop: a turn a session or timer opened must end with ·", run("kit_say_it_once.py", St(f3, "s3"), proj)[0] == 2)
     check("stop: · passes", run("kit_say_it_once.py", St(transcript("u4", "·", human=False), "s4"), proj)[0] == 0)
 
+    # Setup turns (issue #3 item 5): while .kit/config.json says kit.setup, the stop hooks and the reminders stay quiet;
+    # the guard still refuses.
+    cfgp = os.path.join(proj, ".kit", "config.json")
+    c = json.load(open(cfgp)); c["kit"]["setup"] = True; json.dump(c, open(cfgp, "w"))
+    check("setup: stop does not block on uncommitted work", run("kit_stop.py", {}, proj)[0] == 0)
+    f5 = transcript("u5", "x" * 900)
+    check("setup: a long closing message is not blocked", run("kit_say_it_once.py", St(f5, "s5"), proj)[0] == 0)
+    check("setup: no reminder after a post", run("kit_say_it_once.py", {"hook_event_name": "PostToolUse"}, proj)[1] == "")
+    check("setup: no reminder on the owner's prompt",
+          run("kit_say_it_once.py", {"hook_event_name": "UserPromptSubmit", "prompt": "hi"}, proj)[1] == "")
+    check("setup: the guard still refuses", run("kit_guard.py", B("git reset --hard"), proj)[0] == 2)
+    rc, out, _ = run("kit_session_start.py", {}, proj)
+    check("setup: the start says the install is in progress", "SETUP" in out)
+    c["kit"]["setup"] = False; json.dump(c, open(cfgp, "w"))
+    check("after --setup-done: stop blocks again", run("kit_stop.py", {}, proj)[0] == 2)
+
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

@@ -18,3 +18,8 @@ def config():
 
 def limit(name, default):
     return int(config().get("kit", {}).get("limits", {}).get(name, default))
+
+
+def in_setup():
+    """README steps 1-8 (issue #3 item 5): install.py sets kit.setup at the first install, --setup-done clears it."""
+    return bool(config().get("kit", {}).get("setup"))

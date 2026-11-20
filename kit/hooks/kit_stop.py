@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kit_config import project_dir  # noqa: E402
+from kit_config import in_setup, project_dir  # noqa: E402
 
 
 def git(*a):
@@ -23,8 +23,8 @@ def main():
         data = json.load(sys.stdin)
     except (ValueError, OSError):
         data = {}
-    if data.get("stop_hook_active"):
-        return 0
+    if data.get("stop_hook_active") or in_setup():
+        return 0  # the second stop, or a setup turn waiting on the owner or an agent (README step 8 ends it)
     try:
         rc, _ = git("rev-parse", "--is-inside-work-tree")
         if rc:

@@ -30,6 +30,9 @@ def main():
     c, root = config(), project_dir()
     k = c.get("kit", {})
     out = []
+    if k.get("setup"):
+        out.append("SETUP: the kit's install is in progress (README § Install); the stop hooks are quiet until step 8 runs "
+                   "`install.py . --setup-done`.")
     url = c.get("board_url")
     if url:
         out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s), made at turn 1 and "

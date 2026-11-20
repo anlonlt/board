@@ -18,7 +18,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kit_config import config, limit  # noqa: E402
+from kit_config import config, in_setup, limit  # noqa: E402
 
 FORWARD = "Board comment from the owner"
 
@@ -105,6 +105,8 @@ def main():
     except (ValueError, OSError):
         return 0
     ev = data.get("hook_event_name", "")
+    if in_setup() and ev in ("UserPromptSubmit", "Stop", "PostToolUse"):
+        return 0  # the install's own turns (README steps 1-8): no reminders, no blocked stop
     if ev == "PreToolUse":
         ti = data.get("tool_input") or {}
         msg = ti.get("message") or ""
