@@ -32,7 +32,11 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
    It never deletes and never replaces a file it did not write: it lists what it wrote, and `KEPT` for what it left alone.
    Your `.claude/settings.json` keeps every line it had (re-indented); the kit's hook lines are merged in.
    Check: `python3 -I .claude/hooks/kit/test_hooks.py` ends `0 failed`.
-3. **Publish the board** (the Artifact tool asks you to `Read` the whole 145 KB file first, and to load the skill `artifact-capabilities` before passing `capabilities`: both are expected): `Artifact` `publish`, `file_path` `.kit/board.html`, `icon` `board`, `capabilities`
+3. **Translate, then publish the board.** If the owner's language (`--talk`) is not English, translate first
+   every text the person SEES in `.kit/board.html` (headings, buttons, labels, placeholders, `aria-label`s, the status
+   and empty-state lines, the strings the script shows), with Edit, never touching ids, class names, field names,
+   `"owner"`/`"viewer"`, `Answer: `, or code. Then open the page once after publishing and fix any line left in English.
+   **Publish** (the Artifact tool asks you to `Read` the whole 145 KB file first, and to load the skill `artifact-capabilities` before passing `capabilities`: both are expected): `Artifact` `publish`, `file_path` `.kit/board.html`, `icon` `board`, `capabilities`
    `{"assets": {}, "comments": {}, "db": {}, "user": {}, "downloads": true}`. Then rerun step 2's command with
    `--board-url <the url it returned>` (the url goes into the clerk's prompt and the rules), commit
    `.kit .claude .story .gitignore` and push.
@@ -78,8 +82,8 @@ Your chats hold your projects' state; the kit's memory and board start empty. Tw
 
 For Claude, in the project's session: `git -C /tmp/board-kit pull` (or step 1's clone), then step 2's command again
 with no options (`python3 -I /tmp/board-kit/install.py .`): it keeps `.kit/config.json`, updates only the files the kit
-wrote and nobody changed since (`KEPT` lists the others), and merges any new hook line. If `.kit/board.html` changed,
-republish it to the board's url (`Artifact` `publish` with `url`, no `capabilities`: the page keeps its own). Commit,
+wrote and nobody changed since (`KEPT` lists the others), and merges any new hook line. If `.kit/board.html` changed (a translated page shows as
+`KEPT`: redo the translation on the new `.kit/board.html` from `/tmp/board-kit`, the same way as step 3), republish it to the board's url (`Artifact` `publish` with `url`, no `capabilities`: the page keeps its own). Commit,
 push. The guard keeps refusing `git reset --hard`, `git clean` and force pushes on purpose: undo with `git revert`.
 
 ## Feedback (a complaint or a dev report, to anlonlt/board)

@@ -205,6 +205,8 @@ def main(argv=None):
     print("\n".join(ins.log + ins.kept) if ins.log + ins.kept else "", end="\n" if ins.log + ins.kept else "")
     if not ins.log:
         print("nothing to change")
+    if c["language"]["talk"].lower() not in ("en", "english"):
+        print("translate: .kit/board.html is in English; translate what the person sees into %s before publishing (README step 3)" % c["language"]["talk"])
     print("next: %s" % ("README step 3: publish .kit/board.html" if not c.get("board_url") else "README step 4: the first posts, then step 5: the clerk"))
     return 0
 
