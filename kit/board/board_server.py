@@ -14,6 +14,7 @@ import mimetypes
 import os
 import queue
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -819,6 +820,56 @@ def make_handler(root_dir, store):
     return Handler
 
 
+def seed_from_mirror(root_dir, store, branch=None, force=False):
+    """Import board/posts/*.json and board/comments/*.json from git mirror branch into SQLite.
+
+    Reads directly from git objects (origin/<branch>, falling back to <branch>) without modifying
+    the working tree. Existing docs in SQLite are preserved unless force=True.
+    """
+    if not branch:
+        cfg_path = os.path.join(root_dir, ".kit", "config.json")
+        try:
+            branch = json.load(open(cfg_path, encoding="utf-8")).get("mirror", {}).get("branch") or "board-mirror"
+        except (OSError, ValueError):
+            branch = "board-mirror"
+
+    def git(*a):
+        return subprocess.run(["git", "-C", root_dir] + list(a), capture_output=True, text=True, timeout=60)
+
+    git("fetch", "-q", "origin", branch)
+    ref = None
+    for cand in ("origin/" + branch, branch):
+        if git("rev-parse", "--verify", "--quiet", cand).returncode == 0:
+            ref = cand
+            break
+    if not ref:
+        return {"ref": None, "imported": 0, "skipped": 0}
+    r = git("ls-tree", "-r", "--name-only", ref, "board/posts", "board/comments")
+    if r.returncode != 0:
+        return {"ref": ref, "imported": 0, "skipped": 0}
+    imported = skipped = 0
+    for path in r.stdout.splitlines():
+        if not path.endswith(".json"):
+            continue
+        parts = path.split("/")
+        if len(parts) != 3 or parts[1] not in ("posts", "comments"):
+            continue
+        coll, doc_id = parts[1], parts[2][:-5]
+        if not force and store.get_doc(coll, doc_id).get("exists"):
+            skipped += 1
+            continue
+        raw = git("show", "%s:%s" % (ref, path))
+        if raw.returncode != 0:
+            continue
+        try:
+            data = json.loads(raw.stdout)
+        except ValueError:
+            continue
+        store.set_doc(coll, doc_id, data)
+        imported += 1
+    return {"ref": ref, "imported": imported, "skipped": skipped}
+
+
 def start_server(root_dir, host="127.0.0.1", port=8765):
     data_dir = os.path.join(root_dir, ".kit", "board_data")
     store = BoardStore(data_dir)
@@ -832,9 +883,15 @@ def main(argv=None):
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--root", default=None, help="Project root (default: parent of .kit/)")
+    ap.add_argument("--seed-from-mirror", action="store_true", help="Import posts/comments from git board-mirror on startup")
+    ap.add_argument("--mirror-branch", default=None, help="Override mirror branch name (default from .kit/config.json)")
+    ap.add_argument("--force-seed", action="store_true", help="Overwrite existing local SQLite docs when seeding")
     a = ap.parse_args(argv)
     root = os.path.abspath(a.root) if a.root else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     srv, store = start_server(root, a.host, a.port)
+    if a.seed_from_mirror:
+        info = seed_from_mirror(root, store, branch=a.mirror_branch, force=a.force_seed)
+        print("seeded from %s: %d imported, %d skipped" % (info["ref"] or "(none)", info["imported"], info["skipped"]), flush=True)
     actual_port = srv.server_address[1]
     print("board server listening on http://%s:%d (root: %s)" % (a.host, actual_port, root), flush=True)
     try:

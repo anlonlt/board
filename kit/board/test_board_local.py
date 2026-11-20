@@ -129,6 +129,25 @@ with tempfile.TemporaryDirectory() as tmp:
 
         rc, out, _ = cli(url, "comments", "read", sent["thread_id"])
         check("comments read returns replies", rc == 0 and len(json.loads(out).get("replies", [])) == 1)
+
+        # 7. seed_from_mirror (failover from Claude Code Web's board-mirror branch)
+        mrepo = os.path.join(tmp, "mrepo")
+        subprocess.run(["git", "init", "-q", "-b", "board-mirror", mrepo], check=True)
+        os.makedirs(os.path.join(mrepo, "board", "posts"), exist_ok=True)
+        os.makedirs(os.path.join(mrepo, "board", "comments"), exist_ok=True)
+        json.dump({"title": "From Claude", "column": "todo", "created_at": "2026-11-20T01:00:00Z"},
+                  open(os.path.join(mrepo, "board", "posts", "M-1.json"), "w"))
+        json.dump({"post_id": "M-1", "from": "owner", "text": "seeded comment", "created_at": "2026-11-20T01:05:00Z"},
+                  open(os.path.join(mrepo, "board", "comments", "mc-1.json"), "w"))
+        subprocess.run(["git", "-C", mrepo, "-c", "user.name=t", "-c", "user.email=t@t", "add", "."], check=True)
+        subprocess.run(["git", "-C", mrepo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "seed"], check=True)
+        info1 = board_server.seed_from_mirror(mrepo, store, branch="board-mirror")
+        info2 = board_server.seed_from_mirror(mrepo, store, branch="board-mirror")
+        check("seed_from_mirror imports posts and comments from git",
+              info1["imported"] == 2 and store.get_doc("posts", "M-1")["data"].get("title") == "From Claude"
+              and store.get_doc("comments", "mc-1")["data"].get("text") == "seeded comment")
+        check("seed_from_mirror skips existing docs on rerun without --force-seed",
+              info2["imported"] == 0 and info2["skipped"] == 2)
     finally:
         srv.shutdown()
         srv.server_close()
