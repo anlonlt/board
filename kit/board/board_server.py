@@ -908,6 +908,28 @@ def make_handler(root_dir, store, token=None, notify_url=None):
             ok, set_cookie = self._check_auth(parsed)
             if ok:
                 return set_cookie
+            accept = (self.headers.get("Accept") or "").lower()
+            if parsed.path in ("/", "/index.html") and "text/html" in accept:
+                # Auto-restore from localStorage if PWA/browser dropped the cookie; else clean unlock form
+                body = (
+                    "<!doctype html><html><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+                    "<meta name=theme-color content=#0b111e><title>Unlock Board</title></head>"
+                    "<body style='background:#0b111e;color:#e6ebf2;font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:16px'>"
+                    "<script>try{var t=localStorage.getItem('kit_board_token');if(t&&!location.search.includes('token=')){location.replace('/?token='+encodeURIComponent(t));}}catch(e){}</script>"
+                    "<form style='background:#141d2e;border:1px solid #233049;border-radius:16px;padding:24px;max-width:360px;width:100%' onsubmit=\"event.preventDefault();var v=document.getElementById('t').value.trim();if(v){try{localStorage.setItem('kit_board_token',v);}catch(e){}location.replace('/?token='+encodeURIComponent(v));}\">"
+                    "<h2 style='margin:0 0 8px;font-size:1.2rem'>Unlock board</h2>"
+                    "<p style='margin:0 0 14px;color:#9aa6b8;font-size:.9rem'>Paste your board token once — it will be saved permanently on this device.</p>"
+                    "<input id=t type=password placeholder='Board token' required style='width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid #233049;background:#0b111e;color:#e6ebf2;font-size:1rem;margin-bottom:12px'>"
+                    "<button type=submit style='width:100%;padding:10px;border-radius:999px;border:0;background:#e8894a;color:#1a1206;font-weight:700;font-size:.95rem;cursor:pointer'>Unlock</button>"
+                    "</form></body></html>"
+                ).encode("utf-8")
+                self.send_response(401)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return None
             self._send_json(401, {"error": "unauthorized", "code": "unauthorized"})
             return None
 
@@ -991,6 +1013,23 @@ def make_handler(root_dir, store, token=None, notify_url=None):
                 cookie = "kit_token=%s; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax" % token
                 if proto == "https":
                     cookie += "; Secure"
+                accept = (self.headers.get("Accept") or "").lower()
+                if "text/html" in accept:
+                    # Browser / PWA: persist token in localStorage AND 1-year cookie, then strip from URL
+                    body = (
+                        "<!doctype html><html><head><meta charset=utf-8><meta name=theme-color content=#0b111e></head>"
+                        "<body style='background:#0b111e;color:#e6ebf2;font-family:system-ui;padding:24px'>"
+                        "<script>try{localStorage.setItem('kit_board_token',%s);}catch(e){}location.replace('/');</script>"
+                        "</body></html>" % json.dumps(token)
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Set-Cookie", cookie)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 self.send_response(302)
                 self.send_header("Set-Cookie", cookie)
                 self.send_header("Location", "/")
