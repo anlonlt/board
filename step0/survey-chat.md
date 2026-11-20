@@ -5,7 +5,7 @@ only inside Claude's chat tests step 0. **Seamless:** the Claude that runs it fi
 the user's previous chats itself, answers the survey's questions from what it finds, then **works harder on every
 unknown** (a second, adversarial pass, as the consultant's review CR-WF1 did on WF1), tests whether an agent can open
 a separate review conversation, guides the user through every set-up step with direct links, and writes a full dev
-report so the step can be improved. Its last part ends in a **pull request** to this repository, opened by Claude Code: the PR proves the GitHub set-up
+report so the step can be improved. Its last part ends in a **pull request** into this repository (public: from the user's fork), opened by Claude Code: the PR proves the GitHub set-up
 works (connected account, app installed, push allowed) and carries both reports. The Claude Code version of the
 survey (it runs scripts) is `docs/WORKFLOW-KIT.md` § 0 in `anlonlt/harmonize`.
 
@@ -80,11 +80,15 @@ for the user to paste as the first message of a new Claude Code session at https
 repository selected. Tell them: "Open claude.ai/code, pick the repository, paste this, send; then come back and tell
 me the PR link or the error." The block, filled in:
 
-> You are finishing step 0 of a workflow kit. Create a branch `step0/survey-<YYYY-MM-DD>`. Write `survey/<YYYY-MM-DD>/report.md`
+> You are finishing step 0 of a workflow kit. The reports go to the kit's public repository `anlonlt/board`: work in
+> the user's fork of it (if the selected repository is not a fork of `anlonlt/board`, say so and how to fork it:
+> https://github.com/anlonlt/board/fork, then start a session on the fork). Create a branch `step0/survey-<YYYY-MM-DD>`. Write `survey/<YYYY-MM-DD>/report.md`
 > (Report 1, below) and `survey/<YYYY-MM-DD>/dev-report.md` (Report 2, below), then add to the dev report a section
 > "Set-up check (Claude Code)": the repository you see, the branch, whether the commit, the push and the pull request
-> each worked on the first try, and any error verbatim. Commit, push, and open a pull request titled
+> each worked on the first try, and any error verbatim. Commit, push to the fork, and open a pull request INTO
+> `anlonlt/board` (base main, head <user>:<branch>) titled
 > "Step 0 survey <YYYY-MM-DD>" whose body is the dev report in full (with that section) and a link to the report.
+> If the pull request into `anlonlt/board` is refused, open it inside the fork instead and say why in the dev report.
 > If any step fails, do not work around it: write the failure in the dev report, and if the pull request cannot be
 > opened, print the dev report here so the user can copy it. Reply with the PR link.
 > <Report 1>  <Report 2>
