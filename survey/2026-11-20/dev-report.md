@@ -5,11 +5,43 @@ The survey's own reports are in `survey/2026-11-19/`. This file lists, in order,
 Code session that finished step 0. Each entry gives what happened, the exact error where there was one, what it cost
 the user, and the fix for the kit.
 
-**Verdict: not seamless.** Getting from "can you reach my GitHub?" to a pushed branch took **7 user messages**
-("peux-tu accéder", "j'ai pourtant ajouté un token", "je viens de le refaire", the repository URL, "et là" twice,
-"oui"). Finishing Part 5 took 6 more (delete the old clone, a stop hook, "search the documents yourself", the
-artifact link, a second stop hook, this review). That makes **13 user messages**, and the step's final proof, a pull
-request into `anlonlt/board`, **still could not be opened by Claude**: the user has to open it by hand.
+**Verdict: not seamless.** Part 5 took **four Claude Code sessions** in one evening (about 01:21 to 02:20 UTC),
+plus the chat. The first three sessions failed (12 user messages, no pull request). In this fourth session, getting
+from "can you reach my GitHub?" to a pushed branch took **7 user messages** ("peux-tu accéder", "j'ai pourtant
+ajouté un token", "je viens de le refaire", the repository URL, "et là" twice, "oui"). Finishing Part 5 took 6 more
+(delete the old clone, a stop hook, "search the documents yourself", the artifact link, a second stop hook, this
+review). That makes **about 25 user messages in all**. The step's final proof, a pull request into `anlonlt/board`,
+**still could not be opened by Claude**: the user has to open it by hand.
+
+## The three earlier sessions (same evening)
+
+Read from their transcripts. Every one ended unresolved. All three gave the same advice (connect-github, install the
+GitHub App, start a new session), and none mentioned the organization admin page that finally worked.
+
+| Session | User messages | What happened | How it ended |
+|---|---|---|---|
+| 1, "Workflow kit step 0 survey" (01:21) | 3 | The user pasted the **filled** block (instructions + both reports, ~15,000 characters). No repository attached, `github_link_required`, `gh`: "The token in GH_TOKEN is invalid". The user found a plugin connector page alone ("il a fallu que j'aille … ici. ajoute au rapport"). That fixed the connector's read access only. Forking and creating a branch both failed: `403 Resource not accessible by integration`. Claude said the plugin link "only gives read access" and that "access is fixed when a session opens" (both guesses). It printed the dev report as a huge chat block and told the user to "open" a container path a web user cannot reach. | Told to start a new session on the fork and paste the instruction and dev report again |
+| 2, "Problème de connexion GitHub" (01:31) | 5 (+1 interrupted) | "pourquoi tu n'arrives pas à te connecter à GitHub. j'ai tout fait". The connector answered, but repository search returned 0 and Claude Code was not linked. Claude asked for the repository name instead of trying `<account>/board`. **The user pasted a personal access token in clear text into the chat** ("l'étape qui manquait était l'API …"). Claude told him to revoke it, then advised storing it as a network secret or a `GH_TOKEN` environment variable. That advice was unverified and wrong: the variable is ignored (#3 below). The user asked Claude to prompt him for the token ("ask me for github specifically so that I can just paste it"); Claude has no secure field for that. | Told to start a new session. Later reused for the artifact, and the user interrupted it |
+| 3, "Accès GitHub" (01:44) | 4 | Claude read sessions 1 and 2 by itself (the user asked: "regarde mes autres discussions"). Attaching the fork was refused by the auto-mode check, then by `github_link_required`. Branch creation: same 403. After the user's re-link attempt, the **GitHub connector logged out** ("needs you to sign in again"). Claude **reversed its own advice**: "a new session would not fix anything", against what sessions 1, 2 and its own turn 3 had said. It proposed `/web-setup` in the command-line Claude Code, which this user does not have. It was the only session that handed the reports over as files. | Unresolved; told to redo the authorization link or use the command line |
+
+**Correction to the 2026-11-19 dev report.** Its "Set-up check" says the unfilled template was most likely pasted.
+The transcripts show otherwise: session 1 received the **filled** block with both reports. The reports were lost
+because session 1 could not push, and the next sessions started empty. Each new session needed the user to paste
+again, or to get Claude to dig them out.
+
+## Chat side: what should have happened from the start
+
+- **No artifact at the start.** The chat Claude gave the reports as a ~15,000-character block to paste (and a text
+  file). It did not publish them as a claude.ai artifact until after four Claude Code sessions had failed. Claude
+  Code can read the user's artifacts. One artifact, published at the end of Part 4, would have survived every
+  failed session and removed every re-paste.
+- **The chat's connector tried to push.** It was refused (`403 Resource not accessible by integration`), the same
+  error Claude Code sessions 1 and 3 hit. Nothing in the kit says the chat's GitHub connector cannot write.
+- **The same advice four times.** The chat and all four Claude Code sessions sent the user to connect-github and the
+  GitHub App. That was not enough. Claude never checked the setting that mattered (the organization's Claude Code
+  admin page). The user found it alone.
+- **No safe place for a token.** A frustrated user ended up pasting a personal token into a chat. The kit must say
+  early, in one line, that no token is needed and where one would go if it were.
 
 ## Blocker log
 
