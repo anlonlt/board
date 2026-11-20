@@ -1,0 +1,9 @@
+{
+ "body": "**Board:** https://claude.ai/artifact/Etco5hYbtiiSHtV53saYB7\n\n**Step 2 wrote:** `.kit/` (config.json, kit.py, clerk_pending.py, board.html, clerk.md, BOARD.md, ORCHESTRATOR.md), `.claude/hooks/kit/` (kit_config, kit_guard, kit_session_start, kit_stop, kit_pre_compact, kit_say_it_once, kit_board_typing, test_hooks), `.claude/skills/story` and `board`, `.story/` (state, issues, lessons, awaits.md); `.gitignore` + `.story/before-compaction.md`.\n**Kept:** your `.claude/settings.json` lines (the `tide.py` permission and the PostToolUse py_compile hook); 8 kit hook lines merged in. No file was reported KEPT.\n**Check:** `test_hooks.py` ends `0 failed`.\n\nNot checked yet: the clerk's relay of a comment (needs your first comment, step 6).",
+ "column": "info",
+ "created_at": "2026-11-20T02:50:36Z",
+ "part": "KIT",
+ "session_id": "session_01AE1HGkiSyyW8Hh6fYZEvZ7",
+ "status": "in progress",
+ "title": "The board kit is installed"
+}
