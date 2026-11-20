@@ -91,5 +91,21 @@ with tempfile.TemporaryDirectory() as d:
     r = subprocess.run([sys.executable, "-I", os.path.join(t, ".kit", "clerk_pending.py"), "--dir", os.path.join(d, "clerk")], capture_output=True, text=True)
     check("the installed clerk_pending.py runs", r.returncode == 0)
 
+    # Dual runtime (both .agents/ and .claude/) + hybrid mode (Claude Artifact + git_watch.py)
+    t_hyb = os.path.join(d, "hyb")
+    os.makedirs(t_hyb)
+    rc, out = inst(t_hyb, "--project", "Harmonize", "--survey", rep, "--runtime", "both", "--mode", "hybrid",
+                   "--board-url", "https://claude.ai/artifact/H1")
+    check("dual runtime + hybrid mode installs both .agents/ and .claude/ plus git_watch.py",
+          rc == 0
+          and os.path.isfile(os.path.join(t_hyb, ".agents", "hooks.json"))
+          and os.path.isfile(os.path.join(t_hyb, ".claude", "settings.json"))
+          and os.path.isfile(os.path.join(t_hyb, ".kit", "git_watch.py"))
+          and json.load(open(os.path.join(t_hyb, ".kit", "config.json")))["kit"]["mode"] == "hybrid")
+    r_ss = subprocess.run([sys.executable, "-I", os.path.join(t_hyb, ".agents", "hooks", "kit", "kit_session_start.py")],
+                          input=json.dumps({"hookEventName": "SessionStart", "cwd": t_hyb}), capture_output=True, text=True)
+    check("hybrid SessionStart automatically briefs new agy discussions on git_watch.py and skills",
+          r_ss.returncode == 0 and "MODE (hybrid)" in r_ss.stdout and "git_watch.py" in r_ss.stdout)
+
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

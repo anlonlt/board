@@ -39,9 +39,15 @@ def main():
         out.append("SETUP: the kit's install is in progress (README § Install); the stop hooks are quiet until step 8 runs "
                    "`install.py . --setup-done`.")
     url = c.get("board_url")
-    if url:
-        out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s), made at turn 1 and "
-                   "updated in full. Every chat turn then ends with a single \"·\"; to the orchestrator: \"Done. Check post <id>.\"" % url)
+    mode = k.get("mode", "local")
+    if mode == "hybrid":
+        out.append("MODE (hybrid): Claude Code Web owns the claude.ai Artifact board (%s); git (`board-mirror` + `.story/`) "
+                   "is the bridge. Listen for new cards/comments from git with `python3 -I .kit/git_watch.py --runner computer` "
+                   "(no local board server or Tailscale needed). Skills: `story`, `board`." % (url or "see .kit/config.json"))
+    elif url:
+        out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s, CLI `.kit/board_cli.py`), "
+                   "made at turn 1 and updated in full. Every chat turn then ends with a single \"·\"; to the orchestrator: "
+                   "\"Done. Check post <id>.\" Skills: `story`, `board`." % url)
     talk = c.get("language", {}).get("talk")
     if talk:
         out.append("LANGUAGE: talk to the owner in %s." % talk)

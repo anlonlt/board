@@ -31,9 +31,22 @@ HOOKS = ["kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py",
          "kit_say_it_once.py", "kit_board_typing.py", "test_hooks.py"]
 # agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
 CMD = "python3 -I hooks/kit/%s"
+CLAUDE_CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.claude/hooks/kit/%s"'
+CLAUDE_SETTINGS = [
+    ("SessionStart", None, "kit_session_start.py"),
+    ("PreToolUse", "Bash", "kit_guard.py"),
+    ("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage", "kit_say_it_once.py"),
+    ("PostToolUse", "ArtifactData|mcp__claude-code-remote__send_message", "kit_say_it_once.py"),
+    ("UserPromptSubmit", None, "kit_say_it_once.py"),
+    ("UserPromptSubmit", None, "kit_board_typing.py"),
+    ("Stop", None, "kit_stop.py"),
+    ("Stop", None, "kit_say_it_once.py"),
+    ("PreCompact", None, "kit_pre_compact.py"),
+]
 
 DEFAULT_KIT = {
-    "runtime": "agy-local",
+    "runtime": "agy",
+    "mode": "local",
     "talk_language": "English",
     "limits": {"message_chars": 600, "done_message_chars": 240, "chat_answer_chars": 600},
     "guard": {"never_add": ["*.keystore", "*.jks", "*.pem", ".env", "keystore.properties"], "allow_add": []},
@@ -135,7 +148,11 @@ def load_config(t, a):
     if not parts["board"]:
         parts["clerk"] = parts["orchestrator"] = False
     k["parts"] = parts
-    if parts["board"] and not c.get("board_url"):
+    if a.runtime:
+        k["runtime"] = a.runtime
+    if a.mode:
+        k["mode"] = a.mode
+    if parts["board"] and not c.get("board_url") and k.get("mode", "local") == "local":
         c["board_url"] = "http://127.0.0.1:%d" % (a.board_port or 8765)
     if a.survey:
         k["survey"] = a.survey
@@ -250,13 +267,41 @@ def merge_hooks(t, dry, log, board=True):
             fh.write("\n")
 
 
+def merge_claude_settings(t, dry, log, board=True):
+    p = os.path.join(t, ".claude", "settings.json")
+    s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    hooks = s.setdefault("hooks", {})
+    added = 0
+    for ev, matcher, f in CLAUDE_SETTINGS:
+        if not board and f not in MEMORY_HOOKS:
+            continue
+        cmd = CLAUDE_CMD % f
+        groups = hooks.setdefault(ev, [])
+        if any(h.get("command") == cmd for g in groups for h in g.get("hooks", []) if (g.get("matcher") or None) == matcher):
+            continue
+        g = {"hooks": [{"type": "command", "command": cmd}]}
+        if matcher:
+            g = {"matcher": matcher, **g}
+        groups.append(g)
+        added += 1
+    if added:
+        log.append(".claude/settings.json: %d kit hook lines merged in (existing lines kept)" % added)
+        if not dry:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as fh:
+                json.dump(s, fh, indent=2, ensure_ascii=False)
+                fh.write("\n")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("target")
     ap.add_argument("--project")
     ap.add_argument("--talk", help="the language to talk to the owner in (default English)")
-    ap.add_argument("--board-url", help="override board URL (default http://127.0.0.1:<port>)")
+    ap.add_argument("--board-url", help="override board URL (default http://127.0.0.1:<port> in local mode)")
     ap.add_argument("--board-port", type=int, help="local board server port (default 8765)")
+    ap.add_argument("--runtime", choices=["agy", "claude", "both"], help="which harness configs to install (default agy)")
+    ap.add_argument("--mode", choices=["local", "hybrid"], help="local: localhost board_server; hybrid: Claude Artifact + git_watch.py")
     ap.add_argument("--main-branch")
     ap.add_argument("--trunk-push", choices=["yes", "no"], help="the owner's standing permission to push the trunk")
     ap.add_argument("--survey", help="step 0's report (survey/<date>/report.md): required at the first install")
@@ -292,12 +337,22 @@ def main(argv=None):
             os.makedirs(os.path.dirname(p), exist_ok=True)
             open(p, "w", encoding="utf-8").write(cfg)
     rd = lambda *x: open(os.path.join(KIT, *x), encoding="utf-8").read()
+    rt = c["kit"].get("runtime", "agy")
+    want_agy = rt in ("agy", "both")
+    want_claude = rt in ("claude", "both")
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
+    ins.put(".kit/git_watch.py", rd("kit", "git_watch.py"))
     for h in HOOKS:
         if parts["board"] or h in MEMORY_HOOKS:
-            ins.put(".agents/hooks/kit/" + h, rd("kit", "hooks", h))
-    ins.put(".agents/skills/story/SKILL.md", rd("kit", "skills", "story", "SKILL.md"))
+            if want_agy:
+                ins.put(".agents/hooks/kit/" + h, rd("kit", "hooks", h))
+            if want_claude:
+                ins.put(".claude/hooks/kit/" + h, rd("kit", "hooks", h))
+    if want_agy:
+        ins.put(".agents/skills/story/SKILL.md", rd("kit", "skills", "story", "SKILL.md"))
+    if want_claude:
+        ins.put(".claude/skills/story/SKILL.md", rd("kit", "skills", "story", "SKILL.md"))
     if parts["board"]:
         ins.put(".kit/kit.py", rd("scripts", "kit.py"))
         ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))
@@ -314,7 +369,11 @@ def main(argv=None):
         ins.put(".kit/kit_cards.py", rd("kit", "board", "kit_cards.py"))
         ins.put(".kit/BOARD.md", render(rd("kit", "board", "BOARD.template.md"), c))
         ins.put(".kit/agents/kit-cards.md", rd("kit", "agents", "kit-cards.md"))
-        ins.put(".agents/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
+        if want_agy:
+            ins.put(".agents/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
+        if want_claude:
+            ins.put(".claude/agents/kit-cards.md", rd("kit", "agents", "kit-cards.md"))
+            ins.put(".claude/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
     if parts["clerk"]:
         ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
         ins.put(".kit/clerk.md", render(rd("kit", "clerk", "clerk.template.md"), c))
@@ -336,7 +395,10 @@ def main(argv=None):
         if not a.dry_run:
             prefix = "" if cur.endswith("\n") or not cur else "\n"
             open(gi, "a", encoding="utf-8").write(prefix + "\n".join(gi_add) + "\n")
-    merge_hooks(t, a.dry_run, ins.log, parts["board"])
+    if want_agy:
+        merge_hooks(t, a.dry_run, ins.log, parts["board"])
+    if want_claude:
+        merge_claude_settings(t, a.dry_run, ins.log, parts["board"])
     import subprocess
     r = subprocess.run(["git", "-C", KIT, "log", "-1", "--format=%h %cI"], capture_output=True, text=True)
     kit_at = r.stdout.strip() or "unknown (not a git clone)"
