@@ -227,6 +227,7 @@ def render(text, c):
     orch_limit_k = str((k.get("orchestrator") or {}).get("context_limit_k", DEFAULT_KIT["orchestrator"]["context_limit_k"]))
     clerk_limit_k = str((k.get("clerk") or {}).get("context_limit_k", DEFAULT_KIT["clerk"]["context_limit_k"]))
     vals = {"PROJECT": c["project"], "SLUG": slug(c["project"]),
+            "RUNTIME": k.get("runtime") or "agy",
             "CMD": k.get("cmd") or "./.kit/up",
             "BOARD_URL": c.get("board_url") or "http://127.0.0.1:8765",
             "MEMORY_DIR": k.get("memory_dir") or ".board/memory",
@@ -366,6 +367,8 @@ def main(argv=None):
     ap.add_argument("--memory-dir", help="memory directory relative to repo root (default: .story if present, else .board/memory)")
     ap.add_argument("--notify-url", help="optional phone push webhook URL (e.g. https://ntfy.sh/<topic>)")
     ap.add_argument("--bootstrap", action="store_true", help="1-command bootstrap: pre-seed _orchestrator & KIT-installed into local SQLite DB")
+    ap.add_argument("--no-bootstrap", action="store_true", help="skip default SQLite bootstrap on arena/generic installs")
+    ap.add_argument("--demo", action="store_true", help="seed sample memory, 4-lane demo posts, _dashboard, and _trains for instant evaluation")
     ap.add_argument("--main-branch")
     ap.add_argument("--trunk-push", choices=["yes", "no"], help="the owner's standing permission to push the trunk")
     ap.add_argument("--survey", help="step 0's report (survey/<date>/report.md): required at the first install")
@@ -478,7 +481,19 @@ def main(argv=None):
         merge_hooks(t, a.dry_run, ins.log, parts["board"])
         if c["kit"].get("cmd"):
             install_cmd(t, c["kit"]["cmd"], a.dry_run, ins.log)
-    if a.bootstrap and parts["board"] and not a.dry_run:
+    if rt in ("arena", "generic") and parts["board"]:
+        ins.put("AGENTS.md", render(rd("kit", "AGENTS.template.md"), c))
+    if a.demo and not a.dry_run:
+        demo_state = os.path.join(t, mdir, "state", "demo.md")
+        if not os.path.exists(demo_state):
+            ins.put("%s/state/demo.md" % mdir, "Next: Review the sample board cards and reply with 👍\nPriority: 1\n\n# Demo Workstream\n\n## Steps\n- [x] Install board kit\n- [ ] Review sample cards\n")
+        awaits_p = os.path.join(t, mdir, "awaits.md")
+        cur_aw = open(awaits_p, encoding="utf-8").read() if os.path.exists(awaits_p) else "# What awaits the owner\n\n"
+        if "Confirm demo setup" not in cur_aw:
+            with open(awaits_p, "w", encoding="utf-8") as fh:
+                fh.write(cur_aw.rstrip() + "\n- [demo] Confirm demo setup works in your browser\n")
+    should_bootstrap = (a.bootstrap or a.demo or rt in ("arena", "generic")) and not a.no_bootstrap
+    if should_bootstrap and parts["board"] and not claude_only and not a.dry_run:
         from datetime import datetime, timezone
         import board_server as _bs  # already on sys.path via kit/board
         store = _bs.BoardStore(os.path.join(t, ".kit", "board_data"))
@@ -494,8 +509,28 @@ def main(argv=None):
                 store.set_doc("posts", "KIT-installed", {
                     "title": "The board kit is installed", "column": "info", "part": "KIT",
                     "priority": 2, "created_at": now,
-                    "body": "Bootstrapped by `install.py --bootstrap`.\n\nRun `%s` from any terminal to start the board, orchestrator, and clerk." % (c["kit"].get("cmd") or "./.kit/up"),
+                    "body": "Bootstrapped by `install.py`.\n\nRun `%s` (or `python3 -I .kit/board_server.py --preview --embed-mode` in sandbox previews) to start the board." % (c["kit"].get("cmd") or "./.kit/up"),
                 })
+            if a.demo:
+                demo_posts = [
+                    ("demo-todo", {"title": "Try replying or tapping 👍", "column": "todo", "part": "demo", "train": "demo", "priority": 1, "minutes": 2, "created_at": now, "body": "Leave a comment below or tap **👍 Like** to test the round-trip."}),
+                    ("demo-question", {"title": "Pick your preferred workflow mode", "column": "question", "part": "demo", "train": "demo", "priority": 2, "created_at": now, "options": ["Live 30-min listener", "Manual '.' check"], "default_option": "Live 30-min listener", "body": "One-tap answers let you decide without typing."}),
+                    ("demo-done", {"title": "Board kit installed", "column": "done", "part": "demo", "train": "demo", "priority": 3, "created_at": now, "done_at": now, "body": "SQLite board store and UI are ready."}),
+                ]
+                for dpid, ddoc in demo_posts:
+                    if not store.get_doc("posts", dpid).get("exists"):
+                        store.set_doc("posts", dpid, ddoc)
+                import kit_cards as _kc
+                prev_root = _kc.ROOT
+                try:
+                    _kc.ROOT = t
+                    dash_doc = _kc.build(now)
+                    trains_doc = _kc.build_trains(None, dash_doc["rows"], now)
+                finally:
+                    _kc.ROOT = prev_root
+                store.set_doc("posts", "_dashboard", dash_doc)
+                store.set_doc("posts", "_trains", trains_doc)
+                ins.log.append("demo: seeded 4-lane sample posts, _dashboard, and _trains in .kit/board_data/board.db")
             ins.log.append("bootstrap: seeded _orchestrator and KIT-installed in .kit/board_data/board.db")
         finally:
             store.close()

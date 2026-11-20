@@ -706,8 +706,8 @@ def _runtime_capability_lines(runtime, board_url, cmd, mem_rel):
         ]
     if runtime == "arena":
         return [
-            "- **Embedded preview mode:** runs `board_server.py --embed-mode` (`KIT_EMBED_PREVIEW=1`) at `%s` with cookie-independent `X-Kit-Token` unlock and 5s change polling for sandboxed preview iframes." % board_url,
-            "- **Pull-on-turn (no background clerk / no auto-wake):** your comments and 👍 Likes save to the board immediately, but there is no background watcher or automatic wakeup — ping the Arena chat whenever you want the agent to read new comments and reply.",
+            "- **Embedded preview mode:** runs `board_server.py --preview --embed-mode` (`KIT_EMBED_PREVIEW=1`) at `%s` with zero-config sandbox proxy binding, auto-seeded `_orchestrator`, cookie-independent `X-Kit-Token` unlock, 5s change polling, and iframe-safe Copy Markdown / `/_api/export` Share fallback." % board_url,
+            "- **30-min live listener + Pull-on-turn (no background clerk / no auto-wake across turns):** during an active turn, `board_cli.py comments wait --timeout 1750` catches your comments and 👍 Likes live for ~29 minutes without needing `.` in chat. Once a turn ends, there is no 0-token background wake — ping the Arena chat (e.g. `.`) whenever you want the agent to read `board_cli.py inbox` and reply.",
             "- **Handoff:** warm Git sync (`kit.py receive` / `kit.py publish`) when a remote is configured, or a downloadable patch/zip when the sandbox has no push credentials.",
         ]
     return [

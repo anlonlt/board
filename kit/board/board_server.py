@@ -251,9 +251,75 @@ SHIM_JS = r"""(function () {
     }
   };
 
+  function openExportModal(f) {
+    var existing = document.getElementById("kit-export-modal");
+    if (existing) existing.remove();
+    var ov = document.createElement("div");
+    ov.id = "kit-export-modal";
+    ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px";
+    var card = document.createElement("div");
+    card.style.cssText = "background:#fff;color:#111;max-width:680px;width:100%;max-height:85vh;display:flex;flex-direction:column;gap:10px;padding:16px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.3);font-family:system-ui,-apple-system,sans-serif";
+    var hdr = document.createElement("div");
+    hdr.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px";
+    var title = document.createElement("strong");
+    title.textContent = "Export: " + (f.filename || "board-export.md");
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.textContent = "Close";
+    closeBtn.style.cssText = "padding:4px 10px;border:1px solid #ccc;border-radius:6px;background:#f5f5f5;cursor:pointer";
+    closeBtn.addEventListener("click", function () { ov.remove(); });
+    hdr.appendChild(title);
+    hdr.appendChild(closeBtn);
+    var note = document.createElement("div");
+    note.style.cssText = "font-size:12px;color:#555";
+    note.textContent = "Embedded preview iframe detected: direct file downloads may be blocked. Copy the Markdown below or open raw export in a new tab.";
+    var ta = document.createElement("textarea");
+    ta.readOnly = true;
+    ta.value = f.data || "";
+    ta.style.cssText = "width:100%;min-height:240px;flex:1;font-family:ui-monospace,monospace;font-size:12px;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box";
+    var actions = document.createElement("div");
+    actions.style.cssText = "display:flex;gap:8px;align-items:center;flex-wrap:wrap";
+    var copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.textContent = "Copy Markdown";
+    copyBtn.style.cssText = "padding:6px 12px;border:0;border-radius:6px;background:#111;color:#fff;cursor:pointer";
+    copyBtn.addEventListener("click", function () {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ta.value).then(function () { copyBtn.textContent = "Copied!"; }, function () { ta.select(); document.execCommand("copy"); copyBtn.textContent = "Copied!"; });
+      } else {
+        ta.select();
+        try { document.execCommand("copy"); copyBtn.textContent = "Copied!"; } catch (e) {}
+      }
+    });
+    var rawLink = document.createElement("a");
+    rawLink.href = "/_api/export?all=1&raw=1";
+    rawLink.target = "_blank";
+    rawLink.rel = "noopener";
+    rawLink.textContent = "Open raw export";
+    rawLink.style.cssText = "font-size:13px;color:#0b57d0;text-decoration:underline";
+    actions.appendChild(copyBtn);
+    actions.appendChild(rawLink);
+    card.appendChild(hdr);
+    card.appendChild(note);
+    card.appendChild(ta);
+    card.appendChild(actions);
+    ov.appendChild(card);
+    ov.addEventListener("click", function (e) { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(ta.value).then(function () { copyBtn.textContent = "Copied to clipboard!"; }).catch(function () {});
+    }
+  }
+
   var downloads = {
     save: function (f) {
       try {
+        var inIframe = false;
+        try { inIframe = window.self !== window.top; } catch (e) { inIframe = true; }
+        if (inIframe) {
+          openExportModal(f || {});
+          return Promise.resolve();
+        }
         var blob = new Blob([f.data || ""], { type: "text/markdown;charset=utf-8" });
         var url = URL.createObjectURL(blob);
         var a = document.createElement("a");
@@ -1333,6 +1399,24 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                 self._send_json(200, store.comment_counts())
                 return
 
+            if path == "/_api/export":
+                pid = (qs.get("post") or [""])[0].strip()
+                raw_view = (qs.get("raw") or ["0"])[0].strip().lower() in ("1", "true", "yes")
+                md_text, fname = export_markdown(store, post_id=pid or None)
+                if md_text is None:
+                    self._send_json(404, {"error": "not_found"})
+                    return
+                body = md_text.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/markdown; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                disp = "inline" if raw_view else ("attachment; filename=\"%s\"" % fname)
+                self.send_header("Content-Disposition", disp)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
             if path == "/_api/events":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
@@ -1723,11 +1807,66 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
     return {"ref": ref, "imported": imported, "skipped": skipped}
 
 
-def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None, embed_mode=False):
-    if host.strip().lower() not in LOOPBACK_HOSTS and not token:
+def export_markdown(store, post_id=None):
+    """Render one post or all non-internal posts + comments as Markdown for /_api/export."""
+    if post_id:
+        doc = store.get_doc("posts", post_id)
+        if not doc.get("exists"):
+            return None, None
+        posts = [{"id": post_id, "data": doc["data"]}]
+        fname = re.sub(r"[^A-Za-z0-9._-]+", "-", post_id.lstrip("_") or "post") + ".md"
+    else:
+        all_posts = store.list_docs("posts")["docs"]
+        posts = [p for p in all_posts if p["id"] not in ("_dashboard", "_trains") and not (p["data"] or {}).get("removed")]
+        posts.sort(key=lambda p: str((p["data"] or {}).get("created_at") or ""))
+        fname = "board-export.md"
+    all_comments = store.list_docs("comments")["docs"]
+    by_post = {}
+    for c in all_comments:
+        pid = (c["data"] or {}).get("post_id")
+        if pid:
+            by_post.setdefault(pid, []).append(c)
+    blocks = []
+    for p in posts:
+        d = p["data"] or {}
+        lines = [
+            "# %s" % (d.get("title") or p["id"]),
+            "*%s · part %s · P%s · post `%s`*" % (d.get("column") or "info", d.get("part") or "?", d.get("priority") or 2, p["id"]),
+            "",
+            (d.get("body") or "").strip(),
+        ]
+        cs = sorted(by_post.get(p["id"], []), key=lambda c: str((c["data"] or {}).get("created_at") or ""))
+        if cs:
+            lines.extend(["", "## Comments (%d)" % len(cs)])
+            for c in cs:
+                cd = c["data"] or {}
+                who = cd.get("from") or "unknown"
+                when = str(cd.get("created_at") or "")[:16].replace("T", " ")
+                txt = "👍" if cd.get("like") else (("[answer] " + str(cd["answer"])) if cd.get("answer") else str(cd.get("text") or ""))
+                lines.append("- **%s** (%s) `[id: %s]`: %s" % (who, when, c["id"], txt.replace("\n", "\n  ")))
+        blocks.append("\n".join(lines).strip())
+    return ("\n\n---\n\n".join(blocks) + "\n") if blocks else "# Board export\n\n(No posts yet.)\n", fname
+
+
+def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None, embed_mode=False, preview=False, default_watcher=None):
+    if host.strip().lower() not in LOOPBACK_HOSTS and not token and not preview:
         raise ValueError("refusing to bind to non-loopback host %r without --token / KIT_BOARD_TOKEN" % host)
     data_dir = os.path.join(root_dir, ".kit", "board_data")
     store = BoardStore(data_dir)
+    if preview:
+        if not store.get_doc("posts", "_orchestrator").get("exists"):
+            store.set_doc("posts", "_orchestrator", {
+                "title": "Ask the orchestrator",
+                "column": "info",
+                "part": "orchestrator",
+                "priority": 3,
+                "created_at": utc_now(),
+                "body": "Write here for anything that is not about one post.",
+            })
+        if default_watcher is None:
+            default_watcher = "agent"
+    if default_watcher:
+        store.set_watch(default_watcher, True)
     if notify_url is None:
         cfg_path = os.path.join(root_dir, ".kit", "config.json")
         try:
@@ -1747,18 +1886,28 @@ def main(argv=None):
     ap.add_argument("--token", default=None, help="Require auth token (or set $KIT_BOARD_TOKEN)")
     ap.add_argument("--notify-url", default=None, help="Phone push webhook URL (e.g. https://ntfy.sh/<topic>)")
     ap.add_argument("--embed-mode", action="store_true", help="Cookie-independent embedded preview mode (or set KIT_EMBED_PREVIEW=1)")
+    ap.add_argument("--preview", "--unsafe-no-auth", dest="preview", action="store_true", help="Opt-in sandbox preview mode: allows 0.0.0.0 without --token, auto-seeds _orchestrator, and registers default watcher")
+    ap.add_argument("--default-watcher", default=None, help="Auto-register a comment watcher name on startup (default: 'agent' when --preview is set)")
     ap.add_argument("--seed-from-mirror", action="store_true", help="Import posts/comments from git board-mirror on startup")
     ap.add_argument("--mirror-branch", default=None, help="Override mirror branch name (default from .kit/config.json)")
     ap.add_argument("--force-seed", action="store_true", help="Overwrite existing local SQLite docs when seeding")
     a = ap.parse_args(argv)
     root = os.path.abspath(a.root) if a.root else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     tok = a.token or os.environ.get("KIT_BOARD_TOKEN") or None
-    if a.host.strip().lower() not in LOOPBACK_HOSTS and not tok:
+    if a.host.strip().lower() not in LOOPBACK_HOSTS and not tok and not a.preview:
         print("board_server: refusing to bind to non-loopback host %r without --token or KIT_BOARD_TOKEN" % a.host, file=sys.stderr)
         return 2
     nurl = a.notify_url or os.environ.get("KIT_NOTIFY_URL") or None
     embed = bool(a.embed_mode or os.environ.get("KIT_EMBED_PREVIEW", "").strip().lower() in ("1", "true", "yes", "on"))
-    srv, store = start_server(root, a.host, a.port, token=tok, notify_url=nurl, embed_mode=embed)
+    extra = {}
+    if a.preview:
+        extra["preview"] = True
+    if a.default_watcher:
+        extra["default_watcher"] = a.default_watcher
+    srv, store = start_server(
+        root, a.host, a.port, token=tok, notify_url=nurl,
+        embed_mode=embed, **extra,
+    )
     if a.seed_from_mirror:
         info = seed_from_mirror(root, store, branch=a.mirror_branch, force=a.force_seed)
         print("seeded from %s: %d imported, %d skipped" % (info["ref"] or "(none)", info["imported"], info["skipped"]), flush=True)

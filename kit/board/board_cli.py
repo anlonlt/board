@@ -14,11 +14,15 @@
     python3 -I .kit/board_cli.py comments reply <thread_id> --text '...'
     python3 -I .kit/board_cli.py asset upload <path>
     python3 -I .kit/board_cli.py asset read <blob_id> --out <path>
+    python3 -I .kit/board_cli.py inbox [--since ISO]
+    python3 -I .kit/board_cli.py reply <post_id> --text '...' [--comment-id ID] [--reply-to ID] [--from NAME]
 """
 import argparse
+from datetime import datetime, timezone
 import json
 import mimetypes
 import os
+import secrets
 import sys
 import urllib.error
 import urllib.parse
@@ -182,6 +186,17 @@ def main(argv=None):
     prd.add_argument("blob_id")
     prd.add_argument("--out", required=True)
 
+    pi = sub.add_parser("inbox", help="Compact JSON summary of unread owner comments, likes, and option taps")
+    pi.add_argument("--since", default=None, help="Only include items with created_at >= ISO timestamp")
+
+    prp2 = sub.add_parser("reply", help="Mark owner comment read, ack thread if any, and post agent reply in one command")
+    prp2.add_argument("post_id")
+    prp2.add_argument("--text", required=True)
+    prp2.add_argument("--comment-id", default=None, help="Owner comment doc_id to mark read (and ack its thread_id)")
+    prp2.add_argument("--reply-to", default=None, help="Thread id or comment doc_id to reply under")
+    prp2.add_argument("--from", dest="sender", default="orchestrator")
+    prp2.add_argument("--id", dest="new_id", default=None, help="Optional custom doc_id for the new reply comment")
+
     a = ap.parse_args(argv)
     base = (a.url or default_url()).rstrip("/")
     tok = a.token if a.token is not None else default_token()
@@ -311,6 +326,82 @@ def main(argv=None):
                 fh.write(raw)
             print(json.dumps({"ok": True, "path": a.out, "bytes": len(raw)}))
             return 0
+
+    if a.cmd == "inbox":
+        res = call("GET", "/_api/db/comments")
+        status_info = call("GET", "/_api/comments/status")
+        comments, likes, answers = [], [], []
+        for doc in res.get("docs") or []:
+            d = doc.get("data") or {}
+            if d.get("from") not in ("owner", "viewer"):
+                continue
+            if d.get("read") is True:
+                continue
+            if a.since and str(d.get("created_at") or "") < a.since:
+                continue
+            item = {
+                "id": doc["id"],
+                "post_id": d.get("post_id"),
+                "created_at": d.get("created_at"),
+                "thread_id": d.get("thread_id"),
+                "reply_to": d.get("reply_to"),
+            }
+            if d.get("like") is True:
+                item["comment_id"] = d.get("comment_id")
+                likes.append(item)
+            elif d.get("answer"):
+                item["answer"] = d.get("answer")
+                answers.append(item)
+            else:
+                item["text"] = d.get("text") or ""
+                comments.append(item)
+        out = {
+            "total": len(comments) + len(likes) + len(answers),
+            "comments": comments,
+            "likes": likes,
+            "answers": answers,
+            "watcher_status": status_info.get("status"),
+            "pending_threads": status_info.get("pending", 0),
+        }
+        print(json.dumps(out, ensure_ascii=False))
+        return 0
+
+    if a.cmd == "reply":
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        marked_read = False
+        acked_thread = None
+        reply_to = a.reply_to
+        if a.comment_id:
+            orig = call("GET", "/_api/db/comments/%s" % urllib.parse.quote(a.comment_id))
+            if orig.get("exists"):
+                odata = orig.get("data") or {}
+                tid = odata.get("thread_id")
+                if not reply_to:
+                    reply_to = tid or a.comment_id
+                call("PATCH", "/_api/db/comments/%s" % urllib.parse.quote(a.comment_id), {"data": {"read": True, "read_at": now}})
+                marked_read = True
+                if tid:
+                    call("POST", "/_api/comments/threads/%s/ack" % urllib.parse.quote(tid), {})
+                    acked_thread = tid
+        cid = a.new_id or ("reply-" + secrets.token_hex(6))
+        payload_data = {
+            "post_id": a.post_id,
+            "from": a.sender,
+            "text": a.text,
+            "created_at": now,
+        }
+        if reply_to:
+            payload_data["reply_to"] = reply_to
+        res = call("PUT", "/_api/db/comments/%s" % urllib.parse.quote(cid), {"data": payload_data})
+        print(json.dumps({
+            "id": res["id"],
+            "version": res["version"],
+            "post_id": a.post_id,
+            "reply_to": reply_to,
+            "marked_read": marked_read,
+            "acked_thread": acked_thread,
+        }, ensure_ascii=False))
+        return 0
 
     return 1
 
