@@ -32,6 +32,9 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
    It never deletes and never replaces a file it did not write: it lists what it wrote, and `KEPT` for what it left alone.
    Your `.claude/settings.json` keeps every line it had (re-indented); the kit's hook lines are merged in.
    Check: `python3 -I .claude/hooks/kit/test_hooks.py` ends `0 failed`.
+   **Ask the owner once:** "Every session ends by merging its work onto `<main branch>` and pushing it, never forced
+   (a conflict stops it). Do you give that standing permission?" Yes: rerun with `--trunk-push yes`. No: sessions push
+   only their own branch. Either way each session ends with `python3 -I .kit/end_session.py`.
 3. **Translate, then publish the board.** If the owner's language (`--talk`) is not English, translate first
    every text the person SEES in `.kit/board.html` (headings, buttons, labels, placeholders, `aria-label`s, the status
    and empty-state lines, the strings the script shows), with Edit, never touching ids, class names, field names,
@@ -135,7 +138,7 @@ the memory `.story/` and skills `story`, `board`; hooks: `kit_guard` (refuses `r
 `kit_stop` (no stop with unpushed work, once), `kit_pre_compact`, `kit_say_it_once` (message limits), `kit_board_typing`.
 Every limit and name is in `.kit/config.json`. The orchestrator's guide: `.kit/ORCHESTRATOR.md`.
 
-Tests of the kit itself: `python3 -I test_install.py`, `python3 -I kit/import/test_kit_import.py`, `python3 -I kit/board/test_kit_cards.py`, `python3 -I kit/hooks/test_hooks.py`,
+Tests of the kit itself: `python3 -I test_install.py`, `python3 -I kit/import/test_kit_import.py`, `python3 -I kit/board/test_kit_cards.py`, `python3 -I kit/test_end_session.py`, `python3 -I kit/hooks/test_hooks.py`,
 `python3 -I kit/clerk/test_clerk_pending.py`, `python3 -I scripts/test_kit.py` (+ `scripts/kit_mutations.py`).
 
 ## Step 0: the survey

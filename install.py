@@ -49,6 +49,8 @@ DEFAULT_KIT = {
               "part": {"model": "claude-opus-5-5", "effort": "medium"},
               "consultant": {"model": "claude-fable-5-2", "effort": "medium"}},
     "main_branch": "main",
+    # The owner's standing permission for sessions to push the trunk (asked once, README step 2: --trunk-push).
+    "trunk_push": False,
 }
 
 
@@ -116,6 +118,8 @@ def load_config(t, a):
     c.setdefault("language", {}).setdefault("talk", k["talk_language"])
     if a.main_branch:
         k["main_branch"] = a.main_branch
+    if a.trunk_push:
+        k["trunk_push"] = a.trunk_push == "yes"
     return c
 
 
@@ -174,6 +178,7 @@ def main(argv=None):
     ap.add_argument("--talk", help="the language to talk to the owner in (default English)")
     ap.add_argument("--board-url")
     ap.add_argument("--main-branch")
+    ap.add_argument("--trunk-push", choices=["yes", "no"], help="the owner's standing permission to push the trunk")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     t = os.path.abspath(a.target)
@@ -193,6 +198,7 @@ def main(argv=None):
     ins.put(".kit/kit.py", rd("scripts", "kit.py"))
     ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
+    ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
     ins.put(".kit/board.html", render(rd("kit", "board", "board.template.html"), c))
     ins.put(".kit/clerk.md", render(rd("kit", "clerk", "clerk.template.md"), c))
     ins.put(".kit/orchestrator.md", render(rd("kit", "orchestrator.template.md"), c))

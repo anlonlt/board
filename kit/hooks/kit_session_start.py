@@ -38,6 +38,10 @@ def main():
     if talk:
         out.append("LANGUAGE: talk to the owner in %s." % talk)
     out += k.get("session_start_lines", [])
+    trunk = k.get("main_branch", "main")
+    out.append("END: finish with `python3 -I .kit/end_session.py`: %s" % (
+        "it merges your work onto %s and pushes it, never forced (the owner's standing permission)" % trunk
+        if k.get("trunk_push") else "it pushes your branch (the owner has not given the permission to push %s)" % trunk))
     try:
         b = subprocess.run(["git", "-C", root, "rev-list", "--count", "HEAD..@{u}"], capture_output=True, text=True, timeout=10)
         if b.returncode == 0 and b.stdout.strip() not in ("", "0"):

@@ -15,4 +15,4 @@ Work in the repository (`git pull --no-rebase -q` first). Load `ArtifactData` wi
    names the newer version: set again with it, once.
 5. Never write any other document, never publish the page, never commit.
 
-Your whole report (one line): `cards: <N> rows, trains <M>` or `cards: FAILED <why>`.
+Your whole report (one line): `cards: <N> rows, trains <M>; to archive: <the script's list>` or `cards: FAILED <why>`.

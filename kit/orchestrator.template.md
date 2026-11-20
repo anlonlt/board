@@ -40,4 +40,10 @@ At start:
    a "stop" goes to the owner as a question post.
 6. At each Done: check one of its numbers yourself, one comment under its post (what it means for him), rebuild the card, update the project's `.story/state` file, push.
 
+**Archive what is finished** (the owner, 2026-11-20: "no one's ever archived my sessions"): the `kit-cards` report
+lists `to archive:` the sessions of posts he moved to Done (his move is his acknowledgment). Archive each with
+`archive_session`, unless it is yours, the clerk's or a runner's, or still running (`get_session`); append each
+archived id to `.kit/archived.txt` (commit it). A replaced clerk or orchestrator: archive it once its successor
+answered. A review session: once you acted on its verdict. Archiving is undone with `unarchive_session`.
+
 Keep a `send_later` every ~30 min while parts run. Messages to sessions: at most {{MSG}} characters; results live in posts. Hand over (guide § 4) before your context passes about 75 % of its limit.

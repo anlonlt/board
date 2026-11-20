@@ -41,4 +41,11 @@ with tempfile.TemporaryDirectory() as d:
           and T.get("B1", {}).get("prompt") == "docs/prompts/B1-draft.md" and T.get("B1", {}).get("session") == "s1")
     dd2 = json.load(open(out)) if r.returncode == 0 else {"rows": []}
     check("the dashboard row names its train", any(x.get("train") == "P-bulletin" for x in dd2["rows"]))
+    json.dump({"part": "B0", "train": "bulletin", "column": "done", "session_id": "session_DONE1"}, open(os.path.join(d, "b", "posts", "B0-old.json"), "w"))
+    json.dump({"part": "B9", "train": "bulletin", "column": "done", "session_id": "session_DONE2"}, open(os.path.join(d, "b", "posts", "B9-old.json"), "w"))
+    open(os.path.join(d, ".kit", "archived.txt"), "w").write("session_DONE2\n")
+    r = subprocess.run([sys.executable, "-I", os.path.join(d, ".kit", "kit_cards.py"), "--write", out, "--trains", tr,
+                        "--board", os.path.join(d, "b")], capture_output=True, text=True)
+    check("to archive: the session of a post he moved to Done, not one already archived, not one still in a column",
+          "to archive: session_DONE1" in r.stdout and "session_DONE2" not in r.stdout and "session_s1" not in r.stdout)
 print("%d failed" % fails); sys.exit(1 if fails else 0)

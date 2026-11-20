@@ -62,6 +62,8 @@ with tempfile.TemporaryDirectory() as d:
           '"runner","==","<RUNNER>"' in cw and 'from: "<RUNNER>"' in cw and "French" in cw)
     check("the orchestrator sends each step to its runner, and its welcome has a Setup part",
           'runner: "<name>"' in orch and "**Setup:**" in orch)
+    check("end_session.py installed", os.path.exists(os.path.join(t, ".kit", "end_session.py")))
+    check("the orchestrator archives what he moved to Done", "archive_session" in orch)
     check("the kit-cards agent installed", os.path.exists(os.path.join(t, ".claude", "agents", "kit-cards.md")))
     check("the orchestrator calls the agent, never lists posts itself", "kit-cards" in orch and "list` `posts`" not in orch)
     check("a kit file edited by the project is kept", "my note" in open(os.path.join(t, ".kit", "BOARD.md")).read() and "KEPT" in out)

@@ -40,7 +40,8 @@ def main():
         why.append("%s commits not pushed" % ahead)
     if not why:
         return 0
-    print("Before stopping: %s. Commit and push (git pull --no-rebase first), or say why not." % "; ".join(why), file=sys.stderr)
+    print("Before stopping: %s. Commit by name, then `python3 -I .kit/end_session.py` (it pushes, and merges onto the "
+          "trunk when the owner allowed it), or say why not." % "; ".join(why), file=sys.stderr)
     return 2
 
 

@@ -131,6 +131,23 @@ def main(argv=None):
     with open(a.trains, "w", encoding="utf-8") as fh:
         json.dump(t, fh, ensure_ascii=False, indent=1)
     print("dashboard: %d rows -> %s; trains: %d rows -> %s" % (len(d["rows"]), a.write, len(t["rows"]), a.trains))
+    # Sessions to archive (the owner, 2026-11-20: "no one's ever archived my sessions"): a post he moved to Done is
+    # his acknowledgment; its session is listed once, unless .kit/archived.txt already has it.
+    done = set()
+    try:
+        done = set(open(os.path.join(ROOT, ".kit", "archived.txt"), encoding="utf-8").read().split())
+    except OSError:
+        pass
+    todo = []
+    for f in sorted(glob.glob(os.path.join(a.board, "posts", "*.json"))) if a.board else []:
+        try:
+            p = json.load(open(f, encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        sid = p.get("session_id") or ""
+        if p.get("column") == "done" and sid.startswith("session_") and sid not in done and sid not in todo:
+            todo.append(sid)
+    print("to archive: %s" % (" ".join(todo) if todo else "none"))
     return 0
 
 
