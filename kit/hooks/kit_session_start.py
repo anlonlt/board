@@ -44,6 +44,10 @@ def main():
             out.append("CLONE: %s commits behind its remote: git pull --no-rebase first." % b.stdout.strip())
     except (OSError, subprocess.SubprocessError):
         pass
+    pref = os.path.join(root, ".story", "preferences.md")
+    if os.path.exists(pref):
+        with open(pref, encoding="utf-8") as fh:
+            out += ["PREFERENCES (.story/preferences.md):"] + ["  " + l.strip() for l in fh if l.startswith("- ")][:15]
     states = sorted(glob.glob(os.path.join(root, ".story", "state", "*.md")))
     if states:
         out.append("MEMORY (.story/, skill story): each workstream's next step:")

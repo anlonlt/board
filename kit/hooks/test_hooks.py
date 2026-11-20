@@ -60,9 +60,11 @@ with tempfile.TemporaryDirectory() as d:
         fh.write("# app\nNext: ship the login screen\n")
     with open(os.path.join(proj, ".story", "awaits.md"), "w") as fh:
         fh.write("# Awaits\n- choose a colour (default blue)\n- a licence\n")
+    with open(os.path.join(proj, ".story", "preferences.md"), "w") as fh:
+        fh.write("# Standing preferences\n\n- ask before any real action\n")
     rc, out, _ = run("kit_session_start.py", {}, proj)
     check("session start: board, language, project line, next step, awaits",
-          all(x in out for x in ("artifact/TEST", "French", "BUILD: make test", "app: ship the login screen", "2 points")))
+          all(x in out for x in ("artifact/TEST", "French", "BUILD: make test", "app: ship the login screen", "2 points", "ask before any real action")))
     git(proj, "init", "-q"); git(proj, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a")
     with open(os.path.join(proj, "f.txt"), "w") as fh:
         fh.write("1")

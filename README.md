@@ -57,6 +57,28 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
 8. **Report** in the body of `KIT-installed` (`update`): each step's outcome, every step that needed the owner, anything that failed with
    its exact message. From now on every session posts there at turn 1 (the SessionStart hook says so).
 
+## Import (your claude.ai chats into the kit)
+
+Your chats hold your projects' state; the kit's memory and board start empty. Two steps:
+1. **In a new claude.ai chat**, paste the block of `step0/export-chat.md`. Claude goes through your chats, fills one
+   private artifact "kit state" (per project: next step, where it stands, decisions, ids, what waits for you), shows it
+   to you for corrections, and gives you one line for Claude Code.
+2. **For Claude, in the project's session** (after Install): `Artifact` `read` the link; save the JSON inside its
+   `<pre id="kit-state">` as `/tmp/kit-state.json`; `python3 -I .kit/kit_import.py /tmp/kit-state.json --session <the
+   orchestrator's session id>`; it writes `.story/state/<project>.md`, `.story/awaits.md`, `.story/preferences.md`
+   (never over a file it did not create) and prints an `ArtifactData` `batch` of posts: one per project (`info`) and one
+   one-tap `question` per thing waiting for you. Send it to the board (50 writes per call), commit `.story`, push.
+
+## Feedback (a complaint or a dev report, to anlonlt/board)
+
+The project and its board stay private; only the report goes to the public kit repository.
+- Write it as `survey/<YYYY-MM-DD>/<short-slug>.md` (what happened, the exact errors, what you expected; no personal
+  data, no names of people or organisations).
+- If this session can push to `anlonlt/board` (its owner added you as a collaborator): clone it, branch
+  `feedback/<date>-<slug>`, add only that file, push, open a pull request into `main`.
+- Otherwise: tell the person to open https://github.com/anlonlt/board/issues/new and paste the report (or attach the
+  file). A session cannot write to a repository it was not given (PR #1's 403).
+
 **What you get:** the page (posts in columns, comments, one-tap answers, pictures, typing dots, export to Markdown);
 the clerk; `.kit/kit.py` (`post`, `open`, `since`, `session` in hundreds of characters instead of whole dumps);
 the memory `.story/` and skills `story`, `board`; hooks: `kit_guard` (refuses `rm -r` outside /tmp, `git clean`,
@@ -64,7 +86,7 @@ the memory `.story/` and skills `story`, `board`; hooks: `kit_guard` (refuses `r
 `kit_stop` (no stop with unpushed work, once), `kit_pre_compact`, `kit_say_it_once` (message limits), `kit_board_typing`.
 Every limit and name is in `.kit/config.json`. The orchestrator's guide: `.kit/ORCHESTRATOR.md`.
 
-Tests of the kit itself: `python3 -I test_install.py`, `python3 -I kit/hooks/test_hooks.py`,
+Tests of the kit itself: `python3 -I test_install.py`, `python3 -I kit/import/test_kit_import.py`, `python3 -I kit/hooks/test_hooks.py`,
 `python3 -I kit/clerk/test_clerk_pending.py`, `python3 -I scripts/test_kit.py` (+ `scripts/kit_mutations.py`).
 
 ## Step 0: the survey

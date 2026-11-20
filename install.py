@@ -180,6 +180,7 @@ def main(argv=None):
     rd = lambda *x: open(os.path.join(KIT, *x), encoding="utf-8").read()
     ins.put(".kit/kit.py", rd("scripts", "kit.py"))
     ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
+    ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     ins.put(".kit/board.html", render(rd("kit", "board", "board.template.html"), c))
     ins.put(".kit/clerk.md", render(rd("kit", "clerk", "clerk.template.md"), c))
     ins.put(".kit/BOARD.md", render(rd("kit", "board", "BOARD.template.md"), c))
