@@ -216,6 +216,7 @@ def render(text, c):
     vals = {"PROJECT": c["project"], "SLUG": slug(c["project"]),
             "CMD": k.get("cmd") or "./.kit/up",
             "BOARD_URL": c.get("board_url") or "http://127.0.0.1:8765",
+            "MEMORY_DIR": k.get("memory_dir") or ".board/memory",
             "TALK": c["language"]["talk"], "MAIN_BRANCH": k["main_branch"],
             "WAIT": str(k["clerk"]["wait_minutes"]), "CONTEXT_K": str(k["clerk"]["context_limit_k"]),
             "CLERK": c.get("fields", {}).get("clerk", "clerk"),

@@ -562,5 +562,17 @@
  {
   "en": "). Reload to reconnect.",
   "kind": "js"
+ },
+ {
+  "en": "Lanes",
+  "kind": "js"
+ },
+ {
+  "en": "Wall",
+  "kind": "js"
+ },
+ {
+  "en": "Feed",
+  "kind": "js"
  }
 ]

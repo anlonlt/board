@@ -33,6 +33,20 @@ from datetime import datetime, timezone
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def memory_dir(root=ROOT):
+    try:
+        md = json.load(open(os.path.join(root, ".kit", "config.json"), encoding="utf-8")).get("kit", {}).get("memory_dir")
+        if md:
+            return os.path.join(root, md)
+    except (OSError, ValueError):
+        pass
+    if os.path.isdir(os.path.join(root, ".story")):
+        return os.path.join(root, ".story")
+    if os.path.isdir(os.path.join(root, ".board", "memory")):
+        return os.path.join(root, ".board", "memory")
+    return os.path.join(root, ".story")
+
+
 def slug(s):
     return re.sub(r"[^a-z0-9]+", "-", str(s).lower()).strip("-")[:40] or "x"
 
@@ -157,7 +171,7 @@ def state_md(p):
 
 def run(state, out, now, update, session="", posts=True):
     log, writes = [], []
-    sd = os.path.join(ROOT, ".story")
+    sd = memory_dir(ROOT)
     wr = (state.get("workflow") or {}).get("runners") if isinstance(state.get("workflow"), dict) else None
     runners = {r["name"]: r for r in (wr or []) if isinstance(r, dict) and r.get("name")}
     for p in state.get("projects", []):
@@ -234,7 +248,7 @@ def main(argv=None):
     log, writes = run(state, a.out, a.now, a.update, a.session, posts=not a.no_posts)
     print("\n".join(log))
     if a.no_posts:
-        print("no posts (--no-posts): the memory is written; commit .story and push")
+        print("no posts (--no-posts): the memory is written; commit %s and push" % os.path.relpath(memory_dir(ROOT), ROOT))
         return 0
     print("writes (ArtifactData batch, up to 50 per call; posts that exist need if_version):")
     print(json.dumps(writes))

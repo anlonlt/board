@@ -20,8 +20,8 @@ The local board server (`.kit/board_data/board.db`) is the live inbox; `.kit/kit
 4. A gate before anything relies on the copy: `kit.py diff D` against a full dump taken the same minute must print `0 differences`. Delegate a full dump to a subagent (its output never enters your context).
 
 ## 4. Memory and hand-over
-- `.story/state/<workstream>.md`: one file per workstream, its first line `Next: …`; the `SessionStart` hook prints every `Next:` line, so a new session knows where things stand. `.story/awaits.md`: what waits on the owner, each with its default. `.story/lessons/`: one file per lesson. Skill `story` says how.
-- Hand over before context fills: write `.story/state/orchestrator.md` (what runs, each part's conversation ID, scheduled tasks, the next step), push, and start a fresh `agy` session with "Your prompt is `.story/state/orchestrator.md`"; it rewrites `_orchestrator.session_id` and tells each running subagent and the clerk its id.
+- `{{MEMORY_DIR}}/state/<workstream>.md`: one file per workstream, its first line `Next: …`; the `SessionStart` hook prints every `Next:` line, so a new session knows where things stand. `{{MEMORY_DIR}}/awaits.md`: what waits on the owner, each with its default. `{{MEMORY_DIR}}/lessons/`: one file per lesson. Skill `story` says how.
+- Hand over before context fills: write `{{MEMORY_DIR}}/state/orchestrator.md` (what runs, each part's conversation ID, scheduled tasks, the next step), push, and start a fresh `agy` session with "Your prompt is `{{MEMORY_DIR}}/state/orchestrator.md`"; it rewrites `_orchestrator.session_id` and tells each running subagent and the clerk its id.
 
 ## 5. Limits (from `.kit/config.json`, enforced by `.agents/hooks.json`)
 A message via `send_message`: at most {{MSG}} characters (a Done pointer: {{DONE}}); the result goes in the post. Destructive git and `rm -r` outside /tmp are refused by `kit_guard.py`.

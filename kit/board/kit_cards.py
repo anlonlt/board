@@ -32,6 +32,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEYS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
+def memory_dir(root=ROOT):
+    try:
+        md = json.load(open(os.path.join(root, ".kit", "config.json"), encoding="utf-8")).get("kit", {}).get("memory_dir")
+        if md:
+            return os.path.join(root, md)
+    except (OSError, ValueError):
+        pass
+    if os.path.isdir(os.path.join(root, ".story")):
+        return os.path.join(root, ".story")
+    if os.path.isdir(os.path.join(root, ".board", "memory")):
+        return os.path.join(root, ".board", "memory")
+    return os.path.join(root, ".story")
+
+
 def row(path, awaits):
     wid = os.path.basename(path)[:-3]
     text = open(path, encoding="utf-8").read()
@@ -112,9 +126,10 @@ def build_trains(board, rows, now):
 
 
 def build(now):
-    aw = os.path.join(ROOT, ".story", "awaits.md")
+    sd = memory_dir(ROOT)
+    aw = os.path.join(sd, "awaits.md")
     awaits = open(aw, encoding="utf-8").read() if os.path.exists(aw) else ""
-    rows = [row(p, awaits) for p in sorted(glob.glob(os.path.join(ROOT, ".story", "state", "*.md")))]
+    rows = [row(p, awaits) for p in sorted(glob.glob(os.path.join(sd, "state", "*.md")))]
     rows = [r for _, r in sorted(rows, key=lambda x: x[0])]
     for i, r in enumerate(rows):
         r["key"] = KEYS[i] if i < len(KEYS) else str(i)

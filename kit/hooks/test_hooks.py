@@ -49,14 +49,31 @@ with tempfile.TemporaryDirectory() as d:
     B = lambda c: {"hookEventName": "PreToolUse", "toolCall": {"name": "run_command", "args": {"CommandLine": c}}}
     for c in ["rm -rf src", "git clean -fd", "git reset --hard HEAD~1", "git push --force", "git push origin +main",
               "git push origin --delete feature", "git add release.keystore", "bash -c 'rm -r build'", "ls | xargs rm -rf",
-              "git branch -D feature", "find src -name '*.py' -delete", "git --git-dir .git reset --hard"]:
+              "git branch -D feature", "find src -name '*.py' -delete", "git --git-dir .git reset --hard",
+              "rm -rf /tmp/../home/user/project", "find . -exec rm -rf {} \\;", "find . -execdir rm {} +",
+              "find . -ok sh -c 'rm -rf {}' \\;"]:
         rc, out, _ = run("kit_guard.py", B(c), proj)
         check("guard refuses: " + c, rc == 0 and out.get("decision") == "deny")
     for c in ["rm -rf /tmp/x", "git commit -m 'never rm -rf src'", "git clean -n", "git push -u origin main",
               "git add dev-debug.keystore", "git reset --soft HEAD~1", "rm file.txt",
-              "git branch -d merged-feature", "find /tmp/scratch -delete"]:
+              "git branch -d merged-feature", "find /tmp/scratch -delete", "find /tmp/scratch -exec rm -rf {} \\;"]:
         rc, out, _ = run("kit_guard.py", B(c), proj)
         check("guard allows: " + c, rc == 0 and out.get("decision") == "allow")
+
+    # P1-3: broad git add (. / -A / --all / dir) refused when a never_add secret file is present
+    os.makedirs(os.path.join(proj, "sub"), exist_ok=True)
+    open(os.path.join(proj, "release.keystore"), "w").write("secret")
+    open(os.path.join(proj, "sub", "app.keystore"), "w").write("secret")
+    open(os.path.join(proj, "dev-debug.keystore"), "w").write("ok")
+    for c in ["git add .", "git add -A", "git add --all", "git add sub/"]:
+        rc, out, _ = run("kit_guard.py", B(c), proj)
+        check("guard refuses broad add with secret present: " + c, rc == 0 and out.get("decision") == "deny")
+    os.remove(os.path.join(proj, "release.keystore"))
+    os.remove(os.path.join(proj, "sub", "app.keystore"))
+    for c in ["git add .", "git add -A"]:
+        rc, out, _ = run("kit_guard.py", B(c), proj)
+        check("guard allows broad add when only allowed files exist: " + c, rc == 0 and out.get("decision") == "allow")
+    os.remove(os.path.join(proj, "dev-debug.keystore"))
 
     RUN = os.urandom(4).hex()
     S = lambda m: {"hookEventName": "PreToolUse", "toolCall": {"name": "send_message", "args": {"Message": m}}}
@@ -155,6 +172,19 @@ with tempfile.TemporaryDirectory() as d:
     c["kit"]["setup"] = False; json.dump(c, open(cfgp, "w"))
     check("after --setup-done: stop blocks again",
           run("kit_stop.py", {"hookEventName": "Stop", "conversationId": "done-" + RUN, "lastUserInput": "t4"}, proj)[1].get("decision") == "continue")
+
+    # P1-4: kit_stop detects unpushed local commits on a branch with no upstream @{u}
+    bare = os.path.join(d, "bare.git")
+    subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+    git(proj, "remote", "add", "origin", bare)
+    git(proj, "add", "f.txt")
+    git(proj, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "c")
+    rc_nu, out_nu, _ = run("kit_stop.py", {"hookEventName": "Stop", "conversationId": "noup-" + RUN, "terminationReason": "NO_TOOL_CALL", "lastUserInput": "t5"}, proj)
+    check("stop: blocks on unpushed commits when branch has no upstream",
+          out_nu.get("decision") == "continue" and "no upstream" in out_nu.get("reason", ""))
+    git(proj, "push", "-q", "-u", "origin", "HEAD")
+    rc_pu, out_pu, _ = run("kit_stop.py", {"hookEventName": "Stop", "conversationId": "noup2-" + RUN, "terminationReason": "NO_TOOL_CALL", "lastUserInput": "t6"}, proj)
+    check("stop: allows after pushing branch with upstream", out_pu.get("decision") == "allow")
 
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

@@ -8,17 +8,25 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 PORT="${KIT_BOARD_PORT:-8765}"
+HAS_BOARD=1
+HAS_CLERK=1
+HAS_ORCH=1
 if [ -f ".kit/config.json" ]; then
   CFG_PORT="$(python3 -I -c 'import json,re; u=json.load(open(".kit/config.json")).get("board_url",""); m=re.search(r":(\d+)",u); print(m.group(1) if m else "")' 2>/dev/null || true)"
   [ -n "$CFG_PORT" ] && PORT="$CFG_PORT"
+  PARTS="$(python3 -I -c 'import json; p=json.load(open(".kit/config.json")).get("kit",{}).get("parts",{}); print(int(p.get("board",True)), int(p.get("clerk",True)), int(p.get("orchestrator",True)))' 2>/dev/null || echo "1 1 1")"
+  read -r HAS_BOARD HAS_CLERK HAS_ORCH <<< "$PARTS"
 fi
+[ ! -f ".kit/board_server.py" ] && HAS_BOARD=0
+[ ! -f ".kit/clerk.md" ] && HAS_CLERK=0
+[ ! -f ".kit/orchestrator.md" ] && HAS_ORCH=0
 
 HYBRID=0
 for arg in "$@"; do
   [ "$arg" = "--hybrid" ] && HYBRID=1
 done
 
-if [ "$HYBRID" -eq 0 ]; then
+if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
   mkdir -p .kit/board_data
   TOK_FILE=".kit/board_data/token"
   if [ ! -f "$TOK_FILE" ]; then
@@ -28,7 +36,14 @@ if [ "$HYBRID" -eq 0 ]; then
   TOK="$(cat "$TOK_FILE")"
   export KIT_BOARD_TOKEN="$TOK"
 
-  if ! curl -sf "http://127.0.0.1:${PORT}/_api/health" >/dev/null 2>&1; then
+  HEALTH="$(curl -sf "http://127.0.0.1:${PORT}/_api/health" 2>/dev/null || true)"
+  if [ -n "$HEALTH" ]; then
+    AUTH_OK="$(python3 -I -c 'import json,sys; print("1" if json.loads(sys.argv[1]).get("auth") else "0")' "$HEALTH" 2>/dev/null || echo 0)"
+    if [ "$AUTH_OK" != "1" ] || ! curl -sf -H "X-Kit-Token: ${TOK}" "http://127.0.0.1:${PORT}/_api/db/posts?limit=1" >/dev/null 2>&1; then
+      echo "ERROR: a board server is already listening on port ${PORT} without matching token auth; stop it first or set KIT_BOARD_PORT." >&2
+      exit 1
+    fi
+  else
     SEED=""
     [ ! -f ".kit/board_data/board.db" ] && SEED="--seed-from-mirror"
     nohup python3 -I .kit/board_server.py --host 0.0.0.0 --port "$PORT" --root "$ROOT" --token "$TOK" $SEED >/tmp/kit-board-${PORT}.log 2>&1 &
@@ -44,10 +59,19 @@ if [ "$HYBRID" -eq 0 ]; then
     TS_DNS="$(tailscale serve status 2>/dev/null | grep -oE 'https://[^ ]+' | head -n 1 || true)"
     [ -n "$TS_DNS" ] && echo "Board (HTTPS):  ${TS_DNS}?token=${TOK}"
   fi
-  PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Also launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md if not already running."
-else
+  if [ "$HAS_ORCH" -eq 1 ] && [ "$HAS_CLERK" -eq 1 ]; then
+    PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Also launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md if not already running."
+  elif [ "$HAS_ORCH" -eq 1 ]; then
+    PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository."
+  else
+    PROMPT="Check the project memory and board posts (.kit/BOARD.md) and continue from the next step."
+  fi
+elif [ "$HYBRID" -eq 1 ]; then
   echo "Mode: hybrid (Claude Code Web Artifact + git_watch.py)"
   PROMPT="Read .kit/runner.md and .kit/ORCHESTRATOR.md; start the hybrid git listener (.kit/git_watch.py --runner computer) in the background."
+else
+  echo "Mode: memory-only (no board installed)"
+  PROMPT="Read the project memory (state/ and awaits.md) and continue from the next step."
 fi
 
 exec agy --mode auto -i "$PROMPT"

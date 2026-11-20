@@ -42,4 +42,9 @@ with tempfile.TemporaryDirectory() as t:
           and g(seed, "ls-remote", "origin", "main").stdout.split()[0] == before)
     open(os.path.join(e, "e.txt"), "w").write("dirty"); r = run(e)
     check("uncommitted changes: nothing pushed", r.returncode == 1 and "not committed" in r.stdout)
+    # P1-4: trunk_push: false on the trunk branch itself must fail closed and NOT push to origin/main
+    f = os.path.join(t, "f"); clone(origin, f, perm=False); write(f, "f.txt", "f\n")
+    before = g(seed, "ls-remote", "origin", "main").stdout.split()[0]; r = run(f)
+    check("without standing permission, running on trunk refuses to push to trunk",
+          r.returncode == 1 and "refusing" in r.stdout and g(seed, "ls-remote", "origin", "main").stdout.split()[0] == before)
 print("%d failed" % fails); sys.exit(1 if fails else 0)

@@ -10,7 +10,7 @@ The board: {{BOARD_URL}} (served locally by `python3 -I .kit/board_server.py`, s
 Run `python3 -I .kit/board_cli.py set posts <part>-<slug> --data '<json>'` with `{title, body, column, part, session_id, created_at, priority}`; optional `status`, `options` + `default_option` (one-tap answers), `images` (`/_blob/<id>` from `python3 -I .kit/board_cli.py asset upload <file>`), `captions`.
 - `column`: `todo` (the owner does something), `question` (the owner chooses), `info` (news, a finished report), `done`.
 - `body`: plain text with `**bold**`, `` `code` ``, `#` headings, `| tables |`, links. Lead with what was found or what the owner must do; name what was NOT checked. `priority` 1-3. `created_at`: `date -u +%Y-%m-%dT%H:%M:%SZ`, run right before (posts without it do not show).
-- `train`: the project your prompt names (its id in `.story/state/`), and `parent` when you continue another part:
+- `train`: the project your prompt names (its id in `{{MEMORY_DIR}}/state/`), and `parent` when you continue another part:
   your post then shows in that project's train on "Where we are".
 - `session_id`: your `agy` conversation ID (from your system prompt / `<user_information>`).
 - A `todo` post says how long it takes him: `minutes`. Pictures: `captions` (one line per picture, in order);

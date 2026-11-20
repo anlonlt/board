@@ -126,5 +126,28 @@ with tempfile.TemporaryDirectory() as d:
           rc == 0 and st.get_doc("posts", "_orchestrator")["exists"] and st.get_doc("posts", "KIT-installed")["exists"])
     st.close()
 
+    # P1-5: fresh install with .board/memory is consistent across templates, kit_import, SessionStart, and kit_cards
+    orch_b = open(os.path.join(t_boot, ".kit", "orchestrator.md"), encoding="utf-8").read()
+    guide_b = open(os.path.join(t_boot, ".kit", "ORCHESTRATOR.md"), encoding="utf-8").read()
+    check("fresh install renders .board/memory (not .story) into orchestrator templates",
+          ".board/memory/state/" in orch_b and ".story" not in orch_b and ".board/memory/state/" in guide_b and ".story" not in guide_b)
+    sf_b = os.path.join(d, "state_b.json")
+    json.dump({"projects": [{"id": "alpha", "title": "Alpha", "next": "ship beta", "priority": 1}]}, open(sf_b, "w"))
+    r_imp = subprocess.run([sys.executable, "-I", os.path.join(t_boot, ".kit", "kit_import.py"), sf_b, "--no-posts"],
+                           capture_output=True, text=True)
+    check("fresh install kit_import writes to .board/memory/state/alpha.md",
+          r_imp.returncode == 0 and os.path.isfile(os.path.join(t_boot, ".board", "memory", "state", "alpha.md"))
+          and not os.path.exists(os.path.join(t_boot, ".story")))
+    r_ss_b = subprocess.run([sys.executable, "-I", os.path.join(t_boot, ".agents", "hooks", "kit", "kit_session_start.py")],
+                            input=json.dumps({"hookEventName": "SessionStart", "cwd": t_boot}), capture_output=True, text=True)
+    check("fresh install SessionStart reads .board/memory/state/alpha.md",
+          r_ss_b.returncode == 0 and "alpha: ship beta" in r_ss_b.stdout)
+    dash_b = os.path.join(d, "dash_b.json")
+    r_kc = subprocess.run([sys.executable, "-I", os.path.join(t_boot, ".kit", "kit_cards.py"), "--write", dash_b,
+                           "--trains", os.path.join(d, "trains_b.json")], capture_output=True, text=True)
+    rows_b = json.load(open(dash_b))["rows"] if r_kc.returncode == 0 else []
+    check("fresh install kit_cards reads .board/memory/state/alpha.md",
+          r_kc.returncode == 0 and len(rows_b) == 1 and rows_b[0]["name"] == "Alpha")
+
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

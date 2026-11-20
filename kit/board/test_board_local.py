@@ -92,7 +92,7 @@ with tempfile.TemporaryDirectory() as tmp:
         rc, out, _ = cli(url, "query", "comments", "--where", '[["post_id","==","P-1"]]', "--out-dir", out_dir)
         check("query comments with where + out-dir", rc == 0 and json.loads(out).get("count") == 1 and os.path.isfile(os.path.join(out_dir, "comments", "c-1.json")))
 
-        # 5. Blobs upload & read
+        # 5. Blobs upload & read + P1-2 MIME allowlist / XSS hardening
         blob_src = os.path.join(tmp, "pic.txt")
         open(blob_src, "wb").write(b"hello-blob-bytes")
         rc, out, _ = cli(url, "asset", "upload", blob_src)
@@ -101,6 +101,66 @@ with tempfile.TemporaryDirectory() as tmp:
         blob_dst = os.path.join(tmp, "pic_out.txt")
         rc, _, _ = cli(url, "asset", "read", bid, "--out", blob_dst)
         check("asset read downloads exact bytes", rc == 0 and open(blob_dst, "rb").read() == b"hello-blob-bytes")
+
+        # P1-2: unsafe MIME (HTML, SVG) forced to attachment + octet-stream + nosniff + no-store
+        for bad_ct, bad_name, bad_body in [
+            ("text/html", "evil.html", b"<script>alert(1)</script>"),
+            ("image/svg+xml", "evil.svg", b"<svg onload=alert(1)></svg>"),
+        ]:
+            req_up = urllib.request.Request(
+                url + "/_api/blobs", data=bad_body,
+                headers={"Content-Type": bad_ct, "X-Filename": bad_name}, method="POST",
+            )
+            meta_bad = json.loads(urllib.request.urlopen(req_up).read().decode("utf-8"))
+            resp_bad = urllib.request.urlopen(url + "/_blob/" + meta_bad["id"])
+            hdrs = {k.lower(): v for k, v in resp_bad.headers.items()}
+            check("blob XSS (%s): forced octet-stream + attachment + nosniff + no-store" % bad_ct,
+                  hdrs.get("content-type") == "application/octet-stream"
+                  and "attachment" in hdrs.get("content-disposition", "")
+                  and hdrs.get("x-content-type-options") == "nosniff"
+                  and "no-store" in hdrs.get("cache-control", ""))
+
+        # P1-2: safe raster image served inline with nosniff
+        req_png = urllib.request.Request(
+            url + "/_api/blobs", data=b"\x89PNG\r\n\x1a\n",
+            headers={"Content-Type": "image/png", "X-Filename": "ok.png"}, method="POST",
+        )
+        meta_png = json.loads(urllib.request.urlopen(req_png).read().decode("utf-8"))
+        resp_png = urllib.request.urlopen(url + "/_blob/" + meta_png["id"])
+        hdrs_png = {k.lower(): v for k, v in resp_png.headers.items()}
+        check("blob raster (image/png): served inline with nosniff",
+              hdrs_png.get("content-type") == "image/png"
+              and hdrs_png.get("x-content-type-options") == "nosniff"
+              and "attachment" not in hdrs_png.get("content-disposition", ""))
+
+        # P2-1: pre-read Content-Length enforcement (413 without allocating oversized body)
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.putrequest("POST", "/_api/blobs")
+        conn.putheader("Content-Length", str(25 * 1024 * 1024))
+        conn.putheader("Content-Type", "application/octet-stream")
+        conn.endheaders()
+        r_big_blob = conn.getresponse()
+        check("pre-read Content-Length rejects >20 MB blob with 413", r_big_blob.status == 413)
+        conn.close()
+
+        conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn2.putrequest("PUT", "/_api/doc/posts/oversized")
+        conn2.putheader("Content-Length", str(6 * 1024 * 1024))
+        conn2.putheader("Content-Type", "application/json")
+        conn2.endheaders()
+        r_big_json = conn2.getresponse()
+        check("pre-read Content-Length rejects >5 MB JSON with 413", r_big_json.status == 413)
+        conn2.close()
+
+        # P2-2: transactional batch rolls back earlier writes on conflict
+        bad_batch = [
+            {"op": "set", "collection": "posts", "doc_id": "TX-ROLLBACK", "data": {"title": "Should not persist"}},
+            {"op": "update", "collection": "posts", "doc_id": "P-1", "data": {"priority": 9}, "if_version": 999},
+        ]
+        rc_tx, _, err_tx = cli(url, "batch", "--data", json.dumps(bad_batch))
+        check("transactional batch: conflict returns 409 and rolls back earlier op",
+              rc_tx != 0 and "409" in err_tx and not store.get_doc("posts", "TX-ROLLBACK")["exists"])
 
         # 6. Comments watch, send, long-poll wait, read, reply
         rc, out, _ = cli(url, "comments", "watch", "--list")
@@ -217,13 +277,38 @@ with tempfile.TemporaryDirectory() as tmp:
         try:
             opener.open(url_a + "/?token=secret123")
             got_cookie = False
+            no_secure = False
         except urllib.error.HTTPError as e:
-            got_cookie = e.code == 302 and "kit_token=secret123" in (e.headers.get("Set-Cookie") or "")
-        check("token auth: /?token=... sets HttpOnly cookie and redirects (302)", got_cookie)
+            sc = e.headers.get("Set-Cookie") or ""
+            got_cookie = e.code == 302 and "kit_token=secret123" in sc
+            no_secure = "; Secure" not in sc
+        check("token auth: /?token=... sets HttpOnly cookie and redirects (302)", got_cookie and no_secure)
+        # X-Forwarded-Proto: https adds Secure attribute
+        try:
+            opener.open(urllib.request.Request(url_a + "/?token=secret123", headers={"X-Forwarded-Proto": "https"}))
+            got_secure = False
+        except urllib.error.HTTPError as e:
+            sc = e.headers.get("Set-Cookie") or ""
+            got_secure = e.code == 302 and "kit_token=secret123" in sc and "; Secure" in sc
+        check("token auth: X-Forwarded-Proto: https adds Secure to cookie", got_secure)
     finally:
         srv_a.shutdown()
         srv_a.server_close()
         store_a.close()
+
+    # P1-1: non-loopback bind without token is refused
+    try:
+        board_server.start_server(tmp, "0.0.0.0", 0)
+        refused_start = False
+    except ValueError:
+        refused_start = True
+    old_env_tok = os.environ.pop("KIT_BOARD_TOKEN", None)
+    try:
+        rc_main = board_server.main(["--host", "0.0.0.0", "--port", "0", "--root", tmp])
+    finally:
+        if old_env_tok is not None:
+            os.environ["KIT_BOARD_TOKEN"] = old_env_tok
+    check("non-loopback bind without token is refused (start_server & main)", refused_start and rc_main != 0)
 
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

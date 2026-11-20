@@ -54,6 +54,13 @@ def main():
             return 0
         _, dirty = git(root, "status", "--porcelain", "--untracked-files=no")
         rc, ahead = git(root, "rev-list", "--count", "@{u}..HEAD")
+        no_upstream_unpushed = ""
+        if rc != 0:
+            rrc, remotes = git(root, "remote")
+            if rrc == 0 and remotes:
+                urc, ucount = git(root, "rev-list", "--count", "HEAD", "--not", "--remotes")
+                if urc == 0 and ucount not in ("", "0"):
+                    no_upstream_unpushed = ucount
     except (OSError, subprocess.SubprocessError):
         print(json.dumps({"decision": "allow"}))
         return 0
@@ -62,6 +69,8 @@ def main():
         why.append("%d tracked files changed and not committed" % len(dirty.splitlines()))
     if rc == 0 and ahead not in ("", "0"):
         why.append("%s commits not pushed" % ahead)
+    elif no_upstream_unpushed:
+        why.append("%s commits on branch with no upstream (not pushed)" % no_upstream_unpushed)
     if not why:
         print(json.dumps({"decision": "allow"}))
         return 0

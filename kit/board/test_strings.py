@@ -38,12 +38,27 @@ check("the table is current: a fresh extract finds no visible string it lacks",
            - {(e, "js") for e in strings.extract_exclusions()}))
 node = shutil.which("node")
 if node:
-    with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as fh:
-        fh.write(out)
-    r = subprocess.run([node, os.path.join(HERE, "test_page.js")], capture_output=True, text=True, timeout=300,
-                       env=dict(os.environ, KIT_PAGE=fh.name), cwd=os.path.dirname(os.path.dirname(HERE)))
-    check("the translated page runs: test_page.js passes on it (%s)" % (r.stdout.strip().splitlines() or ["?"])[-1],
-          r.returncode == 0 and "0 failed" in r.stdout)
+    repo_root = os.path.dirname(os.path.dirname(HERE))
+    has_pw = subprocess.run(
+        [node, "-e", "require.resolve('playwright')"],
+        capture_output=True, text=True, cwd=repo_root,
+    ).returncode == 0
+    if not has_pw:
+        print("SKIP the translated page in a browser: playwright not installed in node (say so; not a pass)")
+    else:
+        with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as fh:
+            fh.write(out)
+            tmp_html = fh.name
+        try:
+            r = subprocess.run([node, os.path.join(HERE, "test_page.js")], capture_output=True, text=True, timeout=300,
+                               env=dict(os.environ, KIT_PAGE=tmp_html), cwd=repo_root)
+            check("the translated page runs: test_page.js passes on it (%s)" % (r.stdout.strip().splitlines() or ["?"])[-1],
+                  r.returncode == 0 and "0 failed" in r.stdout)
+        finally:
+            try:
+                os.unlink(tmp_html)
+            except OSError:
+                pass
 else:
     print("SKIP the translated page in a browser: no node here (say so; not a pass)")
 print("%d failed" % fails)

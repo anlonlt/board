@@ -55,6 +55,9 @@ def main(argv=None):
         print("end-session: changes are not committed; commit them by name, then run again:\n" + "\n".join(
             "    " + l for l in dirty.splitlines()[:20]))
         return 1
+    if branch == trunk and branch_only:
+        print("end-session: refusing to push directly to trunk '%s' (--branch-only, or no standing permission: kit.trunk_push is false). Commit on a feature branch instead." % trunk)
+        return 1
     if branch != trunk:
         if not push("-u", "origin", branch):
             print("end-session: pushing %s failed; nothing else done" % branch)

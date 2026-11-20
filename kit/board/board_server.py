@@ -585,6 +585,96 @@ class BoardStore:
         self.notify_sse(collection, doc_id)
         return {"id": doc_id, "version": new_ver, "data": cur_data}, None
 
+    def batch_ops(self, ops):
+        now = utc_now()
+        results = []
+        notifies = []
+        with self.lock:
+            try:
+                self.conn.execute("BEGIN IMMEDIATE")
+                for w in ops or []:
+                    op = w.get("op") or "set"
+                    coll, doc_id = w["collection"], w["doc_id"]
+                    if_version = w.get("if_version")
+                    if op == "set":
+                        row = self.conn.execute(
+                            "SELECT version FROM docs WHERE collection=? AND doc_id=?",
+                            (coll, doc_id),
+                        ).fetchone()
+                        cur_ver = row[0] if row else 0
+                        if if_version is not None and int(if_version) != cur_ver:
+                            self.conn.rollback()
+                            return None, ("conflict", doc_id, cur_ver)
+                        new_ver = cur_ver + 1
+                        data = w.get("data", {})
+                        self.conn.execute(
+                            "INSERT INTO docs(collection, doc_id, version, data, updated_at) VALUES (?, ?, ?, ?, ?) "
+                            "ON CONFLICT(collection, doc_id) DO UPDATE SET version=excluded.version, data=excluded.data, updated_at=excluded.updated_at",
+                            (coll, doc_id, new_ver, json.dumps(data, ensure_ascii=False), now),
+                        )
+                        self._record_change(coll, doc_id, "set", new_ver, now)
+                    elif op == "update":
+                        row = self.conn.execute(
+                            "SELECT version, data FROM docs WHERE collection=? AND doc_id=?",
+                            (coll, doc_id),
+                        ).fetchone()
+                        cur_ver = row[0] if row else 0
+                        if if_version is not None and int(if_version) != cur_ver:
+                            self.conn.rollback()
+                            return None, ("conflict", doc_id, cur_ver)
+                        cur_data = json.loads(row[1]) if row else {}
+                        def _deep_merge(dst, src):
+                            for k, v in src.items():
+                                if isinstance(v, dict) and isinstance(dst.get(k), dict):
+                                    _deep_merge(dst[k], v)
+                                else:
+                                    dst[k] = v
+                        _deep_merge(cur_data, w.get("data", {}))
+                        new_ver = cur_ver + 1
+                        self.conn.execute(
+                            "INSERT INTO docs(collection, doc_id, version, data, updated_at) VALUES (?, ?, ?, ?, ?) "
+                            "ON CONFLICT(collection, doc_id) DO UPDATE SET version=excluded.version, data=excluded.data, updated_at=excluded.updated_at",
+                            (coll, doc_id, new_ver, json.dumps(cur_data, ensure_ascii=False), now),
+                        )
+                        self._record_change(coll, doc_id, "update", new_ver, now)
+                    elif op == "str_replace":
+                        row = self.conn.execute(
+                            "SELECT version, data FROM docs WHERE collection=? AND doc_id=?",
+                            (coll, doc_id),
+                        ).fetchone()
+                        if not row:
+                            self.conn.rollback()
+                            return None, ("conflict", doc_id, "not_found")
+                        cur_ver, raw = row
+                        if if_version is not None and int(if_version) != cur_ver:
+                            self.conn.rollback()
+                            return None, ("conflict", doc_id, cur_ver)
+                        cur_data = json.loads(raw)
+                        val = cur_data.get(w["field"])
+                        if not isinstance(val, str) or w["old_str"] not in val:
+                            self.conn.rollback()
+                            return None, ("conflict", doc_id, "old_str_not_found")
+                        cur_data[w["field"]] = val.replace(w["old_str"], w["new_str"], 1)
+                        new_ver = cur_ver + 1
+                        self.conn.execute(
+                            "UPDATE docs SET version=?, data=?, updated_at=? WHERE collection=? AND doc_id=?",
+                            (new_ver, json.dumps(cur_data, ensure_ascii=False), now, coll, doc_id),
+                        )
+                        self._record_change(coll, doc_id, "str_replace", new_ver, now)
+                    else:
+                        self.conn.rollback()
+                        return None, ("unknown_op", doc_id, str(op))
+                    results.append({"collection": coll, "doc_id": doc_id, "version": new_ver})
+                    notifies.append((coll, doc_id))
+                self.conn.commit()
+            except Exception:
+                if self.conn.in_transaction:
+                    self.conn.rollback()
+                raise
+        for coll, doc_id in notifies:
+            self.notify_sse(coll, doc_id)
+        return results, None
+
     def save_blob(self, raw_bytes, content_type="application/octet-stream", filename="file"):
         if len(raw_bytes) > 20 * 1024 * 1024:
             raise ValueError("blob exceeds 20 MB")
@@ -720,6 +810,16 @@ def read_git_diff(root_dir, ref):
     return {"ref": ref, "stat": r_stat.stdout.strip(), "diff": diff}, None
 
 
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+SAFE_INLINE_BLOB_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"}
+MAX_BLOB_BYTES = 20 * 1024 * 1024
+MAX_JSON_BYTES = 5 * 1024 * 1024
+
+
+class PayloadTooLarge(Exception):
+    pass
+
+
 def make_handler(root_dir, store, token=None, notify_url=None):
     html_path = os.path.join(root_dir, ".kit", "board.html")
 
@@ -770,7 +870,14 @@ def make_handler(root_dir, store, token=None, notify_url=None):
             self.wfile.write(raw)
 
         def _read_json(self):
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                raise ValueError("invalid content-length")
+            if length < 0:
+                raise ValueError("invalid content-length")
+            if length > MAX_JSON_BYTES:
+                raise PayloadTooLarge("json body exceeds 5 MB")
             raw = self.rfile.read(length) if length else b"{}"
             return json.loads(raw.decode("utf-8"))
 
@@ -787,8 +894,12 @@ def make_handler(root_dir, store, token=None, notify_url=None):
             if set_cookie is None:
                 return
             if set_cookie and path in ("/", "/index.html"):
+                proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+                cookie = "kit_token=%s; Path=/; HttpOnly; SameSite=Lax" % token
+                if proto == "https":
+                    cookie += "; Secure"
                 self.send_response(302)
-                self.send_header("Set-Cookie", "kit_token=%s; Path=/; HttpOnly; SameSite=Lax" % token)
+                self.send_header("Set-Cookie", cookie)
                 self.send_header("Location", "/")
                 self.send_header("Content-Length", "0")
                 self.end_headers()
@@ -877,11 +988,18 @@ def make_handler(root_dir, store, token=None, notify_url=None):
                 if data is None:
                     self._send_json(404, {"error": "blob not found"})
                     return
-                ctype = meta.get("contentType") or mimetypes.guess_type(meta.get("name", ""))[0] or "application/octet-stream"
+                raw_ctype = (meta.get("contentType") or mimetypes.guess_type(meta.get("name", ""))[0] or "application/octet-stream").split(";")[0].strip().lower()
                 self.send_response(200)
-                self.send_header("Content-Type", ctype)
+                self.send_header("X-Content-Type-Options", "nosniff")
+                if raw_ctype in SAFE_INLINE_BLOB_TYPES:
+                    self.send_header("Content-Type", raw_ctype)
+                    self.send_header("Cache-Control", "public, max-age=31536000")
+                else:
+                    self.send_header("Content-Type", "application/octet-stream")
+                    fname = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(meta.get("name") or blob_id)) or blob_id
+                    self.send_header("Content-Disposition", 'attachment; filename="%s"' % fname)
+                    self.send_header("Cache-Control", "private, no-store")
                 self.send_header("Content-Length", str(len(data)))
-                self.send_header("Cache-Control", "public, max-age=31536000")
                 self.end_headers()
                 self.wfile.write(data)
                 return
@@ -940,6 +1058,10 @@ def make_handler(root_dir, store, token=None, notify_url=None):
             path = parsed.path
             try:
                 body = self._read_json()
+            except PayloadTooLarge as e:
+                self.close_connection = True
+                self._send_json(413, {"error": str(e), "code": "too_large"})
+                return
             except ValueError:
                 self._send_json(400, {"error": "invalid json"})
                 return
@@ -972,6 +1094,10 @@ def make_handler(root_dir, store, token=None, notify_url=None):
             path = parsed.path
             try:
                 body = self._read_json()
+            except PayloadTooLarge as e:
+                self.close_connection = True
+                self._send_json(413, {"error": str(e), "code": "too_large"})
+                return
             except ValueError:
                 self._send_json(400, {"error": "invalid json"})
                 return
@@ -998,7 +1124,18 @@ def make_handler(root_dir, store, token=None, notify_url=None):
             path = parsed.path
 
             if path == "/_api/blobs":
-                length = int(self.headers.get("Content-Length") or 0)
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    self._send_json(400, {"error": "invalid content-length"})
+                    return
+                if length < 0:
+                    self._send_json(400, {"error": "invalid content-length"})
+                    return
+                if length > MAX_BLOB_BYTES:
+                    self.close_connection = True
+                    self._send_json(413, {"error": "blob exceeds 20 MB", "code": "too_large"})
+                    return
                 raw = self.rfile.read(length)
                 ctype = self.headers.get("Content-Type") or "application/octet-stream"
                 fname = urllib.parse.unquote(self.headers.get("X-Filename") or "file")
@@ -1012,6 +1149,10 @@ def make_handler(root_dir, store, token=None, notify_url=None):
 
             try:
                 body = self._read_json()
+            except PayloadTooLarge as e:
+                self.close_connection = True
+                self._send_json(413, {"error": str(e), "code": "too_large"})
+                return
             except ValueError:
                 self._send_json(400, {"error": "invalid json"})
                 return
@@ -1037,23 +1178,14 @@ def make_handler(root_dir, store, token=None, notify_url=None):
 
             if path == "/_api/db/batch":
                 ops = body.get("writes") if isinstance(body, dict) else body
-                results = []
-                for w in ops or []:
-                    op = w.get("op") or "set"
-                    coll, doc_id = w["collection"], w["doc_id"]
-                    if op == "set":
-                        res, err = store.set_doc(coll, doc_id, w.get("data", {}), if_version=w.get("if_version"))
-                    elif op == "update":
-                        res, err = store.update_doc(coll, doc_id, w.get("data", {}), if_version=w.get("if_version"))
-                    elif op == "str_replace":
-                        res, err = store.str_replace(coll, doc_id, w["field"], w["old_str"], w["new_str"], if_version=w.get("if_version"))
+                results, err = store.batch_ops(ops or [])
+                if err is not None:
+                    kind, doc_id, detail = err
+                    if kind == "unknown_op":
+                        self._send_json(400, {"error": "unknown op: " + str(detail)})
                     else:
-                        self._send_json(400, {"error": "unknown op: " + str(op)})
-                        return
-                    if err is not None:
-                        self._send_json(409, {"error": "batch_conflict", "doc_id": doc_id, "detail": err})
-                        return
-                    results.append({"collection": coll, "doc_id": doc_id, "version": res["version"]})
+                        self._send_json(409, {"error": "batch_conflict", "doc_id": doc_id, "detail": detail})
+                    return
                 self._send_json(200, {"ok": True, "results": results})
                 return
 
@@ -1198,6 +1330,8 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
 
 
 def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None):
+    if host.strip().lower() not in LOOPBACK_HOSTS and not token:
+        raise ValueError("refusing to bind to non-loopback host %r without --token / KIT_BOARD_TOKEN" % host)
     data_dir = os.path.join(root_dir, ".kit", "board_data")
     store = BoardStore(data_dir)
     if notify_url is None:
@@ -1224,6 +1358,9 @@ def main(argv=None):
     a = ap.parse_args(argv)
     root = os.path.abspath(a.root) if a.root else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     tok = a.token or os.environ.get("KIT_BOARD_TOKEN") or None
+    if a.host.strip().lower() not in LOOPBACK_HOSTS and not tok:
+        print("board_server: refusing to bind to non-loopback host %r without --token or KIT_BOARD_TOKEN" % a.host, file=sys.stderr)
+        return 2
     nurl = a.notify_url or os.environ.get("KIT_NOTIFY_URL") or None
     srv, store = start_server(root, a.host, a.port, token=tok, notify_url=nurl)
     if a.seed_from_mirror:
