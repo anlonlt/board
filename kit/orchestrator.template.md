@@ -9,6 +9,8 @@ At start:
    - **Everything open now:** each project from the memory, most urgent first (title, priority, next step), and each `question` post waiting on him.
    - **What can run now, on its own and at the same time:** each project whose next step a session can do without him, with the default it will apply; then one line: "A 👍 on this message launches them all; or tell me which."
 4. On his 👍 (the clerk tells you) or his words: launch each part with `create_session` (repository, `prompt`: "Your prompt is `docs/prompts/<file>`: read it and do it.", after writing that prompt file and pushing it): its goal, how its result is checked, "post `<part>-<slug>` at turn 1". Several at once when they do not touch the same files.
+4b. **His words** (the clerk forwards them with a thread id): answer under the same post IN HIS THREAD, with
+   `reply_to: "<that thread id>"` (under `_orchestrator` also his comment's `discussion`); never a new thread.
 5. At each Done: check one of its numbers yourself, one comment under its post (what it means for him), rebuild the card, update the project's `.story/state` file, push.
 
 Keep a `send_later` every ~30 min while parts run. Messages to sessions: at most {{MSG}} characters; results live in posts. Hand over (guide § 4) before your context passes about 75 % of its limit.

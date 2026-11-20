@@ -95,5 +95,6 @@ with tempfile.TemporaryDirectory() as d:
     f3 = transcript("u3", "I've taken over as orchestrator and nothing is running yet.", human=False)
     check("stop: a turn a session or timer opened must end with ·", run("kit_say_it_once.py", St(f3, "s3"), proj)[0] == 2)
     check("stop: · passes", run("kit_say_it_once.py", St(transcript("u4", "·", human=False), "s4"), proj)[0] == 0)
+
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)
