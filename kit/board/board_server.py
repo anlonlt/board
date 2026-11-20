@@ -571,11 +571,13 @@ def make_handler(root_dir, store):
                     self._send_json(404, {"error": "board.html not found"})
                     return
                 html = open(html_path, encoding="utf-8").read()
-                tag = '<script src="/_shim.js"></script>'
+                head_inject = '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<script src="/_shim.js"></script>'
                 if "</head>" in html:
-                    html = html.replace("</head>", tag + "\n</head>", 1)
+                    if 'name="viewport"' in html.lower():
+                        head_inject = '<script src="/_shim.js"></script>'
+                    html = html.replace("</head>", head_inject + "\n</head>", 1)
                 else:
-                    html = tag + "\n" + html
+                    html = "<!doctype html>\n<html>\n<head>\n" + head_inject + "\n</head>\n<body>\n" + html + "\n</body>\n</html>\n"
                 raw = html.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
