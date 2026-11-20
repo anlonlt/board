@@ -25,6 +25,7 @@ This repository uses the local board kit (`.kit/`). Read `.kit/BOARD.md`, `.kit/
    ```
 3. Rebuild `_dashboard` / `_trains` after state changes (`python3 -I .kit/kit_cards.py`).
 4. If a Git `origin` remote is configured, sync the mirror: `python3 -I .kit/kit.py sync-db --commit && python3 -I .kit/kit.py push` (or `kit.py receive` / `kit.py publish` for warm cross-runtime handoff).
+5. When changing board kit scripts in the kit repository, run `python3 scripts/run_all_tests.py` and confirm 0 failures before committing.
 
 ## 3. Live listener (Arena / interactive turns)
 - While in an active turn, arm the ~30-minute listener so incoming board comments wake you without requiring `.` in chat:

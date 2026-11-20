@@ -46,15 +46,67 @@ def memory_dir(root=ROOT):
     return os.path.join(root, ".story")
 
 
+def _clean_title(raw_title, wid):
+    m = re.match(r"^State\s*[—–\-:]\s*(.+)$", raw_title.strip(), re.I)
+    if m:
+        cleaned = m.group(1).strip()
+        if cleaned and cleaned == cleaned.lower():
+            cleaned = cleaned.replace("-", " ").capitalize()
+        return cleaned or wid
+    return raw_title.strip() or wid
+
+
+def _section_text(text, heading_pattern):
+    m = re.search(r"^##\s+" + heading_pattern + r"\s*$(.*?)(?=^## |\Z)", text, re.S | re.M | re.I)
+    return m.group(1).strip() if m else ""
+
+
+def _first_paragraph(section):
+    if not section:
+        return ""
+    paras = []
+    cur = []
+    for line in section.splitlines():
+        s = line.strip()
+        if not s:
+            if cur:
+                paras.append(" ".join(cur))
+                cur = []
+        else:
+            cur.append(re.sub(r"^[-*]\s+", "", s) if not cur else s)
+    if cur:
+        paras.append(" ".join(cur))
+    return paras[0] if paras else ""
+
+
+def _step_summary(nxt, max_len=120):
+    if len(nxt) <= max_len:
+        return nxt
+    # Prefer first sentence/clause if concise
+    m = re.match(r"^(.{15," + str(max_len) + r"}?)(?:\.\s|;\s)", nxt)
+    if m:
+        return m.group(1).strip()
+    return nxt[: max_len - 3].rstrip() + "..."
+
+
+_IDLE_NEXT_RE = re.compile(r"^(?:nothing\s+waits|none\s+queued|waiting:\s*nothing|held\b)", re.I)
+_PLACEHOLDER_STEPS = {"next step", "later", "tbd", "todo", "none", ""}
+
+
 def row(path, awaits):
     wid = os.path.basename(path)[:-3]
     text = open(path, encoding="utf-8").read()
-    title = next((l[2:].strip() for l in text.splitlines() if l.startswith("# ")), wid)
+    raw_title = next((l[2:].strip() for l in text.splitlines() if l.startswith("# ")), wid)
+    title = _clean_title(raw_title, wid)
     nxt = next((l[5:].strip() for l in text.splitlines() if l.startswith("Next:")), "")
-    m = re.search(r"^Priority:\s*([123])", text, re.M)
+    if not nxt:
+        nxt = _first_paragraph(_section_text(text, r"Next(?:\s+step)?"))
+    if not nxt:
+        nxt = _first_paragraph(_section_text(text, r"Where\s+it\s+stands"))
+    m = re.search(r"^Priority:\s*([123])", text, re.M | re.I)
     prio = int(m.group(1)) if m else 2
     steps, done = [], 0
-    sm = re.search(r"^## Steps\s*$(.*?)(?=^## |\Z)", text, re.S | re.M)
+    sm = re.search(r"^## Steps\s*$(.*?)(?=^## |\Z)", text, re.S | re.M | re.I)
     if sm:
         for l in sm.group(1).splitlines():
             x = re.match(r"\s*- \[( |x|X)\]\s*(.+)", l)
@@ -62,12 +114,31 @@ def row(path, awaits):
                 steps.append(x.group(2).strip())
                 done += x.group(1) != " "
     if not steps:
-        steps = [nxt or "next step"]
+        done_sec = _section_text(text, r"Done")
+        if done_sec:
+            for l in done_sec.splitlines():
+                x = re.match(r"\s*[-*]\s+(?:\[[xX]\]\s*)?(.+)", l)
+                if x:
+                    steps.append(x.group(1).strip())
+                    done += 1
+        if nxt:
+            steps.append(_step_summary(nxt))
+        elif not steps:
+            steps = ["next step"]
     mine = [l[len("- [%s]" % wid):].strip() for l in awaits.splitlines() if l.startswith("- [%s]" % wid)]
     bm = re.search(r"^Blocked by:\s*(.+)$", text, re.M | re.I)
     blockers = [b.strip() for b in bm.group(1).split(",") if b.strip() and b.strip().lower() != "none"] if bm else []
     # the page's states (CHIP/ORDER in board.html): you (waits on the owner), blocked, running, ready, idle, done
-    state = "you" if mine else ("blocked" if blockers else ("done" if steps and done == len(steps) else ("ready" if nxt else "idle")))
+    if mine:
+        state = "you"
+    elif blockers:
+        state = "blocked"
+    elif steps and done == len(steps):
+        state = "done"
+    elif nxt and not _IDLE_NEXT_RE.match(nxt):
+        state = "ready"
+    else:
+        state = "idle"
     note = ("Next: " + nxt) if nxt else ""
     if blockers:
         note += "\n- Blocked by: " + ", ".join(blockers)
@@ -78,6 +149,57 @@ def row(path, awaits):
     if blockers:
         out["blocked_by"] = blockers
     return prio, out
+
+
+def existing_dashboard_rows(board_dir):
+    if not board_dir:
+        return []
+    dash_path = os.path.join(board_dir, "posts", "_dashboard.json")
+    if not os.path.isfile(dash_path):
+        return []
+    try:
+        doc = json.load(open(dash_path, encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if isinstance(doc, dict):
+        rows = doc.get("rows")
+        if isinstance(rows, list):
+            return rows
+        data = doc.get("data")
+        if isinstance(data, dict) and isinstance(data.get("rows"), list):
+            return data["rows"]
+    return []
+
+
+def is_placeholder_row(r):
+    name = str(r.get("name") or "").strip()
+    if re.match(r"^State\s*[—–\-:]", name, re.I):
+        return True
+    steps = [str(s).strip().lower() for s in (r.get("steps") or [])]
+    if not steps or all(s in _PLACEHOLDER_STEPS for s in steps):
+        return True
+    return False
+
+
+def check_safety(board_dir, new_rows, force=False):
+    if force or not board_dir:
+        return None
+    existing = existing_dashboard_rows(board_dir)
+    if not existing:
+        return None
+    if len(new_rows) == 0:
+        return (
+            "SAFETY REFUSAL: existing _dashboard in %s has %d rows; refusing to write 0 rows "
+            "(pass --force to override)" % (board_dir, len(existing))
+        )
+    placeholders = sum(1 for r in new_rows if is_placeholder_row(r))
+    if placeholders * 2 > len(new_rows):
+        return (
+            "SAFETY REFUSAL: %d/%d generated rows (>50%%) are generic placeholders while existing "
+            "_dashboard in %s has %d rows (pass --force to override)"
+            % (placeholders, len(new_rows), board_dir, len(existing))
+        )
+    return None
 
 
 def post_state(p):
@@ -142,8 +264,13 @@ def main(argv=None):
     ap.add_argument("--trains", default="/tmp/kit-trains.json")
     ap.add_argument("--board", help="posts saved by ArtifactData list (DIR/posts/*.json) or the board's git copy")
     ap.add_argument("--now", default=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    ap.add_argument("--force", action="store_true", help="allow overwriting a non-empty _dashboard with 0 or placeholder rows")
     a = ap.parse_args(argv)
     d = build(a.now)
+    err = check_safety(a.board, d["rows"], force=a.force)
+    if err:
+        print(err, file=sys.stderr)
+        return 2
     t = build_trains(a.board, d["rows"], a.now)
     for r in d["rows"]:  # a row whose project has a running part runs too
         if r["state"] in ("ready", "idle") and any(x["state"] == "running" for x in t["rows"] if x["parent"] == r["train"]):

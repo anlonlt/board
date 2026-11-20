@@ -13,7 +13,8 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "kit" / "board"))
+if str(ROOT / "kit" / "board") not in sys.path:
+    sys.path.append(str(ROOT / "kit" / "board"))
 import board_server  # noqa: E402
 
 
