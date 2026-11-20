@@ -19,7 +19,8 @@ with tempfile.TemporaryDirectory() as d:
     check("two rows, most urgent first", [x["name"] for x in rows] == ["Bulletin", "Later"])
     b = rows[0] if rows else {}
     check("steps and the current one", b.get("steps") == ["plan", "draft", "publish"] and b.get("at") == 1)
-    check("waits on the owner, from awaits", b.get("state") == "waits" and b.get("waits") is True)
-    check("its post, its next step", b.get("post") == "P-bulletin" and b.get("note") == "Next: draft 24 Nov")
+    check("waits on the owner, from awaits, in the page's state name", b.get("state") == "you" and "Waits on you: P1 layout?" in b.get("note", ""))
+    check("a row with a next step is ready (a page state)", rows[1]["state"] == "ready" if len(rows) > 1 else False)
+    check("its post, its next step", b.get("post") == "P-bulletin" and b.get("note", "").startswith("Next: draft 24 Nov"))
     check("a row without steps shows its next step", rows[1]["steps"] == ["someday"] if len(rows) > 1 else False)
 print("%d failed" % fails); sys.exit(1 if fails else 0)

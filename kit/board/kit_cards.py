@@ -4,8 +4,9 @@
     python3 -I .kit/kit_cards.py [--write /tmp/kit-dashboard.json] [--now ISO]
 
 One row per workstream, from .story/state/<id>.md: its `# title`, `Next:`, `Priority:`, and an optional `## Steps`
-section ("- [x] done step" / "- [ ] step to come"; without it the steps are just the next one). A row is `waits` when
-.story/awaits.md has a line "- [<id>] ...". Rows go most urgent first. Then: `ArtifactData` `set`, collection
+section ("- [x] done step" / "- [ ] step to come"; without it the steps are just the next one). A row is `you` when
+.story/awaits.md has a line "- [<id>] ..." (those lines go into its note), else `ready` with a next step, `done`
+when every step is ticked, `idle` otherwise: the page's own states. Rows go most urgent first. Then: `ArtifactData` `set`, collection
 "posts", doc_id "_dashboard", `file_path` the written file (with `if_version` when it exists). The page shows it as
 the card at the top; a tap on a row opens its post `P-<id>` (the import's) when there is one.
 (The "Waiting for you" card is left out on purpose: what waits on the owner shows as the rows' `waits` mark and as
@@ -40,10 +41,14 @@ def row(path, awaits):
                 done += x.group(1) != " "
     if not steps:
         steps = [nxt or "next step"]
-    waits = "- [%s]" % wid in awaits
-    state = "waits" if waits else ("done" if steps and done == len(steps) else "running")
+    mine = [l[len("- [%s]" % wid):].strip() for l in awaits.splitlines() if l.startswith("- [%s]" % wid)]
+    # the page's states (CHIP/ORDER in board.html): you (waits on the owner), running, ready, idle, done
+    state = "you" if mine else ("done" if steps and done == len(steps) else ("ready" if nxt else "idle"))
+    note = ("Next: " + nxt) if nxt else ""
+    if mine:
+        note += "".join("\n- Waits on you: " + m for m in mine)
     return prio, {"key": wid, "name": title, "steps": steps, "at": min(done, len(steps) - 1), "state": state,
-                  "note": ("Next: " + nxt) if nxt else "", "post": "P-" + wid, "waits": waits}
+                  "note": note.strip(), "post": "P-" + wid}
 
 
 def build(now):

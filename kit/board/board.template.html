@@ -929,7 +929,7 @@ input, textarea, select, .body, .cmt .txt, .peek .body, .cap { -webkit-user-sele
            its post, not its train; the other rows open their train. */
         if (stt === "you") {
           var wl = el("div", "wait-rows dwait"), mine = itemsFor(r);
-          if (!mine.length) wl.appendChild(el("div", "note", "Nothing listed for this row in Waiting for you."));
+          if (!mine.length && state.special._waiting) wl.appendChild(el("div", "note", "Nothing listed for this row in Waiting for you."));
           mine.forEach(function (it) { wl.appendChild(waitRow(it)); });
           w.appendChild(wl);
         }

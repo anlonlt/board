@@ -11,7 +11,11 @@ The board: {{BOARD_URL}} (source `.kit/board.html`). A session's result lives in
 - `column`: `todo` (the owner does something), `question` (the owner chooses), `info` (news, a finished report), `done`.
 - `body`: plain text with `**bold**`, `` `code` ``, `#` headings, `| tables |`, links. Lead with what was found or what the owner must do; name what was NOT checked. `priority` 1-3. `created_at`: `date -u +%Y-%m-%dT%H:%M:%SZ`, run right before (posts without it do not show).
 - `session_id`: yours (the `session_…` in your `Claude-Session` line, or `get_session`).
-- Change your post with `update` / `str_replace` + `if_version` (the version the last write returned). Add, do not resend: `str_replace` `field: "body"`, `old_str` its first line, `new_str` the new lines + that first line.
+- A `todo` post says how long it takes him: `minutes`. Pictures: `captions` (one line per picture, in order);
+  `image_groups: [{title, count}]` puts the pictures meant to be compared side by side; unrelated pictures:
+  `layout_phone` and `layout_computer` `"rows"`.
+- **Never `set` a post that exists:** the page writes its own fields on it (`column_before`, `done_at` when he moves
+  it, `priority` when he taps 1-3); `set` would erase them. Change your post with `update` / `str_replace` + `if_version` (the version the last write returned). Add, do not resend: `str_replace` `field: "body"`, `old_str` its first line, `new_str` the new lines + that first line.
 
 ## Comments
 - The owner's words reach you from the board clerk by `send_message`, naming the post and a thread id. A 👍 Like or a tapped answer goes to the orchestrator only.
@@ -20,4 +24,9 @@ The board: {{BOARD_URL}} (source `.kit/board.html`). A session's result lives in
 - **Typing dots:** when you start writing an answer, `set` `typing/<post_id>` `{from: "<part>", at: <now>}`; the page shows dots until your comment lands or 10 minutes pass.
 - `created_at` is the real UTC time, run right before the write.
 - A post's comments without the whole board: `python3 -I .kit/kit.py post <id>` on a fresh copy (`.kit/ORCHESTRATOR.md` § Reading), or `query` `comments` `where [["post_id","==","<id>"]]` with `out_dir`.
+- **His attachments:** his comment's text ends with `[attached: <name> (<type>) at /_blob/<id>]`; fetch one with
+  `Artifact` `read`, the board's `url`, `path: "<id>"`.
+- **An answer under one of your pictures:** add `image: "/_blob/<id>"` to your comment.
+- **A 👍 or a tapped answer** goes to the orchestrator only (the clerk sends it there), never to you: the orchestrator
+  relays a go.
 - You never republish the page.
