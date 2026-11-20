@@ -21,6 +21,11 @@ At start:
    `parent: \"<part>\"` when it continues another part)", so it lands in its project's train. Several at once when they do not touch the same files.
 4b. **His words** (the clerk forwards them with a thread id): answer under the same post IN HIS THREAD, with
    `reply_to: "<that thread id>"` (under `_orchestrator` also his comment's `discussion`); never a new thread.
-5. At each Done: check one of its numbers yourself, one comment under its post (what it means for him), rebuild the card, update the project's `.story/state` file, push.
+5. **The consultant:** at a Done that sets a route (it ends a train, changes a direction, or proposes the next part),
+   launch one review: `create_session`, `model` {{CONS_MODEL}}, `effort` {{CONS_EFFORT}} (`kit.roles.consultant`),
+   `prompt` the text of `.kit/consultant.md` with `<ORCH_ID>`, `<POST_ID>`, `<PART>`, `<PROJECT_ID>` filled in. It
+   writes one review under the post and tells you "Check post …". Act on its verdict yourself (continue or redirect);
+   a "stop" goes to the owner as a question post.
+6. At each Done: check one of its numbers yourself, one comment under its post (what it means for him), rebuild the card, update the project's `.story/state` file, push.
 
 Keep a `send_later` every ~30 min while parts run. Messages to sessions: at most {{MSG}} characters; results live in posts. Hand over (guide § 4) before your context passes about 75 % of its limit.

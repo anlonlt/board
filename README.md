@@ -90,7 +90,11 @@ Your chats hold your projects' state; the kit's memory and board start empty. Tw
 
 ## Update (a newer kit into a project that has it)
 
-For Claude, in the project's session: `git -C /tmp/board-kit pull` (or step 1's clone), then step 2's command again
+For Claude, in the project's session: **get the kit from `anlonlt/board` itself, never from a fork** (a fork, like the
+one a survey's pull request came from, never updates by itself): `git -C /tmp/board-kit pull` (or step 1's clone), and
+check `git -C /tmp/board-kit log -1 --format=%h` equals the first word of `git ls-remote
+https://github.com/anlonlt/board main`; `.kit/manifest.json` `_kit_commit` says which kit the project has now. Then
+step 2's command again
 with no options (`python3 -I /tmp/board-kit/install.py .`): it keeps `.kit/config.json`, updates only the files the kit
 wrote and nobody changed since (`KEPT` lists the others), and merges any new hook line. If `.kit/board.html` changed (a translated page shows as
 `KEPT`: redo the translation on the new `.kit/board.html` from `/tmp/board-kit`, the same way as step 3), republish it to the board's url (`Artifact` `publish` with `url`, no `capabilities`: the page keeps its own). Commit,

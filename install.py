@@ -46,7 +46,8 @@ DEFAULT_KIT = {
     # orchestrator and the parts think (Opus, medium); the cards agent runs scripts (Sonnet, its file's frontmatter).
     "roles": {"orchestrator": {"model": "claude-opus-5-5", "effort": "medium"},
               "clerk": {"model": "claude-haiku-5-5", "effort": "low"},
-              "part": {"model": "claude-opus-5-5", "effort": "medium"}},
+              "part": {"model": "claude-opus-5-5", "effort": "medium"},
+              "consultant": {"model": "claude-fable-5-2", "effort": "medium"}},
     "main_branch": "main",
 }
 
@@ -103,6 +104,8 @@ def load_config(t, a):
     k = c.setdefault("kit", {})
     for key, v in DEFAULT_KIT.items():
         k.setdefault(key, v)
+    for role, v in DEFAULT_KIT["roles"].items():  # a role added to the kit after this project's install
+        k["roles"].setdefault(role, v)
     if a.project:
         c["project"] = a.project
     c.setdefault("project", os.path.basename(t))
@@ -129,7 +132,9 @@ def render(text, c):
             "CLERK": c.get("fields", {}).get("clerk", "clerk"),
             "MIRROR_BRANCH": c["mirror"]["branch"], "MIRROR_PATH": c["mirror"]["path"],
             "MSG": str(k["limits"]["message_chars"]), "DONE": str(k["limits"]["done_message_chars"]),
-            "PART_MODEL": k["roles"]["part"]["model"], "PART_EFFORT": k["roles"]["part"]["effort"]}
+            "PART_MODEL": k["roles"]["part"]["model"], "PART_EFFORT": k["roles"]["part"]["effort"],
+            "CONS_MODEL": k["roles"].get("consultant", DEFAULT_KIT["roles"]["consultant"])["model"],
+            "CONS_EFFORT": k["roles"].get("consultant", DEFAULT_KIT["roles"]["consultant"])["effort"]}
     for n, v in vals.items():
         text = text.replace("{{%s}}" % n, v)
     left = re.findall(r"\{\{[A-Z_]+\}\}", text)
@@ -191,6 +196,7 @@ def main(argv=None):
     ins.put(".kit/board.html", render(rd("kit", "board", "board.template.html"), c))
     ins.put(".kit/clerk.md", render(rd("kit", "clerk", "clerk.template.md"), c))
     ins.put(".kit/orchestrator.md", render(rd("kit", "orchestrator.template.md"), c))
+    ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
     ins.put(".kit/kit_cards.py", rd("kit", "board", "kit_cards.py"))
     ins.put(".kit/BOARD.md", render(rd("kit", "board", "BOARD.template.md"), c))
     ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
@@ -211,6 +217,13 @@ def main(argv=None):
         if not a.dry_run:
             open(gi, "a", encoding="utf-8").write(("" if cur.endswith("\n") or not cur else "\n") + ".story/before-compaction.md\n")
     merge_settings(t, a.dry_run, ins.log)
+    # Which kit this is (2026-11-20: a session said "the kit was never updated" while it was): the kit's commit, kept in
+    # the manifest and printed, to compare with `git ls-remote https://github.com/anlonlt/board main`.
+    import subprocess
+    r = subprocess.run(["git", "-C", KIT, "log", "-1", "--format=%h %cI"], capture_output=True, text=True)
+    kit_at = r.stdout.strip() or "unknown (not a git clone)"
+    ins.manifest["_kit_commit"] = kit_at
+    ins.log.append("kit version: " + kit_at) if ins.log else None
     ins.finish()
     print("\n".join(ins.log + ins.kept) if ins.log + ins.kept else "", end="\n" if ins.log + ins.kept else "")
     if not ins.log:

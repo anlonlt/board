@@ -54,6 +54,9 @@ with tempfile.TemporaryDirectory() as d:
     check("parts launched at the configured level", "claude-opus-5-5" in orch and "medium" in orch)
     cfgr = json.load(open(os.path.join(t, ".kit", "config.json")))["kit"]["roles"]
     check("roles in config: clerk Haiku low", cfgr["clerk"] == {"model": "claude-haiku-5-5", "effort": "low"})
+    check("the consultant's prompt installed, the orchestrator launches it at its level",
+          os.path.exists(os.path.join(t, ".kit", "consultant.md")) and "claude-fable-5-2" in orch and "consultant.md" in orch)
+    check("the kit's commit recorded", "_kit_commit" in json.load(open(os.path.join(t, ".kit", "manifest.json"))))
     check("the kit-cards agent installed", os.path.exists(os.path.join(t, ".claude", "agents", "kit-cards.md")))
     check("the orchestrator calls the agent, never lists posts itself", "kit-cards" in orch and "list` `posts`" not in orch)
     check("a kit file edited by the project is kept", "my note" in open(os.path.join(t, ".kit", "BOARD.md")).read() and "KEPT" in out)
