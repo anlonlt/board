@@ -34,6 +34,10 @@ would settle it). Never estimate tokens from characters; when only characters ex
 8. If there is a board: `python3 -I scripts/mirror_holes.py DUMP --config config/<project>.json`; and the token
    cost of one board read, with a probe subagent and `scripts/token_probe.py` on its transcript.
 9. The user's wait: how long between their message and a session's answer (a board: comments; else chat turns).
+10. Runners (the kit's README § Runners): every place the work happens, and its kind: `cloud` (sessions here: their
+   environment's connectors, keys, network), `computer` (the user's own machine: Remote Control, the desktop app, local
+   files, Claude in Chrome), `chat` (claude.ai chats and their connectors), `owner` (what only they can do), `scheduled`
+   (`list_triggers`). For each: what is set up, what is not, and which projects need it.
 
 **Part 2: the second pass.** Launch a fresh subagent (or, better, Part 3's session) with the DATA (the files,
 dumps, pages), not your conclusions: "recount every number, find what this missed, settle each unknown". List what

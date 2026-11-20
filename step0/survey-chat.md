@@ -58,6 +58,10 @@ Searches to run (add your own): project names you find; "continue", "where were 
 9. What do they produce, and where does it end up?
 10. What fills a long chat: for the 3 longest chats you can read, characters by source (their pasted material, their own words, your replies, files), and which part is repeated from earlier chats.
 11. Any trace of GitHub, Claude Code, a terminal, an API key, a repository?
+12. Where does the work actually happen? Each place and tool, with what it touches: chat connectors (which), Claude in
+    Chrome, the desktop app, files on their computer, their phone, Claude Code, scheduled tasks, an API. These become
+    the kit's runners (`cloud`, `computer`, `chat`, `owner`, `scheduled`; the kit's README § Runners): say for each
+    what is set up and what is not.
 
 **Part 2: the second pass (work harder on the unknowns).** Act as a fresh reviewer of Part 1. For every answer graded
 unknown or inferred: run at least 3 more searches with different words, open the full chats behind the best hits,

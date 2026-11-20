@@ -93,13 +93,29 @@ def load_state(path):
     return json.loads(_html.unescape(m.group(1)) if m else raw)
 
 
-RUNS = {"claude-code": "Claude Code (sessions launched by the orchestrator)",
-        "chat": "claude.ai chat with Claude in Chrome (the orchestrator prepares the step; the owner runs it in chat)",
-        "both": "both (code in Claude Code; browser steps in claude.ai chat with Claude in Chrome)"}
+RUNS = {"claude-code": "cloud (Claude Code sessions launched by the orchestrator)",  # older exports' words
+        "cloud": "cloud (Claude Code sessions launched by the orchestrator)",
+        "chat": "chat (a claude.ai chat: the orchestrator posts a card, the owner pastes it)",
+        "both": "cloud for code, another runner for the rest (see the project's notes)"}
+
+
+def runs_in(p, runners):
+    v = str(p.get("runs_in") or "")
+    if v in runners:
+        return "%s (%s runner, README § Runners)" % (v, runners[v].get("kind", "?"))
+    return RUNS.get(v, "unknown: check before launching anything")
 
 
 def workflow_md(w):
     out = ["# How the work gets done (imported from the owner's chats)", ""]
+    rs = w.get("runners") or []
+    if rs:
+        out += ["## Runners (README § Runners)"]
+        for r in rs:
+            r = r if isinstance(r, dict) else {"name": _text(r)}
+            out.append("- **%s** (%s): %s" % (r.get("name", "?"), r.get("kind", "?"), "; ".join(
+                _text(r[k]) for k in ("reaches", "tools", "accounts", "setup") if r.get(k))))
+        out.append("")
     for key, head in (("tools", "Tools and methods"), ("accounts", "Accounts and browser profiles"),
                       ("cycle", "The cycle of a change"), ("limits", "Limits")):
         v = w.get(key) or []
@@ -112,7 +128,7 @@ def workflow_md(w):
 def state_md(p):
     out = ["# %s" % p.get("title", p["id"]), "Next: %s" % (p.get("next") or "(none given)"),
            "Priority: %s%s" % (p["priority"], (" (%s)" % p["why"]) if p.get("why") else ""),
-           "Runs in: %s%s" % (RUNS.get(p.get("runs_in"), "unknown: check before launching a Claude Code part"),
+           "Runs in: %s%s" % (runs_in(p, p.get("_runners") or {}),
                               (" (%s)" % _text(p["runs_in_why"])) if p.get("runs_in_why") else ""), "", "## Where it stands"]
     out += ["- " + w for w in p.get("where", [])] or ["- (nothing given)"]
     if p.get("decisions"):
@@ -134,8 +150,11 @@ def state_md(p):
 def run(state, out, now, update, session=""):
     log, writes = [], []
     sd = os.path.join(ROOT, ".story")
+    wr = (state.get("workflow") or {}).get("runners") if isinstance(state.get("workflow"), dict) else None
+    runners = {r["name"]: r for r in (wr or []) if isinstance(r, dict) and r.get("name")}
     for p in state.get("projects", []):
         normalise(p)
+        p["_runners"] = runners
     state["projects"] = sorted(state.get("projects", []), key=lambda p: p["priority"])  # the most urgent first
     for p in state.get("projects", []):
         normalise(p)
@@ -163,9 +182,10 @@ def run(state, out, now, update, session=""):
     w = state.get("workflow")
     if isinstance(w, dict) and any(w.values()):
         put(os.path.join(sd, "workflow.md"), workflow_md(w), update, log)
-    chat = [p["title"] if p.get("title") else p["id"] for p in state.get("projects", []) if p.get("runs_in") == "chat"]
-    if chat:
-        log.append("stay in claude.ai chat (browser work): " + ", ".join(chat))
+    off = ["%s -> %s" % (p.get("title") or p["id"], p.get("runs_in")) for p in state.get("projects", [])
+           if p.get("runs_in") and p.get("runs_in") not in ("cloud", "claude-code")]
+    if off:
+        log.append("not in a cloud session (their runner must be set up, README § Runners): " + ", ".join(off))
     pd = os.path.join(out, "posts")
     os.makedirs(pd, exist_ok=True)
     for p in state.get("projects", []):

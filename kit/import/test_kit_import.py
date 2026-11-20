@@ -87,5 +87,17 @@ with tempfile.TemporaryDirectory() as d:
     sf = open(os.path.join(d, ".story", "state", "flux.md")).read() if os.path.exists(os.path.join(d, ".story", "state", "flux.md")) else ""
     check("workflow: tools, accounts, cycle, limits in .story/workflow.md", all(x in wf for x in ("Claude dans Chrome", "applications@", "construire", "longue action")))
     check("runs_in: the state file says where the project runs, the import names those staying in chat",
-          "Runs in: claude.ai chat with Claude in Chrome" in sf and "stay in claude.ai chat" in r6.stdout)
+          "Runs in: chat (a claude.ai chat" in sf and "Flux -> chat" in r6.stdout)
+    # runners, any setup (the owner, 2026-11-20: "has the kit been rendered universal?")
+    st7 = {"workflow": {"runners": [{"name": "laptop", "kind": "computer", "reaches": "Chrome", "setup": "no desktop app yet"},
+                                    {"name": "teams", "kind": "chat", "reaches": "the Microsoft 365 connector"}]},
+           "projects": [{"id": "rn", "title": "RN", "next": "x", "runs_in": "laptop"}, {"id": "rc", "title": "RC", "next": "y", "runs_in": "cloud"}]}
+    f7 = os.path.join(d, "s7.json"); json.dump(st7, open(f7, "w"))
+    os.remove(os.path.join(d, ".story", "workflow.md"))
+    r7 = subprocess.run([sys.executable, "-I", os.path.join(d, ".kit", "kit_import.py"), f7, "--out", os.path.join(d, "o7")], capture_output=True, text=True)
+    w7 = open(os.path.join(d, ".story", "workflow.md")).read() if os.path.exists(os.path.join(d, ".story", "workflow.md")) else ""
+    rn = open(os.path.join(d, ".story", "state", "rn.md")).read() if os.path.exists(os.path.join(d, ".story", "state", "rn.md")) else ""
+    check("runners: listed with kind, reach and setup; a project names its runner; the others are said",
+          "**laptop** (computer)" in w7 and "**teams** (chat)" in w7 and "Runs in: laptop (computer runner" in rn
+          and "RN -> laptop" in r7.stdout and "RC" not in r7.stdout.split("not in a cloud session")[-1])
 print("%d failed" % fails); sys.exit(1 if fails else 0)

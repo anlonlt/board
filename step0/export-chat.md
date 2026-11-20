@@ -49,8 +49,12 @@ the SHA from https://api.github.com/repos/anlonlt/board/commits/main): the `main
      `accounts` (each account or browser profile, what it is used for, how to tell which one is open), `cycle` (the
      steps a change goes through, e.g. build, check, save, publish only with my go), `limits` (what slows or stops the
      work: one long action per answer, waits, sessions that expire, never a password).
-   And per project, `runs_in`: `"claude-code"` (its work is code, files, or a tool a Claude Code session reaches),
-   `"chat"` (it needs the browser extension in my own browser, or a tool only chat has), or `"both"`, with `runs_in_why`.
+   - `workflow.runners`: every PLACE the work happens, each `{name, kind, reaches, tools, accounts, setup}`, `kind`
+     one of `cloud` (a Claude Code session in the cloud), `computer` (my own computer: its files, apps, Claude in
+     Chrome in my browser…), `chat` (a claude.ai chat with its connectors), `owner` (only I can: phone, signature,
+     login), `scheduled`; `setup`: what is already set up and what is not (README § Runners of the kit lists them).
+   And per project, `runs_in`: the `name` of the runner its work needs (`cloud` when it is code or files a cloud session
+   reaches), with `runs_in_why`.
 4. Publish ONE private artifact, titled "kit state", whose whole content is a `<pre id="kit-state">` holding the JSON,
    exactly this shape (the values are an example):
 ```
@@ -58,9 +62,11 @@ the SHA from https://api.github.com/repos/anlonlt/board/commits/main): the `main
  "preferences": ["short steps", "answer in French"], "approved": ["editing the test list"],
  "never": ["send real emails without asking", "touch personal data"],
  "workflow": {"tools": ["Claude in Chrome in my browser: all intranet editing"], "accounts": ["profile 'work': the intranet editor"],
-   "cycle": ["build", "check", "save", "publish only with my go"], "limits": ["one long action per answer"]},
+   "cycle": ["build", "check", "save", "publish only with my go"], "limits": ["one long action per answer"],
+   "runners": [{"name": "laptop", "kind": "computer", "reaches": "the intranet editor through Claude in Chrome",
+                "accounts": "profile 'work'", "setup": "Claude in Chrome on; no Claude desktop app yet"}]},
  "projects": [{"id": "bulletin", "title": "Weekly bulletin", "next": "draft the 24 Nov edition",
-   "priority": 1, "why": "edition due Friday 24 Nov", "runs_in": "chat", "runs_in_why": "edited in the intranet through Chrome",
+   "priority": 1, "why": "edition due Friday 24 Nov", "runs_in": "laptop", "runs_in_why": "edited in the intranet through Chrome",
    "resume": ["open the intranet page News/Bulletin", "read last week's edition", "then: next"],
    "where": ["published every Friday on the intranet"], "decisions": ["no emojis"],
    "ids": {"News/Bulletin": "intranet page, https://example.sharepoint.com/sites/news/bulletin"},

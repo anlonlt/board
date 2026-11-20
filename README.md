@@ -71,10 +71,9 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
 8. **Report** in the body of `KIT-installed` (`update`): each step's outcome, every step that needed the owner, anything that failed with
    its exact message. From now on every session posts there at turn 1 (the SessionStart hook says so).
 9. **Tell the person what now**, as your last chat message, in their language (`.kit/config.json` `language.talk`):
-   (1) where the work can run: "ask me to read one of your Microsoft 365 / Google / other connector files here; if
-   it answers, that work can move here. Work done through Claude in Chrome in your own browser cannot run in a cloud
-   session unless your computer is attached to it (the Claude desktop app → Remote Control); otherwise it stays in
-   claude.ai chat, and the orchestrator prepares each step for you to paste there"; (2) the Import: "open a new claude.ai chat and paste the block at
+   (1) where the work can run: their runners (README § Runners) as step 0 or the import found them, each with its
+   one-time setup still to do; and the test for a connector: "ask me to read one of your connector's files here; if it
+   answers, that work can run here (a `cloud` runner)"; (2) the Import: "open a new claude.ai chat and paste the block at
    https://github.com/anlonlt/board/blob/main/step0/export-chat.md , then paste back here the line it gives you";
    (3) where the board is: its link.
 
@@ -103,14 +102,21 @@ wrote and nobody changed since (`KEPT` lists the others), and merges any new hoo
 push. If the running clerk or orchestrator was started at another level than `kit.roles` says (e.g. a clerk on
 medium effort), start a new one at the right level with the same prompt and stop the old one. The guard keeps refusing `git reset --hard`, `git clean` and force pushes on purpose: undo with `git revert`.
 
-## Browser work (the Chrome worker)
+## Runners: where the work can happen (any setup)
 
-Work done through Claude in Chrome in the person's own browser cannot run in a cloud session, and the clerk cannot
-reach a session on their computer. So the orchestrator posts each browser step as a **Chrome card** (`part: "chrome"`)
-and a worker on their computer pulls them. **YOU, once:** on your computer, open the Claude desktop app (Code), on
-this repository's folder, with Claude in Chrome on; paste the text of `.kit/chrome-worker.md`, then `/loop 10m` to
-keep it pulling (or say "go" when a card waits). It does each card in the right Chrome profile, publishes or sends only
-what you approved, and answers under the card.
+The kit does not assume where work runs. Step 0 and the export list the person's **runners**, each of one kind; each
+project says which runner it needs (`Runs in:` in its state file); the orchestrator sends each step to that runner.
+
+| kind | what it reaches | how a step gets there | one-time setup (the orchestrator's welcome says which are done) |
+|---|---|---|---|
+| `cloud` | the repository, the web, the connectors and keys of the cloud environment | the orchestrator starts a session (`create_session`) | none beyond Install; connectors: claude.ai Settings → Connectors; an API key: the environment's secrets |
+| `computer` | the person's computer: its files, apps, Claude in Chrome in their browser, local servers, a VPN or intranet | a card with `runner: "<name>"`; the runner on that computer pulls it | the Claude desktop app (or Claude Code) on that computer, the repository cloned there, the tools it needs on (e.g. the Claude in Chrome extension, signed in to the right profiles); then paste `.kit/runner.md` with its name, and `/loop 10m` |
+| `chat` | a claude.ai chat: its connectors (Microsoft 365, Google, Slack…), Projects, Claude in Chrome | a card with `runner: "<name>"`; the person pastes it into a chat (a chat cannot pull) | the connectors in claude.ai Settings → Connectors; the right Project open |
+| `owner` | what only the person can do: their phone, their ears, a signature, money, a login | a `todo` or `question` card for them | none |
+| `scheduled` | a cloud session started on a schedule (a weekly draft, a nightly check) | the orchestrator creates a scheduled task | none (the orchestrator says what it scheduled) |
+
+A runner of kind `computer` can also be reached from a cloud session when that computer is attached to it (the Claude
+desktop app → Remote Control); the orchestrator tests that once before relying on it.
 
 ## Feedback (a complaint or a dev report, to anlonlt/board)
 

@@ -9,14 +9,18 @@ At start:
    - **What the board does:** posts in columns (to do, questions, news, done); a comment under a post reaches the session that wrote it, and its answer comes back under the post; one-tap answers; P1-P3 priorities; the "Where we are" card at the top; this thread ("Ask the orchestrator") for anything else.
    - **How it works:** one session per piece of work posts its result here; the clerk carries his words; the memory (`.story/`) keeps each project's next step, so nothing is re-explained.
    - **Everything open now:** each project from the memory, most urgent first (title, priority, next step), and each `question` post waiting on him.
+   - **Setup:** each runner of `.story/workflow.md` § Runners (or, with none, the kinds of README § Runners his
+     chats show), whether it is ready (a `cloud` runner is; a `computer` runner is once it has answered a card), and
+     for each not ready, its one-time setup in plain steps with its links;
    - **What can run now, on its own and at the same time:** each project whose next step a session can do without him, with the default it will apply; then one line: "A 👍 on this message launches them all; or tell me which."
-3b. **Where a project runs** (its state file's `Runs in:`, and `.story/workflow.md`): launch Claude Code parts only
-   for `Claude Code` projects. For a `chat` project (its work goes through Claude in Chrome in the owner's browser), do
-   not launch a session: post the step as a **Chrome card**: a `todo` post with `part: "chrome"`, `train: "<project>"`,
-   `priority`, and a body saying what to do, with which Chrome profile, how to check it, and whether he already
-   approved publishing. The Chrome worker on his computer (`.kit/chrome-worker.md`, README § Browser work) pulls those
-   cards and answers under them `from: "chrome"`; without one, he pastes the card into claude.ai. Read the answers at
-   your rounds (`query` `comments` `where [["from","==","chrome"]]`, newest first, `out_dir`).
+3b. **Where each step runs** (README § Runners): the project's `Runs in:` names a runner of `.story/workflow.md`
+   § Runners. `cloud`: launch a part (step 4). `scheduled`: a scheduled task. Any other runner: post the step as a
+   **card**, a `todo` post with `runner: "<name>"`, `part: "<name>"`, `train: "<project>"`, `priority`, and a body
+   saying what to do, with which account or profile, how to check it, and whether he already approved publishing,
+   sending or paying. A `computer` runner pulls its cards (`.kit/runner.md`); a `chat` runner's card is pasted by him
+   into a chat; an `owner` card is his to do. Read the answers at your rounds (`query` `comments` `where
+   [["from","==","<runner>"]]`, newest first, `out_dir`). A project whose runner is not set up yet: say so in the
+   welcome's setup part, not by launching something that cannot reach the work.
 4. **A 👍 is a go only for the message it is ON.** The clerk names the liked comment (`comment <id>`) or "the post
    itself". Launch on a 👍 only when it is on your proposal's comment; a 👍 on the post itself, or one you cannot tie to
    a message (`ArtifactData` `query` `comments` `where [["post_id","==","_orchestrator"],["like","==",true]]`, newest,
