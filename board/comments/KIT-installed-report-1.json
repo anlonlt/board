@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-20T02:52:00Z",
+ "from": "KIT",
+ "post_id": "KIT-installed",
+ "text": "**Install report**\n1. Kit cloned to `/tmp/board-kit`: done.\n2. `install.py` (`--main-branch test-install`): done; `test_hooks.py` ends `0 failed`.\n3. Board published, step 2 rerun with `--board-url`, committed and pushed (`1d26dd9` on test-install): done.\n4. Posts `_orchestrator` and `KIT-installed`: done.\n5. Clerk started: session `session_01AE1HGi6rHeeYLGpPxyYeCZ` (claude-haiku-5-5, running); its \"board clerk ready, watching\" had not arrived when this was written.\n6. **YOU:** open https://claude.ai/artifact/Etco5hYbtiiSHtV53saYB7, open this post, write \"test\" in the comment box and send it. Not done yet.\n7. `kit.py init / sync / open / post / push`: done. `open`: \"nothing of his open since 2000-01-01\". `push` created the branch `board-mirror` on GitHub (and a worktree at `../tide-clock-board-mirror`).\n8. This report."
+}
