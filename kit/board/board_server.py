@@ -263,8 +263,9 @@ SHIM_JS = r"""(function () {
     if (!sheet || sheet.hidden) return;
     var postId = "";
     try { postId = sessionStorage.getItem("board-open") || ""; } catch (e) {}
+    var moveBtn = document.getElementById("move");
     var existingSel = document.getElementById("kit-col-move");
-    if (!postId || postId.charAt(0) === "_") {
+    if (!postId || postId.charAt(0) === "_" || (moveBtn && moveBtn.hidden)) {
       if (existingSel) existingSel.hidden = true;
       return;
     }
