@@ -76,4 +76,16 @@ with tempfile.TemporaryDirectory() as d:
     pu = json.load(open(os.path.join(d, "o5", "posts", "P-urgent.json"))) if os.path.exists(os.path.join(d, "o5", "posts", "P-urgent.json")) else {}
     check("priority: in the state file with its why, on the post, most urgent first",
           "Priority: 1 (due Friday)" in u and pu.get("priority") == 1 and [x["doc_id"] for x in w5][:1] == ["P-urgent"])
+    # how the work gets done, and where each project can run (his friend's chat, 2026-11-20)
+    st6 = {"workflow": {"tools": ["Claude dans Chrome"], "accounts": ["profil applications@: flux"], "cycle": ["construire", "verifier"],
+           "limits": ["une longue action par reponse"]},
+           "projects": [{"id": "flux", "title": "Flux", "next": "x", "runs_in": "chat", "runs_in_why": "Power Automate par Chrome"}]}
+    f6 = os.path.join(d, "s6.json"); json.dump(st6, open(f6, "w"))
+    os.remove(os.path.join(d, ".story", "state", "flux.md"))
+    r6 = subprocess.run([sys.executable, "-I", os.path.join(d, ".kit", "kit_import.py"), f6, "--out", os.path.join(d, "o6")], capture_output=True, text=True)
+    wf = open(os.path.join(d, ".story", "workflow.md")).read() if os.path.exists(os.path.join(d, ".story", "workflow.md")) else ""
+    sf = open(os.path.join(d, ".story", "state", "flux.md")).read() if os.path.exists(os.path.join(d, ".story", "state", "flux.md")) else ""
+    check("workflow: tools, accounts, cycle, limits in .story/workflow.md", all(x in wf for x in ("Claude dans Chrome", "applications@", "construire", "longue action")))
+    check("runs_in: the state file says where the project runs, the import names those staying in chat",
+          "Runs in: claude.ai chat with Claude in Chrome" in sf and "stay in claude.ai chat" in r6.stdout)
 print("%d failed" % fails); sys.exit(1 if fails else 0)

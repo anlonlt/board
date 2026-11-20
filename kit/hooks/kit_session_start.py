@@ -44,6 +44,9 @@ def main():
             out.append("CLONE: %s commits behind its remote: git pull --no-rebase first." % b.stdout.strip())
     except (OSError, subprocess.SubprocessError):
         pass
+    if os.path.exists(os.path.join(root, ".story", "workflow.md")):
+        out.append("WORKFLOW: how the work gets done (tools, accounts and browser profiles, cycle, limits): .story/workflow.md; "
+                   "each project's state file says where it runs (Runs in:).")
     pref = os.path.join(root, ".story", "preferences.md")
     if os.path.exists(pref):
         with open(pref, encoding="utf-8") as fh:

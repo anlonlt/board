@@ -43,15 +43,24 @@ the SHA from https://api.github.com/repos/anlonlt/board/commits/main): the `main
    - `preferences`: the instructions I repeat (how short, which language, what to ask before doing);
    - `approved`: what I have already approved once and do not want to be asked again (e.g. "editing the test list");
    - `never`: what Claude must never touch or do without me (production data, personal data, sending real emails…);
-   - `owner_language`: the language I write to you in; `unread`: what you could not read and why.
+   - `owner_language`: the language I write to you in; `unread`: what you could not read and why;
+   - `workflow`: HOW the work gets done, which no project says alone: `tools` (each tool or method used and for
+     what: the browser extension, a connector, scripts run from a page, an editor's code view, artifacts as hand-off),
+     `accounts` (each account or browser profile, what it is used for, how to tell which one is open), `cycle` (the
+     steps a change goes through, e.g. build, check, save, publish only with my go), `limits` (what slows or stops the
+     work: one long action per answer, waits, sessions that expire, never a password).
+   And per project, `runs_in`: `"claude-code"` (its work is code, files, or a tool a Claude Code session reaches),
+   `"chat"` (it needs the browser extension in my own browser, or a tool only chat has), or `"both"`, with `runs_in_why`.
 4. Publish ONE private artifact, titled "kit state", whose whole content is a `<pre id="kit-state">` holding the JSON,
    exactly this shape (the values are an example):
 ```
 {"owner_language": "French", "unread": ["chats before 2026-10-14: not reachable"],
  "preferences": ["short steps", "answer in French"], "approved": ["editing the test list"],
  "never": ["send real emails without asking", "touch personal data"],
+ "workflow": {"tools": ["Claude in Chrome in my browser: all intranet editing"], "accounts": ["profile 'work': the intranet editor"],
+   "cycle": ["build", "check", "save", "publish only with my go"], "limits": ["one long action per answer"]},
  "projects": [{"id": "bulletin", "title": "Weekly bulletin", "next": "draft the 24 Nov edition",
-   "priority": 1, "why": "edition due Friday 24 Nov",
+   "priority": 1, "why": "edition due Friday 24 Nov", "runs_in": "chat", "runs_in_why": "edited in the intranet through Chrome",
    "resume": ["open the intranet page News/Bulletin", "read last week's edition", "then: next"],
    "where": ["published every Friday on the intranet"], "decisions": ["no emojis"],
    "ids": {"News/Bulletin": "intranet page, https://example.sharepoint.com/sites/news/bulletin"},

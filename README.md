@@ -71,8 +71,10 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
 8. **Report** in the body of `KIT-installed` (`update`): each step's outcome, every step that needed the owner, anything that failed with
    its exact message. From now on every session posts there at turn 1 (the SessionStart hook says so).
 9. **Tell the person what now**, as your last chat message, in their language (`.kit/config.json` `language.talk`):
-   (1) the connector test: "ask me to read one of your Microsoft 365 / Google / other connector files here; if it
-   answers, your work can move here"; (2) the Import: "open a new claude.ai chat and paste the block at
+   (1) where the work can run: "ask me to read one of your Microsoft 365 / Google / other connector files here; if
+   it answers, that work can move here. Work done through Claude in Chrome in your own browser cannot run in a cloud
+   session unless your computer is attached to it (the Claude desktop app → Remote Control); otherwise it stays in
+   claude.ai chat, and the orchestrator prepares each step for you to paste there"; (2) the Import: "open a new claude.ai chat and paste the block at
    https://github.com/anlonlt/board/blob/main/step0/export-chat.md , then paste back here the line it gives you";
    (3) where the board is: its link.
 

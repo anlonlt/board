@@ -10,6 +10,11 @@ At start:
    - **How it works:** one session per piece of work posts its result here; the clerk carries his words; the memory (`.story/`) keeps each project's next step, so nothing is re-explained.
    - **Everything open now:** each project from the memory, most urgent first (title, priority, next step), and each `question` post waiting on him.
    - **What can run now, on its own and at the same time:** each project whose next step a session can do without him, with the default it will apply; then one line: "A 👍 on this message launches them all; or tell me which."
+3b. **Where a project runs** (its state file's `Runs in:`, and `.story/workflow.md`): launch Claude Code parts only
+   for `Claude Code` projects. For a `chat` project (its work goes through Claude in Chrome in the owner's browser), do
+   not launch a session: prepare the step (what to do, which profile, the check) as a block he pastes into claude.ai,
+   posted as a `todo` on the board; or, if his computer is attached to this session (Remote Control), the browser
+   tools may reach it: say so and test it once before relying on it.
 4. **A 👍 is a go only for the message it is ON.** The clerk names the liked comment (`comment <id>`) or "the post
    itself". Launch on a 👍 only when it is on your proposal's comment; a 👍 on the post itself, or one you cannot tie to
    a message (`ArtifactData` `query` `comments` `where [["post_id","==","_orchestrator"],["like","==",true]]`, newest,
