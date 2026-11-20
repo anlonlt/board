@@ -13,6 +13,16 @@ Open a Claude Code session on **your** repository (https://claude.ai/code) and p
 The hooks' "end your turn with ·" reminder is about chat turns: your step reports go in the post.
 Steps marked **YOU** need a person (no agent can start a comment on a page: only a person's tap does); Claude says each one, with its link, when it gets there. Everything else is Claude's.
 
+**Before installing, two checks** (from the first outside survey, PR #1):
+- **Private by default.** The kit keeps the project's state, posts and comments in the project's OWN repository
+  (`.story/`, branch `board-mirror`), never in `anlonlt/board`. If the project touches people's data (a school, clients),
+  that repository must be private. The board page itself is private to its owner until shared.
+- **Work that is not code.** If the work lives elsewhere (Microsoft 365, a website driven through the browser
+  extension), the repository holds the work's STATE (decisions, ids, next steps, what waits for approval), not the
+  work. Check first that the tools the work needs answer from a Claude Code session (its connectors; the browser
+  extension only reaches a computer attached to the session): if they do not, the kit gives memory and the board,
+  and the actions stay in chat.
+
 **For Claude, in the project's session.** Do the steps in order; report each step's outcome in one line.
 
 1. **Get the kit** (public repository, no token): `git clone --depth 1 https://github.com/anlonlt/board /tmp/board-kit`
