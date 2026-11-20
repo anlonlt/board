@@ -10,6 +10,8 @@ The board: {{BOARD_URL}} (source `.kit/board.html`). A session's result lives in
 `ToolSearch` `select:ArtifactData` once, then `ArtifactData` `set`, `url` the board, `collection: "posts"`, `doc_id: "<part>-<slug>"`, `data: {title, body, column, part, session_id, created_at, priority}`; optional `status`, `options` + `default_option` (one-tap answers), `images` (`/_blob/<id>` from `Artifact` `publish` `asset: true` to the board's url), `captions`.
 - `column`: `todo` (the owner does something), `question` (the owner chooses), `info` (news, a finished report), `done`.
 - `body`: plain text with `**bold**`, `` `code` ``, `#` headings, `| tables |`, links. Lead with what was found or what the owner must do; name what was NOT checked. `priority` 1-3. `created_at`: `date -u +%Y-%m-%dT%H:%M:%SZ`, run right before (posts without it do not show).
+- `train`: the project your prompt names (its id in `.story/state/`), and `parent` when you continue another part:
+  your post then shows in that project's train on "Where we are".
 - `session_id`: yours (the `session_…` in your `Claude-Session` line, or `get_session`).
 - A `todo` post says how long it takes him: `minutes`. Pictures: `captions` (one line per picture, in order);
   `image_groups: [{title, count}]` puts the pictures meant to be compared side by side; unrelated pictures:

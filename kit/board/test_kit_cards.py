@@ -23,4 +23,22 @@ with tempfile.TemporaryDirectory() as d:
     check("a row with a next step is ready (a page state)", rows[1]["state"] == "ready" if len(rows) > 1 else False)
     check("its post, its next step", b.get("post") == "P-bulletin" and b.get("note", "").startswith("Next: draft 24 Nov"))
     check("a row without steps shows its next step", rows[1]["steps"] == ["someday"] if len(rows) > 1 else False)
+    # trains (the owner, 2026-11-20): a project's parts under it, from their posts' `train`
+    os.makedirs(os.path.join(d, "b", "posts")); os.makedirs(os.path.join(d, "docs", "prompts"))
+    open(os.path.join(d, "docs", "prompts", "B1-draft.md"), "w").write("x")
+    for pid, p in {"P-bulletin": {"column": "info", "title": "Bulletin"},
+                   "B1-draft": {"part": "B1", "train": "bulletin", "column": "info", "status": "in progress", "created_at": "2026-11-20T01:00:00Z", "session_id": "s1"},
+                   "B2-check": {"part": "B2", "train": "bulletin", "parent": "B1", "column": "question", "created_at": "2026-11-20T02:00:00Z"},
+                   "X-other": {"part": "X", "column": "info"}}.items():
+        json.dump(p, open(os.path.join(d, "b", "posts", pid + ".json"), "w"))
+    tr = os.path.join(d, "trains.json")
+    r = subprocess.run([sys.executable, "-I", os.path.join(d, ".kit", "kit_cards.py"), "--write", out, "--trains", tr,
+                        "--board", os.path.join(d, "b"), "--now", "2026-11-20T00:00:00Z"], capture_output=True, text=True)
+    T = {x["part"]: x for x in json.load(open(tr))["rows"]} if r.returncode == 0 else {}
+    check("trains: one root per project, its parts under it, the chain kept",
+          T.get("P-bulletin", {}).get("children") == ["B1"] and T.get("B1", {}).get("children") == ["B2"] and "X" not in T)
+    check("trains: states from the posts, prompt and session", T.get("B1", {}).get("state") == "running" and T.get("B2", {}).get("state") == "you"
+          and T.get("B1", {}).get("prompt") == "docs/prompts/B1-draft.md" and T.get("B1", {}).get("session") == "s1")
+    dd2 = json.load(open(out)) if r.returncode == 0 else {"rows": []}
+    check("the dashboard row names its train", any(x.get("train") == "P-bulletin" for x in dd2["rows"]))
 print("%d failed" % fails); sys.exit(1 if fails else 0)
