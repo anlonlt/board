@@ -1,15 +1,46 @@
 {
-  "project": "my-project",
-  "language": {"talk": "en"},
-  "board_url": null,
-  "fields": {
-    "author": "from", "owner": "owner", "clerk": "clerk", "reviewer": "reviewer",
-    "post": "post_id", "reply_to": "reply_to", "created": "created_at",
-    "later_flags": [], "later_stamps": ["updated_at"],
-    "post_updated": "updated_at", "post_moved": "done_at", "review_kind": ["kind", "review"]
-  },
-  "shell_buckets": [
-    {"name": "Bash: git", "all": ["git (push|pull|commit|merge|log|status|fetch)"]}
+ "project": "my-project",
+ "language": {
+  "talk": "en"
+ },
+ "board_url": null,
+ "fields": {
+  "author": "from",
+  "owner": "owner",
+  "clerk": "clerk",
+  "reviewer": "reviewer",
+  "post": "post_id",
+  "reply_to": "reply_to",
+  "created": "created_at",
+  "later_flags": [
+   "read",
+   "read_at",
+   "delivered"
   ],
-  "mirror": {"branch": "board-mirror", "path": "../board-mirror", "overlap_hours": 1}
+  "later_stamps": [
+   "read_at",
+   "delivered_at",
+   "arrived_at",
+   "updated_at"
+  ],
+  "post_updated": "updated_at",
+  "post_moved": "done_at",
+  "review_kind": [
+   "kind",
+   "review"
+  ]
+ },
+ "shell_buckets": [
+  {
+   "name": "Bash: git",
+   "all": [
+    "git (push|pull|commit|merge|log|status|fetch)"
+   ]
+  }
+ ],
+ "mirror": {
+  "branch": "board-mirror",
+  "path": "../board-mirror",
+  "overlap_hours": 1
+ }
 }
