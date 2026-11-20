@@ -1,0 +1,6 @@
+{
+  "permissions": {"allow": ["Bash(python3 tide.py)"]},
+  "hooks": {
+    "PostToolUse": [{"matcher": "Write", "hooks": [{"type": "command", "command": "python3 -m py_compile tide.py"}]}]
+  }
+}

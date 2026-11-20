@@ -1,0 +1,2168 @@
+<title>{{PROJECT}} board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700&family=Alegreya+Sans:wght@400;500;700&display=swap">
+<style>
+/* Layout: a board of four lanes (one at a time on a phone, side by side when wide); a post opens as a full sheet over it. */
+:root {
+  --bg: #eef2f6; --surface: #ffffff; --sunk: #e2e8ef; --ink: #1b2433; --muted: #5b6678;
+  --line: #cfd7e1; --ember: #b8561c; --ember-ink: #ffffff; --good: #2f7a4f; --warn: #a33b2b;
+  --todo: #b8561c; --question: #6a4fb3; --info: #2b6c9e; --done: #2f7a4f;
+  --scrim: rgba(18, 24, 38, .55);
+  --display: "Alegreya", Georgia, "Times New Roman", serif;
+  --text: "Alegreya Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111826; --surface: #1a2335; --sunk: #0c121d; --ink: #e6ebf2; --muted: #9aa6b8;
+  --line: #2c3850; --ember: #e8894a; --ember-ink: #1a1206; --good: #6cc492; --warn: #f08a78;
+  --todo: #e8894a; --question: #a993ee; --info: #78b4e3; --done: #6cc492;
+  --scrim: rgba(0, 0, 0, .6); color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #111826; --surface: #1a2335; --sunk: #0c121d; --ink: #e6ebf2; --muted: #9aa6b8;
+  --line: #2c3850; --ember: #e8894a; --ember-ink: #1a1206; --good: #6cc492; --warn: #f08a78;
+  --todo: #e8894a; --question: #a993ee; --info: #78b4e3; --done: #6cc492;
+  --scrim: rgba(0, 0, 0, .6); color-scheme: dark; }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--text); font-size: 16px; line-height: 1.45; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 40px; max-width: 1400px; margin: 0 auto; }
+header.top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-family: var(--display); font-weight: 700; font-size: 1.75rem; margin: 0; text-wrap: balance; }
+.status { color: var(--muted); font-size: .85rem; }
+.status.bad { color: var(--warn); }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, textarea:focus-visible, .card:focus-visible, img:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+
+.tabs { display: flex; gap: 6px; margin-block: 14px 12px; overflow-x: auto; }
+.tab { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; white-space: nowrap; font-size: .9rem; display: flex; gap: 6px; align-items: center; }
+.tab .n { font-variant-numeric: tabular-nums; color: var(--muted); }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.tab[aria-selected="true"] .n { color: inherit; opacity: .75; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
+
+.lanes { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.lane { display: none; min-width: 0; }
+.lane.active { display: block; }
+.lane h2 { display: none; }
+@media (min-width: 960px) {
+  .tabs { display: none; }
+  .lanes { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 16px; }
+  .lane { display: block; }
+  .lane h2 { display: flex; gap: 8px; align-items: center; font-family: var(--display); font-size: 1.1rem; margin: 0 0 10px; }
+  .lane h2 .n { color: var(--muted); font-family: var(--text); font-size: .85rem; font-variant-numeric: tabular-nums; }
+}
+.cards { display: flex; flex-direction: column; gap: 10px; }
+.card { text-align: left; width: 100%; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.card:hover { border-color: var(--c); }
+.card .t { font-weight: 700; font-size: 1rem; overflow-wrap: anywhere; }
+.card .first { color: var(--muted); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: .78rem; font-variant-numeric: tabular-nums; }
+.part { font-family: var(--mono); font-size: .75rem; background: var(--sunk); border-radius: 4px; padding: 1px 6px; color: var(--ink); }
+.badge { font-size: .75rem; border-radius: 4px; padding: 1px 6px; background: var(--sunk); }
+.badge.new { background: var(--ember); color: var(--ember-ink); }
+.empty { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; color: var(--muted); font-size: .9rem; }
+.intro { margin-top: 18px; border: 1px dashed var(--line); border-radius: 8px; padding: 16px; max-width: 65ch; color: var(--muted); }
+.intro b { color: var(--ink); }
+
+/* Full-screen post sheet */
+.sheet { position: fixed; inset: 0; background: var(--bg); z-index: 20; overflow-y: auto; overscroll-behavior: contain; }
+.sheet-in { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: calc(env(safe-area-inset-top, 0px) + 12px) calc(env(safe-area-inset-bottom, 0px) + 40px); max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.bar { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; position: sticky; top: 0; background: var(--bg); padding-block: 6px; z-index: 1; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 7px 14px; font-size: .92rem; }
+.btn.ember { background: var(--ember); border-color: var(--ember); color: var(--ember-ink); font-weight: 700; }
+.btn:disabled { opacity: .55; cursor: default; }
+.sheet h2 { font-family: var(--display); font-size: 1.6rem; margin: 0; text-wrap: balance; overflow-wrap: anywhere; }
+.body { overflow-wrap: anywhere; max-width: 72ch; }
+.body p { margin: 0 0 .7em; }
+.body code { font-family: var(--mono); font-size: .88em; background: var(--sunk); padding: 0 4px; border-radius: 3px; }
+.tbl { overflow-x: auto; margin: 0 0 .8em; }
+.tbl table { border-collapse: collapse; font-size: .9rem; font-variant-numeric: tabular-nums; }
+.tbl th, .tbl td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+.tbl th { background: var(--sunk); }
+/* Pictures: one sideways strip; each picture at its natural size (height capped), its comments under it. */
+.pics { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pics-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: .85rem; color: var(--muted); }
+.pics-head .count { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--ink); }
+.strip-box { position: relative; min-width: 0; }
+.strip { display: flex; gap: 20px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; padding-bottom: 10px; }
+.strip-box::after { content: ""; position: absolute; top: 0; right: 0; bottom: 10px; width: 28px; pointer-events: none; background: linear-gradient(to right, transparent, var(--bg)); opacity: 0; transition: opacity .2s; }
+.strip-box.more::after { opacity: 1; }
+.pic { flex: none; margin: 0; display: flex; flex-direction: column; gap: 10px; scroll-snap-align: start; }
+.pic img { display: block; align-self: flex-start; width: auto; height: auto; max-width: none; max-height: 78vh; border-radius: 6px; border: 1px solid var(--line); background: var(--sunk); cursor: zoom-in; }
+/* A wide strip (more than twice as wide as tall) is shown at its own size: its text must read without zooming. */
+/* A post with layout "rows": its pictures stacked top to bottom, each a row that scrolls sideways at its own size,
+   its comments under it (the owner, 2026-11-12: one skill per row, the next skill under it). */
+.sheet-in.rows { max-width: none; }
+.strip.rows { flex-direction: column; overflow-x: visible; overflow-y: visible; scroll-snap-type: none; gap: 36px; }
+.strip.rows .pic { flex: none; min-width: 0; }
+.pic-scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; -webkit-overflow-scrolling: touch; padding-bottom: 8px; }
+.strip.rows .pic img { max-height: none; }
+.strip.rows .pic-side { position: static; }
+.pic img.wide { max-height: none; }
+.pic-side { position: sticky; left: 0; width: min(480px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 8px; }
+.pic-side .n { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pic-cmts { display: flex; flex-direction: column; gap: 8px; }
+.pic-form { display: flex; flex-direction: column; gap: 6px; }
+.pic-form textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.size { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.size input[type=range] { width: min(220px, 50vw); accent-color: var(--ember); }
+.size output { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--ink); min-width: 4ch; }
+/* Selecting several posts on the board */
+.card.pick { padding-left: 40px; position: relative; }
+.card.pick::before { content: ""; position: absolute; left: 12px; top: 12px; width: 18px; height: 18px; border: 2px solid var(--muted); border-radius: 4px; background: var(--surface); }
+.card.pick.on { border-color: var(--ember); background: var(--sunk); }
+.card.pick.on::before { background: var(--ember); border-color: var(--ember); box-shadow: inset 0 0 0 3px var(--surface); }
+.selbar { position: sticky; bottom: 0; z-index: 5; margin-top: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.selbar .n { font-weight: 700; font-variant-numeric: tabular-nums; margin-right: auto; }
+/* Two pictures or more (not a rows post): three side by side, one after the other, a gallery selector under them. */
+.strip.gal { gap: 8px; scroll-snap-type: none; }
+.sheet-in.gal { max-width: 1240px; }
+.strip.gal .pic { scroll-snap-align: none; }
+.strip.gal .pic-side { position: static; width: auto; min-width: 240px; max-width: 480px; }
+.gal-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.gal-thumbs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.gal-thumbs button { padding: 0; border: 2px solid transparent; border-radius: 6px; background: none; line-height: 0; opacity: .6; }
+.gal-thumbs button.on { border-color: var(--ember); opacity: 1; }
+.gal-thumbs img { height: 56px; width: auto; max-width: 120px; object-fit: cover; border-radius: 4px; display: block; }
+.gal-n { font-variant-numeric: tabular-nums; font-weight: 700; }
+/* Like: approve without writing */
+.like { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 3px 10px; font-size: .85rem; white-space: nowrap; }
+.like.on { background: var(--good); border-color: var(--good); color: var(--surface); font-weight: 700; cursor: default; }
+.card { cursor: pointer; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.card .like { margin-left: auto; }
+.taking { color: var(--muted); font-size: .85rem; margin-left: 8px; align-self: center; }
+/* Preview of a post: after a second under the mouse, or a long press; gone when the mouse leaves or the finger lifts. */
+.peek { position: fixed; z-index: 15; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px var(--scrim); padding: 14px 16px; width: min(560px, calc(100vw - 24px)); max-height: 84vh; overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
+.peek h3 { font-family: var(--display); font-size: 1.25rem; margin: 0; overflow-wrap: anywhere; }
+.peek .body { font-size: .95rem; }
+.peek-pics { display: flex; gap: 6px; flex-wrap: wrap; }
+.peek-pics img { max-height: 170px; max-width: 100%; width: auto; border-radius: 4px; border: 1px solid var(--line); }
+.peek-cmts { display: flex; flex-direction: column; gap: 4px; font-size: .88rem; color: var(--muted); }
+/* Search, sort, priority, new marks, answer buttons, undo */
+.tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tools input[type=search], .tools select { font: inherit; font-size: .9rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; }
+.tools input[type=search] { width: min(220px, 46vw); }
+.newdot { width: 10px; height: 10px; border-radius: 50%; background: var(--ember); flex: none; display: inline-block; margin-right: 6px; }
+.newc { color: var(--ember); font-weight: 700; font-family: var(--text); font-size: .85rem; }
+.mins { color: var(--muted); font-family: var(--text); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.badge.prio { background: var(--ink); color: var(--bg); font-weight: 700; }
+.prio { display: inline-flex; gap: 4px; align-items: center; font-size: .82rem; color: var(--muted); }
+.prio button { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 3px 8px; font-size: .82rem; }
+.prio button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 700; }
+.opts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.opts .lab { font-size: .85rem; color: var(--muted); width: 100%; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); z-index: 40; background: var(--ink); color: var(--bg); border-radius: 10px; padding: 10px 14px; display: flex; gap: 12px; align-items: center; max-width: calc(100vw - 24px); box-shadow: 0 8px 28px var(--scrim); }
+.toast .btn { color: var(--ink); }
+.linkish { background: none; border: none; color: var(--ember); padding: 2px 0; font-size: .85rem; text-decoration: underline; }
+
+.thread { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+.thread h3 { font-family: var(--display); font-size: 1.15rem; margin: 0; }
+.cmt { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
+.cmt.mine { border-color: var(--ember); }
+.cmt.orch { border-color: var(--question); border-left-width: 4px; }
+.cmt.orch .part { color: var(--question); font-weight: 700; }
+.review { display: flex; flex-direction: column; gap: 8px; margin-block: 10px; }
+.review:empty { display: none; }
+.badge.rev { background: var(--good); color: var(--surface); border-color: var(--good); }
+.dash { margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.dash summary { cursor: pointer; font-family: var(--display); font-size: 1.15rem; font-weight: 700; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.dash summary .sub { font-family: var(--text); font-size: .85rem; font-weight: 400; color: var(--muted); }
+.dash-rows { margin-top: 6px; }
+.dash-row { display: grid; grid-template-columns: 9px minmax(0, 8.5em) auto minmax(0, 1fr) auto; gap: 0 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); font-size: .9rem; cursor: pointer; }
+.dash .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.dash .name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash .segs { display: flex; gap: 2px; }
+.dash .seg { width: 8px; height: 10px; border-radius: 2px; border: 1px solid var(--muted); }
+.dash .seg.was { background: var(--good); border-color: var(--good); }
+.dash .seg.now { background: var(--ember); border-color: var(--ember); }
+.dash .cur { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash .st { font-size: .78rem; font-weight: 700; white-space: nowrap; color: var(--muted); }
+.dash .you .dot { background: var(--todo); } .dash .you .st { color: var(--todo); }
+.dash .running .dot { background: var(--info); } .dash .running .st { color: var(--info); }
+.dash .ready .dot { background: var(--question); } .dash .ready .st { color: var(--question); }
+.dash .done .dot { background: var(--good); } .dash .done .st { color: var(--good); }
+.dash .what { grid-column: 2 / -1; display: none; padding: 2px 0 4px; color: var(--ink); overflow-wrap: anywhere; }
+.dash-row.open .what { display: block; }
+.dash .what .go { margin-left: 8px; color: var(--ember); font-weight: 700; white-space: nowrap; }
+@media (min-width: 960px) { .dash-rows { columns: 2; column-gap: 28px; } .dash-row { break-inside: avoid; } }
+/* BD4: "Waiting for you" (posts/_waiting), above the dashboard; one line each, a tap opens the post. */
+.wait { border-color: var(--todo); }
+.dash .dwait { margin-top: 6px; width: 100%; columns: 1; }
+.dash .dwait .wait-row .wtext { display: block; white-space: normal; -webkit-line-clamp: unset; }
+.wait-row { display: grid; grid-template-columns: 5.2em minmax(0, 1fr) auto; gap: 0 8px; align-items: center; width: 100%; text-align: left;
+  padding: 5px 0; border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink); font: inherit; font-size: .92rem; }
+button.wait-row { cursor: pointer; }
+button.wait-row:hover .wtext { text-decoration: underline; }
+.wait-row .kind { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
+.wait-row.k-phone .kind { color: var(--todo); } .wait-row.k-ear .kind { color: var(--question); } .wait-row.k-choice .kind { color: var(--info); }
+.wait-row.k-money .kind, .wait-row.k-gate .kind { color: var(--warn); } .wait-row.k-machine .kind { color: var(--good); }
+.wait-row .wtext { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; }
+@media (max-width: 600px) { .wait-row { grid-template-columns: 4.4em minmax(0, 1fr) auto; } .wait-row .kind { font-size: .66rem; white-space: normal; } }
+@media (min-width: 961px) { .wait-row .wtext { display: block; white-space: nowrap; text-overflow: ellipsis; } }
+.wait-row .go { color: var(--ember); font-weight: 700; }
+@media (min-width: 960px) { .wait-rows { columns: 2; column-gap: 28px; } .wait-row { break-inside: avoid; } }
+/* BD4: "Trains" (posts/_trains), folded: each part under its parent; a tap shows its prompt, session, store and post. */
+.trains .tlive { display: inline-flex; gap: 6px; align-items: center; font-size: .85rem; color: var(--muted); margin: 6px 0 2px; }
+.tnode { border-top: 1px solid var(--line); }
+.tline { display: grid; grid-template-columns: minmax(3.2em, auto) auto minmax(0, 1fr); gap: 0 8px; align-items: center; padding: 4px 0; font-size: .9rem; cursor: pointer; }
+.tline .tp { font-weight: 700; white-space: nowrap; }
+.tline .tst { font-size: .72rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.tline .tt { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tnode.running > .tline .tst { color: var(--info); } .tnode.you > .tline .tst { color: var(--todo); } .tnode.done > .tline .tst { color: var(--good); }
+.tkids { margin-left: 14px; border-left: 2px solid var(--line); padding-left: 8px; }
+.tkids.flat { margin-left: 0; border-left: 0; padding-left: 0; }
+.tinfo { display: none; font-size: .85rem; padding: 0 0 6px; overflow-wrap: anywhere; color: var(--ink); }
+.tnode.open > .tinfo { display: block; }
+.tinfo .go { color: var(--ember); font-weight: 700; cursor: pointer; }
+.talone { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0; border-top: 1px solid var(--line); }
+.talone .chip { font-size: .8rem; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; background: var(--sunk); cursor: pointer; color: var(--ink); font-family: inherit; }
+/* BD7: Ask the orchestrator as discussions, like a messaging app's list. */
+.newdisc { align-self: flex-start; }
+.discs { display: flex; flex-direction: column; }
+.disc { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; font: inherit; color: var(--ink); background: none; border: 0; border-top: 1px solid var(--line); padding: 9px 2px; cursor: pointer; }
+.disc:hover .dt { text-decoration: underline; }
+.disc .d1 { display: flex; align-items: center; gap: 0; min-width: 0; }
+.disc .nodot { width: 10px; margin-right: 6px; flex: none; }
+.disc .dt { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.disc.unread .dt { font-weight: 800; }
+.disc .dw { margin-left: auto; padding-left: 10px; font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.disc.unread .dw { color: var(--ember); font-weight: 700; }
+.disc .d2 { margin-left: 16px; color: var(--muted); font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* BD8 (R76): the changes discussion's 2-line clamp (opened by a tap) is gone: every message there shows whole. */
+/* BD7: the dashboard first; its first line opens the Waiting page; a row's mark opens it filtered; a row shows its train. */
+.wait-line { display: flex; gap: 10px; align-items: baseline; width: 100%; margin: 8px 0 4px; padding: 7px 10px; border: 1px solid var(--todo); border-radius: 8px;
+  background: var(--surface); color: var(--ink); font: inherit; font-size: .95rem; text-align: left; cursor: pointer; }
+.wait-line .wl-t { font-weight: 700; color: var(--todo); }
+.wait-line .wl-w { color: var(--muted); font-size: .82rem; }
+.wait-line .go { margin-left: auto; color: var(--ember); font-weight: 700; }
+.dash .wmark { border: 1px solid var(--todo); border-radius: 999px; background: none; padding: 1px 7px; font: inherit; font-size: .76rem; font-weight: 700; color: var(--todo); cursor: pointer; }
+@media (max-width: 600px) { .dash .wmark .wm-w { display: none; } }
+.dash .dtrain { margin-top: 6px; }
+.dash .dtrain > .note { font-weight: 700; }
+.tnode.here > .tline { background: var(--sunk); border-radius: 6px; }
+.tnode.here > .tline .tp { color: var(--ember); }
+.dash > .trains { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
+.dash > .trains > summary { font-family: var(--text); font-size: .95rem; }
+.wfilter .chip { font: inherit; font-size: .88rem; border: 1px solid var(--todo); color: var(--todo); background: var(--surface); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+.wcards { display: flex; flex-direction: column; gap: 10px; }
+.wcard { text-align: left; width: 100%; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--muted);
+  border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+button.wcard { cursor: pointer; }
+.wcard .wtop { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.wcard .kind { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.wcard .wt { font-weight: 700; overflow-wrap: anywhere; }
+.wcard .wpost { font-size: .9rem; color: var(--ink); overflow-wrap: anywhere; }
+.wcard .wpost b { font-weight: 400; color: var(--ember); }
+.wcard .first { color: var(--muted); font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wcard.k-phone { border-left-color: var(--todo); } .wcard.k-phone .kind { color: var(--todo); }
+.wcard.k-ear { border-left-color: var(--question); } .wcard.k-ear .kind { color: var(--question); }
+.wcard.k-choice { border-left-color: var(--info); } .wcard.k-choice .kind { color: var(--info); }
+.wcard.k-money, .wcard.k-gate { border-left-color: var(--warn); } .wcard.k-money .kind, .wcard.k-gate .kind { color: var(--warn); }
+.wcard.k-machine { border-left-color: var(--good); } .wcard.k-machine .kind { color: var(--good); }
+.wrest summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+.wrest .wcards { margin-top: 6px; }
+/* BD4: a thread that became a post: one line in its old place; the post shows it folded at its top. */
+.moved { display: block; width: 100%; text-align: left; margin: 6px 0; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px;
+  background: var(--sunk); color: var(--ink); font: inherit; font-size: .92rem; cursor: pointer; }
+.moved b { color: var(--ember); }
+.moved-in { margin: 6px 0 12px; border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; background: var(--sunk); }
+.moved-in summary { cursor: pointer; font-weight: 700; font-size: .92rem; }
+.moved-in .from { color: var(--ember); cursor: pointer; text-decoration: underline; }
+
+#ask { position: relative; }
+#ask .newdot { position: absolute; top: -3px; right: -3px; }
+.cmt .txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cmt .txt.md { white-space: normal; }
+.replies { margin: 6px 0 0 10px; padding-left: 10px; border-left: 2px solid var(--line); display: grid; gap: 8px; }
+.replies.flat { margin-left: 0; padding-left: 0; border-left: 0; }
+.node { display: grid; gap: 0; }
+.replyto { font-size: .85rem; background: var(--sunk); border-radius: 8px; padding: 4px 8px; overflow-wrap: anywhere; }
+.replyto button { margin-left: 6px; border: 0; background: none; color: var(--warn); font-weight: 700; cursor: pointer; }
+.files { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.files .file { font-size: .85rem; border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; background: var(--sunk); overflow-wrap: anywhere; }
+.files .file button { margin-left: 6px; border: 0; background: none; color: var(--warn); font-weight: 700; cursor: pointer; }
+.cmt .files img { max-width: min(100%, 320px); max-height: 320px; border-radius: 8px; display: block; }
+a { color: var(--ember); }
+.cmt .txt.md p { margin: 0 0 .5em; }
+.cmt .txt.md p:last-child { margin-bottom: 0; }
+.deliv { font-size: .75rem; color: var(--muted); }
+.deliv.err { color: var(--warn); }
+.deliv.ok { color: var(--good); }
+.composer { display: flex; flex-direction: column; gap: 8px; }
+.composer textarea { width: 100%; min-height: 96px; resize: vertical; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.note { font-size: .82rem; color: var(--muted); }
+.btn.small { padding: 4px 10px; font-size: .82rem; }
+
+/* Image zoom */
+.zoom { position: fixed; inset: 0; z-index: 30; background: var(--scrim); display: flex; flex-direction: column; }
+.zoom .ztitle { margin: 0 auto 0 0; font-size: 14px; font-weight: 600; align-self: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
+.zoom .zbar { display: flex; justify-content: flex-end; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 10px) max(12px, env(safe-area-inset-right, 0px)) 10px max(12px, env(safe-area-inset-left, 0px)); }
+.zoom .zimg { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 0 8px calc(env(safe-area-inset-bottom, 0px) + 8px); }
+.zoom img { max-width: 100%; height: auto; cursor: zoom-in; }
+.zoom img.full { max-width: none; cursor: zoom-out; }
+@media (prefers-reduced-motion: no-preference) { .card { transition: border-color .15s; } }
+/* Text boxes and text: selectable, with the phone's own long-press menu (copy, paste, select all). */
+input, textarea, select, .body, .cmt .txt, .peek .body, .cap { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+/* Seen: the clerk passed his comment on. */
+.seen { color: var(--good); font-weight: 700; }
+/* Typing: three dots while a session writes an answer. */
+.typing { display: inline-flex; gap: 6px; align-items: center; font-size: .85rem; color: var(--muted); }
+.typing .dots { display: inline-flex; gap: 3px; background: var(--sunk); border-radius: 999px; padding: 6px 9px; }
+.typing .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); display: block; }
+@media (prefers-reduced-motion: no-preference) {
+  .typing .dots i { animation: blink 1.2s infinite ease-in-out; }
+  .typing .dots i:nth-child(2) { animation-delay: .2s; } .typing .dots i:nth-child(3) { animation-delay: .4s; }
+}
+@keyframes blink { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+/* What lit the dot, shown when the post opens. */
+.newjump { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 30; display: inline-flex; align-items: center; gap: 2px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: inherit; font: inherit; font-weight: 700; box-shadow: 0 4px 16px #0003; cursor: pointer; }
+.newjump[hidden] { display: none; }
+#p-dot[hidden] { display: none; }
+.flash { outline: 3px solid var(--ember); outline-offset: 3px; border-radius: 8px; }
+@media (prefers-reduced-motion: no-preference) { .flash { transition: outline-color 1.2s; } }
+.badge.fresh { background: var(--ember); color: var(--ember-ink); font-weight: 700; }
+/* Pictures in groups: one group per row, its pictures side by side (meant to be compared), each captioned. */
+.strip.groups { flex-direction: column; overflow: visible; scroll-snap-type: none; gap: 28px; }
+.grp { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.grp h4 { font-family: var(--display); font-size: 1.1rem; margin: 0; }
+.grp-row { display: flex; gap: 14px; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding-bottom: 8px; scroll-snap-type: x proximity; }
+/* a group fits the width (one column per picture) down to 240 px a picture, then scrolls sideways */
+.grp .pic { flex: 0 0 max(240px, calc((100% - (var(--n, 3) - 1) * 14px) / var(--n, 3))); min-width: 0; }
+.strip.groups:not(.sized) .grp .pic img { width: 100% !important; height: auto; max-height: none !important; }
+@media (max-width: 959px) { .grp .pic { flex-basis: min(270px, calc(100vw - 72px)); } }
+/* BD4: the Picture size slider on a grouped post: each picture at that % of its own size; a row scrolls sideways */
+.strip.groups.sized .grp .pic { flex: 0 0 auto; max-width: none; }
+.strip.groups.sized .grp .pic img { height: auto; max-height: none; }
+.grp .pic-side { position: static; width: auto; }
+.cap { font-weight: 700; font-size: .9rem; overflow-wrap: anywhere; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>{{PROJECT}} board</h1>
+    <span class="row tools"><input type="search" id="q" placeholder="Search posts or a part" aria-label="Search posts"><select id="sort" aria-label="Order of the posts"><option value="new">Newest first</option><option value="prio">By priority</option></select><button class="btn small" id="sel-toggle" type="button">Select posts</button><span id="status" class="status">Connecting to the board...</span><button class="btn ember small" id="ask" type="button" title="Write to the orchestrator: a question, a correction, anything">Ask the orchestrator</button></span>
+  </header>
+  <!-- BD8 (his 02:26, R74): the Waiting card back as before BD7, one sentence per item, a tap opens its post. -->
+  <details class="dash wait" id="waiting" hidden><summary><span>Waiting for you</span><span class="sub" id="wait-sub"></span></summary><div class="wait-rows" id="wait-rows"></div></details>
+  <details class="dash" id="dash" hidden><summary><span>Where we are</span><span class="sub" id="dash-sub"></span></summary>
+    <div class="dash-rows" id="dash-rows"></div>
+    <details class="trains" id="trains" hidden><summary><span>All trains</span><span class="sub" id="trains-sub"></span></summary><label class="tlive"><input type="checkbox" id="trains-live" checked> Only the trains still moving</label><div id="trains-tree"></div></details>
+  </details>
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+  <main class="lanes" id="lanes"></main>
+  <div class="selbar" id="selbar" hidden>
+    <span class="n" id="sel-n">0 selected</span>
+    <button class="btn ember" id="sel-done" type="button">Move to Done</button>
+    <button class="btn" id="sel-export" type="button" hidden>Export as Markdown</button>
+    <button class="btn" id="sel-cancel" type="button">Cancel</button>
+    <span class="note" id="sel-note"></span>
+  </div>
+  <div class="intro" id="intro" hidden>
+    <b>No posts yet.</b> Claude Code sessions working on {{PROJECT}} post here: things for you to do, questions waiting on you, news, and finished work. Each session follows <code>.kit/BOARD.md</code> in the repository. Open a post to read it in full, comment on it or on one of its images, and your comment is sent to the session that wrote it.
+  </div>
+</div>
+
+<section class="sheet" id="sheet" hidden aria-modal="true" role="dialog" aria-labelledby="p-title">
+  <div class="sheet-in">
+    <div class="bar">
+      <button class="btn" id="back" type="button">&larr; Board</button>
+      <div class="row">
+        <span class="prio" id="p-prio"></span>
+        <span id="p-like"></span>
+        <button class="btn" id="share" type="button" hidden title="Save this post and its comments as a Markdown file">Share</button>
+        <button class="btn" id="move" type="button">Move to Done</button>
+      </div>
+    </div>
+    <div class="meta" id="p-meta"></div>
+    <h2 id="p-title"></h2>
+    <button class="newjump" id="p-newjump" type="button" hidden></button>
+    <div class="body" id="p-body"></div>
+    <div class="review" id="p-review"></div>
+    <div class="opts" id="p-opts" hidden></div>
+    <div class="pics" id="p-pics" hidden>
+      <div class="pics-head"><span><span class="count" id="p-count"></span> <span id="p-hint"></span></span>
+        <span class="size"><label for="p-size" id="p-size-l">Picture size</label><input type="range" id="p-size" min="10" max="200" step="5" value="100"><output id="p-size-v" for="p-size">Auto</output><button class="btn small" id="p-size-auto" type="button">Auto</button></span></div>
+      <div class="strip-box" id="p-strip-box"><div class="strip" id="p-imgs"></div></div>
+      <div class="gal-bar" id="p-gal" hidden>
+        <button class="btn small" id="gal-prev" type="button" aria-label="The pictures before">&lsaquo;</button>
+        <span class="gal-n" id="gal-n"></span>
+        <button class="btn small" id="gal-next" type="button" aria-label="The next pictures">&rsaquo;</button>
+        <span class="gal-thumbs" id="gal-thumbs"></span>
+      </div>
+    </div>
+    <section class="thread">
+      <h3 id="p-th">Comments on the post</h3>
+      <div id="p-comments" class="cards"></div>
+      <div id="p-typing" hidden></div>
+      <form class="composer" id="composer">
+        <label for="c-text" class="note" id="c-label">Your comment goes to the session that wrote this post. Write @o in it to ask the orchestrator instead.</label>
+        <textarea id="c-text" maxlength="4000" placeholder="Write a comment"></textarea>
+        <div class="replyto" id="c-reply" hidden></div>
+        <div class="row" id="c-attach-row" hidden>
+          <button class="btn small" type="button" id="c-attach">Attach a picture or a file</button>
+          <input type="file" id="c-file" multiple hidden>
+          <span class="note">Up to 20 MB each: pictures, video, PDF, text. Not zip, audio or APK.</span>
+        </div>
+        <div id="c-files" class="files"></div>
+        <div class="row">
+          <button class="btn ember" type="submit" id="c-send">Send comment</button>
+          <span class="note" id="c-note"></span>
+        </div>
+      </form>
+    </section>
+  </div>
+</section>
+
+<!-- BD7: "Waiting for you" is a page of the posts that wait on him, opened from the dashboard. -->
+<section class="sheet" id="wsheet" hidden aria-modal="true" role="dialog" aria-labelledby="w-title">
+  <div class="sheet-in">
+    <div class="bar"><button class="btn" id="w-back" type="button">&larr; Board</button></div>
+    <h2 id="w-title">Waiting for you</h2>
+    <div class="note" id="w-sub"></div>
+    <div id="w-filter" class="wfilter" hidden></div>
+    <div id="w-list" class="wcards"></div>
+    <details class="wrest" id="w-rest" hidden><summary id="w-rest-sum"></summary><div id="w-rest-list" class="wcards"></div></details>
+  </div>
+</section>
+
+<div class="peek" id="peek" hidden aria-hidden="true"></div>
+<div class="toast" id="toast" hidden role="status"><span id="toast-t"></span><button class="btn small" id="toast-undo" type="button">Undo</button></div>
+
+<div class="zoom" id="zoom" hidden role="dialog" aria-label="Image">
+  <div class="zbar">
+    <h2 id="z-title" class="ztitle">Image</h2>
+    <button class="btn" type="button" id="z-close">Close</button>
+  </div>
+  <div class="zimg"><img id="z-img" alt=""></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var COLUMNS = [
+    { key: "todo", name: "For you to do", c: "var(--todo)" },
+    { key: "question", name: "Waiting on you", c: "var(--question)" },
+    { key: "info", name: "News", c: "var(--info)" },
+    { key: "done", name: "Done", c: "var(--done)" }
+  ];
+  var state = { special: {}, posts: [], comments: [], active: "question", openId: null, isOwner: false, loaded: false, picking: false, picked: {}, sizeDraft: 0, galStart: 0, galPer: 3, folded: {}, movedOpen: {}, replyTo: null, disc: null };
+  var db = null, cmts = null, user = null, stripKey = "";
+  var $ = function (id) { return document.getElementById(id); };
+
+  try { var t = localStorage.getItem("board-tab"); if (t) state.active = t; } catch (e) {}
+  /* Read marks: when he last opened each post, and what the post was then (sig: title, body, column, pictures).
+     Kept under his own user in the board's db (data/users/<id>/board-seen), so his phone and his computer agree;
+     this browser's localStorage is only the fallback (no user id in this view) and the first copy. */
+  state.q = ""; state.sort = "new";
+  var seen = {}, seenDoc = null, seenExists = false, seenReady = false, seenPatch = null, seenBusy = false;
+  /* {at, sig, v, bt}: every session comment up to `at` has been on his screen; `v` the ids seen after it; `sig` the
+     post as it was when its text was last on his screen (at `bt`). BD3: seen = shown, not opened. */
+  function normSeen(v) {
+    if (typeof v === "string") return { at: v };
+    if (!v || typeof v !== "object" || typeof v.at !== "string") return null;
+    var o = { at: v.at, sig: str(v.sig) };
+    if (Array.isArray(v.v) && v.v.length) o.v = v.v.map(str);
+    if (typeof v.bt === "string" && v.bt) o.bt = v.bt;
+    return o;
+  }
+  try {
+    if (localStorage.getItem("board-sort") === "prio") state.sort = "prio";
+    var raw = JSON.parse(localStorage.getItem("board-seen") || "{}") || {};
+    Object.keys(raw).forEach(function (k) { var v = normSeen(raw[k]); if (v) seen[k] = v; });
+  } catch (e) { seen = {}; }
+  function sigOf(q) {
+    var t = str(q.title) + "\u0001" + str(q.body) + "\u0001" + str(q.column) + "\u0001" + postImages(q).join(",") + "\u0001" + (Array.isArray(q.captions) ? q.captions.map(str).join("\u0002") : "");
+    var h = 5381; for (var i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
+    return h.toString(36) + "." + t.length.toString(36);
+  }
+  function postById(id) { return state.special[id] || state.posts.filter(function (p) { return p.id === id; })[0]; }
+  function saveLocal() { try { localStorage.setItem("board-seen", JSON.stringify(seen)); } catch (e) {} }
+  /* One write at a time to his read doc; marks made meanwhile wait and go together. */
+  function pushSeen(ids) {
+    saveLocal();
+    seenPatch = seenPatch || {};
+    ids.forEach(function (id) { if (seen[id]) seenPatch[id] = seen[id]; });
+    /* nothing goes up before the db's own copy has been read: a set would wipe the other device's marks */
+    if (!seenDoc || !seenReady || seenBusy || !Object.keys(seenPatch).length) return;
+    var patch = seenPatch; seenPatch = null; seenBusy = true;
+    var w = seenExists ? seenDoc.update({ posts: patch }) : seenDoc.set({ posts: Object.assign({}, seen, patch) });
+    var more = function () { seenBusy = false; if (seenPatch) pushSeen([]); };
+    /* a refused write keeps its marks for the next one (no retry loop) */
+    w.then(function () { seenExists = true; more(); }, function () { seenBusy = false; seenPatch = Object.assign({}, patch, seenPatch || {}); });
+  }
+  /* Everything in the post counts as seen (the fallback when this browser cannot tell what was on screen). */
+  function markSeen(id) {
+    var p = postById(id);
+    seen[id] = { at: new Date().toISOString(), sig: p ? sigOf(p) : "" };
+    pushMarks(id);
+  }
+  function pushMarks(id) {
+    /* the read marks first made in this browser before the db answered travel with this one */
+    var ids = [id]; Object.keys(seen).forEach(function (k) { if (seen[k].base) { delete seen[k].base; ids.push(k); } });
+    pushSeen(ids);
+  }
+  /* The db's copy and this browser's: the later read wins, post by post. */
+  function mergeSeen(remote) {
+    var moved = false;
+    Object.keys(remote || {}).forEach(function (k) {
+      var v = normSeen(remote[k]); if (!v) return;
+      var l = seen[k];
+      if (!l) { seen[k] = v; moved = true; return; }
+      var m = v.at > l.at ? Object.assign({}, v) : Object.assign({}, l), o = m === v ? l : v;
+      if (v.at === l.at && v.sig && !l.sig) { m.sig = v.sig; }
+      /* the ids seen past `at` on either device, and the text seen last */
+      var u = (m.v || []).concat((o.v || []).filter(function (x) { return (m.v || []).indexOf(x) < 0; }));
+      if (u.length) m.v = u;
+      if (o.bt && (!m.bt || o.bt > m.bt) && o.bt > m.at) { m.bt = o.bt; m.sig = o.sig; }
+      if (JSON.stringify(m) !== JSON.stringify(l)) { seen[k] = m; moved = true; }
+    });
+    if (moved) saveLocal();
+    return moved;
+  }
+  /* A read made before sigs were kept: the post as it is now counts as read (kept with the next write). */
+  function baseline() {
+    state.posts.concat(Object.keys(state.special).map(function (k) { return state.special[k]; })).forEach(function (p) {
+      var v = seen[p.id]; if (v && !v.sig) { v.sig = sigOf(p); v.base = true; }
+    });
+  }
+  function changed(p) {
+    var v = seen[p.id]; if (!v) return false;
+    if (v.sig && v.sig !== sigOf(p)) return true;
+    var u = str(p.updated_at); return !!u && u > (v.bt && v.bt > v.at ? v.bt : v.at);
+  }
+  function agentFrom(c) { return c.from && c.from !== "owner" && c.from !== "viewer"; }
+  /* BD4. A comment may carry became_post: "<post id>" (or a list): the thread from it down continued as that post.
+     Its old place shows one line "→ continued in …"; the new post shows the thread folded at its top. Those comments
+     no longer light the old post's dot (they are read where they now show). */
+  function becameOf(c) { var b = c && c.became_post; return (Array.isArray(b) ? b : (b ? [b] : [])).map(str).filter(Boolean); }
+  /* BD6 (the owner, 2026-11-15 23:42: the board shows a comment later and later): every card asked "this post's
+     comments" by scanning ALL comments, several times per card (posts x comments per redraw). One index per snapshot. */
+  var ixCache = { src: null };
+  function ix() {
+    if (ixCache.src === state.comments) return ixCache;
+    var byPost = {}, byId = {}, likes = {}, byThread = {};
+    (state.comments || []).forEach(function (c) {
+      (byPost[c.post_id] = byPost[c.post_id] || []).push(c); byId[c.id] = c;
+      if (c.comment_id) (likes[c.comment_id] = likes[c.comment_id] || []).push(c);
+      var th = str(c.thread_id); if (th) (byThread[th] = byThread[th] || []).push(c);
+    });
+    ixCache = { src: state.comments, byPost: byPost, byId: byId, likes: likes, byThread: byThread };
+    return ixCache;
+  }
+  var NONE = [];
+  function postCmts(id) { return ix().byPost[id] || NONE; }
+  function likesOn(cid) { return ix().likes[cid] || NONE; }
+  var movedCache = { src: null, ids: {}, kids: {} };
+  function moved() {
+    if (movedCache.src === state.comments) return movedCache;
+    var ids = {}, byId = {}, kids = {};
+    (state.comments || []).forEach(function (c) { byId[c.id] = c; });
+    (state.comments || []).forEach(function (c) { if (c.comment_id) return; var par = parentOf(c, byId); if (par) (kids[par] = kids[par] || []).push(c); });
+    Object.keys(kids).forEach(function (k) { kids[k].sort(function (a, b) { return tOf(a) - tOf(b); }); });
+    function mark(c, n) { if (ids[c.id] || n > 200) return; ids[c.id] = true; (kids[c.id] || []).forEach(function (k) { mark(k, n + 1); }); }
+    (state.comments || []).forEach(function (c) { if (becameOf(c).length) mark(c, 0); });
+    movedCache = { src: state.comments, ids: ids, kids: kids };
+    return movedCache;
+  }
+  /* BD7 (the owner, 2026-11-16 00:58: "the ask the orchestrator should be sorted into discussions (like a support
+     chat with conversation threads [...]) Basically the list of discussions that iMessage or any text or messaging
+     app greets you with"). A comment under _orchestrator names its discussion in `discussion`; without it, as
+     scripts/board-discussions.py: a Like follows the liked comment, a reply its parent, a hand-over notice goes to
+     "changes", his question under a notice starts its own, anything else starts its own (its id). Titles:
+     posts/_orchestrator `discussions` {id: title}, else the first words of the first message. */
+  var ORCH = "_orchestrator", CHANGES = "changes";
+  var HANDOVER = /orchestrator \d+ (took over|here, taking over|hands over|handed over|is handing over)|handing over to \**orchestrator \d+|start orchestrator \d+|please start orchestrator/i;
+  function isHandover(c) { return c.from === "orchestrator" && HANDOVER.test(str(c.text).split("\n")[0]); }
+  var discCache = { src: null };
+  function discs() {
+    if (discCache.src === state.comments) return discCache;
+    var cs = postCmts(ORCH), byId = {}, of = {};
+    cs.forEach(function (c) { byId[c.id] = c; });
+    function d(c, n) {
+      if (of[c.id] !== undefined) return of[c.id];
+      of[c.id] = c.id; /* a loop ends here */
+      var r = str(c.discussion);
+      if (!r) {
+        var par = c.comment_id && byId[str(c.comment_id)] ? str(c.comment_id) : parentOf(c, byId);
+        r = par && n < 200 ? d(byId[par], n + 1) : "";
+        if (r === CHANGES && !c.like && !isHandover(c)) r = c.id;
+        if (!r) r = isHandover(c) ? CHANGES : c.id;
+      }
+      return (of[c.id] = r);
+    }
+    cs.forEach(function (c) { d(c, 0); });
+    var list = {};
+    cs.forEach(function (c) { var k = of[c.id]; (list[k] = list[k] || []).push(c); });
+    Object.keys(list).forEach(function (k) { list[k].sort(function (a, b) { return tOf(a) - tOf(b); }); });
+    discCache = { src: state.comments, of: of, list: list };
+    return discCache;
+  }
+  function discTitle(k) {
+    var o = state.special[ORCH], t = o && o.discussions && typeof o.discussions === "object" ? str(o.discussions[k]) : "";
+    if (t) return t;
+    if (k === CHANGES) return "Orchestrator changes";
+    var first = (discs().list[k] || []).filter(function (c) { return !c.like; })[0];
+    var l = first ? firstLine(first.text) : "";
+    return l ? (l.length > 60 ? l.slice(0, 59) + "\u2026" : l) : "New discussion";
+  }
+  function newComments(p, since, shown) {
+    var t0 = since ? Date.parse(since) : -Infinity, v = seen[p.id], past = v && v.v ? v.v : [];
+    var mv = moved().ids;
+    return postCmts(p.id).filter(function (c) { return c.post_id === p.id && agentFrom(c) && !(shown && c.like) && tOf(c) > t0 && past.indexOf(c.id) < 0 && !mv[c.id]; })
+      .sort(function (a, b) { return tOf(a) - tOf(b); });
+  }
+  /* What has not been on his screen yet: session comments, and the post's text if it is new or changed. */
+  function unseenOf(p) {
+    var v = seen[p.id];
+    return { cids: newComments(p, v ? v.at : "", true).map(function (c) { return c.id; }), body: !v || changed(p) };
+  }
+  function isNew(p) {
+    if (colOf(p) === "done") return false;
+    var v = seen[p.id]; if (!v) return true;
+    /* BD5 (his 20:05 on PA3): the same test as what the open post waits for; an agent's Like (orchestrator's
+       "taking care of it") is never on screen as a comment, so it lit a dot nothing could clear */
+    var u = unseenOf(p); return u.cids.length > 0 || u.body;
+  }
+  /* One thing (a comment id, or "body") has been on his screen: keep it; once nothing is left, fold it all into `at`. */
+  function markViewed(id, k) {
+    var p = postById(id); if (!p) return;
+    var r = Object.assign({ at: "", sig: "" }, seen[id] || {});
+    if (k === "body") { r.sig = sigOf(p); r.bt = new Date().toISOString(); }
+    else { r.v = (r.v || []).filter(function (x) { return x !== k; }).concat([k]); }
+    seen[id] = r;
+    var u = unseenOf(p);
+    if (!u.cids.length && !u.body) {
+      var top = r.at;
+      postCmts(id).forEach(function (c) { if (c.post_id === id) { var t = new Date(tOf(c)).toISOString(); if (t > top) top = t; } });
+      if (r.bt && r.bt > top) top = r.bt;
+      seen[id] = { at: top || new Date().toISOString(), sig: sigOf(p), v: [] }; /* v: [] clears the db's copy too */
+    }
+    pushMarks(id);
+  }
+  function prioOf(p) { var n = Number(p.priority); return n >= 1 && n <= 3 ? n : 0; }
+  function matches(p) {
+    var q = state.q.trim().toLowerCase(); if (!q) return true;
+    return (str(p.title) + "\n" + str(p.body) + "\n" + str(p.part) + "\n" + p.id).toLowerCase().indexOf(q) >= 0;
+  }
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function str(v) { return typeof v === "string" ? v : (v == null ? "" : String(v)); }
+  /* A post he moved to Done comes back when a session or the orchestrator comments after that (he asked, 2026-11-12). */
+  function reopened(p) {
+    if (str(p.column) !== "done" || !p.done_at) return false;
+    var t = Date.parse(p.done_at);
+    return postCmts(p.id).some(function (c) { return c.post_id === p.id && c.from !== "owner" && c.from !== "viewer" && tOf(c) > t; });
+  }
+  function colOf(p) { var k = reopened(p) ? (str(p.column_before) || "info") : str(p.column); return COLUMNS.some(function (c) { return c.key === k; }) ? k : "info"; }
+  function when(iso) {
+    var d = new Date(str(iso));
+    if (isNaN(d)) return "";
+    var s = (Date.now() - d.getTime()) / 1000;
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + " min ago";
+    if (s < 86400) return Math.floor(s / 3600) + " h ago";
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+  function imgUrl(u) {
+    u = str(u).trim();
+    if (/^[0-9a-f]{32}$/i.test(u)) return "/_blob/" + u;
+    if (u.indexOf("/_blob/") === 0 || u.indexOf("https://") === 0) return u;
+    return "";
+  }
+  function shortSession(s) { s = str(s); return s ? "..." + s.slice(-6) : ""; }
+  function firstLine(b) {
+    var lines = str(b).split("\n");
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i].replace(/[#*|`>-]/g, " ").trim();
+      if (l) return l;
+    }
+    return "";
+  }
+  /* A comment's time: when it really reached the board. A session's created_at can be ahead of the truth (a rounded
+     or guessed minute); the first page of his that sees such a comment early writes arrived_at once (the owner,
+     2026-11-14: his later comment showed above a session's). His own comments carry this page's clock. */
+  function tOf(c) { var a = Date.parse(str(c.arrived_at)), t = Date.parse(str(c.created_at)); return !isNaN(a) && (isNaN(t) || a < t) ? a : (isNaN(t) ? 0 : t); }
+  function isoOf(c) { return new Date(tOf(c)).toISOString(); }
+  function commentsFor(id) {
+    return postCmts(id).filter(function (c) { return c.post_id === id && !c.comment_id; })
+      .sort(function (a, b) { return tOf(a) - tOf(b) || (str(a.created_at) < str(b.created_at) ? -1 : 1); });
+  }
+  var arriving = {};
+  function stampArrivals() {
+    if (!db || !state.isOwner) return;
+    var now = Date.now();
+    state.comments.forEach(function (c) {
+      if (!agentFrom(c) || c.arrived_at || arriving[c.id]) return;
+      var t = Date.parse(str(c.created_at));
+      if (!isNaN(t) && t - now > 5000) {
+        arriving[c.id] = true; c.arrived_at = new Date(now).toISOString();
+        db.doc("comments/" + c.id).update({ arrived_at: c.arrived_at }).catch(function () { delete arriving[c.id]; });
+      }
+    });
+  }
+
+  /* Simple markdown: escaped first, then **bold**, `code`, and | tables |. */
+  function esc(s) { return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function inline(s) {
+    return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+      .replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/_blob\/)[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:])/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  }
+  function renderBody(text) {
+    var lines = str(text).replace(/\r/g, "").split("\n");
+    var html = "", para = [], i = 0;
+    function flush() { if (para.length) { html += "<p>" + para.map(inline).join("<br>") + "</p>"; para = []; } }
+    while (i < lines.length) {
+      var l = lines[i];
+      if (/^\s*\|.*\|\s*$/.test(l)) {
+        flush();
+        var rows = [];
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(lines[i]); i++; }
+        var cells = function (r) { return r.trim().replace(/^\||\|$/g, "").split("|").map(function (c) { return c.trim(); }); };
+        var hasHead = rows.length > 1 && /^[\s|:-]+$/.test(rows[1]);
+        var t = "<div class=\"tbl\"><table>";
+        rows.forEach(function (r, k) {
+          if (hasHead && k === 1) return;
+          var tag = hasHead && k === 0 ? "th" : "td";
+          t += "<tr>" + cells(r).map(function (c) { return "<" + tag + ">" + inline(c) + "</" + tag + ">"; }).join("") + "</tr>";
+        });
+        html += t + "</table></div>";
+        continue;
+      }
+      if (!l.trim()) { flush(); i++; continue; }
+      var h = /^#{1,4}\s+(.*)$/.exec(l);
+      if (h) { flush(); html += "<p><b>" + inline(h[1]) + "</b></p>"; i++; continue; }
+      para.push(l); i++;
+    }
+    flush();
+    return html;
+  }
+
+  /* Typing: typing/<post_id> {from, at} (one doc per post), or a field <post_id>: {from, at} of posts/_typing.
+     Three dots while it is under 10 minutes old and no comment from the same writer came after it. */
+  var TYPING_MS = 10 * 60 * 1000;
+  state.typing = {};
+  function typingFor(id) {
+    var list = [], now = Date.now();
+    var a = state.typing[id]; if (a) list.push(a);
+    var b = state.special._typing && state.special._typing[id]; if (b && typeof b === "object") list.push(b);
+    return list.filter(function (t) {
+      var at = Date.parse(str(t.at)); if (isNaN(at) || now - at > TYPING_MS || at - now > 120000) return false;
+      return !postCmts(id).some(function (c) { return c.post_id === id && str(c.from) === str(t.from) && Date.parse(str(c.created_at)) >= at; });
+    });
+  }
+  function dotsNode(who) {
+    var w = el("span", "typing"), d = el("span", "dots");
+    d.appendChild(el("i")); d.appendChild(el("i")); d.appendChild(el("i"));
+    w.appendChild(d); if (who) w.appendChild(el("span", null, who));
+    w.setAttribute("role", "status"); return w;
+  }
+  function renderTyping() {
+    var box = $("p-typing"); if (!box) return;
+    var t = state.openId ? typingFor(state.openId) : [];
+    box.textContent = ""; box.hidden = !t.length;
+    if (t.length) box.appendChild(dotsNode(t.map(function (x) { return str(x.from) || "A session"; }).join(", ") + " is writing an answer"));
+  }
+  setInterval(function () {
+    var any = Object.keys(state.typing).length || (state.special._typing && Object.keys(state.special._typing).length);
+    if (any && !state.picking) { later("board"); if (state.openId) later("typing"); }
+  }, 60000);
+
+  /* BD6 (the owner, 2026-11-15 23:42): a live update draws at most once a frame, and the board not at all behind an
+     open post (the sheet covers it; closing the post draws it). A burst (typing dots, the comment, the clerk's
+     \u2713 Seen) used to redraw the whole board once per write, each time behind the open post too. */
+  var soon = { board: false, post: false, cmts: false, typing: false, raf: 0, to: 0 };
+  function later(what) {
+    soon[what] = true;
+    /* the next frame, or 250 ms if frames are held back (a hidden tab, an off-screen frame): as before, it draws */
+    if (!soon.raf) { soon.raf = requestAnimationFrame(flushSoon); soon.to = setTimeout(flushSoon, 250); }
+  }
+  var wide = window.matchMedia ? window.matchMedia("(min-width: 960px)") : { matches: true };
+  if (wide.addEventListener) wide.addEventListener("change", function () { later("board"); }); else if (wide.addListener) wide.addListener(function () { later("board"); });
+  function flushSoon() {
+    if (!soon.raf) return;
+    cancelAnimationFrame(soon.raf); clearTimeout(soon.to); soon.raf = 0;
+    if (soon.board && !state.openId) renderBoard();
+    if (state.openId) {
+      if (soon.post) renderPost(); else if (soon.cmts) renderComments();
+      if (soon.typing) renderTyping();
+    }
+    soon.post = soon.cmts = soon.typing = false;
+  }
+  /* Board */
+  function renderBoard() {
+    soon.board = false;
+    renderWaiting(); renderDash(); renderAsk();
+    var tabs = $("tabs"), lanes = $("lanes");
+    var ae = document.activeElement, fc = ae && ae.closest ? ae.closest(".card") : null, focusId = fc ? fc.dataset.id : "";
+    tabs.textContent = ""; lanes.textContent = ""; hidePeek();
+    COLUMNS.forEach(function (c) {
+      var posts = state.posts.filter(function (p) { return colOf(p) === c.key && matches(p); });
+      if (state.sort === "prio") posts = posts.map(function (p, i) { return [p, i]; }).sort(function (a, b) { return ((prioOf(a[0]) || 9) - (prioOf(b[0]) || 9)) || (a[1] - b[1]); }).map(function (x) { return x[0]; });
+      var fresh = posts.filter(isNew).length, mins = c.key === "todo" ? posts.reduce(function (t, p) { return t + (Number(p.minutes) > 0 ? Number(p.minutes) : 0); }, 0) : 0;
+      var tab = el("button", "tab");
+      tab.type = "button"; tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", String(state.active === c.key));
+      tab.style.setProperty("--c", c.c);
+      tab.appendChild(el("span", "dot"));
+      tab.appendChild(el("span", null, c.name));
+      tab.appendChild(el("span", "n", String(posts.length)));
+      if (fresh) tab.appendChild(el("span", "newc", fresh + " new"));
+      if (mins) tab.appendChild(el("span", "mins", mins + " min"));
+      tab.addEventListener("click", function () {
+        state.active = c.key;
+        try { localStorage.setItem("board-tab", c.key); } catch (e) {}
+        renderBoard();
+      });
+      tabs.appendChild(tab);
+
+      var lane = el("section", "lane" + (state.active === c.key ? " active" : ""));
+      var h = el("h2"); h.style.setProperty("--c", c.c);
+      h.appendChild(el("span", "dot")); h.appendChild(el("span", null, c.name)); h.appendChild(el("span", "n", String(posts.length)));
+      if (fresh) h.appendChild(el("span", "newc", fresh + " new"));
+      if (mins) h.appendChild(el("span", "mins", "about " + mins + " min"));
+      lane.appendChild(h);
+      /* BD6: on a phone one column shows at a time; the others' cards are built when their tab is tapped */
+      if (!wide.matches && state.active !== c.key) { lanes.appendChild(lane); return; }
+      var list = el("div", "cards");
+      if (!posts.length) list.appendChild(el("div", "empty", state.loaded ? "Nothing here." : "Loading..."));
+      posts.forEach(function (p) { list.appendChild(card(p, c)); });
+      lane.appendChild(list);
+      lanes.appendChild(lane);
+    });
+    $("intro").hidden = !(state.loaded && state.posts.length === 0);
+    if (focusId) { var all = lanes.querySelectorAll(".card"); for (var k = 0; k < all.length; k++) if (all[k].dataset.id === focusId) { all[k].focus(); break; } }
+    renderPick();
+  }
+  /* Several posts at once: "Select posts", tap the cards, "Move to Done". */
+  /* The at-a-glance card: posts/_dashboard {rows: [{key, name, steps: [], at, state, note, post, train, waits}], updated_at}.
+     BD7 (the owner, 2026-11-16 00:58: "the original at a glance view should be primary, clicking on a train uncollapses
+     the view into the train view of that train, and the waiting for you should be posts in the waiting for you page,
+     that can be opened up by the awaits trains of the at a glance"): the one card at the top. Its first line opens
+     the Waiting page; a row that waits on him carries a mark that opens that page filtered to it; a tap on a row
+     unfolds its note and its train (the Trains tree of that train only); "All trains" at its foot holds the rest. */
+  var CHIP = { you: "you", running: "runs", ready: "ready", idle: "later", done: "done" };
+  var ORDER = { you: 0, running: 1, ready: 2, idle: 3, done: 4 };
+  /* posts/_trains, indexed once per snapshot of it */
+  var trainsCache = { src: {} };
+  function trains() {
+    var d = state.special._trains;
+    if (trainsCache.src === d) return trainsCache;
+    var rows = d && Array.isArray(d.rows) ? d.rows : [], by = {}, byPost = {};
+    rows.forEach(function (r) { by[str(r.part)] = r; if (r.post && !byPost[str(r.post)]) byPost[str(r.post)] = str(r.part); });
+    trainsCache = { src: d, d: d, rows: rows, by: by, byPost: byPost };
+    return trainsCache;
+  }
+  function kidsOf(T, r) { return (Array.isArray(r.children) ? r.children : []).map(str).filter(function (c) { return T.by[c] && c !== str(r.part); }); }
+  function rootOf(T, part) {
+    var r = T.by[part], n = 0;
+    while (r && n++ < 40) { var up = str(r.parent); if (!up || up === str(r.part) || !T.by[up]) break; r = T.by[up]; }
+    return r;
+  }
+  /* A dashboard row's part: its `train` (a part), else the part whose post is the row's post, else the post's prefix. */
+  function partOfRow(r) {
+    var T = trains(), t = str(r.train), p = str(r.post);
+    if (t && T.by[t]) return t;
+    if (p && T.byPost[p]) return T.byPost[p];
+    var pre = p.split("-")[0];
+    return pre && T.by[pre] ? pre : "";
+  }
+  function treeOf(T, root) {
+    var parts = {}, posts = {};
+    (function walk(r, n) {
+      var k = str(r.part); if (parts[k] || n > 60) return; parts[k] = true; if (r.post) posts[str(r.post)] = true;
+      kidsOf(T, r).forEach(function (c) { walk(T.by[c], n + 1); });
+    })(root, 0);
+    return { parts: parts, posts: posts };
+  }
+  function waitItems() { var d = state.special._waiting; return d && Array.isArray(d.items) ? d.items : []; }
+  /* What of "Waiting for you" belongs to a row: an item that names the row (`rows`, from docs/board/waiting.json
+     "rows" through scripts/board-waiting.py), or whose post is in the row's train or is the row's post, or whose
+     workstream (its key before ":") the row names in `waits`. */
+  function itemsFor(r) {
+    var T = trains(), part = partOfRow(r), root = part ? rootOf(T, part) : null, tree = root ? treeOf(T, root) : { posts: {} };
+    var ws = (Array.isArray(r.waits) ? r.waits : (r.waits ? [r.waits] : [])).map(str);
+    return waitItems().filter(function (it) {
+      var pid = str(it.post), w = str(it.key).split(":")[0];
+      var rk = Array.isArray(it.rows) ? it.rows.map(str) : [];
+      return rk.indexOf(str(r.key)) >= 0 || (pid && (tree.posts[pid] || pid === str(r.post))) || (w && ws.indexOf(w) >= 0);
+    });
+  }
+  function dashRows() { var d = state.special._dashboard; return d && Array.isArray(d.rows) ? d.rows : []; }
+  function renderDash() {
+    var d = state.special._dashboard, box = $("dash"), rows = dashRows().slice(), items = waitItems(), T = trains();
+    box.hidden = !rows.length && !items.length && !T.rows.length; if (box.hidden) return;
+    var you = rows.filter(function (r) { return r.state === "you"; }).length, run = rows.filter(function (r) { return r.state === "running"; }).length;
+    $("dash-sub").textContent = rows.length ? you + " wait on you · " + run + " running" + (d && d.updated_at ? " · " + when(d.updated_at) : "") : "";
+    var g = $("dash-rows"); g.textContent = "";
+    function ord(r) { return ORDER[r.state] === undefined ? 3 : ORDER[r.state]; }
+    rows.map(function (r, i) { return [r, i]; }).sort(function (a, b) { return ord(a[0]) - ord(b[0]) || a[1] - b[1]; }).forEach(function (p) {
+      var r = p[0], stt = CHIP[r.state] ? str(r.state) : "idle", key = str(r.key);
+      var row = el("div", "dash-row " + stt + (state.dashOpen === key ? " open" : "")); row.dataset.key = key;
+      row.appendChild(el("span", "dot"));
+      row.appendChild(el("span", "name", str(r.name)));
+      var sg = el("span", "segs"), at = Number(r.at), steps = Array.isArray(r.steps) ? r.steps : [];
+      steps.forEach(function (s, i) { var x = el("span", "seg" + (i < at ? " was" : (i === at ? " now" : ""))); x.title = str(s); sg.appendChild(x); });
+      row.appendChild(sg);
+      row.appendChild(el("span", "cur", str(steps[at] || "")));
+      row.appendChild(el("span", "st", CHIP[stt]));
+      if (state.dashOpen === key) {
+        var w = el("div", "what"); w.innerHTML = inline(str(r.note));
+        w.addEventListener("click", function (e) { e.stopPropagation(); });
+        if (r.post && state.posts.some(function (q) { return q.id === r.post; })) {
+          var go = el("span", "go", "Open the post ›");
+          go.addEventListener("click", function (e) { e.stopPropagation(); openPost(r.post); });
+          w.appendChild(go);
+        }
+        /* BD8 (his 02:26, R74): an orange row (it waits on him) opens what waits on him there, one sentence each with
+           its post, not its train; the other rows open their train. */
+        if (stt === "you") {
+          var wl = el("div", "wait-rows dwait"), mine = itemsFor(r);
+          if (!mine.length) wl.appendChild(el("div", "note", "Nothing listed for this row in Waiting for you."));
+          mine.forEach(function (it) { wl.appendChild(waitRow(it)); });
+          w.appendChild(wl);
+        }
+        /* its train: the tree of the train this row is part of, the row's part marked and its line open */
+        var part = stt === "you" ? "" : partOfRow(r), root = part ? rootOf(T, part) : null;
+        if (root) {
+          var tw = el("div", "dtrain"); tw.appendChild(el("div", "note", "Train " + str(root.part)));
+          var s0 = {}; s0[str(root.part)] = true;
+          tw.appendChild(trainNode(T, root, 0, s0, { here: part, redraw: renderDash }));
+          w.appendChild(tw);
+        }
+        row.appendChild(w);
+      }
+      row.addEventListener("click", function () { state.dashOpen = state.dashOpen === key ? null : key; state.trainOpen = null; renderDash(); });
+      g.appendChild(row);
+    });
+    renderTrains();
+  }
+  /* BD4. "Waiting for you": posts/_waiting {items: [{key, text, kind, post, since, deadline}], updated_at}, written by the
+     orchestrator from scripts/board-waiting.py. BD7: a page (a sheet like a post), one card per item showing the post
+     it points to; from a row's mark, filtered to that row, the rest folded under it: nothing more than two taps away. */
+  var KINDS = { phone: "phone", ear: "your ear", choice: "choice", money: "money", machine: "computer", gate: "gate" };
+  function waitRow(it) {
+    var k = KINDS[str(it.kind)] ? str(it.kind) : "choice", pid = str(it.post);
+    var has = pid && state.posts.some(function (q) { return q.id === pid; });
+    var row = el(has ? "button" : "div", "wait-row k-" + k); row.dataset.key = str(it.key);
+    row.appendChild(el("span", "kind", KINDS[k]));
+    var t = el("span", "wtext", str(it.text)); t.title = str(it.text); row.appendChild(t);
+    if (has) { row.type = "button"; row.appendChild(el("span", "go", "\u203a")); row.addEventListener("click", function (e) { e.stopPropagation(); openPost(pid); }); }
+    return row;
+  }
+  /* BD8 (his 02:26: "Revert the waiting for you change"): the card as before BD7, one sentence per item; the page
+     below (BD7) is no longer opened. */
+  function renderWaiting() {
+    var d = state.special._waiting, box = $("waiting"), items = waitItems();
+    box.hidden = !items.length; if (!items.length) return;
+    $("wait-sub").textContent = items.length + (items.length === 1 ? " thing" : " things") + (d.updated_at ? " \u00b7 " + when(d.updated_at) : "");
+    var g = $("wait-rows"); g.textContent = "";
+    items.forEach(function (it) { g.appendChild(waitRow(it)); });
+  }
+  function openWaiting(key) {
+    state.waitOpen = true; state.waitFor = key || null; hidePeek();
+    $("wsheet").hidden = false; $("wsheet").scrollTop = 0; document.body.style.overflow = "hidden";
+    renderWaitPage(); $("w-back").focus({ preventScroll: true });
+  }
+  function closeWaiting() {
+    state.waitOpen = false; state.waitFor = null; $("wsheet").hidden = true; document.body.style.overflow = ""; renderBoard();
+  }
+  function dayOf(iso) { var d = new Date(str(iso)); return isNaN(d) ? str(iso) : d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
+  function waitCard(it) {
+    var k = KINDS[str(it.kind)] ? str(it.kind) : "choice", pid = str(it.post);
+    var p = pid && state.posts.filter(function (q) { return q.id === pid; })[0];
+    var c = el(p ? "button" : "div", "wcard k-" + k); if (p) c.type = "button"; c.dataset.key = str(it.key);
+    var top = el("div", "wtop"); top.appendChild(el("span", "kind", KINDS[k]));
+    var since = str(it.since), dl = str(it.deadline);
+    if (since || dl) top.appendChild(el("span", "note", (since ? "since " + when(since) : "") + (since && dl ? " · " : "") + (dl ? "by " + dayOf(dl) : "")));
+    c.appendChild(top);
+    c.appendChild(el("div", "wt", str(it.text)));
+    if (p) {
+      var pl = el("div", "wpost");
+      if (isNew(p)) pl.appendChild(el("span", "newdot"));
+      pl.appendChild(el("b", null, str(p.title) || p.id));
+      c.appendChild(pl);
+      var f = firstLine(p.body); if (f) c.appendChild(el("div", "first", f));
+      c.addEventListener("click", function () { state.fromWait = true; $("wsheet").hidden = true; openPost(pid); });
+    }
+    return c;
+  }
+  function renderWaitPage() {
+    if (!state.waitOpen) return;
+    var items = waitItems(), d = state.special._waiting, row = null;
+    if (state.waitFor) row = dashRows().filter(function (r) { return str(r.key) === state.waitFor; })[0] || null;
+    var mine = row ? itemsFor(row) : items, rest = row ? items.filter(function (it) { return mine.indexOf(it) < 0; }) : [];
+    $("w-sub").textContent = items.length + (items.length === 1 ? " thing waits" : " things wait") + " on you" + (d && d.updated_at ? " · " + when(d.updated_at) : "");
+    var f = $("w-filter"); f.textContent = ""; f.hidden = !row;
+    if (row) {
+      var chip = el("button", "chip", "For: " + str(row.name) + " ×"); chip.type = "button"; chip.title = "Show everything";
+      chip.addEventListener("click", function () { state.waitFor = null; renderWaitPage(); });
+      f.appendChild(chip);
+    }
+    var l = $("w-list"); l.textContent = "";
+    if (!mine.length) l.appendChild(el("div", "note", row ? "Nothing listed for this row." : "Nothing waits on you."));
+    mine.forEach(function (it) { l.appendChild(waitCard(it)); });
+    var rd = $("w-rest"), rl = $("w-rest-list"); rd.hidden = !rest.length; rl.textContent = "";
+    $("w-rest-sum").textContent = "Everything else that waits on you (" + rest.length + ")";
+    rest.forEach(function (it) { rl.appendChild(waitCard(it)); });
+  }
+  $("w-back").addEventListener("click", closeWaiting);
+  /* BD4. "Trains": posts/_trains {rows: [{part, parent, also, children, post, prompt, session, state, store}], updated_at},
+     from scripts/board-trains.py. Each part under its parent; "Only the trains still moving" keeps a tree with a part
+     running or waiting on him. A tap on a line shows its prompt, session and store, and opens its post.
+     BD7: folded at the foot of the dashboard ("All trains"); a row of the dashboard shows its own train. */
+  var TST = { running: "runs", you: "you", done: "done", idle: "idle", written: "written", unknown: "?" };
+  function trainTitle(r) {
+    var p = r.post && state.posts.filter(function (q) { return q.id === str(r.post); })[0];
+    return p ? str(p.title) : (r.prompt ? str(r.prompt).split("/").pop().replace(/\.md$/, "") : "");
+  }
+  function trainNode(T, r, depth, seenP, o) {
+    var k = str(r.part), st = TST[str(r.state)] ? str(r.state) : "unknown";
+    var w = el("div", "tnode " + st + (state.trainOpen === k ? " open" : "") + (o.here === k ? " here" : "")); w.dataset.part = k;
+    var line = el("div", "tline");
+    line.appendChild(el("span", "tp", k)); line.appendChild(el("span", "tst", TST[st]));
+    var also = (Array.isArray(r.also) ? r.also : []).map(str).filter(Boolean);
+    line.appendChild(el("span", "tt", trainTitle(r) + (also.length ? "  · also after " + also.join(", ") : "")));
+    line.addEventListener("click", function (e) { e.stopPropagation(); state.trainOpen = state.trainOpen === k ? null : k; o.redraw(); });
+    w.appendChild(line);
+    var info = el("div", "tinfo"), bits = [];
+    if (state.trainOpen === k) {
+      if (r.prompt) bits.push("Prompt: `" + str(r.prompt) + "`");
+      if (r.session) bits.push("Session: `" + str(r.session) + "`");
+      var store = Array.isArray(r.store) ? r.store.map(str) : (r.store ? [str(r.store)] : []);
+      if (store.length) bits.push("Store: " + store.map(function (x) { return "`" + x + "`"; }).join(", "));
+      info.innerHTML = inline(bits.join(" · ") || "No prompt, session or store on record.");
+      info.addEventListener("click", function (e) { e.stopPropagation(); });
+      if (r.post && state.posts.some(function (q) { return q.id === str(r.post); })) {
+        var go = el("span", "go", " Open the post ›");
+        go.addEventListener("click", function (e) { e.stopPropagation(); openPost(str(r.post)); });
+        info.appendChild(go);
+      }
+      w.appendChild(info);
+    }
+    var kids = kidsOf(T, r).filter(function (c) { return !seenP[c]; });
+    if (kids.length) {
+      var sub = el("div", "tkids" + (depth >= 5 ? " flat" : ""));
+      kids.forEach(function (c) { var s2 = Object.assign({}, seenP); s2[c] = true; sub.appendChild(trainNode(T, T.by[c], depth + 1, s2, o)); });
+      w.appendChild(sub);
+    }
+    return w;
+  }
+  function renderTrains() {
+    var T = trains(), d = T.d, box = $("trains"), rows = T.rows;
+    box.hidden = !rows.length; if (!rows.length) return;
+    var liveMemo = {};
+    function live(r, n) {
+      var k = str(r.part); if (liveMemo[k] !== undefined) return liveMemo[k];
+      liveMemo[k] = false;
+      return (liveMemo[k] = r.state === "running" || r.state === "you" || (n < 40 && kidsOf(T, r).some(function (c) { return live(T.by[c], n + 1); })));
+    }
+    var roots = rows.filter(function (r) { return !r.parent || !T.by[str(r.parent)] || str(r.parent) === str(r.part); });
+    var trs = roots.filter(function (r) { return kidsOf(T, r).length; }), alone = roots.filter(function (r) { return !kidsOf(T, r).length; });
+    var onlyLive = $("trains-live").checked;
+    var moving = trs.filter(function (r) { return live(r, 0); }).length + alone.filter(function (r) { return live(r, 0); }).length;
+    $("trains-sub").textContent = trs.length + " trains · " + moving + " moving" + (d && d.updated_at ? " · " + when(d.updated_at) : "");
+    var tree = $("trains-tree"); tree.textContent = "";
+    if (!box.open) return; /* folded: built when opened */
+    var o = { here: "", redraw: renderTrains };
+    trs.concat(onlyLive ? alone : []).forEach(function (r) {
+      if (onlyLive && !live(r, 0)) return;
+      var s0 = {}; s0[str(r.part)] = true; tree.appendChild(trainNode(T, r, 0, s0, o));
+    });
+    if (!onlyLive && alone.length) {
+      var box2 = el("div", "talone");
+      alone.forEach(function (r) {
+        var c = el("button", "chip", str(r.part) + " · " + (TST[str(r.state)] || "?")); c.type = "button"; c.title = trainTitle(r);
+        c.addEventListener("click", function () { if (r.post && state.posts.some(function (q) { return q.id === str(r.post); })) openPost(str(r.post)); });
+        box2.appendChild(c);
+      });
+      tree.appendChild(el("div", "note", "On their own (" + alone.length + "):")); tree.appendChild(box2);
+    }
+    if (!tree.childNodes.length) tree.appendChild(el("div", "note", "No train is moving."));
+  }
+  (function () {
+    var topen = false; try { topen = localStorage.getItem("board-trains") === "open"; } catch (e) {}
+    $("trains").open = topen;
+    $("trains").addEventListener("toggle", function () { try { localStorage.setItem("board-trains", this.open ? "open" : "closed"); } catch (e) {} renderTrains(); });
+    $("trains-live").addEventListener("change", function () { renderTrains(); });
+  })();
+  (function () {
+    var open = true; try { open = localStorage.getItem("board-dash") !== "closed"; } catch (e) {}
+    $("dash").open = open;
+    $("dash").addEventListener("toggle", function (e) { if (e.target !== this) return; try { localStorage.setItem("board-dash", this.open ? "open" : "closed"); } catch (er) {} });
+    $("ask").addEventListener("click", function () {
+      if (state.special._orchestrator) openPost("_orchestrator");
+      else $("status").textContent = "The orchestrator's thread is not there yet.";
+    });
+  })();
+  function renderAsk() {
+    var a = $("ask"), p = state.special._orchestrator, dot = a.querySelector(".newdot");
+    if (dot) a.removeChild(dot);
+    if (p && isNew(p)) { var nd = el("span", "newdot"); nd.title = "A new answer"; a.appendChild(nd); }
+  }
+  function pickedIds() { return state.posts.filter(function (p) { return state.picked[p.id]; }).map(function (p) { return p.id; }); }
+  function renderPick() {
+    var n = pickedIds().length;
+    $("sel-toggle").textContent = state.picking ? "Stop selecting" : "Select posts";
+    $("selbar").hidden = !state.picking;
+    $("sel-n").textContent = n + " selected";
+    $("sel-done").disabled = n === 0; $("sel-export").disabled = n === 0;
+  }
+  function setPicking(on) { state.picking = on; state.picked = {}; $("sel-note").textContent = on ? "Tap the posts to select them." : ""; renderBoard(); }
+  $("sel-toggle").addEventListener("click", function () { setPicking(!state.picking); });
+  $("q").addEventListener("input", function () { state.q = this.value; renderBoard(); });
+  $("sort").value = state.sort;
+  $("sort").addEventListener("change", function () { state.sort = this.value; try { localStorage.setItem("board-sort", state.sort); } catch (e) {} renderBoard(); });
+  /* Undo for "Move to Done": a few seconds to take it back. */
+  var undoList = [], undoTimer = 0;
+  function undoable(list) {
+    if (!list.length) return;
+    undoList = list; clearTimeout(undoTimer);
+    $("toast-t").textContent = list.length === 1 ? "Moved to Done." : list.length + " posts moved to Done.";
+    $("toast").hidden = false;
+    undoTimer = setTimeout(function () { $("toast").hidden = true; undoList = []; }, 8000);
+  }
+  $("toast-undo").addEventListener("click", function () {
+    var list = undoList; undoList = []; clearTimeout(undoTimer); $("toast").hidden = true;
+    if (!db) return;
+    list.forEach(function (x) { db.doc("posts/" + x.id).update({ column: x.before }).catch(function () {}); });
+  });
+  function toDone(p) {
+    var before = colOf(p); if (before === "done" || !db) return Promise.resolve();
+    return db.doc("posts/" + p.id).update({ column: "done", column_before: before, done_at: new Date().toISOString() }).then(function () { undoable([{ id: p.id, before: before }]); });
+  }
+  $("sel-cancel").addEventListener("click", function () { setPicking(false); });
+  $("sel-export").addEventListener("click", function () { share(state.posts.filter(function (p) { return state.picked[p.id]; }), $("sel-note")); });
+  $("share").addEventListener("click", function () { var p = current(); if (p) share([p], $("c-note")); });
+  $("sel-done").addEventListener("click", async function () {
+    if (!db) return;
+    var btn = this; btn.disabled = true;
+    var now = new Date().toISOString(), failed = 0;
+    var movedList = state.posts.filter(function (p) { return state.picked[p.id] && colOf(p) !== "done"; }).map(function (p) { return { id: p.id, before: colOf(p) }; });
+    var jobs = state.posts.filter(function (p) { return state.picked[p.id] && colOf(p) !== "done"; }).map(function (p) {
+      return db.doc("posts/" + p.id).update({ column: "done", column_before: colOf(p), done_at: now }).catch(function () { failed++; });
+    });
+    await Promise.all(jobs);
+    if (failed) { $("sel-note").textContent = failed + " could not be moved; try again."; btn.disabled = false; return; }
+    setPicking(false); undoable(movedList);
+  });
+  function card(p, c) {
+    /* A div, not a button: it holds the Like button. */
+    var b = el("div", "card"); b.tabIndex = 0; b.setAttribute("role", "button"); b.dataset.id = p.id;
+    b.style.setProperty("--c", c.c);
+    var tt = el("span", "t");
+    if (isNew(p)) { var nd = el("span", "newdot"); nd.title = "New since you last opened it"; tt.appendChild(nd); }
+    tt.appendChild(document.createTextNode(str(p.title) || "(untitled)"));
+    b.appendChild(tt);
+    var m = el("span", "meta");
+    if (prioOf(p)) m.appendChild(el("span", "badge prio", "P" + prioOf(p)));
+    if (p.part) m.appendChild(el("span", "part", str(p.part)));
+    m.appendChild(el("span", null, when(p.created_at)));
+    var cs = commentsFor(p.id);
+    var fromAgent = cs.filter(function (x) { return x.from && x.from !== "owner" && x.from !== "viewer"; }).length;
+    if (cs.length) m.appendChild(el("span", "badge", cs.length + (cs.length === 1 ? " comment" : " comments")));
+    if (cs.some(function (x) { return x.kind === "review"; })) m.appendChild(el("span", "badge rev", "\u2713 reviewed"));
+    if (fromAgent) m.appendChild(el("span", "badge new", fromAgent + " from a session"));
+    var imgs = Array.isArray(p.images) ? p.images.length : 0;
+    if (imgs) m.appendChild(el("span", "badge", imgs + (imgs === 1 ? " image" : " images")));
+    var ty = typingFor(p.id); if (ty.length) { var td = dotsNode(""); td.title = str(ty[0].from) + " is writing an answer"; m.appendChild(td); }
+    if (!state.picking) m.appendChild(likeButton(p, null, 0, function () { return b; }));
+    b.appendChild(m);
+    var f = firstLine(p.body);
+    if (f) b.appendChild(el("span", "first", f));
+    if (state.picking) {
+      b.className += " pick" + (state.picked[p.id] ? " on" : "");
+      b.setAttribute("role", "checkbox"); b.setAttribute("aria-checked", String(!!state.picked[p.id]));
+    }
+    function act() {
+      if (!state.picking) { openPost(p.id); return; }
+      if (state.picked[p.id]) delete state.picked[p.id]; else state.picked[p.id] = true;
+      renderBoard();
+    }
+    var held = false, timer = 0;
+    b.addEventListener("click", function () { if (held) { held = false; return; } act(); });
+    b.addEventListener("keydown", function (e) { if (e.target === b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); act(); } });
+    /* Preview: a second under the mouse; on a touch screen a long press, until the finger lifts. */
+    b.addEventListener("pointerenter", function (e) {
+      if (e.pointerType !== "mouse" || state.picking) return;
+      clearTimeout(timer); timer = setTimeout(function () { showPeek(p, b, false); }, 1000);
+    });
+    b.addEventListener("pointerleave", function (e) { if (e.pointerType === "mouse") { clearTimeout(timer); hidePeek(); } });
+    b.addEventListener("touchstart", function () {
+      if (state.picking) return;
+      held = false; clearTimeout(timer);
+      timer = setTimeout(function () { held = true; showPeek(p, b, true); }, 500);
+    }, { passive: true });
+    b.addEventListener("touchmove", function () { if (!held) clearTimeout(timer); }, { passive: true });
+    function lift() { clearTimeout(timer); hidePeek(); if (held) setTimeout(function () { held = false; }, 400); }
+    b.addEventListener("touchend", lift); b.addEventListener("touchcancel", lift);
+    b.addEventListener("contextmenu", function (e) { if (held) e.preventDefault(); });
+    return b;
+  }
+
+  /* The preview pop-up: the whole post (title, text, pictures small, comments). */
+  function showPeek(p, anchor, touch) {
+    var k = $("peek"); k.textContent = "";
+    var col = COLUMNS.filter(function (c) { return c.key === colOf(p); })[0];
+    var meta = el("div", "meta"); meta.appendChild(el("span", "badge", col.name));
+    if (p.part) meta.appendChild(el("span", "part", str(p.part)));
+    meta.appendChild(el("span", null, when(p.created_at)));
+    k.appendChild(meta);
+    k.appendChild(el("h3", null, str(p.title) || "(untitled)"));
+    var body = el("div", "body"); body.innerHTML = renderBody(p.body); k.appendChild(body);
+    var pics = el("div", "peek-pics");
+    postImages(p).forEach(function (u) { var src = imgUrl(u); if (!src) return; var im = el("img"); im.src = src; im.alt = ""; pics.appendChild(im); });
+    if (pics.children.length) k.appendChild(pics);
+    var cs = commentsFor(p.id);
+    if (cs.length) {
+      var box = el("div", "peek-cmts");
+      cs.slice(-4).forEach(function (c) { box.appendChild(el("div", null, (c.from === "owner" ? "You" : str(c.from) || "?") + ": " + str(c.text))); });
+      k.appendChild(box);
+    }
+    k.hidden = false;
+    var r = anchor.getBoundingClientRect(), w = k.offsetWidth, h = k.offsetHeight, vw = window.innerWidth, vh = window.innerHeight, x, y;
+    if (touch || vw < 960) { x = (vw - w) / 2; y = Math.max(8, (vh - h) / 2); }
+    else {
+      x = r.right + 10; if (x + w > vw - 8) x = r.left - w - 10; if (x < 8) x = Math.max(8, vw - w - 8);
+      y = Math.min(Math.max(8, r.top), Math.max(8, vh - h - 8));
+    }
+    k.style.left = Math.round(x) + "px"; k.style.top = Math.round(y) + "px";
+  }
+  function hidePeek() { $("peek").hidden = true; }
+
+  /* Share (the owner, 2026-11-14): a post, or the posts selected on the board, as one Markdown file: each post with its
+     comments, posts and comments in time order, replies nested under the comment they answer. */
+  var downloads = null;
+  function utc(ms) { return ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : ""; }
+  function whoMd(c) { return c.from === "owner" || c.from === "viewer" ? "You" : c.from === "orchestrator" ? (c.kind === "review" ? "Orchestrator (review)" : "Orchestrator") : str(c.from) || "?"; }
+  function indent(text, pad) { return str(text).replace(/\r/g, "").split("\n").map(function (l) { return l ? pad + l : ""; }).join("\n"); }
+  function postMd(p) {
+    var col = COLUMNS.filter(function (c) { return c.key === colOf(p); })[0], out = [];
+    out.push("# " + (str(p.title) || "(untitled)"));
+    var meta = [col ? col.name : "", p.part ? "part " + str(p.part) : "", p.status ? str(p.status) : "", prioOf(p) ? "P" + prioOf(p) : "", "posted " + utc(Date.parse(str(p.created_at))), "post `" + p.id + "`"].filter(Boolean);
+    out.push("*" + meta.join(" · ") + "*", "", str(p.body).replace(/\r/g, "").trim(), "");
+    var opts = Array.isArray(p.options) ? p.options.map(str).filter(Boolean) : [];
+    if (opts.length) out.push("**Options:** " + opts.map(function (o) { return o + (o === str(p.default_option) ? " (default)" : ""); }).join(" / "), "");
+    var imgs = postImages(p);
+    if (imgs.length) {
+      out.push("## Pictures", "");
+      imgs.forEach(function (u, k) { out.push((k + 1) + ". " + (captionOf(p, k) || "Picture " + (k + 1)) + " (`" + u + "`)"); });
+      out.push("");
+    }
+    var all = postCmts(p.id).slice();
+    var likes = all.filter(function (c) { return c.like === true; });
+    var cs = all.filter(function (c) { return !c.like && !c.comment_id; }).sort(function (a, b) { return tOf(a) - tOf(b); });
+    var postLikes = likes.filter(function (c) { return !c.comment_id && !c.image; });
+    if (postLikes.length) out.push("👍 " + postLikes.map(function (c) { return whoMd(c) + " liked the post (" + utc(tOf(c)) + ")"; }).join("; "), "");
+    if (cs.length) {
+      out.push("## Comments", "");
+      var byId = {}, kids = {}, parent = {};
+      cs.forEach(function (c) { byId[c.id] = c; });
+      cs.forEach(function (c) { var par = parentOf(c, byId); if (par) parent[c.id] = par; });
+      cs.forEach(function (c) { var x = parent[c.id], n = 0; while (x && x !== c.id && n++ < 60) x = parent[x]; if (x === c.id) delete parent[c.id]; });
+      cs.forEach(function (c) { if (parent[c.id]) (kids[parent[c.id]] = kids[parent[c.id]] || []).push(c); });
+      var one = function (c, depth) {
+        var pad = new Array(depth + 1).join("  "), head = "**" + whoMd(c) + "** · " + utc(tOf(c));
+        var k = c.image ? imgs.indexOf(str(c.image)) : -1;
+        if (k >= 0) head += " · on picture " + (k + 1) + (captionOf(p, k) ? " (" + captionOf(p, k) + ")" : "");
+        if (c.read === true) head += " · seen";
+        var lk = likes.filter(function (x) { return x.comment_id === c.id; }).map(whoMd);
+        if (lk.length) head += " · 👍 " + lk.join(", ");
+        out.push(pad + "- " + head);
+        out.push(indent(str(c.text).trim(), pad + "  "));
+        (Array.isArray(c.files) ? c.files : []).forEach(function (f) { out.push(pad + "  [attached: " + str(f && f.name) + " at /_blob/" + str(f && f.id) + "]"); });
+        out.push("");
+        (kids[c.id] || []).forEach(function (r) { one(r, depth + 1); });
+      };
+      cs.filter(function (c) { return !parent[c.id]; }).forEach(function (c) { one(c, 0); });
+    }
+    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  }
+  function exportMd(posts) {
+    posts = posts.slice().sort(function (a, b) { return (Date.parse(str(a.created_at)) || 0) - (Date.parse(str(b.created_at)) || 0); });
+    var day = new Date().toISOString().slice(0, 10);
+    var text = posts.length === 1 ? postMd(posts[0])
+      : "# {{PROJECT}} board: " + posts.length + " posts\n*Exported " + utc(Date.now()) + "; posts in the order they were posted.*\n\n" + posts.map(postMd).join("\n---\n\n");
+    var name = posts.length === 1 ? "{{SLUG}}-" + posts[0].id.replace(/^_/, "") + ".md" : "{{SLUG}}-board-" + posts.length + "-posts-" + day + ".md";
+    return { filename: name, data: text };
+  }
+  function share(posts, note) {
+    if (!downloads || !posts.length) return;
+    var f = exportMd(posts);
+    downloads.save(f).then(function () { if (note) note.textContent = "Saved " + f.filename + "."; }, function (e) {
+      var code = e && e.code;
+      if (note) note.textContent = code === "declined" ? "" : code === "rate_limited" ? "A save is already open; try again in a moment." : "Could not save the file (" + (code || "error") + ").";
+    });
+  }
+
+  /* Like: one tap approves a post or a picture without words. It is kept as a comment (like: true) and sent to
+     Claude as one, so the post's session hears it. */
+  function likedBy(p, u) {
+    return postCmts(p.id).some(function (c) { return c.post_id === p.id && c.like === true && !c.comment_id && (c.from === "owner" || c.from === "viewer") && str(c.image) === str(u || ""); });
+  }
+  function likeButton(p, u, n, anchorOf) {
+    var on = likedBy(p, u);
+    var b = el("button", "like" + (on ? " on" : ""), on ? "\uD83D\uDC4D Liked" : "\uD83D\uDC4D Like"); b.type = "button";
+    b.setAttribute("aria-pressed", String(on));
+    b.title = on ? "You approved this" : "Approve without writing";
+    b.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (b.classList.contains("on") || !db) return;
+      b.className = "like on"; b.textContent = "\uD83D\uDC4D Liked";
+      var ref = db.collection("comments").doc();
+      var row = { post_id: p.id, text: "\uD83D\uDC4D", like: true, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+      if (u) row.image = u;
+      sending[ref.id] = true;
+      var sendP = sendToClaude(p, n, anchorOf(), "\uD83D\uDC4D Like: he approves this" + (n ? " picture" : " post") + ", no words.");
+      ref.set(row).then(function () { return sendP; }, function () { return sendP; }).then(function (res) {
+        delete sending[ref.id]; checkCanSend();
+        return ref.update(deliveryFields(res));
+      }).catch(function () {}).then(function () { if (state.openId) renderComments(); });
+    });
+    b.addEventListener("keydown", function (e) { e.stopPropagation(); });
+    return b;
+  }
+
+  /* Drafts (the owner, 2026-11-14: a republish erased the comment he was writing): every comment box is kept in
+     this browser as he types, per post and per picture (0 = the post's own box), and given back when the post opens
+     again, also after the page reloads. Cleared once the comment is saved on the board. */
+  function draftKey(id, n) { if (id === ORCH && state.disc) id += "~" + state.disc; return "board-draft:" + id + ":" + (n || 0); }
+  function loadDraft(id, n) { try { var v = JSON.parse(localStorage.getItem(draftKey(id, n)) || "null"); return v && typeof v.t === "string" ? v : null; } catch (e) { return null; } }
+  function saveDraft(id, n, text, replyTo) {
+    try { if (text) localStorage.setItem(draftKey(id, n), JSON.stringify({ t: text, r: replyTo || "", at: new Date().toISOString() })); else localStorage.removeItem(draftKey(id, n)); } catch (e) {}
+  }
+  function keepDraft(ta, n) { ta.addEventListener("input", function () { if (state.openId) saveDraft(state.openId, n, ta.value, n ? "" : state.replyTo); }); }
+  /* The post he had open comes back after a reload (a republish reloads every open view). */
+  function rememberOpen(id) { try { if (id) sessionStorage.setItem("board-open", id); else sessionStorage.removeItem("board-open"); } catch (e) {} }
+
+  /* Post sheet */
+  function current() { return state.special[state.openId] || state.posts.filter(function (p) { return p.id === state.openId; })[0]; }
+  function openPost(id) {
+    if (id === ORCH || state.openId !== id) state.disc = null; /* BD7: the orchestrator's sheet opens on its list of discussions */
+    state.openId = id; stripKey = ""; state.sizeDraft = 0; state.galStart = 0; hidePeek(); checkCanSend();
+    var dr = loadDraft(id, 0);
+    $("c-text").value = dr ? dr.t : ""; $("c-note").textContent = dr ? "Your unsent draft is back." : "";
+    state.replyTo = dr && dr.r ? dr.r : null;
+    rememberOpen(id);
+    /* What lit the dot: the first comment since his last read, else the post's changed text. */
+    var p = postById(id), v = seen[id], target = null;
+    state.flash = null;
+    if (p && v && id !== ORCH) {
+      var fresh = newComments(p, v.at, true)[0];
+      if (fresh) target = { cid: fresh.id }; else if (changed(p)) target = { body: true };
+    }
+    /* BD3: opening marks nothing; what has been on screen does (watchSeen) */
+    if (!("IntersectionObserver" in window)) markSeen(id);
+    $("sheet").hidden = false; $("sheet").scrollTop = 0;
+    document.body.style.overflow = "hidden";
+    if (target && target.cid) unfoldFor(target.cid);
+    renderPost();
+    $("back").focus({ preventScroll: true });
+    if (target) requestAnimationFrame(function () { goTo(target); });
+  }
+  /* Open the replies above a comment, and the gallery page that holds its picture. */
+  function unfoldFor(cid) {
+    var byId = {}; state.comments.forEach(function (c) { byId[c.id] = c; });
+    var c = byId[cid], guard = 0;
+    while (c && guard++ < 50) { var par = parentOf(c, byId); if (!par) break; state.folded[par] = false; c = byId[par]; }
+  }
+  function goTo(t) {
+    var node = null;
+    if (t.cid) {
+      var c = ix().byId[t.cid], p = current();
+      if (c && p && c.image && $("p-imgs").classList.contains("gal")) {
+        var k = postImages(p).filter(imgUrl).indexOf(str(c.image));
+        if (k >= 0) { state.galStart = Math.floor(k / state.galPer) * state.galPer; applyGallery(); }
+      }
+      node = document.querySelector('.cmt[data-cid="' + t.cid.replace(/["\\]/g, "") + '"]');
+    }
+    if (!node) { node = $("p-body"); t = { body: true }; }
+    if (node.scrollIntoView) node.scrollIntoView({ block: t.cid ? "center" : "start" });
+    /* kept in state, so a live update that redraws the thread keeps the highlight */
+    state.flash = { cid: t.cid || "", body: !t.cid, until: Date.now() + 2600 };
+    node.classList.add("flash");
+    /* one timer: an earlier post's would wipe this one's highlight (seen in BD3's checks) */
+    clearTimeout(state.flashT);
+    state.flashT = setTimeout(function () { state.flash = null; var f = document.querySelectorAll(".flash"); for (var i = 0; i < f.length; i++) f[i].classList.remove("flash"); }, 2600);
+  }
+  function flashing(cid) { var f = state.flash; return !!f && Date.now() < f.until && (cid ? f.cid === cid : f.body); }
+  function closePost() {
+    rememberOpen(null);
+    unwatchSeen(); seenPost = "";
+    state.openId = null; stripKey = ""; $("sheet").hidden = true; document.body.style.overflow = ""; renderBoard();
+    /* BD7: a post opened from the Waiting page goes back to it */
+    if (state.fromWait && state.waitOpen) { state.fromWait = false; $("wsheet").hidden = false; document.body.style.overflow = "hidden"; renderWaitPage(); }
+    state.fromWait = false;
+  }
+  function picLabel(p, n) { return str(p.title) + " [post " + p.id + "] image " + n; }
+  function postImages(p) { return (Array.isArray(p.images) ? p.images : []).map(str); }
+  function renderPost() {
+    var p = current();
+    if (!p) { if (state.openId && state.loaded) closePost(); return; }
+    var col = COLUMNS.filter(function (c) { return c.key === colOf(p); })[0];
+    var meta = $("p-meta"); meta.textContent = "";
+    var tag = el("span", "badge", col.name); meta.appendChild(tag);
+    if (p.part) meta.appendChild(el("span", "part", str(p.part)));
+    if (p.session_id) { var s = el("span", null, "session " + shortSession(p.session_id)); s.title = str(p.session_id); meta.appendChild(s); }
+    meta.appendChild(el("span", null, when(p.created_at)));
+    if (p.status) meta.appendChild(el("span", "badge", str(p.status)));
+    var pd = el("span", "newdot"); pd.id = "p-dot"; pd.hidden = true; pd.title = "Something here has not been on your screen yet"; meta.insertBefore(pd, meta.firstChild);
+    /* BD7: the orchestrator's sheet: its list of discussions, or one discussion's thread */
+    var orch = p.id === ORCH, inDisc = orch && !!state.disc;
+    $("back").textContent = inDisc ? "\u2190 Discussions" : "\u2190 Board";
+    $("p-title").textContent = inDisc ? (state.disc === "new" ? "New discussion" : discTitle(state.disc)) : (str(p.title) || "(untitled)");
+    $("p-body").hidden = inDisc;
+    $("p-th").textContent = orch ? (inDisc ? "Messages" : "Discussions") : "Comments on the post";
+    $("composer").hidden = orch && !inDisc;
+    $("c-label").textContent = orch ? (state.disc === "new" ? "Your first message starts the discussion; it goes to the orchestrator." : "Your message goes to the orchestrator, in this discussion.")
+      : "Your comment goes to the session that wrote this post. Write @o in it to ask the orchestrator instead.";
+    $("p-body").innerHTML = renderBody(p.body);
+    $("p-body").classList.toggle("flash", flashing(""));
+    /* Rebuild the strip only when its pictures change, so typed text and the scroll position survive live updates. */
+    var key = p.id + "|" + str(p.title) + "|" + layoutOf(p).key + "|" + postImages(p).join(",") + "|" + (Array.isArray(p.captions) ? p.captions.join("\u0001") : "");
+    if (key !== stripKey) { stripKey = key; renderStrip(p); }
+    applySize();
+    var done = colOf(p) === "done";
+    $("move").textContent = done ? "Reopen" : "Move to Done";
+    var sp = p.id.charAt(0) === "_"; $("move").hidden = sp; $("p-prio").hidden = sp; $("p-like").hidden = sp;
+    var pr = $("p-prio"); pr.textContent = ""; pr.appendChild(el("span", null, "Priority"));
+    [1, 2, 3].forEach(function (n) {
+      var pb = el("button", prioOf(p) === n ? "on" : "", String(n)); pb.type = "button";
+      pb.title = n === 1 ? "First" : n === 2 ? "Second" : "Third"; pb.setAttribute("aria-pressed", String(prioOf(p) === n));
+      pb.addEventListener("click", function () { if (db) db.doc("posts/" + p.id).update({ priority: prioOf(p) === n ? 0 : n }).catch(function () {}); });
+      pr.appendChild(pb);
+    });
+    renderComments();
+  }
+  function renderStrip(p) {
+    var strip = $("p-imgs"); strip.textContent = ""; strip.scrollLeft = 0;
+    var lay = layoutOf(p), rows = lay.kind === "rows", groups = lay.kind === "groups" ? groupsOf(p) : null;
+    state.galPer = lay.per;
+    strip.classList.toggle("rows", rows);
+    strip.classList.toggle("groups", !!groups);
+    document.querySelector(".sheet-in").classList.toggle("rows", rows || !!groups);
+    var gi = 0, gleft = 0, grow = null;
+    var gal = lay.kind === "gallery" && postImages(p).filter(imgUrl).length > 1;
+    strip.classList.toggle("gal", gal);
+    document.querySelector(".sheet-in").classList.toggle("gal", gal);
+    var thumbs = $("gal-thumbs"); thumbs.textContent = "";
+    var shown = 0;
+    postImages(p).forEach(function (u, k) {
+      var src = imgUrl(u); if (!src) return;
+      shown++;
+      var n = k + 1;
+      var fig = el("figure", "pic"); fig.dataset.image = u;
+      var im = el("img"); im.src = src; im.alt = picLabel(p, n); im.tabIndex = 0;
+      im.addEventListener("load", function () { if (this.naturalWidth > 2 * this.naturalHeight) this.classList.add("wide"); });
+      im.addEventListener("click", function () { zoom(u, src); });
+      im.addEventListener("keydown", function (e) { if (e.key === "Enter") zoom(u, src); });
+      im.addEventListener("load", function () { applySize(); updateHint(); });
+      if (rows) { var sc = el("div", "pic-scroll"); sc.appendChild(im); fig.appendChild(sc); } else fig.appendChild(im);
+      var side = el("div", "pic-side");
+      side.appendChild(el("div", "n", "Picture " + n));
+      if (captionOf(p, k)) side.appendChild(el("div", "cap", captionOf(p, k)));
+      var list = el("div", "pic-cmts"); list.dataset.image = u;
+      side.appendChild(list);
+      var form = el("form", "pic-form");
+      var ta = el("textarea"); ta.id = "c-pic-" + n; ta.maxLength = 4000; ta.placeholder = "Comment on this picture";
+      var pd = loadDraft(p.id, n); if (pd) ta.value = pd.t; keepDraft(ta, n);
+      ta.setAttribute("aria-label", "Comment on picture " + n);
+      var row = el("div", "row");
+      var send = el("button", "btn ember small", "Send"); send.type = "submit";
+      var note = el("span", "note");
+      var likeSlot = el("span"); likeSlot.className = "like-slot"; likeSlot.dataset.image = u; likeSlot.dataset.n = String(n);
+      row.appendChild(send); row.appendChild(likeSlot); row.appendChild(note);
+      form.appendChild(ta); form.appendChild(row);
+      form.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        submitComment({ text: ta, button: send, note: note, image: u, n: n, anchorEl: im });
+      });
+      side.appendChild(form);
+      fig.appendChild(side);
+      if (groups) {
+        while (gleft <= 0 && gi < groups.length) {
+          var g = groups[gi++], box = el("section", "grp"); gleft = g.count;
+          if (g.title) box.appendChild(el("h4", null, g.title));
+          grow = el("div", "grp-row"); grow.style.setProperty("--n", String(g.count)); box.appendChild(grow); strip.appendChild(box);
+        }
+        gleft--; (grow || strip).appendChild(fig);
+      } else strip.appendChild(fig);
+      if (gal) {
+        var tb = el("button"); tb.type = "button"; tb.setAttribute("aria-label", "Show picture " + n);
+        var ti = el("img"); ti.src = src; ti.alt = ""; tb.appendChild(ti);
+        var at = shown - 1;
+        tb.addEventListener("click", function () { state.galStart = Math.floor(at / state.galPer) * state.galPer; applyGallery(); });
+        thumbs.appendChild(tb);
+      }
+    });
+    $("p-pics").hidden = shown === 0;
+    applyGallery();
+    updateHint();
+  }
+  /* The poster chooses the layout, for a phone and for a computer: layout_phone and layout_computer, each
+     "gallery:N" (N pictures side by side at a time, a selector under them), "strip" (all in one sideways strip) or
+     "rows" (one under the other, each scrolling sideways). The older field layout counts for both. */
+  /* image_groups: [{title, count}], in the order of images: each group a row of pictures meant to be compared. */
+  function groupsOf(p) {
+    var g = Array.isArray(p.image_groups) ? p.image_groups : [], n = postImages(p).length, sum = 0, out = [];
+    g.forEach(function (x) { var c = Math.floor(Number(x && x.count)); if (c > 0 && sum + c <= n) { out.push({ title: str(x.title), count: c }); sum += c; } });
+    if (out.length && sum < n) out.push({ title: "", count: n - sum });
+    return out.length ? out : null;
+  }
+  function captionOf(p, k) { return Array.isArray(p.captions) ? str(p.captions[k]) : ""; }
+  function layoutOf(p) {
+    if (groupsOf(p)) return { kind: "groups", per: 3, key: "groups:" + JSON.stringify(p.image_groups) };
+    var v = str(isPhone() ? p.layout_phone : p.layout_computer) || str(p.layout) || "gallery:3";
+    var m = /^gallery(?::(\d+))?$/.exec(v);
+    if (m) return { kind: "gallery", per: Math.min(12, Math.max(1, Number(m[1]) || 3)), key: v };
+    return { kind: v === "rows" ? "rows" : v === "strip" ? "strip" : "gallery", per: 3, key: v };
+  }
+  /* The gallery shows N pictures at a time, side by side; the selector under them picks which. */
+  function applyGallery() {
+    var per = state.galPer;
+    var strip = $("p-imgs"), figs = strip.children, total = figs.length, gal = strip.classList.contains("gal");
+    $("p-gal").hidden = !gal;
+    if (!gal) { for (var i = 0; i < total; i++) figs[i].hidden = false; return; }
+    var start = Math.min(Math.max(0, state.galStart), Math.max(0, Math.floor((total - 1) / per) * per));
+    state.galStart = start;
+    var th = $("gal-thumbs").children;
+    for (var j = 0; j < total; j++) {
+      var on = j >= start && j < start + per;
+      figs[j].hidden = !on;
+      if (th[j]) th[j].className = on ? "on" : "";
+    }
+    $("gal-n").textContent = "Pictures " + (start + 1) + (Math.min(total, start + per) > start + 1 ? "\u2013" + Math.min(total, start + per) : "") + " of " + total;
+    $("gal-prev").disabled = start === 0; $("gal-next").disabled = start + per >= total;
+    $("gal-prev").hidden = $("gal-next").hidden = total <= per;
+    strip.scrollLeft = 0;
+    updateHint();
+  }
+  $("gal-prev").addEventListener("click", function () { state.galStart -= state.galPer; applyGallery(); });
+  $("gal-next").addEventListener("click", function () { state.galStart += state.galPer; applyGallery(); });
+  /* One size for every picture of THIS post, kept in the post: one value for phones, one for computers.
+     A percentage of the picture's own size; none set = Auto (the page's own fit). */
+  function isPhone() { return window.matchMedia("(max-width: 959px)").matches; }
+  function sizeField() { return isPhone() ? "pic_size_phone" : "pic_size_computer"; }
+  function sizeOf(p) { var v = state.sizeDraft || Number(p && p[sizeField()]) || 0; return v >= 10 && v <= 200 ? v : 0; }
+  function applySize() {
+    var p = current(); if (!p) return;
+    var v = sizeOf(p), ims = $("p-imgs").querySelectorAll(".pic img");
+    for (var i = 0; i < ims.length; i++) {
+      var im = ims[i];
+      if (v && im.naturalWidth) { im.style.width = Math.round(im.naturalWidth * v / 100) + "px"; im.style.maxHeight = "none"; }
+      else { im.style.width = ""; im.style.maxHeight = ""; }
+    }
+    /* BD4 (the owner, 15:17 on PA1: "what happened to my zoom slider for photos?"): grouped posts keep the slider */
+    $("p-imgs").classList.toggle("sized", !!v);
+    $("p-size-l").textContent = "Picture size in this post, on " + (isPhone() ? "phones" : "computers");
+    $("p-size-v").textContent = v ? v + " %" : "Auto";
+    if (v && !state.sizeDraft) $("p-size").value = String(v);
+    $("p-size-auto").disabled = !v;
+    updateHint();
+  }
+  function saveSize(v) {
+    var p = current(); if (!p || !db) { state.sizeDraft = 0; return; }
+    var patch = {}; patch[sizeField()] = v;
+    p[sizeField()] = v;
+    db.doc("posts/" + p.id).update(patch).catch(function () {}).then(function () { state.sizeDraft = 0; applySize(); });
+  }
+  $("p-size").addEventListener("input", function () { state.sizeDraft = Number(this.value); applySize(); });
+  $("p-size").addEventListener("change", function () { saveSize(Number(this.value)); });
+  $("p-size-auto").addEventListener("click", function () { state.sizeDraft = 0; saveSize(0); });
+  /* "2 / 5" and a fade on the right edge while more lies to the right. */
+  function updateHint() {
+    var strip = $("p-imgs"), figs = strip.children, total = figs.length;
+    if (!total) return;
+    if (strip.classList.contains("gal")) {
+      var moreG = strip.scrollWidth - strip.clientWidth - strip.scrollLeft > 4;
+      $("p-count").textContent = ""; $("p-hint").textContent = moreG ? "Scroll sideways for the rest of these pictures" : "";
+      $("p-strip-box").classList.toggle("more", moreG);
+      return;
+    }
+    if (strip.classList.contains("groups")) {
+      var np = strip.querySelectorAll(".pic").length;
+      $("p-count").textContent = np + " pictures in " + total + " groups";
+      $("p-hint").textContent = "each group side by side; scroll a group sideways";
+      $("p-strip-box").classList.remove("more");
+      return;
+    }
+    if (strip.classList.contains("rows")) {
+      $("p-count").textContent = total + (total === 1 ? " picture" : " pictures");
+      $("p-hint").textContent = "one under the other; scroll each sideways";
+      $("p-strip-box").classList.remove("more");
+      return;
+    }
+    var x = strip.scrollLeft, idx = 0;
+    for (var i = 0; i < total; i++) { if (figs[i].offsetLeft - strip.offsetLeft <= x + 8) idx = i; }
+    if (strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 4) idx = total - 1;
+    var more = strip.scrollWidth - strip.clientWidth - strip.scrollLeft > 4;
+    $("p-count").textContent = total > 1 ? (idx + 1) + " / " + total : (total === 1 ? "1 picture" : "");
+    $("p-hint").textContent = more ? "Scroll sideways for more" : (strip.scrollWidth > strip.clientWidth + 4 ? "Scroll back to the left for the start" : "");
+    $("p-strip-box").classList.toggle("more", more);
+  }
+  $("p-imgs").addEventListener("scroll", updateHint, { passive: true });
+  window.addEventListener("resize", function () { if (state.openId) renderPost(); });
+
+  /* A reply's parent: reply_to is a comment's doc_id, or (tolerated) the thread id the clerk named. */
+  function parentOf(c, byId) {
+    var par = str(c.reply_to); if (!par || par === c.id) return "";
+    if (byId[par]) return par;
+    var hit = (ix().byThread[par] || NONE).filter(function (x) { return x.id !== c.id; })[0];
+    return hit ? hit.id : "";
+  }
+  function commentNode(c) {
+    var orch = c.from === "orchestrator";
+    var d = el("div", "cmt" + (c.from === "owner" ? " mine" : "") + (orch ? " orch" : ""));
+    d.dataset.cid = c.id;
+    if (flashing(c.id)) d.classList.add("flash");
+    var m = el("div", "meta");
+    m.appendChild(el("span", "part", c.from === "owner" ? "You" : (orch ? (c.kind === "review" ? "Orchestrator · review" : "Orchestrator") : (str(c.from) || "?"))));
+    m.appendChild(el("span", null, when(isoOf(c))));
+    if (state.unseen && state.unseen[c.id]) m.appendChild(el("span", "badge fresh", "new"));
+    d.appendChild(m);
+    // a session's or the orchestrator's comment is written like a post (bold, code, tables); his own words stay as typed
+    if (c.from === "owner" || c.from === "viewer") d.appendChild(el("div", "txt", str(c.text)));
+    else { var tx = el("div", "txt md"); tx.innerHTML = renderBody(c.text); d.appendChild(tx); }
+    if (Array.isArray(c.files) && c.files.length) d.appendChild(filesNode(c.files));
+    if (c.from !== "owner" && c.from !== "viewer") {
+      var lr = el("div", "row"); lr.appendChild(commentLike(c));
+      /* The owner, 2026-11-13 04:12: the orchestrator Likes a review whose suggestion it takes care of. */
+      if (likesOn(c.id).some(function (x) { return x.comment_id === c.id && x.like === true && x.from === "orchestrator"; }))
+        lr.appendChild(el("span", "taking", "\uD83D\uDC4D orchestrator: taking care of it"));
+      d.appendChild(lr);
+    }
+    if (c.from === "owner" || c.from === "viewer") {
+      var info;
+      if (sending[c.id]) info = el("div", "deliv", "Sending to Claude...");
+      else if (c.delivered === true) info = el("div", "deliv ok", "Sent to Claude");
+      else info = el("div", "deliv err", "Saved on the board; not sent" + (c.delivery_error ? " (" + str(c.delivery_error) + ")" : "") + ".");
+      /* Seen: the clerk passed it on (read: true, read_at). */
+      if (c.read === true) {
+        info.appendChild(document.createTextNode(" \u00b7 "));
+        var sn = el("span", "seen", "\u2713 Seen" + (c.read_at ? " " + when(c.read_at) : "")); sn.title = c.read_at ? "Passed on at " + str(c.read_at) : "Passed on";
+        info.appendChild(sn);
+      }
+      d.appendChild(info);
+      if (c.delivered !== true && !sending[c.id] && cmts) {
+        var row = el("div", "row");
+        var again = el("button", "btn small", "Send to Claude again"); again.type = "button";
+        again.addEventListener("click", function () {
+          var p = current(); if (!p) return;
+          resend(p, c);
+        });
+        row.appendChild(again);
+        d.appendChild(row);
+      }
+    }
+    return d;
+  }
+  /* BD4: the line left where a thread became a post, and that thread shown folded at the new post's top. */
+  function postTitle(id) { var q = state.posts.filter(function (x) { return x.id === id; })[0]; return q ? str(q.title) : id; }
+  function movedLine(c, n) {
+    var to = becameOf(c), b = el("button", "moved"); b.type = "button"; b.dataset.cid = c.id;
+    b.innerHTML = "<b>\u2192</b> " + esc("Continued in " + to.map(postTitle).join(" and ")) + " <span class=\"note\">(" + n + (n === 1 ? " comment" : " comments") + ")</span>";
+    b.addEventListener("click", function () { if (state.posts.some(function (x) { return x.id === to[0]; })) openPost(to[0]); });
+    return b;
+  }
+  function movedInto(id) {
+    var mv = moved(), out = [];
+    state.comments.filter(function (c) { return becameOf(c).indexOf(id) >= 0; }).sort(function (a, b) { return tOf(a) - tOf(b); }).forEach(function (root) {
+      var n = 0;
+      function tree(c, depth) {
+        n++;
+        var w = el("div", "node"), cn = commentNode(c), row = el("div", "row");
+        /* the owner, 2026-11-19 20:43: "why can't I reply to these comments, and why do they keep closing?" */
+        var rb = el("button", "btn small", "Reply"); rb.type = "button";
+        rb.addEventListener("click", function () { state.replyTo = c.id; showReplyTo(); saveDraft(state.openId, 0, $("c-text").value, c.id); $("c-text").focus(); });
+        row.appendChild(rb); cn.appendChild(row); w.appendChild(cn);
+        var ks = (mv.kids[c.id] || []).filter(function (k) { return !k.like; });
+        function size(x) { return 1 + (mv.kids[x.id] || []).filter(function (k) { return !k.like; }).reduce(function (t, k) { return t + size(k); }, 0); }
+        if (ks.length) {
+          var sub = el("div", "replies" + (depth >= 4 ? " flat" : ""));
+          /* a thread inside it that became yet another post shows as its line here too */
+          ks.forEach(function (k) { sub.appendChild(becameOf(k).length ? movedLine(k, size(k)) : tree(k, depth + 1)); });
+          w.appendChild(sub);
+        }
+        return w;
+      }
+      var body = tree(root, 0), det = el("details", "moved-in"), sm = el("summary");
+      det.open = state.movedOpen[root.id] !== false; /* open unless he closed it; kept across redraws */
+      det.addEventListener("toggle", function () { state.movedOpen[root.id] = det.open; });
+      sm.appendChild(document.createTextNode("Where this began: " + n + (n === 1 ? " comment" : " comments") + " under "));
+      var from = el("span", "from", postTitle(str(root.post_id)));
+      from.addEventListener("click", function (e) { e.preventDefault(); openPost(str(root.post_id)); });
+      sm.appendChild(from); det.appendChild(sm); det.appendChild(body); out.push(det);
+    });
+    return out;
+  }
+  /* Like on a session's comment: a row with comment_id, sent to Claude with the comment's first words. */
+  function commentLike(c) {
+    var on = likesOn(c.id).some(function (x) { return x.comment_id === c.id && x.like === true && (x.from === "owner" || x.from === "viewer"); });
+    var b = el("button", "like" + (on ? " on" : ""), on ? "\uD83D\uDC4D Liked" : "\uD83D\uDC4D Like"); b.type = "button";
+    b.setAttribute("aria-pressed", String(on));
+    b.addEventListener("click", function () {
+      var p = current(); if (b.classList.contains("on") || !db || !p) return;
+      b.className = "like on"; b.textContent = "\uD83D\uDC4D Liked";
+      var ref = db.collection("comments").doc();
+      var row = { post_id: p.id, comment_id: c.id, text: "\uD83D\uDC4D", like: true, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+      var sendP = sendToClaude(p, 0, $("p-title"), "\uD83D\uDC4D Like on the comment of " + str(c.from) + " (\u00ab" + str(c.text).slice(0, 80) + "\u00bb): he agrees, no words.");
+      ref.set(row).then(function () { return sendP; }, function () { return sendP; }).then(function (res) { checkCanSend(); return ref.update(deliveryFields(res)); }).catch(function () {});
+    });
+    return b;
+  }
+  /* BD7: the list of discussions, like a messaging app: title, the latest message, its time, a dot on unseen. */
+  function renderDiscList() {
+    var box = $("p-comments"), dl = discs(); box.textContent = ""; box.classList.remove("changes");
+    $("p-review").textContent = ""; $("p-opts").hidden = true;
+    var nb = el("button", "btn ember small newdisc", "New discussion"); nb.type = "button";
+    nb.addEventListener("click", function () { openDisc("new"); });
+    box.appendChild(nb);
+    var keys = Object.keys(dl.list).filter(function (k) { return dl.list[k].some(function (c) { return !c.like; }); });
+    var last = function (k) { var t = dl.list[k].filter(function (c) { return !c.like; }); return t[t.length - 1]; };
+    keys.sort(function (a, b) { return tOf(last(b)) - tOf(last(a)); });
+    if (!keys.length) box.appendChild(el("div", "note", "No discussion yet."));
+    var list = el("div", "discs");
+    keys.forEach(function (k) {
+      var m = last(k), unread = dl.list[k].some(function (c) { return state.unseen[c.id]; });
+      var b = el("button", "disc" + (unread ? " unread" : "")); b.type = "button"; b.dataset.disc = k;
+      var l1 = el("div", "d1");
+      l1.appendChild(el("span", unread ? "newdot" : "nodot"));
+      l1.appendChild(el("span", "dt", discTitle(k)));
+      l1.appendChild(el("span", "dw", when(isoOf(m))));
+      b.appendChild(l1);
+      var who = m.from === "owner" || m.from === "viewer" ? "You" : m.from === "orchestrator" ? "Orchestrator" : str(m.from) || "?";
+      b.appendChild(el("div", "d2", who + ": " + firstLine(m.text)));
+      b.addEventListener("click", function () { openDisc(k); });
+      list.appendChild(b);
+    });
+    box.appendChild(list);
+  }
+  function openDisc(k) {
+    state.disc = k; state.replyTo = null; state.flash = null;
+    var dr = loadDraft(ORCH, 0); $("c-text").value = dr ? dr.t : ""; $("c-note").textContent = dr ? "Your unsent draft is back." : "";
+    if (dr && dr.r) state.replyTo = dr.r;
+    $("sheet").scrollTop = 0; renderPost();
+    var p = current(), dl = discs();
+    var first = k && p ? newComments(p, seen[ORCH] ? seen[ORCH].at : "", true).filter(function (c) { return dl.of[c.id] === k; })[0] : null;
+    if (first) { unfoldFor(first.id); renderComments(); requestAnimationFrame(function () { goTo({ cid: first.id }); }); }
+    $("back").focus({ preventScroll: true });
+  }
+  function renderComments() {
+    var p = current(); if (!p) return;
+    var imgs = postImages(p);
+    var cs = commentsFor(state.openId);
+    state.unseen = {}; unseenOf(p).cids.forEach(function (k) { state.unseen[k] = true; });
+    if (p.id === ORCH) {
+      if (!state.disc) { renderDiscList(); renderTyping(); watchSeen(); return; }
+      var dl = discs(); cs = cs.filter(function (c) { return dl.of[c.id] === state.disc; });
+    }
+    var slots = $("p-imgs").querySelectorAll(".like-slot");
+    for (var q = 0; q < slots.length; q++) {
+      (function (slot) {
+        slot.textContent = "";
+        slot.appendChild(likeButton(p, slot.dataset.image, Number(slot.dataset.n), function () { return slot.closest(".pic").querySelector("img"); }));
+      })(slots[q]);
+    }
+    renderOpts(p, cs);
+    var pl = $("p-like"); pl.textContent = ""; pl.appendChild(likeButton(p, null, 0, function () { return $("p-title"); }));
+    var box = $("p-comments"); box.textContent = "";
+    var rv = $("p-review"); rv.textContent = "";
+    /* One tree over ALL the post's comments, in time order, the orchestrator's reviews in it; a reply sits under its
+       comment (a tree that folds) wherever that comment is: under a picture or at the bottom (BD3: a reply without
+       an image to his comment under a picture used to fall to the bottom). Where a tree shows is its root's place. */
+    var onPic = function (c) { return !!c.image && imgs.indexOf(str(c.image)) >= 0; };
+    var rest = cs.filter(function (c) { return !c.like || onPic(c); });
+    var ids = {}, kids = {}, parent = {};
+    rest.forEach(function (c) { ids[c.id] = c; });
+    rest.forEach(function (c) { var par = parentOf(c, ids); if (par) parent[c.id] = par; });
+    /* a loop of replies (A under B under A) would hide both: such a comment stays at the top */
+    rest.forEach(function (c) { var x = parent[c.id], n = 0; while (x && x !== c.id && n++ < 60) x = parent[x]; if (x === c.id) delete parent[c.id]; });
+    rest.forEach(function (c) { var par = parent[c.id]; if (par) (kids[par] = kids[par] || []).push(c); });
+    function count(c) { return (kids[c.id] || []).reduce(function (n, k) { return n + 1 + count(k); }, 0); }
+    function branch(c, depth) {
+      if (becameOf(c).length) return movedLine(c, 1 + count(c));
+      var w = el("div", "node"), n = commentNode(c), row = el("div", "row");
+      var rb = el("button", "btn small", "Reply"); rb.type = "button";
+      rb.addEventListener("click", function () { state.replyTo = c.id; showReplyTo(); saveDraft(state.openId, 0, $("c-text").value, c.id); $("c-text").focus(); });
+      row.appendChild(rb);
+      var ch = kids[c.id] || [];
+      if (ch.length) {
+        var shut = !!state.folded[c.id], tg = el("button", "btn small", (shut ? "Show " : "Hide ") + count(c) + (count(c) === 1 ? " reply" : " replies")); tg.type = "button";
+        tg.addEventListener("click", function () { state.folded[c.id] = !state.folded[c.id]; renderComments(); });
+        row.appendChild(tg);
+      }
+      n.appendChild(row); w.appendChild(n);
+      if (ch.length && !state.folded[c.id]) {
+        var sub = el("div", "replies" + (depth >= 4 ? " flat" : ""));
+        ch.forEach(function (k) { sub.appendChild(branch(k, depth + 1)); });
+        w.appendChild(sub);
+      }
+      return w;
+    }
+    var roots = rest.filter(function (c) { return !parent[c.id]; });
+    var lists = $("p-imgs").querySelectorAll(".pic-cmts");
+    for (var i = 0; i < lists.length; i++) {
+      var list = lists[i], u = list.dataset.image;
+      list.textContent = "";
+      roots.filter(function (c) { return onPic(c) && str(c.image) === u; }).forEach(function (c) { list.appendChild(c.like ? commentNode(c) : branch(c, 0)); });
+    }
+    var bottom = roots.filter(function (c) { return !onPic(c); });
+    movedInto(state.openId).forEach(function (n) { box.appendChild(n); });
+    if (!bottom.length) box.appendChild(el("div", "note", "No comments on the post as a whole yet."));
+    bottom.forEach(function (c) { box.appendChild(branch(c, 0)); });
+    box.classList.toggle("changes", p.id === ORCH && state.disc === CHANGES);
+    if (p.id === ORCH && state.disc === "new") { box.textContent = ""; box.appendChild(el("div", "note", "Write your first message below.")); }
+    renderTyping();
+    showReplyTo();
+    updateHint();
+    watchSeen();
+  }
+  /* BD3, the owner 2026-11-14 11:31: "a new notification should appear, even if I'm on the post, if whatever is new
+     has never passed on my screen". A thing counts as seen once at least half of it (or half the screen, for a tall
+     one) has been in view for SEEN_MS, the page in front. Until then the post keeps its dot, and a jump points to it. */
+  var SEEN_MS = 1000, seenObs = null, seenTimers = {}, seenVis = {}, seenSince = {}, seenPost = "";
+  /* a redraw of the thread (a Like, a new comment) re-observes; the time a thing has been in view carries over */
+  function unwatchSeen() {
+    if (seenObs) seenObs.disconnect(); seenObs = null;
+    Object.keys(seenTimers).forEach(function (k) { clearTimeout(seenTimers[k]); });
+    seenTimers = {}; seenVis = {}; $("p-newjump").hidden = true;
+  }
+  function seenNodes(p) {
+    var u = unseenOf(p), out = [];
+    u.cids.forEach(function (k) { var n = document.querySelector('.cmt[data-cid="' + k.replace(/["\\]/g, "") + '"]'); if (n) out.push(n); });
+    if (u.body) out.push($("p-body"));
+    return { list: out, u: u };
+  }
+  function watchSeen() {
+    unwatchSeen();
+    var p = current(); if (!p || !("IntersectionObserver" in window)) return;
+    var id = p.id, s = seenNodes(p);
+    if (seenPost !== id) { seenPost = id; seenSince = {}; }
+    $("p-dot").hidden = !(s.u.cids.length || s.u.body) || colOf(p) === "done";
+    if (!s.list.length) return;
+    seenObs = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        /* the board runs in a cross-origin frame: without an explicit root, rootBounds is null there, and a text
+           taller than two screens never counted (BD3b, TB1-bench-sittings, 14:09); the sheet is the root now */
+        var k = e.target.dataset.cid || "body", rh = e.rootBounds ? e.rootBounds.height : innerHeight;
+        var vis = e.isIntersecting && (e.intersectionRatio >= 0.5 || e.intersectionRect.height >= 0.5 * rh);
+        seenVis[k] = vis;
+        if (vis && !seenSince[k]) seenSince[k] = Date.now();
+        if (!vis) delete seenSince[k];
+        if (vis && !seenTimers[k]) seenTimers[k] = setTimeout(function () {
+          delete seenTimers[k];
+          if (document.visibilityState === "hidden" || state.openId !== id || !seenVis[k]) return;
+          delete seenSince[k];
+          markViewed(id, k);
+          var still = seenNodes(p);
+          $("p-dot").hidden = !(still.u.cids.length || still.u.body);
+          newJump();
+        }, Math.max(0, SEEN_MS - (Date.now() - seenSince[k])));
+        else if (!vis && seenTimers[k]) { clearTimeout(seenTimers[k]); delete seenTimers[k]; }
+      });
+      newJump();
+    }, { root: $("sheet"), threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1] });
+    s.list.forEach(function (n) { seenObs.observe(n); });
+  }
+  /* "New below" / "New above": the first unseen thing that is not on screen now. */
+  function newJump() {
+    var p = current(), j = $("p-newjump"); if (!p) { j.hidden = true; return; }
+    var off = seenNodes(p).list.filter(function (n) { return !seenVis[n.dataset.cid || "body"]; })[0];
+    if (!off) { j.hidden = true; return; }
+    var below = off.getBoundingClientRect().top > 0;
+    j.textContent = "";
+    j.appendChild(el("span", "newdot")); j.appendChild(document.createTextNode(below ? "New below \u2193" : "New above \u2191"));
+    j.hidden = false;
+    j.onclick = function () { goTo(off.dataset.cid ? { cid: off.dataset.cid } : { body: true }); };
+  }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible" && state.openId) watchSeen(); });
+  /* A question's answers as buttons: the post's options (and default_option); one tap sends "Answer: X". */
+  function renderOpts(p, cs) {
+    var box = $("p-opts"), opts = Array.isArray(p.options) ? p.options.map(str).filter(Boolean) : [];
+    box.textContent = ""; box.hidden = !opts.length; if (!opts.length) return;
+    var last = cs.filter(function (c) { return c.answer && (c.from === "owner" || c.from === "viewer"); }).pop();
+    box.appendChild(el("span", "lab", last ? "Your answer (tap another to change it):" : "Answer with one tap:"));
+    opts.forEach(function (o) {
+      var on = last && str(last.answer) === o;
+      var b = el("button", "btn" + (on ? " ember" : ""), o + (o === str(p.default_option) ? " (default)" : "")); b.type = "button";
+      b.setAttribute("aria-pressed", String(!!on));
+      b.addEventListener("click", function () {
+        if (on || !db) return;
+        var ref = db.collection("comments").doc();
+        var row = { post_id: p.id, text: "Answer: " + o, answer: o, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+        sending[ref.id] = true;
+        var sendP = sendToClaude(p, 0, $("p-title"), "Answer: " + o);
+        ref.set(row).then(function () { return sendP; }, function () { return sendP; }).then(function (res) {
+          delete sending[ref.id]; checkCanSend(); return ref.update(deliveryFields(res));
+        }).catch(function () {}).then(function () { if (state.openId) renderComments(); });
+      });
+      box.appendChild(b);
+    });
+  }
+  /* Keyboard on a computer: arrows move between posts, Enter opens, L likes, D moves to Done. */
+  document.addEventListener("keydown", function (e) {
+    var t = e.target, tag = t && t.tagName;
+    if (e.ctrlKey || e.metaKey || e.altKey || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !$("zoom").hidden) return;
+    var key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (!$("sheet").hidden) {
+      var p = current(); if (!p) return;
+      if (key === "l") { var lb = $("p-like").querySelector(".like"); if (lb) lb.click(); }
+      else if (key === "d" && colOf(p) !== "done") $("move").click();
+      return;
+    }
+    var cur = document.activeElement && document.activeElement.closest ? document.activeElement.closest(".card") : null;
+    var lanes = [].filter.call($("lanes").children, function (l) { return l.offsetParent !== null; });
+    if (key === "ArrowDown" || key === "ArrowUp" || key === "ArrowLeft" || key === "ArrowRight") {
+      var target = null;
+      if (!cur) target = $("lanes").querySelector(".lane.active .card") || lanes.map(function (l) { return l.querySelector(".card"); }).filter(Boolean)[0];
+      else {
+        var lane = cur.closest(".lane"), list = [].slice.call(lane.querySelectorAll(".card")), i = list.indexOf(cur);
+        if (key === "ArrowDown") target = list[i + 1]; else if (key === "ArrowUp") target = list[i - 1];
+        else {
+          var li = lanes.indexOf(lane), step = key === "ArrowRight" ? 1 : -1;
+          for (var j = li + step; j >= 0 && j < lanes.length && !target; j += step) { var cs2 = lanes[j].querySelectorAll(".card"); target = cs2[Math.min(i, cs2.length - 1)]; }
+        }
+      }
+      if (target) { e.preventDefault(); target.focus(); }
+      return;
+    }
+    if (!cur || state.picking) return;
+    var post = state.posts.filter(function (x) { return x.id === cur.dataset.id; })[0]; if (!post) return;
+    if (key === "l") { var b2 = cur.querySelector(".like"); if (b2) b2.click(); }
+    else if (key === "d") toDone(post);
+  });
+  $("back").addEventListener("click", function () { if (state.openId === ORCH && state.disc) openDisc(null); else closePost(); });
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    if (!$("zoom").hidden) { $("zoom").hidden = true; return; }
+    if (!$("sheet").hidden) $("back").click();
+    else if (!$("wsheet").hidden) closeWaiting();
+  });
+
+  /* Zoom */
+  function zoom(u, src) {
+    var im = $("z-img"); im.src = src; im.className = "";
+    /* Name the post in the zoom view, so a platform comment placed on the image says which post it is about. */
+    var p = current(), label = "Image";
+    if (p) {
+      var n = postImages(p).indexOf(u) + 1;
+      label = str(p.title) + " [post " + p.id + "]" + (n > 0 ? " image " + n : " image") + (n > 0 && captionOf(p, n - 1) ? ": " + captionOf(p, n - 1) : "");
+    }
+    $("z-title").textContent = label; im.alt = label; $("zoom").setAttribute("aria-label", label);
+    $("zoom").hidden = false;
+  }
+  $("z-img").addEventListener("click", function () { this.classList.toggle("full"); });
+  $("z-close").addEventListener("click", function () { $("zoom").hidden = true; });
+
+  /* Move to Done / Reopen */
+  $("move").addEventListener("click", async function () {
+    var p = current(); if (!p || !db) return;
+    var btn = this; btn.disabled = true;
+    try {
+      if (colOf(p) === "done") await db.doc("posts/" + p.id).update({ column: str(p.column_before) || "info" });
+      else await toDone(p);
+    } catch (e) { $("c-note").textContent = "Could not move the post: " + (e && e.code || "error"); }
+    btn.disabled = false;
+  });
+
+  /* A comment is saved in the board's db AND posted as a platform comment sent to Claude
+     (comments.sendToClaude), anchored on its picture or on the post title. The watching clerk session
+     reads the prefix "[post <id>] [image <n>] " and forwards it to the post's author. */
+  var sending = {};
+  var WHY = {
+    claude_unavailable: "no Claude session can receive it right now",
+    consent_required: "commenting from the page was not allowed",
+    forbidden: "commenting from the page is off for you here",
+    rate_limited: "too many sends; wait a minute",
+    not_granted: "the comments capability is not available in this view",
+    writers_only: "only editors of the board can send to Claude",
+    no_session: "no Claude session is watching the board",
+    off: "sending to Claude is off in this view"
+  };
+  /* canSendToClaude is a snapshot: read on load, on opening a post and after each send. */
+  var canSend = "";
+  function checkCanSend() {
+    if (!cmts || typeof cmts.canSendToClaude !== "function") return;
+    cmts.canSendToClaude().then(function (v) { canSend = str(v); }, function (e) { canSend = (e && e.code) || "off"; });
+  }
+  function prefixFor(p, n) { return "[post " + p.id + "] " + (n ? "[image " + n + "] " : ""); }
+  /* Starts the send at once, inside the viewer's gesture; resolves to "" when sent, else the reason. */
+  function sendToClaude(p, n, anchorEl, text) {
+    if (!cmts || typeof cmts.sendToClaude !== "function") return Promise.resolve("sending to Claude is not available in this view");
+    if (canSend && canSend !== "available") { checkCanSend(); return Promise.resolve(canSend + ": " + (WHY[canSend] || "not available")); }
+    var started = cmts.anchorFor(anchorEl).then(function (anchor) {
+      return cmts.sendToClaude({ anchor: anchor, text: prefixFor(p, n) + text });
+    });
+    return started.then(function (r) { return { ok: true, thread: r && r.threadId }; }, function (e) {
+      var code = e && e.code || "error";
+      return { ok: false, err: code + (WHY[code] ? ": " + WHY[code] : "") };
+    });
+  }
+  function deliveryFields(res) {
+    if (res && res.ok) return { delivered: true, delivery_error: "", delivered_at: new Date().toISOString(), thread_id: str(res.thread) };
+    return { delivered: false, delivery_error: typeof res === "string" ? res : str(res && res.err) };
+  }
+  /* His attachments: uploaded when chosen (the send itself must stay inside his tap), kept by id in the comment's row. */
+  var pendingFiles = [], assets = null;
+  function renderPending() {
+    var box = $("c-files"); box.textContent = "";
+    pendingFiles.forEach(function (x) {
+      var c = el("span", "file", x.name + (x.error ? ": " + x.error : (x.id ? "" : " (uploading...)")));
+      var rm = el("button", null, "\u00d7"); rm.type = "button"; rm.setAttribute("aria-label", "Remove " + x.name);
+      rm.addEventListener("click", function () { pendingFiles = pendingFiles.filter(function (y) { return y !== x; }); renderPending(); });
+      c.appendChild(rm); box.appendChild(c);
+    });
+  }
+  $("c-attach").addEventListener("click", function () { $("c-file").click(); });
+  $("c-file").addEventListener("change", function () {
+    Array.prototype.slice.call(this.files || []).forEach(function (file) {
+      var x = { name: file.name, type: file.type || "file", id: null, error: "" };
+      pendingFiles.push(x);
+      if (file.size > 20 * 1024 * 1024) { x.error = "over 20 MB, not sent"; return; }
+      assets.upload(file).then(function (r) { x.id = r.id; if (r.contentType) x.type = r.contentType; renderPending(); },
+        function (e) { x.error = (e && e.code === "unsupported_type") ? "this kind of file is not accepted" : "not uploaded (" + ((e && e.code) || "error") + ")"; renderPending(); });
+    });
+    this.value = ""; renderPending();
+  });
+  function filesNode(list) {
+    var box = el("div", "files");
+    list.forEach(function (x) {
+      var id = str(x && x.id); if (!/^[0-9a-f]{32}$/.test(id)) return;
+      var a = el("a", "file"); a.href = "/_blob/" + id; a.target = "_blank"; a.rel = "noopener";
+      if (/^image\//.test(str(x.type))) { var im = el("img"); im.src = "/_blob/" + id; im.alt = str(x.name); a.className = ""; a.appendChild(im); }
+      else a.textContent = str(x.name) || "file";
+      box.appendChild(a);
+    });
+    return box;
+  }
+  function showReplyTo() {
+    var box = $("c-reply"), c = state.replyTo && (state.comments || []).filter(function (x) { return x.id === state.replyTo; })[0];
+    box.textContent = ""; box.hidden = !c; if (!c) { state.replyTo = null; return; }
+    box.appendChild(el("span", null, "Replying to " + (c.from === "owner" ? "you" : str(c.from)) + ": \u00ab" + str(c.text).replace(/\s+/g, " ").slice(0, 60) + "\u2026\u00bb"));
+    var x = el("button", null, "\u00d7"); x.type = "button"; x.setAttribute("aria-label", "Cancel the reply");
+    x.addEventListener("click", function () { state.replyTo = null; showReplyTo(); if (state.openId) saveDraft(state.openId, 0, $("c-text").value, ""); });
+    box.appendChild(x);
+  }
+  async function submitComment(f) {
+    var p = current(); var text = f.text.value.trim();
+    var files = f.files ? pendingFiles.filter(function (x) { return x.id; }) : [];
+    if (f.files && pendingFiles.some(function (x) { return !x.id && !x.error; })) { f.note.textContent = "Wait: a file is still uploading."; return; }
+    if (!p || (!text && !files.length)) return;
+    if (!text) text = "(see the attached file)";
+    if (!db) { f.note.textContent = "The board's storage is not available in this view."; return; }
+    f.button.disabled = true; f.note.textContent = "Sending...";
+    var ref = db.collection("comments").doc();
+    var row = { post_id: p.id, text: text, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+    if (f.image) row.image = f.image;
+    /* BD7: a message under _orchestrator names its discussion; a new one is its own */
+    var dk = p.id === ORCH ? (state.disc && state.disc !== "new" ? state.disc : ref.id) : "";
+    if (dk) row.discussion = dk;
+    if (files.length) row.files = files.map(function (x) { return { id: x.id, name: x.name, type: x.type }; });
+    var par = f.files && state.replyTo ? (state.comments || []).filter(function (x) { return x.id === state.replyTo; })[0] : null;
+    if (par) row.reply_to = par.id;
+    /* a reply to the orchestrator's comment goes to the orchestrator (@o) */
+    var lead = par ? (par.from === "orchestrator" && text.indexOf("@o") < 0 ? "@o " : "") + "(in reply to the comment " + par.id + " of " + str(par.from) + ": \u00ab" + str(par.text).replace(/\s+/g, " ").slice(0, 80) + "\u00bb) " : "";
+    var told = (dk ? "[discussion " + dk + ": " + (state.disc === "new" ? firstLine(text).slice(0, 60) : discTitle(dk)) + "] " : "") + lead + text + files.map(function (x) { return "\n[attached: " + x.name + " (" + x.type + ") at /_blob/" + x.id + "]"; }).join("");
+    sending[ref.id] = true;
+    /* Both start now: the send must come from the viewer's own recent gesture. */
+    var sendP = sendToClaude(p, f.n, f.anchorEl, told);
+    var saved = true;
+    try { await ref.set(row); } catch (e) { saved = false; }
+    var res = await sendP;
+    delete sending[ref.id]; checkCanSend();
+    var sent = res && res.ok;
+    if (saved) {
+      try { await ref.update(deliveryFields(res)); } catch (e) {}
+      f.text.value = ""; saveDraft(p.id, f.n, "");
+      if (f.files) { pendingFiles = []; renderPending(); state.replyTo = null; showReplyTo(); }
+      if (dk && state.disc === "new" && state.openId === ORCH) { state.disc = dk; renderPost(); }
+      f.note.textContent = sent ? "Sent to Claude." : "Saved on the board; not sent.";
+    } else {
+      f.note.textContent = sent ? "Sent to Claude, but not saved on the board." : "Not saved and not sent. Your text is still in the box.";
+      if (sent) { f.text.value = ""; saveDraft(p.id, f.n, ""); }
+    }
+    f.button.disabled = false;
+    renderComments();
+  }
+  async function resend(p, c) {
+    var imgs = postImages(p), n = c.image ? imgs.indexOf(str(c.image)) + 1 : 0;
+    var anchorEl = $("p-title");
+    if (n > 0) { var figs = $("p-imgs").querySelectorAll(".pic img"); if (figs[n - 1]) anchorEl = figs[n - 1]; } else n = 0;
+    sending[c.id] = true; renderComments();
+    var res = await sendToClaude(p, n, anchorEl, str(c.text));
+    delete sending[c.id];
+    try { await db.doc("comments/" + c.id).update(deliveryFields(res)); } catch (e) {}
+    renderComments();
+  }
+  keepDraft($("c-text"), 0);
+  $("composer").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    submitComment({ text: $("c-text"), button: $("c-send"), note: $("c-note"), image: null, n: 0, anchorEl: $("p-title"), files: true });
+  });
+
+  /* Boot */
+  renderBoard();
+  var timer = setTimeout(function () {
+    if (!state.loaded) { var s = $("status"); s.textContent = "The board can't be reached yet."; s.className = "status bad"; }
+  }, 10000);
+
+  (async function () {
+    var w = window.claude;
+    if (!w || !w.use) { clearTimeout(timer); $("status").textContent = "Open this board on claude.ai to see its posts."; return; }
+    w.use("comments").then(function (c) { cmts = c; checkCanSend(); if (state.openId) renderComments(); }, function () {});
+    w.use("assets").then(function (a) { assets = a; $("c-attach-row").hidden = !a; }, function () {});
+    w.use("downloads").then(function (d) { downloads = d; $("share").hidden = !d; $("sel-export").hidden = !d; }, function () {});
+    user = await w.use("user");
+    if (user) { try { state.isOwner = await user.isOwner(); } catch (e) {} }
+    db = await w.use("db");
+    if (!db) { clearTimeout(timer); var s = $("status"); s.textContent = "Sign in on claude.ai to see the board."; s.className = "status bad"; return; }
+    /* His read marks, under his own user: the same on his phone and his computer. */
+    var uid = null;
+    try { uid = user && typeof user.id === "function" ? await user.id() : null; } catch (e) { uid = null; }
+    if (uid) {
+      try {
+        seenDoc = db.doc("data/users/" + uid + "/board-seen");
+        var first = true;
+        seenDoc.onSnapshot(function (d) {
+          if (d.exists) { seenExists = true; var o = d.data() || {}; if (mergeSeen(o.posts)) { later("board"); } }
+          if (first && !d.metadata.fromCache) {
+            first = false; seenReady = true;
+            /* what this browser read that the db does not have yet goes up once (the first time on this device) */
+            var r = (d.exists && d.data().posts) || {};
+            pushSeen(Object.keys(seen).filter(function (k) { var v = normSeen(r[k]); return !v || v.at < seen[k].at || (seen[k].sig && !v.sig); }));
+          }
+        }, function () {});
+      } catch (e) { seenDoc = null; }
+    }
+    db.collection("typing").onSnapshot(function (snap) {
+      var t = {}; snap.docs.forEach(function (d) { var o = d.data(); if (o) t[d.id] = o; });
+      state.typing = t; later("board"); later("typing");
+    }, function () {});
+    db.collection("posts").orderBy("created_at", "desc").onSnapshot(function (snap) {
+      var all = snap.docs.map(function (d) { var o = Object.assign({}, d.data()); o.id = d.id; return o; });
+      state.special = {}; all.forEach(function (o) { if (o.id.charAt(0) === "_") state.special[o.id] = o; });
+      state.posts = all.filter(function (o) { return o.id.charAt(0) !== "_"; });
+      baseline();
+      if (!snap.metadata.fromCache) {
+        var firstLoad = !state.loaded;
+        state.loaded = true; clearTimeout(timer); var s = $("status"); s.className = "status"; s.textContent = "Live";
+        if (firstLoad && !state.openId) { var back = ""; try { back = sessionStorage.getItem("board-open") || ""; } catch (e) {} if (back && postById(back)) setTimeout(function () { openPost(back); }, 0); }
+      }
+      later("board"); later("post");
+    }, function (e) { clearTimeout(timer); var s = $("status"); s.textContent = "The board stopped updating (" + e.code + "). Reload to reconnect."; s.className = "status bad"; });
+    db.collection("comments").onSnapshot(function (snap) {
+      state.comments = snap.docs.map(function (d) { var o = Object.assign({}, d.data()); o.id = d.id; return o; });
+      stampArrivals();
+      later("board"); later("cmts");
+    }, function () {});
+  })();
+})();
+</script>
