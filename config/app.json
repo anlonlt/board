@@ -1,0 +1,71 @@
+{
+ "project": "app",
+ "language": {
+  "talk": "fr",
+  "project": "fr"
+ },
+ "board_url": null,
+ "fields": {
+  "author": "from",
+  "owner": "owner",
+  "clerk": "clerk",
+  "reviewer": "reviewer",
+  "post": "post_id",
+  "reply_to": "reply_to",
+  "created": "created_at",
+  "later_flags": [
+   "read",
+   "read_at",
+   "delivered"
+  ],
+  "later_stamps": [
+   "read_at",
+   "delivered_at",
+   "arrived_at",
+   "updated_at"
+  ],
+  "post_updated": "updated_at",
+  "post_moved": "done_at",
+  "review_kind": [
+   "kind",
+   "review"
+  ]
+ },
+ "shell_buckets": [
+  {
+   "name": "Bash: capture / screenshots (Playwright, capture-propositions, sonde)",
+   "all": [
+    "capture|playwright|sonde-console|screenshot|chromium"
+   ]
+  },
+  {
+   "name": "Bash: npm banc/build/checks",
+   "all": [
+    "npm (run )?(banc|build|temoins|garde|frontiere|guichets|entretien|verre|e2e|dev|preview|install)|scripts/banc|vite build"
+   ]
+  },
+  {
+   "name": "Bash: hand-over docs (passation, CLAUDE.md, doctrine)",
+   "all": [
+    "passation|handoff|CLAUDE\\.md|doctrine|carnet|methode-revamp"
+   ]
+  },
+  {
+   "name": "Bash: git",
+   "all": [
+    "git (push|pull|commit|merge|log|status|fetch|diff|show|checkout|branch|add|rebase|stash)"
+   ]
+  },
+  {
+   "name": "Bash: image work (PIL/convert/identify)",
+   "all": [
+    "PIL|Image\\.|convert |identify |magick|ffmpeg"
+   ]
+  }
+ ],
+ "mirror": {
+  "branch": "board-mirror",
+  "path": "../board-mirror",
+  "overlap_hours": 1
+ }
+}
