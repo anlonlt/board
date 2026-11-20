@@ -263,11 +263,15 @@ SHIM_JS = r"""(function () {
     if (!sheet || sheet.hidden) return;
     var postId = "";
     try { postId = sessionStorage.getItem("board-open") || ""; } catch (e) {}
-    if (!postId || postId.charAt(0) === "_") return;
+    var existingSel = document.getElementById("kit-col-move");
+    if (!postId || postId.charAt(0) === "_") {
+      if (existingSel) existingSel.hidden = true;
+      return;
+    }
+    if (existingSel) existingSel.hidden = false;
 
     /* 1-tap column switcher */
     var bar = sheet.querySelector(".p-actions, .bar") || sheet.firstElementChild;
-    var existingSel = document.getElementById("kit-col-move");
     if (bar && !existingSel) {
       var sel = document.createElement("select");
       sel.id = "kit-col-move";
