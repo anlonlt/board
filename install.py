@@ -33,6 +33,7 @@ SETTINGS = [  # (event, matcher or None, hook file)
     ("UserPromptSubmit", None, "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_board_typing.py"),
     ("Stop", None, "kit_stop.py"),
+    ("Stop", None, "kit_say_it_once.py"),
     ("PreCompact", None, "kit_pre_compact.py"),
 ]
 DEFAULT_KIT = {

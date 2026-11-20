@@ -76,5 +76,24 @@ with tempfile.TemporaryDirectory() as d:
     run("kit_pre_compact.py", {}, proj)
     check("pre-compact: writes .story/before-compaction.md", os.path.exists(os.path.join(proj, ".story", "before-compaction.md")))
 
+    # Stop: the closing message is checked (the owner, 2026-11-20: a friend's orchestrator closed with a long English recap)
+    def transcript(opener, closing, human=True):
+        f = os.path.join(d, "t-%d.jsonl" % abs(hash(opener + closing)))
+        with open(f, "w") as fh:
+            fh.write(json.dumps({"type": "user", "uuid": opener, "origin": {"kind": "human" if human else "task"},
+                                 "message": {"content": "go"}}) + "\n")
+            fh.write(json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use"}]}}) + "\n")
+            fh.write(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": closing}]}}) + "\n")
+        return f
+    RUN = os.urandom(4).hex()  # the once-per-turn mark lives in /tmp: a fresh session id per run
+    St = lambda f, sid: {"hook_event_name": "Stop", "transcript_path": f, "session_id": sid + RUN}
+    f1 = transcript("u1", "x" * 200)
+    rc1, _, err1 = run("kit_say_it_once.py", St(f1, "s1"), proj)
+    check("stop: a long answer to the owner is blocked, naming the language", rc1 == 2 and "French" in err1)
+    check("stop: blocked once per turn, then it passes", run("kit_say_it_once.py", St(f1, "s1"), proj)[0] == 0)
+    check("stop: a short answer to the owner passes", run("kit_say_it_once.py", St(transcript("u2", "oui"), "s2"), proj)[0] == 0)
+    f3 = transcript("u3", "I've taken over as orchestrator and nothing is running yet.", human=False)
+    check("stop: a turn a session or timer opened must end with ·", run("kit_say_it_once.py", St(f3, "s3"), proj)[0] == 2)
+    check("stop: · passes", run("kit_say_it_once.py", St(transcript("u4", "·", human=False), "s4"), proj)[0] == 0)
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

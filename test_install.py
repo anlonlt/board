@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory() as d:
     check("settings: the project's own lines kept", s["permissions"] == mine["permissions"]
           and {"type": "command", "command": "echo mine"} in s["hooks"]["Stop"][0]["hooks"])
     cmds = [h["command"] for ev in s["hooks"].values() for g in ev for h in g["hooks"]]
-    check("settings: 8 kit lines merged", sum("hooks/kit/" in c for c in cmds) == 8)
+    check("settings: 9 kit lines merged", sum("hooks/kit/" in c for c in cmds) == 9)
     check("a project's own skill is not overwritten", open(os.path.join(t, ".claude", "skills", "story", "SKILL.md")).read() == "my own story skill\n"
           and "KEPT" in out)
     page = open(os.path.join(t, ".kit", "board.html"), encoding="utf-8").read()
