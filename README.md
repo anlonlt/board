@@ -52,6 +52,9 @@ Every part is modular (see [docs/KIT-GOALS.md](docs/KIT-GOALS.md) for every quot
 
 ## 🥊 How It Compares
 
+> [!NOTE]
+> **The only open-source kit that works in BOTH worlds:** every other orchestrator below requires a local terminal, desktop app, or database daemon — none of them run 100% in `claude.ai/code` from a browser/phone. **`board`** runs **zero-terminal in the cloud** (via `claude.ai` Artifacts), **natively on your computer** (via `agy` + `board_server.py` + Tailscale), or in **Hybrid mode** with instant failover when Claude hits rate limits.
+
 | Capability | **board** | Vibe Kanban *(sunsetting)* | Kanban Code | Beads (`bd`) | Storybloq |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **Zero external dependencies** *(Python 3 stdlib + 1 HTML file)* | ✅ | ❌ *(Rust + Node + pnpm)* | ❌ *(SwiftUI / Tauri + tmux)* | ❌ *(Go + Dolt SQL)* | ❌ *(Node 20+ + Mac app)* |

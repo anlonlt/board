@@ -71,8 +71,11 @@ def main(argv=None):
             m = git("merge", "-q", "--no-edit", "origin/" + trunk)
             if m.returncode:
                 files = git("diff", "--name-only", "--diff-filter=U").stdout.split()
-                git("merge", "--abort")
-                print("end-session: CONFLICT merging %s: %s. Merge it by hand, then run again." % (trunk, " ".join(files)))
+                if files:
+                    git("merge", "--abort")
+                    print("end-session: CONFLICT merging %s: %s. Merge it by hand, then run again." % (trunk, " ".join(files)))
+                else:
+                    print("end-session: git merge origin/%s failed: %s" % (trunk, (m.stderr or m.stdout).strip()[-300:]))
                 return 1
             if branch != trunk and not push("origin", branch):
                 return 1
