@@ -243,7 +243,7 @@ def answer_delay():
     return _Waits(f.get("owner", "owner"), f.get("clerk", "clerk"))
 
 
-def open_(m, since="2026-11-12"):
+def open_(m, since="2000-01-01"):
     ad = answer_delay()
     cs = [dict(v, doc_id=i) for i, v in load_dir(m + "/board", "comments").items() if v.get("created_at") and v.get("post_id")]
     answers = [c for c in cs if ad.is_answer(c)]
@@ -317,20 +317,26 @@ def main(argv=None):
     ap.add_argument("--config", help="config/<project>.json (branch, stamps, owner and clerk names)")
     sp = ap.add_subparsers(dest="cmd", required=True)
     sp.add_parser("init")
+    sp.add_parser("push")
     s = sp.add_parser("sync"); s.add_argument("dir"); s.add_argument("--at", required=True)
     s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true")
     s = sp.add_parser("diff"); s.add_argument("dump"); s.add_argument("--window", nargs=2)
     s = sp.add_parser("post"); s.add_argument("id"); s.add_argument("--head", type=int)
-    s = sp.add_parser("open"); s.add_argument("--since", default="2026-11-12")
+    s = sp.add_parser("open"); s.add_argument("--since", default="2000-01-01")
     s = sp.add_parser("since"); s.add_argument("t")
     s = sp.add_parser("session"); s.add_argument("post")
     s = sp.add_parser("reads"); s.add_argument("--at")
     a = ap.parse_args(argv)
     if a.config:
         configure(a.config)
+    elif os.path.exists(os.path.join(ROOT, ".kit", "config.json")):  # an installed kit: <project>/.kit/kit.py
+        configure(os.path.join(ROOT, ".kit", "config.json"))
     m = mirror_dir(a)
     if a.cmd == "init":
         print(init(m)); return 0
+    if a.cmd == "push":
+        r = git(m, "push", "-u", "origin", BRANCH)
+        print((r.stdout + r.stderr).strip() or "pushed"); return r.returncode
     if a.cmd == "sync":
         r = sync(m, a.dir, a.at, a.full)
         print("sync %s: posts %d written, %d removed; comments %d new, %d changed, %d removed" % ((a.at,) + r))
