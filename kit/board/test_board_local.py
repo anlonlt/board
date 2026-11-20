@@ -62,6 +62,13 @@ with tempfile.TemporaryDirectory() as tmp:
         rc, out, _ = cli(url, "update", "posts", "P-1", "--data", '{"priority": 2}', "--if-version", "1")
         check("update with matching if_version succeeds (v2)", rc == 0 and json.loads(out).get("version") == 2)
 
+        # 2b. Deep merge on nested dicts (critical for data/users/owner/board-seen)
+        store.set_doc("data/users/owner", "board-seen", {"posts": {"A": {"at": "2026-11-20T01:00:00Z"}, "B": {"at": "2026-11-20T01:00:00Z"}}})
+        store.update_doc("data/users/owner", "board-seen", {"posts": {"C": {"at": "2026-11-20T02:00:00Z"}}})
+        merged_seen = store.get_doc("data/users/owner", "board-seen")["data"].get("posts") or {}
+        check("update_doc deep-merges nested dicts (board-seen preserves prior posts)",
+              set(merged_seen.keys()) == {"A", "B", "C"})
+
         rc, _, err = cli(url, "update", "posts", "P-1", "--data", '{"priority": 3}', "--if-version", "1")
         check("update with stale if_version fails with 409", rc != 0 and "409" in err)
 

@@ -272,11 +272,12 @@ SHIM_JS = r"""(function () {
 
     /* 1-tap column switcher */
     var bar = sheet.querySelector(".p-actions, .bar") || sheet.firstElementChild;
-    if (bar && !existingSel) {
+    var barRow = (bar && bar.querySelector(".row")) || bar;
+    if (barRow && !existingSel) {
       var sel = document.createElement("select");
       sel.id = "kit-col-move";
       sel.title = "Move card to column";
-      sel.style.cssText = "background:var(--surface,#1a2335);color:var(--ink,#e6ebf2);border:1px solid var(--line,#2c3850);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px;cursor:pointer;";
+      sel.style.cssText = "background:var(--surface,#1a2335);color:var(--ink,#e6ebf2);border:1px solid var(--line,#2c3850);border-radius:10px;padding:5px 10px;font:inherit;font-size:.82rem;cursor:pointer;flex:none;";
       [["", "Move column…"], ["todo", "For you to do"], ["question", "Waiting on you"], ["info", "News"], ["done", "Done"]].forEach(function (pair) {
         var o = document.createElement("option"); o.value = pair[0]; o.textContent = pair[1]; sel.appendChild(o);
       });
@@ -287,7 +288,7 @@ SHIM_JS = r"""(function () {
         db.doc("posts/" + pid).update({ column: col }).catch(function () {});
         sel.value = "";
       });
-      bar.appendChild(sel);
+      barRow.appendChild(sel);
     }
 
     /* Inline git diff loader if body mentions a 7-40 char commit hash */
@@ -538,7 +539,13 @@ class BoardStore:
             if if_version is not None and int(if_version) != cur_ver:
                 return None, cur_ver
             cur_data = json.loads(row[1]) if row else {}
-            cur_data.update(patch)
+            def _deep_merge(dst, src):
+                for k, v in src.items():
+                    if isinstance(v, dict) and isinstance(dst.get(k), dict):
+                        _deep_merge(dst[k], v)
+                    else:
+                        dst[k] = v
+            _deep_merge(cur_data, patch)
             new_ver = cur_ver + 1
             self.conn.execute(
                 "INSERT INTO docs(collection, doc_id, version, data, updated_at) VALUES (?, ?, ?, ?, ?) "
