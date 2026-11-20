@@ -1,7 +1,7 @@
 <title>{{PROJECT}} board</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700&family=Alegreya+Sans:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: a board of four lanes (one at a time on a phone, side by side when wide); a post opens as a full sheet over it. */
 :root {
@@ -340,6 +340,129 @@ input, textarea, select, .body, .cmt .txt, .peek .body, .cap { -webkit-user-sele
 .cap { font-weight: 700; font-size: .9rem; overflow-wrap: anywhere; }
 .discrow { display: flex; gap: 6px; align-items: center; } .discrow > .disc { flex: 1; min-width: 0; }
 .cmt > .rm { align-self: flex-end; width: auto; margin-top: 2px; opacity: .6; font-size: .8rem; padding: 2px 8px; }
+
+/* === Modern Padlet × Reddit × Facebook Design System === */
+:root {
+  --display: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --text: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --bg: #f3f5f9; --surface: #ffffff; --sunk: #e8ecf3; --line: #dde3ee;
+  --shadow: 0 2px 10px rgba(15, 23, 42, .06);
+  --shadow-lg: 0 12px 32px rgba(15, 23, 42, .12);
+  --glass: rgba(243, 245, 249, .82);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0b111e; --surface: #141d2e; --sunk: #0f1726; --line: #233049;
+  --shadow: 0 2px 12px rgba(0, 0, 0, .28);
+  --shadow-lg: 0 14px 36px rgba(0, 0, 0, .48);
+  --glass: rgba(11, 17, 30, .82);
+} }
+:root[data-theme="dark"] {
+  --bg: #0b111e; --surface: #141d2e; --sunk: #0f1726; --line: #233049;
+  --shadow: 0 2px 12px rgba(0, 0, 0, .28);
+  --shadow-lg: 0 14px 36px rgba(0, 0, 0, .48);
+  --glass: rgba(11, 17, 30, .82);
+}
+body {
+  background: radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--ember) 7%, transparent), transparent 40%),
+              radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--question) 8%, transparent), transparent 42%),
+              var(--bg);
+  background-attachment: fixed;
+  letter-spacing: -0.005em;
+}
+header.top { padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
+
+/* View switcher pill (Lanes | Wall | Feed) */
+.kit-views { display: inline-flex; background: var(--sunk); border: 1px solid var(--line); border-radius: 999px; padding: 2px; gap: 2px; }
+.kit-views button { border: none; background: transparent; color: var(--muted); border-radius: 999px; padding: 4px 11px; font-size: .8rem; font-weight: 600; transition: all .15s ease; }
+.kit-views button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+
+/* Padlet-style elevated cards with subtle lane glow */
+.card {
+  border-radius: 16px; border: 1px solid var(--line); border-left: 4px solid var(--c);
+  padding: 13px 15px; gap: 7px; box-shadow: var(--shadow);
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-color: color-mix(in srgb, var(--c) 65%, var(--line)); }
+.card .t { font-weight: 700; font-size: 1.02rem; line-height: 1.32; letter-spacing: -0.01em; }
+.card .first { font-size: .88rem; line-height: 1.4; opacity: .88; }
+.tab { border-radius: 999px; padding: 7px 14px; font-weight: 600; box-shadow: var(--shadow); transition: all .15s ease; }
+.dash { border-radius: 16px !important; box-shadow: var(--shadow); border-color: var(--line); }
+.btn { border-radius: 10px; font-weight: 600; transition: transform .12s ease, background .15s ease, border-color .15s ease; }
+.btn:active { transform: scale(.97); }
+.btn.ember { border-radius: 999px; padding-inline: 16px; box-shadow: 0 4px 14px color-mix(in srgb, var(--ember) 32%, transparent); }
+.like { font-weight: 600; transition: transform .12s ease, background .15s ease; }
+.like:active { transform: scale(.95); }
+
+/* Padlet Wall (masonry) & Reddit/Facebook Feed view modes */
+[data-view="wall"] .tabs { display: none !important; }
+[data-view="wall"] .lanes { display: block !important; columns: 3 300px; column-gap: 16px; margin-top: 14px; }
+[data-view="wall"] .lane { display: contents !important; }
+[data-view="wall"] .lane h2, [data-view="wall"] .lane .empty { display: none !important; }
+[data-view="wall"] .cards { display: contents !important; }
+[data-view="wall"] .card { break-inside: avoid; margin-bottom: 14px; border-left: 1px solid var(--line); border-top: 4px solid var(--c); }
+
+[data-view="feed"] .tabs { display: none !important; }
+[data-view="feed"] .lanes { display: flex !important; flex-direction: column; gap: 14px; max-width: 680px; margin: 16px auto 0; }
+[data-view="feed"] .lane { display: contents !important; }
+[data-view="feed"] .lane h2, [data-view="feed"] .lane .empty { display: none !important; }
+[data-view="feed"] .cards { display: contents !important; }
+[data-view="feed"] .card { padding: 16px 18px; }
+[data-view="feed"] .card .first { white-space: normal; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+
+/* Frosted-glass sticky post action bar (compact on mobile) */
+.bar {
+  background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line); margin-inline: -16px; padding: 8px 16px; gap: 6px;
+}
+.bar .btn { padding: 5px 11px; font-size: .84rem; }
+.sheet-in { padding-bottom: 140px !important; }
+.sheet h2 { font-weight: 800; letter-spacing: -0.025em; line-height: 1.22; }
+
+/* Reddit-style threaded comments, clickable vertical rails, avatars & compact Remove */
+.cmt {
+  position: relative; border-radius: 14px !important; padding: 12px 14px !important;
+  box-shadow: var(--shadow); transition: border-color .15s ease;
+}
+.cmt > .rm {
+  position: absolute; top: 10px; right: 10px; margin: 0 !important;
+  opacity: .55; font-size: .74rem; padding: 2px 8px; border-radius: 999px;
+}
+.cmt > .rm:hover { opacity: 1; color: var(--warn); border-color: var(--warn); }
+.kit-av {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 999px; font-size: .72rem; font-weight: 800;
+  color: #fff; flex: none; margin-right: 4px; letter-spacing: 0;
+}
+.replies {
+  border-left: 2px solid var(--line) !important; padding-left: 14px !important;
+  margin-left: 10px !important; position: relative; transition: border-color .15s ease;
+}
+.replies:hover { border-left-color: var(--ember) !important; }
+.replies.kit-folded > * { display: none !important; }
+.replies.kit-folded::after {
+  content: "Thread collapsed — tap rail to expand"; display: block;
+  font-size: .8rem; color: var(--muted); padding: 4px 8px; cursor: pointer; font-style: italic;
+}
+
+/* Facebook-style frosted-glass sticky bottom composer & typing bubble */
+#p-typing {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px;
+  border-radius: 999px; background: var(--surface); border: 1px solid var(--line);
+  box-shadow: var(--shadow); font-size: .84rem; width: fit-content;
+}
+#p-typing[hidden] { display: none !important; }
+.composer {
+  position: sticky; bottom: 0; z-index: 6;
+  background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px;
+  box-shadow: var(--shadow-lg); margin-top: 8px;
+}
+.composer textarea {
+  border-radius: 12px !important; min-height: 52px !important; max-height: 180px;
+  background: var(--surface); padding: 10px 12px;
+}
 </style>
 
 <div class="wrap">
@@ -2158,6 +2281,65 @@ input, textarea, select, .body, .cmt .txt, .peek .body, .cap { -webkit-user-sele
       stampArrivals();
       later("board"); later("cmts");
     }, function () {});
+  })();
+
+  /* Padlet × Reddit × Facebook progressive UI enhancer (view switcher, avatars, collapsible rails) */
+  (function () {
+    var wrap = document.querySelector(".wrap");
+    var tools = document.querySelector(".tools");
+    if (wrap && tools && !document.getElementById("kit-views")) {
+      var savedView = "lanes";
+      try { savedView = localStorage.getItem("board-view") || "lanes"; } catch (e) {}
+      if (["lanes", "wall", "feed"].indexOf(savedView) === -1) savedView = "lanes";
+      wrap.setAttribute("data-view", savedView);
+      var box = document.createElement("span");
+      box.id = "kit-views"; box.className = "kit-views";
+      [["lanes", "Lanes"], ["wall", "Wall"], ["feed", "Feed"]].forEach(function (pair) {
+        var b = document.createElement("button"); b.type = "button"; b.textContent = pair[1];
+        if (pair[0] === savedView) b.className = "on";
+        b.addEventListener("click", function () {
+          wrap.setAttribute("data-view", pair[0]);
+          try { localStorage.setItem("board-view", pair[0]); } catch (e) {}
+          Array.prototype.slice.call(box.children).forEach(function (x) { x.className = x === b ? "on" : ""; });
+        });
+        box.appendChild(b);
+      });
+      tools.insertBefore(box, tools.firstChild);
+    }
+    var AV_COLORS = { you: "#e8894a", owner: "#e8894a", orchestrator: "#8b5cf6", consultant: "#10b981", clerk: "#64748b" };
+    function decorateComments() {
+      var list = document.querySelectorAll(".cmt .meta");
+      for (var i = 0; i < list.length; i++) {
+        var m = list[i];
+        if (m.querySelector(".kit-av")) continue;
+        var who = m.querySelector(".part, .who, b, strong");
+        if (!who) continue;
+        var label = (who.textContent || "?").trim();
+        var key = label.toLowerCase();
+        var av = document.createElement("span");
+        av.className = "kit-av";
+        av.textContent = label.slice(0, 2).toUpperCase();
+        av.style.background = AV_COLORS[key] || "#3b82f6";
+        m.insertBefore(av, m.firstChild);
+      }
+      var rails = document.querySelectorAll(".replies");
+      for (var j = 0; j < rails.length; j++) {
+        (function (r) {
+          if (r.dataset.kitRail) return;
+          r.dataset.kitRail = "1";
+          r.addEventListener("click", function (ev) {
+            var rect = r.getBoundingClientRect();
+            if (r.classList.contains("kit-folded") || (ev.clientX - rect.left) <= 16) {
+              r.classList.toggle("kit-folded");
+              ev.stopPropagation();
+            }
+          });
+        })(rails[j]);
+      }
+    }
+    var obs = new MutationObserver(decorateComments);
+    obs.observe(document.body, { childList: true, subtree: true });
+    decorateComments();
   })();
 })();
 </script>
