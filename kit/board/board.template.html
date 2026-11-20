@@ -2212,15 +2212,19 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     var saved = true;
     try { await ref.set(row); } catch (e) { saved = false; }
     var res = await sendP;
-    delete sending[ref.id]; checkCanSend();
+    checkCanSend();
     var sent = res && res.ok;
     if (saved) {
-      try { await ref.update(deliveryFields(res)); } catch (e) {}
+      var df = deliveryFields(res);
+      try { await ref.update(df); } catch (e) {}
+      (state.comments || []).forEach(function (x) { if (x.id === ref.id) Object.assign(x, df); });
+      delete sending[ref.id];
       f.text.value = ""; saveDraft(p.id, f.n, "");
       if (f.files) { pendingFiles = []; renderPending(); state.replyTo = null; showReplyTo(); }
       if (dk && state.disc === "new" && state.openId === ORCH) { state.disc = dk; renderPost(); }
       f.note.textContent = sent ? "Sent to Claude." : "Saved on the board; not sent.";
     } else {
+      delete sending[ref.id];
       f.note.textContent = sent ? "Sent to Claude, but not saved on the board." : "Not saved and not sent. Your text is still in the box.";
       if (sent) { f.text.value = ""; saveDraft(p.id, f.n, ""); }
     }
