@@ -51,9 +51,13 @@ Steps marked **YOU** need a person; `agy` says each one, with its local URL, whe
    Your `.agents/hooks.json` keeps every other named hook; `kit-board` is merged in.
    Check: `python3 -I .agents/hooks/kit/test_hooks.py` ends `0 failed`.
    **Ask the owner once:** "Every session ends by merging its work onto `<main branch>` and pushing it, never forced (a conflict stops it). Do you give that standing permission?" Yes: rerun with `--trunk-push yes`. No: sessions push only their own branch. Either way each session ends with `python3 -I .kit/end_session.py`.
-3. **Translate (if non-English), then start the local board server** (with a board only):
+3. **Translate (if non-English), then start the local board server & phone access** (with a board only):
    - If `--talk` is not English: `python3 -I .kit/strings.py template .kit/strings.json`, fill in translations, rerun step 2 with no options.
    - Start the local board server as a background daemon (`run_command` with `CommandLine: "python3 -I .kit/board_server.py"`, `IsDaemon: true`, `WaitMsBeforeAsync: 1000`). Verify `curl -sf http://127.0.0.1:8765/_api/health`.
+   - **Phone access via Tailscale (automatic in `local` mode or failover; skipped in `hybrid`-only mode if not wanted):**
+     1. Check `which tailscale`: if missing, install it automatically (`curl -fsSL https://tailscale.com/install.sh | sh` on Linux).
+     2. Run `sudo tailscale up` and give the owner the one-time login link (`https://login.tailscale.com/a/...`) plus the phone app links (**YOU:** sign in on https://login.tailscale.com/start, install Tailscale on phone, click Connect on the login link, and enable MagicDNS + HTTPS Certificates once at https://login.tailscale.com/admin/dns).
+     3. Run `sudo tailscale serve --bg 8765`, read the resulting `https://<machine>.<tailnet>.ts.net` URL, and rerun step 2 with `--board-url <that url>`.
    - Commit `.kit .agents .story .gitignore` and push.
 4. **Post your first two posts** in one `board_cli.py batch` (`.kit/BOARD.md` § Post; `created_at` from `date -u +%Y-%m-%dT%H:%M:%SZ`):
    `_orchestrator` (`{title: "Ask the orchestrator", column: "info", part: "orchestrator", priority: 3, created_at, body: "Write here for anything that is not about one post."}`) and
