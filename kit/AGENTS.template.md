@@ -9,9 +9,10 @@ This repository uses the local board kit (`.kit/`). Read `.kit/BOARD.md`, `.kit/
    python3 -I .kit/board_server.py --host 0.0.0.0 --port 8765 --preview --embed-mode
    ```
    *(For LAN/Tailscale outside a sandbox, omit `--preview` and pass `--token <secret>`.)*
-3. Post the idempotent runtime welcome once:
+3. Post the idempotent runtime welcome once, **then immediately arm the 30-minute live listener** so the owner's first board comment wakes this turn right away:
    ```bash
    python3 -I .kit/kit.py welcome --runtime {{RUNTIME}} --post
+   python3 -I .kit/board_cli.py comments wait --timeout 1750
    ```
 
 ## 2. Check loop (on `.` or each turn)

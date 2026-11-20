@@ -553,7 +553,7 @@ def main(argv=None):
     elif claude_only:
         print("next: publish .kit/board.html as a claude.ai Artifact, rerun with --board-url <url>, then README § Install (Claude Code Web)")
     elif rt == "arena":
-        print("next: start the embedded preview board server (`python3 -I .kit/board_server.py --embed-mode`), open %s, then post `python3 -I .kit/kit.py welcome --runtime arena --post`" % c.get("board_url", "http://127.0.0.1:8765"))
+        print("next: start the sandbox preview board server (`python3 -I .kit/board_server.py --host 0.0.0.0 --port 8765 --preview --embed-mode`), post `python3 -I .kit/kit.py welcome --runtime arena --post`, and immediately arm the 30-min listener (`python3 -I .kit/board_cli.py comments wait --timeout 1750`)" )
     else:
         print("next: start the local board server (`python3 -I .kit/board_server.py`), open %s, then README step 4" % c.get("board_url", "http://127.0.0.1:8765"))
     return 0

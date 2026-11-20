@@ -240,12 +240,13 @@ For **LMArena (Agent Mode)**, **E2B / Codespaces preview iframes**, **Codex**, *
    - `--preview`: allows `0.0.0.0` without `--token` behind a trusted sandbox reverse proxy, auto-seeds `posts/_orchestrator` on an empty DB, and auto-registers the default watcher (so comments never stall on `no_session`).
    - `--embed-mode`: enables cookie-independent `X-Kit-Token` unlock, 5-second visibility-aware polling, and iframe-aware **Share** fallback (Copy Markdown modal + `GET /_api/export`).
    - *(Outside a trusted sandbox — e.g. on LAN/Tailscale — omit `--preview` and pass `--token <secret>`.)*
-4. **Post the idempotent runtime welcome once** (explains the universal board workflow + Arena's exact capabilities & limits under `_orchestrator` as `welcome-arena-1`):
+4. **Post the idempotent runtime welcome once** (explains the universal board workflow + Arena's exact capabilities & limits under `_orchestrator` as `welcome-arena-1`), **then immediately arm the 30-minute live listener** so the owner can start commenting on the board right away without sending `.` in chat:
    ```bash
    python3 -I .kit/kit.py welcome --runtime arena --post
+   python3 -I .kit/board_cli.py comments wait --timeout 1750
    ```
-5. **Operate the board (one-command inbox + reply + 30-min live listener):**
-   - Check unread owner comments, 👍 likes, and one-tap answers in one call:
+5. **Operate the board (one-command inbox + reply + re-arm listener loop):**
+   - Whenever `comments wait` wakes with a comment (or the owner sends `.` in chat), check unread owner comments, 👍 likes, and one-tap answers in one call:
      ```bash
      python3 -I .kit/board_cli.py inbox
      ```
@@ -253,7 +254,7 @@ For **LMArena (Agent Mode)**, **E2B / Codespaces preview iframes**, **Codex**, *
      ```bash
      python3 -I .kit/board_cli.py reply <post_id> --comment-id <owner_comment_id> --text "..."
      ```
-   - **Live listener during an active turn:** after replying, block on `python3 -I .kit/board_cli.py comments wait --timeout 1750` (~29 min, inside Arena's 1800 s bash limit) so incoming board comments wake you immediately without needing `.` in chat. Once a turn ends, there is no 0-token background wake across turn boundaries — the owner sends `.` in chat to start the next turn.
+   - **Always re-arm the ~30-minute listener** right after replying (`python3 -I .kit/board_cli.py comments wait --timeout 1750`, inside Arena's 1800 s bash cap) unless the owner tells you to stop. Once a wait times out and the turn ends, there is no 0-token background wake across turn boundaries — the owner sends `.` in chat to start the next turn.
    - **Warm Git handoff (when a Git `origin` remote is configured):** run `python3 -I .kit/kit.py receive` before starting and `python3 -I .kit/kit.py publish` when done (atomic batch apply + monotonic `board-seen` merge + conflict rollback). Without remote push credentials, use the board's **Share** button (Copy Markdown / `/_api/export`) or export a git patch/zip.
 
 </details>
