@@ -52,7 +52,9 @@ Searches to run (add your own): project names you find; "continue", "where were 
 5. Which instructions or facts do they repeat, in how many chats (count)?
 6. What did they re-explain, re-check or correct because Claude forgot or contradicted something (list cases)?
 7. Do several chats serve one goal at once; how do results move between them?
-8. Usage limits hit: when, doing what?
+8. Usage limits hit: when, doing what? Separate the plan's limits from the per-turn action budget that forces a manual
+   "continue" (count those messages): the second can be the real cost.
+8b. Re-approvals: how often must they confirm or re-approve the same kind of action, and is it a cost (count them)?
 9. What do they produce, and where does it end up?
 10. What fills a long chat: for the 3 longest chats you can read, characters by source (their pasted material, their own words, your replies, files), and which part is repeated from earlier chats.
 11. Any trace of GitHub, Claude Code, a terminal, an API key, a repository?

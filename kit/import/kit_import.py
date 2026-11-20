@@ -65,6 +65,8 @@ def normalise(p):
                 d[_text(x)] = ""  # a bare name: the name is the id
         ids = d
     p["ids"] = {str(k): _text(v) for k, v in ids.items()}
+    if p.get("pitfalls") and not p.get("lessons"):
+        p["lessons"] = p["pitfalls"]
     try:
         p["priority"] = min(3, max(1, int(p.get("priority") or 2)))
     except (TypeError, ValueError):

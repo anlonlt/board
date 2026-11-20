@@ -1,12 +1,15 @@
 # Export your chats' state for the kit (paste into a NEW claude.ai chat)
 
-Paste everything between the two lines as your first message. Claude reads your past chats itself and asks you
+Paste everything between the two lines as your first message. (Reading this file from GitHub: open it by its latest
+commit, https://github.com/anlonlt/board/commits/main/step0/export-chat.md, not a cached raw link.) Claude reads your past chats itself and asks you
 nothing until the end. It needs chat search on (Settings → Memory → "Search and reference chats"). Nothing is sent anywhere: the result is a
 private claude.ai artifact that your Claude Code session reads into your PRIVATE repository. **The test of a good
 export: a new session could resume each project from it without you re-explaining anything.**
 
 ---
 You are preparing my work's state for the board kit (https://github.com/anlonlt/board). Do it alone, then show me.
+If you read any kit file from GitHub, read it by the latest commit's SHA (`raw.githubusercontent.com/anlonlt/board/<sha>/…`,
+the SHA from https://api.github.com/repos/anlonlt/board/commits/main): the `main` raw link can serve an older copy for minutes.
 
 1. With your chat-history tools (recent chats, chat search), go through my conversations of the last 3 months.
    Page back until nothing more comes; note in `unread` the periods you could not reach. Group them into projects:
@@ -31,7 +34,7 @@ You are preparing my work's state for the board kit (https://github.com/anlonlt/
    - `people`: role -> who holds it (approvers, technicians, accounting), as the chats name them;
    - `tests`: what was verified, and what was never verified;
    - `risks`: known risks and fragile parts;
-   - `lessons`: the traps found (the editors' pitfalls, what fails and what works instead);
+   - `lessons` (or `pitfalls`): the traps found (the editors' quirks, what fails and what works instead);
    - `waiting`: what waits for MY approval or choice: `text`; `priority` 1-3 as above; `options` (2-4 short answers) when it is a choice;
      `default`: what happens if I say nothing, and **when there are options, `default` is one of them, word for word**;
    - `needs_me`: what a session will still need me for (a login, an approval, a file only I have);
@@ -59,9 +62,12 @@ You are preparing my work's state for the board kit (https://github.com/anlonlt/
    "waiting": [{"text": "Use the new layout?", "options": ["New layout", "Old layout"], "default": "Old layout"}],
    "chats": ["2026-11-14 Bulletin 46"]}]}
 ```
-5. Show me the projects in a short table, most urgent first (priority and why, title, next step, what waits for me, what will still need me) and the
-   artifact's link, then check it against the test above: for each project, say what a new session could NOT resume
-   from it, and ask me only for that. Republish the artifact with my corrections.
+5. Check the artifact against the test above: for each project, list what a new session could NOT resume from it.
+   **Do not ask me those in chat.** Put each gap into that project's `waiting` (with `options` and a `default` the
+   session can apply or check by itself, e.g. "Look it up in the list's settings"), so it reaches my board as a one-tap
+   question. Ask me in chat ONLY what no session could find or decide without me (a login, a choice only I can make).
+   Then show me the projects in a short table, most urgent first (priority and why, title, next step, what waits for
+   me, what will still need me) and the artifact's link; republish it with any correction I give.
 6. Then tell me, in one line, what to do in Claude Code. If I have a private repository with the kit installed:
    "Import my chats' state: read the artifact <link> and follow the kit's README § Import." If not (nothing in my
    chats shows one): create a private repository at https://github.com/new (Visibility: Private), open

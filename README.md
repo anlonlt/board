@@ -25,7 +25,7 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
 
 **For Claude, in the project's session.** Do the steps in order; report each step's outcome in one line.
 
-1. **Get the kit** (public repository, no token): `git clone --depth 1 https://github.com/anlonlt/board /tmp/board-kit`
+1. **Get the kit** (public repository, no token; always a fresh `git clone`/`git pull`, never a cached `raw.githubusercontent.com/.../main/...` link: it can serve an older copy for minutes): `git clone --depth 1 https://github.com/anlonlt/board /tmp/board-kit`
    (if `/tmp/board-kit` exists, `git -C /tmp/board-kit pull`).
 2. **Install it** into the project root: `python3 -I /tmp/board-kit/install.py . --project "<the project's name>"
    --talk "<the language the owner writes to you in>"` (add `--main-branch <name>` when your sessions start from another branch than `main`: the branch the clerk will read; usually GitHub's default).

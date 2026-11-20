@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory() as d:
            "ids": {"Liste Demandes": "liste SharePoint, https://x.sharepoint.com/Lists/Demandes"},
            "technical": ["Statut = field_3"], "accounts": ["le flux tourne sous le compte de service"],
            "people": {"approbateur": "la direction"}, "tests": ["jamais verifie: l'archive"], "risks": ["titre avec /"],
-           "lessons": ["coller en texte brut"], "needs_me": ["ma connexion"]}]}
+           "pitfalls": ["coller en texte brut"], "needs_me": ["ma connexion"]}]}
     f4 = os.path.join(d, "s4.json"); json.dump(st4, open(f4, "w"))
     subprocess.run([sys.executable, "-I", os.path.join(d, ".kit", "kit_import.py"), f4, "--out", os.path.join(d, "o4")], capture_output=True)
     s4 = open(os.path.join(d, ".story", "state", "soutien.md")).read() if os.path.exists(os.path.join(d, ".story", "state", "soutien.md")) else ""
