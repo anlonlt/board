@@ -248,6 +248,14 @@ with tempfile.TemporaryDirectory() as tmp:
         bulk_lim = json.loads(urllib.request.urlopen(url + "/_api/db/bulk?limit=10").read().decode("utf-8"))
         check("GET /_api/db/<coll> without limit returns all >1000 docs",
               len(bulk_all["docs"]) == 1005 and bulk_all["next_cursor"] is None)
+        rc_b, out_b, _ = cli(url, "list", "bulk")
+        b_res = json.loads(out_b) if rc_b == 0 else {}
+        check("board_cli list without --limit returns all >1000 docs",
+              rc_b == 0 and len(b_res.get("docs") or []) == 1005 and b_res.get("next_cursor") is None)
+        rc_bp, out_bp, _ = cli(url, "list", "bulk", "--limit", "400", "--all")
+        bp_res = json.loads(out_bp) if rc_bp == 0 else {}
+        check("board_cli list --limit 400 --all paginates through all >1000 docs",
+              rc_bp == 0 and len(bp_res.get("docs") or []) == 1005 and bp_res.get("next_cursor") is None)
         check("GET /_api/db/<coll>?limit=10 honors explicit limit",
               len(bulk_lim["docs"]) == 10 and bulk_lim["next_cursor"] == "10")
 

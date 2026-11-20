@@ -5,8 +5,8 @@
 <h1 align="center">board</h1>
 
 <p align="center">
-  <strong>One UI for everything your AI agents build. One Git store. Zero lost context.</strong><br />
-  A zero-dependency workflow kit — live mobile-ready board, persistent <code>.story/</code> memory, automatic context-limit handovers, safety hooks, and a one-word launcher — backed entirely by your own private Git repository. Works with <strong>agy</strong> and <strong>Claude Code</strong>, across desktop, phone, and cloud.
+  <strong>One UI for everything your AI agents build. Local live board + private Git backup. Zero lost context.</strong><br />
+  A zero-dependency workflow kit — live mobile-ready board, persistent <code>.story/</code> memory, automatic context-limit handovers, safety hooks, and a one-word launcher — with a local SQLite live store backed up to your own private Git repository. Works with <strong>agy</strong> and <strong>Claude Code</strong>, across desktop, phone, and cloud.
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
   <img alt="Clients" src="https://img.shields.io/badge/works%20with-agy%20%7C%20Claude%20Code-e8894a?style=flat-square" />
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20Mobile-2b6c9e?style=flat-square" />
   <img alt="Private by Default" src="https://img.shields.io/badge/privacy-your%20private%20repo-6a4fb3?style=flat-square" />
-  <img alt="Tests" src="https://img.shields.io/badge/test%20suites-11%20passing-2f7a4f?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/test%20suites-12%20passing-2f7a4f?style=flat-square" />
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@ Chat windows break down as soon as a real project lasts more than a day — **ev
 - **Approvals tie you to your desk** — you can't review a report, inspect a screenshot, or unblock an agent from your phone in two seconds.
 - **Unchecked agents lose work** — `rm -rf`, `git reset --hard`, force pushes, stranded branches, or leaked `.env` files.
 
-`board` fixes all five with **one Git repository as the single store** and **zero external dependencies** (pure Python 3 stdlib + a single-file HTML board).
+`board` fixes all five with **a local SQLite live store backed up to your private Git repository** and **zero external dependencies** (pure Python 3 stdlib + a single-file HTML board with zero third-party network requests).
 
 ---
 
@@ -91,6 +91,12 @@ flowchart LR
     Git -.->|"git_watch.py / --seed-from-mirror"| Inbox
 ```
 
+### Durability & Backup Cadence
+
+- **Live store (local SQLite):** `.kit/board_data/board.db` (and uploaded blobs in `.kit/board_data/blobs/`, gitignored) is the live store for instant reads, writes, and SSE updates.
+- **Git backup / mirror (`board-mirror`):** updated on `kit.py sync` + `kit.py push` — not on every individual HTTP write. Sync and push at every milestone, handover, and end of session (or on a recurring schedule) so the mirror stays fresh; any edits made after the last `kit.py sync` live only in `.kit/board_data/board.db` until synced. On a new machine or after DB loss, `--seed-from-mirror` restores the live DB from `board-mirror`.
+- **Committed memory (`.story/`):** committed directly to your project branch at every save point.
+
 ---
 
 ## Measured in Production
@@ -105,7 +111,7 @@ Real numbers measured on [anlonlt/harmonize](https://github.com/anlonlt/harmoniz
 | **Context saved checking open comments** (`kit.py open`) | **~120,000 tokens → 290 characters** |
 | **Card rebuild savings** (`kit-cards` via `kit.py`) | **−20% tokens** per run (124,535 → 99,354 tokens) |
 | **Startup memory footprint** (`SessionStart`) | **22 workstreams + 31 waiting items** served in **6.6k chars** (instead of 1.3 MB of docs) |
-| **Automated verification** | **11 Python test suites, 0 failures** (+ 20/20 mutation tests caught on `kit.py`) |
+| **Automated verification** | **12 Python test suites, 0 failures** (+ browser Playwright test + 20/20 mutation tests on `kit.py`) |
 
 ---
 
@@ -135,7 +141,11 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
 **For the installing agent, in the project's session.** Do the steps in order; report each step's outcome in one line.
 
 0. **Step 0 first, always:** run the survey (`step0/survey-code.md` or `step0/survey-chat.md`). Show its report to the owner; their yes or changes decide the parts. `install.py` refuses a first install without `--survey <path>` (or `--no-survey "<why>"`).
-1. **Get the kit:** `git clone --depth 1 -b agy-local https://github.com/anlonlt/board /tmp/board-kit` (if `/tmp/board-kit` exists, `git -C /tmp/board-kit pull`).
+1. **Get the kit (pin a reviewed commit or tag):** `install.py` copies executable hooks into your repository, so pin a reviewed commit SHA or release tag rather than blindly tracking a mutable branch:
+   ```bash
+   git clone https://github.com/anlonlt/board /tmp/board-kit
+   git -C /tmp/board-kit checkout <reviewed-commit-sha-or-tag>   # e.g. latest reviewed commit on agy-local
+   ```
 2. **Install it** into the project root:
    ```bash
    python3 -I /tmp/board-kit/install.py . \
@@ -167,7 +177,8 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
    - Run the orchestrator with `.kit/orchestrator.md`: it writes its conversation ID into `_orchestrator`, builds "Where we are" via `kit-cards`, and posts its welcome under `_orchestrator` (including the one-word launch command, phone links, and unattended mode).
 6. **YOU, the first comment:** open your phone or local board URL, open `KIT-installed`, write `"test"` and tap **Send comment**. The clerk wakes immediately, passes it to this session via `send_message`, marks it "✓ Seen" and replies "Passed to …". Answer it under the post (`board_cli.py set comments ...`).
 7. **The board's copy in git** (`.kit/ORCHESTRATOR.md` § 3):
-   `python3 -I .kit/kit.py init`; `T0=$(date -u +%Y-%m-%dT%H:%M:%SZ)`; `python3 -I .kit/board_cli.py list posts --limit 1000 --out-dir /tmp/kd`; `python3 -I .kit/board_cli.py list comments --limit 1000 --out-dir /tmp/kd`; `python3 -I .kit/kit.py sync /tmp/kd --at "$T0" --full --commit`; `python3 -I .kit/kit.py post KIT-installed`; `python3 -I .kit/kit.py push`.
+   `python3 -I .kit/kit.py init`; `T0=$(date -u +%Y-%m-%dT%H:%M:%SZ)`; `python3 -I .kit/board_cli.py list posts --out-dir /tmp/kd`; `python3 -I .kit/board_cli.py list comments --out-dir /tmp/kd`; `python3 -I .kit/kit.py sync /tmp/kd --at "$T0" --full --commit`; `python3 -I .kit/kit.py post KIT-installed`; `python3 -I .kit/kit.py push`.
+   *(Omitting `--limit` fetches every post and comment without truncating boards over 1,000 comments; pass `--limit N --all` to paginate explicitly.)*
 8. **Report**, then end the setup: `python3 -I /tmp/board-kit/install.py . --setup-done`, commit, push. Update `KIT-installed` (`board_cli.py update`) with each step's outcome.
 9. **Tell the person what now**, in their language (`language.talk`): their one-word terminal command (e.g. `harmonize`), their phone & local board URLs, what runners are ready, and how to import existing history.
 
@@ -177,7 +188,7 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
 Open a Claude Code Web session on **your** repository (`https://claude.ai/code`) and run:
 
 0. **Step 0 first:** run `step0/survey-code.md` or `step0/survey-chat.md` and show the report to the owner.
-1. **Get the kit:** `git clone --depth 1 -b agy-local https://github.com/anlonlt/board /tmp/board-kit`
+1. **Get the kit (pin a reviewed commit or tag):** `git clone https://github.com/anlonlt/board /tmp/board-kit && git -C /tmp/board-kit checkout <reviewed-commit-sha-or-tag>`
 2. **Install with `--runtime claude`:**
    ```bash
    python3 -I /tmp/board-kit/install.py . \
@@ -225,7 +236,13 @@ Not all work lives in code. Each project's `.story/state/<project>.md` says wher
 <details>
 <summary><strong>Updating an existing installation</strong></summary>
 
-Pull the latest kit (`git -C /tmp/board-kit pull`) and rerun `python3 -I /tmp/board-kit/install.py .` with no options:
+Fetch updates, review the incoming diff, and check out a pinned commit SHA or tag (rather than blindly pulling a mutable branch):
+```bash
+git -C /tmp/board-kit fetch origin
+git -C /tmp/board-kit log --oneline HEAD..origin/agy-local
+git -C /tmp/board-kit checkout <reviewed-commit-sha-or-tag>
+python3 -I /tmp/board-kit/install.py .
+```
 - Keeps `.kit/config.json` and every file you customized (`KEPT` lists them).
 - Updates untouched kit files and merges any new hooks cleanly.
 - `.kit/manifest.json` (`_kit_commit`) records the exact kit commit installed.
@@ -246,12 +263,12 @@ Pull the latest kit (`git -C /tmp/board-kit pull`) and rerun `python3 -I /tmp/bo
 | `scripts/mirror_holes.py` | Audits a board dump for fields written later without stamps |
 | `scripts/token_probe.py` | Measures exact token cost of a read from transcript usage |
 
-Run all 11 test suites:
+Run all 12 test suites:
 ```bash
 for t in test_install.py test_install_bd11.py kit/board/test_board_local.py \
-         kit/test_git_watch.py kit/import/test_kit_import.py kit/board/test_kit_cards.py \
-         kit/test_end_session.py kit/hooks/test_hooks.py kit/clerk/test_clerk_pending.py \
-         scripts/test_kit.py scripts/test_survey_scripts.py; do
+         kit/board/test_strings.py kit/test_git_watch.py kit/import/test_kit_import.py \
+         kit/board/test_kit_cards.py kit/test_end_session.py kit/hooks/test_hooks.py \
+         kit/clerk/test_clerk_pending.py scripts/test_kit.py scripts/test_survey_scripts.py; do
   python3 -I "$t"
 done
 ```

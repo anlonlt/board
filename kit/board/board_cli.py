@@ -2,7 +2,7 @@
 """CLI client for the local agy board server (replaces ArtifactData, ArtifactComments, Artifact).
 
     python3 -I .kit/board_cli.py get posts <id> [--out-dir /tmp/kd]
-    python3 -I .kit/board_cli.py list posts [--limit 1000] [--cursor C] [--out-dir /tmp/kd]
+    python3 -I .kit/board_cli.py list posts [--limit N] [--cursor C] [--all] [--out-dir /tmp/kd]
     python3 -I .kit/board_cli.py query comments --where '[["post_id","==","P1"]]' [--out-dir /tmp/kd]
     python3 -I .kit/board_cli.py set posts <id> (--data '{...}' | --file f.json) [--if-version N]
     python3 -I .kit/board_cli.py update posts <id> (--data '{...}' | --file f.json) [--if-version N]
@@ -111,8 +111,9 @@ def main(argv=None):
 
     p = sub.add_parser("list")
     p.add_argument("collection")
-    p.add_argument("--limit", type=int, default=1000)
+    p.add_argument("--limit", type=int, default=None, help="Max docs per page (default: all docs)")
     p.add_argument("--cursor", default="0")
+    p.add_argument("--all", action="store_true", help="Follow pagination to fetch all docs")
     p.add_argument("--out-dir")
 
     p = sub.add_parser("query")
@@ -120,8 +121,9 @@ def main(argv=None):
     p.add_argument("--where", default="[]")
     p.add_argument("--order-by", default=None)
     p.add_argument("--dir", default="asc")
-    p.add_argument("--limit", type=int, default=1000)
+    p.add_argument("--limit", type=int, default=None, help="Max docs per page (default: all docs)")
     p.add_argument("--cursor", default="0")
+    p.add_argument("--all", action="store_true", help="Follow pagination to fetch all docs")
     p.add_argument("--out-dir")
 
     p = sub.add_parser("set")
@@ -197,23 +199,38 @@ def main(argv=None):
         return 0
 
     if a.cmd in ("list", "query"):
-        qs = {"limit": str(a.limit), "cursor": str(a.cursor)}
-        if a.cmd == "query":
-            qs["where"] = a.where
-            if a.order_by:
-                qs["order_by"] = a.order_by
-                qs["dir"] = a.dir
-        path = "/_api/db/%s?%s" % (urllib.parse.quote(a.collection), urllib.parse.urlencode(qs))
-        res = call("GET", path)
-        docs = res.get("docs") or []
+        fetch_all = a.all or a.limit is None
+        docs = []
+        cursor = str(a.cursor)
+        res = {}
+        while True:
+            qs = {"cursor": cursor}
+            if a.limit is not None:
+                qs["limit"] = str(a.limit)
+            if a.cmd == "query":
+                qs["where"] = a.where
+                if a.order_by:
+                    qs["order_by"] = a.order_by
+                    qs["dir"] = a.dir
+            path = "/_api/db/%s?%s" % (urllib.parse.quote(a.collection), urllib.parse.urlencode(qs))
+            res = call("GET", path)
+            docs.extend(res.get("docs") or [])
+            nxt = res.get("next_cursor")
+            if not fetch_all or not nxt:
+                break
+            cursor = str(nxt)
+        next_cursor = None if fetch_all else res.get("next_cursor")
         if a.out_dir:
             summary = []
             for d in docs:
                 p = write_out(a.out_dir, a.collection, d["id"], d["data"])
                 summary.append({"id": d["id"], "version": d["version"], "path": p})
-            print(json.dumps({"count": len(summary), "docs": summary, "next_cursor": res.get("next_cursor")}))
+            print(json.dumps({"count": len(summary), "docs": summary, "next_cursor": next_cursor}))
         else:
-            print(json.dumps(res, ensure_ascii=False))
+            out_obj = dict(res)
+            out_obj["docs"] = docs
+            out_obj["next_cursor"] = next_cursor
+            print(json.dumps(out_obj, ensure_ascii=False))
         return 0
 
     if a.cmd == "set":
