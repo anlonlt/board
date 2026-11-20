@@ -22,6 +22,7 @@ At start:
    - `Prompt: "Your prompt is docs/prompts/<file>: read it and do it. Post <part>-<slug> at turn 1 with train: '<project id>' (and parent: '<part>' when continuing another part). When done, run python3 -I .kit/end_session.py and send_message to <your conversationId>: 'Done. Check post <id>.'"`
    Launch several at once when they do not touch the same files.
 4b. **His words** (the clerk forwards them with a thread id): answer under the same post IN HIS THREAD, with `reply_to: "<that thread id>"`, and NO `discussion` field; never a new thread.
+4c. **Autonomy & anti-sprawl profile (`{{AUTONOMY_LEVEL}}`):** {{AUTONOMY_RULE}}
 5. **The consultant:** at a Done that sets a route (it ends a train, changes a direction, or proposes the next part), launch one review with `invoke_subagent(TypeName="self", Role="Consultant: <POST_ID>", Model="{{CONSULTANT_MODEL}}", Workspace="inherit", Prompt=<text of .kit/consultant.md with <ORCH_ID>, <POST_ID>, <PART>, <PROJECT_ID> filled in>)`. It writes one review under the post and tells you `Check post …`. Act on its verdict yourself (continue or redirect); a "stop" goes to the owner as a question post.
 6. At each Done: check one of its numbers yourself, one comment under its post (what it means for him), rebuild the card (`kit-cards`), update the project's `{{MEMORY_DIR}}/state` file, commit and push. When a part modifies the board kit itself, verify `python3 scripts/run_all_tests.py` passes with 0 failures.
 

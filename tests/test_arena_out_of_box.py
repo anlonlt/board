@@ -345,6 +345,77 @@ class TestArenaOutOfBox(unittest.TestCase):
         self.assertGreater(store.auto_sync_count, 0)
         self.assertTrue(os.path.isfile(os.path.join(mirror_dir, "board", "posts", "P-autosync.json")))
 
+    def test_step0_scan_palettes_autonomy_and_twrp_wizard_headless(self):
+        with tempfile.TemporaryDirectory() as d:
+            home_dir = os.path.join(d, "home")
+            proj_a = os.path.join(home_dir, "proj_alpha")
+            proj_b = os.path.join(home_dir, "proj_beta")
+            os.makedirs(os.path.join(proj_a, ".git"), exist_ok=True)
+            os.makedirs(os.path.join(proj_b, ".git"), exist_ok=True)
+            os.makedirs(os.path.join(proj_a, ".board", "memory", "state"), exist_ok=True)
+
+            # Seed CSS with custom brand color #ff3366 and awaiting decisions
+            with open(os.path.join(proj_a, "theme.css"), "w", encoding="utf-8") as fh:
+                fh.write(":root { --brand: #ff3366; --accent: #00b4d8; }\n")
+            with open(os.path.join(proj_a, ".board", "memory", "awaits.md"), "w", encoding="utf-8") as fh:
+                fh.write("# Awaits\n- [a] Q1\n- [a] Q2\n- [a] Q3\n- [a] Q4\n- [a] Q5\n")
+            for i in range(6):
+                with open(os.path.join(proj_a, ".board", "memory", "state", "w%d.md" % i), "w", encoding="utf-8") as fh:
+                    fh.write("# W%d\nNext: step %d\nPriority: 1\n" % (i, i))
+
+            # Seed a synthetic agy transcript with high tool-per-turn ratio, short approvals, and tangents
+            log_dir = os.path.join(home_dir, ".gemini", "antigravity-cli", "brain", "conv-1", ".system_generated", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            events = [
+                {"type": "USER_INPUT", "source": "USER_EXPLICIT", "content": "<USER_REQUEST>Build dark mode UI with #ff3366</USER_REQUEST>"},
+                {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "a"}, {"name": "b"}, {"name": "c"}, {"name": "d"}]},
+                {"type": "USER_INPUT", "source": "USER_EXPLICIT", "content": "<USER_REQUEST>yes</USER_REQUEST>"},
+                {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "a"}, {"name": "b"}, {"name": "c"}, {"name": "d"}]},
+                {"type": "USER_INPUT", "source": "USER_EXPLICIT", "content": "<USER_REQUEST>also i wonder what if we add another feature</USER_REQUEST>"},
+                {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "a"}, {"name": "b"}, {"name": "c"}, {"name": "d"}]},
+            ]
+            with open(os.path.join(log_dir, "transcript.jsonl"), "w", encoding="utf-8") as fh:
+                for ev in events:
+                    fh.write(json.dumps(ev) + "\n")
+
+            # 1. Run step0_scan.py
+            step0_py = str(ROOT / "scripts" / "step0_scan.py")
+            out_json = os.path.join(d, "step0.json")
+            r_scan = subprocess.run(
+                [sys.executable, "-I", step0_py, proj_a, "--home", home_dir, "--out-json", out_json],
+                capture_output=True, text=True, check=True,
+            )
+            prof = json.loads(r_scan.stdout)
+            self.assertGreaterEqual(len(prof["discovered_projects"]), 2)
+            self.assertEqual(len(prof["palettes"]), 3)
+            self.assertEqual(prof["palettes"][0]["id"], "project-inferred")
+            self.assertEqual(prof["palettes"][0]["light"]["ember"], "#ff3366")
+            self.assertEqual(prof["autonomy_assessment"]["recommended_level"], "full_auto")
+
+            # 2. Run twrp_wizard.py --headless (via install.py --tui shortcut or direct)
+            twrp_py = str(ROOT / "scripts" / "twrp_wizard.py")
+            env = dict(os.environ, KIT_BIN_DIR=os.path.join(d, "bin"))
+            r_wiz = subprocess.run(
+                [sys.executable, "-I", twrp_py, proj_a, "--step0-json", out_json, "--headless", "--runtime", "agy"],
+                capture_output=True, text=True, env=env, check=True,
+            )
+            self.assertIn("TWRP-STYLE STEP 0 BOARD INSTALLER", r_wiz.stdout)
+            with open(os.path.join(proj_a, ".kit", "config.json"), encoding="utf-8") as fh:
+                cfg = json.load(fh)
+            self.assertEqual(cfg["kit"]["autonomy"]["level"], "full_auto")
+            self.assertTrue(cfg["kit"]["autonomy"]["auto_defaults"])
+            self.assertTrue(cfg["kit"]["autonomy"]["carry_on"])
+            self.assertEqual(cfg["kit"]["palette"]["id"], "project-inferred")
+
+            with open(os.path.join(proj_a, ".kit", "board.html"), encoding="utf-8") as fh:
+                bhtml = fh.read()
+            self.assertIn("--ember: #ff3366", bhtml)
+
+            with open(os.path.join(proj_a, ".kit", "orchestrator.md"), encoding="utf-8") as fh:
+                orch_md = fh.read()
+            self.assertIn("full_auto", orch_md)
+            self.assertIn("default_option", orch_md)
+
 
 if __name__ == "__main__":
     unittest.main()

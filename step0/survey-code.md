@@ -6,8 +6,9 @@ from `usage`, never at 4 characters per token), the repository, and a board dump
 `scripts/`, and it can open a separate review session itself. Harmonize's own survey (WF1 and its review CR-WF1) is
 the model: every "unknown" the first pass leaves is worked on by a second, independent pass.
 
-**How to use:** start a Claude Code session at https://claude.ai/code on the project's repository, with this kit
-(`anlonlt/board`, public) cloned beside it or attached read-only, and paste everything between the two lines.
+**How to use:**
+- **On a local CLI (`agy`, Claude Code CLI, generic CLI):** run `python3 -I scripts/step0_scan.py . --out-report survey/$(date -u +%Y-%m-%d)/report.md` (which scans local `~/.gemini/antigravity-cli/brain/*/transcript.jsonl` and `~/.claude/projects/` logs, discovers sibling projects, measures autonomy/handholding vs feature sprawl, and infers 3 colour palettes), or launch the clickable TWRP-style terminal GUI wizard directly with `python3 -I install.py . --tui`.
+- **On Claude Code on the web:** start a session at https://claude.ai/code on the project's repository, with this kit (`anlonlt/board`, public) cloned beside it or attached read-only, and paste everything between the two lines.
 
 ---
 
@@ -42,6 +43,8 @@ would settle it). Never estimate tokens from characters; when only characters ex
    environment's connectors, keys, network), `computer` (the user's own machine: Remote Control, the desktop app, local
    files, Claude in Chrome), `chat` (claude.ai chats and their connectors), `owner` (what only they can do), `scheduled`
    (`list_triggers`). For each: what is set up, what is not, and which projects need it.
+11. **Autonomy, Follow-Through & Sprawl Profile:** from past session transcripts, measure (a) tool calls per user turn and the percentage of user messages that are short handholding confirmations (`"yes"`, `"continue"`, `"ok"`), and (b) completion follow-through vs feature sprawl (`"also"`, `"by the way"`, `"what if we..."`) and awaiting decisions in `awaits.md`. Recommend one of three autonomy profiles: `full_auto` (auto-spawn Consultant, act on continue/redirect, apply `default_option` and carry on continuously when decisions wait, park side-tangents into memory), `balanced` (auto-spawn Consultant + 1-tap 👍), or `gated`.
+12. **3 Inferred Colour Palettes:** from the repository's stylesheets/theme files and any aesthetic preferences or dark/light mode hints in the logs, infer 3 distinct colour palettes for the board (`project-inferred`, `ember-classic`, `oled-cyber` / `forest-sage`) with light and dark CSS variables.
 
 **Part 2: the second pass.** Launch a fresh subagent (or, better, Part 3's session) with the DATA (the files,
 dumps, pages), not your conclusions: "recount every number, find what this missed, settle each unknown". List what

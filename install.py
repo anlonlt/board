@@ -60,6 +60,15 @@ DEFAULT_KIT = {
               "part": {"model": "inherit", "effort": "medium"},
               "consultant": {"model": "pro", "effort": "medium"},
               "cards": {"model": "flash", "effort": "low"}},
+    "autonomy": {
+        "level": "balanced",
+        "auto_consultant": True,
+        "auto_defaults": False,
+        "carry_on": False,
+        "park_tangents": True,
+    },
+    "scope": "single",
+    "palette": None,
     "main_branch": "main",
     "trunk_push": False,
 }
@@ -185,6 +194,31 @@ def load_config(t, a):
         k["memory_dir"] = ".story" if os.path.isdir(os.path.join(t, ".story")) else ".board/memory"
     if a.notify_url:
         k["notify_url"] = a.notify_url
+    if getattr(a, "scope", None):
+        k["scope"] = a.scope
+    if getattr(a, "autonomy", None):
+        lvl = a.autonomy
+        k["autonomy"] = {
+            "level": lvl,
+            "auto_consultant": lvl in ("full_auto", "balanced"),
+            "auto_defaults": lvl == "full_auto",
+            "carry_on": lvl == "full_auto",
+            "park_tangents": lvl in ("full_auto", "balanced"),
+        }
+    if getattr(a, "palette_json", None):
+        try:
+            k["palette"] = json.loads(a.palette_json)
+        except ValueError:
+            raise SystemExit("install: --palette-json is not valid JSON")
+    elif getattr(a, "palette", None):
+        sys.path.insert(0, os.path.join(KIT, "scripts"))
+        import step0_scan as _s0
+        if a.palette in _s0.BUILTIN_PALETTES:
+            k["palette"] = json.loads(json.dumps(_s0.BUILTIN_PALETTES[a.palette]))
+        else:
+            prof = _s0.build_step0_profile(t)
+            matched = next((p for p in prof.get("palettes", []) if p["id"] == a.palette), None)
+            k["palette"] = matched or (prof.get("palettes") or [None])[0]
     return c
 
 
@@ -220,12 +254,72 @@ def slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "project"
 
 
+def render_vars(text, mapping):
+    for k, v in mapping.items():
+        text = text.replace("{{%s}}" % k, v)
+    return text
+
+
+def apply_palette(page_html, palette):
+    """Apply an inferred Step 0 colour palette (light + dark CSS variables) to board.html."""
+    if not isinstance(palette, dict):
+        return page_html
+    light = palette.get("light") or {}
+    dark = palette.get("dark") or {}
+    if not light or not dark:
+        return page_html
+
+    def _fmt_vars(d):
+        keys = ("bg", "surface", "sunk", "ink", "muted", "line", "ember", "ember-ink", "good", "warn", "todo", "question", "info", "done")
+        pairs = ["--%s: %s" % (k, d[k]) for k in keys if d.get(k)]
+        return "; ".join(pairs) + ";"
+
+    light_block = (
+        ":root {\n  " + _fmt_vars(light) + "\n"
+        "  --scrim: rgba(18, 24, 38, .55);\n"
+        '  --display: "Alegreya", Georgia, "Times New Roman", serif;\n'
+        '  --text: "Alegreya Sans", "Segoe UI", system-ui, sans-serif;\n'
+        '  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;\n}'
+    )
+    dark_vars = _fmt_vars(dark)
+    dark_media_block = (
+        '@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {\n  '
+        + dark_vars + "\n  --scrim: rgba(0, 0, 0, .6); color-scheme: dark; } }"
+    )
+    dark_attr_block = (
+        ':root[data-theme="dark"] {\n  '
+        + dark_vars + "\n  --scrim: rgba(0, 0, 0, .6); color-scheme: dark; }"
+    )
+
+    page_html = re.sub(r":root\s*\{\s*--bg:.*?\n\}", light_block, page_html, count=1, flags=re.S)
+    page_html = re.sub(r'@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root:not\(\[data-theme="light"\]\)\s*\{.*?\}\s*\}', dark_media_block, page_html, count=1, flags=re.S)
+    page_html = re.sub(r':root\[data-theme="dark"\]\s*\{.*?\}', dark_attr_block, page_html, count=1, flags=re.S)
+    return page_html
+
+
 def render(text, c):
     k = c["kit"]
     roles = k.get("roles") or {}
     role_cfg = lambda r: roles.get(r, DEFAULT_KIT["roles"][r])
     orch_limit_k = str((k.get("orchestrator") or {}).get("context_limit_k", DEFAULT_KIT["orchestrator"]["context_limit_k"]))
     clerk_limit_k = str((k.get("clerk") or {}).get("context_limit_k", DEFAULT_KIT["clerk"]["context_limit_k"]))
+    autonomy = k.get("autonomy") or DEFAULT_KIT["autonomy"]
+    auto_level = autonomy.get("level") or "balanced"
+    if autonomy.get("auto_defaults") or autonomy.get("carry_on"):
+        autonomy_rule = (
+            "Continuous autonomous mode (`full_auto` — Step 0 anti-sprawl & auto-defaults active): "
+            "every `question` post MUST include `default_option`; when a decision can proceed safely with its `default_option`, "
+            "apply `default_option` and carry on continuously without stalling the train (note the applied default at the top of the post so the owner can override with one tap). "
+            "If the owner mentions a new side-idea or feature tangent, record it in `{{MEMORY_DIR}}/state/<new-workstream>.md` (P2/P3) instead of derailing the active P1 train."
+        )
+    elif auto_level == "gated":
+        autonomy_rule = (
+            "Hands-on gated mode (`gated`): wait for explicit owner approval on every `question` or `todo` card before launching new parts or applying choices."
+        )
+    else:
+        autonomy_rule = (
+            "Balanced autonomy (`balanced`): launch parallel parts on a 👍 on your proposal, auto-spawn the Consultant at route-setting Done milestones, and park new feature tangents in `{{MEMORY_DIR}}/state/` so active trains stay focused."
+        )
     vals = {"PROJECT": c["project"], "SLUG": slug(c["project"]),
             "RUNTIME": k.get("runtime") or "agy",
             "CMD": k.get("cmd") or "./.kit/up",
@@ -244,7 +338,9 @@ def render(text, c):
             "PART_MODEL": role_cfg("part")["model"], "PART_EFFORT": role_cfg("part")["effort"],
             "CONSULTANT_MODEL": role_cfg("consultant")["model"],
             "CONS_MODEL": role_cfg("consultant")["model"], "CONS_EFFORT": role_cfg("consultant")["effort"],
-            "CARDS_MODEL": role_cfg("cards")["model"]}
+            "CARDS_MODEL": role_cfg("cards")["model"],
+            "AUTONOMY_LEVEL": auto_level,
+            "AUTONOMY_RULE": render_vars(autonomy_rule, {"MEMORY_DIR": k.get("memory_dir") or ".board/memory"})}
     for n, v in vals.items():
         text = text.replace("{{%s}}" % n, v)
     left = re.findall(r"\{\{[A-Z_]+\}\}", text)
@@ -366,6 +462,11 @@ def main(argv=None):
     ap.add_argument("--no-cmd", action="store_true", help="skip installing the ~/.local/bin/<cmd> shortcut")
     ap.add_argument("--memory-dir", help="memory directory relative to repo root (default: .story if present, else .board/memory)")
     ap.add_argument("--notify-url", help="optional phone push webhook URL (e.g. https://ntfy.sh/<topic>)")
+    ap.add_argument("--palette", help="Step 0 inferred colour palette id (e.g. project-inferred, ember-classic, oled-cyber, forest-sage)")
+    ap.add_argument("--palette-json", help="Custom Step 0 colour palette JSON object (light & dark CSS variables)")
+    ap.add_argument("--autonomy", choices=["full_auto", "balanced", "gated"], help="Step 0 autonomy & anti-sprawl profile")
+    ap.add_argument("--scope", choices=["single", "all"], help="Step 0 board scope: single project or all discovered projects")
+    ap.add_argument("--tui", "--wizard", dest="tui", action="store_true", help="Launch TWRP-style clickable terminal GUI installer seeded by Step 0 scan")
     ap.add_argument("--bootstrap", action="store_true", help="1-command bootstrap: pre-seed _orchestrator & KIT-installed into local SQLite DB")
     ap.add_argument("--no-bootstrap", action="store_true", help="skip default SQLite bootstrap on arena/generic installs")
     ap.add_argument("--demo", action="store_true", help="seed sample memory, 4-lane demo posts, _dashboard, and _trains for instant evaluation")
@@ -383,6 +484,21 @@ def main(argv=None):
     t = os.path.abspath(a.target)
     if not os.path.isdir(t):
         raise SystemExit("install: %s is not a directory" % t)
+    if a.tui:
+        sys.path.insert(0, os.path.join(KIT, "scripts"))
+        import twrp_wizard as _tw
+        wiz_args = [t]
+        if a.palette:
+            wiz_args.extend(["--palette", a.palette])
+        if a.autonomy:
+            wiz_args.extend(["--autonomy", a.autonomy])
+        if a.runtime:
+            wiz_args.extend(["--runtime", a.runtime])
+        if a.scope:
+            wiz_args.extend(["--scope", a.scope])
+        if a.dry_run:
+            wiz_args.append("--dry-run")
+        return _tw.main(wiz_args)
     first = not os.path.exists(os.path.join(t, ".kit", "config.json"))
     if first and not (a.survey or a.no_survey):
         raise SystemExit("install: step 0 first. Run the survey (step0/survey-code.md or step0/survey-chat.md) and pass "
@@ -413,6 +529,8 @@ def main(argv=None):
     if not claude_only:
         ins.put(".kit/git_watch.py", rd("kit", "git_watch.py"))
         ins.put(".kit/up", rd("kit", "up"))
+        ins.put(".kit/step0_scan.py", rd("scripts", "step0_scan.py"))
+        ins.put(".kit/twrp_wizard.py", rd("scripts", "twrp_wizard.py"))
     for h in HOOKS:
         if parts["board"] or h in MEMORY_HOOKS:
             if want_agy:
@@ -429,6 +547,8 @@ def main(argv=None):
             ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))
             ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
         page = rd("kit", "board", "board.template.html")
+        if c["kit"].get("palette"):
+            page = apply_palette(page, c["kit"]["palette"])
         sp = os.path.join(t, ".kit", "strings.json")
         if os.path.exists(sp):
             tr = json.load(open(sp, encoding="utf-8"))

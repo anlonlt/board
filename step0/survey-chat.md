@@ -66,6 +66,8 @@ Searches to run (add your own): project names you find; "continue", "where were 
     Chrome, the desktop app, files on their computer, their phone, Claude Code, scheduled tasks, an API. These become
     the kit's runners (`cloud`, `computer`, `chat`, `owner`, `scheduled`; the kit's README § Runners): say for each
     what is set up and what is not.
+13. **Autonomy, Follow-Through & Feature Sprawl:** from the chats, measure how much autonomy they give the agent vs handholding (short `"yes"` / `"continue"` turns), and whether they follow a single thread to completion or frequently branch into new ideas/tangents with a growing backlog of decisions awaiting them. Recommend whether setting automatic defaults (`default_option`) and carrying on continuously (`full_auto`) until told otherwise will prevent bottlenecks.
+14. **3 Inferred Colour Palettes:** from any brand colors, documents, dark/light preferences, or aesthetic hints in their chats, propose 3 tailored colour palettes for their board UI.
 
 **Part 2: the second pass (work harder on the unknowns).** Act as a fresh reviewer of Part 1. For every answer graded
 unknown or inferred: run at least 3 more searches with different words, open the full chats behind the best hits,
