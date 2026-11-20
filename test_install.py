@@ -48,6 +48,9 @@ with tempfile.TemporaryDirectory() as d:
     rc, out = inst(t, "--board-url", "https://claude.ai/artifact/XYZ")
     clerk = open(os.path.join(t, ".kit", "clerk.md"), encoding="utf-8").read()
     check("the url reaches the clerk's prompt", "https://claude.ai/artifact/XYZ" in clerk)
+    orch = open(os.path.join(t, ".kit", "orchestrator.md"), encoding="utf-8").read()
+    check("the orchestrator's prompt: url, language, the welcome", "https://claude.ai/artifact/XYZ" in orch and "French" in orch and "welcome" in orch)
+    check("kit_cards.py installed", os.path.exists(os.path.join(t, ".kit", "kit_cards.py")))
     check("a kit file edited by the project is kept", "my note" in open(os.path.join(t, ".kit", "BOARD.md")).read() and "KEPT" in out)
     cfg = json.load(open(os.path.join(t, ".kit", "config.json")))
     check("config keeps earlier answers", cfg["project"] == "Tide Clock" and cfg["language"]["talk"] == "French"

@@ -183,6 +183,8 @@ def main(argv=None):
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     ins.put(".kit/board.html", render(rd("kit", "board", "board.template.html"), c))
     ins.put(".kit/clerk.md", render(rd("kit", "clerk", "clerk.template.md"), c))
+    ins.put(".kit/orchestrator.md", render(rd("kit", "orchestrator.template.md"), c))
+    ins.put(".kit/kit_cards.py", rd("kit", "board", "kit_cards.py"))
     ins.put(".kit/BOARD.md", render(rd("kit", "board", "BOARD.template.md"), c))
     ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
     for h in HOOKS:
@@ -207,7 +209,7 @@ def main(argv=None):
         print("nothing to change")
     if c["language"]["talk"].lower() not in ("en", "english"):
         print("translate: .kit/board.html is in English; translate what the person sees into %s before publishing (README step 3)" % c["language"]["talk"])
-    print("next: %s" % ("README step 3: publish .kit/board.html" if not c.get("board_url") else "README step 4: the first posts, then step 5: the clerk"))
+    print("next: %s" % ("README step 3: publish .kit/board.html" if not c.get("board_url") else "README step 4: the first posts, then step 5: the orchestrator and the clerk"))
     return 0
 
 

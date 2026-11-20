@@ -38,17 +38,25 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
    `"owner"`/`"viewer"`, `Answer: `, or code. Then open the page once after publishing and fix any line left in English.
    **Publish** (the Artifact tool asks you to `Read` the whole 145 KB file first, and to load the skill `artifact-capabilities` before passing `capabilities`: both are expected): `Artifact` `publish`, `file_path` `.kit/board.html`, `icon` `board`, `capabilities`
    `{"assets": {}, "comments": {}, "db": {}, "user": {}, "downloads": true}`. Then rerun step 2's command with
-   `--board-url <the url it returned>` (the url goes into the clerk's prompt and the rules), commit
+   `--board-url <the url it returned>` (the url goes into the prompts and the rules). **Then stop this session's own
+   watch on the page** (`ArtifactComments` `watch` with `url` and `on: false`): publishing makes the publisher listen to its
+   comments, and only the clerk must. Commit
    `.kit .claude .story .gitignore` and push.
 4. **Post your first two posts** in one `ArtifactData` `batch` (`.kit/BOARD.md` § Post; `created_at` from `date -u +%Y-%m-%dT%H:%M:%SZ`):
-   `_orchestrator`: `{title: "Orchestrator", column: "info", part: "orchestrator", priority: 3, session_id, created_at,
-   body: "Orchestrator: <what runs>"}`, where `session_id` is the id of the session the owner talks to (`get_session` with
-   no id; from a subagent, it is the parent's): the clerk sends there. Then `KIT-installed`: `{title: "The board kit is
-   installed", column: "info", part: "KIT", priority: 2, session_id, created_at, body: <what step 2 wrote and kept>}`.
-5. **Start the clerk:** `create_session` with `source_url` the repository's GitHub url (`source_revision` the branch
-   of step 2), `prompt` the whole text of `.kit/clerk.md` pasted inline (Read it first; about 5 KB), a small model if one is offered, `title` "board clerk". It
-   answers "board clerk ready, watching" to this session. If `create_session` is not available here, tell the owner:
-   **YOU:** open https://claude.ai/code, start a session on this repository and paste the content of `.kit/clerk.md`.
+   `_orchestrator`: `{title: "Ask the orchestrator", column: "info", part: "orchestrator", priority: 3, created_at,
+   body: "Write here for anything that is not about one post."}` (no `session_id` yet: the orchestrator writes its own);
+   `KIT-installed`: `{title: "The board kit is installed", column: "info", part: "KIT", priority: 2, session_id: <this
+   session's id>, created_at, body: <what step 2 wrote and kept>}`.
+5. **Start the orchestrator, then the clerk**, each with `create_session` (`source_url` the repository's GitHub url,
+   `source_revision` the branch of step 2, the prompt pasted inline after reading it):
+   - the orchestrator: `prompt` the whole text of `.kit/orchestrator.md`, `title` "orchestrator". It writes its id into
+     `_orchestrator`, builds the "Where we are" card from the memory, and posts its welcome under "Ask the
+     orchestrator": what the board does, how it works, everything open, and what can run on its own at the same time
+     (one 👍 launches it all);
+   - the clerk: `prompt` the whole text of `.kit/clerk.md`, a small model if one is offered, `title` "board clerk". It
+     answers "board clerk ready, watching" to the orchestrator.
+   If `create_session` is not available here, tell the owner: **YOU:** open https://claude.ai/code twice on this
+   repository and paste `.kit/orchestrator.md` into one session and `.kit/clerk.md` into the other.
 6. **YOU, the first comment:** open the board's url, open the post `KIT-installed`, write "test" in its comment box
    and send it. The clerk passes it to this session ("Board comment from the owner on your post KIT-installed …"),
    marks it "✓ Seen" and replies "Passed to …" in the thread. Answer it under the post (`.kit/BOARD.md` § Comments).
@@ -103,7 +111,7 @@ the memory `.story/` and skills `story`, `board`; hooks: `kit_guard` (refuses `r
 `kit_stop` (no stop with unpushed work, once), `kit_pre_compact`, `kit_say_it_once` (message limits), `kit_board_typing`.
 Every limit and name is in `.kit/config.json`. The orchestrator's guide: `.kit/ORCHESTRATOR.md`.
 
-Tests of the kit itself: `python3 -I test_install.py`, `python3 -I kit/import/test_kit_import.py`, `python3 -I kit/hooks/test_hooks.py`,
+Tests of the kit itself: `python3 -I test_install.py`, `python3 -I kit/import/test_kit_import.py`, `python3 -I kit/board/test_kit_cards.py`, `python3 -I kit/hooks/test_hooks.py`,
 `python3 -I kit/clerk/test_clerk_pending.py`, `python3 -I scripts/test_kit.py` (+ `scripts/kit_mutations.py`).
 
 ## Step 0: the survey

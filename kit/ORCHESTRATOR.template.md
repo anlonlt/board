@@ -3,9 +3,9 @@
 The orchestrator is one Claude Code session that launches the other sessions ("parts"), relays what the owner decides, checks each Done, and hands over to a successor before its context grows too large. Everything it carries is paid again on each of its later turns, so **it reads little and points a lot**.
 
 ## 1. Start
-1. Post `_orchestrator` on the board (`ArtifactData` `set`, `collection: "posts"`, `doc_id: "_orchestrator"`, `data: {title: "Orchestrator", column: "info", body: "<one line: what runs>", session_id: "<your session id>", created_at: <now>}`). The clerk and the page find you through its `session_id`: **it is the one place your id is written.** At a hand-over, the successor rewrites that field; nothing else changes.
-2. Launch the clerk once: `create_session` with the repository, `prompt`: the whole text of `.kit/clerk.md` (model: the cheapest that follows it). It answers "board clerk ready". Replace it when it says it is past its limit.
-3. `send_later` every ~30 min while parts run, so an idle part is seen.
+Your prompt is `.kit/orchestrator.md` (the install starts you with it): you write your id into `_orchestrator` (the one
+place it lives: the clerk and the page find you there; a successor rewrites it), build the "Where we are" card with
+`.kit/kit_cards.py`, and post the welcome under `_orchestrator` once. Keep a `send_later` every ~30 min while parts run.
 
 ## 2. A part
 - Write its prompt as a file (`docs/prompts/<part>.md`): goal, bars measured before building, holds, "post `<part>-<slug>` at turn 1". Launch it with `create_session` (`prompt`: "Your prompt is `docs/prompts/<file>`: read it and do it."). Its result lives in its post; it sends you `Done. Check post <id>.`
