@@ -42,6 +42,11 @@ DEFAULT_KIT = {
     "guard": {"never_add": ["*.keystore", "*.jks", "*.pem", ".env", "keystore.properties"], "allow_add": []},
     "session_start_lines": [],
     "clerk": {"wait_minutes": 5, "context_limit_k": 200},
+    # Each role's model and effort, as Harmonize runs them (2026-11-20): the clerk only forwards (Haiku, low); the
+    # orchestrator and the parts think (Opus, medium); the cards agent runs scripts (Sonnet, its file's frontmatter).
+    "roles": {"orchestrator": {"model": "claude-opus-5-5", "effort": "medium"},
+              "clerk": {"model": "claude-haiku-5-5", "effort": "low"},
+              "part": {"model": "claude-opus-5-5", "effort": "medium"}},
     "main_branch": "main",
 }
 
@@ -123,7 +128,8 @@ def render(text, c):
             "WAIT": str(k["clerk"]["wait_minutes"]), "CONTEXT_K": str(k["clerk"]["context_limit_k"]),
             "CLERK": c.get("fields", {}).get("clerk", "clerk"),
             "MIRROR_BRANCH": c["mirror"]["branch"], "MIRROR_PATH": c["mirror"]["path"],
-            "MSG": str(k["limits"]["message_chars"]), "DONE": str(k["limits"]["done_message_chars"])}
+            "MSG": str(k["limits"]["message_chars"]), "DONE": str(k["limits"]["done_message_chars"]),
+            "PART_MODEL": k["roles"]["part"]["model"], "PART_EFFORT": k["roles"]["part"]["effort"]}
     for n, v in vals.items():
         text = text.replace("{{%s}}" % n, v)
     left = re.findall(r"\{\{[A-Z_]+\}\}", text)

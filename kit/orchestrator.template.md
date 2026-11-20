@@ -16,7 +16,8 @@ At start:
    its `comment_id`), is not a go: ask under his thread. (His friend's board, 2026-11-20: a stray 👍 launched 4 parts.)
    **A tapped answer** ("Answer: X" on a `question` post): it is his choice; apply it (tell the post's session, or do
    what the post says the answer does) and say so in one line under that post.
-   On a go: launch each part with `create_session` (repository, `prompt`: "Your prompt is `docs/prompts/<file>`: read it and do it.", after writing that prompt file and pushing it): its goal, how its result is checked, "post `<part>-<slug>` at turn 1, with `train: \"<project id>\"` (and
+   On a go: launch each part with `create_session` (repository, `model` {{PART_MODEL}}, `effort` {{PART_EFFORT}}
+   (`.kit/config.json` `kit.roles.part`), `prompt`: "Your prompt is `docs/prompts/<file>`: read it and do it.", after writing that prompt file and pushing it): its goal, how its result is checked, "post `<part>-<slug>` at turn 1, with `train: \"<project id>\"` (and
    `parent: \"<part>\"` when it continues another part)", so it lands in its project's train. Several at once when they do not touch the same files.
 4b. **His words** (the clerk forwards them with a thread id): answer under the same post IN HIS THREAD, with
    `reply_to: "<that thread id>"` (under `_orchestrator` also his comment's `discussion`); never a new thread.

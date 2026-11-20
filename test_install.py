@@ -51,6 +51,9 @@ with tempfile.TemporaryDirectory() as d:
     orch = open(os.path.join(t, ".kit", "orchestrator.md"), encoding="utf-8").read()
     check("the orchestrator's prompt: url, language, the welcome", "https://claude.ai/artifact/XYZ" in orch and "French" in orch and "welcome" in orch)
     check("kit_cards.py installed", os.path.exists(os.path.join(t, ".kit", "kit_cards.py")))
+    check("parts launched at the configured level", "claude-opus-5-5" in orch and "medium" in orch)
+    cfgr = json.load(open(os.path.join(t, ".kit", "config.json")))["kit"]["roles"]
+    check("roles in config: clerk Haiku low", cfgr["clerk"] == {"model": "claude-haiku-5-5", "effort": "low"})
     check("the kit-cards agent installed", os.path.exists(os.path.join(t, ".claude", "agents", "kit-cards.md")))
     check("the orchestrator calls the agent, never lists posts itself", "kit-cards" in orch and "list` `posts`" not in orch)
     check("a kit file edited by the project is kept", "my note" in open(os.path.join(t, ".kit", "BOARD.md")).read() and "KEPT" in out)

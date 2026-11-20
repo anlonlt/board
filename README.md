@@ -49,11 +49,13 @@ Steps marked **YOU** need a person (no agent can start a comment on a page: only
    session's id>, created_at, body: <what step 2 wrote and kept>}`.
 5. **Start the orchestrator, then the clerk**, each with `create_session` (`source_url` the repository's GitHub url,
    `source_revision` the branch of step 2, the prompt pasted inline after reading it):
-   - the orchestrator: `prompt` the whole text of `.kit/orchestrator.md`, `title` "orchestrator". It writes its id into
+   - the orchestrator: `prompt` the whole text of `.kit/orchestrator.md`, `title` "orchestrator", `model` and `effort`
+     from `.kit/config.json` `kit.roles.orchestrator` (default Opus, medium). It writes its id into
      `_orchestrator`, builds the "Where we are" card from the memory, and posts its welcome under "Ask the
      orchestrator": what the board does, how it works, everything open, and what can run on its own at the same time
      (one 👍 launches it all);
-   - the clerk: `prompt` the whole text of `.kit/clerk.md`, a small model if one is offered, `title` "board clerk". It
+   - the clerk: `prompt` the whole text of `.kit/clerk.md`, `title` "board clerk", `model` and `effort` from
+     `kit.roles.clerk` (default Haiku, **low**: it only forwards; more effort costs more at every wake and helps nothing). It
      answers "board clerk ready, watching" to the orchestrator.
    If `create_session` is not available here, tell the owner: **YOU:** open https://claude.ai/code twice on this
    repository and paste `.kit/orchestrator.md` into one session and `.kit/clerk.md` into the other.
@@ -92,7 +94,8 @@ For Claude, in the project's session: `git -C /tmp/board-kit pull` (or step 1's 
 with no options (`python3 -I /tmp/board-kit/install.py .`): it keeps `.kit/config.json`, updates only the files the kit
 wrote and nobody changed since (`KEPT` lists the others), and merges any new hook line. If `.kit/board.html` changed (a translated page shows as
 `KEPT`: redo the translation on the new `.kit/board.html` from `/tmp/board-kit`, the same way as step 3), republish it to the board's url (`Artifact` `publish` with `url`, no `capabilities`: the page keeps its own). Commit,
-push. The guard keeps refusing `git reset --hard`, `git clean` and force pushes on purpose: undo with `git revert`.
+push. If the running clerk or orchestrator was started at another level than `kit.roles` says (e.g. a clerk on
+medium effort), start a new one at the right level with the same prompt and stop the old one. The guard keeps refusing `git reset --hard`, `git clean` and force pushes on purpose: undo with `git revert`.
 
 ## Feedback (a complaint or a dev report, to anlonlt/board)
 
