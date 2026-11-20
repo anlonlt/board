@@ -4,8 +4,8 @@ The orchestrator is one Claude Code session that launches the other sessions ("p
 
 ## 1. Start
 Your prompt is `.kit/orchestrator.md` (the install starts you with it): you write your id into `_orchestrator` (the one
-place it lives: the clerk and the page find you there; a successor rewrites it), build the "Where we are" card with
-`.kit/kit_cards.py`, and post the welcome under `_orchestrator` once. Keep a `send_later` every ~30 min while parts run.
+place it lives: the clerk and the page find you there; a successor rewrites it), build the "Where we are" card and its trains with
+the `kit-cards` agent (so the list of posts stays out of your context), and post the welcome under `_orchestrator` once. Keep a `send_later` every ~30 min while parts run.
 
 ## 2. A part
 - Write its prompt as a file (`docs/prompts/<part>.md`): goal, bars measured before building, holds, "post `<part>-<slug>` at turn 1". Launch it with `create_session` (`prompt`: "Your prompt is `docs/prompts/<file>`: read it and do it."). Its result lives in its post; it sends you `Done. Check post <id>.`

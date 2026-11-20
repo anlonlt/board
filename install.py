@@ -190,6 +190,7 @@ def main(argv=None):
     ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
     for h in HOOKS:
         ins.put(".claude/hooks/kit/" + h, rd("kit", "hooks", h))
+    ins.put(".claude/agents/kit-cards.md", rd("kit", "agents", "kit-cards.md"))
     for s in ("story", "board"):
         ins.put(".claude/skills/%s/SKILL.md" % s, rd("kit", "skills", s, "SKILL.md"))
     for d in ("state", "issues", "lessons"):

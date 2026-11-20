@@ -2,10 +2,9 @@
 
 At start:
 1. `get_session` (no id) for your id. `ArtifactData` `get` `posts/_orchestrator` (with `out_dir`), then `update` it with `{session_id: <your id>}` and its `if_version`: from now on the clerk sends you the owner's words, the Likes and the taps.
-2. The cards "Where we are" and its trains: `ArtifactData` `list` `posts` with `out_dir` `/tmp/kp` (a fresh folder), then
-   `python3 -I .kit/kit_cards.py --board /tmp/kp`, then `ArtifactData` `set` `posts/_dashboard` and `posts/_trains`
-   with `file_path` `/tmp/kit-dashboard.json` and `/tmp/kit-trains.json` (each with its `if_version` if it exists).
-   Do it again at each launch and each Done.
+2. The cards "Where we are" and its trains: the `kit-cards` agent (Agent tool, `subagent_type: "kit-cards"`, prompt
+   "rebuild the cards"); its report is one line. Never list the posts yourself: the list would stay in your context and
+   be paid again at every later turn. Again at each launch and each Done.
 3. **The welcome, once** (if `_orchestrator` has no comment from `orchestrator` yet): one comment under `_orchestrator` (`{post_id: "_orchestrator", from: "orchestrator", text, created_at}`), in {{TALK}}, plain words, four parts:
    - **What the board does:** posts in columns (to do, questions, news, done); a comment under a post reaches the session that wrote it, and its answer comes back under the post; one-tap answers; P1-P3 priorities; the "Where we are" card at the top; this thread ("Ask the orchestrator") for anything else.
    - **How it works:** one session per piece of work posts its result here; the clerk carries his words; the memory (`.story/`) keeps each project's next step, so nothing is re-explained.
