@@ -10,12 +10,22 @@ keys sorted), board/sync.json (the cursor and a log of syncs).
 
     python3 -I scripts/kit.py init                      # the worktree (from origin/board-mirror, else a new orphan branch)
     python3 -I scripts/kit.py sync DIR --at ISO [--full] [--commit]
+    python3 -I scripts/kit.py sync-db [--db PATH] [--at ISO] [--full] [--commit]
+    python3 -I scripts/kit.py receive [--board-url URL] [--token TOK] [--branch B]
+    python3 -I scripts/kit.py publish [--board-url URL] [--token TOK] [--branch B] [--db PATH] [--at ISO]
     python3 -I scripts/kit.py diff DUMP [--window ISO ISO]
     python3 -I scripts/kit.py post <id> [--head N]
     python3 -I scripts/kit.py open [--since ISO]
     python3 -I scripts/kit.py since <ISO>
     python3 -I scripts/kit.py session <post>
     python3 -I scripts/kit.py reads [--at ISO]         # prints the board reads one sync needs
+
+STATE SEMANTICS:
+- Comment `read` / `read_at` represents "delivered/read by the watching agent (e.g. agy clerk)", independent of the
+  owner's `board-seen` UI dots. Non-watching runtimes (e.g. embedded preview / Arena) leave `delivered: false` until
+  a watching runtime or manual `receive` processes them.
+- Owner seen-state (`data/users/owner/board-seen`) is exported to `board/seen/owner.json` by `sync-db` and reconciled
+  by `receive` using monotonic max-timestamp deep-merge so two devices/runtimes never lose read state.
 
 THE SYNC (one way, board -> git). DIR holds what ArtifactData reads saved with `out_dir` (DIR/posts/*.json,
 DIR/comments/*.json). `kit reads` prints them: every post (`list`, posts carry no reliable update stamp: 12 of 173), and
@@ -46,6 +56,9 @@ import os
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -143,6 +156,25 @@ def sync(m, d, at, full=False):
     return pw, sum(i not in posts for i in old_p), new, changed, removed
 
 
+def _export_seen_from_db(conn, m):
+    """Export data/users/*/board-seen docs to board/seen/<user>.json (if changed)."""
+    sdir = os.path.join(m, "board", "seen")
+    old_s = load_dir(m + "/board", "seen") if os.path.isdir(sdir) else {}
+    rows = conn.execute(
+        "SELECT collection, data FROM docs WHERE doc_id='board-seen' AND collection LIKE 'data/users/%'"
+    ).fetchall()
+    written = 0
+    for coll, raw in rows:
+        user = coll[len("data/users/"):].strip("/")
+        if not user or "/" in user:
+            continue
+        doc = json.loads(raw)
+        if old_s.get(user) != doc:
+            write_doc(os.path.join(sdir, user + ".json"), doc)
+            written += 1
+    return written
+
+
 def sync_db(m, db_path=None, at=None, full=False):
     """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full)."""
     import sqlite3
@@ -169,17 +201,21 @@ def sync_db(m, db_path=None, at=None, full=False):
                 res = sync(m, tmp, now, full=True)
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
+            _export_seen_from_db(conn, m)
             st2 = read_state(m)
             st2["db_seq"] = latest_seq
             write_doc(os.path.join(m, "board", "sync.json"), st2)
             return res
 
         rows = conn.execute(
-            "SELECT DISTINCT collection, doc_id FROM changes WHERE seq>? AND collection IN ('posts', 'comments')",
+            "SELECT DISTINCT collection, doc_id FROM changes WHERE seq>? "
+            "AND (collection IN ('posts', 'comments') OR (collection LIKE 'data/users/%' AND doc_id='board-seen'))",
             (last_seq,),
         ).fetchall()
         pdir, cdir = os.path.join(m, "board", "posts"), os.path.join(m, "board", "comments")
+        sdir = os.path.join(m, "board", "seen")
         old_p, old_c = load_dir(m + "/board", "posts"), load_dir(m + "/board", "comments")
+        old_s = load_dir(m + "/board", "seen") if os.path.isdir(sdir) else {}
         pw = pr = new = changed = removed = 0
         for coll, doc_id in rows:
             r = conn.execute("SELECT data FROM docs WHERE collection=? AND doc_id=?", (coll, doc_id)).fetchone()
@@ -208,6 +244,12 @@ def sync_db(m, db_path=None, at=None, full=False):
                     elif old_c[doc_id] != doc:
                         changed += 1
                         write_doc(target, doc)
+            elif coll.startswith("data/users/") and doc_id == "board-seen":
+                user = coll[len("data/users/"):].strip("/")
+                if user and "/" not in user and r:
+                    doc = json.loads(r[0])
+                    if old_s.get(user) != doc:
+                        write_doc(os.path.join(sdir, user + ".json"), doc)
         st["cursor"] = now
         st["db_seq"] = latest_seq
         st["log"].append({"at": now, "full": False, "db_seq": latest_seq, "posts": len(old_p) - pr,
@@ -362,6 +404,211 @@ def session(m, pid):
         return json.load(fh).get("session_id") or "no session_id on %s" % pid
 
 
+# ---------------------------------------------------------------- warm handoff (receive / publish)
+class Conflict(Exception):
+    pass
+
+
+def _resolve_board_url(explicit=None):
+    return (explicit or os.environ.get("KIT_BOARD_URL") or CONFIG.get("board_url") or "http://127.0.0.1:8765").rstrip("/")
+
+
+def _resolve_board_token(explicit=None):
+    if explicit:
+        return explicit
+    env_tok = os.environ.get("KIT_BOARD_TOKEN")
+    if env_tok:
+        return env_tok
+    tok_path = os.path.join(ROOT, ".kit", "board_data", "token")
+    if os.path.isfile(tok_path):
+        try:
+            tok = open(tok_path, encoding="utf-8").read().strip()
+            if tok:
+                return tok
+        except OSError:
+            pass
+    return None
+
+
+def _board_request(url, path, body=None, token=None, method=None):
+    hdr = {"Content-Type": "application/json"}
+    if token:
+        hdr["X-Kit-Token"] = token
+    req = urllib.request.Request(
+        url.rstrip("/") + "/_api/" + path,
+        data=None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers=hdr,
+        method=method,
+    )
+    with urllib.request.urlopen(req, timeout=15) as res:
+        return json.load(res)
+
+
+def merge_board_seen(local_doc, incoming_doc):
+    """Monotonic max-timestamp deep-merge of board-seen documents so two devices never lose read state."""
+    loc = local_doc if isinstance(local_doc, dict) else {}
+    inc = incoming_doc if isinstance(incoming_doc, dict) else {}
+    merged = dict(loc)
+    for k, v in inc.items():
+        if k == "posts":
+            continue
+        if isinstance(v, str) and isinstance(merged.get(k), str):
+            merged[k] = max(merged[k], v)
+        elif k not in merged:
+            merged[k] = v
+    loc_posts = loc.get("posts") if isinstance(loc.get("posts"), dict) else {}
+    inc_posts = inc.get("posts") if isinstance(inc.get("posts"), dict) else {}
+    posts = {pid: (dict(e) if isinstance(e, dict) else e) for pid, e in loc_posts.items()}
+    for pid, inc_entry in inc_posts.items():
+        cur = posts.get(pid)
+        if not isinstance(cur, dict) or not isinstance(inc_entry, dict):
+            if pid not in posts:
+                posts[pid] = dict(inc_entry) if isinstance(inc_entry, dict) else inc_entry
+            continue
+        loc_at, inc_at = str(cur.get("at") or ""), str(inc_entry.get("at") or "")
+        loc_bt, inc_bt = str(cur.get("bt") or ""), str(inc_entry.get("bt") or "")
+        if inc_at > loc_at:
+            out = dict(cur)
+            out.update(inc_entry)
+        elif loc_at > inc_at:
+            out = dict(inc_entry)
+            out.update(cur)
+        else:
+            out = dict(cur)
+            for k, v in inc_entry.items():
+                if k not in out:
+                    out[k] = v
+            if inc_bt > loc_bt and inc_entry.get("sig"):
+                out["sig"] = inc_entry["sig"]
+        max_bt = max(loc_bt, inc_bt)
+        if max_bt:
+            out["bt"] = max_bt
+        posts[pid] = out
+    merged["posts"] = posts
+    return merged
+
+
+def _git_checked(m, *args):
+    r = git(m, *args)
+    if r.returncode != 0:
+        raise subprocess.CalledProcessError(r.returncode, ["git", "-C", m] + list(args), r.stdout, r.stderr)
+    return r.stdout
+
+
+def receive(m, url=None, branch=None, token=None):
+    """Fetch origin/<branch>, 3-way check changed board docs against running board server, apply atomically."""
+    url = _resolve_board_url(url)
+    token = _resolve_board_token(token)
+    branch = branch or BRANCH
+    if git(m, "check-ref-format", "refs/heads/" + branch).returncode != 0:
+        raise Conflict("Invalid branch name: " + branch)
+    ref = "refs/remotes/origin/" + branch
+    r_fetch = git(m, "fetch", "--no-tags", "origin", "refs/heads/" + branch + ":" + ref)
+    if r_fetch.returncode != 0:
+        msg = (r_fetch.stdout + r_fetch.stderr).strip()
+        if "non-fast-forward" in msg.lower() or "rejected" in msg.lower():
+            raise Conflict("Remote history was rewritten (non-fast-forward fetch); refusing to apply: " + msg)
+        raise subprocess.CalledProcessError(
+            r_fetch.returncode, ["git", "-C", m, "fetch", "--no-tags", "origin", "refs/heads/" + branch + ":" + ref],
+            r_fetch.stdout, r_fetch.stderr,
+        )
+    head = _git_checked(m, "rev-parse", ref).strip()
+    receipt_key = "mirror-" + branch.encode("utf-8").hex()
+    receipt = _board_request(url, "doc/kit-receipts/" + receipt_key, token=token)
+    base = (receipt.get("data") or {}).get("sha")
+    if head == base:
+        return {"sha": head, "applied": 0, "status": "up to date"}
+    dirs = ["board/posts", "board/comments", "board/seen"]
+    if base:
+        if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", str(base)):
+            raise Conflict("Invalid local receipt")
+        if git(m, "merge-base", "--is-ancestor", base, head).returncode != 0:
+            raise Conflict("Receipt is not an ancestor of the remote tip; refusing to apply")
+        paths = _git_checked(m, "diff", "--name-only", "--no-renames", "-z", base, head, "--", *dirs)
+    else:
+        paths = _git_checked(m, "ls-tree", "-r", "--name-only", "-z", head, "--", *dirs)
+
+    def doc_at(rev, path):
+        if not rev or not _git_checked(m, "ls-tree", rev, "--", ":(literal)" + path):
+            return None
+        obj = json.loads(_git_checked(m, "show", rev + ":" + path))
+        if not isinstance(obj, dict):
+            raise ValueError("Not a board document: " + path)
+        return obj
+
+    writes = []
+    for path in filter(None, paths.split("\0")):
+        if not path.endswith(".json"):
+            continue
+        match = re.fullmatch(r"board/(posts|comments|seen)/([^/]+)\.json", path)
+        if not match:
+            raise Conflict("Unsupported mirror path: " + path)
+        kind, key = match.groups()
+        old, new = doc_at(base, path), doc_at(head, path)
+        if kind == "seen":
+            coll = "data/users/" + key
+            doc_id = "board-seen"
+            api_path = "doc/" + "/".join(urllib.parse.quote(p, safe="") for p in (coll.split("/") + [doc_id]))
+            d = _board_request(url, api_path, token=token)
+            local = d["data"] if d.get("exists") else None
+            if new is None:
+                if local is None or new == old:
+                    continue
+                raise Conflict("Hard deletion requires reconciliation: " + path)
+            merged = merge_board_seen(local, new)
+            if merged == local:
+                continue
+            writes.append({"op": "set", "collection": coll, "doc_id": doc_id, "data": merged, "if_version": d["version"]})
+            continue
+
+        coll, doc_id = kind, key
+        d = _board_request(url, "doc/" + coll + "/" + urllib.parse.quote(doc_id, safe=""), token=token)
+        local = d["data"] if d.get("exists") else None
+        if new == local or new == old:
+            continue
+        if new is None:
+            raise Conflict("Hard deletion requires reconciliation: " + path)
+        if local != old:
+            raise Conflict("Divergent record: " + path)
+        writes.append({"op": "set", "collection": coll, "doc_id": doc_id, "data": new, "if_version": d["version"]})
+
+    count = len(writes)
+    writes.append({"op": "set", "collection": "kit-receipts", "doc_id": receipt_key,
+                   "data": {"sha": head}, "if_version": receipt["version"]})
+    try:
+        _board_request(url, "db/batch", {"writes": writes}, token=token)
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            raise Conflict("Board changed during receive; batch rolled back. Retry.") from e
+        raise
+    return {"sha": head, "applied": count, "status": "received"}
+
+
+def publish(m, url=None, db_path=None, branch=None, token=None, at=None):
+    """Receive remote changes first, fast-forward mirror, full-export SQLite, normal push, verify tip, advance receipt."""
+    url = _resolve_board_url(url)
+    token = _resolve_board_token(token)
+    branch = branch or BRANCH
+    rec = receive(m, url=url, branch=branch, token=token)
+    r_ff = git(m, "merge", "--ff-only", "origin/" + branch)
+    if r_ff.returncode != 0:
+        raise Conflict("Mirror worktree cannot fast-forward to origin/%s: %s" % (branch, (r_ff.stdout + r_ff.stderr).strip()))
+    at_val = at or zstamp(datetime.now(timezone.utc))
+    sync_db(m, db_path=db_path, at=at_val, full=True)
+    if git(m, "status", "--porcelain", "board").stdout.strip():
+        commit(m, "kit publish %s (full)" % at_val, branch=branch)
+    r_push = git(m, "push", "-u", "origin", branch)
+    if r_push.returncode != 0:
+        raise Conflict("Push rejected (never force-push): " + (r_push.stdout + r_push.stderr).strip())
+    sha = _git_checked(m, "rev-parse", "HEAD").strip()
+    ls_out = _git_checked(m, "ls-remote", "origin", "refs/heads/" + branch).strip()
+    remote_sha = (ls_out.split() or [""])[0]
+    if remote_sha != sha:
+        raise Conflict("Remote tip mismatch after push: local %s != remote %s" % (sha, remote_sha))
+    receive(m, url=url, branch=branch, token=token)
+    return {"sha": sha, "received": rec, "status": "published"}
+
+
 # ---------------------------------------------------------------- init / commit
 def git(m, *args):
     return subprocess.run(["git", "-C", m] + list(args), capture_output=True, text=True)
@@ -379,9 +626,10 @@ def init(m):
     return (r.stdout + r.stderr).strip()
 
 
-def commit(m, msg):
-    if git(m, "symbolic-ref", "--short", "HEAD").stdout.strip() != BRANCH:
-        raise SystemExit("kit: %s is not on branch %s; refusing to commit the copy anywhere else" % (m, BRANCH))
+def commit(m, msg, branch=None):
+    target_branch = branch or BRANCH
+    if git(m, "symbolic-ref", "--short", "HEAD").stdout.strip() != target_branch:
+        raise SystemExit("kit: %s is not on branch %s; refusing to commit the copy anywhere else" % (m, target_branch))
     git(m, "add", "-A", "board")
     r = git(m, "commit", "-q", "-m", msg)
     return (r.stdout + r.stderr).strip() or "committed"
@@ -398,6 +646,10 @@ def main(argv=None):
     s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true")
     s = sp.add_parser("sync-db"); s.add_argument("--db", default=None); s.add_argument("--at", default=None)
     s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true")
+    s = sp.add_parser("receive"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
+    s.add_argument("--branch", default=None)
+    s = sp.add_parser("publish"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
+    s.add_argument("--branch", default=None); s.add_argument("--db", default=None); s.add_argument("--at", default=None)
     s = sp.add_parser("diff"); s.add_argument("dump"); s.add_argument("--window", nargs=2)
     s = sp.add_parser("post"); s.add_argument("id"); s.add_argument("--head", type=int)
     s = sp.add_parser("open"); s.add_argument("--since", default="2000-01-01")
@@ -428,6 +680,22 @@ def main(argv=None):
         if a.commit:
             print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
         return 0
+    if a.cmd == "receive":
+        try:
+            res = receive(m, url=a.board_url, branch=a.branch, token=a.token)
+            print(json.dumps(res, ensure_ascii=False))
+            return 0
+        except Conflict as e:
+            print("receive conflict: " + str(e), file=sys.stderr)
+            return 2
+    if a.cmd == "publish":
+        try:
+            res = publish(m, url=a.board_url, db_path=a.db, branch=a.branch, token=a.token, at=a.at)
+            print(json.dumps(res, ensure_ascii=False))
+            return 0
+        except Conflict as e:
+            print("publish conflict: " + str(e), file=sys.stderr)
+            return 2
     if a.cmd == "diff":
         ds = diff(m, a.dump, a.window)
         for kind, coll, i, k in ds:

@@ -484,7 +484,7 @@
   "kind": "js"
  },
  {
-  "en": "no Claude session can receive it right now",
+  "en": "no agent session can receive it right now",
   "kind": "js"
  },
  {
@@ -492,7 +492,7 @@
   "kind": "js"
  },
  {
-  "en": "no Claude session is watching the board",
+  "en": "no agent session is watching the board",
   "kind": "js"
  },
  {

@@ -32,9 +32,21 @@ SHIM_JS = r"""(function () {
   var subs = [];
   var es = null;
   var reconnectTimer = null;
+  var embedMode = !!(typeof window !== "undefined" && (window.__KIT_EMBED__ || window.__KIT_TOKEN__));
+
+  function apiUrl(path) {
+    if (embedMode && typeof path === "string" && path.charAt(0) === "/") {
+      return "." + path;
+    }
+    return path;
+  }
 
   function api(method, path, body, headers) {
     var opts = { method: method, headers: Object.assign({}, headers || {}) };
+    if (typeof window !== "undefined" && window.__KIT_TOKEN__) {
+      opts.headers["X-Kit-Token"] = window.__KIT_TOKEN__;
+      opts.credentials = "omit";
+    }
     if (body !== undefined && body !== null) {
       if (body instanceof Blob || body instanceof ArrayBuffer || body instanceof Uint8Array) {
         opts.body = body;
@@ -43,7 +55,7 @@ SHIM_JS = r"""(function () {
         opts.body = JSON.stringify(body);
       }
     }
-    return fetch(path, opts).then(function (r) {
+    return fetch(apiUrl(path), opts).then(function (r) {
       if (!r.ok) {
         return r.json().catch(function () { return {}; }).then(function (j) {
           var err = new Error(j.error || ("HTTP " + r.status));
@@ -100,6 +112,7 @@ SHIM_JS = r"""(function () {
     subs.forEach(function (s) { refreshSub(s); });
   }
   function connectEvents() {
+    if (embedMode) return;
     if (es) return;
     try {
       es = new EventSource("/_api/events");
@@ -372,6 +385,45 @@ SHIM_JS = r"""(function () {
   }
 })();
 """
+
+
+def _merge_board_seen_posts(dst_posts, src_posts):
+    """Monotonic max-timestamp merge for board-seen posts maps."""
+    for pid, inc_entry in src_posts.items():
+        cur = dst_posts.get(pid)
+        if not isinstance(cur, dict) or not isinstance(inc_entry, dict):
+            if pid not in dst_posts or not isinstance(cur, dict):
+                dst_posts[pid] = dict(inc_entry) if isinstance(inc_entry, dict) else inc_entry
+            continue
+        loc_at, inc_at = str(cur.get("at") or ""), str(inc_entry.get("at") or "")
+        loc_bt, inc_bt = str(cur.get("bt") or ""), str(inc_entry.get("bt") or "")
+        if inc_at > loc_at:
+            out = dict(cur)
+            out.update(inc_entry)
+        elif loc_at > inc_at:
+            out = dict(inc_entry)
+            out.update(cur)
+        else:
+            out = dict(cur)
+            for k, v in inc_entry.items():
+                if k not in out:
+                    out[k] = v
+            if inc_bt > loc_bt and inc_entry.get("sig"):
+                out["sig"] = inc_entry["sig"]
+        max_bt = max(loc_bt, inc_bt)
+        if max_bt:
+            out["bt"] = max_bt
+        dst_posts[pid] = out
+
+
+def _deep_merge_doc(dst, src, doc_id=None):
+    for k, v in src.items():
+        if doc_id == "board-seen" and k == "posts" and isinstance(v, dict) and isinstance(dst.get(k), dict):
+            _merge_board_seen_posts(dst[k], v)
+        elif isinstance(v, dict) and isinstance(dst.get(k), dict):
+            _deep_merge_doc(dst[k], v)
+        else:
+            dst[k] = v
 
 
 def utc_now():
@@ -654,13 +706,7 @@ class BoardStore:
             if if_version is not None and int(if_version) != cur_ver:
                 return None, cur_ver
             cur_data = json.loads(row[1]) if row else {}
-            def _deep_merge(dst, src):
-                for k, v in src.items():
-                    if isinstance(v, dict) and isinstance(dst.get(k), dict):
-                        _deep_merge(dst[k], v)
-                    else:
-                        dst[k] = v
-            _deep_merge(cur_data, patch)
+            _deep_merge_doc(cur_data, patch, doc_id=doc_id)
             if collection == "posts" and isinstance(patch, dict) and "updated_at" not in patch:
                 cur_data["updated_at"] = now
             new_ver = cur_ver + 1
@@ -742,14 +788,8 @@ class BoardStore:
                             self.conn.rollback()
                             return None, ("conflict", doc_id, cur_ver)
                         cur_data = json.loads(row[1]) if row else {}
-                        def _deep_merge(dst, src):
-                            for k, v in src.items():
-                                if isinstance(v, dict) and isinstance(dst.get(k), dict):
-                                    _deep_merge(dst[k], v)
-                                else:
-                                    dst[k] = v
                         patch = w.get("data", {})
-                        _deep_merge(cur_data, patch)
+                        _deep_merge_doc(cur_data, patch, doc_id=doc_id)
                         if coll == "posts" and isinstance(patch, dict) and "updated_at" not in patch:
                             cur_data["updated_at"] = now
                         new_ver = cur_ver + 1
@@ -979,13 +1019,64 @@ class PayloadTooLarge(Exception):
     pass
 
 
-def make_handler(root_dir, store, token=None, notify_url=None):
+def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False):
     html_path = os.path.join(root_dir, ".kit", "board.html")
     project_name = "Board"
     try:
         project_name = json.load(open(os.path.join(root_dir, ".kit", "config.json"), encoding="utf-8")).get("project") or "Board"
     except (OSError, ValueError):
         pass
+
+    def _build_embed_unlock_html():
+        return (
+            "<!doctype html><html><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            "<meta name=theme-color content=#0b111e><title>Unlock Board (Preview)</title></head>"
+            "<body style='background:#0b111e;color:#e6ebf2;font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:16px'>"
+            "<form id=f style='background:#141d2e;border:1px solid #233049;border-radius:16px;padding:24px;max-width:360px;width:100%'>"
+            "<h2 style='margin:0 0 8px;font-size:1.2rem'>Unlock board preview</h2>"
+            "<p style='margin:0 0 14px;color:#9aa6b8;font-size:.9rem'>Enter your board token for this preview session. Held in page memory only (no cookies).</p>"
+            "<input id=t type=password placeholder='Board token' autocomplete=off required style='width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid #233049;background:#0b111e;color:#e6ebf2;font-size:1rem;margin-bottom:12px'>"
+            "<button id=b type=submit style='width:100%;padding:10px;border-radius:999px;border:0;background:#e8894a;color:#1a1206;font-weight:700;font-size:.95rem;cursor:pointer'>Unlock</button>"
+            "<p id=err role=alert style='margin:12px 0 0;color:#f87171;font-size:.88rem;min-height:1.2em'></p>"
+            "</form>"
+            "<script>(function(){"
+            "var f=document.getElementById('f'),t=document.getElementById('t'),b=document.getElementById('b'),err=document.getElementById('err');"
+            "f.addEventListener('submit',function(e){"
+            "e.preventDefault();var v=(t.value||'').trim();if(!v)return;"
+            "b.disabled=true;err.textContent='';"
+            "fetch('./',{method:'GET',headers:{'X-Kit-Token':v,'Accept':'application/x-kit-board'},credentials:'omit'})"
+            ".then(function(r){"
+            "if(!r.ok||r.headers.get('X-Kit-Board-Doc')!=='1'){"
+            "err.textContent=r.status===401?'Invalid board token. Check the token and try again.':'Could not load board (HTTP '+r.status+').';"
+            "b.disabled=false;return;"
+            "}"
+            "return r.text().then(function(html){"
+            "var boot='<script>window.__KIT_TOKEN__='+JSON.stringify(v)+';window.__KIT_EMBED__=true;<\\/script>';"
+            "var out=html.indexOf('<head>')>=0?html.replace('<head>','<head>\\n'+boot):boot+html;"
+            "document.open();document.write(out);document.close();"
+            "});"
+            "},function(){"
+            "err.textContent='Network error while contacting the board server.';b.disabled=false;"
+            "});"
+            "});"
+            "})();</script>"
+            "</body></html>"
+        ).encode("utf-8")
+
+    def _build_embed_board_html(inject_embed_flag=False):
+        with open(html_path, encoding="utf-8") as fh:
+            html = fh.read()
+        inline_shim = SHIM_JS.replace("</script>", "<\\/script>")
+        flag_js = "window.__KIT_EMBED__=true;\n" if inject_embed_flag else ""
+        embed_tags = '<meta name="theme-color" content="#0b111e">\n<script>\n' + flag_js + inline_shim + "\n</script>"
+        head_inject = '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<style>html,body{margin:0;padding:0;-webkit-font-smoothing:antialiased;}</style>\n' + embed_tags
+        if "</head>" in html:
+            if 'name="viewport"' in html.lower():
+                head_inject = embed_tags
+            html = html.replace("</head>", head_inject + "\n</head>", 1)
+        else:
+            html = "<!doctype html>\n<html>\n<head>\n" + head_inject + "\n</head>\n<body>\n" + html + "\n</body>\n</html>\n"
+        return html.encode("utf-8")
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -996,25 +1087,27 @@ def make_handler(root_dir, store, token=None, notify_url=None):
         def _check_auth(self, parsed):
             if not token:
                 return True, False
-            qs = urllib.parse.parse_qs(parsed.query)
-            qtok = (qs.get("token") or [""])[0]
-            if qtok and hmac.compare_digest(qtok, token):
-                return True, True
+            if not embed_mode:
+                qs = urllib.parse.parse_qs(parsed.query)
+                qtok = (qs.get("token") or [""])[0]
+                if qtok and hmac.compare_digest(qtok, token):
+                    return True, True
             hdr = self.headers.get("X-Kit-Token") or ""
             if hdr and hmac.compare_digest(hdr, token):
                 return True, False
             auth = self.headers.get("Authorization") or ""
             if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:].strip(), token):
                 return True, False
-            raw_cookie = self.headers.get("Cookie") or ""
-            if raw_cookie:
-                c = SimpleCookie()
-                try:
-                    c.load(raw_cookie)
-                    if "kit_token" in c and hmac.compare_digest(c["kit_token"].value, token):
-                        return True, False
-                except Exception:
-                    pass
+            if not embed_mode:
+                raw_cookie = self.headers.get("Cookie") or ""
+                if raw_cookie:
+                    c = SimpleCookie()
+                    try:
+                        c.load(raw_cookie)
+                        if "kit_token" in c and hmac.compare_digest(c["kit_token"].value, token):
+                            return True, False
+                    except Exception:
+                        pass
             return False, False
 
         def _require_auth(self, parsed):
@@ -1022,7 +1115,7 @@ def make_handler(root_dir, store, token=None, notify_url=None):
             if ok:
                 return set_cookie
             accept = (self.headers.get("Accept") or "").lower()
-            if parsed.path in ("/", "/index.html") and "text/html" in accept:
+            if (not embed_mode) and parsed.path in ("/", "/index.html") and "text/html" in accept:
                 # Auto-restore from localStorage if PWA/browser dropped the cookie; else clean unlock form
                 body = (
                     "<!doctype html><html><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -1073,7 +1166,36 @@ def make_handler(root_dir, store, token=None, notify_url=None):
             qs = urllib.parse.parse_qs(parsed.query)
 
             if path == "/_api/health":
-                self._send_json(200, {"ok": True, "pid": os.getpid(), "auth": bool(token)})
+                self._send_json(200, {"ok": True, "pid": os.getpid(), "auth": bool(token), "embed_mode": bool(embed_mode)})
+                return
+
+            if embed_mode and path in ("/", "/index.html"):
+                accept = (self.headers.get("Accept") or "").lower()
+                if "application/x-kit-board" in accept or not token:
+                    if token:
+                        ok, _ = self._check_auth(parsed)
+                        if not ok:
+                            self._send_json(401, {"error": "unauthorized", "code": "unauthorized"})
+                            return
+                    if not os.path.isfile(html_path):
+                        self._send_json(404, {"error": "board.html not found"})
+                        return
+                    raw = _build_embed_board_html(inject_embed_flag=not bool(token))
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("X-Kit-Board-Doc", "1")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
+                body = _build_embed_unlock_html()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
                 return
 
             if path == "/_manifest.webmanifest":
@@ -1154,7 +1276,8 @@ def make_handler(root_dir, store, token=None, notify_url=None):
                 if not os.path.isfile(html_path):
                     self._send_json(404, {"error": "board.html not found"})
                     return
-                html = open(html_path, encoding="utf-8").read()
+                with open(html_path, encoding="utf-8") as fh:
+                    html = fh.read()
                 pwa_tags = (
                     '<link rel="manifest" href="/_manifest.webmanifest">\n'
                     '<link rel="icon" type="image/svg+xml" href="/_icon.svg">\n'
@@ -1262,7 +1385,12 @@ def make_handler(root_dir, store, token=None, notify_url=None):
             if path == "/_api/comments/status":
                 with store.comment_cond:
                     w = sorted(store.watchers)
-                self._send_json(200, {"watching": bool(w), "status": "available" if w else "no_session", "watchers": w})
+                self._send_json(200, {
+                    "watching": bool(w),
+                    "status": "available" if w else "no_session",
+                    "message": "agent session watching" if w else "no agent session is watching the board",
+                    "watchers": w,
+                })
                 return
 
             if path == "/_api/comments/wait":
@@ -1559,8 +1687,9 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
             if name == "board/sync.json" and isinstance(data, dict):
                 sync_cursor = str(data.get("cursor") or "")
                 continue
-            if name == "board/seen.json" and isinstance(data, dict):
-                mirror_seen = data.get("posts") if isinstance(data.get("posts"), dict) else data
+            if name in ("board/seen.json", "board/seen/owner.json") and isinstance(data, dict):
+                seen_map = data.get("posts") if isinstance(data.get("posts"), dict) else data
+                _merge_board_seen_posts(mirror_seen, seen_map)
                 continue
             if len(parts) != 3 or parts[0] != "board" or parts[1] not in ("posts", "comments"):
                 continue
@@ -1594,7 +1723,7 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
     return {"ref": ref, "imported": imported, "skipped": skipped}
 
 
-def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None):
+def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None, embed_mode=False):
     if host.strip().lower() not in LOOPBACK_HOSTS and not token:
         raise ValueError("refusing to bind to non-loopback host %r without --token / KIT_BOARD_TOKEN" % host)
     data_dir = os.path.join(root_dir, ".kit", "board_data")
@@ -1605,7 +1734,7 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
             notify_url = json.load(open(cfg_path, encoding="utf-8")).get("kit", {}).get("notify_url") or None
         except (OSError, ValueError):
             notify_url = None
-    srv = ThreadingHTTPServer((host, port), make_handler(root_dir, store, token=token, notify_url=notify_url))
+    srv = ThreadingHTTPServer((host, port), make_handler(root_dir, store, token=token, notify_url=notify_url, embed_mode=embed_mode))
     srv.daemon_threads = True
     return srv, store
 
@@ -1617,6 +1746,7 @@ def main(argv=None):
     ap.add_argument("--root", default=None, help="Project root (default: parent of .kit/)")
     ap.add_argument("--token", default=None, help="Require auth token (or set $KIT_BOARD_TOKEN)")
     ap.add_argument("--notify-url", default=None, help="Phone push webhook URL (e.g. https://ntfy.sh/<topic>)")
+    ap.add_argument("--embed-mode", action="store_true", help="Cookie-independent embedded preview mode (or set KIT_EMBED_PREVIEW=1)")
     ap.add_argument("--seed-from-mirror", action="store_true", help="Import posts/comments from git board-mirror on startup")
     ap.add_argument("--mirror-branch", default=None, help="Override mirror branch name (default from .kit/config.json)")
     ap.add_argument("--force-seed", action="store_true", help="Overwrite existing local SQLite docs when seeding")
@@ -1627,7 +1757,8 @@ def main(argv=None):
         print("board_server: refusing to bind to non-loopback host %r without --token or KIT_BOARD_TOKEN" % a.host, file=sys.stderr)
         return 2
     nurl = a.notify_url or os.environ.get("KIT_NOTIFY_URL") or None
-    srv, store = start_server(root, a.host, a.port, token=tok, notify_url=nurl)
+    embed = bool(a.embed_mode or os.environ.get("KIT_EMBED_PREVIEW", "").strip().lower() in ("1", "true", "yes", "on"))
+    srv, store = start_server(root, a.host, a.port, token=tok, notify_url=nurl, embed_mode=embed)
     if a.seed_from_mirror:
         info = seed_from_mirror(root, store, branch=a.mirror_branch, force=a.force_seed)
         print("seeded from %s: %d imported, %d skipped" % (info["ref"] or "(none)", info["imported"], info["skipped"]), flush=True)

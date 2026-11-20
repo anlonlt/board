@@ -2111,13 +2111,13 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
      reads the prefix "[post <id>] [image <n>] " and forwards it to the post's author. */
   var sending = {};
   var WHY = {
-    claude_unavailable: "no Claude session can receive it right now",
+    claude_unavailable: "no agent session can receive it right now",
     consent_required: "commenting from the page was not allowed",
     forbidden: "commenting from the page is off for you here",
     rate_limited: "too many sends; wait a minute",
     not_granted: "the comments capability is not available in this view",
     writers_only: "only editors of the board can send to Claude",
-    no_session: "no Claude session is watching the board",
+    no_session: "no agent session is watching the board",
     off: "sending to Claude is off in this view"
   };
   /* canSendToClaude is a snapshot: read on load, on opening a post and after each send. */
