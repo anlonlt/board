@@ -204,7 +204,7 @@ def main(argv=None):
     print("\n".join(ins.log + ins.kept) if ins.log + ins.kept else "", end="\n" if ins.log + ins.kept else "")
     if not ins.log:
         print("nothing to change")
-    print("next: %s" % ("README step 3: publish .kit/board.html" if not c.get("board_url") else "README step 4: the clerk"))
+    print("next: %s" % ("README step 3: publish .kit/board.html" if not c.get("board_url") else "README step 4: the first posts, then step 5: the clerk"))
     return 0
 
 
