@@ -74,6 +74,19 @@ with tempfile.TemporaryDirectory() as d:
     check("roles in config: clerk flash_lite low", cfgr["clerk"] == {"model": "flash_lite", "effort": "low"})
     check("the consultant's prompt installed, the orchestrator launches it at its level",
           os.path.exists(os.path.join(t, ".kit", "consultant.md")) and 'Model="pro"' in orch and "consultant.md" in orch)
+    cfg_k = json.load(open(os.path.join(t, ".kit", "config.json")))["kit"]
+    guide = open(os.path.join(t, ".kit", "ORCHESTRATOR.md"), encoding="utf-8").read()
+    check("context_limit_k in config: orchestrator 300, clerk 200",
+          cfg_k.get("orchestrator", {}).get("context_limit_k") == 300
+          and cfg_k.get("clerk", {}).get("context_limit_k") == 200)
+    check("rendered role models and automatic handover/clerk rotation in orchestrator & clerk prompts",
+          'Role="Orchestrator <N+1>", Model="inherit"' in orch
+          and 'Role="Board Clerk", Model="flash_lite"' in orch
+          and 'Model="flash"' in orch
+          and '300' in orch and '200' in orch
+          and 'Role="Orchestrator <N+1>", Model="inherit"' in guide
+          and 'ready for replacement' in clerk and '200' in clerk
+          and "{{" not in orch and "{{" not in guide and "{{" not in clerk)
     check("the kit's commit recorded", "_kit_commit" in json.load(open(os.path.join(t, ".kit", "manifest.json"))))
     cw = open(os.path.join(t, ".kit", "runner.md"), encoding="utf-8").read()
     check("one runner prompt for any place: pulls its cards, answers in its name, in the owner's language",

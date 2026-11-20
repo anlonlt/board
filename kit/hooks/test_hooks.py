@@ -136,6 +136,56 @@ with tempfile.TemporaryDirectory() as d:
     check("pre-compact (on Stop): writes .story/before-compaction.md and allows stop",
           out.get("decision") == "allow" and os.path.exists(os.path.join(proj, ".story", "before-compaction.md")))
 
+    # Context-threshold handover trigger in kit_pre_compact.py
+    def ctx_transcript(name, opener_text, in_tok, cache_tok, tool_cmd=None):
+        f = os.path.join(d, "ctx-%s.jsonl" % name)
+        with open(f, "w") as fh:
+            fh.write(json.dumps({"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "content": opener_text}) + "\n")
+            ev = {"step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
+                  "input_tokens": in_tok, "cache_read_tokens": cache_tok, "content": "ok"}
+            if tool_cmd:
+                ev["tool_calls"] = [{"name": "run_command", "args": {"CommandLine": tool_cmd}}]
+            fh.write(json.dumps(ev) + "\n")
+        return f
+
+    # Below threshold (orchestrator at 100k < 300k default) -> allow
+    tf_low = ctx_transcript("orch-low", "MyProj: you are the orchestrator.", 60000, 40000)
+    rc, out, _ = run("kit_pre_compact.py", {"hookEventName": "Stop", "conversation_id": "orch-low-" + RUN, "transcript_path": tf_low}, proj)
+    check("pre-compact: orchestrator below threshold is allowed", rc == 0 and out.get("decision") == "allow")
+
+    # Normal part above threshold (350k) -> allow
+    tf_part = ctx_transcript("part-high", "Your prompt is docs/prompts/p1.md: do it.", 200000, 150000)
+    rc, out, _ = run("kit_pre_compact.py", {"hookEventName": "Stop", "conversation_id": "part-high-" + RUN, "transcript_path": tf_part}, proj)
+    check("pre-compact: normal part above threshold is allowed", rc == 0 and out.get("decision") == "allow")
+
+    # Orchestrator above threshold (310k >= 300k) -> deny once with handover instructions, then allow
+    tf_orch = ctx_transcript("orch-high", "MyProj: you are the orchestrator.", 110000, 200000)
+    orch_cid = "orch-high-" + RUN
+    rc1, out1, _ = run("kit_pre_compact.py", {"hookEventName": "Stop", "conversation_id": orch_cid, "transcript_path": tf_orch}, proj)
+    check("pre-compact: orchestrator above threshold is denied with handover & invoke_subagent instructions",
+          rc1 == 0 and out1.get("decision") == "deny"
+          and "HANDOVER REQUIRED" in out1.get("reason", "")
+          and "310k >= 300k" in out1.get("reason", "")
+          and "invoke_subagent" in out1.get("reason", "")
+          and "state/orchestrator.md" in out1.get("reason", ""))
+    rc2, out2, _ = run("kit_pre_compact.py", {"hookEventName": "Stop", "conversation_id": orch_cid, "transcript_path": tf_orch}, proj)
+    check("pre-compact: orchestrator second stop is allowed (flag prevents infinite loop)",
+          rc2 == 0 and out2.get("decision") == "allow")
+
+    # Clerk above threshold (210k >= 200k) -> deny once with rotation instructions, then allow
+    tf_clerk = ctx_transcript("clerk-high", "MyProj: you are the board clerk.", 10000, 200000,
+                              tool_cmd="python3 -I .kit/board_cli.py comments wait --timeout 300")
+    clerk_cid = "clerk-high-" + RUN
+    rc1, out1, _ = run("kit_pre_compact.py", {"hookEventName": "Stop", "conversation_id": clerk_cid, "transcript_path": tf_clerk}, proj)
+    check("pre-compact: clerk above threshold is denied with rotation instructions",
+          rc1 == 0 and out1.get("decision") == "deny"
+          and "HANDOVER REQUIRED" in out1.get("reason", "")
+          and "210k >= 200k" in out1.get("reason", "")
+          and "ready for replacement" in out1.get("reason", ""))
+    rc2, out2, _ = run("kit_pre_compact.py", {"hookEventName": "Stop", "conversation_id": clerk_cid, "transcript_path": tf_clerk}, proj)
+    check("pre-compact: clerk second stop is allowed (flag prevents infinite loop)",
+          rc2 == 0 and out2.get("decision") == "allow")
+
     # Stop: closing message check using agy's transcript.jsonl format
     def transcript(step_id, closing, human=True):
         f = os.path.join(d, "t-%s.jsonl" % step_id)

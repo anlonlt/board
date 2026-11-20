@@ -51,6 +51,7 @@ DEFAULT_KIT = {
     "limits": {"message_chars": 600, "done_message_chars": 240, "chat_answer_chars": 600},
     "guard": {"never_add": ["*.keystore", "*.jks", "*.pem", ".env", "keystore.properties"], "allow_add": []},
     "session_start_lines": [],
+    "orchestrator": {"context_limit_k": 300},
     "clerk": {"wait_minutes": 5, "context_limit_k": 200},
     # agy subagent model tiers: clerk only forwards (flash_lite), cards runs scripts (flash),
     # orchestrator/parts inherit the session model, consultant uses pro.
@@ -120,12 +121,14 @@ def load_config(t, a):
     k = c.setdefault("kit", {})
     first = not os.path.exists(p)
     for key, v in DEFAULT_KIT.items():
-        k.setdefault(key, v)
+        k.setdefault(key, json.loads(json.dumps(v)))
     if first:
         k["setup"] = True
         k["main_branch"] = None
+    k.setdefault("orchestrator", {}).setdefault("context_limit_k", DEFAULT_KIT["orchestrator"]["context_limit_k"])
+    k.setdefault("clerk", {}).setdefault("context_limit_k", DEFAULT_KIT["clerk"]["context_limit_k"])
     for role, v in DEFAULT_KIT["roles"].items():
-        k["roles"].setdefault(role, v)
+        k["roles"].setdefault(role, dict(v))
     if a.project:
         c["project"] = a.project
     c.setdefault("project", os.path.basename(t))
@@ -219,18 +222,28 @@ def slug(s):
 
 def render(text, c):
     k = c["kit"]
+    roles = k.get("roles") or {}
+    role_cfg = lambda r: roles.get(r, DEFAULT_KIT["roles"][r])
+    orch_limit_k = str((k.get("orchestrator") or {}).get("context_limit_k", DEFAULT_KIT["orchestrator"]["context_limit_k"]))
+    clerk_limit_k = str((k.get("clerk") or {}).get("context_limit_k", DEFAULT_KIT["clerk"]["context_limit_k"]))
     vals = {"PROJECT": c["project"], "SLUG": slug(c["project"]),
             "CMD": k.get("cmd") or "./.kit/up",
             "BOARD_URL": c.get("board_url") or "http://127.0.0.1:8765",
             "MEMORY_DIR": k.get("memory_dir") or ".board/memory",
             "TALK": c["language"]["talk"], "MAIN_BRANCH": k["main_branch"],
-            "WAIT": str(k["clerk"]["wait_minutes"]), "CONTEXT_K": str(k["clerk"]["context_limit_k"]),
+            "WAIT": str(k["clerk"]["wait_minutes"]),
+            "CONTEXT_K": clerk_limit_k,
+            "CLERK_LIMIT_K": clerk_limit_k,
+            "ORCH_LIMIT_K": orch_limit_k,
             "CLERK": c.get("fields", {}).get("clerk", "clerk"),
             "MIRROR_BRANCH": c["mirror"]["branch"], "MIRROR_PATH": c["mirror"]["path"],
             "MSG": str(k["limits"]["message_chars"]), "DONE": str(k["limits"]["done_message_chars"]),
-            "PART_MODEL": k["roles"]["part"]["model"], "PART_EFFORT": k["roles"]["part"]["effort"],
-            "CONS_MODEL": k["roles"].get("consultant", DEFAULT_KIT["roles"]["consultant"])["model"],
-            "CONS_EFFORT": k["roles"].get("consultant", DEFAULT_KIT["roles"]["consultant"])["effort"]}
+            "ORCH_MODEL": role_cfg("orchestrator")["model"],
+            "CLERK_MODEL": role_cfg("clerk")["model"],
+            "PART_MODEL": role_cfg("part")["model"], "PART_EFFORT": role_cfg("part")["effort"],
+            "CONSULTANT_MODEL": role_cfg("consultant")["model"],
+            "CONS_MODEL": role_cfg("consultant")["model"], "CONS_EFFORT": role_cfg("consultant")["effort"],
+            "CARDS_MODEL": role_cfg("cards")["model"]}
     for n, v in vals.items():
         text = text.replace("{{%s}}" % n, v)
     left = re.findall(r"\{\{[A-Z_]+\}\}", text)
