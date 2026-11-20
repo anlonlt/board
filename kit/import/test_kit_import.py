@@ -51,4 +51,17 @@ with tempfile.TemporaryDirectory() as d:
     pf = open(os.path.join(d, ".story", "preferences.md")).read() if os.path.exists(os.path.join(d, ".story", "preferences.md")) else ""
     check("#2: approvals, never and unread reach the memory", "Approved once (do not ask again): editer la liste test" in pf
           and "Never without the owner: envoyer de vrais courriels" in pf and "Not read by the import: avant le 14 octobre" in pf)
+
+    # the owner's screenshot (2026-11-20): what a new session needs to resume without re-explaining
+    st4 = {"projects": [{"id": "soutien", "title": "Soutien TI", "next": "tester le flux", "resume": ["ouvrir l'app"],
+           "ids": {"Liste Demandes": "liste SharePoint, https://x.sharepoint.com/Lists/Demandes"},
+           "technical": ["Statut = field_3"], "accounts": ["le flux tourne sous le compte de service"],
+           "people": {"approbateur": "la direction"}, "tests": ["jamais verifie: l'archive"], "risks": ["titre avec /"],
+           "lessons": ["coller en texte brut"], "needs_me": ["ma connexion"]}]}
+    f4 = os.path.join(d, "s4.json"); json.dump(st4, open(f4, "w"))
+    subprocess.run([sys.executable, "-I", os.path.join(d, ".kit", "kit_import.py"), f4, "--out", os.path.join(d, "o4")], capture_output=True)
+    s4 = open(os.path.join(d, ".story", "state", "soutien.md")).read() if os.path.exists(os.path.join(d, ".story", "state", "soutien.md")) else ""
+    check("resume, technical, accounts, people, tests, risks, lessons, needs_me reach the state file",
+          all(x in s4 for x in ("## How to resume", "Statut = field_3", "compte de service", "approbateur: la direction",
+                                 "jamais verifie", "titre avec /", "coller en texte brut", "ma connexion", "https://x.sharepoint.com")))
 print("%d failed" % fails); sys.exit(1 if fails else 0)

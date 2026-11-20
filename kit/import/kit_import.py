@@ -65,7 +65,12 @@ def normalise(p):
                 d[_text(x)] = ""  # a bare name: the name is the id
         ids = d
     p["ids"] = {str(k): _text(v) for k, v in ids.items()}
-    for f in ("where", "decisions", "chats"):
+    ppl = p.get("people") or {}
+    if isinstance(ppl, list):
+        ppl = {(x.get("role") or str(i)) if isinstance(x, dict) else str(i): _text({k: v for k, v in x.items() if k != "role"}) if isinstance(x, dict) else _text(x)
+               for i, x in enumerate(ppl, 1)}
+    p["people"] = {str(k): _text(v) for k, v in ppl.items()}
+    for f in ("where", "decisions", "chats", "resume", "technical", "accounts", "tests", "risks", "lessons", "needs_me"):
         v = p.get(f) or []
         p[f] = [_text(x) for x in (v if isinstance(v, list) else [v])]
     w = p.get("waiting") or []
@@ -89,6 +94,13 @@ def state_md(p):
         out += ["", "## Decisions"] + ["- " + d for d in p["decisions"]]
     if p.get("ids"):
         out += ["", "## Ids"] + [("- %s: %s" % (k, v)) if v else "- " + k for k, v in p["ids"].items()]
+    for key, head in (("resume", "How to resume"), ("technical", "Technical details"), ("accounts", "Accounts"),
+                      ("tests", "Tests"), ("risks", "Known risks"), ("lessons", "Lessons (traps found)"),
+                      ("needs_me", "Still needs the owner")):
+        if p.get(key):
+            out += ["", "## " + head] + ["- " + x for x in p[key]]
+    if p.get("people"):
+        out += ["", "## People (role: who)"] + ["- %s: %s" % (k, v) for k, v in p["people"].items()]
     if p.get("chats"):
         out += ["", "## Imported from chats"] + ["- " + c for c in p["chats"]]
     return "\n".join(out) + "\n"
