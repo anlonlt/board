@@ -170,6 +170,12 @@ def load_config(t, a):
         k["cmd"] = ""
     else:
         k.setdefault("cmd", slug(c["project"]))
+    if a.memory_dir:
+        k["memory_dir"] = a.memory_dir
+    elif "memory_dir" not in k:
+        k["memory_dir"] = ".story" if os.path.isdir(os.path.join(t, ".story")) else ".board/memory"
+    if a.notify_url:
+        k["notify_url"] = a.notify_url
     return c
 
 
@@ -337,6 +343,8 @@ def main(argv=None):
     ap.add_argument("--mode", choices=["local", "hybrid"], help="local: localhost board_server; hybrid: Claude Artifact + git_watch.py")
     ap.add_argument("--cmd", help="one-word terminal command installed in ~/.local/bin/<cmd> (default: project slug)")
     ap.add_argument("--no-cmd", action="store_true", help="skip installing the ~/.local/bin/<cmd> shortcut")
+    ap.add_argument("--memory-dir", help="memory directory relative to repo root (default: .story if present, else .board/memory)")
+    ap.add_argument("--notify-url", help="optional phone push webhook URL (e.g. https://ntfy.sh/<topic>)")
     ap.add_argument("--bootstrap", action="store_true", help="1-command bootstrap: pre-seed _orchestrator & KIT-installed into local SQLite DB")
     ap.add_argument("--main-branch")
     ap.add_argument("--trunk-push", choices=["yes", "no"], help="the owner's standing permission to push the trunk")
@@ -387,9 +395,9 @@ def main(argv=None):
             if want_claude:
                 ins.put(".claude/hooks/kit/" + h, rd("kit", "hooks", h))
     if want_agy:
-        ins.put(".agents/skills/story/SKILL.md", rd("kit", "skills", "story", "SKILL.md"))
+        ins.put(".agents/skills/memory/SKILL.md", rd("kit", "skills", "memory", "SKILL.md"))
     if want_claude:
-        ins.put(".claude/skills/story/SKILL.md", rd("kit", "skills", "story", "SKILL.md"))
+        ins.put(".claude/skills/memory/SKILL.md", rd("kit", "skills", "memory", "SKILL.md"))
     if parts["board"]:
         ins.put(".kit/kit.py", rd("scripts", "kit.py"))
         ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))
@@ -419,14 +427,15 @@ def main(argv=None):
         ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
         ins.put(".kit/runner.md", render(rd("kit", "runner.template.md"), c))
         ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
+    mdir = c["kit"].get("memory_dir") or ".board/memory"
     for d in ("state", "issues", "lessons"):
-        if not os.path.isdir(os.path.join(t, ".story", d)):
-            ins.put(".story/%s/.gitkeep" % d, "")
-    if not os.path.exists(os.path.join(t, ".story", "awaits.md")):
-        ins.put(".story/awaits.md", "# What awaits the owner\n\n")
+        if not os.path.isdir(os.path.join(t, mdir, d)):
+            ins.put("%s/%s/.gitkeep" % (mdir, d), "")
+    if not os.path.exists(os.path.join(t, mdir, "awaits.md")):
+        ins.put("%s/awaits.md" % mdir, "# What awaits the owner\n\n")
     gi = os.path.join(t, ".gitignore")
     cur = open(gi, encoding="utf-8").read() if os.path.exists(gi) else ""
-    gi_add = [x for x in (".story/before-compaction.md", ".kit/board_data/") if x not in cur]
+    gi_add = [x for x in ("%s/before-compaction.md" % mdir, ".kit/board_data/") if x not in cur]
     if gi_add:
         ins.log.append(".gitignore: + " + ", ".join(gi_add))
         if not a.dry_run:

@@ -77,7 +77,7 @@ with tempfile.TemporaryDirectory() as d:
     kit = os.path.join(t, ".kit")
     cmds = hooks_of(t)
     check("7: --no-board: memory, end_session and the memory's hooks are installed",
-          rc == 0 and os.path.isdir(os.path.join(t, ".story", "state")) and os.path.exists(os.path.join(kit, "end_session.py"))
+          rc == 0 and os.path.isdir(os.path.join(t, ".board", "memory", "state")) and os.path.exists(os.path.join(kit, "end_session.py"))
           and any("kit_session_start" in c for c in cmds) and any("kit_stop" in c for c in cmds) and any("kit_guard" in c for c in cmds))
     check("7: --no-board: no page, no clerk, no orchestrator, no board hooks",
           not any(os.path.exists(os.path.join(kit, f)) for f in ("board.html", "clerk.md", "orchestrator.md", "BOARD.md"))

@@ -156,6 +156,17 @@ with tempfile.TemporaryDirectory() as tmp:
               rc == 0 and ch.get("latest_seq", 0) >= 5 and len(ch.get("changes", [])) >= 5)
         rc2, out2, _ = cli(url, "changes", "--since", str(ch.get("latest_seq", 0)))
         check("changes --since latest_seq returns empty list", rc2 == 0 and json.loads(out2).get("changes") == [])
+
+        # 8b. Comment counts endpoint & inline git diff endpoint & UX shim
+        cnts = json.loads(urllib.request.urlopen(url + "/_api/db/comments/counts").read().decode("utf-8"))
+        check("comments/counts returns per-post totals", cnts.get("counts", {}).get("P-1", {}).get("total") == 1)
+        check("shim includes Cmd+K shortcut, column switcher, and git diff loader",
+              "kit-col-move" in shim and "/_api/git/diff" in shim and "Escape" in shim)
+        sha = subprocess.run(["git", "-C", mrepo, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+        diff_res, diff_err = board_server.read_git_diff(mrepo, sha)
+        check("read_git_diff returns commit stat and diff for valid sha", diff_err is None and "M-1.json" in diff_res["diff"])
+        _, bad_err = board_server.read_git_diff(mrepo, "; rm -rf /")
+        check("read_git_diff rejects unsafe ref", bad_err == "invalid_ref")
     finally:
         srv.shutdown()
         srv.server_close()

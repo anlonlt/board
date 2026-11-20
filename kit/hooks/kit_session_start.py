@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kit_config import config, project_dir  # noqa: E402
+from kit_config import config, memory_dir, project_dir  # noqa: E402
 
 
 def first(path, prefix):
@@ -62,25 +62,27 @@ def main():
             out.append("CLONE: %s commits behind its remote: git pull --no-rebase first." % b.stdout.strip())
     except (OSError, subprocess.SubprocessError):
         pass
-    if os.path.exists(os.path.join(root, ".story", "workflow.md")):
-        out.append("WORKFLOW: how the work gets done (tools, accounts and browser profiles, cycle, limits): .story/workflow.md; "
-                   "each project's state file says where it runs (Runs in:).")
-    pref = os.path.join(root, ".story", "preferences.md")
+    mdir = memory_dir(data)
+    mrel = os.path.relpath(mdir, root)
+    if os.path.exists(os.path.join(mdir, "workflow.md")):
+        out.append("WORKFLOW: how the work gets done (tools, accounts and browser profiles, cycle, limits): %s/workflow.md; "
+                   "each project's state file says where it runs (Runs in:)." % mrel)
+    pref = os.path.join(mdir, "preferences.md")
     if os.path.exists(pref):
         with open(pref, encoding="utf-8") as fh:
-            out += ["PREFERENCES (.story/preferences.md):"] + ["  " + l.strip() for l in fh if l.startswith("- ")][:15]
-    states = sorted(glob.glob(os.path.join(root, ".story", "state", "*.md")))
+            out += ["PREFERENCES (%s/preferences.md):" % mrel] + ["  " + l.strip() for l in fh if l.startswith("- ")][:15]
+    states = sorted(glob.glob(os.path.join(mdir, "state", "*.md")))
     if states:
-        out.append("MEMORY (.story/, skill story): each workstream's next step:")
+        out.append("MEMORY (%s/, skill memory): each workstream's next step:" % mrel)
         for s in states:
             out.append("  %s: %s" % (os.path.basename(s)[:-3], (first(s, "Next:") or "(no Next: line)")[:160]))
-    aw = os.path.join(root, ".story", "awaits.md")
+    aw = os.path.join(mdir, "awaits.md")
     if os.path.exists(aw):
         with open(aw, encoding="utf-8") as fh:
             n = sum(1 for l in fh if l.startswith("- "))
-        out.append("AWAITS THE OWNER: %d points (.story/awaits.md)." % n)
+        out.append("AWAITS THE OWNER: %d points (%s/awaits.md)." % (n, mrel))
     issues = []
-    for f in sorted(glob.glob(os.path.join(root, ".story", "issues", "*.md"))):
+    for f in sorted(glob.glob(os.path.join(mdir, "issues", "*.md"))):
         with open(f, encoding="utf-8") as fh:
             t = fh.read()
         if "status: closed" not in t.lower():
@@ -88,9 +90,9 @@ def main():
     if issues:
         out.append("OPEN ISSUES (%d): a logged defect is not diagnosed again:" % len(issues))
         out += issues[:20]
-    ls = glob.glob(os.path.join(root, ".story", "lessons", "*.md"))
+    ls = glob.glob(os.path.join(mdir, "lessons", "*.md"))
     if ls:
-        out.append("LESSONS (%d): grep -ril '<word>' .story/lessons/" % len(ls))
+        out.append("LESSONS (%d): grep -ril '<word>' %s/lessons/" % (len(ls), mrel))
     msg = "\n".join(out)
     if msg:
         print(json.dumps({"injectSteps": [{"systemMessage": {"systemMessage": msg}}]}, ensure_ascii=False))

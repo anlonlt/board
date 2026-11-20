@@ -14,12 +14,14 @@ import json
 import mimetypes
 import os
 import queue
+import re
 import sqlite3
 import subprocess
 import sys
 import threading
 import time
 import urllib.parse
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from http.cookies import SimpleCookie
@@ -242,6 +244,81 @@ SHIM_JS = r"""(function () {
       return Promise.resolve(null);
     }
   };
+
+  /* UX enhancements: Cmd+K / '/' quick search, Esc to close sheet, 1-tap column switcher, inline git diff */
+  document.addEventListener("keydown", function (e) {
+    var tag = (document.activeElement && document.activeElement.tagName || "").toLowerCase();
+    var typing = tag === "input" || tag === "textarea" || tag === "select" || (document.activeElement && document.activeElement.isContentEditable);
+    if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") || (!typing && e.key === "/")) {
+      var q = document.getElementById("q") || document.querySelector("input[type='search'], input[placeholder*='Search']");
+      if (q) { e.preventDefault(); q.focus(); q.select && q.select(); }
+    } else if (e.key === "Escape") {
+      var back = document.getElementById("back");
+      if (back && back.offsetParent !== null) back.click();
+    }
+  });
+
+  function enhancePostSheet() {
+    var sheet = document.getElementById("sheet");
+    if (!sheet || sheet.hidden) return;
+    var postId = "";
+    try { postId = sessionStorage.getItem("board-open") || ""; } catch (e) {}
+    if (!postId || postId.charAt(0) === "_") return;
+
+    /* 1-tap column switcher */
+    var bar = sheet.querySelector(".p-actions, .bar") || sheet.firstElementChild;
+    var existingSel = document.getElementById("kit-col-move");
+    if (bar && !existingSel) {
+      var sel = document.createElement("select");
+      sel.id = "kit-col-move";
+      sel.title = "Move card to column";
+      sel.style.cssText = "background:var(--surface,#1a2335);color:var(--ink,#e6ebf2);border:1px solid var(--line,#2c3850);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px;cursor:pointer;";
+      [["", "Move column…"], ["todo", "For you to do"], ["question", "Waiting on you"], ["info", "News"], ["done", "Done"]].forEach(function (pair) {
+        var o = document.createElement("option"); o.value = pair[0]; o.textContent = pair[1]; sel.appendChild(o);
+      });
+      sel.addEventListener("change", function () {
+        var col = sel.value; if (!col) return;
+        var pid = ""; try { pid = sessionStorage.getItem("board-open") || ""; } catch (e) {}
+        if (!pid) return;
+        db.doc("posts/" + pid).update({ column: col }).catch(function () {});
+        sel.value = "";
+      });
+      bar.appendChild(sel);
+    }
+
+    /* Inline git diff loader if body mentions a 7-40 char commit hash */
+    var bodyEl = document.getElementById("p-body");
+    if (bodyEl && bodyEl.dataset.kitDiffPost !== postId) {
+      bodyEl.dataset.kitDiffPost = postId;
+      var oldDiff = document.getElementById("kit-git-diff");
+      if (oldDiff) oldDiff.remove();
+      var m = (bodyEl.textContent || "").match(/\b([0-9a-f]{7,40})\b/);
+      if (m) {
+        var wrap = document.createElement("details");
+        wrap.id = "kit-git-diff";
+        wrap.style.cssText = "margin:14px 0;border:1px solid var(--line,#2c3850);border-radius:10px;padding:8px 12px;background:var(--sunk,#0c121d);";
+        var sum = document.createElement("summary");
+        sum.textContent = "Inspect git diff (" + m[1].slice(0, 7) + ")";
+        sum.style.cssText = "cursor:pointer;font-weight:600;color:var(--info,#78b4e3);";
+        var pre = document.createElement("pre");
+        pre.style.cssText = "overflow:auto;max-height:360px;font-family:var(--mono,monospace);font-size:12px;line-height:1.4;margin:8px 0 0;white-space:pre;";
+        pre.textContent = "Loading diff…";
+        wrap.appendChild(sum); wrap.appendChild(pre);
+        var loaded = false;
+        wrap.addEventListener("toggle", function () {
+          if (!wrap.open || loaded) return;
+          loaded = true;
+          api("GET", "/_api/git/diff?ref=" + encodeURIComponent(m[1])).then(function (r) {
+            pre.textContent = (r.stat ? r.stat + "\n\n" : "") + (r.diff || "(empty diff)");
+          }, function (err) {
+            pre.textContent = "Diff unavailable (" + (err.message || "not a commit in this repo") + ")";
+          });
+        });
+        bodyEl.insertAdjacentElement("afterend", wrap);
+      }
+    }
+  }
+  setInterval(enhancePostSheet, 600);
 })();
 """
 
@@ -398,6 +475,28 @@ class BoardStore:
             latest = self.conn.execute("SELECT COALESCE(MAX(seq), 0) FROM changes").fetchone()[0]
         items = [{"seq": r[0], "collection": r[1], "doc_id": r[2], "op": r[3], "version": r[4], "at": r[5]} for r in rows]
         return {"changes": items, "latest_seq": latest}
+
+    def comment_counts(self):
+        """Compact per-post comment counts for fast board scaling at 1,000+ comments."""
+        with self.lock:
+            rows = self.conn.execute("SELECT data FROM docs WHERE collection='comments'").fetchall()
+        counts = {}
+        for (raw,) in rows:
+            try:
+                d = json.loads(raw)
+            except ValueError:
+                continue
+            if d.get("removed"):
+                continue
+            pid = d.get("post_id") or ""
+            if not pid:
+                continue
+            cur = counts.setdefault(pid, {"total": 0, "latest_at": ""})
+            cur["total"] += 1
+            at = str(d.get("created_at") or "")
+            if at > cur["latest_at"]:
+                cur["latest_at"] = at
+        return {"counts": counts}
 
     def set_doc(self, collection, doc_id, data, if_version=None):
         now = utc_now()
@@ -570,7 +669,41 @@ class BoardStore:
         return {"thread_id": thread_id, "replies": replies, "status": "replied"}
 
 
-def make_handler(root_dir, store, token=None):
+def send_push(notify_url, title, body):
+    """Fire-and-forget phone push notification (works with free ntfy.sh or any webhook)."""
+    if not notify_url:
+        return
+    def _go():
+        try:
+            r = urllib.request.Request(
+                notify_url,
+                data=body.encode("utf-8"),
+                headers={"Title": title[:120], "Content-Type": "text/plain; charset=utf-8"},
+                method="POST",
+            )
+            with urllib.request.urlopen(r, timeout=5):
+                pass
+        except Exception:
+            pass
+    threading.Thread(target=_go, daemon=True).start()
+
+
+def read_git_diff(root_dir, ref):
+    if not ref or not re.match(r"^[0-9a-fA-F]{6,40}$", ref):
+        return None, "invalid_ref"
+    r_stat = subprocess.run(["git", "-C", root_dir, "show", "--stat", "--format=%h %s (%an, %cr)", ref],
+                            capture_output=True, text=True, timeout=10)
+    if r_stat.returncode != 0:
+        return None, "not_found"
+    r_diff = subprocess.run(["git", "-C", root_dir, "show", "--format=", ref],
+                            capture_output=True, text=True, timeout=10)
+    diff = (r_diff.stdout or "")[:32768]
+    if len(r_diff.stdout or "") > 32768:
+        diff += "\n... (truncated at 32 KB)"
+    return {"ref": ref, "stat": r_stat.stdout.strip(), "diff": diff}, None
+
+
+def make_handler(root_dir, store, token=None, notify_url=None):
     html_path = os.path.join(root_dir, ".kit", "board.html")
 
     class Handler(BaseHTTPRequestHandler):
@@ -679,6 +812,19 @@ def make_handler(root_dir, store, token=None):
                 since = int((qs.get("since") or ["0"])[0])
                 limit = int((qs.get("limit") or ["1000"])[0])
                 self._send_json(200, store.list_changes(since=since, limit=limit))
+                return
+
+            if path == "/_api/git/diff":
+                ref = (qs.get("ref") or [""])[0].strip()
+                res, err = read_git_diff(root_dir, ref)
+                if err:
+                    self._send_json(400 if err == "invalid_ref" else 404, {"error": err})
+                    return
+                self._send_json(200, res)
+                return
+
+            if path == "/_api/db/comments/counts":
+                self._send_json(200, store.comment_counts())
                 return
 
             if path == "/_api/events":
@@ -794,6 +940,12 @@ def make_handler(root_dir, store, token=None):
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
+            if notify_url:
+                d = body.get("data") or {}
+                if coll == "posts" and d.get("column") in ("todo", "question") and not doc_id.startswith("_"):
+                    send_push(notify_url, "Board (%s): %s" % (d.get("column"), d.get("title") or doc_id), str(d.get("body") or "")[:240])
+                elif coll == "comments" and d.get("from") not in (None, "", "owner", "viewer"):
+                    send_push(notify_url, "%s replied on %s" % (d.get("from"), d.get("post_id") or "board"), str(d.get("text") or "")[:240])
             self._send_json(200, res)
 
         def do_PATCH(self):
@@ -958,10 +1110,16 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
     return {"ref": ref, "imported": imported, "skipped": skipped}
 
 
-def start_server(root_dir, host="127.0.0.1", port=8765, token=None):
+def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None):
     data_dir = os.path.join(root_dir, ".kit", "board_data")
     store = BoardStore(data_dir)
-    srv = ThreadingHTTPServer((host, port), make_handler(root_dir, store, token=token))
+    if notify_url is None:
+        cfg_path = os.path.join(root_dir, ".kit", "config.json")
+        try:
+            notify_url = json.load(open(cfg_path, encoding="utf-8")).get("kit", {}).get("notify_url") or None
+        except (OSError, ValueError):
+            notify_url = None
+    srv = ThreadingHTTPServer((host, port), make_handler(root_dir, store, token=token, notify_url=notify_url))
     srv.daemon_threads = True
     return srv, store
 
@@ -972,13 +1130,15 @@ def main(argv=None):
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--root", default=None, help="Project root (default: parent of .kit/)")
     ap.add_argument("--token", default=None, help="Require auth token (or set $KIT_BOARD_TOKEN)")
+    ap.add_argument("--notify-url", default=None, help="Phone push webhook URL (e.g. https://ntfy.sh/<topic>)")
     ap.add_argument("--seed-from-mirror", action="store_true", help="Import posts/comments from git board-mirror on startup")
     ap.add_argument("--mirror-branch", default=None, help="Override mirror branch name (default from .kit/config.json)")
     ap.add_argument("--force-seed", action="store_true", help="Overwrite existing local SQLite docs when seeding")
     a = ap.parse_args(argv)
     root = os.path.abspath(a.root) if a.root else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     tok = a.token or os.environ.get("KIT_BOARD_TOKEN") or None
-    srv, store = start_server(root, a.host, a.port, token=tok)
+    nurl = a.notify_url or os.environ.get("KIT_NOTIFY_URL") or None
+    srv, store = start_server(root, a.host, a.port, token=tok, notify_url=nurl)
     if a.seed_from_mirror:
         info = seed_from_mirror(root, store, branch=a.mirror_branch, force=a.force_seed)
         print("seeded from %s: %d imported, %d skipped" % (info["ref"] or "(none)", info["imported"], info["skipped"]), flush=True)

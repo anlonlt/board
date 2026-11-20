@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kit_config import project_dir  # noqa: E402
+from kit_config import memory_dir, project_dir  # noqa: E402
 
 
 def git(root, *a):
@@ -25,7 +25,7 @@ def main():
     except (ValueError, OSError):
         data = {}
     root = project_dir(data)
-    d = os.path.join(root, ".story")
+    d = memory_dir(data)
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "before-compaction.md"), "w", encoding="utf-8") as fh:
         fh.write("# Before compaction, %s\n\nbranch: %s\n\n## last commits\n%s\n\n## changed\n%s\n" % (

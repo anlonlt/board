@@ -50,13 +50,20 @@ def row(path, awaits):
     if not steps:
         steps = [nxt or "next step"]
     mine = [l[len("- [%s]" % wid):].strip() for l in awaits.splitlines() if l.startswith("- [%s]" % wid)]
-    # the page's states (CHIP/ORDER in board.html): you (waits on the owner), running, ready, idle, done
-    state = "you" if mine else ("done" if steps and done == len(steps) else ("ready" if nxt else "idle"))
+    bm = re.search(r"^Blocked by:\s*(.+)$", text, re.M | re.I)
+    blockers = [b.strip() for b in bm.group(1).split(",") if b.strip() and b.strip().lower() != "none"] if bm else []
+    # the page's states (CHIP/ORDER in board.html): you (waits on the owner), blocked, running, ready, idle, done
+    state = "you" if mine else ("blocked" if blockers else ("done" if steps and done == len(steps) else ("ready" if nxt else "idle")))
     note = ("Next: " + nxt) if nxt else ""
+    if blockers:
+        note += "\n- Blocked by: " + ", ".join(blockers)
     if mine:
         note += "".join("\n- Waits on you: " + m for m in mine)
-    return prio, {"key": wid, "name": title, "steps": steps, "at": min(done, len(steps) - 1), "state": state,
-                  "note": note.strip(), "post": "P-" + wid, "train": "P-" + wid}
+    out = {"key": wid, "name": title, "steps": steps, "at": min(done, len(steps) - 1), "state": state,
+           "note": note.strip(), "post": "P-" + wid, "train": "P-" + wid}
+    if blockers:
+        out["blocked_by"] = blockers
+    return prio, out
 
 
 def post_state(p):

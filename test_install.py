@@ -41,10 +41,10 @@ def all_hook_cmds(hooks_json):
 with tempfile.TemporaryDirectory() as d:
     os.environ["KIT_BIN_DIR"] = os.path.join(d, "bin")
     t = os.path.join(d, "proj")
-    os.makedirs(os.path.join(t, ".agents", "skills", "story"))
+    os.makedirs(os.path.join(t, ".agents", "skills", "memory"))
     mine = {"my-linter": {"Stop": [{"type": "command", "command": "echo mine"}]}}
     json.dump(mine, open(os.path.join(t, ".agents", "hooks.json"), "w"))
-    open(os.path.join(t, ".agents", "skills", "story", "SKILL.md"), "w").write("my own story skill\n")
+    open(os.path.join(t, ".agents", "skills", "memory", "SKILL.md"), "w").write("my own memory skill\n")
     open(os.path.join(t, ".gitignore"), "w").write("build/")
     rep = os.path.join(d, "report.md")
     open(rep, "w").write("# step 0 report\n")
@@ -54,11 +54,11 @@ with tempfile.TemporaryDirectory() as d:
     check("hooks.json: the project's own named hook kept", s.get("my-linter") == mine["my-linter"])
     cmds = all_hook_cmds(s)
     check("hooks.json: 10 kit handlers merged into kit-board", sum("hooks/kit/" in c for c in cmds) == 10)
-    check("a project's own skill is not overwritten", open(os.path.join(t, ".agents", "skills", "story", "SKILL.md")).read() == "my own story skill\n"
+    check("a project's own skill is not overwritten", open(os.path.join(t, ".agents", "skills", "memory", "SKILL.md")).read() == "my own memory skill\n"
           and "KEPT" in out)
     page = open(os.path.join(t, ".kit", "board.html"), encoding="utf-8").read()
     check("page: the project's name, no Harmonize, no placeholder", "Tide Clock board" in page and "armoniz" not in page and "{{" not in page)
-    check(".gitignore appended, not replaced", open(os.path.join(t, ".gitignore")).read() == "build/\n.story/before-compaction.md\n.kit/board_data/\n")
+    check(".gitignore appended, not replaced", open(os.path.join(t, ".gitignore")).read() == "build/\n.board/memory/before-compaction.md\n.kit/board_data/\n")
     rc, out = inst(t)
     check("a rerun changes nothing", rc == 0 and "nothing to change" in out)
     open(os.path.join(t, ".kit", "BOARD.md"), "a").write("my note\n")

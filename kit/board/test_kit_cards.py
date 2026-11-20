@@ -48,4 +48,11 @@ with tempfile.TemporaryDirectory() as d:
                         "--board", os.path.join(d, "b")], capture_output=True, text=True)
     check("to archive: the session of a post he moved to Done, not one already archived, not one still in a column",
           "to archive: session_DONE1" in r.stdout and "session_DONE2" not in r.stdout and "session_s1" not in r.stdout)
+    sys.path.insert(0, HERE)
+    import kit_cards as _kc
+    blk_path = os.path.join(d, "blk.md")
+    open(blk_path, "w").write("# Blocked stream\nNext: deploy\nBlocked by: P-auth, P-db\n")
+    _, brow = _kc.row(blk_path, "")
+    check("blocked_by sets state=blocked and lists blockers",
+          brow["state"] == "blocked" and brow.get("blocked_by") == ["P-auth", "P-db"] and "Blocked by: P-auth, P-db" in brow["note"])
 print("%d failed" % fails); sys.exit(1 if fails else 0)

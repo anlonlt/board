@@ -40,3 +40,14 @@ def limit(name, default, data=None):
 def in_setup(data=None):
     """README steps 1-8: install.py sets kit.setup at the first install, --setup-done clears it."""
     return bool(config(data).get("kit", {}).get("setup"))
+
+
+def memory_dir(data=None):
+    """Memory directory (configurable via kit.memory_dir to avoid Storybloq .story/ collisions)."""
+    root = project_dir(data)
+    md = config(data).get("kit", {}).get("memory_dir")
+    if md:
+        return os.path.join(root, md)
+    if os.path.isdir(os.path.join(root, ".story")):
+        return os.path.join(root, ".story")
+    return os.path.join(root, ".board", "memory")
