@@ -164,6 +164,12 @@ def load_config(t, a):
         k["main_branch"] = a.main_branch
     if a.trunk_push:
         k["trunk_push"] = a.trunk_push == "yes"
+    if a.cmd:
+        k["cmd"] = a.cmd
+    elif a.no_cmd:
+        k["cmd"] = ""
+    else:
+        k.setdefault("cmd", slug(c["project"]))
     return c
 
 
@@ -202,6 +208,7 @@ def slug(s):
 def render(text, c):
     k = c["kit"]
     vals = {"PROJECT": c["project"], "SLUG": slug(c["project"]),
+            "CMD": k.get("cmd") or "./.kit/up",
             "BOARD_URL": c.get("board_url") or "http://127.0.0.1:8765",
             "TALK": c["language"]["talk"], "MAIN_BRANCH": k["main_branch"],
             "WAIT": str(k["clerk"]["wait_minutes"]), "CONTEXT_K": str(k["clerk"]["context_limit_k"]),
@@ -293,6 +300,32 @@ def merge_claude_settings(t, dry, log, board=True):
                 fh.write("\n")
 
 
+def install_cmd(t, cmd_name, dry, log):
+    """Install a one-word launcher in ~/.local/bin/<cmd_name> (override dir with $KIT_BIN_DIR)."""
+    if not cmd_name or "/" in cmd_name or " " in cmd_name:
+        return
+    bin_dir = os.environ.get("KIT_BIN_DIR") or os.path.expanduser("~/.local/bin")
+    dst = os.path.join(bin_dir, cmd_name)
+    marker = "# kit-board launcher"
+    content = "#!/usr/bin/env bash\n%s\nexec %s \"$@\"\n" % (marker, json.dumps(os.path.join(t, ".kit", "up")))
+    if os.path.exists(dst):
+        try:
+            cur = open(dst, encoding="utf-8").read()
+        except OSError:
+            cur = ""
+        if cur == content:
+            return
+        if marker not in cur:
+            log.append("KEPT %s (already exists and not a kit launcher; pass --cmd <other-name>)" % dst)
+            return
+    log.append("command: `%s` -> %s" % (cmd_name, dst))
+    if not dry:
+        os.makedirs(bin_dir, exist_ok=True)
+        with open(dst, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        os.chmod(dst, 0o755)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("target")
@@ -302,6 +335,8 @@ def main(argv=None):
     ap.add_argument("--board-port", type=int, help="local board server port (default 8765)")
     ap.add_argument("--runtime", choices=["agy", "claude", "both"], help="which harness configs to install (default agy)")
     ap.add_argument("--mode", choices=["local", "hybrid"], help="local: localhost board_server; hybrid: Claude Artifact + git_watch.py")
+    ap.add_argument("--cmd", help="one-word terminal command installed in ~/.local/bin/<cmd> (default: project slug)")
+    ap.add_argument("--no-cmd", action="store_true", help="skip installing the ~/.local/bin/<cmd> shortcut")
     ap.add_argument("--main-branch")
     ap.add_argument("--trunk-push", choices=["yes", "no"], help="the owner's standing permission to push the trunk")
     ap.add_argument("--survey", help="step 0's report (survey/<date>/report.md): required at the first install")
@@ -398,6 +433,8 @@ def main(argv=None):
             open(gi, "a", encoding="utf-8").write(prefix + "\n".join(gi_add) + "\n")
     if want_agy:
         merge_hooks(t, a.dry_run, ins.log, parts["board"])
+        if c["kit"].get("cmd"):
+            install_cmd(t, c["kit"]["cmd"], a.dry_run, ins.log)
     if want_claude:
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"])
     import subprocess

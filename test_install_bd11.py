@@ -48,6 +48,7 @@ def hooks_of(t):
 
 
 with tempfile.TemporaryDirectory() as d:
+    os.environ["KIT_BIN_DIR"] = os.path.join(d, "bin")
     rep = survey(d)
     # 1. step 0 first
     t = os.path.join(d, "a"); os.makedirs(t)

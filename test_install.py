@@ -17,8 +17,11 @@ def check(name, ok):
     fails += not ok
 
 
-def inst(t, *a):
-    r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "install.py"), t] + list(a), capture_output=True, text=True)
+def inst(t, *a, bin_dir=None):
+    env = dict(os.environ)
+    if bin_dir:
+        env["KIT_BIN_DIR"] = bin_dir
+    r = subprocess.run([sys.executable, "-I", os.path.join(HERE, "install.py"), t] + list(a), capture_output=True, text=True, env=env)
     return r.returncode, r.stdout + r.stderr
 
 
@@ -36,6 +39,7 @@ def all_hook_cmds(hooks_json):
 
 
 with tempfile.TemporaryDirectory() as d:
+    os.environ["KIT_BIN_DIR"] = os.path.join(d, "bin")
     t = os.path.join(d, "proj")
     os.makedirs(os.path.join(t, ".agents", "skills", "story"))
     mine = {"my-linter": {"Stop": [{"type": "command", "command": "echo mine"}]}}
@@ -77,8 +81,10 @@ with tempfile.TemporaryDirectory() as d:
     check("the orchestrator sends each step to its runner, and its welcome has a Setup part",
           'runner: "<name>"' in orch and "**Setup:**" in orch)
     check("end_session.py installed", os.path.exists(os.path.join(t, ".kit", "end_session.py")))
-    check(".kit/up launcher installed and executable, named in orchestrator welcome",
-          os.access(os.path.join(t, ".kit", "up"), os.X_OK) and "./.kit/up" in orch and "--mode auto" in orch)
+    check("one-word launcher installed in bin dir and named in orchestrator welcome",
+          os.access(os.path.join(t, ".kit", "up"), os.X_OK)
+          and os.access(os.path.join(d, "bin", "tide-clock"), os.X_OK)
+          and "`tide-clock`" in orch and "--mode auto" in orch)
     check("the orchestrator cleans up what he moved to Done", "manage_subagents" in orch)
     check("the kit-cards agent prompt installed", os.path.exists(os.path.join(t, ".kit", "agents", "kit-cards.md")))
     check("the orchestrator calls the agent, never lists posts itself", "kit-cards" in orch and "list posts" not in orch)
