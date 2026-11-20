@@ -77,6 +77,8 @@ with tempfile.TemporaryDirectory() as d:
     check("the orchestrator sends each step to its runner, and its welcome has a Setup part",
           'runner: "<name>"' in orch and "**Setup:**" in orch)
     check("end_session.py installed", os.path.exists(os.path.join(t, ".kit", "end_session.py")))
+    check(".kit/up launcher installed and executable, named in orchestrator welcome",
+          os.access(os.path.join(t, ".kit", "up"), os.X_OK) and "./.kit/up" in orch and "--mode auto" in orch)
     check("the orchestrator cleans up what he moved to Done", "manage_subagents" in orch)
     check("the kit-cards agent prompt installed", os.path.exists(os.path.join(t, ".kit", "agents", "kit-cards.md")))
     check("the orchestrator calls the agent, never lists posts itself", "kit-cards" in orch and "list posts" not in orch)

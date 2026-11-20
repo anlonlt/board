@@ -94,7 +94,7 @@ class Installer:
             os.makedirs(os.path.dirname(p), exist_ok=True)
             with open(p, "wb") as fh:
                 fh.write(data)
-            if rel.endswith(".py"):
+            if rel.endswith(".py") or rel == ".kit/up":
                 os.chmod(p, 0o755)
 
     def finish(self):
@@ -343,6 +343,7 @@ def main(argv=None):
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     ins.put(".kit/git_watch.py", rd("kit", "git_watch.py"))
+    ins.put(".kit/up", rd("kit", "up"))
     for h in HOOKS:
         if parts["board"] or h in MEMORY_HOOKS:
             if want_agy:
