@@ -46,7 +46,8 @@ if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
   else
     SEED=""
     [ ! -f ".kit/board_data/board.db" ] && SEED="--seed-from-mirror"
-    nohup python3 -I .kit/board_server.py --host 0.0.0.0 --port "$PORT" --root "$ROOT" --token "$TOK" $SEED >/tmp/kit-board-${PORT}.log 2>&1 &
+    AUTOSYNC="${KIT_AUTO_SYNC_INTERVAL:-15}"
+    nohup python3 -I .kit/board_server.py --host 0.0.0.0 --port "$PORT" --root "$ROOT" --token "$TOK" --auto-sync-interval "$AUTOSYNC" $SEED >/tmp/kit-board-${PORT}.log 2>&1 &
     for _ in 1 2 3 4 5 6 7 8 9 10; do
       curl -sf "http://127.0.0.1:${PORT}/_api/health" >/dev/null 2>&1 && break
       sleep 0.2

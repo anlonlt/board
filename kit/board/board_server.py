@@ -605,12 +605,105 @@ class BoardStore:
         self.sse_lock = threading.Lock()
         self.watchers = set()
         self.comment_cond = threading.Condition()
+        self._auto_sync_cond = threading.Condition()
+        self._auto_sync_dirty = False
+        self._auto_sync_closed = False
+        self._auto_sync_thread = None
+        self.auto_sync_count = 0
+
+    def enable_auto_sync(self, root_dir, interval_sec=15.0, push=False):
+        interval = float(interval_sec or 0)
+        if interval <= 0:
+            return
+        self._auto_sync_root = os.path.abspath(root_dir)
+        self._auto_sync_interval = max(0.05, interval)
+        self._auto_sync_push = bool(push)
+        if self._auto_sync_thread is None:
+            self._auto_sync_thread = threading.Thread(target=self._auto_sync_worker, daemon=True)
+            self._auto_sync_thread.start()
+
+    def _resolve_mirror_dir(self):
+        root = getattr(self, "_auto_sync_root", None)
+        if not root:
+            return None
+        if os.environ.get("KIT_MIRROR"):
+            return os.environ["KIT_MIRROR"]
+        cfg_path = os.path.join(root, ".kit", "config.json")
+        mp = None
+        try:
+            with open(cfg_path, encoding="utf-8") as fh:
+                mp = json.load(fh).get("mirror", {}).get("path")
+        except (OSError, ValueError):
+            pass
+        if mp:
+            return mp if os.path.isabs(mp) else os.path.normpath(os.path.join(root, mp))
+        return os.path.join(os.path.dirname(root), "board-mirror")
+
+    def _run_auto_sync_once(self):
+        root = getattr(self, "_auto_sync_root", None)
+        if not root:
+            return False
+        m = self._resolve_mirror_dir()
+        if not m or not os.path.exists(os.path.join(m, ".git")):
+            return False
+        here = os.path.dirname(os.path.abspath(__file__))
+        kit_candidates = [
+            os.path.join(root, ".kit", "kit.py"),
+            os.path.join(root, "scripts", "kit.py"),
+            os.path.join(here, "kit.py"),
+            os.path.join(os.path.dirname(os.path.dirname(here)), "scripts", "kit.py"),
+        ]
+        kit_py = next((p for p in kit_candidates if os.path.isfile(p)), None)
+        if not kit_py:
+            return False
+        try:
+            r = subprocess.run(
+                [sys.executable, "-I", kit_py, "--mirror", m, "sync-db", "--db", self.db_path, "--commit"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if r.returncode == 0:
+                self.auto_sync_count += 1
+                if getattr(self, "_auto_sync_push", False):
+                    subprocess.run(
+                        [sys.executable, "-I", kit_py, "--mirror", m, "push"],
+                        cwd=root,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _auto_sync_worker(self):
+        while True:
+            with self._auto_sync_cond:
+                while not self._auto_sync_dirty and not self._auto_sync_closed:
+                    self._auto_sync_cond.wait()
+                if self._auto_sync_closed:
+                    return
+                self._auto_sync_cond.wait(timeout=self._auto_sync_interval)
+                if self._auto_sync_closed:
+                    return
+                self._auto_sync_dirty = False
+            self._run_auto_sync_once()
 
     def close(self):
+        with self._auto_sync_cond:
+            self._auto_sync_closed = True
+            self._auto_sync_cond.notify_all()
         with self.lock:
             self.conn.close()
 
     def notify_sse(self, collection, doc_id):
+        if self._auto_sync_thread is not None and (collection in ("posts", "comments") or (collection.startswith("data/users/") and doc_id == "board-seen")):
+            with self._auto_sync_cond:
+                self._auto_sync_dirty = True
+                self._auto_sync_cond.notify_all()
         payload = json.dumps({"collection": collection, "doc_id": doc_id, "path": f"{collection}/{doc_id}"})
         with self.sse_lock:
             dead = []
@@ -1848,11 +1941,13 @@ def export_markdown(store, post_id=None):
     return ("\n\n---\n\n".join(blocks) + "\n") if blocks else "# Board export\n\n(No posts yet.)\n", fname
 
 
-def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None, embed_mode=False, preview=False, default_watcher=None):
+def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None, embed_mode=False, preview=False, default_watcher=None, auto_sync_interval=0.0, auto_sync_push=False):
     if host.strip().lower() not in LOOPBACK_HOSTS and not token and not preview:
         raise ValueError("refusing to bind to non-loopback host %r without --token / KIT_BOARD_TOKEN" % host)
     data_dir = os.path.join(root_dir, ".kit", "board_data")
     store = BoardStore(data_dir)
+    if auto_sync_interval and float(auto_sync_interval) > 0:
+        store.enable_auto_sync(root_dir, interval_sec=float(auto_sync_interval), push=auto_sync_push)
     if preview:
         if not store.get_doc("posts", "_orchestrator").get("exists"):
             store.set_doc("posts", "_orchestrator", {
@@ -1888,6 +1983,8 @@ def main(argv=None):
     ap.add_argument("--embed-mode", action="store_true", help="Cookie-independent embedded preview mode (or set KIT_EMBED_PREVIEW=1)")
     ap.add_argument("--preview", "--unsafe-no-auth", dest="preview", action="store_true", help="Opt-in sandbox preview mode: allows 0.0.0.0 without --token, auto-seeds _orchestrator, and registers default watcher")
     ap.add_argument("--default-watcher", default=None, help="Auto-register a comment watcher name on startup (default: 'agent' when --preview is set)")
+    ap.add_argument("--auto-sync-interval", type=float, default=None, help="Debounced interval in seconds to auto-run kit.py sync-db --commit when board-mirror worktree exists (0 to disable)")
+    ap.add_argument("--auto-sync-push", action="store_true", help="Also run kit.py push after auto-sync-db commits")
     ap.add_argument("--seed-from-mirror", action="store_true", help="Import posts/comments from git board-mirror on startup")
     ap.add_argument("--mirror-branch", default=None, help="Override mirror branch name (default from .kit/config.json)")
     ap.add_argument("--force-seed", action="store_true", help="Overwrite existing local SQLite docs when seeding")
@@ -1904,6 +2001,16 @@ def main(argv=None):
         extra["preview"] = True
     if a.default_watcher:
         extra["default_watcher"] = a.default_watcher
+    auto_sync = a.auto_sync_interval
+    if auto_sync is None and os.environ.get("KIT_AUTO_SYNC_INTERVAL"):
+        try:
+            auto_sync = float(os.environ["KIT_AUTO_SYNC_INTERVAL"])
+        except ValueError:
+            auto_sync = 0.0
+    if auto_sync and auto_sync > 0:
+        extra["auto_sync_interval"] = auto_sync
+    if a.auto_sync_push or os.environ.get("KIT_AUTO_SYNC_PUSH", "").strip().lower() in ("1", "true", "yes", "on"):
+        extra["auto_sync_push"] = True
     srv, store = start_server(
         root, a.host, a.port, token=tok, notify_url=nurl,
         embed_mode=embed, **extra,

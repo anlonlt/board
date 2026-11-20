@@ -12,6 +12,9 @@
     python3 -I .kit/board_cli.py comments wait [--timeout 300]
     python3 -I .kit/board_cli.py comments read <thread_id>
     python3 -I .kit/board_cli.py comments reply <thread_id> --text '...'
+    python3 -I .kit/board_cli.py comments route <thread_id>
+    python3 -I .kit/board_cli.py comments seen <thread_id> [--doc-id ID] [--passed-to TEXT] [--pending-dir /tmp/clerk] [--post-id P] [--part PART] [--created-at ISO]
+    python3 -I .kit/board_cli.py comments pending [--dir /tmp/clerk] [--now ISO]
     python3 -I .kit/board_cli.py asset upload <path>
     python3 -I .kit/board_cli.py asset read <blob_id> --out <path>
     python3 -I .kit/board_cli.py inbox [--since ISO]
@@ -19,9 +22,11 @@
 """
 import argparse
 from datetime import datetime, timezone
+import importlib.util
 import json
 import mimetypes
 import os
+import re
 import secrets
 import sys
 import urllib.error
@@ -102,6 +107,119 @@ def write_out(out_dir, collection, doc_id, data):
     return p
 
 
+def _strip_post_prefix(text):
+    m = re.match(r"^\s*\[post\s+([^\]]+)\]\s*(.*)$", str(text or ""), re.S)
+    if m:
+        return m.group(1).strip(), m.group(2)
+    return None, str(text or "")
+
+
+def _route_thread(call, thread_id):
+    thr = call("GET", "/_api/comments/threads/" + urllib.parse.quote(thread_id))
+    thr_status = thr.get("status") or ""
+    raw_text = str(thr.get("text") or "")
+    anchor = thr.get("anchor") or {}
+    prefix_pid, stripped_text = _strip_post_prefix(raw_text)
+
+    where_qs = urllib.parse.urlencode({"where": json.dumps([["thread_id", "==", thread_id]]), "limit": "1"})
+    c_res = call("GET", "/_api/db/comments?" + where_qs)
+    c_docs = c_res.get("docs") or []
+    c_doc = c_docs[0] if c_docs else None
+    c_id = c_doc["id"] if c_doc else None
+    c_ver = c_doc.get("version") if c_doc else None
+    c_data = (c_doc.get("data") or {}) if c_doc else {}
+
+    post_id = c_data.get("post_id") or prefix_pid or anchor.get("id") or "_orchestrator"
+    created_at = c_data.get("created_at") or thr.get("created_at") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    comment_text = c_data.get("text") if (c_doc and "text" in c_data) else stripped_text
+
+    orch_doc = call("GET", "/_api/db/posts/_orchestrator")
+    orch_sid = str((orch_doc.get("data") or {}).get("session_id") or "") if orch_doc.get("exists") else ""
+
+    post_doc = orch_doc if post_id == "_orchestrator" else call("GET", "/_api/db/posts/" + urllib.parse.quote(post_id))
+    post_exists = bool(post_doc.get("exists"))
+    post_data = (post_doc.get("data") or {}) if post_exists else {}
+    post_sid = str(post_data.get("session_id") or "")
+    post_part = str(post_data.get("part") or ("orchestrator" if post_id == "_orchestrator" else post_id))
+
+    if c_data.get("like") is True or re.match(r"^\s*\U0001f44d\s+Like:", stripped_text):
+        kind = "like"
+        liked_cid = c_data.get("comment_id")
+        target_desc = ("on comment %s" % liked_cid) if liked_cid else "on the post itself"
+        target_role = "orchestrator"
+        target_part = "orchestrator"
+        target_sid = orch_sid
+        msg = "Like by the owner on %s, %s, thread %s, %s" % (post_id, target_desc, thread_id, created_at)
+    elif c_data.get("answer") or re.match(r"^\s*Answer:\s+", stripped_text):
+        kind = "answer"
+        ans_val = c_data.get("answer")
+        if not ans_val:
+            m_ans = re.match(r"^\s*Answer:\s+(.+)$", stripped_text.strip(), re.S)
+            ans_val = m_ans.group(1).strip() if m_ans else stripped_text.strip()
+        target_role = "orchestrator"
+        target_part = "orchestrator"
+        target_sid = orch_sid
+        msg = "Answer: %s on %s, thread %s, %s" % (ans_val, post_id, thread_id, created_at)
+    else:
+        kind = "comment"
+        has_at_o = bool(re.search(r"(?:^|\s)@o\b", comment_text))
+        walked_sender = None
+        if not has_at_o and post_id != "_orchestrator" and c_data.get("reply_to"):
+            p_where = urllib.parse.urlencode({"where": json.dumps([["post_id", "==", post_id]])})
+            p_comments = (call("GET", "/_api/db/comments?" + p_where).get("docs") or [])
+            by_id = {}
+            by_tid = {}
+            for pc in p_comments:
+                pd = pc.get("data") or {}
+                by_id[pc["id"]] = pd
+                if pd.get("thread_id"):
+                    by_tid[pd["thread_id"]] = pd
+            cur_ref = c_data.get("reply_to")
+            seen_refs = set()
+            while cur_ref and cur_ref not in seen_refs:
+                seen_refs.add(cur_ref)
+                parent = by_id.get(cur_ref) or by_tid.get(cur_ref)
+                if not parent:
+                    break
+                p_from = str(parent.get("from") or "")
+                if p_from and p_from not in ("owner", "viewer", "clerk"):
+                    walked_sender = p_from
+                    break
+                cur_ref = parent.get("reply_to")
+        if has_at_o or post_id == "_orchestrator" or not post_exists or not post_sid or walked_sender == "orchestrator":
+            target_role = "orchestrator"
+            target_part = "orchestrator"
+            target_sid = orch_sid
+        else:
+            target_role = "part"
+            target_part = post_part
+            target_sid = post_sid
+        msg = (
+            'Board comment from the owner on your post %s, thread %s, %s, verbatim: "%s". '
+            'Answer in his thread: reply_to: "%s" (.kit/BOARD.md § Comments). Sent by the board clerk.'
+            % (post_id, thread_id, created_at, comment_text, thread_id)
+        )
+
+    return {
+        "thread_id": thread_id,
+        "status": thr_status,
+        "forwardable": thr_status == "sent to you — awaiting reply",
+        "kind": kind,
+        "post_id": post_id,
+        "comment_doc_id": c_id,
+        "comment_version": c_ver,
+        "created_at": created_at,
+        "text": comment_text,
+        "target_role": target_role,
+        "target_part": target_part,
+        "target_session_id": target_sid,
+        "orchestrator_session_id": orch_sid,
+        "post_session_id": post_sid,
+        "part": post_part,
+        "message": msg,
+    }
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Local board CLI for agy")
     ap.add_argument("--url", default=None, help="Board server URL (default: from .kit/config.json)")
@@ -177,6 +295,19 @@ def main(argv=None):
     prp = csub.add_parser("reply")
     prp.add_argument("thread_id")
     prp.add_argument("--text", required=True)
+    prt = csub.add_parser("route", help="Deterministically resolve addressee session_id, part, and formatted forward message for a thread")
+    prt.add_argument("thread_id")
+    psn = csub.add_parser("seen", help="Mark comment read, ack thread, optionally post Passed-to reply and append pending line in one call")
+    psn.add_argument("thread_id")
+    psn.add_argument("--doc-id", default=None, help="Optional comment doc_id (otherwise looked up by thread_id)")
+    psn.add_argument("--passed-to", default=None, help="Optional thread reply text, e.g. 'Passed to part (HH:MM UTC).'")
+    psn.add_argument("--pending-dir", default=None, help="Optional directory (e.g. /tmp/clerk) to append pending.txt entry")
+    psn.add_argument("--post-id", default=None, help="Post id for pending.txt entry")
+    psn.add_argument("--part", default=None, help="Part name for pending.txt entry")
+    psn.add_argument("--created-at", default=None, help="Comment created_at for pending.txt entry")
+    ppd = csub.add_parser("pending", help="Fetch comments for all pending posts and run clerk_pending.py in one call")
+    ppd.add_argument("--dir", default="/tmp/clerk")
+    ppd.add_argument("--now", default=None)
 
     pa = sub.add_parser("asset")
     asub = pa.add_subparsers(dest="acmd", required=True)
@@ -309,6 +440,88 @@ def main(argv=None):
         if a.ccmd == "reply":
             res = call("POST", "/_api/comments/threads/%s/reply" % urllib.parse.quote(a.thread_id), {"text": a.text})
             print(json.dumps(res, ensure_ascii=False))
+            return 0
+        if a.ccmd == "route":
+            res = _route_thread(call, a.thread_id)
+            print(json.dumps(res, ensure_ascii=False))
+            return 0
+        if a.ccmd == "seen":
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            doc_id = a.doc_id
+            c_ver = None
+            c_data = {}
+            if not doc_id:
+                where_qs = urllib.parse.urlencode({"where": json.dumps([["thread_id", "==", a.thread_id]]), "limit": "1"})
+                c_docs = (call("GET", "/_api/db/comments?" + where_qs).get("docs") or [])
+                if c_docs:
+                    doc_id = c_docs[0]["id"]
+                    c_ver = c_docs[0].get("version")
+                    c_data = c_docs[0].get("data") or {}
+            marked_read = False
+            if doc_id:
+                patch_body = {"data": {"read": True, "read_at": now}}
+                if c_ver is not None:
+                    patch_body["if_version"] = c_ver
+                call("PATCH", "/_api/db/comments/%s" % urllib.parse.quote(doc_id), patch_body)
+                marked_read = True
+            ack_res = call("POST", "/_api/comments/threads/%s/ack" % urllib.parse.quote(a.thread_id), {})
+            replied = False
+            if a.passed_to:
+                call("POST", "/_api/comments/threads/%s/reply" % urllib.parse.quote(a.thread_id), {"text": a.passed_to})
+                replied = True
+            pending_added = False
+            if a.pending_dir and doc_id:
+                pid = a.post_id or c_data.get("post_id") or "_orchestrator"
+                prt = a.part or "orchestrator"
+                cat = a.created_at or c_data.get("created_at") or now
+                os.makedirs(a.pending_dir, exist_ok=True)
+                pfile = os.path.join(a.pending_dir, "pending.txt")
+                existing_lines = open(pfile, encoding="utf-8").read().splitlines() if os.path.exists(pfile) else []
+                if not any(l.split()[:1] == [doc_id] for l in existing_lines if l.strip()):
+                    with open(pfile, "a", encoding="utf-8") as fh:
+                        fh.write("%s %s %s %s %s\n" % (doc_id, a.thread_id, cat, pid, prt))
+                    pending_added = True
+            print(json.dumps({
+                "thread_id": a.thread_id,
+                "comment_doc_id": doc_id,
+                "marked_read": marked_read,
+                "acked": bool(ack_res),
+                "replied": replied,
+                "pending_added": pending_added,
+            }, ensure_ascii=False))
+            return 0
+        if a.ccmd == "pending":
+            pfile = os.path.join(a.dir, "pending.txt")
+            lines = [l.split() for l in open(pfile, encoding="utf-8").read().splitlines() if len(l.split()) >= 5] if os.path.exists(pfile) else []
+            if not lines:
+                print(json.dumps({"actions": [], "pending_count": 0}, ensure_ascii=False))
+                return 0
+            by_post = {}
+            for f in lines:
+                doc_id, _, _, post_id, _ = f[:5]
+                if post_id not in by_post:
+                    where_qs = urllib.parse.urlencode({"where": json.dumps([["post_id", "==", post_id]]), "limit": "1000"})
+                    by_post[post_id] = (call("GET", "/_api/db/comments?" + where_qs).get("docs") or [])
+                out_sub = os.path.join(a.dir, "t", doc_id)
+                for d in by_post[post_id]:
+                    write_out(out_sub, "comments", d["id"], d.get("data") or {})
+            cp_candidates = [
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "clerk_pending.py"),
+                os.path.join(ROOT, ".kit", "clerk_pending.py"),
+                os.path.join(ROOT, "kit", "clerk", "clerk_pending.py"),
+                os.path.join(ROOT, "clerk", "clerk_pending.py"),
+                os.path.join(os.path.dirname(ROOT), "kit", "clerk", "clerk_pending.py"),
+            ]
+            cp_path = next((p for p in cp_candidates if os.path.isfile(p)), None)
+            if not cp_path:
+                raise SystemExit("board_cli: clerk_pending.py not found")
+            spec = importlib.util.spec_from_file_location("clerk_pending", cp_path)
+            cp_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(cp_mod)
+            now_dt = cp_mod.ts(a.now) if a.now else datetime.now(timezone.utc)
+            actions = cp_mod.run(a.dir, now_dt)
+            rem = [l for l in open(pfile, encoding="utf-8").read().splitlines() if l.strip()] if os.path.exists(pfile) else []
+            print(json.dumps({"actions": actions, "pending_count": len(rem)}, ensure_ascii=False))
             return 0
 
     if a.cmd == "asset":

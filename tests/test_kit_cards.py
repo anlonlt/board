@@ -48,7 +48,8 @@ class TestKitCards(unittest.TestCase):
             tr = os.path.join(d, "trains.json")
             r = _run_kit_cards(d, "--write", out, "--trains", tr, "--now", "2026-11-20T00:00:00Z")
             self.assertEqual(r.returncode, 0, r.stderr)
-            rows = json.load(open(out, encoding="utf-8"))["rows"]
+            with open(out, encoding="utf-8") as fh:
+                rows = json.load(fh)["rows"]
             self.assertEqual([x["name"] for x in rows], ["Bulletin", "Later"])
             self.assertEqual(rows[0]["steps"], ["plan", "draft", "publish"])
             self.assertEqual(rows[0]["at"], 1)
@@ -92,7 +93,8 @@ class TestKitCards(unittest.TestCase):
             tr = os.path.join(d, "trains.json")
             r = _run_kit_cards(d, "--write", out, "--trains", tr, "--now", "2026-11-20T00:00:00Z")
             self.assertEqual(r.returncode, 0, r.stderr)
-            rows = json.load(open(out, encoding="utf-8"))["rows"]
+            with open(out, encoding="utf-8") as fh:
+                rows = json.load(fh)["rows"]
             by_train = {x["train"]: x for x in rows}
 
             # Priority ordering: custom (1), app (default 2), chords-measures (3)
@@ -138,7 +140,8 @@ class TestKitCards(unittest.TestCase):
             r2 = _run_kit_cards(d, "--board", board_dir, "--write", out, "--trains", tr, "--force")
             self.assertEqual(r2.returncode, 0, r2.stderr)
             self.assertTrue(os.path.exists(out))
-            self.assertEqual(json.load(open(out, encoding="utf-8"))["rows"], [])
+            with open(out, encoding="utf-8") as fh:
+                self.assertEqual(json.load(fh)["rows"], [])
 
     def test_safety_guard_refuses_mostly_placeholders_without_force(self):
         with tempfile.TemporaryDirectory() as d:

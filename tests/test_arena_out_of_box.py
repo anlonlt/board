@@ -207,6 +207,144 @@ class TestArenaOutOfBox(unittest.TestCase):
                 self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
                 self.assertFalse(os.path.exists(os.path.join(t_other, "AGENTS.md")))
 
+    def test_clerk_atomic_route_seen_pending_and_auto_sync_db(self):
+        srv, store = board_server.start_server(self.root, "127.0.0.1", 0, preview=True)
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+
+        def _stop():
+            srv.shutdown()
+            srv.server_close()
+            store.close()
+
+        self.addCleanup(_stop)
+        url = "http://127.0.0.1:%d" % srv.server_address[1]
+
+        # Set orchestrator and part post session IDs
+        store.update_doc("posts", "_orchestrator", {"session_id": "conv-orch-1"})
+        store.set_doc("posts", "B1-work", {
+            "title": "Part B1",
+            "column": "info",
+            "part": "B1",
+            "session_id": "conv-part-b1",
+            "created_at": "2026-11-20T12:00:00Z",
+            "body": "Work post.",
+        })
+
+        # 1. Normal comment on B1-work routes to conv-part-b1
+        thr1 = store.send_comment(anchor={"id": "B1-work"}, text="[post B1-work] Looks good, check edge case")
+        store.set_doc("comments", "c-b1-1", {
+            "post_id": "B1-work",
+            "from": "owner",
+            "text": "Looks good, check edge case",
+            "thread_id": thr1["thread_id"],
+            "read": False,
+            "created_at": "2026-11-20T12:01:00Z",
+        })
+        r_rt1 = subprocess.run(
+            [sys.executable, "-I", BOARD_CLI, "--url", url, "comments", "route", thr1["thread_id"]],
+            capture_output=True, text=True, check=True,
+        )
+        rt1 = json.loads(r_rt1.stdout)
+        self.assertEqual(rt1["kind"], "comment")
+        self.assertEqual(rt1["post_id"], "B1-work")
+        self.assertEqual(rt1["comment_doc_id"], "c-b1-1")
+        self.assertEqual(rt1["target_role"], "part")
+        self.assertEqual(rt1["target_part"], "B1")
+        self.assertEqual(rt1["target_session_id"], "conv-part-b1")
+        self.assertIn('verbatim: "Looks good, check edge case"', rt1["message"])
+
+        # 2. Comment with @o on B1-work overrides and routes to orchestrator (conv-orch-1)
+        thr2 = store.send_comment(anchor={"id": "B1-work"}, text="[post B1-work] @o pause this train")
+        store.set_doc("comments", "c-b1-2", {
+            "post_id": "B1-work",
+            "from": "owner",
+            "text": "@o pause this train",
+            "thread_id": thr2["thread_id"],
+            "read": False,
+            "created_at": "2026-11-20T12:02:00Z",
+        })
+        r_rt2 = subprocess.run(
+            [sys.executable, "-I", BOARD_CLI, "--url", url, "comments", "route", thr2["thread_id"]],
+            capture_output=True, text=True, check=True,
+        )
+        rt2 = json.loads(r_rt2.stdout)
+        self.assertEqual(rt2["target_role"], "orchestrator")
+        self.assertEqual(rt2["target_session_id"], "conv-orch-1")
+
+        # 3. Like routes to orchestrator
+        thr3 = store.send_comment(anchor={"id": "B1-work"}, text="[post B1-work] 👍 Like: he approves this")
+        store.set_doc("comments", "c-b1-like", {
+            "post_id": "B1-work",
+            "from": "owner",
+            "like": True,
+            "comment_id": "c-prop-1",
+            "thread_id": thr3["thread_id"],
+            "read": False,
+            "created_at": "2026-11-20T12:03:00Z",
+        })
+        r_rt3 = subprocess.run(
+            [sys.executable, "-I", BOARD_CLI, "--url", url, "comments", "route", thr3["thread_id"]],
+            capture_output=True, text=True, check=True,
+        )
+        rt3 = json.loads(r_rt3.stdout)
+        self.assertEqual(rt3["kind"], "like")
+        self.assertEqual(rt3["target_session_id"], "conv-orch-1")
+        self.assertIn("on comment c-prop-1", rt3["message"])
+
+        # 4. comments seen marks read, acks thread, replies Passed to, and appends pending.txt
+        pdir = os.path.join(self.root, "clerk_pending_dir")
+        r_sn = subprocess.run(
+            [
+                sys.executable, "-I", BOARD_CLI, "--url", url,
+                "comments", "seen", thr1["thread_id"],
+                "--doc-id", "c-b1-1",
+                "--passed-to", "Passed to B1 (12:01 UTC).",
+                "--pending-dir", pdir,
+                "--post-id", "B1-work",
+                "--part", "B1",
+                "--created-at", "2026-11-20T12:01:00Z",
+            ],
+            capture_output=True, text=True, check=True,
+        )
+        sn = json.loads(r_sn.stdout)
+        self.assertTrue(sn["marked_read"])
+        self.assertTrue(sn["acked"])
+        self.assertTrue(sn["replied"])
+        self.assertTrue(sn["pending_added"])
+        self.assertTrue(store.get_doc("comments", "c-b1-1")["data"]["read"])
+
+        # 5. comments pending fetches post comments and runs clerk_pending.py in one call
+        r_pd = subprocess.run(
+            [
+                sys.executable, "-I", BOARD_CLI, "--url", url,
+                "comments", "pending",
+                "--dir", pdir,
+                "--now", "2026-11-20T12:07:00Z",
+            ],
+            capture_output=True, text=True, check=True,
+        )
+        pd = json.loads(r_pd.stdout)
+        self.assertTrue(any(a.startswith("TELL c-b1-1 B1-work") for a in pd["actions"]), pd)
+
+        # 6. Debounced auto-sync-db writes to board-mirror worktree when present
+        mirror_dir = os.path.join(self.root, "board-mirror")
+        os.makedirs(mirror_dir, exist_ok=True)
+        subprocess.run(["git", "-C", mirror_dir, "init", "-q", "-b", "board-mirror"], check=True)
+        subprocess.run(["git", "-C", mirror_dir, "config", "user.name", "test"], check=True)
+        subprocess.run(["git", "-C", mirror_dir, "config", "user.email", "test@example.invalid"], check=True)
+        with open(os.path.join(self.root, ".kit", "config.json"), "w", encoding="utf-8") as fh:
+            json.dump({"mirror": {"branch": "board-mirror", "path": mirror_dir}}, fh)
+        store.enable_auto_sync(self.root, interval_sec=0.05)
+        store.set_doc("posts", "P-autosync", {"title": "Auto Synced", "column": "info"})
+        import time as _time
+        for _ in range(30):
+            if store.auto_sync_count > 0:
+                break
+            _time.sleep(0.05)
+        self.assertGreater(store.auto_sync_count, 0)
+        self.assertTrue(os.path.isfile(os.path.join(mirror_dir, "board", "posts", "P-autosync.json")))
+
 
 if __name__ == "__main__":
     unittest.main()
