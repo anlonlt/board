@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory() as d:
     r = run()
     s = open(os.path.join(d, ".story", "state", "weekly-bulletin.md")).read()
     check("state file: Next line second, ids kept", s.splitlines()[1] == "Next: draft 24 Nov" and "page: News" in s)
-    check("awaits: the waiting item with its default", "- [weekly-bulletin] new layout? (default: Keep)" in open(os.path.join(d, ".story", "awaits.md")).read())
+    check("awaits: the waiting item with its default", "- [weekly-bulletin] P2 new layout? (default: Keep)" in open(os.path.join(d, ".story", "awaits.md")).read())
     check("preferences written", "short steps" in open(os.path.join(d, ".story", "preferences.md")).read())
     q = json.load(open(os.path.join(d, "o", "posts", "Q-weekly-bulletin-1.json")))
     check("question post with one-tap options and the default", q["column"] == "question" and q["options"] == ["New", "Keep"] and q["default_option"] == "Keep")
@@ -64,4 +64,16 @@ with tempfile.TemporaryDirectory() as d:
     check("resume, technical, accounts, people, tests, risks, lessons, needs_me reach the state file",
           all(x in s4 for x in ("## How to resume", "Statut = field_3", "compte de service", "approbateur: la direction",
                                  "jamais verifie", "titre avec /", "coller en texte brut", "ma connexion", "https://x.sharepoint.com")))
+
+    # the owner, 2026-11-20 04:02: a priority per project, the most urgent first, carried to the posts
+    st5 = {"projects": [{"id": "later", "title": "L", "next": "x", "priority": 3},
+                        {"id": "urgent", "title": "U", "next": "y", "priority": 1, "why": "due Friday",
+                         "waiting": [{"text": "go?", "priority": 1}]}]}
+    f5 = os.path.join(d, "s5.json"); json.dump(st5, open(f5, "w"))
+    r5 = subprocess.run([sys.executable, "-I", os.path.join(d, ".kit", "kit_import.py"), f5, "--out", os.path.join(d, "o5")], capture_output=True, text=True)
+    w5 = json.loads(r5.stdout.strip().splitlines()[-1]) if r5.returncode == 0 else []
+    u = open(os.path.join(d, ".story", "state", "urgent.md")).read() if os.path.exists(os.path.join(d, ".story", "state", "urgent.md")) else ""
+    pu = json.load(open(os.path.join(d, "o5", "posts", "P-urgent.json"))) if os.path.exists(os.path.join(d, "o5", "posts", "P-urgent.json")) else {}
+    check("priority: in the state file with its why, on the post, most urgent first",
+          "Priority: 1 (due Friday)" in u and pu.get("priority") == 1 and [x["doc_id"] for x in w5][:1] == ["P-urgent"])
 print("%d failed" % fails); sys.exit(1 if fails else 0)

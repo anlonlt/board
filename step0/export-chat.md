@@ -18,6 +18,8 @@ You are preparing my work's state for the board kit (https://github.com/anlonlt/
    who holds which role are allowed; passwords, keys and tokens are never written.
    - `id` (short, lowercase), `title`;
    - `next`: the one next step, as the latest chat left it;
+   - `priority`: 1 (urgent: a deadline within a week, something broken in use, people waiting on it), 2 (active: worked on
+     in the last 2 weeks), 3 (paused or someday); with `why` in a few words (the deadline, who waits, the last chat's date);
    - `resume`: how a new session resumes it, in order (what to open first, what to check, then `next`);
    - `where`: 2-6 facts on where it stands (what exists, where it lives, which tool reaches it);
    - `decisions`: what I decided and should not be asked again;
@@ -30,7 +32,7 @@ You are preparing my work's state for the board kit (https://github.com/anlonlt/
    - `tests`: what was verified, and what was never verified;
    - `risks`: known risks and fragile parts;
    - `lessons`: the traps found (the editors' pitfalls, what fails and what works instead);
-   - `waiting`: what waits for MY approval or choice: `text`; `options` (2-4 short answers) when it is a choice;
+   - `waiting`: what waits for MY approval or choice: `text`; `priority` 1-3 as above; `options` (2-4 short answers) when it is a choice;
      `default`: what happens if I say nothing, and **when there are options, `default` is one of them, word for word**;
    - `needs_me`: what a session will still need me for (a login, an approval, a file only I have);
    - `chats`: a LIST OF STRINGS, `"<YYYY-MM-DD> <title>"`.
@@ -46,6 +48,7 @@ You are preparing my work's state for the board kit (https://github.com/anlonlt/
  "preferences": ["short steps", "answer in French"], "approved": ["editing the test list"],
  "never": ["send real emails without asking", "touch personal data"],
  "projects": [{"id": "bulletin", "title": "Weekly bulletin", "next": "draft the 24 Nov edition",
+   "priority": 1, "why": "edition due Friday 24 Nov",
    "resume": ["open the intranet page News/Bulletin", "read last week's edition", "then: next"],
    "where": ["published every Friday on the intranet"], "decisions": ["no emojis"],
    "ids": {"News/Bulletin": "intranet page, https://example.sharepoint.com/sites/news/bulletin"},
@@ -56,7 +59,7 @@ You are preparing my work's state for the board kit (https://github.com/anlonlt/
    "waiting": [{"text": "Use the new layout?", "options": ["New layout", "Old layout"], "default": "Old layout"}],
    "chats": ["2026-11-14 Bulletin 46"]}]}
 ```
-5. Show me the projects in a short table (title, next step, what waits for me, what will still need me) and the
+5. Show me the projects in a short table, most urgent first (priority and why, title, next step, what waits for me, what will still need me) and the
    artifact's link, then check it against the test above: for each project, say what a new session could NOT resume
    from it, and ask me only for that. Republish the artifact with my corrections.
 6. Then tell me, in one line, what to do in Claude Code. If I have a private repository with the kit installed:

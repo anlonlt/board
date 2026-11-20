@@ -65,6 +65,10 @@ def normalise(p):
                 d[_text(x)] = ""  # a bare name: the name is the id
         ids = d
     p["ids"] = {str(k): _text(v) for k, v in ids.items()}
+    try:
+        p["priority"] = min(3, max(1, int(p.get("priority") or 2)))
+    except (TypeError, ValueError):
+        p["priority"] = 2
     ppl = p.get("people") or {}
     if isinstance(ppl, list):
         ppl = {(x.get("role") or str(i)) if isinstance(x, dict) else str(i): _text({k: v for k, v in x.items() if k != "role"}) if isinstance(x, dict) else _text(x)
@@ -88,7 +92,8 @@ def load_state(path):
 
 
 def state_md(p):
-    out = ["# %s" % p.get("title", p["id"]), "Next: %s" % (p.get("next") or "(none given)"), "", "## Where it stands"]
+    out = ["# %s" % p.get("title", p["id"]), "Next: %s" % (p.get("next") or "(none given)"),
+           "Priority: %s%s" % (p["priority"], (" (%s)" % p["why"]) if p.get("why") else ""), "", "## Where it stands"]
     out += ["- " + w for w in p.get("where", [])] or ["- (nothing given)"]
     if p.get("decisions"):
         out += ["", "## Decisions"] + ["- " + d for d in p["decisions"]]
@@ -111,6 +116,9 @@ def run(state, out, now, update, session=""):
     sd = os.path.join(ROOT, ".story")
     for p in state.get("projects", []):
         normalise(p)
+    state["projects"] = sorted(state.get("projects", []), key=lambda p: p["priority"])  # the most urgent first
+    for p in state.get("projects", []):
+        normalise(p)
         p["id"] = slug(p.get("id") or p.get("title"))
         put(os.path.join(sd, "state", p["id"] + ".md"), state_md(p), update, log)
     aw = os.path.join(sd, "awaits.md")
@@ -118,7 +126,7 @@ def run(state, out, now, update, session=""):
     added = 0
     for p in state.get("projects", []):
         for w in p.get("waiting", []):
-            line = "- [%s] %s (default: %s)" % (p["id"], w["text"], w.get("default") or "none")
+            line = "- [%s] P%s %s (default: %s)" % (p["id"], w.get("priority") or p["priority"], w["text"], w.get("default") or "none")
             if w["text"] not in cur:
                 cur += line + "\n"
                 added += 1
@@ -136,10 +144,14 @@ def run(state, out, now, update, session=""):
     os.makedirs(pd, exist_ok=True)
     for p in state.get("projects", []):
         body = state_md(p).split("\n", 1)[1]
-        docs = [("P-" + p["id"], {"title": p.get("title", p["id"]), "column": "info", "part": "P-" + p["id"], "priority": 2,
+        docs = [("P-" + p["id"], {"title": p.get("title", p["id"]), "column": "info", "part": "P-" + p["id"], "priority": p["priority"],
                                    "body": body, "created_at": now, "session_id": session})]
         for i, w in enumerate(p.get("waiting", []), 1):
-            d = {"title": w["text"], "column": "question", "part": "P-" + p["id"], "priority": 1, "created_at": now,
+            try:
+                wp = min(3, max(1, int(w.get("priority") or p["priority"])))
+            except (TypeError, ValueError):
+                wp = p["priority"]
+            d = {"title": w["text"], "column": "question", "part": "P-" + p["id"], "priority": wp, "created_at": now,
                  "session_id": session, "body": w["text"] + (("\n\n→ %s" % str(w["default"]).rstrip(". ")) if w.get("default") else "")}
             if w.get("options"):
                 d["options"] = [_text(o) for o in w["options"]]
