@@ -368,7 +368,6 @@ body {
               radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--question) 8%, transparent), transparent 42%),
               var(--bg);
   background-attachment: fixed;
-  letter-spacing: -0.005em;
 }
 header.top { padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
 h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
@@ -411,14 +410,18 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 [data-view="feed"] .card { padding: 16px 18px; }
 [data-view="feed"] .card .first { white-space: normal; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 
-/* Frosted-glass sticky post action bar (compact on mobile) */
+/* Frosted-glass sticky post action bar: always 1 sleek row (scrolls smoothly on narrow phones) */
 .bar {
   background: var(--glass); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line); margin-inline: -16px; padding: 8px 16px; gap: 6px;
+  flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
 }
-.bar .btn { padding: 5px 11px; font-size: .84rem; }
-.sheet-in { padding-bottom: 140px !important; }
-.sheet h2 { font-weight: 800; letter-spacing: -0.025em; line-height: 1.22; }
+.bar::-webkit-scrollbar { display: none; }
+.bar .row { flex-wrap: nowrap !important; gap: 6px; flex: none; }
+.bar .btn, .bar select { padding: 5px 10px; font-size: .82rem; white-space: nowrap; flex: none; }
+.bar .prio { flex: none; white-space: nowrap; }
+.sheet-in { padding-bottom: 96px !important; }
+.sheet h2 { font-weight: 800; letter-spacing: -0.02em; line-height: 1.24; }
 
 /* Reddit-style threaded comments, clickable vertical rails, avatars & compact Remove */
 .cmt {
@@ -446,7 +449,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
   font-size: .8rem; color: var(--muted); padding: 4px 8px; cursor: pointer; font-style: italic;
 }
 
-/* Facebook-style frosted-glass sticky bottom composer & typing bubble */
+/* Facebook-style ultra-compact frosted-glass sticky bottom composer & typing bubble */
 #p-typing {
   display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px;
   border-radius: 999px; background: var(--surface); border: 1px solid var(--line);
@@ -454,14 +457,29 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 }
 #p-typing[hidden] { display: none !important; }
 .composer {
-  position: sticky; bottom: 0; z-index: 6;
+  position: sticky; bottom: 8px; z-index: 6;
   background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: 18px; padding: 8px 10px;
   box-shadow: var(--shadow-lg); margin-top: 8px;
+  display: grid !important; grid-template-columns: auto 1fr auto; column-gap: 8px; row-gap: 0; align-items: end;
 }
+.composer #c-label, .composer #c-attach-row .note { display: none; }
+.composer #c-reply:not([hidden]), .composer #c-files:not(:empty) { grid-column: 1 / -1; margin-bottom: 6px; }
+.composer #c-files:empty { display: none; }
+.composer #c-attach-row { grid-column: 1; grid-row: 3; margin: 0; }
+.composer #c-attach { padding: 7px 10px; font-size: .82rem; border-radius: 999px; white-space: nowrap; }
 .composer textarea {
-  border-radius: 12px !important; min-height: 52px !important; max-height: 180px;
-  background: var(--surface); padding: 10px 12px;
+  grid-column: 2; grid-row: 3;
+  border-radius: 14px !important; min-height: 38px !important; height: 38px; max-height: 140px;
+  background: var(--surface); padding: 8px 12px; font-size: .92rem; line-height: 1.35; resize: vertical;
+}
+.composer > .row:last-child { grid-column: 3; grid-row: 3; margin: 0; gap: 4px; }
+.composer #c-send { padding: 8px 14px; font-size: .86rem; white-space: nowrap; }
+.composer #c-note:empty { display: none; }
+@media (max-width: 520px) {
+  .composer #c-attach { font-size: 0; padding: 8px 11px; }
+  .composer #c-attach::before { content: "\1F4CE"; font-size: 1rem; }
+  .composer #c-send { padding: 8px 12px; font-size: .84rem; }
 }
 </style>
 
