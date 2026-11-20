@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>One UI for everything your AI agents build. Local live board + private Git backup. Zero lost context.</strong><br />
-  A zero-dependency workflow kit — live mobile-ready board, persistent <code>.story/</code> memory, automatic context-limit handovers, safety hooks, and a one-word launcher — with a local SQLite live store backed up to your own private Git repository. Works with <strong>agy</strong> and <strong>Claude Code</strong>, across desktop, phone, and cloud.
+  A zero-dependency workflow kit — live mobile-ready board, persistent <code>.board/memory/</code> (or existing <code>.story/</code>) memory, automatic context-limit handovers, safety hooks, and a one-word launcher — with a local SQLite live store backed up to your own private Git repository. Works with <strong>agy</strong> and <strong>Claude Code</strong>, across desktop, phone, and cloud.
 </p>
 
 <p align="center">
@@ -54,10 +54,10 @@ Every piece of work lives as a structured card in four lanes — **`For you to d
 - **Phone-first, one-tap control:** tap 👍 to approve, tap a one-tap option to choose, attach screenshots up to 20 MB, and see live typing dots while an agent writes its reply.
 - **Live anywhere:** works natively in your browser and on your phone (via `claude.ai` Artifacts in the cloud, or locally via Tailscale — with automatic failover if a cloud plan hits its limit).
 
-### Zero Project Sprawl & Persistent Memory (`.story/`)
-Every project gets a committed `.story/` directory (`state/<workstream>.md`, `awaits.md`, `issues/`, `lessons/`, `preferences.md`):
+### Zero Project Sprawl & Persistent Memory (`.board/memory/` or `.story/`)
+Fresh installs store committed memory under `.board/memory/` (`state/<workstream>.md`, `awaits.md`, `issues/`, `lessons/`, `preferences.md`). If your repo already has a `.story/` directory, `install.py` automatically keeps using `.story/` (override anytime with `--memory-dir`):
 - **Automatic `SessionStart` briefing:** every new session is automatically injected with every workstream's exact `Next:` step, open issues, lessons, and standing preferences before turn 1.
-- **At-a-glance cards:** **Where we are**, **Waiting for you**, and **Trains** are rebuilt automatically from `.story/` and the board — never hand-written, never stale.
+- **At-a-glance cards:** **Where we are**, **Waiting for you**, and **Trains** are rebuilt automatically from your memory directory and the board — never hand-written, never stale.
 
 ### Automatic Context-Limit Handovers & Independent Reviews
 - **Seamless continuity:** orchestrators and clerks hand over automatically before hitting context ceilings, preserving running work and decisions without losing the thread.
@@ -87,7 +87,7 @@ flowchart LR
     Orch -->|"launch & coordinate"| Parts
     Orch -->|"kit-cards subagent"| Inbox
     Orch -->|"route-setting Done"| Cons["Consultant<br/>(independent review)"]
-    Inbox -->|"kit.py sync"| Git[("Your Private Git Repo<br/>.story/ on main · board-mirror")]
+    Inbox -->|"kit.py sync"| Git[("Your Private Git Repo<br/>.board/memory/ (or .story/) on main · board-mirror")]
     Git -.->|"git_watch.py / --seed-from-mirror"| Inbox
 ```
 
@@ -95,7 +95,7 @@ flowchart LR
 
 - **Live store (local SQLite):** `.kit/board_data/board.db` (and uploaded blobs in `.kit/board_data/blobs/`, gitignored) is the live store for instant reads, writes, and SSE updates.
 - **Git backup / mirror (`board-mirror`):** updated on `kit.py sync` + `kit.py push` — not on every individual HTTP write. Sync and push at every milestone, handover, and end of session (or on a recurring schedule) so the mirror stays fresh; any edits made after the last `kit.py sync` live only in `.kit/board_data/board.db` until synced. On a new machine or after DB loss, `--seed-from-mirror` restores the live DB from `board-mirror`.
-- **Committed memory (`.story/`):** committed directly to your project branch at every save point.
+- **Committed memory (`.board/memory/`, or `.story/` if already present):** committed directly to your project branch at every save point.
 
 ---
 
@@ -153,7 +153,7 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
      --talk "<language>" \
      --survey survey/<date>/report.md
    ```
-   Optional flags: `--cmd <one-word-command>` (default: project slug, installed to `~/.local/bin/<cmd>`), `--board-port 8765`, `--runtime agy|claude|both`, `--mode local|hybrid`, and partial flags (`--no-board`, `--no-clerk`, `--no-orchestrator`).
+   Optional flags: `--cmd <one-word-command>` (default: project slug, installed to `~/.local/bin/<cmd>`), `--memory-dir <path>` (default: `.story` if present, else `.board/memory`), `--board-port 8765`, `--runtime agy|claude|both`, `--mode local|hybrid`, and partial flags (`--no-board`, `--no-clerk`, `--no-orchestrator`).
    It never deletes and never replaces a file it did not write (`KEPT` lists what it left alone). Existing hook configs are preserved and merged cleanly.
    Check: `python3 -I .agents/hooks/kit/test_hooks.py` ends `0 failed`.
    **Ask the owner once:** *"Every session ends by merging its work onto `<main branch>` and pushing it, never forced (a conflict stops it). Do you give that standing permission?"* Yes: rerun with `--trunk-push yes`. No: sessions push only their own branch. Either way each session ends with `python3 -I .kit/end_session.py`.
@@ -168,7 +168,7 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
         - Direct Tailscale IP fallback: `http://<tailscale-ip>:8765/`
      4. **Android Private DNS / NextDNS note (tell the owner upfront):** if their phone uses NextDNS or another Private DNS, Android + Tailscale DNS can conflict ("no network access"). Two fixes: (a) quick: toggle **Use Tailscale DNS = OFF** in the Tailscale app and use `http://<tailscale-ip>:8765/`; or (b) permanent: add NextDNS in Tailscale Admin → Global nameservers and set Android Private DNS to **Automatic**.
      5. Rerun step 2 with `--board-url <the working phone url>`.
-   - Commit `.kit .agents .story .gitignore` (and `.claude` if `--runtime both`) and push.
+   - Commit `.kit .agents .board .gitignore` (or `.story` if already present; plus `.claude` if `--runtime both`) and push.
 4. **Post your first two posts** in one `board_cli.py batch` (`.kit/BOARD.md` § Post; `created_at` from `date -u +%Y-%m-%dT%H:%M:%SZ`):
    `_orchestrator` (`{title: "Ask the orchestrator", column: "info", part: "orchestrator", priority: 3, created_at, body: "Write here for anything that is not about one post."}`) and
    `KIT-installed` (`{title: "The board kit is installed", column: "info", part: "KIT", priority: 2, session_id: "<your conversationId>", created_at, body: "<what step 2 wrote and kept>"}`).
@@ -213,7 +213,7 @@ Open a Claude Code Web session on **your** repository (`https://claude.ai/code`)
 
 ## Runners
 
-Not all work lives in code. Each project's `.story/state/<project>.md` says where it runs (`Runs in:`), and the orchestrator routes each step to the right runner:
+Not all work lives in code. Each project's `<memory_dir>/state/<project>.md` (`.board/memory/` by default, or `.story/` if present) says where it runs (`Runs in:`), and the orchestrator routes each step to the right runner:
 
 | Kind | What it reaches | How a step gets there |
 |---|---|---|
@@ -228,7 +228,7 @@ Not all work lives in code. Each project's `.story/state/<project>.md` says wher
 <details>
 <summary><strong>Import existing project or chat history</strong></summary>
 
-- **Existing code repository:** run `step0/import-code.md` (rebuilds `.story/state/*.md` and `.story/awaits.md` from repo docs and session history; pass `--no-posts` without a board).
+- **Existing code repository:** run `step0/import-code.md` (rebuilds `state/*.md` and `awaits.md` in your memory directory — `.board/memory/` or `.story/` — from repo docs and session history; pass `--no-posts` without a board).
 - **Chat history:** paste `step0/export-chat.md` into a new chat to summarize past conversations into one private artifact, then run `python3 -I .kit/kit_import.py <file> --session <orchestrator id>`.
 
 </details>

@@ -12,7 +12,7 @@ Copies, renders and merges; never deletes, never replaces what it did not write:
   .agents/hooks/kit/  the agy lifecycle hooks and their self-test
   .agents/hooks.json  the kit's `kit-board` hook block MERGED in (other named hooks kept untouched)
   .agents/skills/story, .agents/skills/board   (skipped if the project has its own file there)
-  .story/             state/, issues/, lessons/, awaits.md, if absent
+  .board/memory/      state/, issues/, lessons/, awaits.md (or .story/ if already present)
 """
 import argparse
 import hashlib
