@@ -815,6 +815,24 @@ SAFE_INLINE_BLOB_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", 
 MAX_BLOB_BYTES = 20 * 1024 * 1024
 MAX_JSON_BYTES = 5 * 1024 * 1024
 
+PWA_ICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+    '<rect width="512" height="512" rx="112" fill="#0b111e"/>'
+    '<rect x="76" y="108" width="100" height="296" rx="20" fill="#38bdf8"/>'
+    '<rect x="206" y="108" width="100" height="216" rx="20" fill="#818cf8"/>'
+    '<rect x="336" y="108" width="100" height="260" rx="20" fill="#34d399"/>'
+    '</svg>\n'
+)
+
+PWA_SW_JS = (
+    'self.addEventListener("install", function(e) { self.skipWaiting(); });\n'
+    'self.addEventListener("activate", function(e) { e.waitUntil(self.clients.claim()); });\n'
+    'self.addEventListener("fetch", function(e) {\n'
+    '  if (e.request.method !== "GET") return;\n'
+    '  e.respondWith(fetch(e.request));\n'
+    '});\n'
+)
+
 
 class PayloadTooLarge(Exception):
     pass
@@ -822,6 +840,11 @@ class PayloadTooLarge(Exception):
 
 def make_handler(root_dir, store, token=None, notify_url=None):
     html_path = os.path.join(root_dir, ".kit", "board.html")
+    project_name = "Board"
+    try:
+        project_name = json.load(open(os.path.join(root_dir, ".kit", "config.json"), encoding="utf-8")).get("project") or "Board"
+    except (OSError, ValueError):
+        pass
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -890,6 +913,48 @@ def make_handler(root_dir, store, token=None, notify_url=None):
                 self._send_json(200, {"ok": True, "pid": os.getpid(), "auth": bool(token)})
                 return
 
+            if path == "/_manifest.webmanifest":
+                manifest = {
+                    "name": "%s Board" % project_name if project_name != "Board" else "Board",
+                    "short_name": project_name[:16],
+                    "start_url": "/",
+                    "scope": "/",
+                    "display": "standalone",
+                    "background_color": "#0b111e",
+                    "theme_color": "#0b111e",
+                    "icons": [{"src": "/_icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}],
+                }
+                raw = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/manifest+json; charset=utf-8")
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+
+            if path == "/_icon.svg":
+                raw = PWA_ICON_SVG.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+
+            if path == "/_sw.js":
+                raw = PWA_SW_JS.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                self.send_header("Service-Worker-Allowed", "/")
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+
             set_cookie = self._require_auth(parsed)
             if set_cookie is None:
                 return
@@ -910,10 +975,20 @@ def make_handler(root_dir, store, token=None, notify_url=None):
                     self._send_json(404, {"error": "board.html not found"})
                     return
                 html = open(html_path, encoding="utf-8").read()
-                head_inject = '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<style>html,body{margin:0;padding:0;-webkit-font-smoothing:antialiased;}</style>\n<script src="/_shim.js"></script>'
+                pwa_tags = (
+                    '<link rel="manifest" href="/_manifest.webmanifest">\n'
+                    '<link rel="icon" type="image/svg+xml" href="/_icon.svg">\n'
+                    '<link rel="apple-touch-icon" href="/_icon.svg">\n'
+                    '<meta name="theme-color" content="#0b111e">\n'
+                    '<meta name="apple-mobile-web-app-capable" content="yes">\n'
+                    '<meta name="mobile-web-app-capable" content="yes">\n'
+                    '<script src="/_shim.js"></script>\n'
+                    '<script>if("serviceWorker"in navigator){navigator.serviceWorker.register("/_sw.js").catch(function(){});}</script>'
+                )
+                head_inject = '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<style>html,body{margin:0;padding:0;-webkit-font-smoothing:antialiased;}</style>\n' + pwa_tags
                 if "</head>" in html:
                     if 'name="viewport"' in html.lower():
-                        head_inject = '<script src="/_shim.js"></script>'
+                        head_inject = pwa_tags
                     html = html.replace("</head>", head_inject + "\n</head>", 1)
                 else:
                     html = "<!doctype html>\n<html>\n<head>\n" + head_inject + "\n</head>\n<body>\n" + html + "\n</body>\n</html>\n"

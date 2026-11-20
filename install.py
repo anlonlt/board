@@ -62,6 +62,10 @@ DEFAULT_KIT = {
     "main_branch": "main",
     "trunk_push": False,
 }
+CLAUDE_ROLES = {"part": {"model": "opus", "effort": "high"},
+                "clerk": {"model": "haiku", "effort": "low"},
+                "orchestrator": {"model": "opus", "effort": "medium"},
+                "consultant": {"model": "opus", "effort": "high"}}
 
 
 def sha(b):
@@ -150,9 +154,11 @@ def load_config(t, a):
     k["parts"] = parts
     if a.runtime:
         k["runtime"] = a.runtime
+    if first and k.get("runtime") == "claude":
+        k["roles"] = {r: dict(v) for r, v in CLAUDE_ROLES.items()}
     if a.mode:
         k["mode"] = a.mode
-    if parts["board"] and not c.get("board_url") and k.get("mode", "local") == "local":
+    if parts["board"] and not c.get("board_url") and k.get("mode", "local") == "local" and k.get("runtime", "agy") != "claude":
         c["board_url"] = "http://127.0.0.1:%d" % (a.board_port or 8765)
     if a.survey:
         k["survey"] = a.survey
@@ -383,12 +389,14 @@ def main(argv=None):
             open(p, "w", encoding="utf-8").write(cfg)
     rd = lambda *x: open(os.path.join(KIT, *x), encoding="utf-8").read()
     rt = c["kit"].get("runtime", "agy")
+    claude_only = rt == "claude"
     want_agy = rt in ("agy", "both")
     want_claude = rt in ("claude", "both")
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
-    ins.put(".kit/git_watch.py", rd("kit", "git_watch.py"))
-    ins.put(".kit/up", rd("kit", "up"))
+    if not claude_only:
+        ins.put(".kit/git_watch.py", rd("kit", "git_watch.py"))
+        ins.put(".kit/up", rd("kit", "up"))
     for h in HOOKS:
         if parts["board"] or h in MEMORY_HOOKS:
             if want_agy:
@@ -401,8 +409,9 @@ def main(argv=None):
         ins.put(".claude/skills/memory/SKILL.md", rd("kit", "skills", "memory", "SKILL.md"))
     if parts["board"]:
         ins.put(".kit/kit.py", rd("scripts", "kit.py"))
-        ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))
-        ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
+        if not claude_only:
+            ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))
+            ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
         page = rd("kit", "board", "board.template.html")
         sp = os.path.join(t, ".kit", "strings.json")
         if os.path.exists(sp):
@@ -413,21 +422,30 @@ def main(argv=None):
         ins.put(".kit/strings.en.json", rd("kit", "board", "strings.en.json"))
         ins.put(".kit/strings.py", rd("kit", "board", "strings.py"))
         ins.put(".kit/kit_cards.py", rd("kit", "board", "kit_cards.py"))
-        ins.put(".kit/BOARD.md", render(rd("kit", "board", "BOARD.template.md"), c))
-        ins.put(".kit/agents/kit-cards.md", rd("kit", "agents", "kit-cards.md"))
+        board_tpl = rd("kit", "claude", "BOARD.template.md") if claude_only else rd("kit", "board", "BOARD.template.md")
+        cards_tpl = rd("kit", "claude", "kit-cards.md") if claude_only else rd("kit", "agents", "kit-cards.md")
+        ins.put(".kit/BOARD.md", render(board_tpl, c))
         if want_agy:
+            ins.put(".kit/agents/kit-cards.md", cards_tpl)
             ins.put(".agents/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
         if want_claude:
-            ins.put(".claude/agents/kit-cards.md", rd("kit", "agents", "kit-cards.md"))
+            ins.put(".claude/agents/kit-cards.md", cards_tpl)
             ins.put(".claude/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
     if parts["clerk"]:
         ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
-        ins.put(".kit/clerk.md", render(rd("kit", "clerk", "clerk.template.md"), c))
+        clerk_tpl = rd("kit", "claude", "clerk.template.md") if claude_only else rd("kit", "clerk", "clerk.template.md")
+        ins.put(".kit/clerk.md", render(clerk_tpl, c))
     if parts["orchestrator"]:
-        ins.put(".kit/orchestrator.md", render(rd("kit", "orchestrator.template.md"), c))
-        ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
-        ins.put(".kit/runner.md", render(rd("kit", "runner.template.md"), c))
-        ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
+        if claude_only:
+            ins.put(".kit/orchestrator.md", render(rd("kit", "claude", "orchestrator.template.md"), c))
+            ins.put(".kit/consultant.md", render(rd("kit", "claude", "consultant.template.md"), c))
+            ins.put(".kit/runner.md", render(rd("kit", "claude", "runner.template.md"), c))
+            ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "claude", "ORCHESTRATOR.template.md"), c))
+        else:
+            ins.put(".kit/orchestrator.md", render(rd("kit", "orchestrator.template.md"), c))
+            ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
+            ins.put(".kit/runner.md", render(rd("kit", "runner.template.md"), c))
+            ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
     mdir = c["kit"].get("memory_dir") or ".board/memory"
     for d in ("state", "issues", "lessons"):
         if not os.path.isdir(os.path.join(t, mdir, d)):
@@ -482,7 +500,9 @@ def main(argv=None):
     if parts["board"] and c["language"]["talk"].lower() not in ("en", "english") and not os.path.exists(os.path.join(t, ".kit", "strings.json")):
         print("translate: `python3 -I .kit/strings.py template .kit/strings.json`, fill in %s, rerun this install (README step 3)" % c["language"]["talk"])
     if not parts["board"]:
-        print("next: the memory is installed (no board): import the project's state into .story (README § Import), commit, push; then --setup-done")
+        print("next: the memory is installed (no board): import the project's state into %s (README § Import), commit, push; then --setup-done" % mdir)
+    elif claude_only:
+        print("next: publish .kit/board.html as a claude.ai Artifact, rerun with --board-url <url>, then README § Install (Claude Code Web)")
     else:
         print("next: start the local board server (`python3 -I .kit/board_server.py`), open %s, then README step 4" % c.get("board_url", "http://127.0.0.1:8765"))
     return 0

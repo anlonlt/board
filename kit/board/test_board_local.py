@@ -44,9 +44,24 @@ with tempfile.TemporaryDirectory() as tmp:
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
     try:
-        # 1. HTML + shim injection + health
+        # 1. HTML + shim injection + PWA + health
         html = urllib.request.urlopen(url + "/").read().decode("utf-8")
         check("board.html served with /_shim.js injected", '<script src="/_shim.js"></script>' in html)
+        check("board.html injects PWA manifest, theme-color, apple-mobile-web-app-capable, and SW registration",
+              'rel="manifest" href="/_manifest.webmanifest"' in html
+              and 'name="theme-color" content="#0b111e"' in html
+              and 'name="apple-mobile-web-app-capable" content="yes"' in html
+              and 'navigator.serviceWorker.register("/_sw.js")' in html)
+        manifest = json.loads(urllib.request.urlopen(url + "/_manifest.webmanifest").read().decode("utf-8"))
+        check("PWA manifest endpoint returns valid standalone manifest",
+              manifest.get("display") == "standalone" and manifest.get("theme_color") == "#0b111e"
+              and any(i.get("src") == "/_icon.svg" for i in manifest.get("icons", [])))
+        icon_resp = urllib.request.urlopen(url + "/_icon.svg")
+        check("PWA icon endpoint returns SVG",
+              "image/svg+xml" in (icon_resp.headers.get("Content-Type") or "") and "<svg" in icon_resp.read().decode("utf-8"))
+        sw_resp = urllib.request.urlopen(url + "/_sw.js")
+        check("PWA service worker endpoint returns JS",
+              "javascript" in (sw_resp.headers.get("Content-Type") or "") and "skipWaiting" in sw_resp.read().decode("utf-8"))
         shim = urllib.request.urlopen(url + "/_shim.js").read().decode("utf-8")
         check("shim exposes window.claude.use", "window.claude" in shim)
         health = json.loads(urllib.request.urlopen(url + "/_api/health").read().decode("utf-8"))

@@ -149,5 +149,31 @@ with tempfile.TemporaryDirectory() as d:
     check("fresh install kit_cards reads .board/memory/state/alpha.md",
           r_kc.returncode == 0 and len(rows_b) == 1 and rows_b[0]["name"] == "Alpha")
 
+    # Native Claude Code Web support under --runtime claude
+    t_cl = os.path.join(d, "claude_web")
+    os.makedirs(t_cl)
+    rc, out = inst(t_cl, "--project", "WebProj", "--talk", "English", "--survey", rep,
+                   "--runtime", "claude", "--board-url", "https://claude.ai/artifact/WEB1")
+    cl_cfg = json.load(open(os.path.join(t_cl, ".kit", "config.json")))
+    cl_orch = open(os.path.join(t_cl, ".kit", "orchestrator.md"), encoding="utf-8").read()
+    cl_clerk = open(os.path.join(t_cl, ".kit", "clerk.md"), encoding="utf-8").read()
+    cl_board = open(os.path.join(t_cl, ".kit", "BOARD.md"), encoding="utf-8").read()
+    cl_cards = open(os.path.join(t_cl, ".claude", "agents", "kit-cards.md"), encoding="utf-8").read()
+    check("--runtime claude installs .claude/ hooks, settings, agents, and no .agents/ or local board_server",
+          rc == 0
+          and os.path.isfile(os.path.join(t_cl, ".claude", "settings.json"))
+          and os.path.isfile(os.path.join(t_cl, ".claude", "agents", "kit-cards.md"))
+          and not os.path.exists(os.path.join(t_cl, ".agents"))
+          and not os.path.exists(os.path.join(t_cl, ".kit", "board_server.py"))
+          and cl_cfg["kit"]["roles"]["clerk"]["model"] == "haiku")
+    check("--runtime claude renders native ArtifactData/ArtifactComments/create_session templates with .board/memory",
+          "ArtifactData" in cl_board and "ArtifactComments" in cl_clerk
+          and "create_session" in cl_orch and "archive_session" in cl_orch
+          and "ArtifactData" in cl_cards and ".board/memory/state/" in cl_orch
+          and "{{" not in cl_orch and "{{" not in cl_clerk and "{{" not in cl_board)
+    r_cl_hooks = subprocess.run([sys.executable, "-I", os.path.join(t_cl, ".claude", "hooks", "kit", "test_hooks.py")],
+                                capture_output=True, text=True)
+    check("--runtime claude installed hooks pass self-test", r_cl_hooks.returncode == 0)
+
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

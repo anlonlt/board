@@ -171,6 +171,33 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
 8. **Report**, then end the setup: `python3 -I /tmp/board-kit/install.py . --setup-done`, commit, push. Update `KIT-installed` (`board_cli.py update`) with each step's outcome.
 9. **Tell the person what now**, in their language (`language.talk`): their one-word terminal command (e.g. `harmonize`), their phone & local board URLs, what runners are ready, and how to import existing history.
 
+<details>
+<summary><strong>Install (Claude Code Web only — <code>--runtime claude</code>)</strong></summary>
+
+Open a Claude Code Web session on **your** repository (`https://claude.ai/code`) and run:
+
+0. **Step 0 first:** run `step0/survey-code.md` or `step0/survey-chat.md` and show the report to the owner.
+1. **Get the kit:** `git clone --depth 1 -b agy-local https://github.com/anlonlt/board /tmp/board-kit`
+2. **Install with `--runtime claude`:**
+   ```bash
+   python3 -I /tmp/board-kit/install.py . \
+     --runtime claude \
+     --project "<the project's name>" \
+     --talk "<language>" \
+     --survey survey/<date>/report.md
+   ```
+   Installs `.claude/hooks/kit/*`, `.claude/settings.json`, `.claude/skills/*`, `.claude/agents/kit-cards.md`, and native Claude Code Web templates (`ArtifactData`, `ArtifactComments`, `create_session`, `archive_session`). Check: `python3 -I .claude/hooks/kit/test_hooks.py` ends `0 failed`.
+3. **Translate & publish the board Artifact:**
+   - Optional translation: `python3 -I .kit/strings.py template .kit/strings.json`, fill in translations, rerun step 2.
+   - Publish `.kit/board.html` via `Artifact` `publish` (`icon: "board"`, `capabilities: {"assets": {}, "comments": {}, "db": {}, "user": {}, "downloads": true}`).
+   - Rerun step 2 with `--board-url <artifact-url>`, then stop this session's watch (`ArtifactComments` `watch` with `on: false`).
+   - Commit `.kit .claude <memory_dir> .gitignore` and push.
+4. **Post `_orchestrator` and `KIT-installed`** via `ArtifactData` `batch` (`.kit/BOARD.md` § Post).
+5. **Start the orchestrator, then the clerk** via `create_session` using `.kit/orchestrator.md` and `.kit/clerk.md` (with models/effort from `.kit/config.json` `kit.roles`).
+6. **Verify first comment**, initialize git mirror (`kit.py init` + `sync --full` + `push`), and finish with `python3 -I /tmp/board-kit/install.py . --setup-done`.
+
+</details>
+
 ---
 
 ## Runners
