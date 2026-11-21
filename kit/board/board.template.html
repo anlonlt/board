@@ -499,8 +499,57 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 .focus-cmt-bar.has-text .fc-btn.snd, .focus-cmt-bar .fc-btn.snd:hover { opacity: .95; background: var(--ember); color: var(--ember-ink); }
 .focus-cmt-bar .fc-btn svg { width: 17px; height: 17px; display: block; }
 .focus-cmt-files { padding: 4px 12px 0; font-size: .78rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; }
-.kit-icon-btn { width: 34px; height: 34px; padding: 0 !important; border-radius: 999px !important; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.kit-icon-btn { width: 34px; height: 34px; padding: 0 !important; border-radius: 999px !important; display: inline-flex; align-items: center; justify-content: center; flex: none; position: relative; }
 .kit-icon-btn svg { width: 17px; height: 17px; display: block; flex: none; }
+.kit-icon-btn.with-count { width: auto; padding: 0 10px !important; gap: 5px; font-size: .8rem; font-weight: 700; }
+.focus-counter { position: absolute; top: 14px; right: 16px; font-size: .78rem; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; background: var(--sunk); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+
+/* Focus View zen header: hide all clutter, center Focus (reveal other views on hover), semi-transparent X on top-right */
+#waiting { display: none !important; }
+[data-view="focus"] #dash,
+[data-view="focus"] #kit-search-wrap,
+[data-view="focus"] #sort,
+[data-view="focus"] #sel-toggle,
+[data-view="focus"] #status,
+[data-view="focus"] #ask { display: none !important; }
+[data-view="focus"] header.top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+[data-view="focus"] header.top h1 { justify-self: start; font-size: 1.35rem; }
+[data-view="focus"] header.top .tools { justify-self: center; }
+[data-view="focus"] .kit-views button:not(.on) { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  [data-view="focus"] .kit-views:hover button { display: inline-flex; }
+}
+.kit-focus-exit {
+  display: none; justify-self: end;
+  width: 34px; height: 34px; border-radius: 999px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 65%, transparent); color: var(--ink);
+  opacity: .55; align-items: center; justify-content: center; padding: 0;
+  transition: opacity .15s ease, background .15s ease;
+}
+.kit-focus-exit:hover { opacity: .95; background: var(--surface); }
+.kit-focus-exit svg { width: 17px; height: 17px; display: block; }
+[data-view="focus"] .kit-focus-exit { display: inline-flex; }
+[data-view="focus"] #kit-focus-view { margin-top: 10px; }
+
+/* Feed Floating Comments Overlay (opens #sheet as a floating card over a blurred Feed background) */
+.wrap.kit-blurred { filter: blur(6px); pointer-events: none; user-select: none; transition: filter .18s ease; }
+.sheet.feed-comments-overlay {
+  inset: 28px auto 28px 50%; transform: translateX(-50%);
+  width: min(760px, calc(100vw - 24px)); height: auto; max-height: calc(100vh - 56px);
+  border-radius: 20px; border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg), 0 24px 64px rgba(0, 0, 0, .38);
+  background: var(--surface); z-index: 26;
+}
+.sheet.feed-comments-overlay .sheet-in { padding: 0 18px 24px !important; max-width: none; }
+.sheet.feed-comments-overlay .bar { margin-inline: -18px; }
+@media (max-width: 640px) {
+  .sheet.feed-comments-overlay { inset: 12px; transform: none; width: auto; max-height: calc(100vh - 24px); border-radius: 16px; }
+}
+.kit-overlay-backdrop {
+  position: fixed; inset: 0; z-index: 24;
+  background: rgba(10, 15, 26, .35); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+}
+.kit-overlay-backdrop[hidden] { display: none !important; }
 
 /* Floating Orchestrator Messenger Popup (renders the full #sheet messaging UI right over the dashboard) */
 .sheet.orch-popup {
@@ -559,8 +608,8 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 .kit-move-menu button:hover { background: var(--sunk); }
 .kit-move-menu button.cur { font-weight: 700; color: var(--ember); }
 
-/* Edge-to-edge post body & adaptive horizontally-scrollable tables (no mid-word breaks) */
-.sheet-in { max-width: 1040px; padding-bottom: 96px !important; }
+/* Edge-to-edge post body inside comfortable 860px sheet & adaptive horizontally-scrollable tables (no mid-word breaks) */
+.sheet-in { max-width: 860px; padding-bottom: 96px !important; }
 .sheet .body { max-width: none !important; width: 100%; }
 .tbl { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; margin: 0 0 .9em; border: 1px solid var(--line); border-radius: 10px; }
 .tbl table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: .88rem; font-variant-numeric: tabular-nums; }
@@ -1839,7 +1888,10 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
   function closePost() {
     rememberOpen(null);
     unwatchSeen(); seenPost = "";
-    state.openId = null; stripKey = ""; $("sheet").hidden = true; $("sheet").classList.remove("orch-popup"); document.body.style.overflow = ""; renderBoard();
+    state.openId = null; stripKey = ""; $("sheet").hidden = true; $("sheet").classList.remove("orch-popup", "feed-comments-overlay");
+    var _w = document.querySelector(".wrap"); if (_w) _w.classList.remove("kit-blurred");
+    var _bd = document.getElementById("kit-overlay-backdrop"); if (_bd) _bd.hidden = true;
+    document.body.style.overflow = ""; renderBoard();
     /* BD7: a post opened from the Waiting page goes back to it */
     if (state.fromWait && state.waitOpen) { state.fromWait = false; $("wsheet").hidden = false; document.body.style.overflow = "hidden"; renderWaitPage(); }
     state.fromWait = false;
@@ -2970,7 +3022,6 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       box.appendChild(meta);
 
       var h3 = el("h3", null, str(p.title) || "(untitled)");
-      h3.addEventListener("click", function () { openPost(p.id); });
       box.appendChild(h3);
 
       var rawBody = str(p.body);
@@ -2981,19 +3032,43 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       body.innerHTML = renderBody(rawBody);
       enhanceRenderedBody(body);
       bodyWrap.appendChild(body);
-      if (isClamped) {
+      var prev = null;
+      function makePreview() {
         var plain = rawBody.replace(/[#*_`>\[\]]/g, " ").replace(/\s+/g, " ").trim();
         var snip = plain.length > 220 ? plain.slice(0, 220).replace(/\s+\S*$/, "") : plain;
-        var prev = el("div", "ffeed-preview");
-        prev.appendChild(document.createTextNode(snip + "\u2026"));
-        var sm = el("span", "ffeed-seemore", "see more");
-        prev.appendChild(sm);
-        bodyWrap.appendChild(prev);
-        bodyWrap.addEventListener("click", function (ev) {
-          ev.stopPropagation();
+        var d = el("div", "ffeed-preview");
+        d.appendChild(document.createTextNode(snip + "\u2026"));
+        d.appendChild(el("span", "ffeed-seemore", "see more"));
+        return d;
+      }
+      function toggleFeedExpand() {
+        if (!isLong) return;
+        if (bodyWrap.classList.contains("clamped")) {
           feedExpanded[p.id] = true;
           bodyWrap.classList.remove("clamped");
-          if (prev.parentNode) prev.parentNode.removeChild(prev);
+          if (prev && prev.parentNode) prev.parentNode.removeChild(prev);
+        } else {
+          delete feedExpanded[p.id];
+          bodyWrap.classList.add("clamped");
+          if (!prev) prev = makePreview();
+          if (!prev.parentNode) bodyWrap.appendChild(prev);
+        }
+      }
+      if (isLong) {
+        if (isClamped) { prev = makePreview(); bodyWrap.appendChild(prev); }
+        h3.addEventListener("click", function () { toggleFeedExpand(); });
+        var tapX = 0, tapY = 0, tapT = 0;
+        bodyWrap.addEventListener("pointerdown", function (ev) {
+          tapX = ev.clientX; tapY = ev.clientY; tapT = Date.now();
+        });
+        bodyWrap.addEventListener("click", function (ev) {
+          if (ev.target && ev.target.closest && ev.target.closest("a, button, summary, details, input, textarea")) return;
+          if (Math.abs(ev.clientX - tapX) > 6 || Math.abs(ev.clientY - tapY) > 6) return;
+          if (Date.now() - tapT > 450) return;
+          var sel = window.getSelection ? String(window.getSelection()) : "";
+          if (sel && sel.trim().length > 0) return;
+          ev.stopPropagation();
+          toggleFeedExpand();
         });
       }
       box.appendChild(bodyWrap);
@@ -3046,11 +3121,13 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
         acts.appendChild(doneBtn);
       }
 
+      var cs = commentsFor(p.id);
       var focusCmtBar = null;
       if (isFocusMode) {
-        var cmtBtn = el("button", "btn small kit-icon-btn");
+        var cmtBtn = el("button", "btn small kit-icon-btn" + (cs.length ? " with-count" : ""));
         cmtBtn.type = "button"; cmtBtn.title = "Write a comment"; cmtBtn.setAttribute("aria-label", "Write a comment");
         cmtBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+        if (cs.length) cmtBtn.appendChild(el("span", null, String(cs.length)));
         focusCmtBar = el("div", "focus-cmt-bar");
         var fFiles = el("div", "focus-cmt-files");
         var fTa = document.createElement("textarea"); fTa.placeholder = "Write a comment"; fTa.maxLength = 4000;
@@ -3098,18 +3175,19 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
         });
         acts.appendChild(cmtBtn);
       } else {
-        var openBtn = el("button", "btn small", "Open the post \u203a");
-        openBtn.type = "button";
-        openBtn.addEventListener("click", function () { openPost(p.id); });
-        acts.appendChild(openBtn);
+        var feedCmtBtn = el("button", "btn small kit-icon-btn" + (cs.length ? " with-count" : ""));
+        feedCmtBtn.type = "button"; feedCmtBtn.title = "Comments on the post"; feedCmtBtn.setAttribute("aria-label", "Comments on the post");
+        feedCmtBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+        if (cs.length) feedCmtBtn.appendChild(el("span", null, String(cs.length)));
+        feedCmtBtn.addEventListener("click", function () { openFeedCommentsOverlay(p.id); });
+        acts.appendChild(feedCmtBtn);
       }
       box.appendChild(acts);
       if (focusCmtBar) box.appendChild(focusCmtBar);
 
-      var cs = commentsFor(p.id);
-      if (cs.length) {
+      if (isFocusMode && cs.length) {
         var det = el("details", "ffeed-cmts");
-        if (isFocusMode) det.open = true;
+        det.open = true;
         var sum = el("summary", null, cs.length + (cs.length === 1 ? " comment" : " comments"));
         det.appendChild(sum);
         cs.slice(-5).forEach(function (c) {
@@ -3208,8 +3286,27 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       posts.forEach(function (p) { openFeedEl.appendChild(buildOpenFeedCard(p, false)); });
     }
 
+    var overlayBackdrop = document.createElement("div");
+    overlayBackdrop.id = "kit-overlay-backdrop"; overlayBackdrop.className = "kit-overlay-backdrop"; overlayBackdrop.hidden = true;
+    overlayBackdrop.addEventListener("click", function () { closePost(); });
+    document.body.appendChild(overlayBackdrop);
+
+    function openFeedCommentsOverlay(pid) {
+      openPost(pid);
+      var sh = $("sheet");
+      if (sh) sh.classList.add("feed-comments-overlay");
+      if (wrap) wrap.classList.add("kit-blurred");
+      overlayBackdrop.hidden = false;
+      requestAnimationFrame(function () {
+        var th = document.getElementById("p-th") || document.getElementById("p-comments");
+        if (th && th.scrollIntoView) th.scrollIntoView({ block: "start", behavior: "instant" });
+      });
+    }
+
+    var focusCurrentCard = null, focusCurrentPost = null;
     function renderFocusView() {
       focusViewEl.textContent = "";
+      focusCurrentCard = null; focusCurrentPost = null;
       var actionQueue = (state.posts || []).filter(function (p) {
         var c = colOf(p);
         return c !== "done" && matches(p) && (c === "question" || c === "todo" || (prioOf(p) === 1 && isNew(p)));
@@ -3228,18 +3325,10 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       }
       if (focusIdx >= actionQueue.length) focusIdx = 0;
       var p = actionQueue[focusIdx];
-      var nav = el("div", "ffeed-bar");
-      nav.appendChild(el("b", null, (focusIdx + 1) + " / " + actionQueue.length));
-      var navBtns = el("span", "row");
-      var prevB = el("button", "btn small", "\u2039"); prevB.type = "button";
-      prevB.addEventListener("click", function () { focusIdx = (focusIdx - 1 + actionQueue.length) % actionQueue.length; renderFocusView(); });
-      var nextB = el("button", "btn small ember", "\u203a"); nextB.type = "button";
-      nextB.addEventListener("click", function () { focusIdx = (focusIdx + 1) % actionQueue.length; renderFocusView(); });
-      navBtns.appendChild(prevB); navBtns.appendChild(nextB);
-      nav.appendChild(navBtns);
-      focusViewEl.appendChild(nav);
       var fCard = buildOpenFeedCard(p, true);
+      fCard.appendChild(el("span", "focus-counter", (focusIdx + 1) + " / " + actionQueue.length));
       attachFocusSwipe(fCard, p);
+      focusCurrentCard = fCard; focusCurrentPost = p;
       focusViewEl.appendChild(fCard);
     }
 
@@ -3251,25 +3340,43 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       else if (v === "focus") renderFocusView();
     }
 
+    var prevNonFocusView = "lanes";
+    function switchView(v) {
+      var curV = wrap.getAttribute("data-view") || "lanes";
+      if (v === "focus" && curV !== "focus") prevNonFocusView = curV;
+      wrap.setAttribute("data-view", v);
+      try { localStorage.setItem("board-view", v); } catch (e) {}
+      var kb = document.getElementById("kit-views");
+      if (kb) {
+        Array.prototype.slice.call(kb.children).forEach(function (x) { x.className = x.dataset.view === v ? "on" : ""; });
+      }
+      refreshAltViews();
+    }
+
     if (wrap && tools && !document.getElementById("kit-views")) {
       var savedView = "lanes";
       try { savedView = localStorage.getItem("board-view") || "lanes"; } catch (e) {}
       if (["lanes", "trains", "feed", "focus"].indexOf(savedView) === -1) savedView = "lanes";
+      if (savedView !== "focus") prevNonFocusView = savedView;
       wrap.setAttribute("data-view", savedView);
       var box = document.createElement("span");
       box.id = "kit-views"; box.className = "kit-views";
       [["lanes", "Lanes"], ["trains", "Trains"], ["feed", "Feed"], ["focus", "Focus"]].forEach(function (pair) {
-        var b = document.createElement("button"); b.type = "button"; b.textContent = pair[1];
+        var b = document.createElement("button"); b.type = "button"; b.textContent = pair[1]; b.dataset.view = pair[0];
         if (pair[0] === savedView) b.className = "on";
-        b.addEventListener("click", function () {
-          wrap.setAttribute("data-view", pair[0]);
-          try { localStorage.setItem("board-view", pair[0]); } catch (e) {}
-          Array.prototype.slice.call(box.children).forEach(function (x) { x.className = x === b ? "on" : ""; });
-          refreshAltViews();
-        });
+        b.addEventListener("click", function () { switchView(pair[0]); });
         box.appendChild(b);
       });
       tools.insertBefore(box, tools.firstChild);
+      var headerTop = document.querySelector("header.top");
+      if (headerTop && !document.getElementById("kit-focus-exit")) {
+        var exitB = document.createElement("button");
+        exitB.id = "kit-focus-exit"; exitB.className = "kit-focus-exit"; exitB.type = "button";
+        exitB.setAttribute("aria-label", "Close"); exitB.title = "Close";
+        exitB.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+        exitB.addEventListener("click", function () { switchView(prevNonFocusView || "lanes"); });
+        headerTop.appendChild(exitB);
+      }
     }
     var AV_COLORS = { you: "#e8894a", owner: "#e8894a", orchestrator: "#8b5cf6", consultant: "#10b981", clerk: "#64748b" };
     function decorateComments() {
@@ -3302,23 +3409,18 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
         })(rails[j]);
       }
     }
-    /* Keyboard shortcuts in Focus View (←/→ or J/K to step, L to 👍 Like, E to Move to Done) */
+    /* Keyboard shortcuts in Focus View (ArrowLeft = skip to end of deck, ArrowRight = approve/done/default) */
     document.addEventListener("keydown", function (e) {
-      if (!wrap || wrap.getAttribute("data-view") !== "focus" || state.openId || !orchPop.hidden) return;
+      if (!wrap || wrap.getAttribute("data-view") !== "focus" || state.openId || !focusCurrentCard || !focusCurrentPost) return;
       var tag = (e.target && e.target.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
-      if (e.key === "ArrowRight" || e.key === "j" || e.key === "J") {
-        var nb = focusViewEl.querySelector(".ffeed-bar .btn.ember");
-        if (nb) nb.click();
-      } else if (e.key === "ArrowLeft" || e.key === "k" || e.key === "K") {
-        var pb = focusViewEl.querySelector(".ffeed-bar .btn:not(.ember)");
-        if (pb) pb.click();
-      } else if (e.key === "l" || e.key === "L") {
-        var lb = focusViewEl.querySelector(".ffeed-actions .like");
-        if (lb) lb.click();
-      } else if (e.key === "e" || e.key === "E") {
-        var dbBtn = focusViewEl.querySelector(".ffeed-actions .btn.ember");
-        if (dbBtn) dbBtn.click();
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        var cp = focusCurrentPost, cc = focusCurrentCard;
+        slideCardAndNext(cc, 1, cp, function () { return submitDefaultOrAction(cp, cc); });
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        slideCardAndNext(focusCurrentCard, -1, focusCurrentPost, null);
       }
     });
 

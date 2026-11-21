@@ -164,6 +164,8 @@ def extract_exclusions():
         "transform .22s ease, opacity .22s ease",
         "application/octet-stream",
         "button, textarea, input, summary, a",
+        "a, button, summary, details, input, textarea",
+        "header.top",
         "\U0001f44d Like: he approves this post, no words.",
     ]
     return [decode_js(e) for e in EXCLUDED] + extra + [
