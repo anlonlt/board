@@ -154,6 +154,37 @@ class TestChecklistFeatures(unittest.TestCase):
         names = {t["name"] for t in r_list["result"]["tools"]}
         self.assertEqual(names, {"board_inbox", "board_queue", "board_post", "board_reply", "board_search"})
 
+    def test_post_unlock_and_kit_report(self):
+        with tempfile.TemporaryDirectory() as td:
+            os.makedirs(os.path.join(td, ".kit"), exist_ok=True)
+            shutil.copyfile(os.path.join(ROOT, "kit", "board", "board.template.html"), os.path.join(td, ".kit", "board.html"))
+            srv, store = board_server.start_server(td, host="127.0.0.1", port=0, token="secret-xyz")
+            store.set_doc("posts", "q1", {"title": "Pick one", "column": "question", "created_at": "2026-11-20T10:00:00Z"})
+            store.set_doc("comments", "c1", {"post_id": "q1", "from": "owner", "text": "go", "created_at": "2026-11-20T10:01:00Z"})
+            store.set_doc("comments", "c2", {"post_id": "q1", "from": "agent", "text": "done", "created_at": "2026-11-20T10:03:00Z"})
+            port = srv.server_address[1]
+            t = threading.Thread(target=srv.serve_forever, daemon=True)
+            t.start()
+            try:
+                c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                c.request("POST", "/_api/unlock", body=json.dumps({"token": "wrong"}), headers={"Content-Type": "application/json"})
+                r_bad = c.getresponse(); r_bad.read()
+                self.assertEqual(r_bad.status, 401)
+                c.request("POST", "/_api/unlock", body=json.dumps({"token": "secret-xyz"}), headers={"Content-Type": "application/json"})
+                r_ok = c.getresponse(); r_ok.read()
+                self.assertEqual(r_ok.status, 200)
+                self.assertIn("kit_token=secret-xyz", r_ok.getheader("Set-Cookie") or "")
+                c.close()
+
+                rep = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "kit.py"), "report", "--db", store.db_path], capture_output=True, text=True)
+                self.assertEqual(rep.returncode, 0, rep.stderr)
+                self.assertIn("2.0 / 2.0 min", rep.stdout)
+                self.assertIn("Board Self-Audit & ROI Report", rep.stdout)
+            finally:
+                srv.shutdown()
+                srv.server_close()
+                store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

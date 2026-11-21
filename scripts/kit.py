@@ -183,7 +183,31 @@ def _export_seen_from_db(conn, m):
     return written
 
 
-def sync_db(m, db_path=None, at=None, full=False):
+def _export_blobs_to_mirror(db_path, m, max_bytes=5 * 1024 * 1024):
+    """Copy local blobs (under max_bytes) and their .json metadata into <mirror>/board/blobs/."""
+    src_dir = os.path.join(os.path.dirname(os.path.abspath(db_path)), "blobs")
+    if not os.path.isdir(src_dir):
+        return 0
+    dst_dir = os.path.join(m, "board", "blobs")
+    os.makedirs(dst_dir, exist_ok=True)
+    copied = 0
+    for fn in os.listdir(src_dir):
+        if not re.fullmatch(r"[a-fA-F0-9]{16,64}", fn):
+            continue
+        sp = os.path.join(src_dir, fn)
+        if not os.path.isfile(sp) or os.path.getsize(sp) > max_bytes:
+            continue
+        dp = os.path.join(dst_dir, fn)
+        if not os.path.exists(dp) or os.path.getsize(dp) != os.path.getsize(sp):
+            shutil.copy2(sp, dp)
+            copied += 1
+        meta_s = sp + ".json"
+        if os.path.isfile(meta_s):
+            shutil.copy2(meta_s, dp + ".json")
+    return copied
+
+
+def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
     """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full)."""
     import sqlite3
     import tempfile
@@ -210,6 +234,8 @@ def sync_db(m, db_path=None, at=None, full=False):
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
             _export_seen_from_db(conn, m)
+            if with_blobs:
+                _export_blobs_to_mirror(db, m)
             st2 = read_state(m)
             st2["db_seq"] = latest_seq
             write_doc(os.path.join(m, "board", "sync.json"), st2)
@@ -959,6 +985,102 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None):
     return "\n".join(out) + "\n(%d card%s)" % (len(rows), "" if len(rows) == 1 else "s")
 
 
+def report_metrics(m, db_path=None):
+    """Compute weekly ROI & board self-audit metrics (posts, open questions, owner wait p50/p95, DB/blob health)."""
+    db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    posts, comments = {}, []
+    db_kb = 0
+    blob_count = missing_blobs = 0
+    if os.path.isfile(db):
+        db_kb = round(os.path.getsize(db) / 1024.0, 1)
+        blob_dir = os.path.join(os.path.dirname(db), "blobs")
+        if os.path.isdir(blob_dir):
+            blob_count = sum(1 for fn in os.listdir(blob_dir) if re.fullmatch(r"[a-fA-F0-9]{16,64}", fn))
+        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+        try:
+            ref_blobs = set()
+            for coll, did, raw in conn.execute("SELECT collection, doc_id, data FROM docs WHERE collection IN ('posts','comments')"):
+                for bid in re.findall(r"/_blob/([a-fA-F0-9]{16,64})", raw or ""):
+                    ref_blobs.add(bid)
+                try:
+                    d = json.loads(raw)
+                except ValueError:
+                    continue
+                if coll == "posts" and not did.startswith("_"):
+                    posts[did] = d
+                elif coll == "comments":
+                    d["_id"] = did
+                    comments.append(d)
+            missing_blobs = sum(1 for b in ref_blobs if not os.path.isfile(os.path.join(blob_dir, b)))
+        finally:
+            conn.close()
+    by_col = {"todo": 0, "question": 0, "info": 0, "done": 0}
+    oldest_q_age_h = 0.0
+    oldest_q_id = ""
+    now_dt = datetime.now(timezone.utc)
+    for pid, p in posts.items():
+        if p.get("removed"):
+            continue
+        col = str(p.get("column") or "info")
+        by_col[col] = by_col.get(col, 0) + 1
+        if col == "question" and p.get("created_at"):
+            try:
+                age_h = (now_dt - iso(str(p["created_at"]))).total_seconds() / 3600.0
+                if age_h > oldest_q_age_h:
+                    oldest_q_age_h, oldest_q_id = age_h, pid
+            except ValueError:
+                pass
+    by_post = {}
+    owner_cmts = 0
+    for c in comments:
+        by_post.setdefault(str(c.get("post_id") or ""), []).append(c)
+        if c.get("from") in ("owner", "viewer"):
+            owner_cmts += 1
+    waits_min = []
+    for cs in by_post.values():
+        cs.sort(key=lambda x: str(x.get("created_at") or ""))
+        pending_t = None
+        for c in cs:
+            ts = str(c.get("created_at") or "")
+            if not ts:
+                continue
+            try:
+                dt = iso(ts)
+            except ValueError:
+                continue
+            if c.get("from") in ("owner", "viewer") and not c.get("like"):
+                if pending_t is None:
+                    pending_t = dt
+            elif c.get("from") not in ("owner", "viewer", "clerk") and pending_t is not None:
+                diff = (dt - pending_t).total_seconds() / 60.0
+                if 0 <= diff <= 1440:
+                    waits_min.append(diff)
+                pending_t = None
+    waits_min.sort()
+    def pct(arr, q):
+        if not arr:
+            return None
+        idx = min(len(arr) - 1, int(round((len(arr) - 1) * q)))
+        return round(arr[idx], 1)
+    p50, p95 = pct(waits_min, 0.5), pct(waits_min, 0.95)
+    st = read_state(m)
+    last_sync = st.get("last_sync") or "(never)"
+    lines = [
+        "# Board Self-Audit & ROI Report",
+        "",
+        "| Metric | Value |",
+        "|---|---|",
+        "| Posts (Action / Decisions / Updates / Done) | %d (%d / %d / %d / %d) |" % (sum(by_col.values()), by_col["todo"], by_col["question"], by_col["info"], by_col["done"]),
+        "| Comments (total / owner) | %d / %d |" % (len(comments), owner_cmts),
+        "| Owner reply wait (p50 / p95, n=%d) | %s / %s min |" % (len(waits_min), p50 if p50 is not None else "n/a", p95 if p95 is not None else "n/a"),
+        "| Oldest open question | %s |" % (("%s (%.1fh)" % (oldest_q_id, oldest_q_age_h)) if oldest_q_id else "none"),
+        "| SQLite DB size | %.1f KB |" % db_kb,
+        "| Blobs (local / missing refs) | %d / %d |" % (blob_count, missing_blobs),
+        "| Mirror last sync | %s |" % last_sync,
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def search_all(query, db_path=None, limit=25):
     """Search posts, comments (SQLite) and committed memory markdown files."""
     q = (query or "").strip()
@@ -1035,7 +1157,7 @@ def main(argv=None):
     s = sp.add_parser("sync"); s.add_argument("dir"); s.add_argument("--at", required=True)
     s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true")
     s = sp.add_parser("sync-db"); s.add_argument("--db", default=None); s.add_argument("--at", default=None)
-    s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true")
+    s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true"); s.add_argument("--with-blobs", action="store_true")
     s = sp.add_parser("receive"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s.add_argument("--branch", default=None)
     s = sp.add_parser("publish"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
@@ -1047,6 +1169,7 @@ def main(argv=None):
     s = sp.add_parser("session"); s.add_argument("post")
     s = sp.add_parser("reads"); s.add_argument("--at")
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
+    s = sp.add_parser("report"); s.add_argument("--db", default=None)
     s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None)
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("welcome")
@@ -1080,7 +1203,7 @@ def main(argv=None):
     if a.cmd == "sync-db":
         at_val = a.at or zstamp(datetime.now(timezone.utc))
         with _sync_lock(m):
-            r = sync_db(m, db_path=a.db, at=at_val, full=a.full)
+            r = sync_db(m, db_path=a.db, at=at_val, full=a.full, with_blobs=a.with_blobs)
             print("sync-db %s: posts %d written, %d removed; comments %d new, %d changed, %d removed" % ((at_val,) + r))
             if a.commit:
                 print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
@@ -1089,6 +1212,9 @@ def main(argv=None):
         out, rc = doctor(m, db_path=a.db)
         print(out)
         return rc
+    if a.cmd == "report":
+        print(report_metrics(m, db_path=a.db), end="")
+        return 0
     if a.cmd == "queue":
         print(queue_cards(m, runner=a.runner, for_owner=a.for_owner, db_path=a.db))
         return 0

@@ -42,7 +42,37 @@ SHIM_JS = r"""(function () {
     return path;
   }
 
-  function api(method, path, body, headers) {
+  var OUTBOX_KEY = "kit_offline_outbox";
+  function readOutbox() {
+    try { return JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]"); } catch (e) { return []; }
+  }
+  function writeOutbox(q) {
+    try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(q.slice(-100))); } catch (e) {}
+    var st = typeof document !== "undefined" && document.getElementById("status");
+    if (st && q.length) { st.textContent = "Pending sync (" + q.length + ")"; st.className = "status"; }
+  }
+  var flushingOutbox = false;
+  function flushOutbox() {
+    if (flushingOutbox) return;
+    var q = readOutbox();
+    if (!q.length) return;
+    flushingOutbox = true;
+    (function next() {
+      var cur = readOutbox();
+      if (!cur.length) { flushingOutbox = false; refreshAllSubs(); return; }
+      var item = cur[0];
+      rawApi(item.method, item.path, item.body, item.headers).then(function () {
+        var rest = readOutbox().slice(1);
+        writeOutbox(rest);
+        if (rest.length) next(); else { flushingOutbox = false; refreshAllSubs(); }
+      }, function () { flushingOutbox = false; });
+    })();
+  }
+  if (typeof window !== "undefined") {
+    window.addEventListener("online", flushOutbox);
+  }
+
+  function rawApi(method, path, body, headers) {
     var opts = { method: method, headers: Object.assign({}, headers || {}) };
     if (typeof window !== "undefined" && window.__KIT_TOKEN__) {
       opts.headers["X-Kit-Token"] = window.__KIT_TOKEN__;
@@ -66,6 +96,21 @@ SHIM_JS = r"""(function () {
         });
       }
       return r.json();
+    });
+  }
+
+  function api(method, path, body, headers) {
+    return rawApi(method, path, body, headers).catch(function (err) {
+      var isWrite = (method === "PUT" || method === "PATCH" || method === "POST");
+      var isJsonBody = !(body instanceof Blob || body instanceof ArrayBuffer || body instanceof Uint8Array);
+      var isQueueable = isWrite && isJsonBody && (path.indexOf("/_api/db/") === 0 || path.indexOf("/_api/comments/send") === 0);
+      if (isQueueable && !err.status) {
+        var q = readOutbox();
+        q.push({ method: method, path: path, body: body, headers: headers || {}, at: Date.now() });
+        writeOutbox(q);
+        return { ok: true, queued: true, id: (path.split("/").pop() || ""), version: 0 };
+      }
+      throw err;
     });
   }
 
@@ -117,7 +162,7 @@ SHIM_JS = r"""(function () {
     if (es) return;
     try {
       es = new EventSource("/_api/events");
-      es.onopen = function () { refreshAllSubs(); };
+      es.onopen = function () { flushOutbox(); refreshAllSubs(); };
       es.addEventListener("change", function (ev) {
         var info = {};
         try { info = JSON.parse(ev.data || "{}"); } catch (e) {}
@@ -1578,18 +1623,21 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                 return set_cookie
             accept = (self.headers.get("Accept") or "").lower()
             if (not embed_mode) and parsed.path in ("/", "/index.html") and "text/html" in accept:
-                # Auto-restore from localStorage if PWA/browser dropped the cookie; else clean unlock form
+                # Auto-restore from localStorage via POST /_api/unlock (never puts secret in URL)
                 body = (
-                    "<!doctype html><html><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+                    '<!doctype html><html lang="en"><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">'
                     "<meta name=theme-color content=#0b111e><title>Unlock Board</title></head>"
                     "<body style='background:#0b111e;color:#e6ebf2;font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:16px'>"
-                    "<script>try{var t=localStorage.getItem('kit_board_token');if(t&&!location.search.includes('token=')){location.replace('/?token='+encodeURIComponent(t));}}catch(e){}</script>"
-                    "<form style='background:#141d2e;border:1px solid #233049;border-radius:16px;padding:24px;max-width:360px;width:100%' onsubmit=\"event.preventDefault();var v=document.getElementById('t').value.trim();if(v){try{localStorage.setItem('kit_board_token',v);}catch(e){}location.replace('/?token='+encodeURIComponent(v));}\">"
+                    "<form id=uf style='background:#141d2e;border:1px solid #233049;border-radius:16px;padding:24px;max-width:360px;width:100%'>"
                     "<h2 style='margin:0 0 8px;font-size:1.2rem'>Unlock board</h2>"
                     "<p style='margin:0 0 14px;color:#9aa6b8;font-size:.9rem'>Paste your board token once — it will be saved permanently on this device.</p>"
                     "<input id=t type=password placeholder='Board token' required style='width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid #233049;background:#0b111e;color:#e6ebf2;font-size:1rem;margin-bottom:12px'>"
                     "<button type=submit style='width:100%;padding:10px;border-radius:999px;border:0;background:#e8894a;color:#1a1206;font-weight:700;font-size:.95rem;cursor:pointer'>Unlock</button>"
-                    "</form></body></html>"
+                    "<div id=err style='color:#f08a78;font-size:.85rem;margin-top:10px'></div></form>"
+                    "<script>(function(){function go(v){return fetch('/_api/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:v})}).then(function(r){if(!r.ok)throw 0;try{localStorage.setItem('kit_board_token',v);}catch(e){}location.replace('/');});}"
+                    "try{var s=localStorage.getItem('kit_board_token');if(s){go(s).catch(function(){});}}catch(e){}"
+                    "document.getElementById('uf').addEventListener('submit',function(e){e.preventDefault();var v=document.getElementById('t').value.trim();if(!v)return;document.getElementById('err').textContent='';go(v).catch(function(){document.getElementById('err').textContent='Invalid board token.';});});})();</script>"
+                    "</body></html>"
                 ).encode("utf-8")
                 self.send_response(401)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1977,9 +2025,34 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
 
         def do_POST(self):
             parsed = urllib.parse.urlsplit(self.path)
+            path = parsed.path
+            if path == "/_api/unlock":
+                try:
+                    body = self._read_json()
+                except (PayloadTooLarge, ValueError):
+                    self._send_json(400, {"error": "invalid json"})
+                    return
+                cand = str(body.get("token") or "")
+                if token and not hmac.compare_digest(cand, token):
+                    self._send_json(401, {"error": "unauthorized", "code": "unauthorized"})
+                    return
+                raw = json.dumps({"ok": True}).encode("utf-8")
+                self.send_response(200)
+                if token and not embed_mode:
+                    proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+                    cookie = "kit_token=%s; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax" % token
+                    if proto == "https":
+                        cookie += "; Secure"
+                    self.send_header("Set-Cookie", cookie)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self._send_security_headers()
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(raw)
+                return
             if self._require_auth(parsed) is None:
                 return
-            path = parsed.path
 
             if path == "/_api/blobs":
                 try:
@@ -2141,23 +2214,42 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
     if arc.returncode != 0 or not arc.stdout:
         return {"ref": ref, "imported": 0, "skipped": 0}
 
-    imported = skipped = 0
+    imported = skipped = blobs_restored = 0
     sync_cursor = ""
     mirror_seen = {}
     imported_posts = {}
+    referenced_blobs = set()
     with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
         for member in tf.getmembers():
-            if not member.isfile() or not member.name.endswith(".json"):
+            if not member.isfile():
                 continue
             name = member.name.lstrip("./")
             parts = name.split("/")
+            if len(parts) == 3 and parts[0] == "board" and parts[1] == "blobs":
+                bfn = parts[2]
+                if re.fullmatch(r"[a-fA-F0-9]{16,64}(\.json)?", bfn):
+                    dst = os.path.join(store.blob_dir, bfn)
+                    if force or not os.path.exists(dst):
+                        fobj = tf.extractfile(member)
+                        if fobj is not None:
+                            with open(dst, "wb") as out_fh:
+                                out_fh.write(fobj.read())
+                            if not bfn.endswith(".json"):
+                                blobs_restored += 1
+                continue
+            if not member.name.endswith(".json"):
+                continue
             fobj = tf.extractfile(member)
             if fobj is None:
                 continue
+            raw_bytes = fobj.read()
             try:
-                data = json.loads(fobj.read().decode("utf-8"))
+                raw_text = raw_bytes.decode("utf-8")
+                data = json.loads(raw_text)
             except (UnicodeDecodeError, ValueError):
                 continue
+            for bid in re.findall(r"/_blob/([a-fA-F0-9]{16,64})", raw_text):
+                referenced_blobs.add(bid)
             if name == "board/sync.json" and isinstance(data, dict):
                 sync_cursor = str(data.get("cursor") or "")
                 continue
@@ -2194,7 +2286,10 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
     if seen_changed:
         store.set_doc("data/users/owner", "board-seen", {"posts": seen_posts})
 
-    return {"ref": ref, "imported": imported, "skipped": skipped}
+    missing_blobs = sorted(b for b in referenced_blobs if not os.path.isfile(os.path.join(store.blob_dir, b)))
+    if missing_blobs:
+        print("seed_from_mirror: WARNING: %d referenced blob(s) missing locally (first 5: %s)" % (len(missing_blobs), ", ".join(missing_blobs[:5])), file=sys.stderr)
+    return {"ref": ref, "imported": imported, "skipped": skipped, "blobs_restored": blobs_restored, "missing_blobs": len(missing_blobs)}
 
 
 def export_markdown(store, post_id=None):
