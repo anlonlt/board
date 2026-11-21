@@ -358,7 +358,12 @@ SHIM_JS = r"""(function () {
     var typing = tag === "input" || tag === "textarea" || tag === "select" || (document.activeElement && document.activeElement.isContentEditable);
     if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") || (!typing && e.key === "/")) {
       var q = document.getElementById("q") || document.querySelector("input[type='search'], input[placeholder*='Search']");
-      if (q) { e.preventDefault(); q.focus(); q.select && q.select(); }
+      if (q) {
+        e.preventDefault();
+        var sw = document.getElementById("kit-search-wrap");
+        if (sw) sw.classList.add("open");
+        q.focus(); q.select && q.select();
+      }
     } else if (e.key === "Escape") {
       var back = document.getElementById("back");
       if (back && back.offsetParent !== null) back.click();
@@ -399,35 +404,33 @@ SHIM_JS = r"""(function () {
       barRow.appendChild(sel);
     }
 
-    /* Inline git diff loader if body mentions a 7-40 char commit hash */
+    /* Inline git diff loader: only shown when the post body names a real commit in this repo */
     var bodyEl = document.getElementById("p-body");
     if (bodyEl && bodyEl.dataset.kitDiffPost !== postId) {
       bodyEl.dataset.kitDiffPost = postId;
       var oldDiff = document.getElementById("kit-git-diff");
       if (oldDiff) oldDiff.remove();
-      var m = (bodyEl.textContent || "").match(/\b([0-9a-f]{7,40})\b/);
-      if (m) {
-        var wrap = document.createElement("details");
-        wrap.id = "kit-git-diff";
-        wrap.style.cssText = "margin:14px 0;border:1px solid var(--line,#2c3850);border-radius:10px;padding:8px 12px;background:var(--sunk,#0c121d);";
-        var sum = document.createElement("summary");
-        sum.textContent = "Inspect git diff (" + m[1].slice(0, 7) + ")";
-        sum.style.cssText = "cursor:pointer;font-weight:600;color:var(--info,#78b4e3);";
-        var pre = document.createElement("pre");
-        pre.style.cssText = "overflow:auto;max-height:360px;font-family:var(--mono,monospace);font-size:12px;line-height:1.4;margin:8px 0 0;white-space:pre;";
-        pre.textContent = "Loading diff…";
-        wrap.appendChild(sum); wrap.appendChild(pre);
-        var loaded = false;
-        wrap.addEventListener("toggle", function () {
-          if (!wrap.open || loaded) return;
-          loaded = true;
-          api("GET", "/_api/git/diff?ref=" + encodeURIComponent(m[1])).then(function (r) {
-            pre.textContent = (r.stat ? r.stat + "\n\n" : "") + (r.diff || "(empty diff)");
-          }, function (err) {
-            pre.textContent = "Diff unavailable (" + (err.message || "not a commit in this repo") + ")";
-          });
-        });
-        bodyEl.insertAdjacentElement("afterend", wrap);
+      if (postId && postId !== "_orchestrator") {
+        var m = (bodyEl.textContent || "").match(/\b(?=[0-9a-f]{7,40}\b)(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b/);
+        if (m) {
+          var sha = m[0];
+          api("GET", "/_api/git/diff?ref=" + encodeURIComponent(sha)).then(function (r) {
+            if (!r || (!r.stat && !r.diff) || bodyEl.dataset.kitDiffPost !== postId) return;
+            var curOld = document.getElementById("kit-git-diff");
+            if (curOld) curOld.remove();
+            var wrap = document.createElement("details");
+            wrap.id = "kit-git-diff";
+            wrap.style.cssText = "margin:14px 0;border:1px solid var(--line,#2c3850);border-radius:10px;padding:8px 12px;background:var(--sunk,#0c121d);";
+            var sum = document.createElement("summary");
+            sum.textContent = "Inspect git diff (" + sha.slice(0, 7) + ")";
+            sum.style.cssText = "cursor:pointer;font-weight:600;color:var(--info,#78b4e3);";
+            var pre = document.createElement("pre");
+            pre.style.cssText = "overflow:auto;max-height:360px;font-family:var(--mono,monospace);font-size:12px;line-height:1.4;margin:8px 0 0;white-space:pre;";
+            pre.textContent = (r.stat ? r.stat + "\n\n" : "") + (r.diff || "");
+            wrap.appendChild(sum); wrap.appendChild(pre);
+            bodyEl.insertAdjacentElement("afterend", wrap);
+          }, function () {});
+        }
       }
     }
   }
