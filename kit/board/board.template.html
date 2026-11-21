@@ -392,7 +392,16 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 .like { font-weight: 600; transition: transform .12s ease, background .15s ease; }
 .like:active { transform: scale(.95); }
 
-/* Padlet Wall (masonry) & Reddit/Facebook Feed view modes */
+/* Traffic-light priority badges (P1 red, P2 amber, P3 emerald) */
+.badge.prio[data-prio="1"], .prio-1 { background: rgba(239, 68, 68, .16) !important; color: #ef4444 !important; border: 1px solid rgba(239, 68, 68, .38); font-weight: 700; }
+.badge.prio[data-prio="2"], .prio-2 { background: rgba(245, 158, 11, .16) !important; color: #d97706 !important; border: 1px solid rgba(245, 158, 11, .38); font-weight: 700; }
+.badge.prio[data-prio="3"], .prio-3 { background: rgba(16, 185, 129, .16) !important; color: #10b981 !important; border: 1px solid rgba(16, 185, 129, .38); font-weight: 700; }
+:root[data-theme="dark"] .badge.prio[data-prio="2"], @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .badge.prio[data-prio="2"] { color: #fbbf24 !important; } }
+
+/* Horizontal Trains Network View, Open Facebook-style Feed View, and ADHD Focus View */
+[data-view="trains"] .tabs, [data-view="trains"] .lanes,
+[data-view="feed"] .tabs, [data-view="feed"] .lanes,
+[data-view="focus"] .tabs, [data-view="focus"] .lanes,
 [data-view="wall"] .tabs { display: none !important; }
 [data-view="wall"] .lanes { display: block !important; columns: 3 300px; column-gap: 16px; margin-top: 14px; }
 [data-view="wall"] .lane { display: contents !important; }
@@ -400,13 +409,29 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 [data-view="wall"] .cards { display: contents !important; }
 [data-view="wall"] .card { break-inside: avoid; margin-bottom: 14px; border-left: 1px solid var(--line); border-top: 4px solid var(--c); }
 
-[data-view="feed"] .tabs { display: none !important; }
-[data-view="feed"] .lanes { display: flex !important; flex-direction: column; gap: 14px; max-width: 680px; margin: 16px auto 0; }
-[data-view="feed"] .lane { display: contents !important; }
-[data-view="feed"] .lane h2, [data-view="feed"] .lane .empty { display: none !important; }
-[data-view="feed"] .cards { display: contents !important; }
-[data-view="feed"] .card { padding: 16px 18px; }
-[data-view="feed"] .card .first { white-space: normal; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.kit-alt-view { display: none; margin-top: 16px; }
+[data-view="trains"] #kit-train-net { display: flex; flex-direction: column; gap: 16px; }
+[data-view="feed"] #kit-open-feed { display: flex; flex-direction: column; gap: 18px; max-width: 780px; margin: 16px auto 0; }
+[data-view="focus"] #kit-focus-view { display: flex; flex-direction: column; gap: 16px; max-width: 760px; margin: 16px auto 0; }
+
+.tnet-track { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
+.tnet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-weight: 700; font-size: .95rem; }
+.tnet-rail { display: flex; align-items: stretch; gap: 10px; overflow-x: auto; padding-bottom: 8px; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
+.tnet-node { flex: 0 0 265px; display: flex; flex-direction: column; justify-content: space-between; position: relative; }
+.tnet-node.latest { box-shadow: 0 0 0 2px var(--ember), var(--shadow-lg); }
+.tnet-arrow { display: flex; align-items: center; color: var(--muted); font-weight: 800; font-size: 1.1rem; flex: none; padding-inline: 2px; user-select: none; }
+
+.ffeed-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 8px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.ffeed-card { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--c); border-radius: 18px; padding: 18px 20px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px; }
+.ffeed-card h3 { margin: 0; font-family: var(--display); font-size: 1.32rem; cursor: pointer; }
+.ffeed-card h3:hover { color: var(--ember); }
+.ffeed-imgs { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+.ffeed-imgs img { max-height: 220px; border-radius: 10px; border: 1px solid var(--line); cursor: pointer; }
+.ffeed-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--line); }
+.ffeed-cmts { background: var(--sunk); border-radius: 12px; padding: 10px 14px; font-size: .88rem; }
+.ffeed-cmts summary { cursor: pointer; font-weight: 600; color: var(--muted); }
+.ffeed-cmt-item { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.ffeed-cmt-item:last-child { border-bottom: none; }
 
 /* Frosted-glass sticky post action bar: always 1 sleek row (scrolls smoothly on narrow phones) */
 .bar {
@@ -998,14 +1023,61 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
      unfolds its note and its train (the Trains tree of that train only); "All trains" at its foot holds the rest. */
   var CHIP = { you: "you", running: "runs", ready: "ready", idle: "later", done: "done" };
   var ORDER = { you: 0, running: 1, ready: 2, idle: 3, done: 4 };
-  /* posts/_trains, indexed once per snapshot of it */
-  var trainsCache = { src: {} };
+  /* posts/_trains, indexed once per snapshot of it, PLUS live client-side link synthesis from state.posts */
+  var trainsCache = { src: {}, postCount: -1 };
+  function resolveClientLinks() {
+    var byPart = {}, byPost = {}, list = [];
+    (state.posts || []).forEach(function (p) {
+      if (!p || !p.id || p.id.charAt(0) === "_" || p.removed) return;
+      var part = str(p.part || p.id), tr = str(p.train).replace(/^P-/, ""), par = str(p.parent);
+      var item = { id: p.id, part: part, train: tr, parent: par, post: p, created_at: str(p.created_at) };
+      list.push(item); byPart[part] = item; byPost[p.id] = item;
+    });
+    for (var pass = 0; pass < 8; pass++) {
+      var ch = false;
+      list.forEach(function (it) {
+        if (!it.train && it.parent) {
+          var pk = it.parent.replace(/^P-/, "");
+          var par = byPart[it.parent] || byPost[it.parent] || byPart[pk] || byPost["P-" + pk];
+          if (par && par.train) { it.train = par.train; ch = true; }
+          else if (it.parent.indexOf("P-") === 0) { it.train = pk; ch = true; }
+        }
+      });
+      if (!ch) break;
+    }
+    list.sort(function (a, b) { return a.created_at < b.created_at ? -1 : (a.created_at > b.created_at ? 1 : 0); });
+    return list;
+  }
+  function clientPostState(p) {
+    var col = colOf(p), st = str(p.status).toLowerCase();
+    if (col === "done") return "done";
+    if (col === "question" || col === "todo") return "you";
+    return st.indexOf("progress") >= 0 ? "running" : "idle";
+  }
   function trains() {
-    var d = state.special._trains;
-    if (trainsCache.src === d) return trainsCache;
-    var rows = d && Array.isArray(d.rows) ? d.rows : [], by = {}, byPost = {};
-    rows.forEach(function (r) { by[str(r.part)] = r; if (r.post && !byPost[str(r.post)]) byPost[str(r.post)] = str(r.part); });
-    trainsCache = { src: d, d: d, rows: rows, by: by, byPost: byPost };
+    var d = state.special._trains, pLen = (state.posts || []).length;
+    if (trainsCache.src === d && trainsCache.postCount === pLen) return trainsCache;
+    var baseRows = d && Array.isArray(d.rows) ? d.rows.map(function (r) { return Object.assign({}, r, { children: (r.children || []).slice() }); }) : [];
+    var by = {}, byPost = {};
+    baseRows.forEach(function (r) { by[str(r.part)] = r; if (r.post && !byPost[str(r.post)]) byPost[str(r.post)] = str(r.part); });
+    resolveClientLinks().forEach(function (lk) {
+      if (!lk.train) return;
+      var rootKey = "P-" + lk.train;
+      if (!by[rootKey]) {
+        var rootRow = { part: rootKey, parent: "", also: [], children: [], post: byPost[rootKey] ? rootKey : lk.id, prompt: "", session: "", state: "idle", store: [] };
+        baseRows.push(rootRow); by[rootKey] = rootRow;
+      }
+      if (lk.part === rootKey) { by[rootKey].post = lk.id; by[rootKey].state = clientPostState(lk.post); return; }
+      if (!by[lk.part]) {
+        var parKey = lk.parent && by[lk.parent] ? lk.parent : rootKey;
+        var row = { part: lk.part, parent: parKey, also: [], children: [], post: lk.id, prompt: "", session: str(lk.post.session_id), state: clientPostState(lk.post), store: [] };
+        baseRows.push(row); by[lk.part] = row; byPost[lk.id] = lk.part;
+        if (by[parKey].children.indexOf(lk.part) < 0) by[parKey].children.push(lk.part);
+      } else {
+        by[lk.part].state = clientPostState(lk.post);
+      }
+    });
+    trainsCache = { src: d, postCount: pLen, d: d, rows: baseRows, by: by, byPost: byPost };
     return trainsCache;
   }
   function kidsOf(T, r) { return (Array.isArray(r.children) ? r.children : []).map(str).filter(function (c) { return T.by[c] && c !== str(r.part); }); }
@@ -1043,7 +1115,38 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       return rk.indexOf(str(r.key)) >= 0 || (pid && (tree.posts[pid] || pid === str(r.post))) || (w && ws.indexOf(w) >= 0);
     });
   }
-  function dashRows() { var d = state.special._dashboard; return d && Array.isArray(d.rows) ? d.rows : []; }
+  function dashRows() {
+    var d = state.special._dashboard, base = d && Array.isArray(d.rows) ? d.rows.slice() : [];
+    var known = {}; base.forEach(function (r) { if (r.train) known[str(r.train)] = true; });
+    var byTrain = {};
+    resolveClientLinks().forEach(function (lk) {
+      if (!lk.train) return;
+      var rk = "P-" + lk.train;
+      if (known[rk]) return;
+      (byTrain[lk.train] = byTrain[lk.train] || []).push(lk);
+    });
+    var keys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    Object.keys(byTrain).sort().forEach(function (tr) {
+      var lks = byTrain[tr], rk = "P-" + tr;
+      var steps = lks.map(function (x) { return str(x.post.title || x.part).slice(0, 80); });
+      var doneN = lks.filter(function (x) { return colOf(x.post) === "done"; }).length;
+      var hasYou = lks.some(function (x) { var c = colOf(x.post); return c === "question" || c === "todo"; });
+      var hasRun = lks.some(function (x) { return str(x.post.status).toLowerCase().indexOf("progress") >= 0; });
+      var st = hasYou ? "you" : (hasRun ? "running" : (doneN === lks.length ? "done" : "ready"));
+      var last = lks[lks.length - 1];
+      base.push({
+        key: keys[base.length] || String(base.length),
+        name: tr.replace(/-/g, " ").replace(/^\w/, function (c) { return c.toUpperCase(); }),
+        steps: steps,
+        at: Math.min(doneN, Math.max(0, steps.length - 1)),
+        state: st,
+        note: "Next: " + str(last.post.title || last.part),
+        post: last.id,
+        train: rk
+      });
+    });
+    return base;
+  }
   function renderDash() {
     var d = state.special._dashboard, box = $("dash"), rows = dashRows().slice(), items = waitItems(), T = trains();
     box.hidden = !rows.length && !items.length && !T.rows.length; if (box.hidden) return;
@@ -1310,7 +1413,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     tt.appendChild(document.createTextNode(str(p.title) || "(untitled)"));
     b.appendChild(tt);
     var m = el("span", "meta");
-    if (prioOf(p)) m.appendChild(el("span", "badge prio", "P" + prioOf(p)));
+    if (prioOf(p)) { var pb = el("span", "badge prio", "P" + prioOf(p)); pb.setAttribute("data-prio", String(prioOf(p))); m.appendChild(pb); }
     if (p.part) m.appendChild(el("span", "part", str(p.part)));
     m.appendChild(el("span", null, when(p.created_at)));
     var cs = commentsFor(p.id);
@@ -2308,24 +2411,225 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     }, function () {});
   })();
 
-  /* Padlet × Reddit × Facebook progressive UI enhancer (view switcher, avatars, collapsible rails) */
+  /* Padlet × Reddit × Facebook progressive UI enhancer (view switcher, horizontal train network, open feed, ADHD focus view, avatars, collapsible rails) */
   (function () {
     var wrap = document.querySelector(".wrap");
     var tools = document.querySelector(".tools");
+    var lanesEl = document.getElementById("lanes");
+    var trainNetEl = document.createElement("div"); trainNetEl.id = "kit-train-net"; trainNetEl.className = "kit-alt-view";
+    var openFeedEl = document.createElement("div"); openFeedEl.id = "kit-open-feed"; openFeedEl.className = "kit-alt-view";
+    var focusViewEl = document.createElement("div"); focusViewEl.id = "kit-focus-view"; focusViewEl.className = "kit-alt-view";
+    if (lanesEl && lanesEl.parentNode) {
+      lanesEl.parentNode.insertBefore(trainNetEl, lanesEl.nextSibling);
+      lanesEl.parentNode.insertBefore(openFeedEl, trainNetEl.nextSibling);
+      lanesEl.parentNode.insertBefore(focusViewEl, openFeedEl.nextSibling);
+    }
+    var feedSortMode = "urgent";
+    var focusIdx = 0;
+
+    function urgencyScore(p) {
+      var col = colOf(p), pr = prioOf(p) || 2, unread = isNew(p) ? 1 : 0;
+      var colWeight = col === "question" ? 0 : (col === "todo" ? 10 : (col === "info" ? 20 : 90));
+      return colWeight + (pr * 3) - (unread * 2);
+    }
+
+    function renderHorizontalTrains() {
+      trainNetEl.textContent = "";
+      var activePosts = (state.posts || []).filter(function (p) { return colOf(p) !== "done" && matches(p); });
+      if (!activePosts.length) {
+        trainNetEl.appendChild(el("div", "empty", state.loaded ? "Nothing here." : "Loading..."));
+        return;
+      }
+      var links = resolveClientLinks();
+      var byTrain = {}, linkedIds = {};
+      links.forEach(function (lk) {
+        if (colOf(lk.post) === "done" || !matches(lk.post)) return;
+        var tr = lk.train || lk.part || "general";
+        (byTrain[tr] = byTrain[tr] || []).push(lk.post);
+        linkedIds[lk.id] = true;
+      });
+      activePosts.forEach(function (p) {
+        if (!linkedIds[p.id]) {
+          var tr = str(p.train).replace(/^P-/, "") || str(p.part) || "general";
+          (byTrain[tr] = byTrain[tr] || []).push(p);
+        }
+      });
+      var trainKeys = Object.keys(byTrain).sort(function (a, b) {
+        var minA = Math.min.apply(null, byTrain[a].map(urgencyScore));
+        var minB = Math.min.apply(null, byTrain[b].map(urgencyScore));
+        return minA - minB || (a < b ? -1 : 1);
+      });
+      trainKeys.forEach(function (trKey) {
+        var tPosts = byTrain[trKey];
+        tPosts.sort(function (a, b) { return str(a.created_at) < str(b.created_at) ? -1 : 1; });
+        var track = el("section", "tnet-track");
+        var head = el("div", "tnet-head");
+        var minP = Math.min.apply(null, tPosts.map(function (p) { return prioOf(p) || 2; }));
+        var titleSpan = el("span", null);
+        var pb = el("span", "badge prio", "P" + minP); pb.setAttribute("data-prio", String(minP));
+        titleSpan.appendChild(pb);
+        titleSpan.appendChild(document.createTextNode("  Train " + trKey + " (" + tPosts.length + ")"));
+        head.appendChild(titleSpan);
+        track.appendChild(head);
+
+        var rail = el("div", "tnet-rail");
+        tPosts.forEach(function (p, idx) {
+          if (idx > 0) rail.appendChild(el("span", "tnet-arrow", "\u2500\u2500\u25b6"));
+          var colObj = COLUMNS.filter(function (c) { return c.key === colOf(p); })[0] || COLUMNS[2];
+          var node = card(p, colObj);
+          node.className += " tnet-node" + (idx === tPosts.length - 1 ? " latest" : "");
+          rail.appendChild(node);
+        });
+        track.appendChild(rail);
+        trainNetEl.appendChild(track);
+        setTimeout(function () { rail.scrollLeft = rail.scrollWidth; }, 0);
+      });
+    }
+
+    function buildOpenFeedCard(p) {
+      var colObj = COLUMNS.filter(function (c) { return c.key === colOf(p); })[0] || COLUMNS[2];
+      var box = el("article", "ffeed-card");
+      box.style.setProperty("--c", colObj.c);
+      var meta = el("div", "meta");
+      if (prioOf(p)) { var pb = el("span", "badge prio", "P" + prioOf(p)); pb.setAttribute("data-prio", String(prioOf(p))); meta.appendChild(pb); }
+      meta.appendChild(el("span", "badge", colObj.name));
+      if (p.part) meta.appendChild(el("span", "part", str(p.part)));
+      if (p.train) meta.appendChild(el("span", "badge", "Train " + str(p.train).replace(/^P-/, "")));
+      meta.appendChild(el("span", null, when(p.created_at)));
+      box.appendChild(meta);
+
+      var h3 = el("h3", null, str(p.title) || "(untitled)");
+      h3.addEventListener("click", function () { openPost(p.id); });
+      box.appendChild(h3);
+
+      var body = el("div", "body");
+      body.innerHTML = renderBody(p.body);
+      box.appendChild(body);
+
+      var imgs = postImages(p);
+      if (imgs.length) {
+        var strip = el("div", "ffeed-imgs");
+        imgs.forEach(function (u) {
+          var src = imgUrl(u); if (!src) return;
+          var im = el("img"); im.src = src; im.alt = "";
+          im.addEventListener("click", function () { openPost(p.id); });
+          strip.appendChild(im);
+        });
+        box.appendChild(strip);
+      }
+
+      if (Array.isArray(p.options) && p.options.length) {
+        var optRow = el("div", "row");
+        p.options.forEach(function (opt) {
+          var ob = el("button", "btn small" + (p.default_option === opt ? " ember" : ""), str(opt) + (p.default_option === opt ? " (default)" : ""));
+          ob.type = "button";
+          ob.addEventListener("click", function () { openPost(p.id); });
+          optRow.appendChild(ob);
+        });
+        box.appendChild(optRow);
+      }
+
+      var acts = el("div", "ffeed-actions");
+      acts.appendChild(likeButton(p, null, 0, function () { return box; }));
+      if (colOf(p) !== "done") {
+        var doneBtn = el("button", "btn small", "Move to Done");
+        doneBtn.type = "button";
+        doneBtn.addEventListener("click", function () { toDone(p); });
+        acts.appendChild(doneBtn);
+      }
+      var openBtn = el("button", "btn small", "Open the post \u203a");
+      openBtn.type = "button";
+      openBtn.addEventListener("click", function () { openPost(p.id); });
+      acts.appendChild(openBtn);
+      box.appendChild(acts);
+
+      var cs = commentsFor(p.id);
+      if (cs.length) {
+        var det = el("details", "ffeed-cmts");
+        var sum = el("summary", null, cs.length + (cs.length === 1 ? " comment" : " comments"));
+        det.appendChild(sum);
+        cs.slice(-5).forEach(function (c) {
+          var item = el("div", "ffeed-cmt-item");
+          var who = c.from === "owner" ? "You" : (str(c.from) || "A session");
+          item.appendChild(el("b", null, who + " (" + when(c.created_at) + "): "));
+          item.appendChild(document.createTextNode(str(c.text)));
+          det.appendChild(item);
+        });
+        box.appendChild(det);
+      }
+      return box;
+    }
+
+    function renderOpenFeed() {
+      openFeedEl.textContent = "";
+      var posts = (state.posts || []).filter(function (p) { return colOf(p) !== "done" && matches(p); });
+      var bar = el("div", "ffeed-bar");
+      bar.appendChild(el("span", "note", posts.length + " active"));
+      var sortToggle = el("button", "btn small", feedSortMode === "urgent" ? "By priority" : "Newest first");
+      sortToggle.type = "button";
+      sortToggle.addEventListener("click", function () {
+        feedSortMode = feedSortMode === "urgent" ? "new" : "urgent";
+        renderOpenFeed();
+      });
+      bar.appendChild(sortToggle);
+      openFeedEl.appendChild(bar);
+      if (!posts.length) {
+        openFeedEl.appendChild(el("div", "empty", state.loaded ? "Nothing here." : "Loading..."));
+        return;
+      }
+      posts.sort(function (a, b) {
+        if (feedSortMode === "urgent") return urgencyScore(a) - urgencyScore(b) || (str(b.created_at) < str(a.created_at) ? -1 : 1);
+        return str(b.created_at) < str(a.created_at) ? -1 : 1;
+      });
+      posts.forEach(function (p) { openFeedEl.appendChild(buildOpenFeedCard(p)); });
+    }
+
+    function renderFocusView() {
+      focusViewEl.textContent = "";
+      var queue = (state.posts || []).filter(function (p) { return colOf(p) !== "done" && matches(p); });
+      queue.sort(function (a, b) { return urgencyScore(a) - urgencyScore(b); });
+      if (!queue.length) {
+        focusViewEl.appendChild(el("div", "empty", state.loaded ? "Nothing waits on you." : "Loading..."));
+        return;
+      }
+      if (focusIdx >= queue.length) focusIdx = 0;
+      var p = queue[focusIdx];
+      var nav = el("div", "ffeed-bar");
+      nav.appendChild(el("b", null, (focusIdx + 1) + " / " + queue.length));
+      var navBtns = el("span", "row");
+      var prevB = el("button", "btn small", "\u2039"); prevB.type = "button";
+      prevB.addEventListener("click", function () { focusIdx = (focusIdx - 1 + queue.length) % queue.length; renderFocusView(); });
+      var nextB = el("button", "btn small ember", "\u203a"); nextB.type = "button";
+      nextB.addEventListener("click", function () { focusIdx = (focusIdx + 1) % queue.length; renderFocusView(); });
+      navBtns.appendChild(prevB); navBtns.appendChild(nextB);
+      nav.appendChild(navBtns);
+      focusViewEl.appendChild(nav);
+      focusViewEl.appendChild(buildOpenFeedCard(p));
+    }
+
+    function refreshAltViews() {
+      if (!wrap) return;
+      var v = wrap.getAttribute("data-view") || "lanes";
+      if (v === "trains") renderHorizontalTrains();
+      else if (v === "feed") renderOpenFeed();
+      else if (v === "focus") renderFocusView();
+    }
+
     if (wrap && tools && !document.getElementById("kit-views")) {
       var savedView = "lanes";
       try { savedView = localStorage.getItem("board-view") || "lanes"; } catch (e) {}
-      if (["lanes", "wall", "feed"].indexOf(savedView) === -1) savedView = "lanes";
+      if (["lanes", "trains", "wall", "feed", "focus"].indexOf(savedView) === -1) savedView = "lanes";
       wrap.setAttribute("data-view", savedView);
       var box = document.createElement("span");
       box.id = "kit-views"; box.className = "kit-views";
-      [["lanes", "Lanes"], ["wall", "Wall"], ["feed", "Feed"]].forEach(function (pair) {
+      [["lanes", "Lanes"], ["trains", "Trains"], ["feed", "Feed"], ["focus", "Focus"], ["wall", "Wall"]].forEach(function (pair) {
         var b = document.createElement("button"); b.type = "button"; b.textContent = pair[1];
         if (pair[0] === savedView) b.className = "on";
         b.addEventListener("click", function () {
           wrap.setAttribute("data-view", pair[0]);
           try { localStorage.setItem("board-view", pair[0]); } catch (e) {}
           Array.prototype.slice.call(box.children).forEach(function (x) { x.className = x === b ? "on" : ""; });
+          refreshAltViews();
         });
         box.appendChild(b);
       });
@@ -2362,9 +2666,16 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
         })(rails[j]);
       }
     }
-    var obs = new MutationObserver(decorateComments);
+    var obs = new MutationObserver(function () {
+      decorateComments();
+    });
     obs.observe(document.body, { childList: true, subtree: true });
+    if (lanesEl) {
+      var lanesObs = new MutationObserver(refreshAltViews);
+      lanesObs.observe(lanesEl, { childList: true });
+    }
     decorateComments();
+    refreshAltViews();
   })();
 })();
 </script>

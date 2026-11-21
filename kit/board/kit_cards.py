@@ -34,7 +34,8 @@ KEYS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 def memory_dir(root=ROOT):
     try:
-        md = json.load(open(os.path.join(root, ".kit", "config.json"), encoding="utf-8")).get("kit", {}).get("memory_dir")
+        with open(os.path.join(root, ".kit", "config.json"), encoding="utf-8") as fh:
+            md = json.load(fh).get("kit", {}).get("memory_dir")
         if md:
             return os.path.join(root, md)
     except (OSError, ValueError):
@@ -211,13 +212,146 @@ def post_state(p):
     return "running" if "progress" in st else "idle"
 
 
-def build_trains(board, rows, now):
+def _load_board_posts(board):
     posts = {}
+    if isinstance(board, dict):
+        for k, v in board.items():
+            if isinstance(v, dict):
+                posts[k] = v
+        return posts
     for f in glob.glob(os.path.join(board, "posts", "*.json")) if board else []:
         try:
-            posts[os.path.basename(f)[:-5]] = json.load(open(f, encoding="utf-8"))
+            with open(f, encoding="utf-8") as fh:
+                posts[os.path.basename(f)[:-5]] = json.load(fh)
         except (OSError, ValueError):
             pass
+    return posts
+
+
+def resolve_links(posts):
+    """Build normalized link edges [{post_id, part, train, parent, title, column, status, priority, session_id, created_at}]
+    where a post with `parent` pointing to an existing part/post inherits its `train` automatically."""
+    raw = []
+    by_part = {}
+    by_post = {}
+    for pid, p in (posts or {}).items():
+        if pid.startswith("_") or p.get("removed"):
+            continue
+        part = str(p.get("part") or pid)
+        train = str(p.get("train") or "").strip()
+        if train.startswith("P-"):
+            train = train[2:]
+        parent = str(p.get("parent") or "").strip()
+        item = {
+            "post_id": pid,
+            "part": part,
+            "train": train,
+            "parent": parent,
+            "title": str(p.get("title") or pid),
+            "column": str(p.get("column") or "info"),
+            "status": str(p.get("status") or ""),
+            "priority": int(p.get("priority")) if str(p.get("priority") or "") in ("1", "2", "3") else 2,
+            "session_id": str(p.get("session_id") or ""),
+            "created_at": str(p.get("created_at") or ""),
+        }
+        raw.append(item)
+        by_part[part] = item
+        by_post[pid] = item
+
+    # Propagate train from parent chain if a post only specified parent
+    for _ in range(10):
+        changed = False
+        for item in raw:
+            if not item["train"] and item["parent"]:
+                par_key = item["parent"][2:] if item["parent"].startswith("P-") else item["parent"]
+                par = by_part.get(item["parent"]) or by_post.get(item["parent"]) or by_part.get(par_key) or by_post.get("P-" + par_key)
+                if par and par["train"]:
+                    item["train"] = par["train"]
+                    changed = True
+                elif item["parent"].startswith("P-"):
+                    item["train"] = par_key
+                    changed = True
+        if not changed:
+            break
+
+    raw.sort(key=lambda x: (x["created_at"], x["post_id"]))
+    return [x for x in raw if x["train"]]
+
+
+def synthesize_linked_rows(board, existing_rows):
+    """Synthesize dashboard rows for trains present in post links that do not have a .story/state/<train>.md file yet."""
+    posts = _load_board_posts(board)
+    if not posts:
+        return []
+    links = resolve_links(posts)
+    known_trains = {str(r.get("train") or "") for r in existing_rows}
+    by_train = {}
+    for lk in links:
+        t_root = "P-" + lk["train"]
+        if t_root in known_trains:
+            continue
+        by_train.setdefault(lk["train"], []).append(lk)
+
+    synth = []
+    for wid in sorted(by_train.keys()):
+        t_links = by_train[wid]
+        root_pid = "P-" + wid
+        root_doc = posts.get(root_pid) or {}
+        raw_title = str(root_doc.get("title") or wid.replace("-", " ").capitalize())
+        title = _clean_title(raw_title, wid)
+        prio = min((lk["priority"] for lk in t_links), default=2)
+        steps = []
+        done_count = 0
+        has_you = False
+        has_running = False
+        latest_active = None
+        for lk in t_links:
+            if lk["post_id"] == root_pid and len(t_links) > 1:
+                continue
+            step_label = _step_summary(lk["title"] or lk["part"], max_len=90)
+            steps.append(step_label)
+            st = post_state({"column": lk["column"], "status": lk["status"]})
+            if st == "done":
+                done_count += 1
+            elif st == "you":
+                has_you = True
+                latest_active = lk
+            elif st == "running":
+                has_running = True
+                if not latest_active:
+                    latest_active = lk
+            else:
+                if not latest_active:
+                    latest_active = lk
+        if not steps:
+            steps = [_step_summary(title)]
+        if has_you:
+            state = "you"
+        elif has_running:
+            state = "running"
+        elif done_count == len(steps):
+            state = "done"
+        else:
+            state = "ready"
+        at_idx = min(done_count, len(steps) - 1)
+        nxt_label = latest_active["title"] if latest_active else steps[at_idx]
+        note = "Next: " + nxt_label
+        primary_post = root_pid if root_pid in posts else (latest_active["post_id"] if latest_active else t_links[-1]["post_id"])
+        synth.append((prio, {
+            "key": wid,
+            "name": title,
+            "steps": steps,
+            "at": at_idx,
+            "state": state,
+            "note": note,
+            "post": primary_post,
+            "train": root_pid,
+        }))
+    return synth
+
+
+def build_trains(board, rows, now):
+    posts = _load_board_posts(board)
     prompts = sorted(glob.glob(os.path.join(ROOT, "docs", "prompts", "*.md")))
     out, by = [], {}
     for r in rows:
@@ -225,14 +359,22 @@ def build_trains(board, rows, now):
                 "prompt": "", "session": "", "state": {"you": "you", "done": "done"}.get(r["state"], "idle"), "store": []}
         out.append(root)
         by[root["part"]] = root
-    parts = sorted(((pid, p) for pid, p in posts.items() if p.get("train") and not pid.startswith("_") and not p.get("removed")),
-                   key=lambda x: x[1].get("created_at") or "")
-    for pid, p in parts:
-        part = str(p.get("part") or pid)
-        root = "P-" + str(p["train"])
+    links = resolve_links(posts)
+    for lk in links:
+        pid = lk["post_id"]
+        p = posts.get(pid) or {}
+        part = lk["part"]
+        root = "P-" + lk["train"]
         if root not in by:
-            continue  # a train no project of the memory names: left out, not guessed
-        parent = str(p.get("parent") or root)
+            root_row = {"part": root, "parent": "", "also": [], "children": [], "post": root if root in posts else pid,
+                        "prompt": "", "session": "", "state": "idle", "store": []}
+            out.append(root_row)
+            by[root] = root_row
+        if part == root:
+            by[root]["post"] = pid
+            by[root]["state"] = post_state(p)
+            continue
+        parent = str(lk["parent"] or root)
         row = {"part": part, "parent": parent if parent in by else root, "also": [], "children": [], "post": pid,
                "prompt": next((os.path.relpath(x, ROOT) for x in prompts if os.path.basename(x).startswith(part)), ""),
                "session": p.get("session_id") or "", "state": post_state(p), "store": []}
@@ -240,19 +382,23 @@ def build_trains(board, rows, now):
         by[part] = row
     for row in out:
         if row["parent"] and row["parent"] in by:
-            by[row["parent"]]["children"].append(row["part"])
+            if row["part"] not in by[row["parent"]]["children"]:
+                by[row["parent"]]["children"].append(row["part"])
     for row in out:  # a root runs while one of its parts does
         if not row["parent"] and row["state"] not in ("you", "done") and any(by[c]["state"] == "running" for c in row["children"]):
             row["state"] = "running"
     return {"title": "Trains", "column": "info", "rows": out, "updated_at": now, "created_at": now}
 
 
-def build(now):
+def build(now, board=None):
     sd = memory_dir(ROOT)
     aw = os.path.join(sd, "awaits.md")
     awaits = open(aw, encoding="utf-8").read() if os.path.exists(aw) else ""
-    rows = [row(p, awaits) for p in sorted(glob.glob(os.path.join(sd, "state", "*.md")))]
-    rows = [r for _, r in sorted(rows, key=lambda x: x[0])]
+    scored_rows = [row(p, awaits) for p in sorted(glob.glob(os.path.join(sd, "state", "*.md")))]
+    if board:
+        existing_only = [r for _, r in scored_rows]
+        scored_rows.extend(synthesize_linked_rows(board, existing_only))
+    rows = [r for _, r in sorted(scored_rows, key=lambda x: x[0])]
     for i, r in enumerate(rows):
         r["key"] = KEYS[i] if i < len(KEYS) else str(i)
     return {"title": "Where we are", "column": "info", "rows": rows, "updated_at": now, "created_at": now}
@@ -266,7 +412,7 @@ def main(argv=None):
     ap.add_argument("--now", default=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
     ap.add_argument("--force", action="store_true", help="allow overwriting a non-empty _dashboard with 0 or placeholder rows")
     a = ap.parse_args(argv)
-    d = build(a.now)
+    d = build(a.now, board=a.board)
     err = check_safety(a.board, d["rows"], force=a.force)
     if err:
         print(err, file=sys.stderr)

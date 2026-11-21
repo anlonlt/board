@@ -192,6 +192,14 @@
   "kind": "js"
  },
  {
+  "en": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  "kind": "js"
+ },
+ {
+  "en": "Next: ",
+  "kind": "js"
+ },
+ {
   "en": " wait on you · ",
   "kind": "js"
  },
@@ -656,15 +664,35 @@
   "kind": "js"
  },
  {
+  "en": "  Train ",
+  "kind": "js"
+ },
+ {
+  "en": "By priority",
+  "kind": "js"
+ },
+ {
+  "en": "Newest first",
+  "kind": "js"
+ },
+ {
   "en": "Lanes",
   "kind": "js"
  },
  {
-  "en": "Wall",
+  "en": "Trains",
   "kind": "js"
  },
  {
   "en": "Feed",
+  "kind": "js"
+ },
+ {
+  "en": "Focus",
+  "kind": "js"
+ },
+ {
+  "en": "Wall",
   "kind": "js"
  }
 ]

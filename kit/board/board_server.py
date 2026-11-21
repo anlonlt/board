@@ -600,6 +600,23 @@ class BoardStore:
             "  at TEXT NOT NULL"
             ")"
         )
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS links ("
+            "  post_id TEXT PRIMARY KEY,"
+            "  part TEXT NOT NULL,"
+            "  train TEXT NOT NULL,"
+            "  parent_part TEXT NOT NULL DEFAULT '',"
+            "  title TEXT NOT NULL DEFAULT '',"
+            "  column_name TEXT NOT NULL DEFAULT 'info',"
+            "  status TEXT NOT NULL DEFAULT '',"
+            "  priority INTEGER NOT NULL DEFAULT 2,"
+            "  session_id TEXT NOT NULL DEFAULT '',"
+            "  created_at TEXT NOT NULL DEFAULT '',"
+            "  updated_at TEXT NOT NULL DEFAULT ''"
+            ")"
+        )
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_links_train ON links(train, created_at)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_links_parent ON links(parent_part)")
         self.conn.commit()
         self.sse_clients = set()
         self.sse_lock = threading.Lock()
@@ -832,8 +849,143 @@ class BoardStore:
                 (str(data["thread_id"]),),
             )
 
+    def _sync_post_link_and_cards(self, doc_id, data, now):
+        """Maintain the `links` DAG table and auto-materialize posts/_dashboard and posts/_trains on any post write."""
+        if not doc_id or doc_id.startswith("_") or not isinstance(data, dict):
+            return []
+        if data.get("removed"):
+            self.conn.execute("DELETE FROM links WHERE post_id=?", (doc_id,))
+        else:
+            part = str(data.get("part") or doc_id)
+            train = str(data.get("train") or "").strip()
+            if train.startswith("P-"):
+                train = train[2:]
+            parent_part = str(data.get("parent") or "").strip()
+            if not train and parent_part:
+                par_clean = parent_part[2:] if parent_part.startswith("P-") else parent_part
+                prow = self.conn.execute(
+                    "SELECT train FROM links WHERE part=? OR post_id=? OR part=? OR post_id=? LIMIT 1",
+                    (parent_part, parent_part, par_clean, "P-" + par_clean),
+                ).fetchone()
+                if prow and prow[0]:
+                    train = str(prow[0])
+                elif parent_part.startswith("P-"):
+                    train = par_clean
+            title = str(data.get("title") or doc_id)
+            col = str(data.get("column") or "info")
+            st = str(data.get("status") or "")
+            prio = int(data.get("priority")) if str(data.get("priority") or "") in ("1", "2", "3") else 2
+            sid = str(data.get("session_id") or "")
+            cat = str(data.get("created_at") or now)
+            if train:
+                self.conn.execute(
+                    "INSERT INTO links(post_id, part, train, parent_part, title, column_name, status, priority, session_id, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(post_id) DO UPDATE SET part=excluded.part, train=excluded.train, parent_part=excluded.parent_part, "
+                    "title=excluded.title, column_name=excluded.column_name, status=excluded.status, priority=excluded.priority, "
+                    "session_id=excluded.session_id, updated_at=excluded.updated_at",
+                    (doc_id, part, train, parent_part, title, col, st, prio, sid, cat, now),
+                )
+            else:
+                self.conn.execute("DELETE FROM links WHERE post_id=?", (doc_id,))
+
+        return self._materialize_cards_locked(now)
+
+    def _materialize_cards_locked(self, now):
+        """Rebuild posts/_dashboard and posts/_trains in-transaction from memory + links table."""
+        try:
+            here = os.path.dirname(os.path.abspath(__file__))
+            if here not in sys.path:
+                sys.path.insert(0, here)
+            import kit_cards as _kc
+        except Exception:
+            return []
+
+        rows = self.conn.execute("SELECT doc_id, data FROM docs WHERE collection='posts'").fetchall()
+        posts_map = {}
+        for pid, raw in rows:
+            try:
+                posts_map[pid] = json.loads(raw)
+            except ValueError:
+                pass
+
+        root = getattr(self, "root_dir", None) or os.path.dirname(os.path.dirname(self.data_dir))
+        prev_root = _kc.ROOT
+        try:
+            _kc.ROOT = root
+            dash_doc = _kc.build(now, board=posts_map)
+            trains_doc = _kc.build_trains(posts_map, dash_doc["rows"], now)
+            for r in dash_doc["rows"]:
+                if r["state"] in ("ready", "idle") and any(x["state"] == "running" for x in trains_doc["rows"] if x["parent"] == r["train"]):
+                    r["state"] = "running"
+        except Exception:
+            return []
+        finally:
+            _kc.ROOT = prev_root
+
+        # Safety guard: never overwrite a non-empty _dashboard with 0 or >50% placeholder rows
+        cur_dash = posts_map.get("_dashboard")
+        cur_rows = (cur_dash.get("rows") or []) if isinstance(cur_dash, dict) else []
+        new_rows = dash_doc.get("rows") or []
+        if cur_rows:
+            if not new_rows:
+                return []
+            placeholders = sum(1 for r in new_rows if _kc.is_placeholder_row(r))
+            if placeholders * 2 > len(new_rows):
+                return []
+
+        touched = []
+        for special_id, special_doc in (("_dashboard", dash_doc), ("_trains", trains_doc)):
+            if not new_rows and not (trains_doc.get("rows") or []) and special_id not in posts_map:
+                continue
+            v_row = self.conn.execute("SELECT version, data FROM docs WHERE collection='posts' AND doc_id=?", (special_id,)).fetchone()
+            if v_row:
+                try:
+                    old_d = json.loads(v_row[1])
+                    if old_d.get("rows") == special_doc.get("rows"):
+                        continue
+                except ValueError:
+                    pass
+            new_v = (v_row[0] if v_row else 0) + 1
+            self.conn.execute(
+                "INSERT INTO docs(collection, doc_id, version, data, updated_at) VALUES ('posts', ?, ?, ?, ?) "
+                "ON CONFLICT(collection, doc_id) DO UPDATE SET version=excluded.version, data=excluded.data, updated_at=excluded.updated_at",
+                (special_id, new_v, json.dumps(special_doc, ensure_ascii=False), now),
+            )
+            self._record_change("posts", special_id, "auto_links", new_v, now)
+            touched.append(("posts", special_id))
+        return touched
+
+    def list_links(self, train=None):
+        """Return the DAG links table + train summary for compact agent queries."""
+        with self.lock:
+            if train:
+                t_clean = train[2:] if train.startswith("P-") else train
+                rows = self.conn.execute(
+                    "SELECT post_id, part, train, parent_part, title, column_name, status, priority, session_id, created_at, updated_at "
+                    "FROM links WHERE train=? ORDER BY created_at ASC, post_id ASC",
+                    (t_clean,),
+                ).fetchall()
+            else:
+                rows = self.conn.execute(
+                    "SELECT post_id, part, train, parent_part, title, column_name, status, priority, session_id, created_at, updated_at "
+                    "FROM links ORDER BY train ASC, created_at ASC, post_id ASC"
+                ).fetchall()
+        links = []
+        by_train = {}
+        for r in rows:
+            item = {
+                "post_id": r[0], "part": r[1], "train": r[2], "parent": r[3],
+                "title": r[4], "column": r[5], "status": r[6], "priority": r[7],
+                "session_id": r[8], "created_at": r[9], "updated_at": r[10],
+            }
+            links.append(item)
+            by_train.setdefault(r[2], []).append(item["part"])
+        return {"total": len(links), "trains": by_train, "links": links}
+
     def set_doc(self, collection, doc_id, data, if_version=None):
         now = utc_now()
+        extra_notifies = []
         with self.lock:
             row = self.conn.execute(
                 "SELECT version FROM docs WHERE collection=? AND doc_id=?",
@@ -850,12 +1002,17 @@ class BoardStore:
             )
             self._ack_thread_if_seen(collection, data)
             self._record_change(collection, doc_id, "set", new_ver, now)
+            if collection == "posts" and not doc_id.startswith("_"):
+                extra_notifies = self._sync_post_link_and_cards(doc_id, data, now)
             self.conn.commit()
         self.notify_sse(collection, doc_id)
+        for c_ext, d_ext in extra_notifies:
+            self.notify_sse(c_ext, d_ext)
         return {"id": doc_id, "version": new_ver, "data": data}, None
 
     def update_doc(self, collection, doc_id, patch, if_version=None):
         now = utc_now()
+        extra_notifies = []
         with self.lock:
             row = self.conn.execute(
                 "SELECT version, data FROM docs WHERE collection=? AND doc_id=?",
@@ -876,8 +1033,12 @@ class BoardStore:
             )
             self._ack_thread_if_seen(collection, cur_data)
             self._record_change(collection, doc_id, "update", new_ver, now)
+            if collection == "posts" and not doc_id.startswith("_"):
+                extra_notifies = self._sync_post_link_and_cards(doc_id, cur_data, now)
             self.conn.commit()
         self.notify_sse(collection, doc_id)
+        for c_ext, d_ext in extra_notifies:
+            self.notify_sse(c_ext, d_ext)
         return {"id": doc_id, "version": new_ver, "data": cur_data}, None
 
     def str_replace(self, collection, doc_id, field, old_str, new_str, if_version=None):
@@ -990,6 +1151,9 @@ class BoardStore:
                         return None, ("unknown_op", doc_id, str(op))
                     results.append({"collection": coll, "doc_id": doc_id, "version": new_ver})
                     notifies.append((coll, doc_id))
+                    if coll == "posts" and not doc_id.startswith("_"):
+                        post_data_for_link = data if op == "set" else cur_data
+                        notifies.extend(self._sync_post_link_and_cards(doc_id, post_data_for_link, now))
                 self.conn.commit()
             except Exception:
                 if self.conn.in_transaction:
@@ -1490,6 +1654,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
 
             if path == "/_api/db/comments/counts":
                 self._send_json(200, store.comment_counts())
+                return
+
+            if path == "/_api/links":
+                tr = (qs.get("train") or [None])[0]
+                self._send_json(200, store.list_links(train=tr))
                 return
 
             if path == "/_api/export":

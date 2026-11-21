@@ -416,6 +416,66 @@ class TestArenaOutOfBox(unittest.TestCase):
             self.assertIn("full_auto", orch_md)
             self.assertIn("default_option", orch_md)
 
+    def test_auto_links_table_and_dashboard_trains_materialization(self):
+        srv, store = board_server.start_server(self.root, "127.0.0.1", 0, preview=True)
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+
+        def _stop():
+            srv.shutdown()
+            srv.server_close()
+            store.close()
+
+        self.addCleanup(_stop)
+        url = "http://127.0.0.1:%d" % srv.server_address[1]
+
+        # 1. Create a first post on a brand-new train ("payments") with no .board/memory/state/payments.md file
+        store.set_doc("posts", "PAY1-init", {
+            "title": "Design Stripe webhook schema",
+            "column": "done",
+            "part": "PAY1",
+            "train": "payments",
+            "priority": 1,
+            "created_at": "2026-11-20T14:00:00Z",
+            "body": "Schema designed.",
+        })
+
+        # 2. Create a second post that only names `parent: "PAY1"` (no explicit `train` field!)
+        store.set_doc("posts", "PAY2-verify", {
+            "title": "Approve live Stripe keys",
+            "column": "question",
+            "part": "PAY2",
+            "parent": "PAY1",
+            "priority": 1,
+            "created_at": "2026-11-20T14:05:00Z",
+            "body": "Waiting on key approval.",
+        })
+
+        # Verify links table inherited `train: "payments"` for PAY2 and materialized _dashboard & _trains automatically
+        r_lk = subprocess.run(
+            [sys.executable, "-I", BOARD_CLI, "--url", url, "links", "--train", "payments"],
+            capture_output=True, text=True, check=True,
+        )
+        lk_data = json.loads(r_lk.stdout)
+        self.assertEqual(lk_data["total"], 2)
+        self.assertEqual(lk_data["trains"]["payments"], ["PAY1", "PAY2"])
+
+        dash = store.get_doc("posts", "_dashboard")
+        self.assertTrue(dash["exists"])
+        pay_rows = [r for r in dash["data"]["rows"] if r.get("train") == "P-payments"]
+        self.assertEqual(len(pay_rows), 1)
+        self.assertEqual(pay_rows[0]["state"], "you")
+        self.assertEqual(pay_rows[0]["steps"], ["Design Stripe webhook schema", "Approve live Stripe keys"])
+        self.assertEqual(pay_rows[0]["at"], 1)
+
+        trains = store.get_doc("posts", "_trains")
+        self.assertTrue(trains["exists"])
+        by_part = {r["part"]: r for r in trains["data"]["rows"]}
+        self.assertIn("P-payments", by_part)
+        self.assertIn("PAY1", by_part["P-payments"]["children"])
+        self.assertIn("PAY2", by_part["PAY1"]["children"])
+        self.assertEqual(by_part["PAY2"]["state"], "you")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -320,6 +320,9 @@ def main(argv=None):
     pi = sub.add_parser("inbox", help="Compact JSON summary of unread owner comments, likes, and option taps")
     pi.add_argument("--since", default=None, help="Only include items with created_at >= ISO timestamp")
 
+    plk = sub.add_parser("links", help="Compact DAG summary of linked posts and trains from the links table")
+    plk.add_argument("--train", default=None, help="Filter links to a specific train")
+
     prp2 = sub.add_parser("reply", help="Mark owner comment read, ack thread if any, and post agent reply in one command")
     prp2.add_argument("post_id")
     prp2.add_argument("--text", required=True)
@@ -335,6 +338,12 @@ def main(argv=None):
 
     if a.cmd == "changes":
         res = call("GET", "/_api/changes?since=%d&limit=%d" % (a.since, a.limit))
+        print(json.dumps(res, ensure_ascii=False))
+        return 0
+
+    if a.cmd == "links":
+        q = ("?train=" + urllib.parse.quote(a.train)) if a.train else ""
+        res = call("GET", "/_api/links" + q)
         print(json.dumps(res, ensure_ascii=False))
         return 0
 
