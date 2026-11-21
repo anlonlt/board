@@ -3756,10 +3756,10 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       statusEl.classList.add("kit-live-dot");
       function syncLiveDot() {
         var txt = (statusEl.textContent || "").trim();
-        statusEl.title = txt; statusEl.setAttribute("aria-label", txt);
+        if (statusEl.title !== txt) { statusEl.title = txt; statusEl.setAttribute("aria-label", txt); }
         statusEl.classList.toggle("warn", txt !== "Live" && !statusEl.classList.contains("bad"));
       }
-      new MutationObserver(syncLiveDot).observe(statusEl, { childList: true, characterData: true, subtree: true, attributes: true });
+      new MutationObserver(syncLiveDot).observe(statusEl, { childList: true, characterData: true, subtree: true });
       syncLiveDot();
     }
     var sortEl = document.getElementById("sort");
@@ -3789,10 +3789,12 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     if (selTog) {
       selTog.classList.add("kit-icon-btn");
       var syncSelIcon = function () {
-        selTog.title = state.picking ? "Stop selecting" : "Select posts";
-        selTog.setAttribute("aria-label", selTog.title);
+        var t = state.picking ? "Stop selecting" : "Select posts";
+        if (selTog.title !== t) { selTog.title = t; selTog.setAttribute("aria-label", t); }
         selTog.classList.toggle("ember", !!state.picking);
-        selTog.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>';
+        if (!selTog.querySelector("svg")) {
+          selTog.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>';
+        }
       };
       new MutationObserver(syncSelIcon).observe(selTog, { childList: true });
       syncSelIcon();
