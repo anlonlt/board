@@ -159,7 +159,14 @@ EXCLUDED = ["_orchestrator", "2-digit", "/_blob/", "https://", "comments/", "pos
 
 
 def extract_exclusions():
-    return [decode_js(e) for e in EXCLUDED] + [
+    extra = [
+        ") rotate(", "-6deg", "6deg", "deg)", "translateX(",
+        "transform .22s ease, opacity .22s ease",
+        "application/octet-stream",
+        "button, textarea, input, summary, a",
+        "\U0001f44d Like: he approves this post, no words.",
+    ]
+    return [decode_js(e) for e in EXCLUDED] + extra + [
         e for e in (r["en"] for r in extract(open(os.path.join(HERE, "board.template.html"), encoding="utf-8").read()))
         if e.startswith("var(")
     ]

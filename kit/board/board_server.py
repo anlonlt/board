@@ -383,10 +383,10 @@ SHIM_JS = r"""(function () {
     }
     if (existingSel) existingSel.hidden = false;
 
-    /* 1-tap column switcher */
+    /* 1-tap column switcher (fallback when native split-button #kit-move-wrap is absent) */
     var bar = sheet.querySelector(".p-actions, .bar") || sheet.firstElementChild;
     var barRow = (bar && bar.querySelector(".row")) || bar;
-    if (barRow && !existingSel) {
+    if (barRow && !existingSel && !document.getElementById("kit-move-wrap")) {
       var sel = document.createElement("select");
       sel.id = "kit-col-move";
       sel.title = "Move card to column";

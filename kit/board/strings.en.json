@@ -144,18 +144,6 @@
   "kind": "attr"
  },
  {
-  "en": "For you to do",
-  "kind": "js"
- },
- {
-  "en": "Waiting on you",
-  "kind": "js"
- },
- {
-  "en": "News",
-  "kind": "js"
- },
- {
   "en": "Done",
   "kind": "js"
  },
@@ -693,6 +681,34 @@
  },
  {
   "en": "Checks (",
+  "kind": "js"
+ },
+ {
+  "en": "Action",
+  "kind": "js"
+ },
+ {
+  "en": "Decisions",
+  "kind": "js"
+ },
+ {
+  "en": "Updates",
+  "kind": "js"
+ },
+ {
+  "en": "Write a comment",
+  "kind": "js"
+ },
+ {
+  "en": "Attach a picture or a file",
+  "kind": "js"
+ },
+ {
+  "en": "Send comment",
+  "kind": "js"
+ },
+ {
+  "en": "✓ Done",
   "kind": "js"
  }
 ]
