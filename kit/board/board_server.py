@@ -8,6 +8,7 @@ Serves .kit/board.html with an injected window.claude shim (/_shim.js) backed by
 (/_api/events) for live onSnapshot updates and a local comment-watch queue for the board clerk.
 """
 import argparse
+import gzip
 import hashlib
 import hmac
 import json
@@ -549,8 +550,15 @@ class BoardStore:
         os.makedirs(self.blob_dir, exist_ok=True)
         self.db_path = os.path.join(self.data_dir, "board.db")
         self.lock = threading.RLock()
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=5.0)
+        self.conn.execute("PRAGMA busy_timeout=5000")
         self.conn.execute("PRAGMA journal_mode=WAL")
+        try:
+            qc = self.conn.execute("PRAGMA quick_check").fetchone()
+            if qc and str(qc[0]).lower() != "ok":
+                print("board_server: WARNING: SQLite quick_check reported: %s" % qc[0], file=sys.stderr)
+        except sqlite3.Error as e:
+            print("board_server: WARNING: SQLite quick_check failed: %s" % e, file=sys.stderr)
         self._has_json1 = True
         try:
             self.conn.execute("SELECT json_extract('{\"a\":1}', '$.a')").fetchone()
@@ -572,6 +580,8 @@ class BoardStore:
                 "CREATE INDEX IF NOT EXISTS idx_docs_thread_id ON docs(collection, json_extract(data, '$.thread_id'))",
                 "CREATE INDEX IF NOT EXISTS idx_docs_column ON docs(collection, json_extract(data, '$.column'))",
                 "CREATE INDEX IF NOT EXISTS idx_docs_created_at ON docs(collection, json_extract(data, '$.created_at'))",
+                "CREATE INDEX IF NOT EXISTS idx_docs_runner ON docs(collection, json_extract(data, '$.runner'))",
+                "CREATE INDEX IF NOT EXISTS idx_docs_for ON docs(collection, json_extract(data, '$.for'))",
             ):
                 try:
                     self.conn.execute(idx_sql)
@@ -1448,11 +1458,90 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                 head_inject = embed_tags
             html = html.replace("</head>", head_inject + "\n</head>", 1)
         else:
-            html = "<!doctype html>\n<html>\n<head>\n" + head_inject + "\n</head>\n<body>\n" + html + "\n</body>\n</html>\n"
+            html = '<!doctype html>\n<html lang="en">\n<head>\n' + head_inject + "\n</head>\n<body>\n" + html + "\n</body>\n</html>\n"
         return html.encode("utf-8")
+
+    HTML_CSP = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob: /_blob/; "
+        "media-src 'self' /_blob/; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'none'"
+    )
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+
+        def _send_security_headers(self, is_html=False):
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            if is_html:
+                self.send_header("Content-Security-Policy", HTML_CSP)
+
+        def _send_html_bytes(self, code, raw, extra_headers=None, head_only=False):
+            ae = (self.headers.get("Accept-Encoding") or "").lower()
+            use_gzip = "gzip" in ae and len(raw) >= 1024
+            payload = gzip.compress(raw, compresslevel=6) if use_gzip else raw
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self._send_security_headers(is_html=True)
+            if use_gzip:
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Vary", "Accept-Encoding")
+            if extra_headers:
+                for k, v in extra_headers:
+                    self.send_header(k, v)
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            if not head_only:
+                self.wfile.write(payload)
+
+        def do_HEAD(self):
+            parsed = urllib.parse.urlsplit(self.path)
+            path = parsed.path
+            if path == "/_api/health":
+                raw = json.dumps({"ok": True, "pid": os.getpid(), "auth": bool(token), "embed_mode": bool(embed_mode)}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self._send_security_headers()
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return
+            if path in ("/", "/index.html"):
+                if not embed_mode:
+                    ok, _ = self._check_auth(parsed)
+                    if not ok:
+                        self.send_response(401)
+                        self._send_security_headers()
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
+                if not os.path.isfile(html_path):
+                    self.send_response(404)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self._send_security_headers(is_html=True)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return
+            if path in ("/_shim.js", "/_manifest.webmanifest", "/_icon.svg", "/_sw.js"):
+                self.send_response(200)
+                self._send_security_headers()
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            self.send_response(404)
+            self._send_security_headers()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
 
         def log_message(self, fmt, *args):
             pass  # keep daemon stdout/stderr quiet
@@ -1554,13 +1643,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                         self._send_json(404, {"error": "board.html not found"})
                         return
                     raw = _build_embed_board_html(inject_embed_flag=not bool(token))
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
-                    self.send_header("X-Kit-Board-Doc", "1")
-                    self.send_header("Content-Length", str(len(raw)))
-                    self.send_header("Cache-Control", "no-store")
-                    self.end_headers()
-                    self.wfile.write(raw)
+                    self._send_html_bytes(200, raw, extra_headers=[("X-Kit-Board-Doc", "1")])
                     return
                 body = _build_embed_unlock_html()
                 self.send_response(200)
@@ -1667,14 +1750,9 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                         head_inject = pwa_tags
                     html = html.replace("</head>", head_inject + "\n</head>", 1)
                 else:
-                    html = "<!doctype html>\n<html>\n<head>\n" + head_inject + "\n</head>\n<body>\n" + html + "\n</body>\n</html>\n"
+                    html = '<!doctype html>\n<html lang="en">\n<head>\n' + head_inject + "\n</head>\n<body>\n" + html + "\n</body>\n</html>\n"
                 raw = html.encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(raw)))
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.wfile.write(raw)
+                self._send_html_bytes(200, raw)
                 return
 
             if path == "/_shim.js":
@@ -2168,6 +2246,13 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
     if auto_sync_interval and float(auto_sync_interval) > 0:
         store.enable_auto_sync(root_dir, interval_sec=float(auto_sync_interval), push=auto_sync_push)
     if preview:
+        if not token:
+            print(
+                "board_server: WARNING: --preview disables authentication! "
+                "Anyone who can reach http://%s:%d can read and write this board." % (host, port),
+                file=sys.stderr,
+                flush=True,
+            )
         if not store.get_doc("posts", "_orchestrator").get("exists"):
             store.set_doc("posts", "_orchestrator", {
                 "title": "Ask the orchestrator",

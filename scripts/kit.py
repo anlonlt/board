@@ -52,15 +52,22 @@ import argparse
 import re
 import glob
 import importlib.util
+import contextlib
 import json
 import os
+import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG = {}
@@ -822,16 +829,191 @@ def git(m, *args):
     return subprocess.run(["git", "-C", m] + list(args), capture_output=True, text=True)
 
 
+@contextlib.contextmanager
+def _sync_lock(m):
+    """Advisory file lock around mirror sync operations to prevent concurrent corruption."""
+    if fcntl is None or not os.path.isdir(m):
+        yield
+        return
+    lock_path = os.path.join(m, ".kit-sync.lock")
+    fh = open(lock_path, "a+", encoding="utf-8")
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+
 def init(m):
     if os.path.exists(os.path.join(m, ".git")):
-        return "%s exists" % m
+        br = git(m, "symbolic-ref", "--short", "HEAD").stdout.strip() or BRANCH
+        return "init: mirror already exists at %s (branch %s). Next: python3 -I .kit/kit.py sync-db --commit" % (m, br)
     subprocess.run(["git", "-C", ROOT, "fetch", "origin", BRANCH], capture_output=True)
     has = subprocess.run(["git", "-C", ROOT, "rev-parse", "--verify", "origin/" + BRANCH], capture_output=True).returncode == 0
     if has:
         r = subprocess.run(["git", "-C", ROOT, "worktree", "add", "-B", BRANCH, m, "origin/" + BRANCH], capture_output=True, text=True)
+        src = "origin/" + BRANCH
     else:
         r = subprocess.run(["git", "-C", ROOT, "worktree", "add", "--orphan", "-b", BRANCH, m], capture_output=True, text=True)
-    return (r.stdout + r.stderr).strip()
+        src = "new orphan branch " + BRANCH
+    if r.returncode != 0:
+        return (r.stdout + r.stderr).strip()
+    return "init: created worktree %s from %s. Next: python3 -I .kit/kit.py sync-db --commit" % (m, src)
+
+
+def doctor(m, db_path=None):
+    """Verify SQLite integrity, mirror worktree health, sync freshness, and referenced blobs."""
+    issues = []
+    lines = []
+    db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    blob_dir = os.path.join(os.path.dirname(db), "blobs")
+    if os.path.isfile(db):
+        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+        try:
+            ic = conn.execute("PRAGMA integrity_check").fetchone()
+            ok = bool(ic and str(ic[0]).lower() == "ok")
+            lines.append("db: %s (%s)" % (db, "ok" if ok else str(ic)))
+            if not ok:
+                issues.append("db integrity_check failed: %s" % (ic,))
+            counts = dict(conn.execute("SELECT collection, COUNT(*) FROM docs GROUP BY collection").fetchall())
+            lines.append("docs: %d posts, %d comments" % (counts.get("posts", 0), counts.get("comments", 0)))
+            missing_blobs = []
+            for coll, did, raw in conn.execute("SELECT collection, doc_id, data FROM docs WHERE collection IN ('posts','comments')"):
+                for bid in set(re.findall(r"/_blob/([a-fA-F0-9]{16,64})", raw or "")):
+                    if not os.path.isfile(os.path.join(blob_dir, bid)):
+                        missing_blobs.append("%s/%s -> %s" % (coll, did, bid))
+            if missing_blobs:
+                issues.append("%d missing blob(s)" % len(missing_blobs))
+                lines.append("blobs: MISSING %d (%s)" % (len(missing_blobs), ", ".join(missing_blobs[:5])))
+            else:
+                lines.append("blobs: ok")
+        finally:
+            conn.close()
+    else:
+        lines.append("db: not found at %s" % db)
+    if os.path.exists(os.path.join(m, ".git")):
+        br = git(m, "symbolic-ref", "--short", "HEAD").stdout.strip()
+        st = read_state(m)
+        last = st.get("last_sync") or "(never)"
+        lines.append("mirror: %s (branch %s, last_sync %s)" % (m, br or "?", last))
+        if br != BRANCH:
+            issues.append("mirror branch is %r, expected %r" % (br, BRANCH))
+    else:
+        lines.append("mirror: not initialized at %s (run: python3 -I .kit/kit.py init)" % m)
+    lines.append("doctor: %s" % ("OK" if not issues else ("%d issue(s): %s" % (len(issues), "; ".join(issues)))))
+    return "\n".join(lines), (1 if issues else 0)
+
+
+def queue_cards(m, runner=None, for_owner=None, db_path=None):
+    """List open cards attributed to a runner (e.g. lmarena, claude-chrome) or person/role from SQLite or mirror."""
+    rf = (runner or "").strip().lower()
+    ff = (for_owner or "").strip().lower()
+    posts = {}
+    db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    if os.path.isfile(db):
+        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+        try:
+            for did, raw in conn.execute("SELECT doc_id, data FROM docs WHERE collection='posts'"):
+                if did.startswith("_"):
+                    continue
+                try:
+                    posts[did] = json.loads(raw)
+                except ValueError:
+                    pass
+        finally:
+            conn.close()
+    elif os.path.isdir(os.path.join(m, "board", "posts")):
+        for did, doc in load_dir(os.path.join(m, "board"), "posts").items():
+            if not did.startswith("_"):
+                posts[did] = doc
+    rows = []
+    for pid, d in posts.items():
+        if d.get("removed") or d.get("column") == "done":
+            continue
+        pr = str(d.get("runner") or "").strip()
+        pf = str(d.get("for") or d.get("assignee") or "").strip()
+        if rf and pr.lower() != rf:
+            continue
+        if ff and pf.lower() != ff:
+            continue
+        if not rf and not ff and not pr and not pf:
+            continue
+        prio = int(d.get("priority") or 3)
+        rows.append((prio, pid, pr, pf, d.get("column") or "todo", str(d.get("title") or "(untitled)"), str(d.get("body") or "")))
+    rows.sort(key=lambda x: (x[0], x[1]))
+    if not rows:
+        who = ("runner=%s" % runner if runner else "") + (" for=%s" % for_owner if for_owner else "")
+        return "queue%s: 0 open cards" % ((" (" + who.strip() + ")") if who.strip() else "")
+    out = []
+    for prio, pid, pr, pf, col, title, body in rows:
+        tags = []
+        if pr:
+            tags.append("@" + pr)
+        if pf:
+            tags.append("for:" + pf)
+        first = body.strip().splitlines()[0][:100] if body.strip() else ""
+        out.append("P%d [%s] %s (%s) — %s%s" % (prio, col, pid, " ".join(tags) or "unassigned", title, (" | " + first) if first else ""))
+    return "\n".join(out) + "\n(%d card%s)" % (len(rows), "" if len(rows) == 1 else "s")
+
+
+def search_all(query, db_path=None, limit=25):
+    """Search posts, comments (SQLite) and committed memory markdown files."""
+    q = (query or "").strip()
+    if not q:
+        return "search: empty query"
+    ql = q.lower()
+    hits = []
+    db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    if os.path.isfile(db):
+        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+        try:
+            for coll, did, raw in conn.execute("SELECT collection, doc_id, data FROM docs WHERE collection IN ('posts','comments') ORDER BY updated_at DESC"):
+                if ql not in (raw or "").lower():
+                    continue
+                try:
+                    doc = json.loads(raw)
+                except ValueError:
+                    continue
+                if coll == "posts":
+                    txt = str(doc.get("title") or "") + " — " + str(doc.get("body") or "")
+                    idx = txt.lower().find(ql)
+                    snip = txt[max(0, idx - 30): idx + 90].replace("\n", " ") if idx >= 0 else txt[:100].replace("\n", " ")
+                    hits.append("[post %s] %s" % (did, snip))
+                else:
+                    txt = str(doc.get("text") or "")
+                    idx = txt.lower().find(ql)
+                    snip = txt[max(0, idx - 30): idx + 90].replace("\n", " ") if idx >= 0 else txt[:100].replace("\n", " ")
+                    hits.append("[comment %s on %s] %s" % (did, doc.get("post_id") or "?", snip))
+                if len(hits) >= limit:
+                    break
+        finally:
+            conn.close()
+    mem_dir = CONFIG.get("kit", {}).get("memory_dir") or ".story"
+    mem_root = os.path.join(ROOT, mem_dir)
+    if os.path.isdir(mem_root) and len(hits) < limit:
+        for dirpath, _, files in os.walk(mem_root):
+            for fn in sorted(files):
+                if not fn.endswith(".md"):
+                    continue
+                fp = os.path.join(dirpath, fn)
+                try:
+                    with open(fp, encoding="utf-8", errors="replace") as fh:
+                        for lineno, line in enumerate(fh, 1):
+                            if ql in line.lower():
+                                rel = os.path.relpath(fp, ROOT)
+                                hits.append("[memory %s:%d] %s" % (rel, lineno, line.strip()[:110]))
+                                if len(hits) >= limit:
+                                    break
+                except OSError:
+                    pass
+                if len(hits) >= limit:
+                    break
+    if not hits:
+        return "search %r: 0 matches" % q
+    return "\n".join(hits) + ("\n(%d match%s)" % (len(hits), "" if len(hits) == 1 else "es"))
 
 
 def commit(m, msg, branch=None):
@@ -864,6 +1046,9 @@ def main(argv=None):
     s = sp.add_parser("since"); s.add_argument("t")
     s = sp.add_parser("session"); s.add_argument("post")
     s = sp.add_parser("reads"); s.add_argument("--at")
+    s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
+    s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None)
+    s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("welcome")
     s.add_argument("--runtime", choices=WELCOME_RUNTIMES, default=None)
     s.add_argument("--post", action="store_true", help="Post welcome-<runtime>-1 under _orchestrator (idempotent)")
@@ -886,17 +1071,29 @@ def main(argv=None):
         r = git(m, "push", "-u", "origin", BRANCH)
         print((r.stdout + r.stderr).strip() or "pushed"); return r.returncode
     if a.cmd == "sync":
-        r = sync(m, a.dir, a.at, a.full)
-        print("sync %s: posts %d written, %d removed; comments %d new, %d changed, %d removed" % ((a.at,) + r))
-        if a.commit:
-            print(commit(m, "kit sync %s%s" % (a.at, " (full)" if a.full else "")))
+        with _sync_lock(m):
+            r = sync(m, a.dir, a.at, a.full)
+            print("sync %s: posts %d written, %d removed; comments %d new, %d changed, %d removed" % ((a.at,) + r))
+            if a.commit:
+                print(commit(m, "kit sync %s%s" % (a.at, " (full)" if a.full else "")))
         return 0
     if a.cmd == "sync-db":
         at_val = a.at or zstamp(datetime.now(timezone.utc))
-        r = sync_db(m, db_path=a.db, at=at_val, full=a.full)
-        print("sync-db %s: posts %d written, %d removed; comments %d new, %d changed, %d removed" % ((at_val,) + r))
-        if a.commit:
-            print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
+        with _sync_lock(m):
+            r = sync_db(m, db_path=a.db, at=at_val, full=a.full)
+            print("sync-db %s: posts %d written, %d removed; comments %d new, %d changed, %d removed" % ((at_val,) + r))
+            if a.commit:
+                print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
+        return 0
+    if a.cmd == "doctor":
+        out, rc = doctor(m, db_path=a.db)
+        print(out)
+        return rc
+    if a.cmd == "queue":
+        print(queue_cards(m, runner=a.runner, for_owner=a.for_owner, db_path=a.db))
+        return 0
+    if a.cmd == "search":
+        print(search_all(a.query, db_path=a.db, limit=a.limit))
         return 0
     if a.cmd == "receive":
         try:

@@ -341,6 +341,8 @@ def render(text, c):
             "CARDS_MODEL": role_cfg("cards")["model"],
             "AUTONOMY_LEVEL": auto_level,
             "AUTONOMY_RULE": render_vars(autonomy_rule, {"MEMORY_DIR": k.get("memory_dir") or ".board/memory"})}
+    if c["project"].strip().lower().endswith("board"):
+        text = text.replace("{{PROJECT}} board", "{{PROJECT}}")
     for n, v in vals.items():
         text = text.replace("{{%s}}" % n, v)
     left = re.findall(r"\{\{[A-Z_]+\}\}", text)
@@ -479,11 +481,42 @@ def main(argv=None):
     ap.add_argument("--no-clerk", action="store_true")
     ap.add_argument("--no-orchestrator", action="store_true")
     ap.add_argument("--setup-done", action="store_true", help="README step 8: the install is reported; hooks speak again")
+    ap.add_argument("--uninstall", action="store_true", help="Remove unmodified kit files recorded in .kit/manifest.json")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     t = os.path.abspath(a.target)
     if not os.path.isdir(t):
         raise SystemExit("install: %s is not a directory" % t)
+    if a.uninstall:
+        mp = os.path.join(t, ".kit", "manifest.json")
+        if not os.path.isfile(mp):
+            print("uninstall: no .kit/manifest.json found in %s" % t)
+            return 0
+        mf = json.load(open(mp, encoding="utf-8"))
+        removed, kept = [], []
+        for rel, expected_sha in sorted(mf.items()):
+            if rel.startswith("_"):
+                continue
+            fp = os.path.join(t, rel)
+            if not os.path.isfile(fp):
+                continue
+            if sha(open(fp, "rb").read()) == expected_sha:
+                removed.append(rel)
+                if not a.dry_run:
+                    os.remove(fp)
+            else:
+                kept.append(rel)
+        if not a.dry_run and not kept:
+            try:
+                os.remove(mp)
+            except OSError:
+                pass
+        for r in removed:
+            print(("would remove " if a.dry_run else "removed ") + r)
+        for k in kept:
+            print("KEPT (modified since install): " + k)
+        print("uninstall: %d removed, %d kept" % (len(removed), len(kept)))
+        return 0
     if a.tui:
         sys.path.insert(0, os.path.join(KIT, "scripts"))
         import twrp_wizard as _tw
@@ -632,14 +665,35 @@ def main(argv=None):
                     "body": "Bootstrapped by `install.py`.\n\nRun `%s` (or `python3 -I .kit/board_server.py --preview --embed-mode` in sandbox previews) to start the board." % (c["kit"].get("cmd") or "./.kit/up"),
                 })
             if a.demo:
+                from datetime import timedelta
+                base_dt = datetime.now(timezone.utc)
+                ts = lambda mins: (base_dt - timedelta(minutes=mins)).strftime("%Y-%m-%dT%H:%M:%SZ")
                 demo_posts = [
-                    ("demo-todo", {"title": "Try replying or tapping 👍", "column": "todo", "part": "demo", "train": "demo", "priority": 1, "minutes": 2, "created_at": now, "body": "Leave a comment below or tap **👍 Like** to test the round-trip."}),
-                    ("demo-question", {"title": "Pick your preferred workflow mode", "column": "question", "part": "demo", "train": "demo", "priority": 2, "created_at": now, "options": ["Live 30-min listener", "Manual '.' check"], "default_option": "Live 30-min listener", "body": "One-tap answers let you decide without typing."}),
-                    ("demo-done", {"title": "Board kit installed", "column": "done", "part": "demo", "train": "demo", "priority": 3, "created_at": now, "done_at": now, "body": "SQLite board store and UI are ready."}),
+                    ("demo-todo", {"title": "Try replying or tapping 👍", "column": "todo", "part": "D1", "train": "demo", "priority": 2, "minutes": 2, "created_at": ts(5), "body": "Leave a comment below or tap **👍 Like** to test the live round-trip."}),
+                    ("demo-todo-2", {"title": "Review release checklist for v0.1", "column": "todo", "part": "R2", "train": "release", "parent": "R1", "priority": 1, "minutes": 5, "created_at": ts(35), "body": "CI is green across all 6 suites. Confirm tag name and changelog notes before publishing."}),
+                    ("demo-todo-3", {"title": "Spot-check mobile layout on phone", "column": "todo", "part": "D2", "train": "demo", "parent": "D1", "priority": 3, "minutes": 3, "created_at": ts(90), "body": "Open the board on a narrow viewport and verify the lane tabs and one-tap options."}),
+                    ("demo-question", {"title": "Pick your preferred workflow mode", "column": "question", "part": "D1", "train": "demo", "priority": 2, "created_at": ts(12), "options": ["Live 30-min listener", "Manual '.' check"], "default_option": "Live 30-min listener", "body": "One-tap answers let you decide from your phone without typing."}),
+                    ("demo-q-2", {"title": "Default Done lane window", "column": "question", "part": "R2", "train": "release", "parent": "R1", "priority": 2, "created_at": ts(48), "options": ["Last 7 days (Recommended)", "Last 30 days", "Show all"], "default_option": "Last 7 days (Recommended)", "body": "Keeping Done scoped to recent cards prevents an infinite scroll wall at production volume."}),
+                    ("demo-q-3", {"title": "Enable daily digest notifications?", "column": "question", "part": "D3", "train": "demo", "parent": "D2", "priority": 3, "created_at": ts(140), "options": ["Yes, via ntfy", "No, board only"], "default_option": "No, board only", "body": "Optional push summary when questions wait longer than 30 minutes."}),
+                    ("demo-info-1", {"title": "Benchmark: mirror reads 12× smaller", "column": "info", "part": "R1", "train": "release", "priority": 3, "status": "in progress", "created_at": ts(20), "body": "Measured `kit.py post` vs full JSON dump:\n\n| Operation | Full dump | `kit.py` mirror |\n|---|---|---|\n| Single post | 35.9k chars | 2.9k chars |\n| Open comments | ~120k tokens | 290 chars |"}),
+                    ("demo-info-2", {"title": "Nightly doctor check passed", "column": "info", "part": "D2", "train": "demo", "parent": "D1", "priority": 3, "created_at": ts(75), "body": "`kit.py doctor` verified SQLite integrity (`ok`), zero missing blobs, and clean mirror branch."}),
+                    ("demo-done", {"title": "Board kit installed", "column": "done", "part": "D0", "train": "demo", "priority": 3, "created_at": ts(180), "done_at": ts(175), "body": "SQLite board store, local server, and single-file UI are ready."}),
+                    ("demo-done-2", {"title": "Safety hooks verified (kit_guard)", "column": "done", "part": "R0", "train": "release", "priority": 3, "created_at": ts(240), "done_at": ts(230), "body": "Destructive `rm -rf`, `git reset --hard`, force-push, and secret staging all blocked cleanly."}),
+                    ("demo-done-3", {"title": "Gzip & security headers enabled", "column": "done", "part": "R1", "train": "release", "parent": "R0", "priority": 3, "created_at": ts(300), "done_at": ts(290), "body": "HTML payload compressed ~75% with `Referrer-Policy` and minimal CSP active."}),
+                    ("demo-done-4", {"title": "Accessibility pass complete", "column": "done", "part": "D0", "train": "demo", "priority": 3, "created_at": ts(360), "done_at": ts(350), "body": "Added `<html lang>`, un-nested card like buttons, and raised muted-text contrast ≥ 4.5:1."}),
                 ]
                 for dpid, ddoc in demo_posts:
                     if not store.get_doc("posts", dpid).get("exists"):
                         store.set_doc("posts", dpid, ddoc)
+                demo_comments = [
+                    ("demo-cmt-1", {"post_id": "demo-todo", "from": "D1", "text": "Ready for your check — tap 👍 if the layout looks good on your screen.", "created_at": ts(4)}),
+                    ("demo-cmt-2", {"post_id": "demo-todo", "from": "owner", "text": "Looks crisp! Can we also verify dark mode?", "reply_to": "demo-cmt-1", "read": True, "delivered": True, "created_at": ts(3)}),
+                    ("demo-cmt-3", {"post_id": "demo-todo", "from": "D1", "text": "Checked dark mode: per-lane tinted cards and ≥ 4.5:1 contrast both pass.", "reply_to": "demo-cmt-2", "created_at": ts(2)}),
+                    ("demo-cmt-4", {"post_id": "demo-question", "from": "orchestrator", "text": "Defaulting to **Live 30-min listener** if you don't tap another option.", "created_at": ts(10)}),
+                ]
+                for dcid, cdoc in demo_comments:
+                    if not store.get_doc("comments", dcid).get("exists"):
+                        store.set_doc("comments", dcid, cdoc)
                 import kit_cards as _kc
                 prev_root = _kc.ROOT
                 try:
@@ -650,7 +704,7 @@ def main(argv=None):
                     _kc.ROOT = prev_root
                 store.set_doc("posts", "_dashboard", dash_doc)
                 store.set_doc("posts", "_trains", trains_doc)
-                ins.log.append("demo: seeded 4-lane sample posts, _dashboard, and _trains in .kit/board_data/board.db")
+                ins.log.append("demo: seeded 12 sample posts, 4 comments, _dashboard, and _trains in .kit/board_data/board.db")
             ins.log.append("bootstrap: seeded _orchestrator and KIT-installed in .kit/board_data/board.db")
         finally:
             store.close()

@@ -2,6 +2,11 @@
 
 This repository uses the local board kit (`.kit/`). Read `.kit/BOARD.md`, `.kit/orchestrator.md`, and memory files under `{{MEMORY_DIR}}/state/*.md` and `{{MEMORY_DIR}}/awaits.md` before acting. Talk to the owner in **{{TALK}}**, on the board, and end each chat turn with a single `·`.
 
+## 0. Card Attribution & Auto-Dispatch (`runner` / `for`)
+Cards can carry optional **`runner`** (which agent/environment executes it: `agy`, `claude-chrome`, `claude-web`, `lmarena`, `owner`, …) and **`for`** (which person/role approves or owns it) fields:
+- **External / Arena runners (e.g. `lmarena` when given this repo's GitHub URL):** immediately check your attributed queue with `python3 -I .kit/kit.py queue --runner lmarena` (or `python3 -I .kit/board_cli.py inbox --runner lmarena`), carry out the highest-priority open card, and update the card with your results.
+- **Browser / Chrome runners (e.g. `claude-chrome`):** when the owner says `board` in a discussion, check `runner: "claude-chrome"` open cards, execute them in Chrome, and write the findings under each card.
+
 ## 1. Start the board (if not already running)
 1. Check `curl -sf {{BOARD_URL}}/_api/health`.
 2. If not running, start in sandbox preview mode (`--preview` allows `0.0.0.0` without `--token` behind a trusted sandbox proxy, auto-seeds `_orchestrator`, and registers the default watcher; `--embed-mode` enables cookie-independent iframe support):

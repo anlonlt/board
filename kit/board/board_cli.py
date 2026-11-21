@@ -317,8 +317,10 @@ def main(argv=None):
     prd.add_argument("blob_id")
     prd.add_argument("--out", required=True)
 
-    pi = sub.add_parser("inbox", help="Compact JSON summary of unread owner comments, likes, and option taps")
+    pi = sub.add_parser("inbox", help="Compact JSON summary of unread owner comments, likes, option taps, and runner-attributed cards")
     pi.add_argument("--since", default=None, help="Only include items with created_at >= ISO timestamp")
+    pi.add_argument("--runner", default=None, help="Filter to cards attributed to this runner (e.g. lmarena, claude-chrome, agy)")
+    pi.add_argument("--for", dest="for_owner", default=None, help="Filter to cards attributed to this person/role")
 
     plk = sub.add_parser("links", help="Compact DAG summary of linked posts and trains from the links table")
     plk.add_argument("--train", default=None, help="Filter links to a specific train")
@@ -577,6 +579,35 @@ def main(argv=None):
             else:
                 item["text"] = d.get("text") or ""
                 comments.append(item)
+        assigned_posts = []
+        if a.runner or a.for_owner:
+            pres = call("GET", "/_api/db/posts")
+            rf = (a.runner or "").strip().lower()
+            ff = (a.for_owner or "").strip().lower()
+            for pdoc in pres.get("docs") or []:
+                pid = pdoc.get("id") or ""
+                if pid.startswith("_"):
+                    continue
+                pd = pdoc.get("data") or {}
+                if pd.get("removed") or pd.get("column") == "done":
+                    continue
+                pr = str(pd.get("runner") or "").strip().lower()
+                pf = str(pd.get("for") or pd.get("assignee") or "").strip().lower()
+                if rf and pr != rf:
+                    continue
+                if ff and pf != ff:
+                    continue
+                assigned_posts.append({
+                    "id": pid,
+                    "title": pd.get("title") or "",
+                    "column": pd.get("column") or "todo",
+                    "priority": pd.get("priority") or 3,
+                    "runner": pd.get("runner") or "",
+                    "for": pd.get("for") or pd.get("assignee") or "",
+                    "status": pd.get("status") or "",
+                    "body": str(pd.get("body") or "")[:300],
+                })
+            assigned_posts.sort(key=lambda x: (int(x["priority"] or 9), x["id"]))
         out = {
             "total": len(comments) + len(likes) + len(answers),
             "comments": comments,
@@ -585,6 +616,9 @@ def main(argv=None):
             "watcher_status": status_info.get("status"),
             "pending_threads": status_info.get("pending", 0),
         }
+        if a.runner or a.for_owner:
+            out["assigned_posts"] = assigned_posts
+            out["assigned_total"] = len(assigned_posts)
         print(json.dumps(out, ensure_ascii=False))
         return 0
 

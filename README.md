@@ -14,7 +14,7 @@
   <img alt="Clients" src="https://img.shields.io/badge/works%20with-agy%20%7C%20Claude%20Code%20%7C%20Arena%20%7C%20CLI-e8894a?style=flat-square" />
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20Mobile-2b6c9e?style=flat-square" />
   <img alt="Private by Default" src="https://img.shields.io/badge/privacy-your%20private%20repo-6a4fb3?style=flat-square" />
-  <img alt="Tests" src="https://img.shields.io/badge/test%20suites-12%20passing-2f7a4f?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/test%20suites-6%20passing%20(154%2B%20checks)-2f7a4f?style=flat-square" />
 </p>
 
 <p align="center">
@@ -49,7 +49,7 @@ Chat windows break down as soon as a real project lasts more than a day — **ev
 ## Features
 
 ### One Visual UI for Everything Agents Create
-Every piece of work lives as a structured card in four lanes — **`For you to do`**, **`Waiting on you`**, **`News`**, and **`Done`** — instead of being buried across commits, PRs, and chat transcripts:
+Every piece of work lives as a structured card in four lanes — **`Action`**, **`Decisions`**, **`Updates`**, and **`Done`** — across four views (**Lanes**, **Trains**, **Feed**, and **Focus**) with hash deep-links (`#/post/<id>`, `#/focus`) instead of being buried across commits, PRs, and chat transcripts:
 - Rich Markdown reports, tables, side-by-side image comparisons, and one-click Markdown export.
 - **Phone-first, one-tap control:** tap 👍 to approve, tap a one-tap option to choose, attach screenshots up to 20 MB, and see live typing dots while an agent writes its reply.
 - **Live anywhere:** works natively in your browser and on your phone (via `claude.ai` Artifacts in the cloud, or locally via Tailscale — with automatic failover if a cloud plan hits its limit).
@@ -111,7 +111,7 @@ Real numbers measured on [anlonlt/harmonize](https://github.com/anlonlt/harmoniz
 | **Context saved checking open comments** (`kit.py open`) | **~120,000 tokens → 290 characters** |
 | **Card rebuild savings** (`kit-cards` via `kit.py`) | **−20% tokens** per run (124,535 → 99,354 tokens) |
 | **Startup memory footprint** (`SessionStart`) | **22 workstreams + 31 waiting items** served in **6.6k chars** (instead of 1.3 MB of docs) |
-| **Automated verification** | **12 Python test suites, 0 failures** (+ browser Playwright test + 20/20 mutation tests on `kit.py`) |
+| **Automated verification** | **6 Python test suites (154+ checks), 0 failures** (`python3 scripts/run_all_tests.py`, + browser Playwright test + 20/20 mutation tests on `kit.py`) |
 
 ---
 

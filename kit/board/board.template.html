@@ -3,7 +3,7 @@
 <style>
 /* Layout: a board of four lanes (one at a time on a phone, side by side when wide); a post opens as a full sheet over it. */
 :root {
-  --bg: #eef2f6; --surface: #ffffff; --sunk: #e2e8ef; --ink: #1b2433; --muted: #5b6678;
+  --bg: #eef2f6; --surface: #ffffff; --sunk: #e2e8ef; --ink: #1b2433; --muted: #465162;
   --line: #cfd7e1; --ember: #b8561c; --ember-ink: #ffffff; --good: #2f7a4f; --warn: #a33b2b;
   --todo: #b8561c; --question: #6a4fb3; --info: #2b6c9e; --done: #2f7a4f;
   --scrim: rgba(18, 24, 38, .55);
@@ -12,12 +12,12 @@
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #111826; --surface: #1a2335; --sunk: #0c121d; --ink: #e6ebf2; --muted: #9aa6b8;
+  --bg: #111826; --surface: #1a2335; --sunk: #0c121d; --ink: #e6ebf2; --muted: #aab6c8;
   --line: #2c3850; --ember: #e8894a; --ember-ink: #1a1206; --good: #6cc492; --warn: #f08a78;
   --todo: #e8894a; --question: #a993ee; --info: #78b4e3; --done: #6cc492;
   --scrim: rgba(0, 0, 0, .6); color-scheme: dark; } }
 :root[data-theme="dark"] {
-  --bg: #111826; --surface: #1a2335; --sunk: #0c121d; --ink: #e6ebf2; --muted: #9aa6b8;
+  --bg: #111826; --surface: #1a2335; --sunk: #0c121d; --ink: #e6ebf2; --muted: #aab6c8;
   --line: #2c3850; --ember: #e8894a; --ember-ink: #1a1206; --good: #6cc492; --warn: #f08a78;
   --todo: #e8894a; --question: #a993ee; --info: #78b4e3; --done: #6cc492;
   --scrim: rgba(0, 0, 0, .6); color-scheme: dark; }
@@ -372,7 +372,7 @@ body {
               var(--bg);
   background-attachment: fixed;
 }
-header.top { padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+header.top { position: sticky; top: 0; z-index: 12; background: var(--bg); padding-top: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
 h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 
 /* View switcher pill (Lanes | Trains | Feed | Focus) */
@@ -383,7 +383,16 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 /* Section headers & full-width tabs */
 @media (min-width: 960px) {
   [data-view="lanes"] .tabs { display: none !important; }
+  .lanes { align-items: start; }
+  .lane .cards { max-height: calc(100vh - 190px); overflow-y: auto; padding-right: 4px; overscroll-behavior: contain; }
 }
+@media (max-width: 959px) {
+  .tabs { padding-right: 18px; -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 22px), transparent 100%); mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 22px), transparent 100%); }
+}
+.card-open { background: none; border: 0; padding: 0; text-align: left; font: inherit; color: inherit; width: 100%; display: block; cursor: pointer; }
+.done-more { margin-top: 4px; width: 100%; text-align: center; font-size: .84rem; color: var(--muted); }
+.badge.runner { font-family: var(--mono); background: color-mix(in srgb, var(--info) 16%, var(--surface)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--info) 38%, var(--line)); }
+.badge.for-owner { background: color-mix(in srgb, var(--question) 14%, var(--surface)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--question) 36%, var(--line)); }
 .tabs { display: flex; width: 100%; gap: 8px; margin-block: 14px 12px; }
 .tab { flex: 1 1 0; justify-content: center; border-radius: 14px; padding: 9px 10px; font-weight: 700; box-shadow: var(--shadow); transition: all .15s ease; background: color-mix(in srgb, var(--c) 9%, var(--surface)); border-color: color-mix(in srgb, var(--c) 28%, var(--line)); }
 .tab[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
@@ -839,7 +848,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
 <div class="wrap">
   <header class="top">
     <h1>{{PROJECT}} board</h1>
-    <span class="row tools"><input type="search" id="q" placeholder="Search posts or a part" aria-label="Search posts"><select id="sort" aria-label="Order of the posts"><option value="new">Newest first</option><option value="prio">By priority</option></select><button class="btn small" id="sel-toggle" type="button">Select posts</button><span id="status" class="status">Connecting to the board...</span><button class="btn ember small" id="ask" type="button" title="Write to the orchestrator: a question, a correction, anything">Ask the orchestrator</button></span>
+    <span class="row tools"><input type="search" id="q" placeholder="Search posts or a part" aria-label="Search posts"><select id="runner-filter" aria-label="Filter by runner" hidden></select><select id="sort" aria-label="Order of the posts"><option value="new">Newest first</option><option value="prio">By priority</option></select><button class="btn small" id="sel-toggle" type="button">Select posts</button><span id="status" class="status">Connecting to the board...</span><button class="btn ember small" id="ask" type="button" title="Write to the orchestrator: a question, a correction, anything">Ask the orchestrator</button></span>
   </header>
   <!-- BD8 (his 02:26, R74): the Waiting card back as before BD7, one sentence per item, a tap opens its post. -->
   <details class="dash wait" id="waiting" hidden><summary><span>Waiting for you</span><span class="sub" id="wait-sub"></span></summary><div class="wait-rows" id="wait-rows"></div></details>
@@ -892,7 +901,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     </div>
     <section class="thread">
       <h3 id="p-th">Comments on the post</h3>
-      <div id="p-comments" class="cards"></div>
+      <div id="p-comments" class="cards" aria-live="polite" aria-relevant="additions"></div>
       <div id="p-typing" hidden></div>
       <form class="composer" id="composer">
         <label for="c-text" class="note" id="c-label">Your comment goes to the session that wrote this post. Write @o in it to ask the orchestrator instead.</label>
@@ -1141,8 +1150,16 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
   }
   function prioOf(p) { var n = Number(p.priority); return n >= 1 && n <= 3 ? n : 0; }
   function matches(p) {
+    if (state.runnerFilter) {
+      var pr = str(p.runner).trim(), pf = str(p.for || p.assignee).trim();
+      if (state.runnerFilter.indexOf("for:") === 0) {
+        if (pf.toLowerCase() !== state.runnerFilter.slice(4).toLowerCase()) return false;
+      } else if (pr.toLowerCase() !== state.runnerFilter.toLowerCase()) {
+        return false;
+      }
+    }
     var q = state.q.trim().toLowerCase(); if (!q) return true;
-    return (str(p.title) + "\n" + str(p.body) + "\n" + str(p.part) + "\n" + p.id).toLowerCase().indexOf(q) >= 0;
+    return (str(p.title) + "\n" + str(p.body) + "\n" + str(p.part) + "\n" + str(p.runner) + "\n" + str(p.for || p.assignee) + "\n" + p.id).toLowerCase().indexOf(q) >= 0;
   }
 
   function el(tag, cls, text) {
@@ -1295,8 +1312,31 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     soon.post = soon.cmts = soon.typing = false;
   }
   /* Board */
+  function renderRunnerFilter() {
+    var sel = $("runner-filter"); if (!sel) return;
+    var runners = {}, owners = {};
+    (state.posts || []).forEach(function (p) {
+      if (p.removed) return;
+      var r = str(p.runner).trim(), f = str(p.for || p.assignee).trim();
+      if (r) runners[r] = true;
+      if (f) owners[f] = true;
+    });
+    var rList = Object.keys(runners).sort(), oList = Object.keys(owners).sort();
+    sel.hidden = !rList.length && !oList.length;
+    if (sel.hidden) { state.runnerFilter = ""; return; }
+    var cur = state.runnerFilter || "";
+    sel.textContent = "";
+    var opt0 = el("option", null, "All roles"); opt0.value = ""; sel.appendChild(opt0);
+    rList.forEach(function (r) { var o = el("option", null, "@" + r); o.value = r; sel.appendChild(o); });
+    oList.forEach(function (f) { var o = el("option", null, "\u2192 " + f); o.value = "for:" + f; sel.appendChild(o); });
+    sel.value = cur;
+  }
+  if ($("runner-filter")) {
+    $("runner-filter").addEventListener("change", function () { state.runnerFilter = this.value; renderBoard(); });
+  }
   function renderBoard() {
     soon.board = false;
+    renderRunnerFilter();
     renderWaiting(); renderDash(); renderAsk();
     var tabs = $("tabs"), lanes = $("lanes");
     var ae = document.activeElement, fc = ae && ae.closest ? ae.closest(".card") : null, focusId = fc ? fc.dataset.id : "";
@@ -1337,7 +1377,23 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       if (!wide.matches && state.active !== c.key) { lanes.appendChild(lane); return; }
       var list = el("div", "cards");
       if (!posts.length) list.appendChild(el("div", "empty", state.loaded ? "Nothing here." : "Loading..."));
-      posts.forEach(function (p) { list.appendChild(card(p, c)); });
+      var shown = posts, hiddenDone = 0;
+      if (c.key === "done" && !state.showAllDone && !state.q && posts.length > 10) {
+        var cutoff = Date.now() - 7 * 86400 * 1000;
+        var recent = posts.filter(function (p) {
+          var ts = Date.parse(p.done_at || p.updated_at || p.created_at || "");
+          return !isNaN(ts) && ts >= cutoff;
+        });
+        shown = recent.length >= 10 ? recent : posts.slice(0, 10);
+        hiddenDone = posts.length - shown.length;
+      }
+      shown.forEach(function (p) { list.appendChild(card(p, c)); });
+      if (hiddenDone > 0) {
+        var moreBtn = el("button", "btn small done-more", "+" + hiddenDone + " older done");
+        moreBtn.type = "button";
+        moreBtn.addEventListener("click", function () { state.showAllDone = true; renderBoard(); });
+        list.appendChild(moreBtn);
+      }
       lane.appendChild(list);
       lanes.appendChild(lane);
     });
@@ -1488,7 +1544,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       return r.state !== "done" || hasPlannedNext;
     });
     var you = activeRows.filter(function (r) { return r.state === "you"; }).length, run = activeRows.filter(function (r) { return r.state === "running"; }).length;
-    $("dash-sub").textContent = activeRows.length ? you + " wait on you · " + run + " running" + (d && d.updated_at ? " · " + when(d.updated_at) : "") : "";
+    $("dash-sub").textContent = activeRows.length ? you + " waiting on you · " + run + " running" + (d && d.updated_at ? " · " + when(d.updated_at) : "") : "";
     var g = $("dash-rows"); g.textContent = "";
     function ord(r) { return ORDER[r.state] === undefined ? 4 : ORDER[r.state]; }
     activeRows.map(function (r, i) { return [r, i]; }).sort(function (a, b) { return ord(a[0]) - ord(b[0]) || a[1] - b[1]; }).forEach(function (p) {
@@ -1496,7 +1552,8 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       var blockers = Array.isArray(r.blocked_by) ? r.blocked_by.filter(Boolean) : (r.blocked_by ? [str(r.blocked_by)] : []);
       var stLabel = (stt === "blocked" || (stt === "idle" && blockers.length)) && blockers.length ? ("waiting on " + blockers[0]) : CHIP[stt];
       var row = el("div", "dash-row " + stt + (state.dashOpen === key ? " open" : "")); row.dataset.key = key;
-      row.appendChild(el("span", "name", str(r.name)));
+      var nm = el("span", "name", str(r.name)); nm.title = str(r.name);
+      row.appendChild(nm);
       var sg = el("span", "segs"), at = Number(r.at), steps = Array.isArray(r.steps) ? r.steps : [];
       steps.forEach(function (s, i) { var x = el("span", "seg" + (i < at ? " was" : (i === at ? " now" : ""))); x.title = str(s); sg.appendChild(x); });
       row.appendChild(sg);
@@ -1752,16 +1809,19 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     setPicking(false); undoable(movedList);
   });
   function card(p, c) {
-    /* A div, not a button: it holds the Like button. */
-    var b = el("div", "card"); b.tabIndex = 0; b.setAttribute("role", "button"); b.dataset.id = p.id;
+    /* Semantic container: title is the real button, Like is a sibling button (no nested-interactive violation). */
+    var b = el("article", "card"); b.dataset.id = p.id;
     b.style.setProperty("--c", c.c);
     if (prioOf(p)) b.setAttribute("data-prio", String(prioOf(p)));
-    var tt = el("span", "t");
+    var tt = el(state.picking ? "span" : "button", state.picking ? "t" : "t card-open");
+    if (!state.picking) tt.type = "button";
     if (isNew(p)) { var nd = el("span", "newdot"); nd.title = "New since you last opened it"; tt.appendChild(nd); }
     tt.appendChild(document.createTextNode(str(p.title) || "(untitled)"));
     b.appendChild(tt);
     var m = el("span", "meta");
     if (p.part) m.appendChild(el("span", "part", str(p.part)));
+    if (p.runner) m.appendChild(el("span", "badge runner", "@" + str(p.runner)));
+    if (p.for || p.assignee) m.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
     if (Number(p.minutes) > 0) m.appendChild(el("span", "badge", Number(p.minutes) + " min"));
     m.appendChild(el("span", null, when(p.created_at)));
     var cs = commentsFor(p.id);
@@ -1781,6 +1841,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     var f = firstLine(p.body);
     if (f) b.appendChild(el("span", "first", f));
     if (state.picking) {
+      b.tabIndex = 0;
       b.className += " pick" + (state.picked[p.id] ? " on" : "");
       b.setAttribute("role", "checkbox"); b.setAttribute("aria-checked", String(!!state.picked[p.id]));
     }
@@ -1790,8 +1851,8 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       renderBoard();
     }
     var held = false, timer = 0;
-    b.addEventListener("click", function () { if (held) { held = false; return; } act(); });
-    b.addEventListener("keydown", function (e) { if (e.target === b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); act(); } });
+    b.addEventListener("click", function (e) { if (held) { held = false; return; } if (e.target && e.target.closest && e.target.closest(".like")) return; act(); });
+    b.addEventListener("keydown", function (e) { if (state.picking && e.target === b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); act(); } });
     /* Preview: a second under the mouse; on a touch screen a long press, until the finger lifts. */
     b.addEventListener("pointerenter", function (e) {
       if (e.pointerType !== "mouse" || state.picking) return;
@@ -1816,6 +1877,8 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     var col = COLUMNS.filter(function (c) { return c.key === colOf(p); })[0];
     var meta = el("div", "meta"); meta.appendChild(el("span", "badge", col.name));
     if (p.part) meta.appendChild(el("span", "part", str(p.part)));
+    if (p.runner) meta.appendChild(el("span", "badge runner", "@" + str(p.runner)));
+    if (p.for || p.assignee) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
     meta.appendChild(el("span", null, when(p.created_at)));
     k.appendChild(meta);
     k.appendChild(el("h3", null, str(p.title) || "(untitled)"));
@@ -1966,6 +2029,10 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     $("c-text").value = dr ? dr.t : ""; $("c-note").textContent = dr ? "Your unsent draft is back." : "";
     state.replyTo = dr && dr.r ? dr.r : null;
     rememberOpen(id);
+    try {
+      var targetHash = "#/post/" + encodeURIComponent(id);
+      if (location.hash !== targetHash && history && history.replaceState) history.replaceState(null, "", targetHash);
+    } catch (e) {}
     /* What lit the dot: the first comment since his last read, else the post's changed text. */
     var p = postById(id), v = seen[id], target = null;
     state.flash = null;
@@ -2011,6 +2078,10 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
   function flashing(cid) { var f = state.flash; return !!f && Date.now() < f.until && (cid ? f.cid === cid : f.body); }
   function closePost() {
     rememberOpen(null);
+    try {
+      var curV = (document.querySelector(".wrap") && document.querySelector(".wrap").getAttribute("data-view")) || "lanes";
+      if (location.hash && location.hash.indexOf("#/post/") === 0 && history && history.replaceState) history.replaceState(null, "", "#/" + curV);
+    } catch (e) {}
     unwatchSeen(); seenPost = "";
     state.openId = null; stripKey = ""; $("sheet").hidden = true; $("sheet").classList.remove("orch-popup", "feed-comments-overlay");
     var _ot = document.getElementById("orch-hdr-tools"); if (_ot) _ot.remove();
@@ -2030,6 +2101,8 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     var meta = $("p-meta"); meta.textContent = "";
     var tag = el("span", "badge", col.name); meta.appendChild(tag);
     if (p.part) meta.appendChild(el("span", "part", str(p.part)));
+    if (p.runner) meta.appendChild(el("span", "badge runner", "@" + str(p.runner)));
+    if (p.for || p.assignee) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
     if (p.session_id) { var s = el("span", null, "session " + shortSession(p.session_id)); s.title = str(p.session_id); meta.appendChild(s); }
     meta.appendChild(el("span", null, when(p.created_at)));
     if (p.status) meta.appendChild(el("span", "badge", str(p.status)));
@@ -2304,7 +2377,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       var info = el("div", "deliv");
       if (sending[c.id]) { info.textContent = "\u2026"; info.title = "Sending to Claude..."; }
       else if (c.read === true) { info.classList.add("seen-ok"); info.textContent = "\u2713\u2713"; info.title = "\u2713 Seen" + (c.read_at ? " " + when(c.read_at) : ""); }
-      else if (c.delivered === true) { info.classList.add("ok"); info.textContent = "\u2713\u2713"; info.title = "Sent to Claude"; }
+      else if (c.delivered === true) { info.classList.add("ok"); info.textContent = "\u2713\u2713"; info.title = "Sent to the agent"; }
       else { info.classList.add("err"); info.textContent = "\u2713"; info.title = "Saved on the board; not sent" + (c.delivery_error ? " (" + str(c.delivery_error) + ")" : "") + "."; }
       d.appendChild(info);
       if (c.delivered !== true && !sending[c.id] && cmts) {
@@ -2797,15 +2870,20 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     if (saved) {
       var df = deliveryFields(res);
       try { await ref.update(df); } catch (e) {}
-      (state.comments || []).forEach(function (x) { if (x.id === ref.id) Object.assign(x, df); });
+      var foundCmt = false;
+      (state.comments || []).forEach(function (x) { if (x.id === ref.id) { Object.assign(x, df); foundCmt = true; } });
+      if (!foundCmt) {
+        if (!Array.isArray(state.comments)) state.comments = [];
+        state.comments.push(Object.assign({ id: ref.id }, row, df));
+      }
       delete sending[ref.id];
       f.text.value = ""; saveDraft(p.id, f.n, "");
       if (f.files) { pendingFiles = []; renderPending(); state.replyTo = null; showReplyTo(); }
       if (dk && state.disc === "new" && state.openId === ORCH) { state.disc = dk; renderPost(); }
-      f.note.textContent = sent ? "Sent to Claude." : "Saved on the board; not sent.";
+      f.note.textContent = sent ? "Sent to the agent." : "Saved on the board; not sent.";
     } else {
       delete sending[ref.id];
-      f.note.textContent = sent ? "Sent to Claude, but not saved on the board." : "Not saved and not sent. Your text is still in the box.";
+      f.note.textContent = sent ? "Sent to the agent, but not saved on the board." : "Not saved and not sent. Your text is still in the box.";
       if (sent) { f.text.value = ""; saveDraft(p.id, f.n, ""); }
     }
     f.button.disabled = false;
@@ -3336,6 +3414,8 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       var meta = el("div", "meta");
       meta.appendChild(el("span", "badge", colObj.name));
       if (p.part) meta.appendChild(el("span", "part", str(p.part)));
+    if (p.runner) meta.appendChild(el("span", "badge runner", "@" + str(p.runner)));
+    if (p.for || p.assignee) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
       if (Number(p.minutes) > 0) meta.appendChild(el("span", "badge", Number(p.minutes) + " min"));
       var trLabel = humanTrainName(familyOf(p, tMap), tMap, [p]);
       if (trLabel && trLabel !== "General") meta.appendChild(el("span", "badge", trLabel));
@@ -3718,12 +3798,42 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       if (v === "focus" && curV !== "focus") prevNonFocusView = curV;
       wrap.setAttribute("data-view", v);
       try { localStorage.setItem("board-view", v); } catch (e) {}
+      try {
+        var vh = "#/" + v;
+        if (!state.openId && location.hash !== vh && history && history.replaceState) history.replaceState(null, "", vh);
+      } catch (e) {}
       var kb = document.getElementById("kit-views");
       if (kb) {
         Array.prototype.slice.call(kb.children).forEach(function (x) { x.className = x.dataset.view === v ? "on" : ""; });
       }
       refreshAltViews();
     }
+    var pendingHashPost = "";
+    function applyHashRoute() {
+      var h = (location.hash || "").replace(/^#\/?/, "");
+      if (!h) return;
+      if (h === "lanes" || h === "trains" || h === "feed" || h === "focus") {
+        if (state.openId) closePost();
+        switchView(h);
+        return;
+      }
+      if (h.indexOf("post/") === 0) {
+        var pid = decodeURIComponent(h.slice(5));
+        if (!pid) return;
+        if (postById(pid) || state.special[pid]) { pendingHashPost = ""; if (state.openId !== pid) openPost(pid); }
+        else { pendingHashPost = pid; }
+      }
+    }
+    window.addEventListener("hashchange", applyHashRoute);
+    var _origRefresh = refreshAltViews;
+    refreshAltViews = function () {
+      _origRefresh();
+      if (pendingHashPost && (postById(pendingHashPost) || state.special[pendingHashPost])) {
+        var pid = pendingHashPost; pendingHashPost = "";
+        if (state.openId !== pid) openPost(pid);
+      }
+    };
+    setTimeout(applyHashRoute, 0);
 
     if (wrap && tools && !document.getElementById("kit-views")) {
       var savedView = "lanes";

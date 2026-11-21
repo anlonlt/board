@@ -176,7 +176,7 @@
   "kind": "js"
  },
  {
-  "en": " wait on you · ",
+  "en": " waiting on you · ",
   "kind": "js"
  },
  {
@@ -472,7 +472,7 @@
   "kind": "js"
  },
  {
-  "en": "Sent to Claude",
+  "en": "Sent to the agent",
   "kind": "js"
  },
  {
@@ -596,11 +596,11 @@
   "kind": "js"
  },
  {
-  "en": "Sent to Claude.",
+  "en": "Sent to the agent.",
   "kind": "js"
  },
  {
-  "en": "Sent to Claude, but not saved on the board.",
+  "en": "Sent to the agent, but not saved on the board.",
   "kind": "js"
  },
  {
@@ -713,6 +713,22 @@
  },
  {
   "en": "Cancel",
+  "kind": "js"
+ },
+ {
+  "en": "Filter by runner",
+  "kind": "attr"
+ },
+ {
+  "en": "for:",
+  "kind": "js"
+ },
+ {
+  "en": "All roles",
+  "kind": "js"
+ },
+ {
+  "en": "post/",
   "kind": "js"
  }
 ]
