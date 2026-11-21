@@ -664,7 +664,15 @@
   "kind": "js"
  },
  {
-  "en": "  Train ",
+  "en": "Forked from ",
+  "kind": "js"
+ },
+ {
+  "en": "Branched from ",
+  "kind": "js"
+ },
+ {
+  "en": "🔍Checks (",
   "kind": "js"
  },
  {
@@ -673,6 +681,22 @@
  },
  {
   "en": "Newest first",
+  "kind": "js"
+ },
+ {
+  "en": "Ask the orchestrator",
+  "kind": "js"
+ },
+ {
+  "en": "Close",
+  "kind": "js"
+ },
+ {
+  "en": "You: ",
+  "kind": "js"
+ },
+ {
+  "en": "Write a comment",
   "kind": "js"
  },
  {
@@ -689,10 +713,6 @@
  },
  {
   "en": "Focus",
-  "kind": "js"
- },
- {
-  "en": "Wall",
   "kind": "js"
  }
 ]

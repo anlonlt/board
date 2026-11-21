@@ -370,68 +370,127 @@ body {
 header.top { padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
 h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 
-/* View switcher pill (Lanes | Wall | Feed) */
+/* View switcher pill (Lanes | Trains | Feed | Focus) */
 .kit-views { display: inline-flex; background: var(--sunk); border: 1px solid var(--line); border-radius: 999px; padding: 2px; gap: 2px; }
 .kit-views button { border: none; background: transparent; color: var(--muted); border-radius: 999px; padding: 4px 11px; font-size: .8rem; font-weight: 600; transition: all .15s ease; }
 .kit-views button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
 
-/* Padlet-style elevated cards with subtle lane glow */
+/* Section headers & full-width tabs */
+@media (min-width: 960px) {
+  [data-view="lanes"] .tabs { display: none !important; }
+}
+.tabs { display: flex; width: 100%; gap: 8px; margin-block: 14px 12px; }
+.tab { flex: 1 1 0; justify-content: center; border-radius: 14px; padding: 9px 10px; font-weight: 700; box-shadow: var(--shadow); transition: all .15s ease; background: color-mix(in srgb, var(--c) 9%, var(--surface)); border-color: color-mix(in srgb, var(--c) 28%, var(--line)); }
+.tab[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.lane-sub { display: block; font-family: var(--text); font-size: .75rem; font-weight: 500; color: var(--muted); margin-top: -6px; margin-bottom: 10px; }
+
+/* Whole-card section tint + palette-safe priority left edge bar */
 .card {
-  border-radius: 16px; border: 1px solid var(--line); border-left: 4px solid var(--c);
-  padding: 13px 15px; gap: 7px; box-shadow: var(--shadow);
+  --p-edge: var(--c);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--c) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--c) 26%, var(--line));
+  border-left: 5px solid var(--p-edge);
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, .18), var(--shadow);
+  padding: 13px 15px; gap: 7px;
   transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
 }
-.card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-color: color-mix(in srgb, var(--c) 65%, var(--line)); }
+.card[data-prio="1"] { --p-edge: #ef4444; }
+.card[data-prio="2"] { --p-edge: #f59e0b; }
+.card[data-prio="3"] { --p-edge: #10b981; }
+.card:hover { transform: translateY(-2px); box-shadow: inset 1px 0 0 rgba(255, 255, 255, .25), var(--shadow-lg); border-color: color-mix(in srgb, var(--c) 55%, var(--line)); border-left-color: var(--p-edge); }
 .card .t { font-weight: 700; font-size: 1.02rem; line-height: 1.32; letter-spacing: -0.01em; }
-.card .first { font-size: .88rem; line-height: 1.4; opacity: .88; }
-.tab { border-radius: 999px; padding: 7px 14px; font-weight: 600; box-shadow: var(--shadow); transition: all .15s ease; }
+.card .first { font-size: .88rem; line-height: 1.4; opacity: .9; }
 .dash { border-radius: 16px !important; box-shadow: var(--shadow); border-color: var(--line); }
 .btn { border-radius: 10px; font-weight: 600; transition: transform .12s ease, background .15s ease, border-color .15s ease; }
 .btn:active { transform: scale(.97); }
 .btn.ember { border-radius: 999px; padding-inline: 16px; box-shadow: 0 4px 14px color-mix(in srgb, var(--ember) 32%, transparent); }
-.like { font-weight: 600; transition: transform .12s ease, background .15s ease; }
-.like:active { transform: scale(.95); }
 
-/* Traffic-light priority badges (P1 red, P2 amber, P3 emerald) */
-.badge.prio[data-prio="1"], .prio-1 { background: rgba(239, 68, 68, .16) !important; color: #ef4444 !important; border: 1px solid rgba(239, 68, 68, .38); font-weight: 700; }
-.badge.prio[data-prio="2"], .prio-2 { background: rgba(245, 158, 11, .16) !important; color: #d97706 !important; border: 1px solid rgba(245, 158, 11, .38); font-weight: 700; }
-.badge.prio[data-prio="3"], .prio-3 { background: rgba(16, 185, 129, .16) !important; color: #10b981 !important; border: 1px solid rgba(16, 185, 129, .38); font-weight: 700; }
+/* Icon-only 👍 Like button & 💬 Ask the Orchestrator icon button */
+.like { font-weight: 700; border-radius: 999px; padding: 2px 8px; transition: transform .12s ease, background .15s ease; }
+.like.icon-only { font-size: 0 !important; padding: 3px 8px; display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 24px; }
+.like.icon-only::before { content: "\1F44D"; font-size: .86rem; line-height: 1; }
+.like.icon-only.on { background: color-mix(in srgb, var(--ember) 22%, var(--surface)); border-color: var(--ember); }
+.like:active { transform: scale(.94); }
+#ask.icon-msg { font-size: 0 !important; width: 36px; height: 36px; padding: 0 !important; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; position: relative; }
+#ask.icon-msg::before { content: "\1F4AC"; font-size: 1.1rem; line-height: 1; }
+#ask.icon-msg .newdot { position: absolute; top: -2px; right: -2px; margin: 0; width: 10px; height: 10px; border: 2px solid var(--bg); }
+
+/* Traffic-light priority badges (P1 red, P2 amber, P3 emerald) with universal contrast border */
+.badge.prio[data-prio="1"], .prio-1 { background: rgba(239, 68, 68, .18) !important; color: #ef4444 !important; border: 1px solid rgba(239, 68, 68, .48); font-weight: 700; }
+.badge.prio[data-prio="2"], .prio-2 { background: rgba(245, 158, 11, .18) !important; color: #d97706 !important; border: 1px solid rgba(245, 158, 11, .48); font-weight: 700; }
+.badge.prio[data-prio="3"], .prio-3 { background: rgba(16, 185, 129, .18) !important; color: #10b981 !important; border: 1px solid rgba(16, 185, 129, .48); font-weight: 700; }
 :root[data-theme="dark"] .badge.prio[data-prio="2"], @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .badge.prio[data-prio="2"] { color: #fbbf24 !important; } }
 
-/* Horizontal Trains Network View, Open Facebook-style Feed View, and ADHD Focus View */
+/* Rich Hover Peek Comments */
+.peek-cmts { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.peek-cmt { background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; font-size: .84rem; }
+.peek-cmt .meta { font-size: .74rem; gap: 6px; }
+.peek-cmt .body p { margin: 0 0 .35em; }
+.peek-cmt .body p:last-child { margin: 0; }
+
+/* Synchronized Horizontal Trains Matrix View, Open Facebook-style Feed View, and ADHD Focus View */
 [data-view="trains"] .tabs, [data-view="trains"] .lanes,
 [data-view="feed"] .tabs, [data-view="feed"] .lanes,
-[data-view="focus"] .tabs, [data-view="focus"] .lanes,
-[data-view="wall"] .tabs { display: none !important; }
-[data-view="wall"] .lanes { display: block !important; columns: 3 300px; column-gap: 16px; margin-top: 14px; }
-[data-view="wall"] .lane { display: contents !important; }
-[data-view="wall"] .lane h2, [data-view="wall"] .lane .empty { display: none !important; }
-[data-view="wall"] .cards { display: contents !important; }
-[data-view="wall"] .card { break-inside: avoid; margin-bottom: 14px; border-left: 1px solid var(--line); border-top: 4px solid var(--c); }
+[data-view="focus"] .tabs, [data-view="focus"] .lanes { display: none !important; }
 
 .kit-alt-view { display: none; margin-top: 16px; }
-[data-view="trains"] #kit-train-net { display: flex; flex-direction: column; gap: 16px; }
+[data-view="trains"] #kit-train-net { display: block; }
 [data-view="feed"] #kit-open-feed { display: flex; flex-direction: column; gap: 18px; max-width: 780px; margin: 16px auto 0; }
 [data-view="focus"] #kit-focus-view { display: flex; flex-direction: column; gap: 16px; max-width: 760px; margin: 16px auto 0; }
 
-.tnet-track { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
-.tnet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-weight: 700; font-size: .95rem; }
-.tnet-rail { display: flex; align-items: stretch; gap: 10px; overflow-x: auto; padding-bottom: 8px; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
-.tnet-node { flex: 0 0 265px; display: flex; flex-direction: column; justify-content: space-between; position: relative; }
-.tnet-node.latest { box-shadow: 0 0 0 2px var(--ember), var(--shadow-lg); }
-.tnet-arrow { display: flex; align-items: center; color: var(--muted); font-weight: 800; font-size: 1.1rem; flex: none; padding-inline: 2px; user-select: none; }
+/* Unified Horizontal Matrix for Trains: scrolling left moves ALL trains left in lockstep, rightmost column aligned */
+.tnet-matrix { overflow-x: auto; overflow-y: visible; padding-bottom: 14px; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 16px; background: var(--sunk); padding: 14px; }
+.tnet-rows { display: flex; flex-direction: column; gap: 12px; width: max-content; min-width: 100%; }
+.tnet-row { display: flex; align-items: stretch; justify-content: flex-end; gap: 8px; min-width: 100%; }
+.tnet-label { position: sticky; left: 0; z-index: 3; background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; width: 200px; flex: 0 0 200px; display: flex; flex-direction: column; justify-content: center; gap: 3px; margin-right: auto; box-shadow: var(--shadow); }
+.tnet-label b { font-size: .92rem; line-height: 1.25; color: var(--ink); }
+.tnet-label span { font-size: .75rem; color: var(--muted); }
+.tnet-chain { display: flex; align-items: stretch; justify-content: flex-end; gap: 6px; flex: none; }
+.tnet-node { width: 270px !important; min-width: 270px !important; max-width: 270px !important; height: 132px !important; flex: 0 0 270px !important; justify-content: space-between; overflow: hidden; margin: 0 !important; }
+.tnet-node .t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tnet-node .first { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tnet-arrow { display: flex; align-items: center; justify-content: center; color: var(--muted); font-weight: 800; font-size: 1rem; width: 24px; flex: 0 0 24px; user-select: none; }
+.tnet-arrow.fork { color: var(--ember); font-size: 1.1rem; }
 
-.ffeed-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 8px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
-.ffeed-card { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--c); border-radius: 18px; padding: 18px 20px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px; }
+/* Open Feed Card with Show More clamp, Callout Highlights, and Collapsible Agent Audit Appendix */
+.ffeed-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+.ffeed-card {
+  --p-edge: var(--c);
+  background: color-mix(in srgb, var(--c) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--c) 26%, var(--line));
+  border-left: 5px solid var(--p-edge);
+  border-radius: 18px; padding: 18px 20px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px;
+}
+.ffeed-card[data-prio="1"] { --p-edge: #ef4444; }
+.ffeed-card[data-prio="2"] { --p-edge: #f59e0b; }
+.ffeed-card[data-prio="3"] { --p-edge: #10b981; }
 .ffeed-card h3 { margin: 0; font-family: var(--display); font-size: 1.32rem; cursor: pointer; }
 .ffeed-card h3:hover { color: var(--ember); }
+.ffeed-body-wrap.clamped .body { max-height: 175px; overflow: hidden; position: relative; mask-image: linear-gradient(to bottom, #000 65%, transparent 100%); -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent 100%); }
+.ffeed-more { align-self: flex-start; font-size: .82rem; padding: 4px 12px; border-radius: 999px; background: var(--sunk); border: 1px solid var(--line); font-weight: 700; color: var(--ember); }
+.kit-callout { border-left: 4px solid var(--ember); background: color-mix(in srgb, var(--ember) 12%, var(--surface)); padding: 8px 12px; border-radius: 8px; margin: 6px 0; }
+.kit-audit { background: var(--sunk); border: 1px dashed var(--line); border-radius: 10px; padding: 6px 12px; font-size: .84rem; color: var(--muted); }
+.kit-audit summary { cursor: pointer; font-weight: 600; user-select: none; }
 .ffeed-imgs { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
 .ffeed-imgs img { max-height: 220px; border-radius: 10px; border: 1px solid var(--line); cursor: pointer; }
 .ffeed-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--line); }
 .ffeed-cmts { background: var(--sunk); border-radius: 12px; padding: 10px 14px; font-size: .88rem; }
 .ffeed-cmts summary { cursor: pointer; font-weight: 600; color: var(--muted); }
-.ffeed-cmt-item { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.ffeed-cmt-item { padding: 8px 0; border-bottom: 1px dashed var(--line); display: flex; flex-direction: column; gap: 4px; }
 .ffeed-cmt-item:last-child { border-bottom: none; }
+
+/* Floating iMessage-style Orchestrator Messenger Popover */
+.kit-orch-pop {
+  position: fixed; right: 18px; bottom: 18px; width: min(430px, calc(100vw - 24px)); height: min(560px, calc(100vh - 90px));
+  background: var(--surface); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow-lg);
+  z-index: 18; display: flex; flex-direction: column; overflow: hidden;
+}
+.kit-orch-pop[hidden] { display: none !important; }
+.kit-orch-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; background: var(--sunk); border-bottom: 1px solid var(--line); font-weight: 700; }
+.kit-orch-body { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.kit-orch-foot { padding: 10px 12px; border-top: 1px solid var(--line); background: var(--sunk); display: flex; gap: 6px; }
+.kit-orch-foot input { flex: 1 1 auto; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 7px 12px; font: inherit; font-size: .88rem; }
 
 /* Frosted-glass sticky post action bar: always 1 sleek row (scrolls smoothly on narrow phones) */
 .bar {
@@ -984,7 +1043,8 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       tab.type = "button"; tab.setAttribute("role", "tab");
       tab.setAttribute("aria-selected", String(state.active === c.key));
       tab.style.setProperty("--c", c.c);
-      tab.appendChild(el("span", "dot"));
+      var colIcons = { todo: "\u270B", question: "\u26A1", info: "\uD83D\uDCE1", done: "\u2713" };
+      tab.appendChild(el("span", null, colIcons[c.key] || ""));
       tab.appendChild(el("span", null, c.name));
       tab.appendChild(el("span", "n", String(posts.length)));
       if (fresh) tab.appendChild(el("span", "newc", fresh + " new"));
@@ -998,7 +1058,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 
       var lane = el("section", "lane" + (state.active === c.key ? " active" : ""));
       var h = el("h2"); h.style.setProperty("--c", c.c);
-      h.appendChild(el("span", "dot")); h.appendChild(el("span", null, c.name)); h.appendChild(el("span", "n", String(posts.length)));
+      h.appendChild(el("span", null, colIcons[c.key] || "")); h.appendChild(el("span", null, c.name)); h.appendChild(el("span", "n", String(posts.length)));
       if (fresh) h.appendChild(el("span", "newc", fresh + " new"));
       if (mins) h.appendChild(el("span", "mins", "about " + mins + " min"));
       lane.appendChild(h);
@@ -1408,6 +1468,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     /* A div, not a button: it holds the Like button. */
     var b = el("div", "card"); b.tabIndex = 0; b.setAttribute("role", "button"); b.dataset.id = p.id;
     b.style.setProperty("--c", c.c);
+    if (prioOf(p)) b.setAttribute("data-prio", String(prioOf(p)));
     var tt = el("span", "t");
     if (isNew(p)) { var nd = el("span", "newdot"); nd.title = "New since you last opened it"; tt.appendChild(nd); }
     tt.appendChild(document.createTextNode(str(p.title) || "(untitled)"));
@@ -1415,6 +1476,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     var m = el("span", "meta");
     if (prioOf(p)) { var pb = el("span", "badge prio", "P" + prioOf(p)); pb.setAttribute("data-prio", String(prioOf(p))); m.appendChild(pb); }
     if (p.part) m.appendChild(el("span", "part", str(p.part)));
+    if (Number(p.minutes) > 0) m.appendChild(el("span", "badge", "\u23F1 " + Number(p.minutes) + "m"));
     m.appendChild(el("span", null, when(p.created_at)));
     var cs = commentsFor(p.id);
     var fromAgent = cs.filter(function (x) { return x.from && x.from !== "owner" && x.from !== "viewer"; }).length;
@@ -1424,7 +1486,11 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     var imgs = Array.isArray(p.images) ? p.images.length : 0;
     if (imgs) m.appendChild(el("span", "badge", imgs + (imgs === 1 ? " image" : " images")));
     var ty = typingFor(p.id); if (ty.length) { var td = dotsNode(""); td.title = str(ty[0].from) + " is writing an answer"; m.appendChild(td); }
-    if (!state.picking) m.appendChild(likeButton(p, null, 0, function () { return b; }));
+    if (!state.picking) {
+      var lb = likeButton(p, null, 0, function () { return b; });
+      lb.classList.add("icon-only");
+      m.appendChild(lb);
+    }
     b.appendChild(m);
     var f = firstLine(p.body);
     if (f) b.appendChild(el("span", "first", f));
@@ -1474,7 +1540,19 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     var cs = commentsFor(p.id);
     if (cs.length) {
       var box = el("div", "peek-cmts");
-      cs.slice(-4).forEach(function (c) { box.appendChild(el("div", null, (c.from === "owner" ? "You" : str(c.from) || "?") + ": " + str(c.text))); });
+      cs.slice(-4).forEach(function (c) {
+        var row = el("div", "peek-cmt");
+        var cm = el("div", "meta");
+        var whoLabel = c.from === "owner" ? "You" : (c.from === "orchestrator" ? (c.kind === "review" ? "Orchestrator (review)" : "Orchestrator") : (str(c.from) || "A session"));
+        cm.appendChild(el("span", "part", whoLabel));
+        if (c.kind === "review") cm.appendChild(el("span", "badge rev", "\u2713 reviewed"));
+        cm.appendChild(el("span", null, when(c.created_at)));
+        row.appendChild(cm);
+        var cb = el("div", "body");
+        cb.innerHTML = renderBody(c.text);
+        row.appendChild(cb);
+        box.appendChild(row);
+      });
       k.appendChild(box);
     }
     k.hidden = false;
@@ -2411,11 +2489,14 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     }, function () {});
   })();
 
-  /* Padlet × Reddit × Facebook progressive UI enhancer (view switcher, horizontal train network, open feed, ADHD focus view, avatars, collapsible rails) */
+  /* Padlet × Reddit × Facebook progressive UI enhancer (view switcher, synchronized horizontal train matrix, open feed with Show More & agent audit folding, ADHD focus triage view, floating orchestrator messenger popover) */
   (function () {
     var wrap = document.querySelector(".wrap");
     var tools = document.querySelector(".tools");
     var lanesEl = document.getElementById("lanes");
+    var askBtn = document.getElementById("ask");
+    if (askBtn) askBtn.classList.add("icon-msg");
+
     var trainNetEl = document.createElement("div"); trainNetEl.id = "kit-train-net"; trainNetEl.className = "kit-alt-view";
     var openFeedEl = document.createElement("div"); openFeedEl.id = "kit-open-feed"; openFeedEl.className = "kit-alt-view";
     var focusViewEl = document.createElement("div"); focusViewEl.id = "kit-focus-view"; focusViewEl.className = "kit-alt-view";
@@ -2433,6 +2514,62 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       return colWeight + (pr * 3) - (unread * 2);
     }
 
+    function trainTitleMap() {
+      var map = {}, T = trains();
+      dashRows().forEach(function (r) {
+        var nm = str(r.name);
+        if (!nm) return;
+        if (r.train) map[str(r.train).replace(/^P-/, "")] = nm;
+        if (r.post) {
+          map[str(r.post)] = nm;
+          var m0 = /^([A-Za-z]+)\d/.exec(str(r.post));
+          if (m0 && !map[m0[1].toUpperCase()]) map[m0[1].toUpperCase()] = nm;
+        }
+        var pt = partOfRow(r);
+        if (pt) {
+          map[pt.replace(/^P-/, "")] = nm;
+          var rt = rootOf(T, pt);
+          if (rt && rt.part) {
+            map[str(rt.part).replace(/^P-/, "")] = nm;
+            var m1 = /^([A-Za-z]+)\d/.exec(str(rt.part));
+            if (m1 && !map[m1[1].toUpperCase()]) map[m1[1].toUpperCase()] = nm;
+          }
+        }
+        (Array.isArray(r.steps) ? r.steps : []).forEach(function (s) {
+          var tok = str(s).trim().split(/\s+/)[0];
+          if (tok) {
+            map[tok] = nm;
+            var ms = /^([A-Za-z]+)\d/.exec(tok);
+            if (ms && !map[ms[1].toUpperCase()]) map[ms[1].toUpperCase()] = nm;
+          }
+        });
+      });
+      return map;
+    }
+
+    function familyOf(p, tMap) {
+      var tr = str(p.train).replace(/^P-/, "");
+      if (tr) return tr;
+      var T = trains(), prt = str(p.part);
+      if (prt && tMap && tMap[prt]) return prt;
+      if (prt && T.by[prt]) {
+        var rt = rootOf(T, prt);
+        if (rt && rt.part) return str(rt.part).replace(/^P-/, "");
+      }
+      var m = /^([A-Za-z]+)\d/.exec(prt || p.id);
+      return m ? m[1].toUpperCase() : (prt || "general");
+    }
+
+    function humanTrainName(trKey, tMap, tPosts) {
+      if (tMap[trKey]) return tMap[trKey];
+      for (var i = 0; i < (tPosts || []).length; i++) {
+        var p = tPosts[i], prt = str(p.part);
+        if (tMap[p.id]) return tMap[p.id];
+        if (prt && tMap[prt]) return tMap[prt];
+      }
+      return trKey.replace(/-/g, " ").replace(/^\w/, function (c) { return c.toUpperCase(); });
+    }
+
     function renderHorizontalTrains() {
       trainNetEl.textContent = "";
       var activePosts = (state.posts || []).filter(function (p) { return colOf(p) !== "done" && matches(p); });
@@ -2440,72 +2577,110 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
         trainNetEl.appendChild(el("div", "empty", state.loaded ? "Nothing here." : "Loading..."));
         return;
       }
+      var tMap = trainTitleMap();
       var links = resolveClientLinks();
-      var byTrain = {}, linkedIds = {};
-      function familyOf(p) {
-        var tr = str(p.train).replace(/^P-/, "");
-        if (tr) return tr;
-        var T = trains(), prt = str(p.part);
-        if (prt && T.by[prt]) {
-          var rt = rootOf(T, prt);
-          if (rt && rt.part) return str(rt.part).replace(/^P-/, "");
-        }
-        var m = /^([A-Za-z]+)\d/.exec(prt || p.id);
-        return m ? m[1].toUpperCase() : (prt || "general");
-      }
+      var byTrain = {}, linkedIds = {}, parentCounts = {};
       links.forEach(function (lk) {
         if (colOf(lk.post) === "done" || !matches(lk.post)) return;
-        var tr = lk.train || familyOf(lk.post);
+        var tr = tMap[lk.train] || tMap[lk.part] || tMap[lk.id] || lk.train || familyOf(lk.post, tMap);
         (byTrain[tr] = byTrain[tr] || []).push(lk.post);
         linkedIds[lk.id] = true;
+        if (lk.parent) parentCounts[lk.parent] = (parentCounts[lk.parent] || 0) + 1;
       });
       activePosts.forEach(function (p) {
         if (!linkedIds[p.id]) {
-          var tr = familyOf(p);
+          var fk = familyOf(p, tMap);
+          var tr = tMap[p.id] || tMap[str(p.part)] || tMap[fk] || fk;
           (byTrain[tr] = byTrain[tr] || []).push(p);
+          if (p.parent) parentCounts[str(p.parent)] = (parentCounts[str(p.parent)] || 0) + 1;
         }
       });
       var trainKeys = Object.keys(byTrain).sort(function (a, b) {
-        var minA = Math.min.apply(null, byTrain[a].map(urgencyScore));
-        var minB = Math.min.apply(null, byTrain[b].map(urgencyScore));
-        return minA - minB || (a < b ? -1 : 1);
+        var lastA = byTrain[a][byTrain[a].length - 1], lastB = byTrain[b][byTrain[b].length - 1];
+        return urgencyScore(lastA) - urgencyScore(lastB) || (a < b ? -1 : 1);
       });
+
+      /* Single shared horizontal scroll matrix: all rightmost (most recent) posts align vertically, scrolling left moves all trains left together */
+      var matrix = el("div", "tnet-matrix");
+      var rowsBox = el("div", "tnet-rows");
+      var T = trains();
+
       trainKeys.forEach(function (trKey) {
         var tPosts = byTrain[trKey];
         tPosts.sort(function (a, b) { return str(a.created_at) < str(b.created_at) ? -1 : 1; });
-        var track = el("section", "tnet-track");
-        var head = el("div", "tnet-head");
-        var minP = Math.min.apply(null, tPosts.map(function (p) { return prioOf(p) || 2; }));
-        var titleSpan = el("span", null);
-        var pb = el("span", "badge prio", "P" + minP); pb.setAttribute("data-prio", String(minP));
-        titleSpan.appendChild(pb);
-        titleSpan.appendChild(document.createTextNode("  Train " + trKey + " (" + tPosts.length + ")"));
-        head.appendChild(titleSpan);
-        track.appendChild(head);
+        var row = el("div", "tnet-row");
+        var lbl = el("div", "tnet-label");
+        lbl.appendChild(el("b", null, humanTrainName(trKey, tMap, tPosts)));
+        lbl.appendChild(el("span", null, tPosts.length + (tPosts.length === 1 ? " post" : " posts")));
+        row.appendChild(lbl);
 
-        var rail = el("div", "tnet-rail");
+        var chain = el("div", "tnet-chain");
         tPosts.forEach(function (p, idx) {
-          if (idx > 0) rail.appendChild(el("span", "tnet-arrow", "\u2500\u2500\u25b6"));
+          var prt = str(p.part), par = str(p.parent) || (prt && T.by[prt] ? str(T.by[prt].parent) : "");
+          var isFork = par && (parentCounts[par] > 1 || (T.by[par] && (T.by[par].children || []).length > 1));
+          if (idx > 0) {
+            var arr = el("span", "tnet-arrow" + (isFork ? " fork" : ""), isFork ? "\u251c\u25b6" : "\u2500\u25b6");
+            if (isFork && par) arr.title = "Forked from " + par;
+            chain.appendChild(arr);
+          } else if (isFork) {
+            var forkBadge = el("span", "tnet-arrow fork", "\u2570\u25b6");
+            forkBadge.title = "Branched from " + par;
+            chain.appendChild(forkBadge);
+          }
           var colObj = COLUMNS.filter(function (c) { return c.key === colOf(p); })[0] || COLUMNS[2];
           var node = card(p, colObj);
-          node.className += " tnet-node" + (idx === tPosts.length - 1 ? " latest" : "");
-          rail.appendChild(node);
+          node.className += " tnet-node";
+          chain.appendChild(node);
         });
-        track.appendChild(rail);
-        trainNetEl.appendChild(track);
-        setTimeout(function () { rail.scrollLeft = rail.scrollWidth; }, 0);
+        row.appendChild(chain);
+        rowsBox.appendChild(row);
       });
+      matrix.appendChild(rowsBox);
+      trainNetEl.appendChild(matrix);
+      setTimeout(function () { matrix.scrollLeft = matrix.scrollWidth; }, 0);
     }
 
-    function buildOpenFeedCard(p) {
+    function enhanceRenderedBody(container) {
+      /* Auto-highlight 'For you:' / 'My suggestion:' callouts and auto-fold 'Not checked:' / 'Turn 1:' agent audit blocks */
+      var paras = Array.prototype.slice.call(container.querySelectorAll("p"));
+      var auditNodes = [];
+      var inAudit = false;
+      paras.forEach(function (p) {
+        var txt = (p.textContent || "").trim();
+        if (/^(For you|My suggestion|What I would choose|Proposal|What you do|1\.\s*Does the Done hold)/i.test(txt)) {
+          p.className = (p.className ? p.className + " " : "") + "kit-callout";
+          inAudit = false;
+        } else if (/^(Not checked|NOT checked|Turn 1\b|What I checked|Commits\b|Read:|Where:)/i.test(txt)) {
+          inAudit = true;
+          auditNodes.push(p);
+        } else if (inAudit) {
+          auditNodes.push(p);
+        }
+      });
+      if (auditNodes.length >= 1 && paras.length > auditNodes.length) {
+        var det = el("details", "kit-audit");
+        det.appendChild(el("summary", null, "\uD83D\uDD0DChecks (" + auditNodes.length + ")"));
+        var firstNode = auditNodes[0];
+        if (firstNode.parentNode === container) {
+          container.insertBefore(det, firstNode);
+          auditNodes.forEach(function (n) { det.appendChild(n); });
+        }
+      }
+    }
+
+    function buildOpenFeedCard(p, isFocusMode) {
       var colObj = COLUMNS.filter(function (c) { return c.key === colOf(p); })[0] || COLUMNS[2];
       var box = el("article", "ffeed-card");
       box.style.setProperty("--c", colObj.c);
+      if (prioOf(p)) box.setAttribute("data-prio", String(prioOf(p)));
+      var tMap = trainTitleMap();
       var meta = el("div", "meta");
       if (prioOf(p)) { var pb = el("span", "badge prio", "P" + prioOf(p)); pb.setAttribute("data-prio", String(prioOf(p))); meta.appendChild(pb); }
       meta.appendChild(el("span", "badge", colObj.name));
       if (p.part) meta.appendChild(el("span", "part", str(p.part)));
-      if (p.train) meta.appendChild(el("span", "badge", "Train " + str(p.train).replace(/^P-/, "")));
+      if (Number(p.minutes) > 0) meta.appendChild(el("span", "badge", "\u23F1 " + Number(p.minutes) + "m"));
+      var trLabel = humanTrainName(familyOf(p, tMap), tMap, [p]);
+      if (trLabel && trLabel !== "General") meta.appendChild(el("span", "badge", trLabel));
       meta.appendChild(el("span", null, when(p.created_at)));
       box.appendChild(meta);
 
@@ -2513,9 +2688,24 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       h3.addEventListener("click", function () { openPost(p.id); });
       box.appendChild(h3);
 
+      var rawBody = str(p.body);
+      var isLong = !isFocusMode && (rawBody.length > 360 || rawBody.split("\n").length > 6);
+      var bodyWrap = el("div", "ffeed-body-wrap" + (isLong ? " clamped" : ""));
       var body = el("div", "body");
-      body.innerHTML = renderBody(p.body);
-      box.appendChild(body);
+      body.innerHTML = renderBody(rawBody);
+      enhanceRenderedBody(body);
+      bodyWrap.appendChild(body);
+      box.appendChild(bodyWrap);
+
+      if (isLong) {
+        var moreBtn = el("button", "ffeed-more", "Show everything");
+        moreBtn.type = "button";
+        moreBtn.addEventListener("click", function () {
+          var cl = bodyWrap.classList.toggle("clamped");
+          moreBtn.textContent = cl ? "Show everything" : "Hide ";
+        });
+        box.appendChild(moreBtn);
+      }
 
       var imgs = postImages(p);
       if (imgs.length) {
@@ -2541,11 +2731,15 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       }
 
       var acts = el("div", "ffeed-actions");
-      acts.appendChild(likeButton(p, null, 0, function () { return box; }));
+      var lb = likeButton(p, null, 0, function () { return box; });
+      lb.classList.add("icon-only");
+      acts.appendChild(lb);
       if (colOf(p) !== "done") {
-        var doneBtn = el("button", "btn small", "Move to Done");
+        var doneBtn = el("button", "btn small" + (isFocusMode ? " ember" : ""), "Move to Done");
         doneBtn.type = "button";
-        doneBtn.addEventListener("click", function () { toDone(p); });
+        doneBtn.addEventListener("click", function () {
+          toDone(p).then(function () { if (isFocusMode) renderFocusView(); });
+        });
         acts.appendChild(doneBtn);
       }
       var openBtn = el("button", "btn small", "Open the post \u203a");
@@ -2557,13 +2751,21 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       var cs = commentsFor(p.id);
       if (cs.length) {
         var det = el("details", "ffeed-cmts");
+        if (isFocusMode) det.open = true;
         var sum = el("summary", null, cs.length + (cs.length === 1 ? " comment" : " comments"));
         det.appendChild(sum);
         cs.slice(-5).forEach(function (c) {
           var item = el("div", "ffeed-cmt-item");
-          var who = c.from === "owner" ? "You" : (str(c.from) || "A session");
-          item.appendChild(el("b", null, who + " (" + when(c.created_at) + "): "));
-          item.appendChild(document.createTextNode(str(c.text)));
+          var cm = el("div", "meta");
+          var who = c.from === "owner" ? "You" : (c.from === "orchestrator" ? (c.kind === "review" ? "Orchestrator (review)" : "Orchestrator") : (str(c.from) || "A session"));
+          cm.appendChild(el("span", "part", who));
+          if (c.kind === "review") cm.appendChild(el("span", "badge rev", "\u2713 reviewed"));
+          cm.appendChild(el("span", null, when(c.created_at)));
+          item.appendChild(cm);
+          var cb = el("div", "body");
+          cb.innerHTML = renderBody(c.text);
+          enhanceRenderedBody(cb);
+          item.appendChild(cb);
           det.appendChild(item);
         });
         box.appendChild(det);
@@ -2575,7 +2777,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       openFeedEl.textContent = "";
       var posts = (state.posts || []).filter(function (p) { return colOf(p) !== "done" && matches(p); });
       var bar = el("div", "ffeed-bar");
-      bar.appendChild(el("span", "note", posts.length + " active"));
+      bar.appendChild(el("span", "note", String(posts.length)));
       var sortToggle = el("button", "btn small", feedSortMode === "urgent" ? "By priority" : "Newest first");
       sortToggle.type = "button";
       sortToggle.addEventListener("click", function () {
@@ -2592,30 +2794,141 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
         if (feedSortMode === "urgent") return urgencyScore(a) - urgencyScore(b) || (str(b.created_at) < str(a.created_at) ? -1 : 1);
         return str(b.created_at) < str(a.created_at) ? -1 : 1;
       });
-      posts.forEach(function (p) { openFeedEl.appendChild(buildOpenFeedCard(p)); });
+      posts.forEach(function (p) { openFeedEl.appendChild(buildOpenFeedCard(p, false)); });
     }
 
     function renderFocusView() {
       focusViewEl.textContent = "";
-      var queue = (state.posts || []).filter(function (p) { return colOf(p) !== "done" && matches(p); });
-      queue.sort(function (a, b) { return urgencyScore(a) - urgencyScore(b); });
-      if (!queue.length) {
+      /* Focus mode filters strictly to action/decision items waiting on YOU (question, todo, or unread P1) first */
+      var actionQueue = (state.posts || []).filter(function (p) {
+        var c = colOf(p);
+        return c !== "done" && matches(p) && (c === "question" || c === "todo" || (prioOf(p) === 1 && isNew(p)));
+      });
+      if (!actionQueue.length) {
+        actionQueue = (state.posts || []).filter(function (p) { return colOf(p) !== "done" && matches(p); });
+      }
+      actionQueue.sort(function (a, b) { return urgencyScore(a) - urgencyScore(b); });
+      if (!actionQueue.length) {
         focusViewEl.appendChild(el("div", "empty", state.loaded ? "Nothing waits on you." : "Loading..."));
         return;
       }
-      if (focusIdx >= queue.length) focusIdx = 0;
-      var p = queue[focusIdx];
+      if (focusIdx >= actionQueue.length) focusIdx = 0;
+      var p = actionQueue[focusIdx];
       var nav = el("div", "ffeed-bar");
-      nav.appendChild(el("b", null, (focusIdx + 1) + " / " + queue.length));
+      nav.appendChild(el("b", null, "\uD83C\uDFAF " + (focusIdx + 1) + " / " + actionQueue.length));
       var navBtns = el("span", "row");
       var prevB = el("button", "btn small", "\u2039"); prevB.type = "button";
-      prevB.addEventListener("click", function () { focusIdx = (focusIdx - 1 + queue.length) % queue.length; renderFocusView(); });
+      prevB.addEventListener("click", function () { focusIdx = (focusIdx - 1 + actionQueue.length) % actionQueue.length; renderFocusView(); });
       var nextB = el("button", "btn small ember", "\u203a"); nextB.type = "button";
-      nextB.addEventListener("click", function () { focusIdx = (focusIdx + 1) % queue.length; renderFocusView(); });
+      nextB.addEventListener("click", function () { focusIdx = (focusIdx + 1) % actionQueue.length; renderFocusView(); });
       navBtns.appendChild(prevB); navBtns.appendChild(nextB);
       nav.appendChild(navBtns);
       focusViewEl.appendChild(nav);
-      focusViewEl.appendChild(buildOpenFeedCard(p));
+      focusViewEl.appendChild(buildOpenFeedCard(p, true));
+    }
+
+    /* Floating iMessage-style Orchestrator Popover (stays right on the dashboard without opening full page) */
+    var orchPop = document.createElement("aside");
+    orchPop.id = "kit-orch-pop"; orchPop.className = "kit-orch-pop"; orchPop.hidden = true;
+    var popDisc = null;
+    function renderOrchPopover() {
+      if (orchPop.hidden) return;
+      orchPop.textContent = "";
+      var head = el("div", "kit-orch-head");
+      if (popDisc) {
+        var backB = el("button", "btn small", "\u2190 Discussions"); backB.type = "button";
+        backB.addEventListener("click", function () { popDisc = null; renderOrchPopover(); });
+        head.appendChild(backB);
+        head.appendChild(el("span", null, popDisc === "new" ? "New discussion" : discTitle(popDisc)));
+      } else {
+        head.appendChild(el("span", null, "Ask the orchestrator"));
+        var newB = el("button", "btn small ember", "+"); newB.type = "button"; newB.title = "New discussion";
+        newB.addEventListener("click", function () { popDisc = "new"; renderOrchPopover(); });
+        head.appendChild(newB);
+      }
+      var closeB = el("button", "btn small", "\u00d7"); closeB.type = "button"; closeB.setAttribute("aria-label", "Close");
+      closeB.addEventListener("click", function () { orchPop.hidden = true; });
+      head.appendChild(closeB);
+      orchPop.appendChild(head);
+
+      var body = el("div", "kit-orch-body");
+      var d = discs();
+      if (!popDisc) {
+        var keys = Object.keys(d.list).sort(function (a, b) {
+          var la = d.list[a][d.list[a].length - 1], lb = d.list[b][d.list[b].length - 1];
+          return (lb ? tOf(lb) : 0) - (la ? tOf(la) : 0);
+        });
+        if (!keys.length) {
+          body.appendChild(el("div", "note", "No discussion yet."));
+        } else {
+          keys.forEach(function (k) {
+            var msgs = d.list[k] || [], last = msgs[msgs.length - 1];
+            var row = el("button", "card", null); row.type = "button";
+            row.style.setProperty("--c", "var(--info)");
+            row.appendChild(el("span", "t", discTitle(k)));
+            if (last) row.appendChild(el("span", "first", (last.from === "owner" ? "You: " : "") + firstLine(last.text)));
+            row.addEventListener("click", function () { popDisc = k; renderOrchPopover(); });
+            body.appendChild(row);
+          });
+        }
+      } else {
+        var threadMsgs = (popDisc === "new" ? [] : (d.list[popDisc] || [])).filter(function (c) { return !c.like; });
+        if (!threadMsgs.length) {
+          body.appendChild(el("div", "note", "Write your first message below."));
+        } else {
+          threadMsgs.forEach(function (c) {
+            var item = el("div", "peek-cmt");
+            var cm = el("div", "meta");
+            var who = c.from === "owner" ? "You" : (str(c.from) || "Orchestrator");
+            cm.appendChild(el("span", "part", who));
+            cm.appendChild(el("span", null, when(c.created_at)));
+            item.appendChild(cm);
+            var cb = el("div", "body");
+            cb.innerHTML = renderBody(c.text);
+            enhanceRenderedBody(cb);
+            item.appendChild(cb);
+            body.appendChild(item);
+          });
+        }
+      }
+      orchPop.appendChild(body);
+      setTimeout(function () { body.scrollTop = body.scrollHeight; }, 0);
+
+      var foot = el("div", "kit-orch-foot");
+      var fullB = el("button", "btn small", "\u2922"); fullB.type = "button"; fullB.title = "Open the post \u203a";
+      fullB.addEventListener("click", function () {
+        orchPop.hidden = true;
+        if (state.special._orchestrator) { openPost("_orchestrator"); if (popDisc) { state.disc = popDisc; renderPost(); } }
+      });
+      foot.appendChild(fullB);
+      var inp = el("input"); inp.type = "text"; inp.placeholder = "Write a comment";
+      var sendB = el("button", "btn small ember", "Send"); sendB.type = "button";
+      function sendQuick() {
+        var txt = (inp.value || "").trim();
+        if (!txt || !db || !state.special._orchestrator) return;
+        inp.value = "";
+        state.openId = "_orchestrator";
+        state.disc = popDisc || "new";
+        $("c-text").value = txt;
+        submitComment({ text: $("c-text"), button: sendB, note: $("status"), image: null, n: 0, anchorEl: askBtn || document.body, files: false }).then(function () {
+          popDisc = state.disc;
+          state.openId = null;
+          renderOrchPopover();
+        });
+      }
+      sendB.addEventListener("click", sendQuick);
+      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); sendQuick(); } });
+      foot.appendChild(inp); foot.appendChild(sendB);
+      orchPop.appendChild(foot);
+    }
+    document.body.appendChild(orchPop);
+    if (askBtn) {
+      askBtn.addEventListener("click", function (ev) {
+        if (!state.special._orchestrator) return;
+        ev.stopImmediatePropagation();
+        orchPop.hidden = !orchPop.hidden;
+        if (!orchPop.hidden) renderOrchPopover();
+      }, true);
     }
 
     function refreshAltViews() {
@@ -2624,16 +2937,17 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       if (v === "trains") renderHorizontalTrains();
       else if (v === "feed") renderOpenFeed();
       else if (v === "focus") renderFocusView();
+      if (!orchPop.hidden) renderOrchPopover();
     }
 
     if (wrap && tools && !document.getElementById("kit-views")) {
       var savedView = "lanes";
       try { savedView = localStorage.getItem("board-view") || "lanes"; } catch (e) {}
-      if (["lanes", "trains", "wall", "feed", "focus"].indexOf(savedView) === -1) savedView = "lanes";
+      if (["lanes", "trains", "feed", "focus"].indexOf(savedView) === -1) savedView = "lanes";
       wrap.setAttribute("data-view", savedView);
       var box = document.createElement("span");
       box.id = "kit-views"; box.className = "kit-views";
-      [["lanes", "Lanes"], ["trains", "Trains"], ["feed", "Feed"], ["focus", "Focus"], ["wall", "Wall"]].forEach(function (pair) {
+      [["lanes", "Lanes"], ["trains", "Trains"], ["feed", "Feed"], ["focus", "Focus"]].forEach(function (pair) {
         var b = document.createElement("button"); b.type = "button"; b.textContent = pair[1];
         if (pair[0] === savedView) b.className = "on";
         b.addEventListener("click", function () {
@@ -2648,7 +2962,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     }
     var AV_COLORS = { you: "#e8894a", owner: "#e8894a", orchestrator: "#8b5cf6", consultant: "#10b981", clerk: "#64748b" };
     function decorateComments() {
-      var list = document.querySelectorAll(".cmt .meta");
+      var list = document.querySelectorAll(".cmt .meta, .peek-cmt .meta, .ffeed-cmt-item .meta");
       for (var i = 0; i < list.length; i++) {
         var m = list[i];
         if (m.querySelector(".kit-av")) continue;
@@ -2677,6 +2991,26 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
         })(rails[j]);
       }
     }
+    /* Keyboard shortcuts in Focus View (←/→ or J/K to step, L to 👍 Like, E to Move to Done) */
+    document.addEventListener("keydown", function (e) {
+      if (!wrap || wrap.getAttribute("data-view") !== "focus" || state.openId || !orchPop.hidden) return;
+      var tag = (e.target && e.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (e.key === "ArrowRight" || e.key === "j" || e.key === "J") {
+        var nb = focusViewEl.querySelector(".ffeed-bar .btn.ember");
+        if (nb) nb.click();
+      } else if (e.key === "ArrowLeft" || e.key === "k" || e.key === "K") {
+        var pb = focusViewEl.querySelector(".ffeed-bar .btn:not(.ember)");
+        if (pb) pb.click();
+      } else if (e.key === "l" || e.key === "L") {
+        var lb = focusViewEl.querySelector(".ffeed-actions .like");
+        if (lb) lb.click();
+      } else if (e.key === "e" || e.key === "E") {
+        var dbBtn = focusViewEl.querySelector(".ffeed-actions .btn.ember");
+        if (dbBtn) dbBtn.click();
+      }
+    });
+
     var obs = new MutationObserver(function () {
       decorateComments();
     });

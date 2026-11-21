@@ -78,12 +78,12 @@ node = shutil.which("node")
 if node:
     _, js_block, _ = strings.split(out)
     js_code = re.sub(r"^<script[^>]*>|</script>$", "", js_block)
-    r_syn = subprocess.run([node, "-e", "new Function(process.argv[1])", js_code], capture_output=True, text=True)
+    r_syn = subprocess.run([node, "-e", "const fs=require('fs'); new Function(fs.readFileSync(0,'utf8'))"], input=js_code, capture_output=True, text=True)
     check("issue #4: pseudo-translated script (including multiline strings) parses as valid JS in node",
           r_syn.returncode == 0)
     _, js_i4, _ = strings.split(out_i4)
     js_i4_code = re.sub(r"^<script[^>]*>|</script>$", "", js_i4)
-    r_syn2 = subprocess.run([node, "-e", "new Function(process.argv[1])", js_i4_code], capture_output=True, text=True)
+    r_syn2 = subprocess.run([node, "-e", "const fs=require('fs'); new Function(fs.readFileSync(0,'utf8'))"], input=js_i4_code, capture_output=True, text=True)
     check("issue #4: French issue-4 translated script parses as valid JS in node",
           r_syn2.returncode == 0)
     repo_root = os.path.dirname(os.path.dirname(HERE))
