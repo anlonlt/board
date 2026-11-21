@@ -185,6 +185,49 @@ class TestChecklistFeatures(unittest.TestCase):
                 srv.server_close()
                 store.close()
 
+    def test_export_json_rss_import_and_portfolio(self):
+        with tempfile.TemporaryDirectory() as td1, tempfile.TemporaryDirectory() as td2:
+            os.makedirs(os.path.join(td1, ".kit"), exist_ok=True)
+            os.makedirs(os.path.join(td2, ".kit"), exist_ok=True)
+            srv1, st1 = board_server.start_server(td1, host="127.0.0.1", port=0, preview=True)
+            st1.set_doc("posts", "p-rss", {"title": "Shipped RSS", "column": "info", "created_at": "2026-11-21T10:00:00Z", "body": "Hello RSS"})
+            st1.set_doc("comments", "c-rss", {"post_id": "p-rss", "from": "agent", "text": "Confirmed", "created_at": "2026-11-21T10:01:00Z"})
+            srv2, st2 = board_server.start_server(td2, host="127.0.0.1", port=0, preview=True)
+            port1, port2 = srv1.server_address[1], srv2.server_address[1]
+            t1 = threading.Thread(target=srv1.serve_forever, daemon=True)
+            t2 = threading.Thread(target=srv2.serve_forever, daemon=True)
+            t1.start(); t2.start()
+            try:
+                cli = os.path.join(ROOT, "kit", "board", "board_cli.py")
+                r_rss = subprocess.run([sys.executable, cli, "--url", f"http://127.0.0.1:{port1}", "export", "--format", "rss"], capture_output=True, text=True)
+                self.assertEqual(r_rss.returncode, 0, r_rss.stderr)
+                self.assertIn("<rss version=\"2.0\">", r_rss.stdout)
+                self.assertIn("Shipped RSS", r_rss.stdout)
+
+                bundle_p = os.path.join(td2, "bundle.json")
+                r_js = subprocess.run([sys.executable, cli, "--url", f"http://127.0.0.1:{port1}", "export", "--format", "json", "--out", bundle_p], capture_output=True, text=True)
+                self.assertEqual(r_js.returncode, 0, r_js.stderr)
+
+                r_imp = subprocess.run([sys.executable, cli, "--url", f"http://127.0.0.1:{port2}", "import", bundle_p], capture_output=True, text=True)
+                self.assertEqual(r_imp.returncode, 0, r_imp.stderr)
+                self.assertGreaterEqual(json.loads(r_imp.stdout)["imported_posts"], 1)
+                self.assertTrue(st2.get_doc("posts", "p-rss")["exists"])
+
+                md_p = os.path.join(td2, "note.md")
+                with open(md_p, "w", encoding="utf-8") as fh:
+                    fh.write("---\nid: md-1\ntitle: From Markdown\ncolumn: todo\npriority: 1\n---\nBody text\n")
+                r_md = subprocess.run([sys.executable, cli, "--url", f"http://127.0.0.1:{port2}", "import", md_p], capture_output=True, text=True)
+                self.assertEqual(r_md.returncode, 0, r_md.stderr)
+                self.assertTrue(st2.get_doc("posts", "md-1")["exists"])
+
+                rp = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "kit.py"), "portfolio", "--roots", td1, td2], capture_output=True, text=True)
+                self.assertEqual(rp.returncode, 0, rp.stderr)
+                self.assertIn("# Portfolio Board Index", rp.stdout)
+                self.assertIn("**Total**", rp.stdout)
+            finally:
+                srv1.shutdown(); srv1.server_close(); st1.close()
+                srv2.shutdown(); srv2.server_close(); st2.close()
+
 
 if __name__ == "__main__":
     unittest.main()

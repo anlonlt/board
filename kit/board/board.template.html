@@ -880,6 +880,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         <span class="prio" id="p-prio"></span>
         <span id="p-like"></span>
         <button class="btn" id="share" type="button" hidden title="Save this post and its comments as a Markdown file">Share</button>
+        <button class="btn" id="snooze" type="button" title="Hide this post for 24 hours">Snooze 24h</button>
         <button class="btn" id="move" type="button">Move to Done</button>
         <button class="btn" id="remove" type="button">Remove from the board</button>
       </div>
@@ -1152,6 +1153,11 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
   }
   function prioOf(p) { var n = Number(p.priority); return n >= 1 && n <= 3 ? n : 0; }
   function matches(p) {
+    var q = state.q.trim().toLowerCase();
+    if (!q && p.snoozed_until) {
+      var st = Date.parse(p.snoozed_until);
+      if (!isNaN(st) && st > Date.now()) return false;
+    }
     if (state.runnerFilter) {
       var pr = str(p.runner).trim(), pf = str(p.for || p.assignee).trim();
       if (state.runnerFilter.indexOf("for:") === 0) {
@@ -1160,7 +1166,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         return false;
       }
     }
-    var q = state.q.trim().toLowerCase(); if (!q) return true;
+    if (!q) return true;
     return (str(p.title) + "\n" + str(p.body) + "\n" + str(p.part) + "\n" + str(p.runner) + "\n" + str(p.for || p.assignee) + "\n" + p.id).toLowerCase().indexOf(q) >= 0;
   }
 
@@ -1819,6 +1825,13 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
   }
   $("sel-export").addEventListener("click", function () { share(state.posts.filter(function (p) { return state.picked[p.id]; }), $("sel-note")); });
   $("share").addEventListener("click", function () { var p = current(); if (p) share([p], $("c-note")); });
+  if ($("snooze")) {
+    $("snooze").addEventListener("click", function () {
+      var p = current(); if (!p || !db) return;
+      var until = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+      db.doc("posts/" + p.id).update({ snoozed_until: until }).then(function () { closePost(); }).catch(function () {});
+    });
+  }
   $("sel-done").addEventListener("click", async function () {
     if (!db) return;
     var btn = this; btn.disabled = true;

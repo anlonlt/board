@@ -333,6 +333,14 @@ def main(argv=None):
     prp2.add_argument("--from", dest="sender", default="orchestrator")
     prp2.add_argument("--id", dest="new_id", default=None, help="Optional custom doc_id for the new reply comment")
 
+    pex = sub.add_parser("export", help="Export board posts as md, json, or rss")
+    pex.add_argument("--format", dest="fmt", choices=["md", "json", "rss"], default="md")
+    pex.add_argument("--post", default=None)
+    pex.add_argument("--out", default=None)
+
+    pim = sub.add_parser("import", help="Import posts/comments from a JSON export bundle or front-matter Markdown file")
+    pim.add_argument("path")
+
     a = ap.parse_args(argv)
     base = (a.url or default_url()).rstrip("/")
     tok = a.token if a.token is not None else default_token()
@@ -657,6 +665,72 @@ def main(argv=None):
             "marked_read": marked_read,
             "acked_thread": acked_thread,
         }, ensure_ascii=False))
+        return 0
+
+    if a.cmd == "export":
+        qs = ["format=" + urllib.parse.quote(a.fmt), "raw=1"]
+        if a.post:
+            qs.append("post=" + urllib.parse.quote(a.post))
+        u = base + "/_api/export?" + "&".join(qs)
+        hdrs = {}
+        if tok:
+            hdrs["X-Kit-Token"] = tok
+        r = urllib.request.Request(u, headers=hdrs, method="GET")
+        with urllib.request.urlopen(r, timeout=60) as resp:
+            raw = resp.read()
+        if a.out:
+            with open(a.out, "wb") as fh:
+                fh.write(raw)
+            print(json.dumps({"out": a.out, "bytes": len(raw), "format": a.fmt}))
+        else:
+            sys.stdout.buffer.write(raw)
+        return 0
+
+    if a.cmd == "import":
+        raw_txt = open(a.path, encoding="utf-8").read()
+        imported_posts = imported_cmts = 0
+        if a.path.endswith(".json") or raw_txt.lstrip().startswith("{"):
+            bundle = json.loads(raw_txt)
+            for p in bundle.get("posts") or []:
+                pid = p.get("id")
+                pdata = p.get("data")
+                if pid and isinstance(pdata, dict):
+                    call("PUT", "/_api/db/posts/%s" % urllib.parse.quote(pid), {"data": pdata})
+                    imported_posts += 1
+            for c in bundle.get("comments") or []:
+                cid = c.get("id")
+                cdata = c.get("data")
+                if cid and isinstance(cdata, dict):
+                    call("PUT", "/_api/db/comments/%s" % urllib.parse.quote(cid), {"data": cdata})
+                    imported_cmts += 1
+        else:
+            meta = {}
+            body_txt = raw_txt
+            if raw_txt.startswith("---\n"):
+                end_i = raw_txt.find("\n---\n", 4)
+                if end_i > 0:
+                    for ln in raw_txt[4:end_i].splitlines():
+                        if ":" in ln:
+                            k, v = ln.split(":", 1)
+                            meta[k.strip()] = v.strip().strip('"').strip("'")
+                    body_txt = raw_txt[end_i + 5:].strip()
+            pid = meta.pop("id", None) or ("imp-" + secrets.token_hex(4))
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            doc = {
+                "title": meta.pop("title", os.path.splitext(os.path.basename(a.path))[0]),
+                "column": meta.pop("column", "info"),
+                "created_at": meta.pop("created_at", now),
+                "body": body_txt,
+            }
+            if "priority" in meta:
+                try:
+                    doc["priority"] = int(meta.pop("priority"))
+                except ValueError:
+                    pass
+            doc.update(meta)
+            call("PUT", "/_api/db/posts/%s" % urllib.parse.quote(pid), {"data": doc})
+            imported_posts += 1
+        print(json.dumps({"imported_posts": imported_posts, "imported_comments": imported_cmts}))
         return 0
 
     return 1

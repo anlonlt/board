@@ -1081,6 +1081,58 @@ def report_metrics(m, db_path=None):
     return "\n".join(lines) + "\n"
 
 
+def portfolio_summary(config_path=None, roots=None):
+    """Aggregate open counts across multiple project boards (multi-project federation, issue #3)."""
+    projects = []
+    if config_path and os.path.isfile(config_path):
+        cfg = json.load(open(config_path, encoding="utf-8"))
+        for item in cfg.get("projects") or []:
+            if isinstance(item, dict) and item.get("path"):
+                projects.append((item.get("name") or os.path.basename(item["path"]), item["path"]))
+            elif isinstance(item, str):
+                projects.append((os.path.basename(item), item))
+    for r in (roots or []):
+        ap = os.path.abspath(r)
+        projects.append((os.path.basename(ap), ap))
+    if not projects:
+        return "portfolio: pass --config portfolio.json or --roots <dir1> <dir2> ..."
+    now_dt = datetime.now(timezone.utc)
+    lines = ["# Portfolio Board Index", "", "| Project | Action | Decisions | Updates | Done | Aging >24h |", "|---|---|---|---|---|---|"]
+    tot = [0, 0, 0, 0, 0]
+    for name, root in projects:
+        db = os.path.join(root, ".kit", "board_data", "board.db")
+        c_todo = c_q = c_info = c_done = c_age = 0
+        if os.path.isfile(db):
+            conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+            try:
+                for did, raw in conn.execute("SELECT doc_id, data FROM docs WHERE collection='posts'"):
+                    if did.startswith("_"):
+                        continue
+                    try:
+                        d = json.loads(raw)
+                    except ValueError:
+                        continue
+                    if d.get("removed"):
+                        continue
+                    col = str(d.get("column") or "info")
+                    if col == "todo": c_todo += 1
+                    elif col == "question": c_q += 1
+                    elif col == "done": c_done += 1
+                    else: c_info += 1
+                    if col in ("todo", "question") and d.get("created_at"):
+                        try:
+                            if (now_dt - iso(str(d["created_at"]))).total_seconds() >= 86400:
+                                c_age += 1
+                        except ValueError:
+                            pass
+            finally:
+                conn.close()
+        tot[0] += c_todo; tot[1] += c_q; tot[2] += c_info; tot[3] += c_done; tot[4] += c_age
+        lines.append("| %s | %d | %d | %d | %d | %d |" % (name, c_todo, c_q, c_info, c_done, c_age))
+    lines.append("| **Total** | **%d** | **%d** | **%d** | **%d** | **%d** |" % tuple(tot))
+    return "\n".join(lines) + "\n"
+
+
 def search_all(query, db_path=None, limit=25):
     """Search posts, comments (SQLite) and committed memory markdown files."""
     q = (query or "").strip()
@@ -1170,6 +1222,7 @@ def main(argv=None):
     s = sp.add_parser("reads"); s.add_argument("--at")
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
     s = sp.add_parser("report"); s.add_argument("--db", default=None)
+    s = sp.add_parser("portfolio"); s.add_argument("--config", dest="portfolio_config", default=None); s.add_argument("--roots", nargs="*", default=[])
     s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None)
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("welcome")
@@ -1214,6 +1267,9 @@ def main(argv=None):
         return rc
     if a.cmd == "report":
         print(report_metrics(m, db_path=a.db), end="")
+        return 0
+    if a.cmd == "portfolio":
+        print(portfolio_summary(config_path=a.portfolio_config, roots=a.roots), end="")
         return 0
     if a.cmd == "queue":
         print(queue_cards(m, runner=a.runner, for_owner=a.for_owner, db_path=a.db))

@@ -1839,16 +1839,31 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
 
             if path == "/_api/export":
                 pid = (qs.get("post") or [""])[0].strip()
+                fmt = (qs.get("format") or ["md"])[0].strip().lower()
                 raw_view = (qs.get("raw") or ["0"])[0].strip().lower() in ("1", "true", "yes")
-                md_text, fname = export_markdown(store, post_id=pid or None)
-                if md_text is None:
-                    self._send_json(404, {"error": "not_found"})
-                    return
-                body = md_text.encode("utf-8")
+                if fmt == "json":
+                    data_obj, fname = export_json_bundle(store, post_id=pid or None)
+                    if data_obj is None:
+                        self._send_json(404, {"error": "not_found"})
+                        return
+                    body = json.dumps(data_obj, ensure_ascii=False, indent=2).encode("utf-8")
+                    ctype = "application/json; charset=utf-8"
+                elif fmt == "rss":
+                    rss_text, fname = export_rss(store, project_name=project_name)
+                    body = rss_text.encode("utf-8")
+                    ctype = "application/rss+xml; charset=utf-8"
+                else:
+                    md_text, fname = export_markdown(store, post_id=pid or None)
+                    if md_text is None:
+                        self._send_json(404, {"error": "not_found"})
+                        return
+                    body = md_text.encode("utf-8")
+                    ctype = "text/markdown; charset=utf-8"
                 self.send_response(200)
-                self.send_header("Content-Type", "text/markdown; charset=utf-8")
+                self.send_header("Content-Type", ctype)
+                self._send_security_headers()
                 self.send_header("Content-Length", str(len(body)))
-                disp = "inline" if raw_view else ("attachment; filename=\"%s\"" % fname)
+                disp = "inline" if (raw_view or fmt == "rss") else ("attachment; filename=\"%s\"" % fname)
                 self.send_header("Content-Disposition", disp)
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
@@ -2290,6 +2305,57 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
     if missing_blobs:
         print("seed_from_mirror: WARNING: %d referenced blob(s) missing locally (first 5: %s)" % (len(missing_blobs), ", ".join(missing_blobs[:5])), file=sys.stderr)
     return {"ref": ref, "imported": imported, "skipped": skipped, "blobs_restored": blobs_restored, "missing_blobs": len(missing_blobs)}
+
+
+def export_json_bundle(store, post_id=None):
+    """Export one post or all non-internal posts + comments as a portable JSON bundle."""
+    if post_id:
+        doc = store.get_doc("posts", post_id)
+        if not doc.get("exists"):
+            return None, None
+        posts = [{"id": post_id, "data": doc["data"]}]
+        fname = re.sub(r"[^A-Za-z0-9._-]+", "-", post_id.lstrip("_") or "post") + ".json"
+    else:
+        posts = [p for p in store.list_docs("posts")["docs"] if p["id"] not in ("_dashboard", "_trains") and not (p["data"] or {}).get("removed")]
+        fname = "board-export.json"
+    pids = {p["id"] for p in posts}
+    comments = [c for c in store.list_docs("comments")["docs"] if (c["data"] or {}).get("post_id") in pids]
+    return {"exported_at": utc_now(), "posts": posts, "comments": comments}, fname
+
+
+def export_rss(store, project_name="Board"):
+    """Render recent non-internal posts as an RSS 2.0 XML feed."""
+    from xml.sax.saxutils import escape as xesc
+    posts = [p for p in store.list_docs("posts")["docs"] if not p["id"].startswith("_") and not (p["data"] or {}).get("removed")]
+    posts.sort(key=lambda p: str((p["data"] or {}).get("created_at") or ""), reverse=True)
+    items = []
+    for p in posts[:50]:
+        d = p["data"] or {}
+        title = xesc(str(d.get("title") or p["id"]))
+        guid = xesc(p["id"])
+        desc = xesc(str(d.get("body") or "")[:1000])
+        col = xesc(str(d.get("column") or "info"))
+        pub = xesc(str(d.get("created_at") or ""))
+        items.append(
+            "    <item>\n"
+            "      <title>%s</title>\n"
+            "      <guid isPermaLink=\"false\">%s</guid>\n"
+            "      <category>%s</category>\n"
+            "      <pubDate>%s</pubDate>\n"
+            "      <description>%s</description>\n"
+            "    </item>" % (title, guid, col, pub, desc)
+        )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<rss version="2.0">\n'
+        '  <channel>\n'
+        '    <title>%s Board</title>\n'
+        '    <description>Updates and decisions from %s</description>\n'
+        '%s\n'
+        '  </channel>\n'
+        '</rss>\n' % (xesc(project_name), xesc(project_name), "\n".join(items))
+    )
+    return xml, "board-feed.xml"
 
 
 def export_markdown(store, post_id=None):

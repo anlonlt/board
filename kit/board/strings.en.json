@@ -746,5 +746,13 @@
  {
   "en": "Unanswered for more than 24 hours",
   "kind": "js"
+ },
+ {
+  "en": "Snooze 24h",
+  "kind": "html"
+ },
+ {
+  "en": "Hide this post for 24 hours",
+  "kind": "attr"
  }
 ]
