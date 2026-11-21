@@ -406,14 +406,14 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 .btn:active { transform: scale(.97); }
 .btn.ember { border-radius: 999px; padding-inline: 16px; box-shadow: 0 4px 14px color-mix(in srgb, var(--ember) 32%, transparent); }
 
-/* Icon-only 👍 Like button & 💬 Ask the Orchestrator icon button */
+/* Icon-only Like button & Ask the Orchestrator icon button */
 .like { font-weight: 700; border-radius: 999px; padding: 2px 8px; transition: transform .12s ease, background .15s ease; }
 .like.icon-only { font-size: 0 !important; padding: 3px 8px; display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 24px; }
 .like.icon-only::before { content: "\1F44D"; font-size: .86rem; line-height: 1; }
 .like.icon-only.on { background: color-mix(in srgb, var(--ember) 22%, var(--surface)); border-color: var(--ember); }
 .like:active { transform: scale(.94); }
-#ask.icon-msg { font-size: 0 !important; width: 36px; height: 36px; padding: 0 !important; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; position: relative; }
-#ask.icon-msg::before { content: "\1F4AC"; font-size: 1.1rem; line-height: 1; }
+#ask.icon-msg { width: 36px; height: 36px; padding: 0 !important; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; position: relative; }
+#ask.icon-msg svg { width: 18px; height: 18px; display: block; flex: none; }
 #ask.icon-msg .newdot { position: absolute; top: -2px; right: -2px; margin: 0; width: 10px; height: 10px; border: 2px solid var(--bg); }
 
 /* Traffic-light priority badges (P1 red, P2 amber, P3 emerald) with universal contrast border */
@@ -480,17 +480,25 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 .ffeed-cmt-item { padding: 8px 0; border-bottom: 1px dashed var(--line); display: flex; flex-direction: column; gap: 4px; }
 .ffeed-cmt-item:last-child { border-bottom: none; }
 
-/* Floating iMessage-style Orchestrator Messenger Popover */
-.kit-orch-pop {
-  position: fixed; right: 18px; bottom: 18px; width: min(430px, calc(100vw - 24px)); height: min(560px, calc(100vh - 90px));
-  background: var(--surface); border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow-lg);
-  z-index: 18; display: flex; flex-direction: column; overflow: hidden;
+/* Floating Orchestrator Messenger Popup (renders the full #sheet messaging UI right over the dashboard) */
+.sheet.orch-popup {
+  inset: auto 18px 18px auto;
+  width: min(500px, calc(100vw - 24px));
+  height: min(680px, calc(100vh - 84px));
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg), 0 18px 48px rgba(0, 0, 0, .28);
+  background: var(--surface);
+  z-index: 25;
 }
-.kit-orch-pop[hidden] { display: none !important; }
-.kit-orch-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; background: var(--sunk); border-bottom: 1px solid var(--line); font-weight: 700; }
-.kit-orch-body { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
-.kit-orch-foot { padding: 10px 12px; border-top: 1px solid var(--line); background: var(--sunk); display: flex; gap: 6px; }
-.kit-orch-foot input { flex: 1 1 auto; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 7px 12px; font: inherit; font-size: .88rem; }
+.sheet.orch-popup .sheet-in { padding: 0 16px 24px !important; gap: 10px; max-width: none; }
+.sheet.orch-popup .bar { margin-inline: -16px; padding: 10px 16px; background: var(--sunk); }
+.sheet.orch-popup #p-meta, .sheet.orch-popup #p-body { display: none; }
+.sheet.orch-popup h2 { font-size: 1.25rem; }
+.sheet.orch-popup .composer { position: sticky; bottom: 0; background: var(--surface); padding-top: 8px; border-top: 1px solid var(--line); }
+@media (max-width: 640px) {
+  .sheet.orch-popup { inset: 8px; width: auto; height: auto; border-radius: 16px; }
+}
 
 /* Frosted-glass sticky post action bar: always 1 sleek row (scrolls smoothly on narrow phones) */
 .bar {
@@ -1043,8 +1051,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       tab.type = "button"; tab.setAttribute("role", "tab");
       tab.setAttribute("aria-selected", String(state.active === c.key));
       tab.style.setProperty("--c", c.c);
-      var colIcons = { todo: "\u270B", question: "\u26A1", info: "\uD83D\uDCE1", done: "\u2713" };
-      tab.appendChild(el("span", null, colIcons[c.key] || ""));
+      tab.appendChild(el("span", "dot"));
       tab.appendChild(el("span", null, c.name));
       tab.appendChild(el("span", "n", String(posts.length)));
       if (fresh) tab.appendChild(el("span", "newc", fresh + " new"));
@@ -1058,7 +1065,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 
       var lane = el("section", "lane" + (state.active === c.key ? " active" : ""));
       var h = el("h2"); h.style.setProperty("--c", c.c);
-      h.appendChild(el("span", null, colIcons[c.key] || "")); h.appendChild(el("span", null, c.name)); h.appendChild(el("span", "n", String(posts.length)));
+      h.appendChild(el("span", "dot")); h.appendChild(el("span", null, c.name)); h.appendChild(el("span", "n", String(posts.length)));
       if (fresh) h.appendChild(el("span", "newc", fresh + " new"));
       if (mins) h.appendChild(el("span", "mins", "about " + mins + " min"));
       lane.appendChild(h);
@@ -1409,7 +1416,8 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     $("dash").open = open;
     $("dash").addEventListener("toggle", function (e) { if (e.target !== this) return; try { localStorage.setItem("board-dash", this.open ? "open" : "closed"); } catch (er) {} });
     $("ask").addEventListener("click", function () {
-      if (state.special._orchestrator) openPost("_orchestrator");
+      if (state.openId === ORCH) closePost();
+      else if (state.special._orchestrator) openPost("_orchestrator");
       else $("status").textContent = "The orchestrator's thread is not there yet.";
     });
   })();
@@ -1476,7 +1484,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     var m = el("span", "meta");
     if (prioOf(p)) { var pb = el("span", "badge prio", "P" + prioOf(p)); pb.setAttribute("data-prio", String(prioOf(p))); m.appendChild(pb); }
     if (p.part) m.appendChild(el("span", "part", str(p.part)));
-    if (Number(p.minutes) > 0) m.appendChild(el("span", "badge", "\u23F1 " + Number(p.minutes) + "m"));
+    if (Number(p.minutes) > 0) m.appendChild(el("span", "badge", Number(p.minutes) + " min"));
     m.appendChild(el("span", null, when(p.created_at)));
     var cs = commentsFor(p.id);
     var fromAgent = cs.filter(function (x) { return x.from && x.from !== "owner" && x.from !== "viewer"; }).length;
@@ -1689,8 +1697,9 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     }
     /* BD3: opening marks nothing; what has been on screen does (watchSeen) */
     if (!("IntersectionObserver" in window)) markSeen(id);
+    $("sheet").classList.toggle("orch-popup", id === ORCH);
     $("sheet").hidden = false; $("sheet").scrollTop = 0;
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow = id === ORCH ? "" : "hidden";
     if (target && target.cid) unfoldFor(target.cid);
     renderPost();
     $("back").focus({ preventScroll: true });
@@ -1725,7 +1734,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
   function closePost() {
     rememberOpen(null);
     unwatchSeen(); seenPost = "";
-    state.openId = null; stripKey = ""; $("sheet").hidden = true; document.body.style.overflow = ""; renderBoard();
+    state.openId = null; stripKey = ""; $("sheet").hidden = true; $("sheet").classList.remove("orch-popup"); document.body.style.overflow = ""; renderBoard();
     /* BD7: a post opened from the Waiting page goes back to it */
     if (state.fromWait && state.waitOpen) { state.fromWait = false; $("wsheet").hidden = false; document.body.style.overflow = "hidden"; renderWaitPage(); }
     state.fromWait = false;
@@ -1745,7 +1754,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     var pd = el("span", "newdot"); pd.id = "p-dot"; pd.hidden = true; pd.title = "Something here has not been on your screen yet"; meta.insertBefore(pd, meta.firstChild);
     /* BD7: the orchestrator's sheet: its list of discussions, or one discussion's thread */
     var orch = p.id === ORCH, inDisc = orch && !!state.disc;
-    $("back").textContent = inDisc ? "\u2190 Discussions" : "\u2190 Board";
+    $("back").textContent = inDisc ? "\u2190 Discussions" : (orch ? "Close" : "\u2190 Board");
     $("p-title").textContent = inDisc ? (state.disc === "new" ? "New discussion" : discTitle(state.disc)) : (str(p.title) || "(untitled)");
     $("p-body").hidden = inDisc;
     $("p-th").textContent = orch ? (inDisc ? "Messages" : "Discussions") : "Comments on the post";
@@ -2495,7 +2504,12 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
     var tools = document.querySelector(".tools");
     var lanesEl = document.getElementById("lanes");
     var askBtn = document.getElementById("ask");
-    if (askBtn) askBtn.classList.add("icon-msg");
+    if (askBtn) {
+      askBtn.classList.add("icon-msg");
+      askBtn.setAttribute("aria-label", askBtn.textContent || "Ask the orchestrator");
+      askBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+      renderAsk();
+    }
 
     var trainNetEl = document.createElement("div"); trainNetEl.id = "kit-train-net"; trainNetEl.className = "kit-alt-view";
     var openFeedEl = document.createElement("div"); openFeedEl.id = "kit-open-feed"; openFeedEl.className = "kit-alt-view";
@@ -2659,7 +2673,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       });
       if (auditNodes.length >= 1 && paras.length > auditNodes.length) {
         var det = el("details", "kit-audit");
-        det.appendChild(el("summary", null, "\uD83D\uDD0DChecks (" + auditNodes.length + ")"));
+        det.appendChild(el("summary", null, "Checks (" + auditNodes.length + ")"));
         var firstNode = auditNodes[0];
         if (firstNode.parentNode === container) {
           container.insertBefore(det, firstNode);
@@ -2678,7 +2692,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       if (prioOf(p)) { var pb = el("span", "badge prio", "P" + prioOf(p)); pb.setAttribute("data-prio", String(prioOf(p))); meta.appendChild(pb); }
       meta.appendChild(el("span", "badge", colObj.name));
       if (p.part) meta.appendChild(el("span", "part", str(p.part)));
-      if (Number(p.minutes) > 0) meta.appendChild(el("span", "badge", "\u23F1 " + Number(p.minutes) + "m"));
+      if (Number(p.minutes) > 0) meta.appendChild(el("span", "badge", Number(p.minutes) + " min"));
       var trLabel = humanTrainName(familyOf(p, tMap), tMap, [p]);
       if (trLabel && trLabel !== "General") meta.appendChild(el("span", "badge", trLabel));
       meta.appendChild(el("span", null, when(p.created_at)));
@@ -2815,7 +2829,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       if (focusIdx >= actionQueue.length) focusIdx = 0;
       var p = actionQueue[focusIdx];
       var nav = el("div", "ffeed-bar");
-      nav.appendChild(el("b", null, "\uD83C\uDFAF " + (focusIdx + 1) + " / " + actionQueue.length));
+      nav.appendChild(el("b", null, (focusIdx + 1) + " / " + actionQueue.length));
       var navBtns = el("span", "row");
       var prevB = el("button", "btn small", "\u2039"); prevB.type = "button";
       prevB.addEventListener("click", function () { focusIdx = (focusIdx - 1 + actionQueue.length) % actionQueue.length; renderFocusView(); });
@@ -2827,117 +2841,12 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       focusViewEl.appendChild(buildOpenFeedCard(p, true));
     }
 
-    /* Floating iMessage-style Orchestrator Popover (stays right on the dashboard without opening full page) */
-    var orchPop = document.createElement("aside");
-    orchPop.id = "kit-orch-pop"; orchPop.className = "kit-orch-pop"; orchPop.hidden = true;
-    var popDisc = null;
-    function renderOrchPopover() {
-      if (orchPop.hidden) return;
-      orchPop.textContent = "";
-      var head = el("div", "kit-orch-head");
-      if (popDisc) {
-        var backB = el("button", "btn small", "\u2190 Discussions"); backB.type = "button";
-        backB.addEventListener("click", function () { popDisc = null; renderOrchPopover(); });
-        head.appendChild(backB);
-        head.appendChild(el("span", null, popDisc === "new" ? "New discussion" : discTitle(popDisc)));
-      } else {
-        head.appendChild(el("span", null, "Ask the orchestrator"));
-        var newB = el("button", "btn small ember", "+"); newB.type = "button"; newB.title = "New discussion";
-        newB.addEventListener("click", function () { popDisc = "new"; renderOrchPopover(); });
-        head.appendChild(newB);
-      }
-      var closeB = el("button", "btn small", "\u00d7"); closeB.type = "button"; closeB.setAttribute("aria-label", "Close");
-      closeB.addEventListener("click", function () { orchPop.hidden = true; });
-      head.appendChild(closeB);
-      orchPop.appendChild(head);
-
-      var body = el("div", "kit-orch-body");
-      var d = discs();
-      if (!popDisc) {
-        var keys = Object.keys(d.list).sort(function (a, b) {
-          var la = d.list[a][d.list[a].length - 1], lb = d.list[b][d.list[b].length - 1];
-          return (lb ? tOf(lb) : 0) - (la ? tOf(la) : 0);
-        });
-        if (!keys.length) {
-          body.appendChild(el("div", "note", "No discussion yet."));
-        } else {
-          keys.forEach(function (k) {
-            var msgs = d.list[k] || [], last = msgs[msgs.length - 1];
-            var row = el("button", "card", null); row.type = "button";
-            row.style.setProperty("--c", "var(--info)");
-            row.appendChild(el("span", "t", discTitle(k)));
-            if (last) row.appendChild(el("span", "first", (last.from === "owner" ? "You: " : "") + firstLine(last.text)));
-            row.addEventListener("click", function () { popDisc = k; renderOrchPopover(); });
-            body.appendChild(row);
-          });
-        }
-      } else {
-        var threadMsgs = (popDisc === "new" ? [] : (d.list[popDisc] || [])).filter(function (c) { return !c.like; });
-        if (!threadMsgs.length) {
-          body.appendChild(el("div", "note", "Write your first message below."));
-        } else {
-          threadMsgs.forEach(function (c) {
-            var item = el("div", "peek-cmt");
-            var cm = el("div", "meta");
-            var who = c.from === "owner" ? "You" : (str(c.from) || "Orchestrator");
-            cm.appendChild(el("span", "part", who));
-            cm.appendChild(el("span", null, when(c.created_at)));
-            item.appendChild(cm);
-            var cb = el("div", "body");
-            cb.innerHTML = renderBody(c.text);
-            enhanceRenderedBody(cb);
-            item.appendChild(cb);
-            body.appendChild(item);
-          });
-        }
-      }
-      orchPop.appendChild(body);
-      setTimeout(function () { body.scrollTop = body.scrollHeight; }, 0);
-
-      var foot = el("div", "kit-orch-foot");
-      var fullB = el("button", "btn small", "\u2922"); fullB.type = "button"; fullB.title = "Open the post \u203a";
-      fullB.addEventListener("click", function () {
-        orchPop.hidden = true;
-        if (state.special._orchestrator) { openPost("_orchestrator"); if (popDisc) { state.disc = popDisc; renderPost(); } }
-      });
-      foot.appendChild(fullB);
-      var inp = el("input"); inp.type = "text"; inp.placeholder = "Write a comment";
-      var sendB = el("button", "btn small ember", "Send"); sendB.type = "button";
-      function sendQuick() {
-        var txt = (inp.value || "").trim();
-        if (!txt || !db || !state.special._orchestrator) return;
-        inp.value = "";
-        state.openId = "_orchestrator";
-        state.disc = popDisc || "new";
-        $("c-text").value = txt;
-        submitComment({ text: $("c-text"), button: sendB, note: $("status"), image: null, n: 0, anchorEl: askBtn || document.body, files: false }).then(function () {
-          popDisc = state.disc;
-          state.openId = null;
-          renderOrchPopover();
-        });
-      }
-      sendB.addEventListener("click", sendQuick);
-      inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); sendQuick(); } });
-      foot.appendChild(inp); foot.appendChild(sendB);
-      orchPop.appendChild(foot);
-    }
-    document.body.appendChild(orchPop);
-    if (askBtn) {
-      askBtn.addEventListener("click", function (ev) {
-        if (!state.special._orchestrator) return;
-        ev.stopImmediatePropagation();
-        orchPop.hidden = !orchPop.hidden;
-        if (!orchPop.hidden) renderOrchPopover();
-      }, true);
-    }
-
     function refreshAltViews() {
       if (!wrap) return;
       var v = wrap.getAttribute("data-view") || "lanes";
       if (v === "trains") renderHorizontalTrains();
       else if (v === "feed") renderOpenFeed();
       else if (v === "focus") renderFocusView();
-      if (!orchPop.hidden) renderOrchPopover();
     }
 
     if (wrap && tools && !document.getElementById("kit-views")) {

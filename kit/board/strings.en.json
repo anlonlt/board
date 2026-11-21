@@ -1,17 +1,5 @@
 [
  {
-  "en": "{{PROJECT}} board",
-  "kind": "html"
- },
- {
-  "en": "Claude Code sessions working on {{PROJECT}} post here: things for you to do, questions waiting on you, news, and finished work. Each session follows",
-  "kind": "html"
- },
- {
-  "en": "&larr; Board",
-  "kind": "html"
- },
- {
   "en": "Newest first",
   "kind": "html"
  },
@@ -672,10 +660,6 @@
   "kind": "js"
  },
  {
-  "en": "🔍Checks (",
-  "kind": "js"
- },
- {
   "en": "By priority",
   "kind": "js"
  },
@@ -692,14 +676,6 @@
   "kind": "js"
  },
  {
-  "en": "You: ",
-  "kind": "js"
- },
- {
-  "en": "Write a comment",
-  "kind": "js"
- },
- {
   "en": "Lanes",
   "kind": "js"
  },
@@ -713,6 +689,10 @@
  },
  {
   "en": "Focus",
+  "kind": "js"
+ },
+ {
+  "en": "Checks (",
   "kind": "js"
  }
 ]
