@@ -710,5 +710,9 @@
  {
   "en": "✓ Done",
   "kind": "js"
+ },
+ {
+  "en": "Export as Markdown",
+  "kind": "js"
  }
 ]

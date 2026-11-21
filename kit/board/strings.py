@@ -160,12 +160,16 @@ EXCLUDED = ["_orchestrator", "2-digit", "/_blob/", "https://", "comments/", "pos
 
 def extract_exclusions():
     extra = [
-        ") rotate(", "-6deg", "6deg", "deg)", "translateX(",
+        ") rotate(", "-6deg", "6deg", "-7deg", "7deg", "deg)", "translateX(",
         "transform .22s ease, opacity .22s ease",
+        "transform .42s cubic-bezier(.22, .85, .32, 1), opacity .42s ease",
         "application/octet-stream",
         "button, textarea, input, summary, a",
         "a, button, summary, details, input, textarea",
+        "button, a, textarea, input",
         "header.top",
+        "header.top h1",
+        "posts/_board_meta",
         "\U0001f44d Like: he approves this post, no words.",
     ]
     return [decode_js(e) for e in EXCLUDED] + extra + [
