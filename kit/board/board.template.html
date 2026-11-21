@@ -164,24 +164,29 @@ button:focus-visible, textarea:focus-visible, .card:focus-visible, img:focus-vis
 .review { display: flex; flex-direction: column; gap: 8px; margin-block: 10px; }
 .review:empty { display: none; }
 .badge.rev { background: var(--good); color: var(--surface); border-color: var(--good); }
+@keyframes kit-blink { 0%, 100% { opacity: 1; } 50% { opacity: .32; } }
+@keyframes kit-fade { 0%, 100% { opacity: 1; } 50% { opacity: .28; } }
+@keyframes kit-live-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, .55); } 60% { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); } }
 .dash { margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
 .dash summary { cursor: pointer; font-family: var(--display); font-size: 1.15rem; font-weight: 700; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
 .dash summary .sub { font-family: var(--text); font-size: .85rem; font-weight: 400; color: var(--muted); }
 .dash-rows { margin-top: 6px; }
-.dash-row { display: grid; grid-template-columns: 9px minmax(0, 8.5em) auto minmax(0, 1fr) auto; gap: 0 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); font-size: .9rem; cursor: pointer; }
-.dash .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.dash-row { --st-c: var(--muted); display: grid; grid-template-columns: minmax(0, 8.5em) auto minmax(0, 1fr) auto; gap: 0 8px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); font-size: .9rem; cursor: pointer; }
 .dash .name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dash .segs { display: flex; gap: 2px; }
 .dash .seg { width: 8px; height: 10px; border-radius: 2px; border: 1px solid var(--muted); }
 .dash .seg.was { background: var(--good); border-color: var(--good); }
-.dash .seg.now { background: var(--ember); border-color: var(--ember); }
+.dash .seg.now { background: var(--st-c); border-color: var(--st-c); }
 .dash .cur { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dash .st { font-size: .78rem; font-weight: 700; white-space: nowrap; color: var(--muted); }
-.dash .you .dot { background: var(--todo); } .dash .you .st { color: var(--todo); }
-.dash .running .dot { background: var(--info); } .dash .running .st { color: var(--info); }
-.dash .ready .dot { background: var(--question); } .dash .ready .st { color: var(--question); }
-.dash .done .dot { background: var(--good); } .dash .done .st { color: var(--good); }
-.dash .what { grid-column: 2 / -1; display: none; padding: 2px 0 4px; color: var(--ink); overflow-wrap: anywhere; }
+.dash .st { font-size: .78rem; font-weight: 700; white-space: nowrap; color: var(--st-c); }
+.dash .you { --st-c: var(--todo); }
+.dash .running { --st-c: var(--info); }
+.dash .running .st, .dash .running .seg.now { animation: kit-blink 1.5s ease-in-out infinite; }
+.dash .default, .dash .ready { --st-c: var(--question); }
+.dash .default .st, .dash .ready .st { animation: kit-fade 2.4s ease-in-out infinite; }
+.dash .done { --st-c: var(--done); }
+.dash .blocked, .dash .idle { --st-c: var(--muted); }
+.dash .what { grid-column: 1 / -1; display: none; padding: 2px 0 4px; color: var(--ink); overflow-wrap: anywhere; }
 .dash-row.open .what { display: block; }
 .dash .what .go { margin-left: 8px; color: var(--ember); font-weight: 700; white-space: nowrap; }
 @media (min-width: 960px) { .dash-rows { columns: 2; column-gap: 28px; } .dash-row { break-inside: avoid; } }
@@ -439,18 +444,45 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 [data-view="feed"] #kit-open-feed { display: flex; flex-direction: column; gap: 18px; max-width: 780px; margin: 16px auto 0; }
 [data-view="focus"] #kit-focus-view { display: flex; flex-direction: column; gap: 16px; max-width: 760px; margin: 16px auto 0; }
 
-/* Unified Horizontal Matrix for Trains: non-overlapping sticky headers above each track, rightmost column aligned */
-.tnet-matrix { overflow-x: auto; overflow-y: visible; padding: 14px; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 16px; background: var(--sunk); }
-.tnet-rows { display: flex; flex-direction: column; gap: 16px; width: max-content; min-width: 100%; }
+/* Edge-to-edge Trains Flowchart + Interactive All-Trains Map + Clean Cards */
+[data-view="trains"].wrap { max-width: none !important; }
+[data-view="trains"] #dash { display: none !important; }
+.tnet-map {
+  margin-bottom: 14px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 16px; padding: 10px 14px; box-shadow: var(--shadow);
+}
+.tnet-map summary { cursor: pointer; font-family: var(--display); font-size: 1.1rem; font-weight: 700; display: flex; align-items: baseline; gap: 10px; }
+.tnet-map summary .sub { font-family: var(--text); font-size: .82rem; font-weight: 400; color: var(--muted); }
+.tnet-map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 18px; margin-top: 8px; }
+.tnet-map-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 5px 0; border-top: 1px solid var(--line); font-size: .84rem; }
+.tnet-map-row b { font-weight: 700; margin-right: 4px; color: var(--ink); }
+.tnet-map-chip {
+  font-family: var(--mono); font-size: .72rem; font-weight: 700; border: 1px solid var(--line);
+  border-radius: 6px; padding: 1px 6px; background: var(--sunk); color: var(--ink); cursor: pointer;
+}
+.tnet-map-chip.st-you { border-color: var(--todo); color: var(--todo); }
+.tnet-map-chip.st-running { border-color: var(--info); color: var(--info); animation: kit-blink 1.5s ease-in-out infinite; }
+.tnet-map-chip.st-default { border-color: var(--question); color: var(--question); animation: kit-fade 2.4s ease-in-out infinite; }
+.tnet-map-chip.st-done { border-color: var(--done); color: var(--done); opacity: .7; }
+.tnet-map-chip:hover { background: var(--ember); color: var(--ember-ink); border-color: var(--ember); }
+
+.tnet-matrix { overflow-x: auto; overflow-y: visible; padding: 6px 0 18px; -webkit-overflow-scrolling: touch; border: 0; border-radius: 0; background: transparent; }
+.tnet-rows { display: flex; flex-direction: column; gap: 18px; width: max-content; min-width: 100%; }
 .tnet-row { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 100%; }
-.tnet-label { position: sticky; left: 0; z-index: 2; width: fit-content; max-width: calc(100vw - 48px); display: inline-flex; align-items: baseline; gap: 8px; padding: 2px 4px; background: transparent; border: 0; box-shadow: none; }
-.tnet-label b { font-size: .88rem; line-height: 1.2; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tnet-label { position: sticky; left: 0; z-index: 2; width: fit-content; max-width: calc(100vw - 36px); display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; background: transparent; border: 0; box-shadow: none; }
+.tnet-label b { font-size: .9rem; line-height: 1.2; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tnet-label span { font-size: .74rem; color: var(--muted); white-space: nowrap; }
 .tnet-chain { display: flex; align-items: stretch; justify-content: flex-end; gap: 6px; flex: none; }
-.tnet-node { width: 268px !important; min-width: 268px !important; max-width: 268px !important; min-height: 112px; height: auto !important; flex: 0 0 268px !important; justify-content: space-between; overflow: visible; margin: 0 !important; gap: 6px; }
-.tnet-node .t { flex: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.tnet-node .meta { flex-wrap: nowrap; overflow: hidden; gap: 6px; }
-.tnet-node .meta > * { flex: none; }
+.tnet-node { width: 256px !important; min-width: 256px !important; max-width: 256px !important; min-height: 92px; height: auto !important; flex: 0 0 256px !important; justify-content: space-between; overflow: visible; margin: 0 !important; gap: 8px; transition: box-shadow .25s ease, transform .25s ease; }
+.tnet-node.is-running { animation: kit-blink 2s ease-in-out infinite; }
+.tnet-node.tnet-flash { box-shadow: 0 0 0 3px var(--ember), var(--shadow-lg) !important; transform: scale(1.03); }
+.tnet-node .t { flex: none; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tnet-node .meta { flex-wrap: nowrap; overflow: hidden; gap: 6px; align-items: center; }
+.tnet-node .tnet-st { font-size: .74rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.tnet-node .tnet-st.st-you { color: var(--todo); }
+.tnet-node .tnet-st.st-running { color: var(--info); }
+.tnet-node .tnet-st.st-default { color: var(--question); animation: kit-fade 2.4s ease-in-out infinite; }
+.tnet-node .tnet-st.st-done { color: var(--done); }
 .tnet-node .first { display: none; }
 .tnet-arrow { display: flex; align-items: center; justify-content: center; color: var(--muted); font-weight: 800; font-size: 1rem; width: 22px; flex: 0 0 22px; user-select: none; }
 .tnet-arrow.fork { color: var(--ember); font-size: 1.1rem; }
@@ -544,15 +576,44 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
 .ffeed-card.picked .feed-pick-zone .kit-pick-sq,
 .ffeed-card .feed-pick-zone .kit-pick-sq.on { opacity: 1; }
 .ffeed-card.picked { box-shadow: 0 0 0 2px var(--ember), var(--shadow); }
-.tnet-label .train-pick-zone { display: inline-flex; align-items: center; padding-right: 4px; }
-.tnet-label .train-pick-zone .kit-pick-sq { opacity: 0; }
+.tnet-label .train-pick-zone { display: inline-flex; align-items: center; gap: 5px; margin-left: 4px; }
+.tnet-label .train-pick-zone .kit-pick-sq,
+.tnet-label .train-pick-zone .train-dl-btn { opacity: 0; transition: opacity .15s ease; }
 .tnet-label:hover .train-pick-zone .kit-pick-sq,
+.tnet-label:hover .train-pick-zone .train-dl-btn,
 .tnet-label .train-pick-zone .kit-pick-sq.on { opacity: 1; }
-.disc-toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.disc-toolbar .kit-icon-btn:disabled { opacity: .32; cursor: default; pointer-events: none; }
+.disc-new-row {
+  display: flex; align-items: center; justify-content: center; width: 100%; height: 46px;
+  border: 1px dashed var(--line); border-radius: 12px; background: transparent; color: var(--ink);
+  opacity: .48; cursor: pointer; margin-bottom: 6px; transition: opacity .15s ease, border-color .15s ease, background .15s ease;
+}
+.disc-new-row:hover { opacity: .95; border-color: var(--ember); background: var(--sunk); }
+.disc-new-row svg { width: 20px; height: 20px; display: block; }
+.sheet.orch-popup #p-th { display: none !important; }
+.sheet.orch-popup #p-title[contenteditable="true"] {
+  border: 1px solid transparent; border-radius: 8px; padding: 2px 6px; margin: -2px -6px; cursor: text; outline: none;
+}
+.sheet.orch-popup #p-title[contenteditable="true"]:hover { border-color: var(--line); }
+.sheet.orch-popup #p-title[contenteditable="true"]:focus { border-color: var(--ember); background: var(--surface); }
+.orch-hdr-tools { display: inline-flex; align-items: center; gap: 6px; }
+.orch-hdr-tools .kit-icon-btn:disabled { opacity: .32; pointer-events: none; }
 .discrow .kit-pick-sq { margin-left: 6px; }
 .kit-cmt-icon { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px !important; border-radius: 999px !important; font-size: .78rem; }
 .kit-cmt-icon svg { width: 14px; height: 14px; display: block; flex: none; }
+
+/* Header Live pulsing dot, icon-only Sort & Lanes Edit/Checklist, and icon-only Selection Bar */
+#status.kit-live-dot {
+  width: 10px; height: 10px; border-radius: 999px; font-size: 0 !important; padding: 0;
+  display: inline-block; flex: none; background: #10b981; animation: kit-live-pulse 2.2s infinite;
+}
+#status.kit-live-dot.bad { background: #ef4444; animation: none; }
+#status.kit-live-dot.warn { background: #f59e0b; animation: none; }
+#sort.kit-hidden-select { display: none !important; }
+.selbar .kit-icon-btn { width: 34px; height: 34px; }
+.zoom .zbar { justify-content: flex-end; position: relative; }
+.zoom .ztitle { margin-right: auto; }
+.zoom #z-close.kit-icon-btn { opacity: .65; background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.zoom #z-close.kit-icon-btn:hover { opacity: 1; }
 [data-view="focus"] .kit-views button:not(.on) { display: none; }
 @media (hover: hover) and (pointer: fine) {
   [data-view="focus"] .kit-views:hover button { display: inline-flex; }
@@ -660,17 +721,27 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
   .tabs .tab[data-col="done"] .tab-lbl { display: none; }
 }
 
-/* Reddit-style threaded comments, clickable vertical rails, avatars & compact Remove */
+/* Reddit-style threaded comments, clickable vertical rails, avatars, hover-proximity trash & overflow containment */
+.node, .replies, .cmt, .cmt .txt { min-width: 0; max-width: 100%; overflow-x: hidden; }
+.cmt .txt { overflow-wrap: anywhere; word-break: break-word; }
+.cmt .txt .tbl { overflow-x: auto; max-width: 100%; }
 .cmt {
   position: relative; border-radius: 14px !important; padding: 12px 14px !important;
   box-shadow: var(--shadow); transition: border-color .15s ease;
 }
-.cmt > .meta { padding-right: 72px; }
+.cmt > .meta { padding-right: 38px; }
 .cmt > .rm {
-  position: absolute; top: 10px; right: 10px; margin: 0 !important;
-  opacity: .55; font-size: .74rem; padding: 2px 8px; border-radius: 999px;
+  position: absolute; top: 8px; right: 8px; margin: 0 !important;
+  opacity: 0; width: 28px; height: 28px; padding: 0 !important; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-color: transparent; background: transparent; transition: opacity .15s ease, color .15s ease, background .15s ease;
 }
-.cmt > .rm:hover { opacity: 1; color: var(--warn); border-color: var(--warn); }
+.cmt:hover > .rm, .cmt:focus-within > .rm { opacity: .65; }
+.cmt > .rm:hover { opacity: 1; color: var(--warn); background: var(--sunk); }
+.cmt > .rm svg { width: 15px; height: 15px; display: block; }
+.cmt .cmt-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.cmt .deliv { display: inline-flex; align-items: center; gap: 4px; font-size: .74rem; opacity: .78; margin-top: 2px; }
+.cmt .deliv.seen-ok { color: var(--info); opacity: 1; }
 .kit-av {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border-radius: 999px; font-size: .72rem; font-weight: 800;
@@ -1281,8 +1352,8 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
      that can be opened up by the awaits trains of the at a glance"): the one card at the top. Its first line opens
      the Waiting page; a row that waits on him carries a mark that opens that page filtered to it; a tap on a row
      unfolds its note and its train (the Trains tree of that train only); "All trains" at its foot holds the rest. */
-  var CHIP = { you: "you", running: "runs", ready: "ready", idle: "later", done: "done" };
-  var ORDER = { you: 0, running: 1, ready: 2, idle: 3, done: 4 };
+  var CHIP = { you: "you", running: "runs", default: "default", ready: "default", blocked: "later", idle: "later", done: "done" };
+  var ORDER = { you: 0, default: 1, ready: 1, running: 2, blocked: 3, idle: 4, done: 5 };
   /* posts/_trains, indexed once per snapshot of it, PLUS live client-side link synthesis from state.posts */
   var trainsCache = { src: {}, postCount: -1 };
   function resolveClientLinks() {
@@ -1410,26 +1481,41 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
   function renderDash() {
     var d = state.special._dashboard, box = $("dash"), rows = dashRows().slice(), items = waitItems(), T = trains();
     box.hidden = !rows.length && !items.length && !T.rows.length; if (box.hidden) return;
-    var you = rows.filter(function (r) { return r.state === "you"; }).length, run = rows.filter(function (r) { return r.state === "running"; }).length;
-    $("dash-sub").textContent = rows.length ? you + " wait on you · " + run + " running" + (d && d.updated_at ? " · " + when(d.updated_at) : "") : "";
+    /* Done trains with no planned next step belong in All trains, not the active Where we are list */
+    var activeRows = rows.filter(function (r) {
+      var steps = Array.isArray(r.steps) ? r.steps : [], at = Number(r.at);
+      var hasPlannedNext = steps.length > at + 1;
+      return r.state !== "done" || hasPlannedNext;
+    });
+    var you = activeRows.filter(function (r) { return r.state === "you"; }).length, run = activeRows.filter(function (r) { return r.state === "running"; }).length;
+    $("dash-sub").textContent = activeRows.length ? you + " wait on you · " + run + " running" + (d && d.updated_at ? " · " + when(d.updated_at) : "") : "";
     var g = $("dash-rows"); g.textContent = "";
-    function ord(r) { return ORDER[r.state] === undefined ? 3 : ORDER[r.state]; }
-    rows.map(function (r, i) { return [r, i]; }).sort(function (a, b) { return ord(a[0]) - ord(b[0]) || a[1] - b[1]; }).forEach(function (p) {
+    function ord(r) { return ORDER[r.state] === undefined ? 4 : ORDER[r.state]; }
+    activeRows.map(function (r, i) { return [r, i]; }).sort(function (a, b) { return ord(a[0]) - ord(b[0]) || a[1] - b[1]; }).forEach(function (p) {
       var r = p[0], stt = CHIP[r.state] ? str(r.state) : "idle", key = str(r.key);
+      var blockers = Array.isArray(r.blocked_by) ? r.blocked_by.filter(Boolean) : (r.blocked_by ? [str(r.blocked_by)] : []);
+      var stLabel = (stt === "blocked" || (stt === "idle" && blockers.length)) && blockers.length ? ("waiting on " + blockers[0]) : CHIP[stt];
       var row = el("div", "dash-row " + stt + (state.dashOpen === key ? " open" : "")); row.dataset.key = key;
-      row.appendChild(el("span", "dot"));
       row.appendChild(el("span", "name", str(r.name)));
       var sg = el("span", "segs"), at = Number(r.at), steps = Array.isArray(r.steps) ? r.steps : [];
       steps.forEach(function (s, i) { var x = el("span", "seg" + (i < at ? " was" : (i === at ? " now" : ""))); x.title = str(s); sg.appendChild(x); });
       row.appendChild(sg);
       row.appendChild(el("span", "cur", str(steps[at] || "")));
-      row.appendChild(el("span", "st", CHIP[stt]));
+      var stEl = el("span", "st", stLabel);
+      if ((stt === "default" || stt === "ready") && (r.due || r.default_at)) {
+        stEl.dataset.alt = str(r.due || r.default_at);
+        stEl.dataset.base = stLabel;
+      }
+      row.appendChild(stEl);
       if (state.dashOpen === key) {
         var w = el("div", "what"); w.innerHTML = inline(str(r.note));
         w.addEventListener("click", function (e) { e.stopPropagation(); });
         if (r.post && state.posts.some(function (q) { return q.id === r.post; })) {
           var go = el("span", "go", "Open the post ›");
-          go.addEventListener("click", function (e) { e.stopPropagation(); openPost(r.post); });
+          go.addEventListener("click", function (e) {
+            e.stopPropagation();
+            if (window._kitOpenOverlay) window._kitOpenOverlay(r.post); else openPost(r.post);
+          });
           w.appendChild(go);
         }
         /* BD8 (his 02:26, R74): an orange row (it waits on him) opens what waits on him there, one sentence each with
@@ -1927,6 +2013,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     rememberOpen(null);
     unwatchSeen(); seenPost = "";
     state.openId = null; stripKey = ""; $("sheet").hidden = true; $("sheet").classList.remove("orch-popup", "feed-comments-overlay");
+    var _ot = document.getElementById("orch-hdr-tools"); if (_ot) _ot.remove();
     var _w = document.querySelector(".wrap"); if (_w) _w.classList.remove("kit-blurred");
     var _bd = document.getElementById("kit-overlay-backdrop"); if (_bd) _bd.hidden = true;
     document.body.style.overflow = ""; renderBoard();
@@ -1951,6 +2038,29 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     var orch = p.id === ORCH, inDisc = orch && !!state.disc;
     $("back").textContent = inDisc ? "\u2190 Discussions" : (orch ? "Close" : "\u2190 Board");
     $("p-title").textContent = inDisc ? (state.disc === "new" ? "New discussion" : discTitle(state.disc)) : (str(p.title) || "(untitled)");
+    var ptEl = $("p-title");
+    var canRenameDisc = inDisc && state.disc !== "new" && !!db;
+    ptEl.setAttribute("contenteditable", canRenameDisc ? "true" : "false");
+    if (canRenameDisc && !ptEl.dataset.kitDiscRename) {
+      ptEl.dataset.kitDiscRename = "1";
+      var prevDiscName = "";
+      ptEl.addEventListener("focus", function () { prevDiscName = (ptEl.textContent || "").trim(); });
+      ptEl.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); ptEl.blur(); }
+        else if (e.key === "Escape") { e.preventDefault(); ptEl.textContent = prevDiscName; ptEl.blur(); }
+      });
+      ptEl.addEventListener("blur", function () {
+        if (state.openId !== ORCH || !state.disc || state.disc === "new" || !db) return;
+        var next = (ptEl.textContent || "").replace(/\s+/g, " ").trim();
+        if (!next || next === prevDiscName) { ptEl.textContent = prevDiscName; return; }
+        var o = state.special[ORCH] || {};
+        var dm = Object.assign({}, o.discussions || {});
+        dm[state.disc] = next;
+        db.doc("posts/" + ORCH).update({ discussions: dm }).catch(function () {});
+      });
+    }
+    if (orch && !inDisc) { $("share").hidden = true; }
+    else { $("share").hidden = !downloads || orch; }
     $("p-body").hidden = inDisc;
     $("p-th").textContent = orch ? (inDisc ? "Messages" : "Discussions") : "Comments on the post";
     $("composer").hidden = orch && !inDisc;
@@ -2182,24 +2292,20 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     if (c.from === "owner" || c.from === "viewer") d.appendChild(el("div", "txt", str(c.text)));
     else { var tx = el("div", "txt md"); tx.innerHTML = renderBody(c.text); d.appendChild(tx); }
     if (Array.isArray(c.files) && c.files.length) d.appendChild(filesNode(c.files));
+    var actsRow = el("div", "row cmt-acts");
     if (c.from !== "owner" && c.from !== "viewer") {
-      var lr = el("div", "row"); lr.appendChild(commentLike(c));
+      actsRow.appendChild(commentLike(c));
       /* The owner, 2026-11-13 04:12: the orchestrator Likes a review whose suggestion it takes care of. */
       if (likesOn(c.id).some(function (x) { return x.comment_id === c.id && x.like === true && x.from === "orchestrator"; }))
-        lr.appendChild(el("span", "taking", "\uD83D\uDC4D orchestrator: taking care of it"));
-      d.appendChild(lr);
+        actsRow.appendChild(el("span", "taking", "\uD83D\uDC4D orchestrator: taking care of it"));
     }
+    d.appendChild(actsRow);
     if (c.from === "owner" || c.from === "viewer") {
-      var info;
-      if (sending[c.id]) info = el("div", "deliv", "Sending to Claude...");
-      else if (c.delivered === true) info = el("div", "deliv ok", "Sent to Claude");
-      else info = el("div", "deliv err", "Saved on the board; not sent" + (c.delivery_error ? " (" + str(c.delivery_error) + ")" : "") + ".");
-      /* Seen: the clerk passed it on (read: true, read_at). */
-      if (c.read === true) {
-        info.appendChild(document.createTextNode(" \u00b7 "));
-        var sn = el("span", "seen", "\u2713 Seen" + (c.read_at ? " " + when(c.read_at) : "")); sn.title = c.read_at ? "Passed on at " + str(c.read_at) : "Passed on";
-        info.appendChild(sn);
-      }
+      var info = el("div", "deliv");
+      if (sending[c.id]) { info.textContent = "\u2026"; info.title = "Sending to Claude..."; }
+      else if (c.read === true) { info.classList.add("seen-ok"); info.textContent = "\u2713\u2713"; info.title = "\u2713 Seen" + (c.read_at ? " " + when(c.read_at) : ""); }
+      else if (c.delivered === true) { info.classList.add("ok"); info.textContent = "\u2713\u2713"; info.title = "Sent to Claude"; }
+      else { info.classList.add("err"); info.textContent = "\u2713"; info.title = "Saved on the board; not sent" + (c.delivery_error ? " (" + str(c.delivery_error) + ")" : "") + "."; }
       d.appendChild(info);
       if (c.delivered !== true && !sending[c.id] && cmts) {
         var row = el("div", "row");
@@ -2213,7 +2319,8 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       }
     }
     if (db && !c.like) {
-      var rm = el("button", "btn small rm", "Remove"); rm.type = "button";
+      var rm = el("button", "btn small rm"); rm.type = "button"; rm.title = "Remove"; rm.setAttribute("aria-label", "Remove");
+      rm.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
       rm.addEventListener("click", function (e) { e.stopPropagation(); removeDocs(["comments/" + c.id], "this message"); });
       d.appendChild(rm);
     }
@@ -2273,21 +2380,18 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     });
     return b;
   }
-  /* BD7: the list of discussions, like a messaging app: title, the latest message, its time, a dot on unseen. */
+  /* BD7: the list of discussions, like a messaging app: empty ghost row (+) at top, Edit/Export/Delete in top-right header. */
   var orchEdit = false, orchSel = {};
-  function renderDiscList() {
-    var box = $("p-comments"), dl = discs(); box.textContent = ""; box.classList.remove("changes");
-    $("p-review").textContent = ""; $("p-opts").hidden = true;
-    var bar = el("div", "disc-toolbar");
-    var nb = el("button", "btn ember small newdisc", "New discussion"); nb.type = "button";
-    nb.addEventListener("click", function () { orchEdit = false; orchSel = {}; openDisc("new"); });
-    bar.appendChild(nb);
-    var editB = el("button", "btn small kit-icon-btn" + (orchEdit ? " ember" : "")); editB.type = "button";
-    editB.title = "Select posts"; editB.setAttribute("aria-label", "Select posts");
-    editB.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
-    editB.addEventListener("click", function () { orchEdit = !orchEdit; if (!orchEdit) orchSel = {}; renderDiscList(); });
-    bar.appendChild(editB);
+  function renderOrchHeaderTools() {
+    var old = document.getElementById("orch-hdr-tools");
+    if (old) old.remove();
+    var p = current();
+    if (!p || p.id !== ORCH || state.disc) return;
+    var barRow = document.querySelector("#sheet .bar .row");
+    if (!barRow) return;
+    var dl = discs();
     var selKeys = Object.keys(orchSel).filter(function (k) { return orchSel[k] && dl.list[k]; });
+    var tools = el("span", "orch-hdr-tools"); tools.id = "orch-hdr-tools";
     if (orchEdit) {
       var expB = el("button", "btn small kit-icon-btn"); expB.type = "button"; expB.disabled = selKeys.length === 0;
       expB.title = "Export as Markdown"; expB.setAttribute("aria-label", "Export as Markdown");
@@ -2300,7 +2404,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         }).join("\n\n===\n\n");
         downloads.save({ filename: "{{SLUG}}-orchestrator-" + selKeys.length + ".md", data: md }).catch(function () {});
       });
-      bar.appendChild(expB);
+      tools.appendChild(expB);
       if (db) {
         var delB = el("button", "btn small kit-icon-btn"); delB.type = "button"; delB.disabled = selKeys.length === 0;
         delB.title = "Remove"; delB.setAttribute("aria-label", "Remove");
@@ -2311,10 +2415,25 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
           removeDocs(ids, selKeys.length === 1 ? "this discussion" : selKeys.length + " discussions");
           orchSel = {};
         });
-        bar.appendChild(delB);
+        tools.appendChild(delB);
       }
     }
-    box.appendChild(bar);
+    var editB = el("button", "btn small kit-icon-btn" + (orchEdit ? " ember" : "")); editB.type = "button";
+    editB.title = "Select posts"; editB.setAttribute("aria-label", "Select posts");
+    editB.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+    editB.addEventListener("click", function () { orchEdit = !orchEdit; if (!orchEdit) orchSel = {}; renderDiscList(); });
+    tools.appendChild(editB);
+    barRow.appendChild(tools);
+  }
+  function renderDiscList() {
+    var box = $("p-comments"), dl = discs(); box.textContent = ""; box.classList.remove("changes");
+    $("p-review").textContent = ""; $("p-opts").hidden = true;
+    renderOrchHeaderTools();
+    var nb = el("button", "disc-new-row"); nb.type = "button";
+    nb.title = "New discussion"; nb.setAttribute("aria-label", "New discussion");
+    nb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+    nb.addEventListener("click", function () { orchEdit = false; orchSel = {}; openDisc("new"); });
+    box.appendChild(nb);
     var keys = Object.keys(dl.list).filter(function (k) { return dl.list[k].some(function (c) { return !c.like; }); });
     var last = function (k) { var t = dl.list[k].filter(function (c) { return !c.like; }); return t[t.length - 1]; };
     keys.sort(function (a, b) { return tOf(last(b)) - tOf(last(a)); });
@@ -2347,13 +2466,18 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
   }
   function openDisc(k) {
     state.disc = k; state.replyTo = null; state.flash = null;
+    var oldT = document.getElementById("orch-hdr-tools"); if (oldT) oldT.remove();
     var dr = loadDraft(ORCH, 0); $("c-text").value = dr ? dr.t : ""; $("c-note").textContent = dr ? "Your unsent draft is back." : "";
     if (dr && dr.r) state.replyTo = dr.r;
     $("sheet").scrollTop = 0; renderPost();
     var p = current(), dl = discs();
     var first = k && p ? newComments(p, seen[ORCH] ? seen[ORCH].at : "", true).filter(function (c) { return dl.of[c.id] === k; })[0] : null;
     if (first) { unfoldFor(first.id); renderComments(); requestAnimationFrame(function () { goTo({ cid: first.id }); }); }
-    $("back").focus({ preventScroll: true });
+    if (k === "new") {
+      setTimeout(function () { var ct = $("c-text"); if (ct) ct.focus(); }, 40);
+    } else {
+      $("back").focus({ preventScroll: true });
+    }
   }
   function renderComments() {
     var p = current(); if (!p) return;
@@ -2389,10 +2513,18 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     function count(c) { return (kids[c.id] || []).reduce(function (n, k) { return n + 1 + count(k); }, 0); }
     function branch(c, depth) {
       if (becameOf(c).length) return movedLine(c, 1 + count(c));
-      var w = el("div", "node"), n = commentNode(c), row = el("div", "row");
+      var w = el("div", "node"), n = commentNode(c), row = n.querySelector(".cmt-acts") || el("div", "row cmt-acts");
       var rb = el("button", "btn small kit-cmt-icon"); rb.type = "button"; rb.title = "Reply"; rb.setAttribute("aria-label", "Reply");
       rb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>';
-      rb.addEventListener("click", function () { state.replyTo = c.id; showReplyTo(); saveDraft(state.openId, 0, $("c-text").value, c.id); $("c-text").focus(); });
+      rb.addEventListener("click", function () {
+        state.replyTo = c.id; showReplyTo(); saveDraft(state.openId, 0, $("c-text").value, c.id);
+        var ct = $("c-text");
+        if (ct) ct.focus({ preventScroll: true });
+        setTimeout(function () {
+          var target = document.querySelector('.cmt[data-cid="' + c.id.replace(/["\\]/g, "") + '"]');
+          if (target && target.scrollIntoView) target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }, 280);
+      });
       row.appendChild(rb);
       var ch = kids[c.id] || [];
       if (ch.length) {
@@ -2406,7 +2538,8 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         tg.addEventListener("click", function () { state.folded[c.id] = !state.folded[c.id]; renderComments(); });
         row.appendChild(tg);
       }
-      n.appendChild(row); w.appendChild(n);
+      if (!row.parentNode) n.appendChild(row);
+      w.appendChild(n);
       if (ch.length && !state.folded[c.id]) {
         var sub = el("div", "replies" + (depth >= 4 ? " flat" : ""));
         ch.forEach(function (k) { sub.appendChild(branch(k, depth + 1)); });
@@ -2998,20 +3131,58 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         return urgencyScore(lastA) - urgencyScore(lastB) || (a < b ? -1 : 1);
       });
 
-      /* Single shared horizontal scroll matrix: all rightmost (most recent) posts align vertically, scrolling left moves all trains left together */
+      /* Interactive All-Trains Map at top of Trains view (replaces Where we are; clicking any acronym centers on that post) */
+      var T = trains();
+      var nodeMap = {};
+      function postStateKey(p) {
+        var c = colOf(p);
+        if (c === "done") return "done";
+        if (str(p.status).toLowerCase().indexOf("progress") >= 0) return "running";
+        if (c === "question") return Array.isArray(p.options) && p.options.length ? "default" : "you";
+        if (c === "todo") return "you";
+        return "running";
+      }
+      var mapDet = el("details", "tnet-map"); mapDet.open = true;
+      var mapSum = el("summary");
+      mapSum.appendChild(el("span", null, "All trains"));
+      mapSum.appendChild(el("span", "sub", trainKeys.length + " · " + activePosts.length));
+      mapDet.appendChild(mapSum);
+      var mapGrid = el("div", "tnet-map-grid");
+
+      /* Single shared horizontal scroll matrix edge-to-edge: rightmost (most recent) posts align vertically */
       var matrix = el("div", "tnet-matrix");
       var rowsBox = el("div", "tnet-rows");
-      var T = trains();
 
       trainKeys.forEach(function (trKey) {
         var tPosts = byTrain[trKey];
         tPosts.sort(function (a, b) { return str(a.created_at) < str(b.created_at) ? -1 : 1; });
+        var hName = humanTrainName(trKey, tMap, tPosts);
+
+        var mRow = el("div", "tnet-map-row");
+        mRow.appendChild(el("b", null, hName));
+        tPosts.forEach(function (p) {
+          var stK = postStateKey(p);
+          var code = str(p.part) || p.id.slice(0, 8);
+          var chip = el("button", "tnet-map-chip st-" + stK, code); chip.type = "button"; chip.title = str(p.title);
+          chip.addEventListener("click", function () {
+            var target = nodeMap[p.id];
+            if (!target) return;
+            target.scrollIntoView({ behavior: "smooth", inline: "center", block: "center" });
+            target.classList.add("tnet-flash");
+            setTimeout(function () { target.classList.remove("tnet-flash"); }, 1400);
+          });
+          mRow.appendChild(chip);
+        });
+        mapGrid.appendChild(mRow);
+
         var row = el("div", "tnet-row");
         var lbl = el("div", "tnet-label");
+        lbl.appendChild(el("b", null, hName));
+        lbl.appendChild(el("span", null, tPosts.length + (tPosts.length === 1 ? " post" : " posts")));
         var allPicked = tPosts.length > 0 && tPosts.every(function (p) { return !!state.picked[p.id]; });
         var tpz = el("span", "train-pick-zone");
         var tsq = el("button", "kit-pick-sq" + (allPicked ? " on" : "")); tsq.type = "button";
-        tsq.title = "Export as Markdown"; tsq.setAttribute("aria-label", "Export as Markdown");
+        tsq.title = "Select posts"; tsq.setAttribute("aria-label", "Select posts");
         tsq.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
         tsq.addEventListener("click", function (ev) {
           ev.stopPropagation();
@@ -3020,9 +3191,11 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
           state.picking = pickedIds().length > 0;
           renderPick(); renderHorizontalTrains();
         });
-        tpz.appendChild(tsq); lbl.appendChild(tpz);
-        lbl.appendChild(el("b", null, humanTrainName(trKey, tMap, tPosts)));
-        lbl.appendChild(el("span", null, tPosts.length + (tPosts.length === 1 ? " post" : " posts")));
+        var tdl = el("button", "btn small kit-icon-btn train-dl-btn"); tdl.type = "button";
+        tdl.title = "Export as Markdown"; tdl.setAttribute("aria-label", "Export as Markdown");
+        tdl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>';
+        tdl.addEventListener("click", function (ev) { ev.stopPropagation(); share(tPosts, $("status")); });
+        tpz.appendChild(tsq); tpz.appendChild(tdl); lbl.appendChild(tpz);
         row.appendChild(lbl);
 
         var chain = el("div", "tnet-chain");
@@ -3039,8 +3212,21 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
             chain.appendChild(forkBadge);
           }
           var colObj = COLUMNS.filter(function (c) { return c.key === colOf(p); })[0] || COLUMNS[2];
-          var node = card(p, colObj);
-          node.className += " tnet-node" + (state.picked[p.id] ? " pick on" : "");
+          var stK = postStateKey(p);
+          var node = el("div", "card tnet-node" + (stK === "running" ? " is-running" : "") + (state.picked[p.id] ? " pick on" : ""));
+          node.tabIndex = 0; node.setAttribute("role", "button"); node.dataset.id = p.id;
+          node.style.setProperty("--c", colObj.c);
+          if (prioOf(p)) node.setAttribute("data-prio", String(prioOf(p)));
+          var tt = el("span", "t");
+          if (isNew(p)) { var nd = el("span", "newdot"); nd.title = "New since you last opened it"; tt.appendChild(nd); }
+          tt.appendChild(document.createTextNode(str(p.title) || "(untitled)"));
+          node.appendChild(tt);
+          var m = el("span", "meta");
+          m.appendChild(el("span", "tnet-st st-" + stK, CHIP[stK] || stK));
+          var pcs = commentsFor(p.id);
+          if (pcs.some(function (x) { return x.kind === "review"; })) m.appendChild(el("span", "badge rev", "\u2713 reviewed"));
+          node.appendChild(m);
+          node.addEventListener("click", function () { openPost(p.id); });
           var holdT = 0;
           node.addEventListener("touchstart", function () {
             clearTimeout(holdT);
@@ -3052,11 +3238,14 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
           }, { passive: true });
           node.addEventListener("touchend", function () { clearTimeout(holdT); }, { passive: true });
           node.addEventListener("touchmove", function () { clearTimeout(holdT); }, { passive: true });
+          nodeMap[p.id] = node;
           chain.appendChild(node);
         });
         row.appendChild(chain);
         rowsBox.appendChild(row);
       });
+      mapDet.appendChild(mapGrid);
+      trainNetEl.appendChild(mapDet);
       matrix.appendChild(rowsBox);
       trainNetEl.appendChild(matrix);
       setTimeout(function () { matrix.scrollLeft = matrix.scrollWidth; }, 0);
@@ -3422,6 +3611,8 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         return;
       }
       posts.sort(function (a, b) {
+        var na = isNew(a) ? 0 : 1, nb = isNew(b) ? 0 : 1;
+        if (na !== nb) return na - nb;
         if (feedSortMode === "urgent") return urgencyScore(a) - urgencyScore(b) || (str(b.created_at) < str(a.created_at) ? -1 : 1);
         return str(b.created_at) < str(a.created_at) ? -1 : 1;
       });
@@ -3444,6 +3635,13 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         if (th && th.scrollIntoView) th.scrollIntoView({ block: "start", behavior: "instant" });
       });
     }
+    window._kitOpenOverlay = function (pid) {
+      openPost(pid);
+      var sh = $("sheet");
+      if (sh) sh.classList.add("feed-comments-overlay");
+      if (wrap) wrap.classList.add("kit-blurred");
+      overlayBackdrop.hidden = false;
+    };
 
     var focusCurrentCard = null, focusCurrentPost = null;
     function renderFocusView() {
@@ -3552,6 +3750,114 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         headerTop.appendChild(exitB);
       }
     }
+    /* Header Live pulsing dot, icon-only Sort toggle (defaults to priority), icon-only Lanes checklist & Selection bar, and Zoom lightbox swipe + X */
+    var statusEl = document.getElementById("status");
+    if (statusEl) {
+      statusEl.classList.add("kit-live-dot");
+      function syncLiveDot() {
+        var txt = (statusEl.textContent || "").trim();
+        statusEl.title = txt; statusEl.setAttribute("aria-label", txt);
+        statusEl.classList.toggle("warn", txt !== "Live" && !statusEl.classList.contains("bad"));
+      }
+      new MutationObserver(syncLiveDot).observe(statusEl, { childList: true, characterData: true, subtree: true, attributes: true });
+      syncLiveDot();
+    }
+    var sortEl = document.getElementById("sort");
+    if (sortEl && sortEl.parentNode && !document.getElementById("kit-sort-btn")) {
+      if (!localStorage.getItem("board-sort")) { state.sort = "prio"; sortEl.value = "prio"; }
+      sortEl.classList.add("kit-hidden-select");
+      var sortB = document.createElement("button");
+      sortB.id = "kit-sort-btn"; sortB.type = "button"; sortB.className = "btn small kit-icon-btn";
+      sortB.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="9" y1="18" x2="15" y2="18"/></svg>';
+      function syncSortBtn() {
+        var isPrio = state.sort === "prio";
+        sortB.title = isPrio ? "By priority" : "Newest first";
+        sortB.setAttribute("aria-label", sortB.title);
+        sortB.classList.toggle("ember", isPrio);
+      }
+      sortB.addEventListener("click", function () {
+        state.sort = state.sort === "prio" ? "new" : "prio";
+        feedSortMode = state.sort === "prio" ? "urgent" : "new";
+        sortEl.value = state.sort;
+        try { localStorage.setItem("board-sort", state.sort); } catch (e) {}
+        syncSortBtn(); renderBoard(); refreshAltViews();
+      });
+      sortEl.parentNode.insertBefore(sortB, sortEl);
+      syncSortBtn();
+    }
+    var selTog = document.getElementById("sel-toggle");
+    if (selTog) {
+      selTog.classList.add("kit-icon-btn");
+      var syncSelIcon = function () {
+        selTog.title = state.picking ? "Stop selecting" : "Select posts";
+        selTog.setAttribute("aria-label", selTog.title);
+        selTog.classList.toggle("ember", !!state.picking);
+        selTog.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>';
+      };
+      new MutationObserver(syncSelIcon).observe(selTog, { childList: true });
+      syncSelIcon();
+    }
+    var selDone = document.getElementById("sel-done");
+    if (selDone) {
+      selDone.classList.add("kit-icon-btn"); selDone.title = "Move to Done"; selDone.setAttribute("aria-label", "Move to Done");
+      selDone.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+    }
+    var selExp = document.getElementById("sel-export");
+    if (selExp) {
+      selExp.classList.add("kit-icon-btn"); selExp.title = "Export as Markdown"; selExp.setAttribute("aria-label", "Export as Markdown");
+      selExp.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>';
+    }
+    var selCan = document.getElementById("sel-cancel");
+    if (selCan) {
+      selCan.classList.add("kit-icon-btn"); selCan.title = "Cancel"; selCan.setAttribute("aria-label", "Cancel");
+      selCan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    }
+    var selBar = document.getElementById("selbar");
+    if (selBar && !document.getElementById("sel-del") && db !== undefined) {
+      var selDel = document.createElement("button");
+      selDel.id = "sel-del"; selDel.type = "button"; selDel.className = "btn kit-icon-btn";
+      selDel.title = "Remove"; selDel.setAttribute("aria-label", "Remove");
+      selDel.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+      selDel.addEventListener("click", function () {
+        var ids = pickedIds(); if (!ids.length) return;
+        removeDocs(ids.map(function (id) { return "posts/" + id; }), ids.length === 1 ? "this post" : ids.length + " posts");
+        setPicking(false);
+      });
+      if (selCan && selCan.parentNode === selBar) selBar.insertBefore(selDel, selCan);
+    }
+    /* Image lightbox (#zoom): semi-transparent X icon + left/right touch swipe between post images */
+    var zClose = document.getElementById("z-close");
+    if (zClose) {
+      zClose.classList.add("kit-icon-btn"); zClose.title = "Close"; zClose.setAttribute("aria-label", "Close");
+      zClose.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    }
+    var zoomEl = document.getElementById("zoom");
+    if (zoomEl) {
+      var zSx = 0;
+      zoomEl.addEventListener("touchstart", function (e) { if (e.touches && e.touches.length === 1) zSx = e.touches[0].clientX; }, { passive: true });
+      zoomEl.addEventListener("touchend", function (e) {
+        if (!e.changedTouches || !e.changedTouches.length) return;
+        var dx = e.changedTouches[0].clientX - zSx;
+        if (Math.abs(dx) < 55) return;
+        var p = current(); if (!p) return;
+        var srcs = postImages(p).map(imgUrl).filter(Boolean);
+        var zi = document.getElementById("z-img"); if (!zi || srcs.length < 2) return;
+        var curI = srcs.indexOf(zi.getAttribute("src") || zi.src);
+        if (curI < 0) return;
+        var nxt = dx < 0 ? (curI + 1) % srcs.length : (curI - 1 + srcs.length) % srcs.length;
+        zi.src = srcs[nxt];
+      }, { passive: true });
+    }
+    /* Alternate 'default' status label with its due date smoothly in Where we are */
+    var altFlip = false;
+    setInterval(function () {
+      altFlip = !altFlip;
+      var els = document.querySelectorAll(".dash .st[data-alt]");
+      for (var i = 0; i < els.length; i++) {
+        els[i].textContent = altFlip ? els[i].dataset.alt : (els[i].dataset.base || "");
+      }
+    }, 2400);
+
     var AV_COLORS = { you: "#e8894a", owner: "#e8894a", orchestrator: "#8b5cf6", consultant: "#10b981", clerk: "#64748b" };
     function decorateComments() {
       var list = document.querySelectorAll(".cmt .meta, .peek-cmt .meta, .ffeed-cmt-item .meta");

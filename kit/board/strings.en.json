@@ -480,14 +480,6 @@
   "kind": "js"
  },
  {
-  "en": "Passed on at ",
-  "kind": "js"
- },
- {
-  "en": "Passed on",
-  "kind": "js"
- },
- {
   "en": "Send to Claude again",
   "kind": "js"
  },
@@ -713,6 +705,14 @@
  },
  {
   "en": "Export as Markdown",
+  "kind": "js"
+ },
+ {
+  "en": "All trains",
+  "kind": "js"
+ },
+ {
+  "en": "Cancel",
   "kind": "js"
  }
 ]
