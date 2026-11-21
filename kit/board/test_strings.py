@@ -36,8 +36,56 @@ check("an empty translation changes nothing", strings.apply(page, table, {})[0] 
 check("the table is current: a fresh extract finds no visible string it lacks",
       not ({(r["en"], r["kind"]) for r in strings.extract(page)} - {(r["en"], r["kind"]) for r in table}
            - {(e, "js") for e in strings.extract_exclusions()}))
+
+# Issue #4: decoded emojis/arrows, ternary branches (on ? "A" : "B"), real newlines, and backward-compat old \uXXXX tables
+check("table keys are decoded plain text (no \\\\u escapes in strings.en.json)",
+      all("\\u" not in r["en"] and "\\n" not in r["en"] for r in table)
+      and any(r["en"] == "👍 Like" for r in table)
+      and any(r["en"] == "👍 Liked" for r in table)
+      and any(r["en"] == "← Discussions" for r in table)
+      and any(r["en"] == " posts\n*Exported " for r in table))
+
+fr_issue4 = {
+    "👍 Like": "👍 J'aime",
+    "👍 Liked": "👍 Aimé",
+    "← Board": "← Tableau",
+    "← Discussions": "← Discussions FR",
+    "You approved this": "Vous avez approuvé",
+    "New discussion": "Nouvelle discussion",
+    " posts\n*Exported ": " billets\n*Exporté ",
+    # Also test old-style \uXXXX key and value compatibility:
+    "\\u2713 Seen": "\\u2713 Vu",
+    "New above \\u2191": "Nouveau plus haut \\u2191",
+}
+out_i4, used_i4, _ = strings.apply(page, table, fr_issue4)
+check("issue #4: both ternary branches translated (👍 Liked / 👍 Like, ← Discussions / ← Board)",
+      '"👍 Aimé"' in out_i4 and '"👍 J\'aime"' in out_i4
+      and '"← Discussions FR"' in out_i4 and '"← Tableau"' in out_i4
+      and '"Vous avez approuvé"' in out_i4 and '"Nouvelle discussion"' in out_i4)
+check("issue #4: old \\\\uXXXX keys and values decode cleanly without double-escaping \\\\u in output",
+      '"✓ Vu"' in out_i4 and '"Nouveau plus haut ↑"' in out_i4 and "\\\\u" not in out_i4)
+check("issue #4: newline in translation is valid JS escape (\\n, never raw newline inside literal)",
+      '" billets\\n*Exporté "' in out_i4)
+
+# Unit test on synthetic snippet with single & double quotes, ternary, and node syntax check
+mini_page = '<head></head><script>var s = on ? "First branch" : \'Second branch\'; var nl = " posts\\n*Exported ";</script><body></body>'
+mini_tbl = strings.extract(mini_page)
+mini_out, mini_used, _ = strings.apply(mini_page, mini_tbl, {"First branch": "Alpha", "Second branch": "L'arbre", " posts\n*Exported ": " billets\n*Exporté "})
+check("issue #4: synthetic ternary & single-quote & newline translation",
+      mini_used == 3 and 'on ? "Alpha" : \'L\\\'arbre\'' in mini_out and '" billets\\n*Exporté "' in mini_out)
+
 node = shutil.which("node")
 if node:
+    _, js_block, _ = strings.split(out)
+    js_code = re.sub(r"^<script[^>]*>|</script>$", "", js_block)
+    r_syn = subprocess.run([node, "-e", "new Function(process.argv[1])", js_code], capture_output=True, text=True)
+    check("issue #4: pseudo-translated script (including multiline strings) parses as valid JS in node",
+          r_syn.returncode == 0)
+    _, js_i4, _ = strings.split(out_i4)
+    js_i4_code = re.sub(r"^<script[^>]*>|</script>$", "", js_i4)
+    r_syn2 = subprocess.run([node, "-e", "new Function(process.argv[1])", js_i4_code], capture_output=True, text=True)
+    check("issue #4: French issue-4 translated script parses as valid JS in node",
+          r_syn2.returncode == 0)
     repo_root = os.path.dirname(os.path.dirname(HERE))
     has_pw = subprocess.run(
         [node, "-e", "require.resolve('playwright')"],

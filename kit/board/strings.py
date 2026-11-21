@@ -56,9 +56,32 @@ def js_literals(js):
     return out
 
 
+def decode_js(s):
+    """Decode JS string escapes (\\uXXXX, \\n, \\', \\") into plain text; leaves already-plain text as-is."""
+    if not isinstance(s, str) or "\\" not in s:
+        return s
+    try:
+        inner = s.replace("\\'", "'")
+        # Escape any unescaped double quotes before passing to json.loads
+        inner = re.sub(r'(?<!\\)"', r'\"', inner)
+        return json.loads('"' + inner + '"')
+    except Exception:
+        return s
+
+
+def encode_js(s, q='"'):
+    """Encode plain text as the interior of a JS string literal delimited by q ('"' or "'")."""
+    esc = json.dumps(s, ensure_ascii=False)[1:-1]
+    if q == "'":
+        esc = esc.replace("'", "\\'").replace('\\"', '"')
+    return esc
+
+
 def code_use(js, lit, q, at, end):
     before = js[max(0, at - 6):at]
     after = js[end:end + 6]
+    if re.search(r"\?\s*$", before):
+        return False
     return bool(re.search(r"(?:[=!]==?|case)\s*$", before) or re.match(r"\s*(?:[=!]==?|:(?!:))", after)
                 or re.search(r"(?:classList\.\w+\(|className\s*=\s*|querySelector(?:All)?\(|getElementById\()\s*$", before))
 
@@ -83,7 +106,7 @@ def extract(page):
             continue
         if code_use(js, lit, q, at, at + len(lit) + 2):
             continue
-        add(lit, "js")
+        add(decode_js(lit), "js")
     return rows
 
 
@@ -91,9 +114,13 @@ def apply(page, table, strings):
     """The page with each table entry that has a translation replaced in its own kind of place; (page, used, missing)."""
     head, js, tail = split(page)
     used, missing = 0, []
+    norm_strings = {}
+    for k_raw, v_raw in (strings or {}).items():
+        if v_raw:
+            norm_strings[decode_js(k_raw)] = decode_js(v_raw)
     for row in table:
-        en, kind = row["en"], row["kind"]
-        tr = strings.get(en)
+        en, kind = decode_js(row["en"]), row["kind"]
+        tr = norm_strings.get(en)
         if not tr or tr == en:
             missing.append(en)
             continue
@@ -111,9 +138,9 @@ def apply(page, table, strings):
         else:
             k, out, last = 0, [], 0
             for lit, q, at in js_literals(js):
-                if lit != en or code_use(js, lit, q, at, at + len(lit) + 2):
+                if decode_js(lit) != en or code_use(js, lit, q, at, at + len(lit) + 2):
                     continue
-                esc = tr.replace("\\", "\\\\").replace(q, "\\" + q)
+                esc = encode_js(tr, q)
                 out.append(js[last:at + 1] + esc)
                 last = at + 1 + len(lit)
                 k += 1
@@ -126,19 +153,25 @@ def apply(page, table, strings):
 EXCLUDED = ["_orchestrator", "2-digit", "/_blob/", "https://", "comments/", "posts/", "groups:", "gallery:3", "board-draft:",
             " [post ", "] image ", "[post ", "[image ", "[discussion ", "_blank", "data/users/", "/board-seen",
             "(hover: hover) and (pointer: fine)", "-posts-", " at /_blob/", ") at /_blob/", "  [attached: ",
-            "\\n[attached: ", "(in reply to the comment ", "\\uD83D\\uDC4D", "Answer: ", "Answer: X",
-            "\\uD83D\\uDC4D Like: he approves this", ", no words.", "\\uD83D\\uDC4D Like on the comment of ", " (\\u00ab",
-            "\\u00bb): he agrees, no words.", "(see the attached file)", ": \\u00ab", "\\u2026\\u00bb"]
+            "\n[attached: ", "(in reply to the comment ", "👍", "Answer: ", "Answer: X",
+            "👍 Like: he approves this", ", no words.", "👍 Like on the comment of ", " («",
+            "»): he agrees, no words.", "(see the attached file)", ": «", "…»", " UTC", "») "]
 
 
 def extract_exclusions():
-    return EXCLUDED + [e for e in (r["en"] for r in extract(open(os.path.join(HERE, "board.template.html"), encoding="utf-8").read()))
-                       if e.startswith("var(")]
+    return [decode_js(e) for e in EXCLUDED] + [
+        e for e in (r["en"] for r in extract(open(os.path.join(HERE, "board.template.html"), encoding="utf-8").read()))
+        if e.startswith("var(")
+    ]
 
 
 def load_table():
     with open(TABLE, encoding="utf-8") as fh:
-        return json.load(fh)
+        rows = json.load(fh)
+    for r in rows:
+        if r.get("kind") == "js":
+            r["en"] = decode_js(r["en"])
+    return rows
 
 
 def main(argv):

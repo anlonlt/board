@@ -184,6 +184,10 @@
   "kind": "js"
  },
  {
+  "en": "Nothing here.",
+  "kind": "js"
+ },
+ {
   "en": "Loading...",
   "kind": "js"
  },
@@ -209,6 +213,10 @@
  },
  {
   "en": "Show everything",
+  "kind": "js"
+ },
+ {
+  "en": "Nothing listed for this row.",
   "kind": "js"
  },
  {
@@ -264,7 +272,19 @@
   "kind": "js"
  },
  {
+  "en": "Stop selecting",
+  "kind": "js"
+ },
+ {
   "en": "Select posts",
+  "kind": "js"
+ },
+ {
+  "en": "Tap the posts to select them.",
+  "kind": "js"
+ },
+ {
+  "en": "Moved to Done.",
   "kind": "js"
  },
  {
@@ -280,7 +300,15 @@
   "kind": "js"
  },
  {
-  "en": "\\u2713 reviewed",
+  "en": "✓ reviewed",
+  "kind": "js"
+ },
+ {
+  "en": "You",
+  "kind": "js"
+ },
+ {
+  "en": "Orchestrator (review)",
   "kind": "js"
  },
  {
@@ -293,6 +321,10 @@
  },
  {
   "en": "**Options:** ",
+  "kind": "js"
+ },
+ {
+  "en": " (default)",
   "kind": "js"
  },
  {
@@ -312,7 +344,7 @@
   "kind": "js"
  },
  {
-  "en": " posts\\n*Exported ",
+  "en": " posts\n*Exported ",
   "kind": "js"
  },
  {
@@ -324,7 +356,15 @@
   "kind": "js"
  },
  {
-  "en": "\\uD83D\\uDC4D Like",
+  "en": "👍 Liked",
+  "kind": "js"
+ },
+ {
+  "en": "👍 Like",
+  "kind": "js"
+ },
+ {
+  "en": "You approved this",
   "kind": "js"
  },
  {
@@ -332,7 +372,7 @@
   "kind": "js"
  },
  {
-  "en": "\\uD83D\\uDC4D Liked",
+  "en": "Your unsent draft is back.",
   "kind": "js"
  },
  {
@@ -340,7 +380,15 @@
   "kind": "js"
  },
  {
-  "en": "\\u2190 Board",
+  "en": "← Discussions",
+  "kind": "js"
+ },
+ {
+  "en": "← Board",
+  "kind": "js"
+ },
+ {
+  "en": "Messages",
   "kind": "js"
  },
  {
@@ -360,11 +408,23 @@
   "kind": "js"
  },
  {
+  "en": "Reopen",
+  "kind": "js"
+ },
+ {
   "en": "Move to Done",
   "kind": "js"
  },
  {
   "en": "Priority",
+  "kind": "js"
+ },
+ {
+  "en": "First",
+  "kind": "js"
+ },
+ {
+  "en": "Second",
   "kind": "js"
  },
  {
@@ -400,7 +460,27 @@
   "kind": "js"
  },
  {
-  "en": "\\uD83D\\uDC4D orchestrator: taking care of it",
+  "en": "Scroll sideways for the rest of these pictures",
+  "kind": "js"
+ },
+ {
+  "en": "1 picture",
+  "kind": "js"
+ },
+ {
+  "en": "Scroll sideways for more",
+  "kind": "js"
+ },
+ {
+  "en": "Scroll back to the left for the start",
+  "kind": "js"
+ },
+ {
+  "en": "Orchestrator · review",
+  "kind": "js"
+ },
+ {
+  "en": "👍 orchestrator: taking care of it",
   "kind": "js"
  },
  {
@@ -412,7 +492,7 @@
   "kind": "js"
  },
  {
-  "en": "\\u2713 Seen",
+  "en": "✓ Seen",
   "kind": "js"
  },
  {
@@ -448,6 +528,10 @@
   "kind": "js"
  },
  {
+  "en": "Show ",
+  "kind": "js"
+ },
+ {
   "en": "Hide ",
   "kind": "js"
  },
@@ -460,7 +544,15 @@
   "kind": "js"
  },
  {
-  "en": "New above \\u2191",
+  "en": "New below ↓",
+  "kind": "js"
+ },
+ {
+  "en": "New above ↑",
+  "kind": "js"
+ },
+ {
+  "en": "Your answer (tap another to change it):",
   "kind": "js"
  },
  {
@@ -484,15 +576,7 @@
   "kind": "js"
  },
  {
-  "en": "no agent session can receive it right now",
-  "kind": "js"
- },
- {
   "en": "only editors of the board can send to Claude",
-  "kind": "js"
- },
- {
-  "en": "no agent session is watching the board",
   "kind": "js"
  },
  {
@@ -533,6 +617,14 @@
  },
  {
   "en": "Sending...",
+  "kind": "js"
+ },
+ {
+  "en": "Sent to Claude.",
+  "kind": "js"
+ },
+ {
+  "en": "Sent to Claude, but not saved on the board.",
   "kind": "js"
  },
  {
