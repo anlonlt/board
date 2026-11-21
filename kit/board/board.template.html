@@ -2442,15 +2442,26 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       }
       var links = resolveClientLinks();
       var byTrain = {}, linkedIds = {};
+      function familyOf(p) {
+        var tr = str(p.train).replace(/^P-/, "");
+        if (tr) return tr;
+        var T = trains(), prt = str(p.part);
+        if (prt && T.by[prt]) {
+          var rt = rootOf(T, prt);
+          if (rt && rt.part) return str(rt.part).replace(/^P-/, "");
+        }
+        var m = /^([A-Za-z]+)\d/.exec(prt || p.id);
+        return m ? m[1].toUpperCase() : (prt || "general");
+      }
       links.forEach(function (lk) {
         if (colOf(lk.post) === "done" || !matches(lk.post)) return;
-        var tr = lk.train || lk.part || "general";
+        var tr = lk.train || familyOf(lk.post);
         (byTrain[tr] = byTrain[tr] || []).push(lk.post);
         linkedIds[lk.id] = true;
       });
       activePosts.forEach(function (p) {
         if (!linkedIds[p.id]) {
-          var tr = str(p.train).replace(/^P-/, "") || str(p.part) || "general";
+          var tr = familyOf(p);
           (byTrain[tr] = byTrain[tr] || []).push(p);
         }
       });
