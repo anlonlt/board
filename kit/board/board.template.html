@@ -393,6 +393,7 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 .done-more { margin-top: 4px; width: 100%; text-align: center; font-size: .84rem; color: var(--muted); }
 .badge.runner { font-family: var(--mono); background: color-mix(in srgb, var(--info) 16%, var(--surface)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--info) 38%, var(--line)); }
 .badge.for-owner { background: color-mix(in srgb, var(--question) 14%, var(--surface)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--question) 36%, var(--line)); }
+.badge.aging { background: rgba(245, 158, 11, .2); color: var(--warn); border: 1px solid rgba(245, 158, 11, .5); font-weight: 700; }
 .tabs { display: flex; width: 100%; gap: 8px; margin-block: 14px 12px; }
 .tab { flex: 1 1 0; justify-content: center; border-radius: 14px; padding: 9px 10px; font-weight: 700; box-shadow: var(--shadow); transition: all .15s ease; background: color-mix(in srgb, var(--c) 9%, var(--surface)); border-color: color-mix(in srgb, var(--c) 28%, var(--line)); }
 .tab[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
@@ -860,6 +861,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
   <main class="lanes" id="lanes"></main>
   <div class="selbar" id="selbar" hidden>
     <span class="n" id="sel-n">0 selected</span>
+    <button class="btn" id="sel-approve" type="button">Approve selected</button>
     <button class="btn ember" id="sel-done" type="button">Move to Done</button>
     <button class="btn" id="sel-export" type="button" hidden>Export as Markdown</button>
     <button class="btn" id="sel-cancel" type="button">Cancel</button>
@@ -1769,6 +1771,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     $("selbar").hidden = !state.picking;
     $("sel-n").textContent = n + " selected";
     $("sel-done").disabled = n === 0; $("sel-export").disabled = n === 0;
+    if ($("sel-approve")) $("sel-approve").disabled = n === 0;
   }
   function setPicking(on) { state.picking = on; state.picked = {}; $("sel-note").textContent = on ? "Tap the posts to select them." : ""; renderBoard(); }
   $("sel-toggle").addEventListener("click", function () { setPicking(!state.picking); });
@@ -1794,6 +1797,26 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     return db.doc("posts/" + p.id).update({ column: "done", column_before: before, done_at: new Date().toISOString() }).then(function () { undoable([{ id: p.id, before: before }]); });
   }
   $("sel-cancel").addEventListener("click", function () { setPicking(false); });
+  if ($("sel-approve")) {
+    $("sel-approve").addEventListener("click", async function () {
+      if (!db) return;
+      var targets = state.posts.filter(function (p) { return state.picked[p.id]; });
+      if (!targets.length) return;
+      var preview = targets.map(function (p) { return "- " + (str(p.title) || p.id); }).join("\n");
+      if (!window.confirm("Approve " + targets.length + " selected post(s)?\n\n" + preview)) return;
+      var btn = this; btn.disabled = true;
+      var now = new Date().toISOString(), failed = 0;
+      await Promise.all(targets.map(function (p) {
+        var ref = db.collection("comments").doc();
+        return ref.set({
+          post_id: p.id, from: state.isOwner ? "owner" : "viewer", like: true,
+          text: "", created_at: now, delivered: false, delivery_error: "", read: false
+        }).catch(function () { failed++; });
+      }));
+      if (failed) { $("sel-note").textContent = failed + " could not be approved; try again."; btn.disabled = false; return; }
+      setPicking(false);
+    });
+  }
   $("sel-export").addEventListener("click", function () { share(state.posts.filter(function (p) { return state.picked[p.id]; }), $("sel-note")); });
   $("share").addEventListener("click", function () { var p = current(); if (p) share([p], $("c-note")); });
   $("sel-done").addEventListener("click", async function () {
@@ -1825,6 +1848,15 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     if (Number(p.minutes) > 0) m.appendChild(el("span", "badge", Number(p.minutes) + " min"));
     m.appendChild(el("span", null, when(p.created_at)));
     var cs = commentsFor(p.id);
+    if ((c.key === "question" || c.key === "todo") && p.created_at) {
+      var ageH = (Date.now() - Date.parse(p.created_at)) / 3600000;
+      var hasOwnerAct = cs.some(function (x) { return x.from === "owner" || x.from === "viewer"; });
+      if (ageH >= 24 && !hasOwnerAct) {
+        var ageLbl = Math.floor(ageH / 24) + "d waiting";
+        var ag = el("span", "badge aging", ageLbl); ag.title = "Unanswered for more than 24 hours";
+        m.appendChild(ag);
+      }
+    }
     var fromAgent = cs.filter(function (x) { return x.from && x.from !== "owner" && x.from !== "viewer"; }).length;
     if (cs.length) m.appendChild(el("span", "badge", cs.length + (cs.length === 1 ? " comment" : " comments")));
     if (cs.some(function (x) { return x.kind === "review"; })) m.appendChild(el("span", "badge rev", "\u2713 reviewed"));

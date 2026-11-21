@@ -730,5 +730,21 @@
  {
   "en": "post/",
   "kind": "js"
+ },
+ {
+  "en": "Approve selected",
+  "kind": "html"
+ },
+ {
+  "en": "Approve ",
+  "kind": "js"
+ },
+ {
+  "en": " selected post(s)?\n\n",
+  "kind": "js"
+ },
+ {
+  "en": "Unanswered for more than 24 hours",
+  "kind": "js"
  }
 ]

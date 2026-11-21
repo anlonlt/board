@@ -481,12 +481,34 @@ def main(argv=None):
     ap.add_argument("--no-clerk", action="store_true")
     ap.add_argument("--no-orchestrator", action="store_true")
     ap.add_argument("--setup-done", action="store_true", help="README step 8: the install is reported; hooks speak again")
+    ap.add_argument("--verify", action="store_true", help="Verify installed kit files against SHA-256 hashes in .kit/manifest.json")
     ap.add_argument("--uninstall", action="store_true", help="Remove unmodified kit files recorded in .kit/manifest.json")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     t = os.path.abspath(a.target)
     if not os.path.isdir(t):
         raise SystemExit("install: %s is not a directory" % t)
+    if a.verify:
+        mp = os.path.join(t, ".kit", "manifest.json")
+        if not os.path.isfile(mp):
+            print("verify: no .kit/manifest.json found in %s" % t)
+            return 1
+        mf = json.load(open(mp, encoding="utf-8"))
+        ok_n, mod_n, miss_n = 0, 0, 0
+        for rel, expected_sha in sorted(mf.items()):
+            if rel.startswith("_"):
+                continue
+            fp = os.path.join(t, rel)
+            if not os.path.isfile(fp):
+                print("MISSING  " + rel)
+                miss_n += 1
+            elif sha(open(fp, "rb").read()) != expected_sha:
+                print("MODIFIED " + rel)
+                mod_n += 1
+            else:
+                ok_n += 1
+        print("verify: %d ok, %d modified, %d missing" % (ok_n, mod_n, miss_n))
+        return 0 if (mod_n == 0 and miss_n == 0) else 1
     if a.uninstall:
         mp = os.path.join(t, ".kit", "manifest.json")
         if not os.path.isfile(mp):
@@ -579,6 +601,7 @@ def main(argv=None):
         if not claude_only:
             ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))
             ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
+            ins.put(".kit/mcp_stdio.py", rd("kit", "board", "mcp_stdio.py"))
         page = rd("kit", "board", "board.template.html")
         if c["kit"].get("palette"):
             page = apply_palette(page, c["kit"]["palette"])
