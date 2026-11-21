@@ -282,6 +282,59 @@ class TestChecklistFeatures(unittest.TestCase):
                 srv.server_close()
                 store.close()
 
+    def test_cross_repo_attach_and_routed_share(self):
+        with tempfile.TemporaryDirectory() as td_harm, tempfile.TemporaryDirectory() as td_board:
+            os.makedirs(os.path.join(td_harm, ".kit"), exist_ok=True)
+            os.makedirs(os.path.join(td_board, ".kit"), exist_ok=True)
+            with open(os.path.join(td_harm, ".kit", "config.json"), "w", encoding="utf-8") as fh:
+                json.dump({"project": "Harmonize"}, fh)
+            with open(os.path.join(td_board, ".kit", "config.json"), "w", encoding="utf-8") as fh:
+                json.dump({"project": "board"}, fh)
+            # Pre-seed a post in the attached `board` repo
+            bst = board_server.BoardStore(os.path.join(td_board, ".kit", "board_data"))
+            bst.set_doc("posts", "bd-cross-1", {"title": "Cross-repo task", "column": "todo", "body": "Research board UX"})
+            bst.close()
+
+            srv, store = board_server.start_server(td_harm, host="127.0.0.1", port=0, token="master-tok", attach={"board": td_board})
+            port = srv.server_address[1]
+            t = threading.Thread(target=srv.serve_forever, daemon=True)
+            t.start()
+            try:
+                cli = os.path.join(ROOT, "kit", "board", "board_cli.py")
+                c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                c.request("GET", "/_api/repos", headers={"X-Kit-Token": "master-tok"})
+                r_rep = c.getresponse(); repos = json.loads(r_rep.read().decode("utf-8"))
+                self.assertEqual({x["id"] for x in repos["repos"]}, {"harmonize", "board"})
+
+                # Mint a share link for the attached `board` post through Harmonize's server
+                rc = subprocess.run([sys.executable, cli, "--url", f"http://127.0.0.1:{port}", "--token", "master-tok", "--repo", "board", "share", "create", "bd-cross-1"], capture_output=True, text=True)
+                self.assertEqual(rc.returncode, 0, rc.stderr)
+                sh = json.loads(rc.stdout)
+                self.assertEqual(sh["repo"], "board")
+
+                # Unauthenticated GET + POST submit via Harmonize's URL writes directly into `board`'s DB!
+                c.request("GET", "/_share/" + sh["token"])
+                r1 = c.getresponse(); txt = r1.read().decode("utf-8")
+                self.assertEqual(r1.status, 200)
+                self.assertIn("Research board UX", txt)
+
+                c.request("POST", "/_share/" + sh["token"] + "/submit", body=json.dumps({"from": "lmarena", "text": "Findings for board repo"}), headers={"Content-Type": "application/json"})
+                r2 = c.getresponse(); d2 = json.loads(r2.read().decode("utf-8"))
+                self.assertEqual(r2.status, 200)
+                self.assertEqual(d2["repo"], "board")
+                c.close()
+
+                # Verify the comment landed in `board`'s DB and NOT Harmonize's DB
+                self.assertFalse(store.get_doc("comments", d2["comment_id"])["exists"])
+                b_attached = srv._extra_stores["board"]["store"]
+                self.assertTrue(b_attached.get_doc("comments", d2["comment_id"])["exists"])
+            finally:
+                srv.shutdown()
+                srv.server_close()
+                store.close()
+                for info in srv._extra_stores.values():
+                    info["store"].close()
+
 
 if __name__ == "__main__":
     unittest.main()

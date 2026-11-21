@@ -79,6 +79,9 @@ SHIM_JS = r"""(function () {
       opts.headers["X-Kit-Token"] = window.__KIT_TOKEN__;
       opts.credentials = "omit";
     }
+    if (typeof window !== "undefined" && window.__KIT_ACTIVE_REPO__) {
+      opts.headers["X-Kit-Repo"] = window.__KIT_ACTIVE_REPO__;
+    }
     if (body !== undefined && body !== null) {
       if (body instanceof Blob || body instanceof ArrayBuffer || body instanceof Uint8Array) {
         opts.body = body;
@@ -189,6 +192,43 @@ SHIM_JS = r"""(function () {
     });
   }
   if (typeof window !== "undefined") {
+    try {
+      var savedRepo = localStorage.getItem("kit_active_repo") || "";
+      if (savedRepo) window.__KIT_ACTIVE_REPO__ = savedRepo;
+    } catch (e) {}
+    function initRepoSwitcher() {
+      rawApi("GET", "/_api/repos").then(function (info) {
+        if (!info || !Array.isArray(info.repos) || info.repos.length <= 1) return;
+        var hdr = document.querySelector("header.top");
+        if (!hdr || document.getElementById("kit-repo-switch")) return;
+        var sel = document.createElement("select");
+        sel.id = "kit-repo-switch";
+        sel.setAttribute("aria-label", "Switch repository board");
+        sel.style.cssText = "border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:4px 10px;font-size:.82rem;font-weight:700;cursor:pointer;";
+        info.repos.forEach(function (r) {
+          var o = document.createElement("option");
+          o.value = r.primary ? "" : r.id;
+          o.textContent = r.name + (r.primary ? "" : " (attached)");
+          sel.appendChild(o);
+        });
+        var cur = window.__KIT_ACTIVE_REPO__ || "";
+        if (!info.repos.some(function (r) { return (r.primary ? "" : r.id) === cur; })) {
+          cur = ""; window.__KIT_ACTIVE_REPO__ = "";
+        }
+        sel.value = cur;
+        sel.addEventListener("change", function () {
+          window.__KIT_ACTIVE_REPO__ = sel.value;
+          try { localStorage.setItem("kit_active_repo", sel.value); } catch (e) {}
+          lastSeq = 0;
+          refreshAllSubs();
+        });
+        var h1 = hdr.querySelector("h1");
+        if (h1 && h1.nextSibling) hdr.insertBefore(sel, h1.nextSibling);
+        else hdr.appendChild(sel);
+      }, function () {});
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initRepoSwitcher);
+    else setTimeout(initRepoSwitcher, 100);
     window.addEventListener("focus", function () { connectEvents(); refreshAllSubs(); });
     setInterval(function () {
       if (typeof document !== "undefined" && document.hidden) return;
@@ -637,6 +677,7 @@ class BoardStore:
             "CREATE TABLE IF NOT EXISTS shares ("
             "  token TEXT PRIMARY KEY,"
             "  post_id TEXT NOT NULL,"
+            "  repo TEXT NOT NULL DEFAULT '',"
             "  allow_write INTEGER NOT NULL DEFAULT 1,"
             "  files_json TEXT NOT NULL DEFAULT '[]',"
             "  expires_at TEXT NOT NULL,"
@@ -646,6 +687,10 @@ class BoardStore:
             "  max_submissions INTEGER NOT NULL DEFAULT 5"
             ")"
         )
+        try:
+            self.conn.execute("ALTER TABLE shares ADD COLUMN repo TEXT NOT NULL DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS threads ("
             "  thread_id TEXT PRIMARY KEY,"
@@ -781,7 +826,7 @@ class BoardStore:
                 self._auto_sync_dirty = False
             self._run_auto_sync_once()
 
-    def create_share(self, post_id, ttl_hours=24.0, allow_write=True, files=None, max_submissions=5):
+    def create_share(self, post_id, ttl_hours=24.0, allow_write=True, files=None, max_submissions=5, repo=""):
         tok = secrets.token_urlsafe(24)
         now_dt = datetime.now(timezone.utc)
         now = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -792,25 +837,25 @@ class BoardStore:
                 safe_files.append({"name": str(f["name"])[:120], "content": str(f.get("content") or "")[:200000]})
         with self.lock:
             self.conn.execute(
-                "INSERT INTO shares(token, post_id, allow_write, files_json, expires_at, created_at, revoked, submissions, max_submissions) "
-                "VALUES(?, ?, ?, ?, ?, ?, 0, 0, ?)",
-                (tok, post_id, 1 if allow_write else 0, json.dumps(safe_files, ensure_ascii=False), exp, now, max(1, int(max_submissions or 5))),
+                "INSERT INTO shares(token, post_id, repo, allow_write, files_json, expires_at, created_at, revoked, submissions, max_submissions) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, 0, 0, ?)",
+                (tok, post_id, str(repo or ""), 1 if allow_write else 0, json.dumps(safe_files, ensure_ascii=False), exp, now, max(1, int(max_submissions or 5))),
             )
             self.conn.commit()
-        return {"token": tok, "post_id": post_id, "path": "/_share/" + tok, "allow_write": bool(allow_write), "expires_at": exp, "created_at": now}
+        return {"token": tok, "post_id": post_id, "repo": str(repo or ""), "path": "/_share/" + tok, "allow_write": bool(allow_write), "expires_at": exp, "created_at": now}
 
     def get_share(self, tok):
         with self.lock:
             row = self.conn.execute(
-                "SELECT token, post_id, allow_write, files_json, expires_at, created_at, revoked, submissions, max_submissions FROM shares WHERE token=?",
+                "SELECT token, post_id, repo, allow_write, files_json, expires_at, created_at, revoked, submissions, max_submissions FROM shares WHERE token=?",
                 (tok,),
             ).fetchone()
         if not row:
             return None
         return {
-            "token": row[0], "post_id": row[1], "allow_write": bool(row[2]),
-            "files": json.loads(row[3] or "[]"), "expires_at": row[4], "created_at": row[5],
-            "revoked": bool(row[6]), "submissions": int(row[7]), "max_submissions": int(row[8]),
+            "token": row[0], "post_id": row[1], "repo": row[2] or "", "allow_write": bool(row[3]),
+            "files": json.loads(row[4] or "[]"), "expires_at": row[5], "created_at": row[6],
+            "revoked": bool(row[7]), "submissions": int(row[8]), "max_submissions": int(row[9]),
         }
 
     def list_shares(self, post_id=None):
@@ -1521,13 +1566,20 @@ class PayloadTooLarge(Exception):
     pass
 
 
-def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False):
+def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False, extra_stores=None):
     html_path = os.path.join(root_dir, ".kit", "board.html")
     project_name = "Board"
     try:
         project_name = json.load(open(os.path.join(root_dir, ".kit", "config.json"), encoding="utf-8")).get("project") or "Board"
     except (OSError, ValueError):
         pass
+    primary_repo_id = re.sub(r"[^a-z0-9_-]+", "-", project_name.lower()).strip("-") or "primary"
+    stores_map = {primary_repo_id: store}
+    repo_meta = [{"id": primary_repo_id, "name": project_name, "primary": True}]
+    for rid, rinfo in (extra_stores or {}).items():
+        if rid and rid != primary_repo_id and isinstance(rinfo, dict) and rinfo.get("store"):
+            stores_map[rid] = rinfo["store"]
+            repo_meta.append({"id": rid, "name": rinfo.get("name") or rid, "primary": False})
 
     def _build_embed_unlock_html():
         return (
@@ -1597,11 +1649,12 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
     UNLOCK_WINDOW_SEC = 600.0
 
     def _render_share_brief(sh, base_origin):
-        post_doc = store.get_doc("posts", sh["post_id"])
+        tstore = stores_map.get(sh.get("repo") or "") or store
+        post_doc = tstore.get_doc("posts", sh["post_id"])
         if not post_doc.get("exists"):
             return None
         p = post_doc["data"] or {}
-        cmts = [c for c in store.list_docs("comments")["docs"] if (c["data"] or {}).get("post_id") == sh["post_id"]]
+        cmts = [c for c in tstore.list_docs("comments")["docs"] if (c["data"] or {}).get("post_id") == sh["post_id"]]
         cmts.sort(key=lambda c: str((c["data"] or {}).get("created_at") or ""))
         lines = [
             "# External Task Brief — %s" % (p.get("title") or sh["post_id"]),
@@ -1663,6 +1716,14 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+
+        def _repo_id(self, parsed):
+            qs = urllib.parse.parse_qs(parsed.query)
+            rid = (self.headers.get("X-Kit-Repo") or (qs.get("repo") or [""])[0] or "").strip()
+            return rid if rid in stores_map else primary_repo_id
+
+        def _store(self, parsed):
+            return stores_map.get(self._repo_id(parsed)) or store
 
         def _send_security_headers(self, is_html=False):
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -1983,10 +2044,14 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                 self.wfile.write(raw)
                 return
 
+            if path == "/_api/repos":
+                self._send_json(200, {"primary": primary_repo_id, "repos": repo_meta})
+                return
+
             if path == "/_api/changes":
                 since = int((qs.get("since") or ["0"])[0])
                 limit = int((qs.get("limit") or ["1000"])[0])
-                self._send_json(200, store.list_changes(since=since, limit=limit))
+                self._send_json(200, self._store(parsed).list_changes(since=since, limit=limit))
                 return
 
             if path == "/_api/git/diff":
@@ -2128,21 +2193,22 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                 except ValueError as e:
                     self._send_json(400, {"error": str(e)})
                     return
-                self._send_json(200, store.get_doc(coll, doc_id))
+                self._send_json(200, self._store(parsed).get_doc(coll, doc_id))
                 return
 
             if path.startswith("/_api/db/"):
                 rest = [urllib.parse.unquote(x) for x in path[len("/_api/db/"):].strip("/").split("/") if x]
+                cur_store = self._store(parsed)
                 if len(rest) == 1:
                     where = json.loads(qs["where"][0]) if "where" in qs else None
                     order_by = (qs.get("order_by") or [None])[0]
                     direction = (qs.get("dir") or ["asc"])[0]
                     limit = int(qs["limit"][0]) if "limit" in qs and qs["limit"][0] else None
                     cursor = int((qs.get("cursor") or ["0"])[0])
-                    self._send_json(200, store.list_docs(rest[0], where=where, order_by=order_by, direction=direction, limit=limit, cursor=cursor))
+                    self._send_json(200, cur_store.list_docs(rest[0], where=where, order_by=order_by, direction=direction, limit=limit, cursor=cursor))
                     return
                 if len(rest) == 2:
-                    self._send_json(200, store.get_doc(rest[0], rest[1]))
+                    self._send_json(200, cur_store.get_doc(rest[0], rest[1]))
                     return
 
             self._send_json(404, {"error": "not found"})
@@ -2171,7 +2237,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
             if not coll:
                 self._send_json(404, {"error": "not found"})
                 return
-            res, err = store.set_doc(coll, doc_id, body.get("data", {}), if_version=body.get("if_version"))
+            res, err = self._store(parsed).set_doc(coll, doc_id, body.get("data", {}), if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
@@ -2207,7 +2273,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
             if not coll:
                 self._send_json(404, {"error": "not found"})
                 return
-            res, err = store.update_doc(coll, doc_id, body.get("data", {}), if_version=body.get("if_version"))
+            res, err = self._store(parsed).update_doc(coll, doc_id, body.get("data", {}), if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
@@ -2258,12 +2324,14 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                 sender = re.sub(r"[^A-Za-z0-9._-]", "", str(body.get("from") or "external-ai"))[:32] or "external-ai"
                 mode = str(body.get("mode") or "comment").strip().lower()
                 now = utc_now()
-                parent_doc = store.get_doc("posts", sh["post_id"])
+                target_repo = sh.get("repo") or primary_repo_id
+                tstore = stores_map.get(target_repo) or store
+                parent_doc = tstore.get_doc("posts", sh["post_id"])
                 pdata = parent_doc.get("data") or {}
                 if mode == "child_post":
                     new_id = "%s-%s-%s" % (sh["post_id"][:40], sender[:12], secrets.token_hex(3))
                     title = str(body.get("title") or ((pdata.get("title") or sh["post_id"]) + " — " + sender))[:180]
-                    res, _ = store.set_doc("posts", new_id, {
+                    res, _ = tstore.set_doc("posts", new_id, {
                         "title": title,
                         "body": text,
                         "column": "info",
@@ -2275,17 +2343,17 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                         "created_at": now,
                     })
                     store.increment_share_submissions(stok)
-                    self._send_json(200, {"ok": True, "mode": "child_post", "post_id": new_id, "version": res["version"]})
+                    self._send_json(200, {"ok": True, "mode": "child_post", "repo": target_repo, "post_id": new_id, "version": res["version"]})
                     return
                 cid = "ext-%s-%s" % (sender[:10], secrets.token_hex(4))
-                res, _ = store.set_doc("comments", cid, {
+                res, _ = tstore.set_doc("comments", cid, {
                     "post_id": sh["post_id"],
                     "from": sender,
                     "text": text,
                     "created_at": now,
                 })
                 store.increment_share_submissions(stok)
-                self._send_json(200, {"ok": True, "mode": "comment", "comment_id": cid, "post_id": sh["post_id"], "version": res["version"]})
+                self._send_json(200, {"ok": True, "mode": "comment", "repo": target_repo, "comment_id": cid, "post_id": sh["post_id"], "version": res["version"]})
                 return
             if path == "/_api/unlock":
                 ip = ((self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()) or (self.client_address[0] if self.client_address else "unknown")
@@ -2371,7 +2439,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
 
             if path == "/_api/shares":
                 pid = str(body.get("post_id") or "").strip()
-                if not pid or not store.get_doc("posts", pid).get("exists"):
+                target_repo = str(body.get("repo") or "").strip()
+                if not target_repo or target_repo not in stores_map:
+                    target_repo = self._repo_id(parsed)
+                tstore = stores_map.get(target_repo) or store
+                if not pid or not tstore.get_doc("posts", pid).get("exists"):
                     self._send_json(404, {"error": "post_not_found"})
                     return
                 res = store.create_share(
@@ -2380,6 +2452,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                     allow_write=bool(body.get("allow_write", True)),
                     files=body.get("files") or [],
                     max_submissions=body.get("max_submissions", 5),
+                    repo=target_repo,
                 )
                 self._send_json(200, res)
                 return
@@ -2680,13 +2753,38 @@ def export_markdown(store, post_id=None):
     return ("\n\n---\n\n".join(blocks) + "\n") if blocks else "# Board export\n\n(No posts yet.)\n", fname
 
 
-def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None, embed_mode=False, preview=False, default_watcher=None, auto_sync_interval=0.0, auto_sync_push=False):
+def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None, embed_mode=False, preview=False, default_watcher=None, auto_sync_interval=0.0, auto_sync_push=False, attach=None):
     if host.strip().lower() not in LOOPBACK_HOSTS and not token and not preview:
         raise ValueError("refusing to bind to non-loopback host %r without --token / KIT_BOARD_TOKEN" % host)
     data_dir = os.path.join(root_dir, ".kit", "board_data")
     store = BoardStore(data_dir)
     if auto_sync_interval and float(auto_sync_interval) > 0:
         store.enable_auto_sync(root_dir, interval_sec=float(auto_sync_interval), push=auto_sync_push)
+    extra_stores = {}
+    attach_specs = dict(attach or {})
+    cfg_path = os.path.join(root_dir, ".kit", "config.json")
+    try:
+        cfg_data = json.load(open(cfg_path, encoding="utf-8"))
+    except (OSError, ValueError):
+        cfg_data = {}
+    for item in (cfg_data.get("portfolio") or []):
+        if isinstance(item, dict) and item.get("path"):
+            aname = str(item.get("name") or os.path.basename(os.path.abspath(item["path"])))
+            aid = re.sub(r"[^a-z0-9_-]+", "-", aname.lower()).strip("-")
+            if aid and aid not in attach_specs:
+                attach_specs[aid] = item["path"]
+    for aid, apath in attach_specs.items():
+        ap_abs = os.path.abspath(apath)
+        if os.path.isdir(ap_abs):
+            ast = BoardStore(os.path.join(ap_abs, ".kit", "board_data"))
+            if auto_sync_interval and float(auto_sync_interval) > 0:
+                ast.enable_auto_sync(ap_abs, interval_sec=float(auto_sync_interval), push=auto_sync_push)
+            aname = aid
+            try:
+                aname = json.load(open(os.path.join(ap_abs, ".kit", "config.json"), encoding="utf-8")).get("project") or aid
+            except (OSError, ValueError):
+                pass
+            extra_stores[aid] = {"name": aname, "root": ap_abs, "store": ast}
     if preview:
         if not token:
             print(
@@ -2709,13 +2807,10 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
     if default_watcher:
         store.set_watch(default_watcher, True)
     if notify_url is None:
-        cfg_path = os.path.join(root_dir, ".kit", "config.json")
-        try:
-            notify_url = json.load(open(cfg_path, encoding="utf-8")).get("kit", {}).get("notify_url") or None
-        except (OSError, ValueError):
-            notify_url = None
-    srv = ThreadingHTTPServer((host, port), make_handler(root_dir, store, token=token, notify_url=notify_url, embed_mode=embed_mode))
+        notify_url = cfg_data.get("kit", {}).get("notify_url") or None
+    srv = ThreadingHTTPServer((host, port), make_handler(root_dir, store, token=token, notify_url=notify_url, embed_mode=embed_mode, extra_stores=extra_stores))
     srv.daemon_threads = True
+    srv._extra_stores = extra_stores
     return srv, store
 
 
@@ -2734,6 +2829,7 @@ def main(argv=None):
     ap.add_argument("--seed-from-mirror", action="store_true", help="Import posts/comments from git board-mirror on startup")
     ap.add_argument("--mirror-branch", default=None, help="Override mirror branch name (default from .kit/config.json)")
     ap.add_argument("--force-seed", action="store_true", help="Overwrite existing local SQLite docs when seeding")
+    ap.add_argument("--attach", action="append", default=[], help="Attach another local repo board as name=path (or path) for cross-repo viewing & routed /_share")
     a = ap.parse_args(argv)
     root = os.path.abspath(a.root) if a.root else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     tok = a.token or os.environ.get("KIT_BOARD_TOKEN") or None
@@ -2757,6 +2853,16 @@ def main(argv=None):
         extra["auto_sync_interval"] = auto_sync
     if a.auto_sync_push or os.environ.get("KIT_AUTO_SYNC_PUSH", "").strip().lower() in ("1", "true", "yes", "on"):
         extra["auto_sync_push"] = True
+    if a.attach:
+        att = {}
+        for spec in a.attach:
+            if "=" in spec:
+                k, v = spec.split("=", 1)
+                att[re.sub(r"[^a-z0-9_-]+", "-", k.strip().lower()).strip("-")] = v.strip()
+            else:
+                v = os.path.abspath(spec.strip())
+                att[re.sub(r"[^a-z0-9_-]+", "-", os.path.basename(v).lower()).strip("-")] = v
+        extra["attach"] = att
     srv, store = start_server(
         root, a.host, a.port, token=tok, notify_url=nurl,
         embed_mode=embed, **extra,
