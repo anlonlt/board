@@ -16,6 +16,7 @@ import mimetypes
 import os
 import queue
 import re
+import secrets
 import sqlite3
 import subprocess
 import sys
@@ -24,7 +25,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -633,6 +634,19 @@ class BoardStore:
                 except sqlite3.OperationalError:
                     pass
         self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS shares ("
+            "  token TEXT PRIMARY KEY,"
+            "  post_id TEXT NOT NULL,"
+            "  allow_write INTEGER NOT NULL DEFAULT 1,"
+            "  files_json TEXT NOT NULL DEFAULT '[]',"
+            "  expires_at TEXT NOT NULL,"
+            "  created_at TEXT NOT NULL,"
+            "  revoked INTEGER NOT NULL DEFAULT 0,"
+            "  submissions INTEGER NOT NULL DEFAULT 0,"
+            "  max_submissions INTEGER NOT NULL DEFAULT 5"
+            ")"
+        )
+        self.conn.execute(
             "CREATE TABLE IF NOT EXISTS threads ("
             "  thread_id TEXT PRIMARY KEY,"
             "  anchor TEXT NOT NULL,"
@@ -766,6 +780,66 @@ class BoardStore:
                     return
                 self._auto_sync_dirty = False
             self._run_auto_sync_once()
+
+    def create_share(self, post_id, ttl_hours=24.0, allow_write=True, files=None, max_submissions=5):
+        tok = secrets.token_urlsafe(24)
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        exp = (now_dt + timedelta(hours=max(0.1, min(float(ttl_hours or 24.0), 720.0)))).strftime("%Y-%m-%dT%H:%M:%SZ")
+        safe_files = []
+        for f in (files or [])[:10]:
+            if isinstance(f, dict) and f.get("name"):
+                safe_files.append({"name": str(f["name"])[:120], "content": str(f.get("content") or "")[:200000]})
+        with self.lock:
+            self.conn.execute(
+                "INSERT INTO shares(token, post_id, allow_write, files_json, expires_at, created_at, revoked, submissions, max_submissions) "
+                "VALUES(?, ?, ?, ?, ?, ?, 0, 0, ?)",
+                (tok, post_id, 1 if allow_write else 0, json.dumps(safe_files, ensure_ascii=False), exp, now, max(1, int(max_submissions or 5))),
+            )
+            self.conn.commit()
+        return {"token": tok, "post_id": post_id, "path": "/_share/" + tok, "allow_write": bool(allow_write), "expires_at": exp, "created_at": now}
+
+    def get_share(self, tok):
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT token, post_id, allow_write, files_json, expires_at, created_at, revoked, submissions, max_submissions FROM shares WHERE token=?",
+                (tok,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "token": row[0], "post_id": row[1], "allow_write": bool(row[2]),
+            "files": json.loads(row[3] or "[]"), "expires_at": row[4], "created_at": row[5],
+            "revoked": bool(row[6]), "submissions": int(row[7]), "max_submissions": int(row[8]),
+        }
+
+    def list_shares(self, post_id=None):
+        with self.lock:
+            if post_id:
+                rows = self.conn.execute(
+                    "SELECT token, post_id, allow_write, expires_at, created_at, revoked, submissions, max_submissions FROM shares WHERE post_id=? ORDER BY created_at DESC",
+                    (post_id,),
+                ).fetchall()
+            else:
+                rows = self.conn.execute(
+                    "SELECT token, post_id, allow_write, expires_at, created_at, revoked, submissions, max_submissions FROM shares ORDER BY created_at DESC LIMIT 100"
+                ).fetchall()
+        return [
+            {"token": r[0], "post_id": r[1], "path": "/_share/" + r[0], "allow_write": bool(r[2]),
+             "expires_at": r[3], "created_at": r[4], "revoked": bool(r[5]), "submissions": int(r[6]), "max_submissions": int(r[7])}
+            for r in rows
+        ]
+
+    def revoke_share(self, tok):
+        with self.lock:
+            cur = self.conn.execute("UPDATE shares SET revoked=1 WHERE token=?", (tok,))
+            self.conn.commit()
+            return cur.rowcount > 0
+
+    def increment_share_submissions(self, tok):
+        with self.lock:
+            self.conn.execute("UPDATE shares SET submissions=submissions+1 WHERE token=?", (tok,))
+            self.conn.commit()
 
     def close(self):
         with self._auto_sync_cond:
@@ -1517,6 +1591,76 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
         "base-uri 'none'"
     )
 
+    unlock_fails = {}
+    unlock_lock = threading.Lock()
+    MAX_UNLOCK_FAILS = 10
+    UNLOCK_WINDOW_SEC = 600.0
+
+    def _render_share_brief(sh, base_origin):
+        post_doc = store.get_doc("posts", sh["post_id"])
+        if not post_doc.get("exists"):
+            return None
+        p = post_doc["data"] or {}
+        cmts = [c for c in store.list_docs("comments")["docs"] if (c["data"] or {}).get("post_id") == sh["post_id"]]
+        cmts.sort(key=lambda c: str((c["data"] or {}).get("created_at") or ""))
+        lines = [
+            "# External Task Brief — %s" % (p.get("title") or sh["post_id"]),
+            "",
+            "- **Card ID:** `%s`" % sh["post_id"],
+            "- **Column:** `%s`" % (p.get("column") or "info"),
+            "- **Train / Part:** `%s` / `%s`" % (p.get("train") or "-", p.get("part") or "-"),
+            "- **Expires:** `%s`" % sh["expires_at"],
+            "",
+            "## Task & Context",
+            "",
+            str(p.get("body") or "").strip(),
+        ]
+        if cmts:
+            lines.extend(["", "## Recent Comments (%d)" % len(cmts)])
+            for c in cmts[-10:]:
+                cd = c["data"] or {}
+                txt = str(cd.get("text") or "").strip()
+                if txt:
+                    lines.append("- **%s**: %s" % (cd.get("from") or "unknown", txt.replace("\n", "\n  ")))
+        if sh.get("files"):
+            lines.extend(["", "## Attached Reference Files"])
+            for f in sh["files"]:
+                lines.extend(["", "### `%s`" % f["name"], "```", f.get("content") or "", "```"])
+        lines.extend(["", "## How to Return Your Findings", ""])
+        if sh["allow_write"]:
+            submit_url = (base_origin.rstrip("/") if base_origin else "") + "/_share/" + sh["token"] + "/submit"
+            lines.extend([
+                "### Option A — Direct write-back (if you have outbound HTTP)",
+                "POST JSON to `%s`:" % submit_url,
+                "```json",
+                json.dumps({
+                    "from": "lmarena",
+                    "mode": "comment",
+                    "text": "<your concise Markdown findings here>",
+                }, indent=2),
+                "```",
+                "*(Set `\"mode\": \"child_post\"` and `\"title\": \"...\"` to create a linked result card instead of a comment.)*",
+                "",
+            ])
+        lines.extend([
+            "### Option B — Copy-paste Markdown card (for 1-click import)",
+            "Output a single Markdown block starting with this YAML front-matter:",
+            "```markdown",
+            "---",
+            "id: %s-research" % sh["post_id"],
+            "title: %s — Research" % (p.get("title") or sh["post_id"]),
+            "column: info",
+            "parent: %s" % sh["post_id"],
+            "train: %s" % (p.get("train") or ""),
+            "runner: lmarena",
+            "---",
+            "",
+            "<your findings here>",
+            "```",
+            "",
+        ])
+        return "\n".join(lines)
+
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -1679,6 +1823,32 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                 self._send_json(200, {"ok": True, "pid": os.getpid(), "auth": bool(token), "embed_mode": bool(embed_mode)})
                 return
 
+            if path.startswith("/_share/") and not path.endswith("/submit"):
+                stok = urllib.parse.unquote(path[len("/_share/"):]).strip("/")
+                sh = store.get_share(stok)
+                if not sh:
+                    self._send_json(404, {"error": "share_not_found"})
+                    return
+                if sh["revoked"] or sh["expires_at"] < utc_now():
+                    self._send_json(410, {"error": "share_expired_or_revoked"})
+                    return
+                proto = (self.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip()
+                host_hdr = self.headers.get("Host") or ""
+                origin = ("%s://%s" % (proto, host_hdr)) if host_hdr else ""
+                brief = _render_share_brief(sh, origin)
+                if brief is None:
+                    self._send_json(404, {"error": "post_not_found"})
+                    return
+                raw = brief.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/markdown; charset=utf-8")
+                self._send_security_headers()
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+
             if embed_mode and path in ("/", "/index.html"):
                 accept = (self.headers.get("Accept") or "").lower()
                 if "application/x-kit-board" in accept or not token:
@@ -1835,6 +2005,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
             if path == "/_api/links":
                 tr = (qs.get("train") or [None])[0]
                 self._send_json(200, store.list_links(train=tr))
+                return
+
+            if path == "/_api/shares":
+                pid = (qs.get("post") or [None])[0]
+                self._send_json(200, {"shares": store.list_shares(post_id=pid)})
                 return
 
             if path == "/_api/export":
@@ -2038,10 +2213,97 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                 return
             self._send_json(200, res)
 
+        def do_DELETE(self):
+            parsed = urllib.parse.urlsplit(self.path)
+            if self._require_auth(parsed) is None:
+                return
+            path = parsed.path
+            if path.startswith("/_api/shares/"):
+                stok = urllib.parse.unquote(path[len("/_api/shares/"):]).strip("/")
+                ok = store.revoke_share(stok)
+                self._send_json(200 if ok else 404, {"revoked": ok, "token": stok})
+                return
+            self._send_json(404, {"error": "not_found"})
+
         def do_POST(self):
             parsed = urllib.parse.urlsplit(self.path)
             path = parsed.path
+            if path.startswith("/_share/") and path.endswith("/submit"):
+                stok = urllib.parse.unquote(path[len("/_share/"):-len("/submit")]).strip("/")
+                sh = store.get_share(stok)
+                if not sh:
+                    self._send_json(404, {"error": "share_not_found"})
+                    return
+                if sh["revoked"] or sh["expires_at"] < utc_now():
+                    self._send_json(410, {"error": "share_expired_or_revoked"})
+                    return
+                if not sh["allow_write"]:
+                    self._send_json(403, {"error": "share_read_only"})
+                    return
+                if sh["submissions"] >= sh["max_submissions"]:
+                    self._send_json(429, {"error": "share_submission_limit_reached"})
+                    return
+                try:
+                    body = self._read_json()
+                except (PayloadTooLarge, ValueError):
+                    self._send_json(400, {"error": "invalid json"})
+                    return
+                text = str(body.get("text") or body.get("body") or "").strip()
+                if not text:
+                    self._send_json(400, {"error": "empty text"})
+                    return
+                if len(text) > 500000:
+                    self._send_json(413, {"error": "text exceeds 500 KB"})
+                    return
+                sender = re.sub(r"[^A-Za-z0-9._-]", "", str(body.get("from") or "external-ai"))[:32] or "external-ai"
+                mode = str(body.get("mode") or "comment").strip().lower()
+                now = utc_now()
+                parent_doc = store.get_doc("posts", sh["post_id"])
+                pdata = parent_doc.get("data") or {}
+                if mode == "child_post":
+                    new_id = "%s-%s-%s" % (sh["post_id"][:40], sender[:12], secrets.token_hex(3))
+                    title = str(body.get("title") or ((pdata.get("title") or sh["post_id"]) + " — " + sender))[:180]
+                    res, _ = store.set_doc("posts", new_id, {
+                        "title": title,
+                        "body": text,
+                        "column": "info",
+                        "part": sender,
+                        "runner": sender,
+                        "parent": sh["post_id"],
+                        "train": pdata.get("train") or "",
+                        "priority": 2,
+                        "created_at": now,
+                    })
+                    store.increment_share_submissions(stok)
+                    self._send_json(200, {"ok": True, "mode": "child_post", "post_id": new_id, "version": res["version"]})
+                    return
+                cid = "ext-%s-%s" % (sender[:10], secrets.token_hex(4))
+                res, _ = store.set_doc("comments", cid, {
+                    "post_id": sh["post_id"],
+                    "from": sender,
+                    "text": text,
+                    "created_at": now,
+                })
+                store.increment_share_submissions(stok)
+                self._send_json(200, {"ok": True, "mode": "comment", "comment_id": cid, "post_id": sh["post_id"], "version": res["version"]})
+                return
             if path == "/_api/unlock":
+                ip = ((self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()) or (self.client_address[0] if self.client_address else "unknown")
+                now_ts = time.time()
+                with unlock_lock:
+                    recent = [t for t in unlock_fails.get(ip, []) if now_ts - t < UNLOCK_WINDOW_SEC]
+                    unlock_fails[ip] = recent
+                    if len(recent) >= MAX_UNLOCK_FAILS:
+                        retry_after = max(1, int(UNLOCK_WINDOW_SEC - (now_ts - recent[0])))
+                        raw = json.dumps({"error": "too_many_attempts", "retry_after": retry_after}).encode("utf-8")
+                        self.send_response(429)
+                        self.send_header("Retry-After", str(retry_after))
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self._send_security_headers()
+                        self.send_header("Content-Length", str(len(raw)))
+                        self.end_headers()
+                        self.wfile.write(raw)
+                        return
                 try:
                     body = self._read_json()
                 except (PayloadTooLarge, ValueError):
@@ -2049,8 +2311,12 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                     return
                 cand = str(body.get("token") or "")
                 if token and not hmac.compare_digest(cand, token):
+                    with unlock_lock:
+                        unlock_fails.setdefault(ip, []).append(now_ts)
                     self._send_json(401, {"error": "unauthorized", "code": "unauthorized"})
                     return
+                with unlock_lock:
+                    unlock_fails.pop(ip, None)
                 raw = json.dumps({"ok": True}).encode("utf-8")
                 self.send_response(200)
                 if token and not embed_mode:
@@ -2101,6 +2367,21 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False)
                 return
             except ValueError:
                 self._send_json(400, {"error": "invalid json"})
+                return
+
+            if path == "/_api/shares":
+                pid = str(body.get("post_id") or "").strip()
+                if not pid or not store.get_doc("posts", pid).get("exists"):
+                    self._send_json(404, {"error": "post_not_found"})
+                    return
+                res = store.create_share(
+                    pid,
+                    ttl_hours=body.get("ttl_hours", 24),
+                    allow_write=bool(body.get("allow_write", True)),
+                    files=body.get("files") or [],
+                    max_submissions=body.get("max_submissions", 5),
+                )
+                self._send_json(200, res)
                 return
 
             if path == "/_api/comments/watch":

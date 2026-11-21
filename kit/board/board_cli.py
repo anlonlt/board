@@ -341,6 +341,19 @@ def main(argv=None):
     pim = sub.add_parser("import", help="Import posts/comments from a JSON export bundle or front-matter Markdown file")
     pim.add_argument("path")
 
+    psh = sub.add_parser("share", help="Manage card-scoped external AI share links (/_share/<token>)")
+    shsub = psh.add_subparsers(dest="shcmd", required=True)
+    shc = shsub.add_parser("create")
+    shc.add_argument("post_id")
+    shc.add_argument("--ttl", type=float, default=24.0, help="Expiry in hours (default 24)")
+    shc.add_argument("--read-only", action="store_true")
+    shc.add_argument("--max-submissions", type=int, default=5)
+    shc.add_argument("--file", dest="files", action="append", default=[], help="Whitelist a local file to embed in the brief")
+    shl = shsub.add_parser("list")
+    shl.add_argument("--post", default=None)
+    shr = shsub.add_parser("revoke")
+    shr.add_argument("share_token")
+
     a = ap.parse_args(argv)
     base = (a.url or default_url()).rstrip("/")
     tok = a.token if a.token is not None else default_token()
@@ -732,6 +745,30 @@ def main(argv=None):
             imported_posts += 1
         print(json.dumps({"imported_posts": imported_posts, "imported_comments": imported_cmts}))
         return 0
+
+    if a.cmd == "share":
+        if a.shcmd == "create":
+            attached = []
+            for fp in a.files:
+                with open(fp, encoding="utf-8", errors="replace") as fh:
+                    attached.append({"name": os.path.basename(fp), "content": fh.read(200000)})
+            res = call("POST", "/_api/shares", {
+                "post_id": a.post_id,
+                "ttl_hours": a.ttl,
+                "allow_write": not a.read_only,
+                "max_submissions": a.max_submissions,
+                "files": attached,
+            })
+            res["url"] = base + res.get("path", "")
+            print(json.dumps(res, ensure_ascii=False))
+            return 0
+        if a.shcmd == "list":
+            q = ("?post=" + urllib.parse.quote(a.post)) if a.post else ""
+            print(json.dumps(call("GET", "/_api/shares" + q), ensure_ascii=False))
+            return 0
+        if a.shcmd == "revoke":
+            print(json.dumps(call("DELETE", "/_api/shares/" + urllib.parse.quote(a.share_token)), ensure_ascii=False))
+            return 0
 
     return 1
 

@@ -849,7 +849,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
 <div class="wrap">
   <header class="top">
     <h1>{{PROJECT}} board</h1>
-    <span class="row tools"><input type="search" id="q" placeholder="Search posts or a part" aria-label="Search posts"><select id="runner-filter" aria-label="Filter by runner" hidden></select><select id="sort" aria-label="Order of the posts"><option value="new">Newest first</option><option value="prio">By priority</option></select><button class="btn small" id="sel-toggle" type="button">Select posts</button><span id="status" class="status">Connecting to the board...</span><button class="btn ember small" id="ask" type="button" title="Write to the orchestrator: a question, a correction, anything">Ask the orchestrator</button></span>
+    <span class="row tools"><input type="search" id="q" placeholder="Search posts or a part" aria-label="Search posts"><select id="runner-filter" aria-label="Filter by runner" hidden></select><select id="sort" aria-label="Order of the posts"><option value="new">Newest first</option><option value="prio">By priority</option></select><button class="btn small" id="sel-toggle" type="button">Select posts</button><button class="btn small" id="imp-btn" type="button" title="Import a Markdown or JSON card">Import</button><input type="file" id="imp-file" accept=".md,.json,text/markdown,application/json" hidden><span id="status" class="status">Connecting to the board...</span><button class="btn ember small" id="ask" type="button" title="Write to the orchestrator: a question, a correction, anything">Ask the orchestrator</button></span>
   </header>
   <!-- BD8 (his 02:26, R74): the Waiting card back as before BD7, one sentence per item, a tap opens its post. -->
   <details class="dash wait" id="waiting" hidden><summary><span>Waiting for you</span><span class="sub" id="wait-sub"></span></summary><div class="wait-rows" id="wait-rows"></div></details>
@@ -880,6 +880,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         <span class="prio" id="p-prio"></span>
         <span id="p-like"></span>
         <button class="btn" id="share" type="button" hidden title="Save this post and its comments as a Markdown file">Share</button>
+        <button class="btn" id="ai-share" type="button" title="Mint a scoped link for an external AI (LMArena, etc.)">Link for AI</button>
         <button class="btn" id="snooze" type="button" title="Hide this post for 24 hours">Snooze 24h</button>
         <button class="btn" id="move" type="button">Move to Done</button>
         <button class="btn" id="remove" type="button">Remove from the board</button>
@@ -1781,6 +1782,35 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
   }
   function setPicking(on) { state.picking = on; state.picked = {}; $("sel-note").textContent = on ? "Tap the posts to select them." : ""; renderBoard(); }
   $("sel-toggle").addEventListener("click", function () { setPicking(!state.picking); });
+  if ($("imp-btn") && $("imp-file")) {
+    $("imp-btn").addEventListener("click", function () { $("imp-file").click(); });
+    $("imp-file").addEventListener("change", async function () {
+      var f = this.files && this.files[0]; this.value = "";
+      if (!f || !db) return;
+      var txt = await f.text(), now = new Date().toISOString();
+      if (f.name.endsWith(".json") || txt.trim().charAt(0) === "{") {
+        var b = JSON.parse(txt);
+        for (var i = 0; i < (b.posts || []).length; i++) if (b.posts[i].id && b.posts[i].data) await db.doc("posts/" + b.posts[i].id).set(b.posts[i].data);
+        for (var j = 0; j < (b.comments || []).length; j++) if (b.comments[j].id && b.comments[j].data) await db.doc("comments/" + b.comments[j].id).set(b.comments[j].data);
+      } else {
+        var meta = {}, body = txt;
+        if (txt.indexOf("---\n") === 0) {
+          var end = txt.indexOf("\n---\n", 4);
+          if (end > 0) {
+            txt.slice(4, end).split("\n").forEach(function (ln) {
+              var k = ln.indexOf(":"); if (k > 0) meta[ln.slice(0, k).trim()] = ln.slice(k + 1).trim().replace(/^["']|["']$/g, "");
+            });
+            body = txt.slice(end + 5).trim();
+          }
+        }
+        var pid = meta.id || ("imp-" + Date.now().toString(36)); delete meta.id;
+        var doc = Object.assign({ title: f.name.replace(/\.md$/i, ""), column: "info", created_at: now, body: body }, meta);
+        if (doc.priority) doc.priority = Number(doc.priority) || 2;
+        await db.doc("posts/" + pid).set(doc);
+      }
+      renderBoard();
+    });
+  }
   $("q").addEventListener("input", function () { state.q = this.value; renderBoard(); });
   $("sort").value = state.sort;
   $("sort").addEventListener("change", function () { state.sort = this.value; try { localStorage.setItem("board-sort", state.sort); } catch (e) {} renderBoard(); });
@@ -1830,6 +1860,26 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       var p = current(); if (!p || !db) return;
       var until = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
       db.doc("posts/" + p.id).update({ snoozed_until: until }).then(function () { closePost(); }).catch(function () {});
+    });
+  }
+  if ($("ai-share")) {
+    $("ai-share").addEventListener("click", async function () {
+      var p = current(); if (!p) return;
+      var btn = this; btn.disabled = true;
+      try {
+        var hdrs = { "Content-Type": "application/json" };
+        if (window.__KIT_TOKEN__) hdrs["X-Kit-Token"] = window.__KIT_TOKEN__;
+        var r = await fetch("/_api/shares", { method: "POST", headers: hdrs, body: JSON.stringify({ post_id: p.id, ttl_hours: 24, allow_write: true }) });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        var j = await r.json();
+        var url = location.origin + j.path;
+        if (navigator.clipboard && navigator.clipboard.writeText) { try { await navigator.clipboard.writeText(url); } catch (e) {} }
+        window.prompt("Scoped 24h link for external AI (copied if allowed):", url);
+      } catch (e) {
+        $("c-note").textContent = "Could not create share link.";
+      } finally {
+        btn.disabled = false;
+      }
     });
   }
   $("sel-done").addEventListener("click", async function () {

@@ -754,5 +754,49 @@
  {
   "en": "Hide this post for 24 hours",
   "kind": "attr"
+ },
+ {
+  "en": "Import",
+  "kind": "html"
+ },
+ {
+  "en": "Link for AI",
+  "kind": "html"
+ },
+ {
+  "en": "Import a Markdown or JSON card",
+  "kind": "attr"
+ },
+ {
+  "en": "Mint a scoped link for an external AI (LMArena, etc.)",
+  "kind": "attr"
+ },
+ {
+  "en": "application/json",
+  "kind": "js"
+ },
+ {
+  "en": "X-Kit-Token",
+  "kind": "js"
+ },
+ {
+  "en": "/_api/shares",
+  "kind": "js"
+ },
+ {
+  "en": "POST",
+  "kind": "js"
+ },
+ {
+  "en": "HTTP ",
+  "kind": "js"
+ },
+ {
+  "en": "Scoped 24h link for external AI (copied if allowed):",
+  "kind": "js"
+ },
+ {
+  "en": "Could not create share link.",
+  "kind": "js"
  }
 ]

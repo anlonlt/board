@@ -228,6 +228,60 @@ class TestChecklistFeatures(unittest.TestCase):
                 srv1.shutdown(); srv1.server_close(); st1.close()
                 srv2.shutdown(); srv2.server_close(); st2.close()
 
+    def test_scoped_ai_share_and_unlock_rate_limit(self):
+        with tempfile.TemporaryDirectory() as td:
+            os.makedirs(os.path.join(td, ".kit"), exist_ok=True)
+            srv, store = board_server.start_server(td, host="127.0.0.1", port=0, token="master-tok")
+            store.set_doc("posts", "ai-task", {"title": "Research audio codecs", "column": "todo", "train": "voice", "body": "Compare Opus vs Lyra"})
+            port = srv.server_address[1]
+            t = threading.Thread(target=srv.serve_forever, daemon=True)
+            t.start()
+            try:
+                cli = os.path.join(ROOT, "kit", "board", "board_cli.py")
+                ref_file = os.path.join(td, "notes.txt")
+                with open(ref_file, "w", encoding="utf-8") as fh:
+                    fh.write("target bitrate: 16kbps\n")
+                rc = subprocess.run([sys.executable, cli, "--url", f"http://127.0.0.1:{port}", "--token", "master-tok", "share", "create", "ai-task", "--file", ref_file], capture_output=True, text=True)
+                self.assertEqual(rc.returncode, 0, rc.stderr)
+                sh = json.loads(rc.stdout)
+                stok = sh["token"]
+
+                # Unauthenticated GET /_share/<token> works (like over Tailscale Funnel)
+                c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                c.request("GET", "/_share/" + stok)
+                r1 = c.getresponse(); txt = r1.read().decode("utf-8")
+                self.assertEqual(r1.status, 200)
+                self.assertIn("Compare Opus vs Lyra", txt)
+                self.assertIn("target bitrate: 16kbps", txt)
+
+                # Unauthenticated POST /_share/<token>/submit writes back to the card
+                c.request("POST", "/_share/" + stok + "/submit", body=json.dumps({"from": "lmarena", "text": "Opus wins at 16kbps"}), headers={"Content-Type": "application/json"})
+                r2 = c.getresponse(); d2 = json.loads(r2.read().decode("utf-8"))
+                self.assertEqual(r2.status, 200)
+                self.assertTrue(d2["ok"] and d2["mode"] == "comment")
+                self.assertTrue(store.get_doc("comments", d2["comment_id"])["exists"])
+
+                # Revoke stops further access (410 Gone)
+                rr = subprocess.run([sys.executable, cli, "--url", f"http://127.0.0.1:{port}", "--token", "master-tok", "share", "revoke", stok], capture_output=True, text=True)
+                self.assertEqual(rr.returncode, 0, rr.stderr)
+                c.request("GET", "/_share/" + stok)
+                r3 = c.getresponse(); r3.read()
+                self.assertEqual(r3.status, 410)
+
+                # Unlock rate-limit triggers 429 after 10 failures
+                for _ in range(10):
+                    c.request("POST", "/_api/unlock", body=json.dumps({"token": "bad"}), headers={"Content-Type": "application/json"})
+                    r_bad = c.getresponse(); r_bad.read()
+                    self.assertEqual(r_bad.status, 401)
+                c.request("POST", "/_api/unlock", body=json.dumps({"token": "bad"}), headers={"Content-Type": "application/json"})
+                r_429 = c.getresponse(); r_429.read()
+                self.assertEqual(r_429.status, 429)
+                c.close()
+            finally:
+                srv.shutdown()
+                srv.server_close()
+                store.close()
+
 
 if __name__ == "__main__":
     unittest.main()
