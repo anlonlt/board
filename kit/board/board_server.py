@@ -923,7 +923,8 @@ class BoardStore:
         finally:
             _kc.ROOT = prev_root
 
-        # Safety guard: never overwrite a non-empty _dashboard with 0 or >50% placeholder rows
+        # Preserve existing curated _dashboard and _trains rows (e.g. Harmonize's 20 rich rows & 198 board-trains rows)
+        # and only merge/update rows that correspond to actual linked trains in `links`.
         cur_dash = posts_map.get("_dashboard")
         cur_rows = (cur_dash.get("rows") or []) if isinstance(cur_dash, dict) else []
         new_rows = dash_doc.get("rows") or []
@@ -933,6 +934,52 @@ class BoardStore:
             placeholders = sum(1 for r in new_rows if _kc.is_placeholder_row(r))
             if placeholders * 2 > len(new_rows):
                 return []
+            # If existing _dashboard has legacy curated rows that carry no `train` field (e.g. Harmonize's SCOREBOARD import),
+            # preserve those legacy rows and merge/update any train rows from `new_rows`!
+            has_curated_rows = any(not r.get("train") and r.get("state") in ("you", "running", "done") for r in cur_rows)
+            if has_curated_rows:
+                by_new_train = {str(nr.get("train")): nr for nr in new_rows if nr.get("train")}
+                merged_dash_rows = []
+                seen_trains = set()
+                for cr in cur_rows:
+                    t_id = str(cr.get("train") or "")
+                    if t_id and t_id in by_new_train:
+                        merged_dash_rows.append(by_new_train[t_id])
+                        seen_trains.add(t_id)
+                    else:
+                        merged_dash_rows.append(cr)
+                        if t_id:
+                            seen_trains.add(t_id)
+                for nr in new_rows:
+                    t_id = str(nr.get("train") or "")
+                    if t_id and t_id not in seen_trains and any(lk[0] == t_id[2:] for lk in self.conn.execute("SELECT DISTINCT train FROM links").fetchall()):
+                        merged_dash_rows.append(nr)
+                        seen_trains.add(t_id)
+                dash_doc["rows"] = merged_dash_rows
+
+        cur_trains = posts_map.get("_trains")
+        cur_t_rows = (cur_trains.get("rows") or []) if isinstance(cur_trains, dict) else []
+        new_t_rows = trains_doc.get("rows") or []
+        if cur_t_rows and len(cur_t_rows) > len(new_t_rows):
+            by_existing_part = {str(r.get("part")): dict(r) for r in cur_t_rows if r.get("part")}
+            for tr in new_t_rows:
+                pt = str(tr.get("part") or "")
+                if not pt:
+                    continue
+                if pt not in by_existing_part:
+                    if not pt.startswith("P-") or tr.get("children"):
+                        cur_t_rows.append(tr)
+                        by_existing_part[pt] = tr
+                elif tr.get("children"):
+                    ex = by_existing_part[pt]
+                    ex_kids = list(ex.get("children") or [])
+                    for k in tr["children"]:
+                        if k not in ex_kids:
+                            ex_kids.append(k)
+                    ex["children"] = ex_kids
+                    if tr.get("state") in ("you", "running"):
+                        ex["state"] = tr["state"]
+            trains_doc["rows"] = cur_t_rows
 
         touched = []
         for special_id, special_doc in (("_dashboard", dash_doc), ("_trains", trains_doc)):
