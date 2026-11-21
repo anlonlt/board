@@ -549,33 +549,73 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 #p-typing[hidden] { display: none !important; }
 .composer {
   position: sticky; bottom: 8px; z-index: 6;
-  background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--line); border-radius: 18px; padding: 8px 10px;
-  box-shadow: var(--shadow-lg); margin-top: 8px;
-  display: grid !important; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; row-gap: 0; align-items: end;
+  background: var(--surface);
+  border: 1px solid var(--line); border-radius: 16px; padding: 0;
+  box-shadow: var(--shadow-lg); margin-top: 10px;
+  display: flex !important; flex-direction: column; width: 100%;
+  transition: border-color .15s ease, box-shadow .15s ease;
 }
+.composer:focus-within { border-color: var(--ember); box-shadow: var(--shadow-lg), 0 0 0 3px color-mix(in srgb, var(--ember) 14%, transparent); }
 .composer[hidden] { display: none !important; }
 .composer #c-label, .composer #c-attach-row .note { display: none; }
-.composer #c-reply:not([hidden]), .composer #c-files:not(:empty) { grid-column: 1 / -1; margin-bottom: 6px; }
+.composer #c-reply:not([hidden]) { margin: 8px 12px 0; }
+.composer #c-files:not(:empty) { padding: 6px 12px 0; }
 .composer #c-files:empty { display: none; }
-.composer #c-attach-row { grid-column: 1; grid-row: 3; margin: 0; }
-.composer #c-attach { padding: 8px 11px; font-size: .82rem; border-radius: 999px; white-space: nowrap; }
+.composer #c-attach-row { position: static; margin: 0; height: 0; }
 .composer textarea {
-  grid-column: 2; grid-row: 3; min-width: 0; width: 100%;
-  border-radius: 14px !important; min-height: 40px !important; height: 40px; max-height: 140px;
-  background: var(--surface); padding: 9px 12px; font-size: .92rem; line-height: 1.35; resize: vertical;
+  order: 2; min-width: 0; width: 100%;
+  border: 0 !important; border-radius: 16px !important;
+  min-height: 88px !important; height: 88px; max-height: 240px;
+  background: transparent !important; padding: 12px 14px 44px 14px;
+  font-size: .95rem; line-height: 1.45; resize: vertical; outline: none;
 }
 .composer > .row:last-child { display: contents !important; }
-.composer #c-send { grid-column: 3; grid-row: 3; align-self: end; padding: 9px 14px; font-size: .86rem; white-space: nowrap; }
-.composer #c-note { grid-column: 1 / -1; grid-row: 4; margin-top: 4px; font-size: .8rem; padding-inline: 4px; }
+.composer #c-attach, .composer #c-send {
+  position: absolute; bottom: 8px; z-index: 2;
+  width: 34px; height: 34px; padding: 0 !important;
+  border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; background: transparent; color: var(--ink);
+  opacity: .42; transition: opacity .15s ease, background .15s ease, color .15s ease, transform .12s ease;
+  box-shadow: none !important;
+}
+.composer #c-attach { left: 8px; }
+.composer #c-send { right: 8px; }
+.composer #c-attach:hover, .composer #c-attach:focus-visible { opacity: .92; background: var(--sunk); }
+.composer #c-send:hover, .composer #c-send:focus-visible, .composer.has-text #c-send { opacity: .92; background: var(--ember); color: var(--ember-ink); }
+.composer #c-attach svg, .composer #c-send svg { width: 18px; height: 18px; display: block; flex: none; }
+.composer #c-note {
+  position: absolute; left: 48px; right: 48px; bottom: 13px;
+  margin: 0; font-size: .78rem; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+}
 .composer #c-note:empty { display: none; }
+
+/* Expandable Search Icon -> Bar in header .tools */
+.kit-search-wrap {
+  display: inline-flex; align-items: center;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+  height: 36px; padding: 0; overflow: hidden;
+  transition: width .2s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.kit-search-wrap.open { border-color: var(--ember); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ember) 14%, transparent); padding-right: 10px; }
+.kit-search-btn {
+  width: 34px; height: 34px; flex: none; border: 0; background: transparent; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; padding: 0;
+  transition: color .15s ease;
+}
+.kit-search-btn:hover, .kit-search-wrap.open .kit-search-btn { color: var(--ink); }
+.kit-search-btn svg { width: 17px; height: 17px; display: block; }
+.kit-search-wrap #q {
+  border: 0 !important; background: transparent !important; outline: none; box-shadow: none !important;
+  width: 0; min-width: 0; padding: 0; opacity: 0; pointer-events: none;
+  transition: width .2s ease, opacity .15s ease, padding .15s ease;
+}
+.kit-search-wrap.open #q { width: 210px; padding: 4px 4px; opacity: 1; pointer-events: auto; }
 @media (max-width: 520px) {
-  .composer #c-attach { font-size: 0; padding: 8px 11px; }
-  .composer #c-attach::before { content: "\1F4CE"; font-size: 1rem; }
-  .composer #c-send { padding: 9px 12px; font-size: .84rem; }
+  .kit-search-wrap.open #q { width: 150px; }
   .replies { margin-left: 6px !important; padding-left: 10px !important; }
 }
-.newjump { bottom: 88px !important; z-index: 7; }
+.newjump { bottom: 112px !important; z-index: 7; }
 </style>
 
 <div class="wrap">
@@ -2509,6 +2549,47 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
       askBtn.setAttribute("aria-label", askBtn.textContent || "Ask the orchestrator");
       askBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
       renderAsk();
+    }
+    var attachBtn = document.getElementById("c-attach");
+    if (attachBtn) {
+      var attLbl = attachBtn.textContent || "";
+      attachBtn.setAttribute("aria-label", attLbl); attachBtn.title = attLbl;
+      attachBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+    }
+    var sendBtn = document.getElementById("c-send");
+    var cText = document.getElementById("c-text");
+    var cForm = document.getElementById("composer");
+    if (sendBtn) {
+      var sndLbl = sendBtn.textContent || "";
+      sendBtn.setAttribute("aria-label", sndLbl); sendBtn.title = sndLbl;
+      sendBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
+    }
+    if (cText && cForm) {
+      function syncHasText() { cForm.classList.toggle("has-text", !!(cText.value || "").trim()); }
+      cText.addEventListener("input", syncHasText);
+      cForm.addEventListener("submit", function () { setTimeout(syncHasText, 50); });
+    }
+    var qInput = document.getElementById("q");
+    if (qInput && qInput.parentNode && !document.getElementById("kit-search-wrap")) {
+      var sWrap = document.createElement("span");
+      sWrap.id = "kit-search-wrap"; sWrap.className = "kit-search-wrap";
+      var sBtn = document.createElement("button");
+      sBtn.type = "button"; sBtn.className = "kit-search-btn";
+      var sLbl = qInput.getAttribute("aria-label") || "";
+      sBtn.setAttribute("aria-label", sLbl); sBtn.title = sLbl;
+      sBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+      qInput.parentNode.insertBefore(sWrap, qInput);
+      sWrap.appendChild(sBtn);
+      sWrap.appendChild(qInput);
+      sBtn.addEventListener("click", function () {
+        var open = sWrap.classList.toggle("open");
+        if (open) { qInput.focus(); }
+        else if (qInput.value) { qInput.value = ""; state.q = ""; renderBoard(); }
+      });
+      qInput.addEventListener("blur", function () { if (!qInput.value.trim()) sWrap.classList.remove("open"); });
+      qInput.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") { qInput.value = ""; state.q = ""; renderBoard(); sWrap.classList.remove("open"); qInput.blur(); }
+      });
     }
 
     var trainNetEl = document.createElement("div"); trainNetEl.id = "kit-train-net"; trainNetEl.className = "kit-alt-view";
