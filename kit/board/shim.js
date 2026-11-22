@@ -1153,11 +1153,12 @@
     }
     function hitEdges(e) {
       if (window.innerWidth < 680 || winEl.dataset.kitNoResize === "1") return "";
+      var ep = winEl.classList.contains("video-win") ? 16 : edgePx;
       var r = winEl.getBoundingClientRect();
       var x = e.clientX - r.left, y = e.clientY - r.top;
       var s = "";
-      if (y <= edgePx) s += "n"; else if (y >= r.height - edgePx) s += "s";
-      if (x <= edgePx) s += "w"; else if (x >= r.width - edgePx) s += "e";
+      if (y <= ep) s += "n"; else if (y >= r.height - ep) s += "s";
+      if (x <= ep) s += "w"; else if (x >= r.width - ep) s += "e";
       return s;
     }
     var curMap = { n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize", ne: "nesw-resize", sw: "nesw-resize", nw: "nwse-resize", se: "nwse-resize" };
@@ -1165,6 +1166,15 @@
       if (winEl.dataset.kitDragging) return;
       var ed = hitEdges(e);
       winEl.style.cursor = ed ? curMap[ed] : "";
+      if (ed) {
+        winEl.style.setProperty("--kit-rz-cur", curMap[ed]);
+        winEl.classList.add("kit-edge-hover");
+      } else {
+        winEl.classList.remove("kit-edge-hover");
+      }
+    });
+    winEl.addEventListener("mouseleave", function () {
+      if (!winEl.dataset.kitDragging) winEl.classList.remove("kit-edge-hover");
     });
     winEl.addEventListener("mousedown", function (e) {
       if (e.button !== 0) return;
@@ -1194,6 +1204,8 @@
       }
       function onUp() {
         delete winEl.dataset.kitDragging;
+        winEl.dataset.kitJustResized = String(Date.now());
+        winEl.classList.remove("kit-edge-hover");
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
         saveWinGeom();
@@ -2211,10 +2223,12 @@
         var isHtml = activeKind === "html" && activeViewMode === "view";
         var isImg = activeKind === "img" && activeViewMode === "view";
         var isAudio = activeKind === "audio" && activeViewMode === "view";
+        var isVideo = activeKind === "video" && activeViewMode === "view";
         var isGalOrCmp = activeViewMode === "gallery" || activeViewMode === "compare";
         stageEl.classList.toggle("iframe-active", isHtml && htmlMode !== "code");
         modal.classList.toggle("photo-mode", isImg && !drawActive);
         modal.classList.toggle("audio-mode", isAudio);
+        modal.classList.toggle("video-win", isVideo);
         modal.dataset.kitNoResize = isAudio ? "1" : "";
         if (window.innerWidth >= 720) {
           if (isAudio) {
@@ -3510,7 +3524,13 @@
             viewEl.classList.add("video-mode");
             var vWrap = document.createElement("div");
             vWrap.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;min-height:0;flex:1 1 0;overflow:hidden;background:#000;";
-            vWrap.appendChild(buildCustomVideoPlayer(mediaUrl, { fullHeight: true }));
+            var dvPostId = ""; try { dvPostId = sessionStorage.getItem("board-open") || ""; } catch (e) {}
+            var dvLike = makeMediaLikeBtn(res.path, dvPostId);
+            var dvCmt = document.createElement("button"); dvCmt.type = "button"; dvCmt.className = "kit-mbtn";
+            dvCmt.title = "Comment on video"; dvCmt.setAttribute("aria-label", "Comment on video");
+            dvCmt.innerHTML = SVG_CMT_M;
+            dvCmt.addEventListener("click", function (ev) { ev.stopPropagation(); cmtHdrBtn.click(); });
+            vWrap.appendChild(buildCustomVideoPlayer(mediaUrl, { fullHeight: true, extraBtns: [dvLike, dvCmt] }));
             viewEl.appendChild(vWrap);
             applyLocalZoom(100, true);
           } else {
@@ -3524,7 +3544,13 @@
             aName.textContent = shortName(res.path);
             var aSub = document.createElement("div"); aSub.className = "note";
             aSub.textContent = activeDocMetaText;
-            var audBox = buildCustomAudioPlayer(mediaUrl);
+            var daPostId = ""; try { daPostId = sessionStorage.getItem("board-open") || ""; } catch (e) {}
+            var daLike = makeMediaLikeBtn(res.path, daPostId);
+            var daCmt = document.createElement("button"); daCmt.type = "button"; daCmt.className = "kit-mbtn";
+            daCmt.title = "Comment on audio"; daCmt.setAttribute("aria-label", "Comment on audio");
+            daCmt.innerHTML = SVG_CMT_M;
+            daCmt.addEventListener("click", function (ev) { ev.stopPropagation(); cmtHdrBtn.click(); });
+            var audBox = buildCustomAudioPlayer(mediaUrl, { extraBtns: [daLike, daCmt] });
             audBox.style.width = "min(520px,100%)";
             aWrap.appendChild(aIcon); aWrap.appendChild(aName); aWrap.appendChild(aSub); aWrap.appendChild(audBox);
             viewEl.appendChild(aWrap);
@@ -3794,7 +3820,7 @@
       return { w: w, h: h, fromSaved: !!g };
     }
     applyMode("default");
-    var edgePx = 8;
+    var edgePx = kindKey === "video" ? 14 : 8;
     function hitInlineEdge(e) {
       if (window.innerWidth < 720) return "";
       var r = card.getBoundingClientRect();
@@ -3808,6 +3834,15 @@
       if (card.dataset.kitResizing) return;
       var ed = hitInlineEdge(e);
       card.style.cursor = ed ? cmap[ed] : "";
+      if (ed) {
+        card.style.setProperty("--kit-rz-cur", cmap[ed]);
+        card.classList.add("kit-edge-hover");
+      } else {
+        card.classList.remove("kit-edge-hover");
+      }
+    });
+    card.addEventListener("mouseleave", function () {
+      if (!card.dataset.kitResizing) card.classList.remove("kit-edge-hover");
     });
     card.addEventListener("mousedown", function (e) {
       if (e.button !== 0) return;
@@ -3838,6 +3873,8 @@
       }
       function onUp() {
         delete card.dataset.kitResizing;
+        card.dataset.kitJustResized = String(Date.now());
+        card.classList.remove("kit-edge-hover");
         for (var k = 0; k < iframes.length; k++) iframes[k].style.pointerEvents = "";
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
@@ -3886,7 +3923,11 @@
       ".kit-vid-bar .kit-mbtn.playing{background:var(--ember);border-color:var(--ember);color:#fff;}" +
       ".kit-vid-bar .kit-mspd{background:transparent;border-color:rgba(255,255,255,.18);color:#cbd5e1;}" +
       ".kit-vid-bar .kit-mtime{color:#cbd5e1;}" +
-      ".kit-vid-bar .kit-mbar{background:rgba(255,255,255,.22);}";
+      ".kit-vid-bar .kit-mbar{background:rgba(255,255,255,.22);}" +
+      ".kit-msep{width:1px;height:16px;background:var(--line);flex:none;margin:0 1px;}" +
+      ".kit-vid-bar .kit-msep{background:rgba(255,255,255,.22);}" +
+      ".kit-mbtn.liked{color:var(--good) !important;border-color:var(--good) !important;}" +
+      ".kit-edge-hover,.kit-edge-hover *{cursor:var(--kit-rz-cur,nwse-resize) !important;}";
     document.head.appendChild(st);
   }
   var SVG_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>';
@@ -3894,8 +3935,34 @@
   var SVG_VOL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
   var SVG_MUTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
   var SVG_FS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+  var SVG_LIKE_M = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
+  var SVG_CMT_M = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>';
 
-  function wireMediaControls(mediaEl, barEl, wrapEl) {
+  function makeMediaLikeBtn(fp, postId) {
+    var b = document.createElement("button"); b.type = "button"; b.className = "kit-mbtn";
+    b.title = "Like"; b.setAttribute("aria-label", "Like"); b.innerHTML = SVG_LIKE_M;
+    var lkKey = "kit_media_like:" + (postId || "") + ":" + (fp || "");
+    try { if (localStorage.getItem(lkKey) === "1") { b.classList.add("liked"); b.title = "Liked"; } } catch (e) {}
+    b.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      if (b.classList.contains("liked")) return;
+      b.classList.add("liked"); b.title = "Liked";
+      try { localStorage.setItem(lkKey, "1"); } catch (e) {}
+      var pid = postId;
+      if (!pid) { try { pid = sessionStorage.getItem("board-open") || ""; } catch (e) {} }
+      if (pid && window.firebase && typeof window.firebase.firestore === "function") {
+        try {
+          window.firebase.firestore().collection("comments").doc().set({
+            post_id: pid, image: fp || "", text: "Liked " + (fp || ""), like: true,
+            from: "owner", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false
+          });
+        } catch (e) {}
+      }
+    });
+    return b;
+  }
+
+  function wireMediaControls(mediaEl, barEl, wrapEl, extraBtns) {
     var playB = document.createElement("button"); playB.type = "button"; playB.className = "kit-mbtn"; playB.title = "Play"; playB.setAttribute("aria-label", "Play"); playB.innerHTML = SVG_PLAY;
     var track = document.createElement("div"); track.className = "kit-mtrack";
     var bar = document.createElement("div"); bar.className = "kit-mbar";
@@ -3949,7 +4016,17 @@
         else if (wrapEl.requestFullscreen) wrapEl.requestFullscreen();
       });
       barEl.appendChild(fsB);
-      mediaEl.addEventListener("click", function (ev) { ev.stopPropagation(); togglePlay(); });
+      mediaEl.addEventListener("click", function (ev) {
+        var host = wrapEl.closest ? wrapEl.closest(".kit-docs-modal, .kit-inline-embed") : null;
+        if (host) {
+          if (host.classList.contains("kit-edge-hover")) return;
+          if (Date.now() - Number(host.dataset.kitJustResized || 0) < 260) return;
+          var hr = host.getBoundingClientRect();
+          if (ev.clientX - hr.left <= 16 || hr.right - ev.clientX <= 16 || ev.clientY - hr.top <= 16 || hr.bottom - ev.clientY <= 16) return;
+        }
+        ev.stopPropagation();
+        togglePlay();
+      });
       var idleT = null;
       function wakeBar() {
         wrapEl.classList.remove("idle");
@@ -3960,14 +4037,21 @@
       mediaEl.addEventListener("play", wakeBar);
       mediaEl.addEventListener("pause", function () { clearTimeout(idleT); wrapEl.classList.remove("idle"); });
     }
+    if (extraBtns && extraBtns.length) {
+      var sep = document.createElement("span"); sep.className = "kit-msep";
+      barEl.appendChild(sep);
+      for (var bi = 0; bi < extraBtns.length; bi++) {
+        if (extraBtns[bi]) barEl.appendChild(extraBtns[bi]);
+      }
+    }
     syncUi();
   }
-  function buildCustomAudioPlayer(src) {
+  function buildCustomAudioPlayer(src, opts) {
     ensureMediaPlayerCss();
     var wrap = document.createElement("div"); wrap.className = "kit-aud";
     var aud = document.createElement("audio"); aud.preload = "metadata"; aud.src = src; aud.style.display = "none";
     wrap.appendChild(aud);
-    wireMediaControls(aud, wrap, wrap);
+    wireMediaControls(aud, wrap, wrap, opts && opts.extraBtns);
     return wrap;
   }
   function buildCustomVideoPlayer(src, opts) {
@@ -3976,7 +4060,7 @@
     var vid = document.createElement("video"); vid.playsInline = true; vid.preload = "metadata"; vid.src = src;
     var bar = document.createElement("div"); bar.className = "kit-vid-bar";
     wrap.appendChild(vid); wrap.appendChild(bar);
-    wireMediaControls(vid, bar, wrap);
+    wireMediaControls(vid, bar, wrap, opts && opts.extraBtns);
     return wrap;
   }
 
@@ -4184,15 +4268,21 @@
       pIfr.style.cssText = "width:100%;height:460px;border:0;border-radius:8px;background:#fff;";
       body.appendChild(pIfr);
     } else if (isAudio) {
+      card.style.cssText = "border:0;background:transparent;box-shadow:none;overflow:visible;";
       body.textContent = "";
-      body.style.padding = "10px 12px";
-      body.appendChild(buildCustomAudioPlayer(withKitToken(resolveAssetUrl(fp, "", repoOverride))));
+      body.style.cssText = "padding:0;background:transparent;max-height:none;overflow:visible;";
+      cmtB.className = "kit-mbtn";
+      popB.className = "kit-mbtn";
+      var aLike = makeMediaLikeBtn(fp, postIdCtx);
+      body.appendChild(buildCustomAudioPlayer(withKitToken(resolveAssetUrl(fp, "", repoOverride)), { extraBtns: [aLike, cmtB, popB] }));
     } else if (isVideo) {
-      card.classList.add("is-img");
       body.classList.add("media");
       body.classList.add("is-vid");
       body.textContent = "";
-      var vPlayer = buildCustomVideoPlayer(withKitToken(resolveAssetUrl(fp, "", repoOverride)));
+      cmtB.className = "kit-mbtn";
+      popB.className = "kit-mbtn";
+      var vLike = makeMediaLikeBtn(fp, postIdCtx);
+      var vPlayer = buildCustomVideoPlayer(withKitToken(resolveAssetUrl(fp, "", repoOverride)), { extraBtns: [vLike, cmtB, popB] });
       body.appendChild(vPlayer);
       var vTag = vPlayer.querySelector("video");
       if (vTag) {
@@ -4264,8 +4354,11 @@
       }, function () { card.remove(); });
     }
 
-    hdr.appendChild(cmtB); hdr.appendChild(popB);
-    card.appendChild(hdr); card.appendChild(body);
+    if (!isAudio && !isVideo) {
+      hdr.appendChild(cmtB); hdr.appendChild(popB);
+      card.appendChild(hdr);
+    }
+    card.appendChild(body);
     var hostBlk = anchorEl.closest("p, li, blockquote, pre, div");
     if (hostBlk && hostBlk.parentNode && postBody.contains(hostBlk) && hostBlk !== postBody) {
       hostBlk.parentNode.insertBefore(card, hostBlk.nextSibling);
