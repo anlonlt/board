@@ -90,7 +90,8 @@ def js_literals(js):
 
 def drawable(path):
     """(where, decoded text) for each piece of the file that can reach the screen."""
-    src = open(path, encoding="utf-8").read()
+    with open(path, encoding="utf-8") as f:
+        src = f.read()
     if path.endswith(".js"):
         return [("js literal", decode(t)) for t in js_literals(src)]
     pieces = []
