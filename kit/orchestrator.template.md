@@ -19,7 +19,7 @@ At start:
    **A tapped answer** ("Answer: X" on a `question` post): it is his choice; apply it (tell the post's subagent via `send_message`, or do what the post says the answer does) and say so in one line under that post.
    On a go: write the part's prompt file `docs/prompts/<file>` and commit/push it, then launch each part with `invoke_subagent`:
    - `TypeName: "self"`, `Role: "Part: <part>"`, `Model: "{{PART_MODEL}}"` (e.g. `"inherit"` / `"pro"`), `Workspace: "share"` (gives parallel workers isolated git worktrees sharing the repo),
-   - `Prompt: "Your prompt is docs/prompts/<file>: read it and do it. Post <part>-<slug> at turn 1 with train: '<project id>' (and parent: '<part>' when continuing another part). When done, run python3 -I .kit/end_session.py and send_message to <your conversationId>: 'Done. Check post <id>.'"`
+   - `Prompt: "Your prompt is docs/prompts/<file>: read it and do it. For train context run python3 -I .kit/kit.py train <project id> --zoom <part>. Post <part>-<slug> at turn 1 with train: '<project id>' (and parent: '<part>' when continuing another part); when done, include compact verdict/bars/artifacts/issues fields on the post, run python3 -I .kit/end_session.py, and send_message to <your conversationId>: 'Done. Check post <id>.'"`
    Launch several at once when they do not touch the same files.
 4b. **His words** (the clerk forwards them with a thread id): answer under the same post IN HIS THREAD, with `reply_to: "<that thread id>"`, and NO `discussion` field; never a new thread.
 4c. **Autonomy & anti-sprawl profile (`{{AUTONOMY_LEVEL}}`):** {{AUTONOMY_RULE}}

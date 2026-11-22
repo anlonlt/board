@@ -729,8 +729,8 @@ SHIM_JS = r"""(function () {
         var it = document.createElement("button"); it.type = "button";
         it.className = "kit-docs-item" + (d.path === activePath ? " on" : "");
         it.innerHTML = '<span class="dp"></span><span class="dm"></span>';
-        it.querySelector(".dp").textContent = d.path;
-        it.querySelector(".dm").textContent = d.category + " · " + fmtKb(d.size);
+        it.querySelector(".dp").textContent = (d.pinned ? "📌 " : "") + d.path;
+        it.querySelector(".dm").textContent = (d.pinned ? "pinned · " : "") + d.category + " · " + fmtKb(d.size);
         it.addEventListener("click", function () { openRepoDoc(d.path, ""); });
         listEl.appendChild(it);
       });
@@ -1891,6 +1891,14 @@ def _classify_repo_doc(rel):
 def list_repo_docs(root_dir, query="", limit=1000):
     root_real = os.path.realpath(root_dir)
     ql = (query or "").strip().lower()
+    pinned_set = set()
+    try:
+        cfg = json.load(open(os.path.join(root_real, ".kit", "config.json"), encoding="utf-8"))
+        for p in (cfg.get("kit", {}).get("pinned_docs") or []):
+            if isinstance(p, str) and p.strip():
+                pinned_set.add(p.strip().replace("\\", "/").lstrip("/"))
+    except (OSError, ValueError):
+        pass
     items = []
     for dirpath, dirs, files in os.walk(root_real):
         dirs[:] = sorted(d for d in dirs if d not in REPO_DOC_SKIP_DIRS)
@@ -1908,6 +1916,7 @@ def list_repo_docs(root_dir, query="", limit=1000):
             items.append({
                 "path": rel,
                 "category": _classify_repo_doc(rel),
+                "pinned": rel in pinned_set,
                 "size": st.st_size,
                 "mtime": datetime.fromtimestamp(st.st_mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             })
@@ -1916,7 +1925,7 @@ def list_repo_docs(root_dir, query="", limit=1000):
         if len(items) >= limit:
             break
     cat_order = {"memory": 0, "root": 1, "docs": 2, "prompts": 3, "kit": 4, "other": 5}
-    items.sort(key=lambda x: (cat_order.get(x["category"], 9), x["path"].lower()))
+    items.sort(key=lambda x: (0 if x.get("pinned") else 1, cat_order.get(x["category"], 9), x["path"].lower()))
     return {"docs": items, "total": len(items)}
 
 

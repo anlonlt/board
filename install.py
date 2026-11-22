@@ -570,6 +570,12 @@ def main(argv=None):
         c["kit"]["funnel"] = False
     elif "funnel" not in c["kit"]:
         c["kit"]["funnel"] = True
+    if "pinned_docs" not in c["kit"]:
+        _pin_candidates = (
+            "PLAN.md", "ROADMAP.md", "TODO.md", "CLAUDE.md", "AGENTS.md", "README.md",
+            "docs/WORKPLAN.md", "docs/DISCIPLINE.md", "docs/ARCHITECTURE.md",
+        )
+        c["kit"]["pinned_docs"] = [p for p in _pin_candidates if os.path.isfile(os.path.join(t, p))]
     if a.attach:
         port_list = list(c.get("portfolio") or [])
         seen_paths = {os.path.abspath(x["path"]) for x in port_list if isinstance(x, dict) and x.get("path")}
@@ -709,7 +715,12 @@ def main(argv=None):
                 store.set_doc("posts", "KIT-installed", {
                     "title": "The board kit is installed", "column": "info", "part": "KIT",
                     "priority": 2, "created_at": now,
-                    "body": "Bootstrapped by `install.py`.\n\nRun `%s` (or `python3 -I .kit/board_server.py --preview --embed-mode` in sandbox previews) to start the board." % (c["kit"].get("cmd") or "./.kit/up"),
+                    "body": (
+                        "Bootstrapped by `install.py`.\n\n"
+                        "- **Start anytime:** run `%s` (or `python3 -I .kit/board_server.py --preview --embed-mode` in sandbox previews).\n"
+                        "- **Repo Docs & Memory:** tap the book icon in the header to read any `.md` file in your repo directly from the board — and tap **Comment on this section** to start an orchestrator discussion anchored to what's on your screen.\n"
+                        "- **Trains as Tasklists:** switch to **Trains** and tap the checklist icon on any train to see all waves, verdicts, and artifacts; agents can run `python3 -I .kit/kit.py train <name> --zoom <part>` for compact context."
+                    ) % (c["kit"].get("cmd") or "./.kit/up"),
                 })
             if a.demo:
                 from datetime import timedelta
