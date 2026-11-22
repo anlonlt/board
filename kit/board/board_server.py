@@ -2954,6 +2954,50 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
     return srv, store
 
 
+def _file_sig(path):
+    try:
+        st = os.stat(path)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
+def _ensure_funnel_async(port, root_dir):
+    """Best-effort, non-blocking Tailscale Funnel refresh on startup/reload."""
+    import shutil
+    if not shutil.which("tailscale"):
+        return
+    cfg_path = os.path.join(root_dir, ".kit", "config.json")
+    try:
+        if json.load(open(cfg_path, encoding="utf-8")).get("kit", {}).get("funnel") is False:
+            return
+    except (OSError, ValueError):
+        pass
+
+    def _run():
+        try:
+            subprocess.run(
+                ["tailscale", "funnel", "--bg", str(port)],
+                capture_output=True, text=True, timeout=15,
+            )
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def _reload_argv():
+    """Build argv for in-place os.execv reload, stripping one-shot seed flags."""
+    skip = {"--seed-from-mirror", "--force-seed"}
+    args = [a for a in sys.argv[1:] if a not in skip]
+    cmd = [sys.executable]
+    if sys.flags.isolated:
+        cmd.append("-I")
+    cmd.append(os.path.abspath(__file__))
+    cmd.extend(args)
+    return cmd
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Local board server for agy")
     ap.add_argument("--host", default="127.0.0.1")
@@ -2970,6 +3014,9 @@ def main(argv=None):
     ap.add_argument("--mirror-branch", default=None, help="Override mirror branch name (default from .kit/config.json)")
     ap.add_argument("--force-seed", action="store_true", help="Overwrite existing local SQLite docs when seeding")
     ap.add_argument("--attach", action="append", default=[], help="Attach another local repo board as name=path (or path) for cross-repo viewing & routed /_share")
+    ap.add_argument("--auto-reload", action="store_true", help="Watch board_server.py and .kit/config.json and reload in-place via os.execv on changes")
+    ap.add_argument("--reload-interval", type=float, default=1.5, help="Polling interval in seconds for --auto-reload (default: 1.5)")
+    ap.add_argument("--funnel", action="store_true", help="Refresh `tailscale funnel --bg <port>` on startup/reload when kit.funnel is enabled")
     a = ap.parse_args(argv)
     root = os.path.abspath(a.root) if a.root else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     tok = a.token or os.environ.get("KIT_BOARD_TOKEN") or None
@@ -3011,14 +3058,56 @@ def main(argv=None):
         info = seed_from_mirror(root, store, branch=a.mirror_branch, force=a.force_seed)
         print("seeded from %s: %d imported, %d skipped" % (info["ref"] or "(none)", info["imported"], info["skipped"]), flush=True)
     actual_port = srv.server_address[1]
+    auto_reload = bool(a.auto_reload or os.environ.get("KIT_BOARD_AUTO_RELOAD", "").strip().lower() in ("1", "true", "yes", "on"))
+    if a.funnel or (auto_reload and a.host.strip().lower() not in LOOPBACK_HOSTS):
+        _ensure_funnel_async(actual_port, root)
+    reload_requested = [False]
+    stop_watch = threading.Event()
+    if auto_reload:
+        script_path = os.path.abspath(__file__)
+        cfg_path = os.path.join(root, ".kit", "config.json")
+        watched = [script_path, cfg_path]
+        interval = max(0.1, float(a.reload_interval or 1.5))
+
+        def _watcher():
+            import py_compile
+            sigs = {p: _file_sig(p) for p in watched}
+            while not stop_watch.wait(interval):
+                changed = [p for p in watched if _file_sig(p) != sigs[p]]
+                if not changed:
+                    continue
+                time.sleep(0.2)
+                new_sigs = {p: _file_sig(p) for p in watched}
+                if script_path in changed:
+                    try:
+                        py_compile.compile(script_path, doraise=True)
+                    except Exception as exc:
+                        print("board_server: syntax error in %s (%s); keeping current server running" % (script_path, exc), file=sys.stderr, flush=True)
+                        sigs[script_path] = new_sigs[script_path]
+                        continue
+                print("board_server: detected update (%s), reloading in-place..." % ", ".join(os.path.basename(p) for p in changed), flush=True)
+                reload_requested[0] = True
+                srv.shutdown()
+                return
+
+        threading.Thread(target=_watcher, daemon=True).start()
     print("board server listening on http://%s:%d (root: %s)" % (a.host, actual_port, root), flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        stop_watch.set()
         srv.server_close()
         store.close()
+        for rinfo in (getattr(srv, "_extra_stores", None) or {}).values():
+            try:
+                rinfo["store"].close()
+            except Exception:
+                pass
+    if reload_requested[0]:
+        cmd = _reload_argv()
+        os.execv(cmd[0], cmd)
     return 0
 
 

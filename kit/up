@@ -28,6 +28,14 @@ for arg in "$@"; do
   [ "$arg" = "--board-only" ] && BOARD_ONLY=1
 done
 
+STARTED_SERVER=0
+SERVER_PID=""
+cleanup_server() {
+  if [ "$STARTED_SERVER" -eq 1 ] && [ -n "$SERVER_PID" ]; then
+    kill "$SERVER_PID" 2>/dev/null || true
+  fi
+}
+
 if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
   mkdir -p .kit/board_data
   TOK_FILE=".kit/board_data/token"
@@ -51,7 +59,12 @@ if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
     AUTOSYNC="${KIT_AUTO_SYNC_INTERVAL:-15}"
     PUSH_FLAG=""
     [ "${KIT_AUTO_SYNC_PUSH:-1}" != "0" ] && PUSH_FLAG="--auto-sync-push"
-    nohup python3 -I .kit/board_server.py --host 0.0.0.0 --port "$PORT" --root "$ROOT" --token "$TOK" --auto-sync-interval "$AUTOSYNC" $PUSH_FLAG $SEED >/tmp/kit-board-${PORT}.log 2>&1 &
+    RELOAD_FLAG="--auto-reload"
+    [ "${KIT_BOARD_AUTO_RELOAD:-1}" = "0" ] && RELOAD_FLAG=""
+    python3 -I .kit/board_server.py --host 0.0.0.0 --port "$PORT" --root "$ROOT" --token "$TOK" --auto-sync-interval "$AUTOSYNC" $PUSH_FLAG $RELOAD_FLAG $SEED </dev/null >/tmp/kit-board-${PORT}.log 2>&1 &
+    SERVER_PID=$!
+    STARTED_SERVER=1
+    trap cleanup_server EXIT INT TERM HUP
     for _ in 1 2 3 4 5 6 7 8 9 10; do
       curl -sf "http://127.0.0.1:${PORT}/_api/health" >/dev/null 2>&1 && break
       sleep 0.2
@@ -98,4 +111,8 @@ else
   PROMPT="Read the project memory (state/ and awaits.md) and continue from the next step."
 fi
 
-exec agy --mode auto -i "$PROMPT"
+if [ "$STARTED_SERVER" -eq 1 ]; then
+  agy --mode auto -i "$PROMPT"
+else
+  exec agy --mode auto -i "$PROMPT"
+fi

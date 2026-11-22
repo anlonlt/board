@@ -363,5 +363,78 @@ with tempfile.TemporaryDirectory() as tmp:
             os.environ["KIT_BOARD_TOKEN"] = old_env_tok
     check("non-loopback bind without token is refused (start_server & main)", refused_start and rc_main != 0)
 
+    # Auto-reload: in-place os.execv on config/code change + syntax-error resilience
+    import shutil
+    import socket
+    rel_dir = os.path.join(tmp, "reload_repo")
+    os.makedirs(os.path.join(rel_dir, ".kit"), exist_ok=True)
+    rel_srv_py = os.path.join(rel_dir, ".kit", "board_server.py")
+    shutil.copy2(os.path.join(HERE, "board_server.py"), rel_srv_py)
+    with open(os.path.join(rel_dir, ".kit", "board.html"), "w", encoding="utf-8") as fh:
+        fh.write("<!doctype html><html><head><title>R</title></head><body>ok</body></html>")
+    cfg_p = os.path.join(rel_dir, ".kit", "config.json")
+    with open(cfg_p, "w", encoding="utf-8") as fh:
+        json.dump({"project": "BeforeReload"}, fh)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s_free:
+        s_free.bind(("127.0.0.1", 0))
+        free_port = s_free.getsockname()[1]
+    rel_env = dict(os.environ)
+    rel_env.pop("KIT_BOARD_TOKEN", None)
+    proc = subprocess.Popen(
+        [sys.executable, "-I", rel_srv_py, "--host", "127.0.0.1", "--port", str(free_port), "--root", rel_dir, "--auto-reload", "--reload-interval", "0.15"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=rel_env,
+    )
+    try:
+        rurl = "http://127.0.0.1:%d" % free_port
+        ready = False
+        for _ in range(40):
+            try:
+                h = json.loads(urllib.request.urlopen(rurl + "/_api/health", timeout=1).read().decode("utf-8"))
+                if h.get("ok"):
+                    ready = True
+                    break
+            except Exception:
+                time.sleep(0.1)
+        check("auto-reload server boots cleanly", ready)
+        orig_pid = proc.pid
+        # Broken syntax must NOT kill the running server
+        orig_src = open(rel_srv_py, encoding="utf-8").read()
+        with open(rel_srv_py, "w", encoding="utf-8") as fh:
+            fh.write(orig_src + "\ndef broken(:\n")
+        time.sleep(0.55)
+        still_alive = False
+        try:
+            h2 = json.loads(urllib.request.urlopen(rurl + "/_api/health", timeout=1).read().decode("utf-8"))
+            still_alive = h2.get("ok") is True and h2.get("pid") == orig_pid
+        except Exception:
+            still_alive = False
+        check("auto-reload skips broken syntax and keeps serving", still_alive)
+        # Restore valid syntax + update config.json -> reloads in-place with same PID
+        with open(rel_srv_py, "w", encoding="utf-8") as fh:
+            fh.write(orig_src)
+        with open(cfg_p, "w", encoding="utf-8") as fh:
+            json.dump({"project": "AfterReload"}, fh)
+        reloaded_name = ""
+        reloaded_pid = 0
+        for _ in range(40):
+            try:
+                rp = json.loads(urllib.request.urlopen(rurl + "/_api/repos", timeout=1).read().decode("utf-8"))
+                nm = (rp.get("repos") or [{}])[0].get("name") or ""
+                if nm == "AfterReload":
+                    reloaded_name = nm
+                    reloaded_pid = json.loads(urllib.request.urlopen(rurl + "/_api/health", timeout=1).read().decode("utf-8")).get("pid") or 0
+                    break
+            except Exception:
+                pass
+            time.sleep(0.15)
+        check("auto-reload applies config/code update in-place keeping same PID",
+              reloaded_name == "AfterReload" and reloaded_pid == orig_pid)
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except Exception:
+            proc.kill()
+
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)
