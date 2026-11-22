@@ -69,6 +69,7 @@ DEFAULT_KIT = {
     },
     "scope": "single",
     "palette": None,
+    "funnel": True,
     "main_branch": "main",
     "trunk_push": False,
 }
@@ -468,6 +469,8 @@ def main(argv=None):
     ap.add_argument("--palette-json", help="Custom Step 0 colour palette JSON object (light & dark CSS variables)")
     ap.add_argument("--autonomy", choices=["full_auto", "balanced", "gated"], help="Step 0 autonomy & anti-sprawl profile")
     ap.add_argument("--scope", choices=["single", "all"], help="Step 0 board scope: single project or all discovered projects")
+    ap.add_argument("--attach", action="append", default=[], help="Attach another local repo board (name=path or path) into .kit/config.json portfolio")
+    ap.add_argument("--no-funnel", action="store_true", help="Disable default Tailscale Funnel auto-setup in .kit/up")
     ap.add_argument("--tui", "--wizard", dest="tui", action="store_true", help="Launch TWRP-style clickable terminal GUI installer seeded by Step 0 scan")
     ap.add_argument("--bootstrap", action="store_true", help="1-command bootstrap: pre-seed _orchestrator & KIT-installed into local SQLite DB")
     ap.add_argument("--no-bootstrap", action="store_true", help="skip default SQLite bootstrap on arena/generic installs")
@@ -562,6 +565,24 @@ def main(argv=None):
     if a.survey and not os.path.isfile(a.survey):
         raise SystemExit("install: --survey %s: no such file" % a.survey)
     c = load_config(t, a)
+    if a.no_funnel:
+        c["kit"]["funnel"] = False
+    elif "funnel" not in c["kit"]:
+        c["kit"]["funnel"] = True
+    if a.attach:
+        port_list = list(c.get("portfolio") or [])
+        seen_paths = {os.path.abspath(x["path"]) for x in port_list if isinstance(x, dict) and x.get("path")}
+        for spec in a.attach:
+            if "=" in spec:
+                aname, apath = spec.split("=", 1)
+                aname, apath = aname.strip(), os.path.abspath(apath.strip())
+            else:
+                apath = os.path.abspath(spec.strip())
+                aname = os.path.basename(apath)
+            if apath not in seen_paths:
+                port_list.append({"name": aname, "path": apath})
+                seen_paths.add(apath)
+        c["portfolio"] = port_list
     ins = Installer(t, a.dry_run)
     trunk(t, c["kit"], a.main_branch, ins.log if (first or a.main_branch) else None) if (first or a.main_branch) else None
     parts = c["kit"]["parts"]
@@ -752,7 +773,18 @@ def main(argv=None):
     elif rt == "arena":
         print("next: start the sandbox preview board server (`python3 -I .kit/board_server.py --host 0.0.0.0 --port 8765 --preview --embed-mode`), post `python3 -I .kit/kit.py welcome --runtime arena --post`, and immediately arm the 30-min listener (`python3 -I .kit/board_cli.py comments wait --timeout 1750`)" )
     else:
-        print("next: start the local board server (`python3 -I .kit/board_server.py`), open %s, then README step 4" % c.get("board_url", "http://127.0.0.1:8765"))
+        cmd_word = c["kit"].get("cmd") or "./.kit/up"
+        port_m = re.search(r":(\d+)", c.get("board_url") or "")
+        bport = port_m.group(1) if port_m else "8765"
+        if c["kit"].get("funnel", True) and not a.dry_run:
+            import shutil as _sh
+            if _sh.which("tailscale"):
+                rf = subprocess.run(["tailscale", "funnel", "--bg", bport], capture_output=True, text=True)
+                if rf.returncode == 0:
+                    print("funnel: enabled on port %s (works on phone & NextDNS without Tailscale app)" % bport)
+                else:
+                    print("funnel (one-time setup for phone + NextDNS + LMArena): sudo tailscale set --operator=$USER && tailscale funnel --bg %s" % bport)
+        print("next: run `%s` from any terminal (starts board on %s, Funnel, and orchestrator + clerk)" % (cmd_word, c.get("board_url", "http://127.0.0.1:8765")))
     return 0
 
 

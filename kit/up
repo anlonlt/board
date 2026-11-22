@@ -47,18 +47,36 @@ if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
     SEED=""
     [ ! -f ".kit/board_data/board.db" ] && SEED="--seed-from-mirror"
     AUTOSYNC="${KIT_AUTO_SYNC_INTERVAL:-15}"
-    nohup python3 -I .kit/board_server.py --host 0.0.0.0 --port "$PORT" --root "$ROOT" --token "$TOK" --auto-sync-interval "$AUTOSYNC" $SEED >/tmp/kit-board-${PORT}.log 2>&1 &
+    PUSH_FLAG=""
+    [ "${KIT_AUTO_SYNC_PUSH:-1}" != "0" ] && PUSH_FLAG="--auto-sync-push"
+    nohup python3 -I .kit/board_server.py --host 0.0.0.0 --port "$PORT" --root "$ROOT" --token "$TOK" --auto-sync-interval "$AUTOSYNC" $PUSH_FLAG $SEED >/tmp/kit-board-${PORT}.log 2>&1 &
     for _ in 1 2 3 4 5 6 7 8 9 10; do
       curl -sf "http://127.0.0.1:${PORT}/_api/health" >/dev/null 2>&1 && break
       sleep 0.2
     done
   fi
-  echo "Board (local):  http://127.0.0.1:${PORT}/?token=${TOK}"
+  echo "Board (local):  http://127.0.0.1:${PORT}/"
+  echo "Board token:    ${TOK}  (paste once in the unlock prompt; never needed in URLs)"
+  USE_FUNNEL=1
+  if [ -f ".kit/config.json" ]; then
+    USE_FUNNEL="$(python3 -I -c 'import json; print("0" if json.load(open(".kit/config.json")).get("kit",{}).get("funnel") is False else "1")' 2>/dev/null || echo 1)"
+  fi
   if command -v tailscale >/dev/null 2>&1; then
     TS_IP="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
-    [ -n "$TS_IP" ] && echo "Board (phone):  http://${TS_IP}:${PORT}/?token=${TOK}"
-    TS_DNS="$(tailscale serve status 2>/dev/null | grep -oE 'https://[^ ]+' | head -n 1 || true)"
-    [ -n "$TS_DNS" ] && echo "Board (HTTPS):  ${TS_DNS}?token=${TOK}"
+    [ -n "$TS_IP" ] && echo "Board (LAN/TS): http://${TS_IP}:${PORT}/"
+    if [ "$USE_FUNNEL" = "1" ]; then
+      if tailscale funnel --bg "$PORT" >/dev/null 2>&1; then
+        TS_FUNNEL="$(tailscale funnel status 2>/dev/null | grep -oE 'https://[^ ]+' | head -n 1 || true)"
+        [ -n "$TS_FUNNEL" ] && echo "Board (Funnel): ${TS_FUNNEL}  (works on phone & NextDNS without Tailscale app)"
+      else
+        TS_DNS="$(tailscale serve status 2>/dev/null | grep -oE 'https://[^ ]+' | head -n 1 || true)"
+        [ -n "$TS_DNS" ] && echo "Board (HTTPS):  ${TS_DNS}"
+        echo "Enable Funnel (once, free, NextDNS-friendly): sudo tailscale set --operator=\$USER && tailscale funnel --bg ${PORT}"
+      fi
+    else
+      TS_DNS="$(tailscale serve status 2>/dev/null | grep -oE 'https://[^ ]+' | head -n 1 || true)"
+      [ -n "$TS_DNS" ] && echo "Board (HTTPS):  ${TS_DNS}"
+    fi
   fi
   if [ "$HAS_ORCH" -eq 1 ] && [ "$HAS_CLERK" -eq 1 ]; then
     PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Also launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md if not already running."
