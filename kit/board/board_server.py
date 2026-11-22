@@ -574,10 +574,65 @@ SHIM_JS = r"""(function () {
         q.focus(); q.select && q.select();
       }
     } else if (e.key === "Escape") {
+      var dlg = document.getElementById("kit-dlg");
+      if (dlg) { dlg.remove(); return; }
       var back = document.getElementById("back");
       if (back && back.offsetParent !== null) back.click();
     }
   });
+
+  /* In-page confirm() and prompt() dialogs (works in sandboxed iframes like claude.ai Artifacts and Arena
+     preview frames where native modal dialogs are blocked and window.confirm() returns false immediately). */
+  if (typeof window !== "undefined" && !window.__KIT_DIALOG_INSTALLED__) {
+    window.__KIT_DIALOG_INSTALLED__ = true;
+    var _kitLastClicked = null, _kitAllowOnce = false, _kitReclicking = false;
+    window.addEventListener("click", function (ev) {
+      if (_kitReclicking || !ev.target || !ev.target.closest) return;
+      if (ev.target.closest("#kit-dlg")) return;
+      _kitLastClicked = ev.target.closest("button, a, [role=button], [role=link], input, label") || ev.target;
+    }, true);
+    function showKitDialog(message, withText, okLabel, onOk) {
+      var old = document.getElementById("kit-dlg"); if (old) old.remove();
+      var back = document.createElement("div"); back.id = "kit-dlg";
+      back.style.cssText = "position:fixed;inset:0;z-index:95;background:rgba(10,14,24,.48);display:flex;align-items:center;justify-content:center;padding:16px;overscroll-behavior:contain;";
+      back.addEventListener("click", function (ev) { if (ev.target === back) back.remove(); });
+      var box = document.createElement("div"); box.setAttribute("role", "alertdialog"); box.setAttribute("aria-modal", "true");
+      box.style.cssText = "max-width:520px;width:100%;max-height:85vh;overflow:auto;overscroll-behavior:contain;background:var(--surface,#fff);color:var(--ink,#111);border:1px solid var(--line,#ccc);border-radius:14px;padding:16px 18px;box-shadow:0 18px 50px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:12px;";
+      var p = document.createElement("div"); p.style.cssText = "white-space:pre-wrap;word-break:break-word;line-height:1.5;"; p.textContent = message; box.appendChild(p);
+      if (withText !== null && withText !== undefined) {
+        var ta = document.createElement("textarea"); ta.readOnly = true; ta.value = String(withText);
+        ta.style.cssText = "width:100%;min-height:140px;font:13px/1.4 var(--mono,monospace);background:var(--sunk,#f3f3f3);color:var(--ink,#111);border:1px solid var(--line,#ccc);border-radius:8px;padding:8px 10px;overscroll-behavior:contain;";
+        box.appendChild(ta);
+        setTimeout(function () { ta.focus(); ta.select(); }, 0);
+      }
+      var row = document.createElement("div"); row.style.cssText = "display:flex;gap:8px;justify-content:flex-end;";
+      var no = document.createElement("button"); no.type = "button"; no.className = "btn small"; no.textContent = onOk ? "Cancel" : "Close";
+      no.onclick = function () { back.remove(); };
+      row.appendChild(no);
+      if (onOk) {
+        var ok = document.createElement("button"); ok.type = "button"; ok.className = "btn small ember"; ok.textContent = okLabel || "OK";
+        ok.onclick = function () { back.remove(); onOk(); };
+        row.appendChild(ok);
+        setTimeout(function () { ok.focus(); }, 0);
+      }
+      box.appendChild(row); back.appendChild(box);
+      document.body.appendChild(back);
+    }
+    window.confirm = function (message) {
+      if (_kitAllowOnce) { _kitAllowOnce = false; return true; }
+      var target = _kitLastClicked;
+      if (!target || !document.contains(target)) return false;
+      showKitDialog(String(message || ""), null, "OK", function () {
+        _kitAllowOnce = true; _kitReclicking = true;
+        try { target.click(); } finally { _kitAllowOnce = false; _kitReclicking = false; }
+      });
+      return false;
+    };
+    window.prompt = function (message, def) {
+      showKitDialog(String(message || ""), def == null ? "" : String(def), null, null);
+      return null;
+    };
+  }
 
   function enhancePostSheet() {
     var sheet = document.getElementById("sheet");

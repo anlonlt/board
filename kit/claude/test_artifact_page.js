@@ -109,6 +109,14 @@ const STUB = `(function () {
   await p.waitForTimeout(500);
   res.gmail = await p.evaluate(() => { const w = document.getElementById('kit-mcp-win'); return w ? { title: w.querySelector('b').textContent, hasBody: /Looks good/.test(w.querySelector('pre').textContent) } : 'no window'; });
   res.mcpCalls = await p.evaluate(() => (window.__mcp || []).map(c => c[0] + ':' + c[1]));
+  // Check in-page confirm() dialog on Remove from the board
+  await p.evaluate(() => { const w = document.getElementById('kit-mcp-win'); if (w) w.remove(); });
+  await p.evaluate(() => { const b = document.getElementById('rm'); if (b) b.click(); });
+  await p.waitForTimeout(300);
+  res.confirmDialog = await p.evaluate(() => !!document.getElementById('kit-dlg'));
+  await p.evaluate(() => { const ok = document.querySelector('#kit-dlg button.ember'); if (ok) ok.click(); });
+  await p.waitForTimeout(400);
+  res.removedWrite = await p.evaluate(() => (window.__writes || []).some(w => w[1] === 'posts/P-a' && w[2] && w[2].removed === true));
   res.errors = errors.filter(e => !/net::ERR_FAILED|Failed to load resource/.test(e));
   console.log(JSON.stringify(res, null, 1));
   await b.close();
