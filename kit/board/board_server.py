@@ -200,31 +200,101 @@ SHIM_JS = r"""(function () {
       rawApi("GET", "/_api/repos").then(function (info) {
         if (!info || !Array.isArray(info.repos) || info.repos.length <= 1) return;
         var hdr = document.querySelector("header.top");
-        if (!hdr || document.getElementById("kit-repo-switch")) return;
-        var sel = document.createElement("select");
-        sel.id = "kit-repo-switch";
-        sel.setAttribute("aria-label", "Switch repository board");
-        sel.style.cssText = "border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:4px 10px;font-size:.82rem;font-weight:700;cursor:pointer;";
-        info.repos.forEach(function (r) {
-          var o = document.createElement("option");
-          o.value = r.primary ? "" : r.id;
-          o.textContent = r.name + (r.primary ? "" : " (attached)");
-          sel.appendChild(o);
-        });
+        var h1 = hdr && hdr.querySelector("h1");
+        if (!hdr || !h1 || document.getElementById("kit-repo-wrap")) return;
         var cur = window.__KIT_ACTIVE_REPO__ || "";
         if (!info.repos.some(function (r) { return (r.primary ? "" : r.id) === cur; })) {
           cur = ""; window.__KIT_ACTIVE_REPO__ = "";
         }
-        sel.value = cur;
-        sel.addEventListener("change", function () {
-          window.__KIT_ACTIVE_REPO__ = sel.value;
-          try { localStorage.setItem("kit_active_repo", sel.value); } catch (e) {}
-          lastSeq = 0;
-          refreshAllSubs();
+        if (!document.getElementById("kit-repo-css")) {
+          var st = document.createElement("style");
+          st.id = "kit-repo-css";
+          st.textContent =
+            ".kit-repo-wrap{position:relative;display:inline-flex;align-items:center;gap:4px;}" +
+            ".kit-repo-chev{background:none;border:0;padding:4px;margin-top:2px;color:var(--muted);border-radius:8px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:.65;transition:opacity .16s ease,transform .16s ease,background .15s ease;}" +
+            ".kit-repo-chev:hover{opacity:1;color:var(--ink);background:var(--sunk);}" +
+            ".kit-repo-chev[aria-expanded='true'] svg{transform:rotate(180deg);}" +
+            ".kit-repo-wrap h1:focus + .kit-repo-chev{opacity:0;pointer-events:none;}" +
+            ".kit-repo-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:190px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg,0 10px 28px rgba(0,0,0,.18));padding:4px;z-index:40;display:flex;flex-direction:column;gap:2px;}" +
+            ".kit-repo-menu[hidden]{display:none;}" +
+            ".kit-repo-item{background:none;border:0;text-align:left;padding:7px 12px;border-radius:8px;cursor:pointer;font-family:var(--display);font-weight:800;letter-spacing:-0.025em;font-size:1.35rem;line-height:1.2;color:var(--ink);white-space:nowrap;}" +
+            ".kit-repo-item:hover{background:var(--sunk);}";
+          document.head.appendChild(st);
+        }
+        var wrap = document.createElement("span");
+        wrap.id = "kit-repo-wrap";
+        wrap.className = "kit-repo-wrap";
+        h1.parentNode.insertBefore(wrap, h1);
+        wrap.appendChild(h1);
+
+        var btn = document.createElement("button");
+        btn.id = "kit-repo-chev";
+        btn.className = "kit-repo-chev";
+        btn.type = "button";
+        btn.setAttribute("aria-label", "Switch board");
+        btn.setAttribute("aria-haspopup", "menu");
+        btn.setAttribute("aria-expanded", "false");
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
+        wrap.appendChild(btn);
+
+        var menu = document.createElement("div");
+        menu.id = "kit-repo-menu";
+        menu.className = "kit-repo-menu";
+        menu.setAttribute("role", "menu");
+        menu.hidden = true;
+        wrap.appendChild(menu);
+
+        function repoLabel(r) {
+          var n = String(r.name || r.id || "Board");
+          return /board$/i.test(n) ? n : (n + " board");
+        }
+        function applyRepoTitle() {
+          var active = info.repos.filter(function (r) { return (r.primary ? "" : r.id) === (window.__KIT_ACTIVE_REPO__ || ""); })[0];
+          if (active && document.activeElement !== h1) {
+            var lbl = repoLabel(active);
+            h1.textContent = lbl;
+            document.title = lbl;
+          }
+        }
+        function renderMenu() {
+          menu.textContent = "";
+          var activeKey = window.__KIT_ACTIVE_REPO__ || "";
+          info.repos.forEach(function (r) {
+            var key = r.primary ? "" : r.id;
+            if (key === activeKey) return;
+            var it = document.createElement("button");
+            it.type = "button";
+            it.className = "kit-repo-item";
+            it.setAttribute("role", "menuitem");
+            it.textContent = repoLabel(r);
+            it.addEventListener("click", function () {
+              window.__KIT_ACTIVE_REPO__ = key;
+              try { localStorage.setItem("kit_active_repo", key); } catch (e) {}
+              closeMenu();
+              applyRepoTitle();
+              lastSeq = 0;
+              refreshAllSubs();
+            });
+            menu.appendChild(it);
+          });
+        }
+        function openMenu() {
+          renderMenu();
+          menu.hidden = false;
+          btn.setAttribute("aria-expanded", "true");
+        }
+        function closeMenu() {
+          menu.hidden = true;
+          btn.setAttribute("aria-expanded", "false");
+        }
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          if (menu.hidden) openMenu(); else closeMenu();
         });
-        var h1 = hdr.querySelector("h1");
-        if (h1 && h1.nextSibling) hdr.insertBefore(sel, h1.nextSibling);
-        else hdr.appendChild(sel);
+        h1.addEventListener("focus", closeMenu);
+        document.addEventListener("click", function (e) { if (!wrap.contains(e.target)) closeMenu(); });
+        document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeMenu(); });
+        applyRepoTitle();
       }, function () {});
     }
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initRepoSwitcher);
