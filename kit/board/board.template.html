@@ -175,7 +175,7 @@ button:focus-visible, textarea:focus-visible, .card:focus-visible, img:focus-vis
 .dash .name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dash .segs { display: flex; gap: 2px; }
 .dash .seg { width: 8px; height: 10px; border-radius: 2px; border: 1px solid var(--muted); }
-.dash .seg.was { background: var(--good); border-color: var(--good); }
+.dash .seg.was { background: var(--done); border-color: var(--done); }
 .dash .seg.now { background: var(--st-c); border-color: var(--st-c); }
 .dash .cur { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dash .st { font-size: .78rem; font-weight: 700; white-space: nowrap; color: var(--st-c); }
@@ -213,7 +213,11 @@ button.wait-row:hover .wtext { text-decoration: underline; }
 .tline .tp { font-weight: 700; white-space: nowrap; }
 .tline .tst { font-size: .72rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
 .tline .tt { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tnode.running > .tline .tst { color: var(--info); } .tnode.you > .tline .tst { color: var(--todo); } .tnode.done > .tline .tst { color: var(--good); }
+.tnode.you > .tline .tst { color: var(--todo); }
+.tnode.running > .tline .tst { color: var(--info); animation: kit-blink 1.5s ease-in-out infinite; }
+.tnode.default > .tline .tst, .tnode.ready > .tline .tst { color: var(--question); animation: kit-fade 2.4s ease-in-out infinite; }
+.tnode.done > .tline .tst { color: var(--done); }
+.tnode.blocked > .tline .tst, .tnode.idle > .tline .tst { color: var(--muted); }
 .tkids { margin-left: 14px; border-left: 2px solid var(--line); padding-left: 8px; }
 .tkids.flat { margin-left: 0; border-left: 0; padding-left: 0; }
 .tinfo { display: none; font-size: .85rem; padding: 0 0 6px; overflow-wrap: anywhere; color: var(--ink); }
@@ -1606,7 +1610,17 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       row.addEventListener("click", function () { state.dashOpen = state.dashOpen === key ? null : key; state.trainOpen = null; renderDash(); });
       g.appendChild(row);
     });
-    renderTrains();
+    var shownRoots = {};
+    activeRows.forEach(function (r) {
+      var pt = partOfRow(r), rt = pt ? rootOf(T, pt) : null;
+      if (rt) shownRoots[str(rt.part)] = true;
+      if (r.train) {
+        shownRoots[str(r.train)] = true;
+        var rt2 = rootOf(T, str(r.train));
+        if (rt2) shownRoots[str(rt2.part)] = true;
+      }
+    });
+    renderTrains(shownRoots);
   }
   /* BD4. "Waiting for you": posts/_waiting {items: [{key, text, kind, post, since, deadline}], updated_at}, written by the
      orchestrator from scripts/board-waiting.py. BD7: a page (a sheet like a post), one card per item showing the post
@@ -1682,7 +1696,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
      from scripts/board-trains.py. Each part under its parent; "Only the trains still moving" keeps a tree with a part
      running or waiting on him. A tap on a line shows its prompt, session and store, and opens its post.
      BD7: folded at the foot of the dashboard ("All trains"); a row of the dashboard shows its own train. */
-  var TST = { running: "runs", you: "you", done: "done", idle: "idle", written: "written", unknown: "?" };
+  var TST = { running: "runs", you: "you", default: "default", ready: "default", blocked: "later", done: "done", idle: "later", written: "written", unknown: "?" };
   function trainTitle(r) {
     var p = r.post && state.posts.filter(function (q) { return q.id === str(r.post); })[0];
     return p ? str(p.title) : (r.prompt ? str(r.prompt).split("/").pop().replace(/\.md$/, "") : "");
@@ -1719,23 +1733,29 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     }
     return w;
   }
-  function renderTrains() {
+  function renderTrains(shownRoots) {
     var T = trains(), d = T.d, box = $("trains"), rows = T.rows;
-    box.hidden = !rows.length; if (!rows.length) return;
+    shownRoots = shownRoots || {};
     var liveMemo = {};
     function live(r, n) {
       var k = str(r.part); if (liveMemo[k] !== undefined) return liveMemo[k];
       liveMemo[k] = false;
       return (liveMemo[k] = r.state === "running" || r.state === "you" || (n < 40 && kidsOf(T, r).some(function (c) { return live(T.by[c], n + 1); })));
     }
-    var roots = rows.filter(function (r) { return !r.parent || !T.by[str(r.parent)] || str(r.parent) === str(r.part); });
+    var roots = rows.filter(function (r) {
+      var k = str(r.part);
+      return (!r.parent || !T.by[str(r.parent)] || str(r.parent) === k) && !shownRoots[k];
+    });
     var trs = roots.filter(function (r) { return kidsOf(T, r).length; }), alone = roots.filter(function (r) { return !kidsOf(T, r).length; });
-    var onlyLive = $("trains-live").checked;
+    box.hidden = !trs.length && !alone.length; if (box.hidden) return;
     var moving = trs.filter(function (r) { return live(r, 0); }).length + alone.filter(function (r) { return live(r, 0); }).length;
+    var liveLbl = $("trains-live") && $("trains-live").closest ? $("trains-live").closest("label") : null;
+    if (liveLbl) liveLbl.hidden = moving === 0;
+    var onlyLive = moving > 0 && $("trains-live").checked;
     $("trains-sub").textContent = trs.length + " trains · " + moving + " moving" + (d && d.updated_at ? " · " + when(d.updated_at) : "");
     var tree = $("trains-tree"); tree.textContent = "";
     if (!box.open) return; /* folded: built when opened */
-    var o = { here: "", redraw: renderTrains };
+    var o = { here: "", redraw: function () { renderDash(); } };
     trs.concat(onlyLive ? alone : []).forEach(function (r) {
       if (onlyLive && !live(r, 0)) return;
       var s0 = {}; s0[str(r.part)] = true; tree.appendChild(trainNode(T, r, 0, s0, o));
@@ -1754,8 +1774,8 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
   (function () {
     var topen = false; try { topen = localStorage.getItem("board-trains") === "open"; } catch (e) {}
     $("trains").open = topen;
-    $("trains").addEventListener("toggle", function () { try { localStorage.setItem("board-trains", this.open ? "open" : "closed"); } catch (e) {} renderTrains(); });
-    $("trains-live").addEventListener("change", function () { renderTrains(); });
+    $("trains").addEventListener("toggle", function () { try { localStorage.setItem("board-trains", this.open ? "open" : "closed"); } catch (e) {} renderDash(); });
+    $("trains-live").addEventListener("change", function () { renderDash(); });
   })();
   (function () {
     var open = true; try { open = localStorage.getItem("board-dash") !== "closed"; } catch (e) {}
