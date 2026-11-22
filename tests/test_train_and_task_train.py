@@ -98,7 +98,7 @@ class PostFormat(unittest.TestCase):
     def good(self, **kw):
         p = {"verdict": "The parser reads 48 of 50 files.", "bars": ["48 of 50 files parsed", "latency 80 ms (bar <= 100 ms)"],
              "artifacts": ["out/report.html", "/_blob/abc"], "not_checked": ["files over 1 GB"],
-             "check": "python3 parse.py --all", "handoff": "use out/parsed.json", "body": "For you: nothing to do."}
+             "check": "python3 parse.py --all", "breaks": "rm data/sample.csv", "handoff": "use out/parsed.json", "body": "For you: nothing to do."}
         p.update(kw)
         return p
 

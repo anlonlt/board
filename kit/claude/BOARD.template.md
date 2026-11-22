@@ -29,6 +29,7 @@ The owner and the train view read fields, not prose. A finished post carries:
 | `not_checked` | what you did NOT check (`["nothing left unchecked"]` if so) | the step's Issues |
 | `issues` | what is wrong or open | the step's Issues |
 | `check` | the one command that reproduces your main number | the step's Check: the orchestrator and the review rerun it |
+| `breaks` | how to make `check` fail: a planted fault or a bad input (`sed -i 's/a + b/a - b/' calc.py`), or `manual: <what to do>` for a browser or Microsoft 365 step | the step's Breaks: the review applies it in a throwaway copy and sees `check` fail; a check that cannot fail holds nothing |
 | `handoff` | what the next step needs from yours | the step's Handoff, and the next part's context |
 | `body` | the whole result, after a first line saying what he must know or do; `##` sections, tables | the post |
 **Say it once, on the board:** the post is the one place your result lives, complete; messages and chat only point to it. The fields come first so the answer is never buried; the body holds the rest, as long as it needs. A repo document (`docs/<part>.md`) only for what is a document to keep or needs what a post body cannot show (pictures inline, diagrams): commit it and embed its sections as `` `docs/<part>.md § Section` `` (the page shows them inline and he comments on them in place); then the body points to it and never restates it. Update the post as you go (`update` / `str_replace`); a post is never rewritten in full.

@@ -3775,6 +3775,8 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
             addSec("Bars", barsList);
             /* The command that reproduces the main number (the orchestrator reruns it at Done) */
             if (str(p.check)) addSec("Check", str(p.check));
+            /* How to make that check fail: kit.py done applies it in a throwaway copy, or the review does by hand */
+            if (str(p.breaks)) addSec("Breaks", str(p.breaks));
             /* 5. Issues & Comments */
             var cmtsN = commentsFor(p.id).filter(function (x) { return !x.like && !x.removed; }).length;
             var notChk = Array.isArray(p.not_checked) ? p.not_checked : (str(p.not_checked) ? [str(p.not_checked)] : []);

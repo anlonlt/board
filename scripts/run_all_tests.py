@@ -20,11 +20,15 @@ SUITES = [
     ("test_install_bd11.py", [sys.executable, "test_install_bd11.py"]),
 ]
 
+SESSION_ENV = ("KIT_ROLE", "KIT_BOARD_TOKEN", "KIT_BOARD_URL", "KIT_BREAKS_COPY", "CLAUDE_PROJECT_DIR")
+
 
 def main():
     results = []
     t0 = time.monotonic()
-    env = dict(os.environ)
+    # The suites start without the calling session's identity: a part, clerk or orchestrator that runs them would
+    # otherwise hand its KIT_ROLE (or board token and URL) to every hook and kit command the tests launch.
+    env = {k: v for k, v in os.environ.items() if k not in SESSION_ENV}
     env["KIT_NO_FUNNEL"] = "1"
     for name, cmd in SUITES:
         print("=== %s ===" % name, flush=True)
