@@ -3,6 +3,8 @@ Board, part CL16: The board travels in git, always current (mirror synced on eve
 ## The task
 Goal: the board travels in git, always current, so a clone anywhere (another computer, Claude Code web) sees the same trains. Today .kit/board_data/board.db is gitignored and board-mirror was last synced 2026-11-20 (two days stale), so after a crash or on the web `kit.py resume` finds nothing.
 
+First diagnose: the board server already runs with `--auto-sync-interval 15 --auto-sync-push` (board_server.py enable_auto_sync), yet on 2026-11-22 four new posts (CL15-CL18, made with `kit.py step new` while the server ran) did not reach origin/board-mirror within a minute, and the ../board-board-mirror worktree is still at 78fa427. Find why (dirty flag not set by that write path? push failing silently? lock left in .kit-sync.lock?), make failures visible in the server log, and add a test that fails while it is broken.
+
 Do:
 - Sync the board to the `board-mirror` branch automatically (`kit.py sync-db` / `sync`) after every step change (`kit.py step new|start|complete|drop`, so the kit_task_train hook covers it), after `kit.py done`, and in `end_session.py` and `handover.py`; debounce (e.g. at most one push per minute, a final one guaranteed) and never block the tool on a network failure (retry later, say so once).
 - `kit.py resume` (and `train`, `board_cli.py` reads) work without a local board.db: they read the mirror (fetch origin/board-mirror). When both exist, the newer wins and the older is merged, never lost; say which source was used and its age.
