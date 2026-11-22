@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-22T23:32:24Z",
+ "created_at": "2026-11-22T23:35:29Z",
  "rows": [
   {
    "also": [],
@@ -366,7 +366,7 @@
    "post": "cl15-step-0-measures-each-device-never-more-s",
    "prompt": "",
    "session": "anon-b8",
-   "state": "running",
+   "state": "idle",
    "store": []
   },
   {
@@ -404,5 +404,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-22T23:32:24Z"
+ "updated_at": "2026-11-22T23:35:29Z"
 }
