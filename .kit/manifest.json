@@ -39,7 +39,7 @@
  ".kit/claude-cli/ORCHESTRATOR.md": "4879816d7a100ba59a2c67325ce292dcf28a3f9741e25f66cf5d7f23a1f38a5a",
  ".kit/claude-cli/clerk.md": "d1464cced04909c046226185ee45307582d81e52f4262973410f6c3da9b3b88e",
  ".kit/claude-cli/consultant.md": "a0a1533480e522c2f74548feb815a57ffa191902f22a1b86f9762607b7fc9a75",
- ".kit/claude-cli/orchestrator.md": "b2589892e299cf9df228ffb547584c38a665caa2542f4f6daf00bb8acb3026d7",
+ ".kit/claude-cli/orchestrator.md": "de2ebc66a52582826d2d69fd0347d37ec193139ac9cf44fabde8a55248e72f78",
  ".kit/claude-cli/part.md": "8398aa1aa0f87ab6f751a1e2a94f0aeadc103e5b107ac19a11ee4680f33c4bb2",
  ".kit/clerk.md": "7a18ed588a9e0448755eb13da3c6aeabfd6de11d5a3ddfe87b1df7b7135e4eac",
  ".kit/clerk_pending.py": "a107e6acfb52ac1f71578d779781dd9022ba58ffec50dda3103de02f7d60386d",
@@ -47,7 +47,7 @@
  ".kit/end_session.py": "70a94d110ab92c8eba0c3d80e169b4d6caac2a59ed9c50bfc5ab28313ac2c07c",
  ".kit/git_watch.py": "0573bbb27c983c40a7394b695944b92068f69f15611561ee384e4e2ac9a0b08c",
  ".kit/handover.py": "f4f13516facc0d47c38605151e99801b3b0106bc0aa4725f313bd6bc97382d88",
- ".kit/kit.py": "6de1721f90978f23e4c396654c48457aa9031e964c919957654a7b5c74d72b55",
+ ".kit/kit.py": "2597b937048d678b46f2a6b7fd5de0f66e8a42a77b904c9ebb981b7f1878a3c2",
  ".kit/kit_cards.py": "303d3ed650385367703a6dc647b8aa47cef48ed5058069bc2ad0dc8ebfcc94d9",
  ".kit/kit_import.py": "7ee7050f20af4343885704ca613b86945472e9ceec08ec8e0fb47645578ba809",
  ".kit/mcp_stdio.py": "ff406e51f4037b8a93240edd324d2b3bcb4656910fdacd9893af39ef17997ec9",
@@ -61,5 +61,5 @@
  ".kit/up": "80856782305588bb4b30ee32914e93bfdce4d9efe2d4d148f622a75fffb563ad",
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
- "_kit_commit": "2e74fce 2026-11-22T16:48:53-05:00"
+ "_kit_commit": "52b72ee 2026-11-22T16:49:13-05:00"
 }

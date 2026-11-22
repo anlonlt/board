@@ -1633,7 +1633,8 @@ def resume(m, db_path=None, alive=None):
     out = ["# Resume (from the board; nothing else carries over)"]
     n_active = 0
     for t in sorted(trains):
-        steps = sorted(trains[t], key=lambda x: (str(x[1].get("created_at") or ""), x[0]))
+        nat = lambda v: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", str(v).lower())]
+        steps = sorted(trains[t], key=lambda x: (str(x[1].get("created_at") or ""), nat(x[1].get("part") or x[0])))
         open_steps = [x for x in steps if str(x[1].get("column") or "info").lower() != "done"]
         if not open_steps:
             continue
