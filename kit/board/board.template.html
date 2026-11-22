@@ -1127,10 +1127,11 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
   /* What has not been on his screen yet: session comments, and the post's text if it is new or changed. */
   function unseenOf(p) {
     var v = seen[p.id];
-    return { cids: newComments(p, v ? v.at : "", true).map(function (c) { return c.id; }), body: !v || changed(p) };
+    return { cids: newComments(p, v ? v.at : "", true).map(function (c) { return c.id; }), body: p.id !== ORCH && (!v || changed(p)) };
   }
   function isNew(p) {
     if (colOf(p) === "done") return false;
+    if (p.id === ORCH) return unseenOf(p).cids.length > 0;
     var v = seen[p.id]; if (!v) return true;
     /* BD5 (his 20:05 on PA3): the same test as what the open post waits for; an agent's Like (orchestrator's
        "taking care of it") is never on screen as a comment, so it lit a dot nothing could clear */
