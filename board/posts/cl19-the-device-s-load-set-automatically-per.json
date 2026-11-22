@@ -6,7 +6,9 @@
  "parent": "cl15-step-0-measures-each-device-never-more-s",
  "part": "CL19",
  "planned_by": "orchestrator",
- "status": "planned",
+ "session_id": "anon-b8",
+ "status": "in progress",
  "title": "The device's load set automatically per task, learned from what tasks took here",
- "train": "cli"
+ "train": "cli",
+ "updated_at": "2026-11-22T23:40:43Z"
 }
