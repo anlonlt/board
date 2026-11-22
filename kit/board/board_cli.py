@@ -186,7 +186,8 @@ def _route_thread(call, thread_id):
                     walked_sender = p_from
                     break
                 cur_ref = parent.get("reply_to")
-        if has_at_o or post_id == "_orchestrator" or not post_exists or not post_sid or walked_sender == "orchestrator":
+        if has_at_o or post_id == "_orchestrator" or not post_exists or not post_sid or walked_sender in ("orchestrator", "consultant"):
+            # a reply to a review goes to the orchestrator: the review's session has ended, and acting on it is its job
             target_role = "orchestrator"
             target_part = "orchestrator"
             target_sid = orch_sid
@@ -196,9 +197,14 @@ def _route_thread(call, thread_id):
             target_sid = post_sid
         msg = (
             'Board comment from the owner on your post %s, thread %s, %s, verbatim: "%s". '
-            'Answer in his thread: reply_to: "%s" (.kit/BOARD.md § Comments). Sent by the board clerk.'
-            % (post_id, thread_id, created_at, comment_text, thread_id)
+            % (post_id, thread_id, created_at, comment_text)
         )
+        if c_id:
+            # One command answers in his thread, marks his comment read and acks the thread: no reply_to to work out.
+            msg += ('Answer with: python3 -I .kit/board_cli.py reply %s --comment-id %s --from <you> --text "<answer>" '
+                    '(.kit/BOARD.md § Comments). Sent by the board clerk.' % (post_id, c_id))
+        else:
+            msg += ('Answer in his thread: reply_to: "%s" (.kit/BOARD.md § Comments). Sent by the board clerk.' % thread_id)
 
     return {
         "thread_id": thread_id,

@@ -21,6 +21,6 @@ One fact, one file. A workstream's next step lives ONLY in its state file; other
 The `SessionStart` hook injected every workstream's `Next:` line, awaits count, open issues, and lessons count. Open the state file of the workstream you work on; grep `lessons/` before diagnosing anything twice.
 
 ## Save
-1. Rewrite `state/<ws>.md`: line 1 `Next: …` (one concrete step, who does it); `## Where it stands` as facts with evidence (commit, file, measure).
+1. Rewrite `state/<ws>.md`: line 1 `Next: …` (one concrete step, who does it); `## Where it stands` as facts with evidence (commit, file, measure). Say it once: when the workstream has a train on the board, its steps live there (the orchestrator's task list), not in a `## Steps` list here; "Where we are" follows the train.
 2. Update `awaits.md`: add what waits on the owner (with a default), remove what they answered.
 3. Commit the memory directory, then run `python3 -I .kit/end_session.py`.

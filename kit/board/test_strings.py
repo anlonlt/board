@@ -88,11 +88,11 @@ if node:
           r_syn2.returncode == 0)
     repo_root = os.path.dirname(os.path.dirname(HERE))
     has_pw = subprocess.run(
-        [node, "-e", "require.resolve('playwright')"],
+        [node, "-e", "try{require.resolve('playwright');process.exit(0)}catch(e){process.exit(require('./kit/claude/page_driver').findBrowser()?0:1)}"],
         capture_output=True, text=True, cwd=repo_root,
     ).returncode == 0
     if not has_pw:
-        print("SKIP the translated page in a browser: playwright not installed in node (say so; not a pass)")
+        print("SKIP the translated page in a browser: no Playwright and no Chrome/Edge/Brave/Chromium (say so; not a pass)")
     else:
         with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as fh:
             fh.write(out)

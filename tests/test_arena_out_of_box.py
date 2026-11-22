@@ -253,6 +253,21 @@ class TestArenaOutOfBox(unittest.TestCase):
         self.assertEqual(rt1["target_part"], "B1")
         self.assertEqual(rt1["target_session_id"], "conv-part-b1")
         self.assertIn('verbatim: "Looks good, check edge case"', rt1["message"])
+        # the forward carries the one command that answers in his thread
+        self.assertIn("board_cli.py reply B1-work --comment-id c-b1-1", rt1["message"])
+
+        # 1b. His reply to a review routes to the orchestrator (the review's session has ended)
+        store.set_doc("comments", "CR-B1-work", {"post_id": "B1-work", "from": "consultant", "kind": "review",
+                                                 "verdict": "redirect", "text": "Verdict: redirect.",
+                                                 "created_at": "2026-11-20T12:01:30Z"})
+        thr1b = store.send_comment(anchor={"id": "B1-work"}, text="[post B1-work] why redirect?")
+        store.set_doc("comments", "c-b1-rv", {"post_id": "B1-work", "from": "owner", "text": "why redirect?",
+                                              "reply_to": "CR-B1-work", "thread_id": thr1b["thread_id"], "read": False,
+                                              "created_at": "2026-11-20T12:01:40Z"})
+        rt1b = json.loads(subprocess.run(
+            [sys.executable, "-I", BOARD_CLI, "--url", url, "comments", "route", thr1b["thread_id"]],
+            capture_output=True, text=True, check=True).stdout)
+        self.assertEqual((rt1b["target_role"], rt1b["target_session_id"]), ("orchestrator", "conv-orch-1"))
 
         # 2. Comment with @o on B1-work overrides and routes to orchestrator (conv-orch-1)
         thr2 = store.send_comment(anchor={"id": "B1-work"}, text="[post B1-work] @o pause this train")

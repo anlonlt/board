@@ -48,7 +48,10 @@ def answered(doc_id, thread, at, comments):
     for c in comments:
         if c.get("from") in (OWNER, "viewer", CLERK_NAME) or c.get("like") or CLERK.match(c.get("text") or ""):
             continue
-        if c.get("reply_to") in (doc_id, thread) or (c.get("created_at") and ts(c["created_at"]) > t0):
+        if c.get("reply_to") in (doc_id, thread):
+            return True
+        # A review (an automatic one, under the same post) is not an answer to him unless it replies to his comment.
+        if c.get("kind") != "review" and c.get("created_at") and ts(c["created_at"]) > t0:
             return True
     return False
 

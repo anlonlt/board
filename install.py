@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the board kit for agy on a computer:
+"""Install the board kit on a computer, for agy and/or the Claude Code CLI:
     python3 install.py <project dir> --project "<Name>" --survey <step 0 report>
                        [--talk English] [--board-url URL] [--board-port 8765] [--main-branch <trunk>] [--dry-run]
                        [--no-board | --no-clerk | --no-orchestrator | --parts memory,board,...]
@@ -12,6 +12,9 @@ Copies, renders and merges; never deletes, never replaces what it did not write:
   .agents/hooks/kit/  the agy lifecycle hooks and their self-test
   .agents/hooks.json  the kit's `kit-board` hook block MERGED in (other named hooks kept untouched)
   .agents/skills/story, .agents/skills/board   (skipped if the project has its own file there)
+  .claude/hooks/kit/, .claude/settings.json, .claude/skills/*, .claude/agents/kit-cards.md
+                      (--runtime local, the default: the same hooks for the Claude Code CLI, merged into settings.json)
+  .kit/claude-cli/    the orchestrator / consultant / guide for a Claude Code CLI session (--runtime local)
   .board/memory/      state/, issues/, lessons/, awaits.md (or .story/ if already present)
 """
 import argparse
@@ -28,7 +31,8 @@ import strings as page_strings  # noqa: E402
 PARTS = ("memory", "board", "clerk", "orchestrator")
 MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "test_hooks.py"}
 HOOKS = ["kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
-         "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "test_hooks.py"]
+         "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "kit_task_train.py",
+         "test_hooks.py"]
 # agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
 CMD = "python3 -I hooks/kit/%s"
 CLAUDE_CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.claude/hooks/kit/%s"'
@@ -46,16 +50,41 @@ CLAUDE_SETTINGS = [
     ("Stop", None, "kit_say_it_once.py"),
     ("PreCompact", None, "kit_pre_compact.py"),
 ]
+# The Claude Code CLI on a computer with the local board server (--runtime local): the agy hook set,
+# mapped onto Claude Code's events and tool names (run_command -> Bash, send_message -> SendMessage).
+CLAUDE_CLI_SETTINGS = [
+    ("SessionStart", None, "kit_session_start.py"),
+    ("PreToolUse", "Bash", "kit_guard.py"),
+    ("PreToolUse", "SendMessage", "kit_say_it_once.py"),
+    ("PostToolUse", "SendMessage|Bash", "kit_say_it_once.py"),
+    ("PostToolUse", "TaskCreate|TaskUpdate", "kit_task_train.py"),
+    ("UserPromptSubmit", None, "kit_say_it_once.py"),
+    ("UserPromptSubmit", None, "kit_board_typing.py"),
+    ("Stop", None, "kit_stop.py"),
+    ("Stop", None, "kit_say_it_once.py"),
+    ("Stop", None, "kit_pre_compact.py"),
+    ("PreCompact", None, "kit_pre_compact.py"),
+]
+# Runtimes served by the local board server; `local` = agy + the Claude Code CLI in one install.
+LOCAL_RUNTIMES = ("local", "agy", "both", "arena", "generic")
 
 DEFAULT_KIT = {
-    "runtime": "agy",
+    "runtime": "local",
+    "cli": "auto",
     "mode": "local",
     "talk_language": "English",
     "limits": {"message_chars": 600, "done_message_chars": 240, "chat_answer_chars": 600},
     "guard": {"never_add": ["*.keystore", "*.jks", "*.pem", ".env", "keystore.properties"], "allow_add": []},
     "session_start_lines": [],
-    "orchestrator": {"context_limit_k": 300},
-    "clerk": {"wait_minutes": 5, "context_limit_k": 200},
+    # Context RESET points (kit_pre_compact.py; README § Context Reset): the orchestrator at 380k (a takeover costs
+    # ~150k, so a lower limit spends half of each session getting going; past ~400k every turn re-reads too much), the
+    # clerk at 80k (its takeover is a 1k prompt, and every wake re-reads its whole context: small is cheap).
+    "orchestrator": {"context_limit_k": 380},
+    # Reviews (Claude Code CLI): each completed step, and every train_every completed steps of a train a cross review.
+    "review": {"auto": "all", "train_every": 4},
+    # Above this a post body gets a nudge from `kit.py done` (never an error: the post is where the detail goes).
+    "post_body_max": 1500,
+    "clerk": {"wait_minutes": 5, "context_limit_k": 80},
     # agy subagent model tiers: clerk only forwards (flash_lite), cards runs scripts (flash),
     # orchestrator/parts inherit the session model, consultant uses pro.
     "roles": {"orchestrator": {"model": "inherit", "effort": "medium"},
@@ -75,6 +104,11 @@ DEFAULT_KIT = {
     "funnel": True,
     "main_branch": "main",
     "trunk_push": False,
+    # Claude Code CLI role models (--runtime local): `inherit` = the session's model (no `model` on the Agent call).
+    "claude_cli_roles": {"clerk": {"model": "haiku"}, "part": {"model": "inherit"}, "consultant": {"model": "opus"},
+                         "cards": {"model": "haiku"}},
+    # Every Claude Code CLI session of the kit runs in this mode (sessions in different modes hold each other's messages).
+    "claude_permission_mode": "auto",
 }
 CLAUDE_ROLES = {"part": {"model": "opus", "effort": "high"},
                 "clerk": {"model": "haiku", "effort": "low"},
@@ -142,6 +176,8 @@ def load_config(t, a):
     k.setdefault("clerk", {}).setdefault("context_limit_k", DEFAULT_KIT["clerk"]["context_limit_k"])
     for role, v in DEFAULT_KIT["roles"].items():
         k["roles"].setdefault(role, dict(v))
+    for role, v in DEFAULT_KIT["claude_cli_roles"].items():
+        k["claude_cli_roles"].setdefault(role, dict(v))
     if a.project:
         c["project"] = a.project
     c.setdefault("project", os.path.basename(t))
@@ -174,7 +210,15 @@ def load_config(t, a):
         k["roles"] = {r: dict(v) for r, v in CLAUDE_ROLES.items()}
     if a.mode:
         k["mode"] = a.mode
-    if parts["board"] and not c.get("board_url") and k.get("mode", "local") == "local" and k.get("runtime", "agy") != "claude":
+    if getattr(a, "cli", None):
+        k["cli"] = a.cli
+    if k.get("runtime") in ("local", "agy", "both") and k.get("cli", "auto") == "auto":
+        # The launcher's CLI is chosen here, once, not guessed at each launch: the CLI running this install,
+        # else the one installed (agy first). `--cli agy|claude` (or `<cmd> --agy|--claude`) overrides it.
+        sys.path.insert(0, os.path.join(KIT, "scripts"))
+        import step0_scan  # noqa: E402
+        k["cli"] = "agy" if k.get("runtime") in ("agy", "both") else step0_scan.pick_cli()
+    if parts["board"] and not c.get("board_url") and k.get("mode", "local") == "local" and k.get("runtime", "local") != "claude":
         c["board_url"] = "http://127.0.0.1:%d" % (a.board_port or 8765)
     if a.survey:
         k["survey"] = a.survey
@@ -305,6 +349,8 @@ def render(text, c):
     k = c["kit"]
     roles = k.get("roles") or {}
     role_cfg = lambda r: roles.get(r, DEFAULT_KIT["roles"][r])
+    cli_roles = k.get("claude_cli_roles") or {}
+    cli_role = lambda r: (cli_roles.get(r) or DEFAULT_KIT["claude_cli_roles"][r]).get("model") or "inherit"
     orch_limit_k = str((k.get("orchestrator") or {}).get("context_limit_k", DEFAULT_KIT["orchestrator"]["context_limit_k"]))
     clerk_limit_k = str((k.get("clerk") or {}).get("context_limit_k", DEFAULT_KIT["clerk"]["context_limit_k"]))
     autonomy = k.get("autonomy") or DEFAULT_KIT["autonomy"]
@@ -325,7 +371,7 @@ def render(text, c):
             "Balanced autonomy (`balanced`): launch parallel parts on a 👍 on your proposal, auto-spawn the Consultant at route-setting Done milestones, and park new feature tangents in `{{MEMORY_DIR}}/state/` so active trains stay focused."
         )
     vals = {"PROJECT": c["project"], "SLUG": slug(c["project"]),
-            "RUNTIME": k.get("runtime") or "agy",
+            "RUNTIME": k.get("runtime") or "local",
             "CMD": k.get("cmd") or "./.kit/up",
             "BOARD_URL": c.get("board_url") or "http://127.0.0.1:8765",
             "MEMORY_DIR": k.get("memory_dir") or ".board/memory",
@@ -333,6 +379,8 @@ def render(text, c):
             "WAIT": str(k["clerk"]["wait_minutes"]),
             "CONTEXT_K": clerk_limit_k,
             "CLERK_LIMIT_K": clerk_limit_k,
+            # Claude Code's own compaction only as a safety net just past the reset point, if a hand-over ever fails.
+            "CLERK_AUTOCOMPACT": str(max(100, int(clerk_limit_k) + 40) * 1000),
             "ORCH_LIMIT_K": orch_limit_k,
             "CLERK": c.get("fields", {}).get("clerk", "clerk"),
             "MIRROR_BRANCH": c["mirror"]["branch"], "MIRROR_PATH": c["mirror"]["path"],
@@ -343,6 +391,10 @@ def render(text, c):
             "CONSULTANT_MODEL": role_cfg("consultant")["model"],
             "CONS_MODEL": role_cfg("consultant")["model"], "CONS_EFFORT": role_cfg("consultant")["effort"],
             "CARDS_MODEL": role_cfg("cards")["model"],
+            "CLI_PART_MODEL": cli_role("part"), "CLI_CONS_MODEL": cli_role("consultant"), "CLI_CARDS_MODEL": cli_role("cards"),
+            "CLI_CLERK_MODEL": cli_role("clerk"),
+            "CLI_PART_MODEL_FLAG": "" if cli_role("part") == "inherit" else "--model %s " % cli_role("part"),
+            "CLAUDE_MODE": k.get("claude_permission_mode") or "auto",
             "AUTONOMY_LEVEL": auto_level,
             "AUTONOMY_RULE": render_vars(autonomy_rule, {"MEMORY_DIR": k.get("memory_dir") or ".board/memory"})}
     if c["project"].strip().lower().endswith("board"):
@@ -403,12 +455,19 @@ def merge_hooks(t, dry, log, board=True):
             fh.write("\n")
 
 
-def merge_claude_settings(t, dry, log, board=True):
+def merge_claude_settings(t, dry, log, board=True, spec=None):
     p = os.path.join(t, ".claude", "settings.json")
     s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
     hooks = s.setdefault("hooks", {})
     added = 0
-    for ev, matcher, f in CLAUDE_SETTINGS:
+    if any(f == "kit_task_train.py" for _, _, f in (spec or [])) and board:
+        # Claude Code's task tools (TaskCreate / TaskUpdate) are off unless this is set; the orchestrator plans with
+        # them and kit_task_train.py puts each step on its train.
+        env = s.setdefault("env", {})
+        if env.get("CLAUDE_CODE_ENABLE_TODO_TOOLS") != "1":
+            env["CLAUDE_CODE_ENABLE_TODO_TOOLS"] = "1"
+            added += 1
+    for ev, matcher, f in (spec or CLAUDE_SETTINGS):
         if not board and f not in MEMORY_HOOKS:
             continue
         cmd = CLAUDE_CMD % f
@@ -463,7 +522,11 @@ def main(argv=None):
     ap.add_argument("--talk", help="the language to talk to the owner in (default English)")
     ap.add_argument("--board-url", help="override board URL (default http://127.0.0.1:<port> in local mode)")
     ap.add_argument("--board-port", type=int, help="local board server port (default 8765)")
-    ap.add_argument("--runtime", choices=["agy", "claude", "arena", "generic", "both"], help="which harness configs to install (default agy)")
+    ap.add_argument("--runtime", choices=["local", "agy", "claude", "arena", "generic", "both"],
+                    help="which harness configs to install (default local: agy + the Claude Code CLI on this computer; "
+                         "agy: agy only; claude: Claude Code Web Artifact; both: agy + Claude Code Web hybrid)")
+    ap.add_argument("--cli", choices=["auto", "agy", "claude"],
+                    help="which CLI the one-word launcher opens (default auto: kit.cli, else the one installed, agy first)")
     ap.add_argument("--mode", choices=["local", "hybrid"], help="local: localhost board_server; hybrid: Claude Artifact + git_watch.py")
     ap.add_argument("--cmd", help="one-word terminal command installed in ~/.local/bin/<cmd> (default: project slug)")
     ap.add_argument("--no-cmd", action="store_true", help="skip installing the ~/.local/bin/<cmd> shortcut")
@@ -633,10 +696,11 @@ def main(argv=None):
             os.makedirs(os.path.dirname(p), exist_ok=True)
             open(p, "w", encoding="utf-8").write(cfg)
     rd = lambda *x: open(os.path.join(KIT, *x), encoding="utf-8").read()
-    rt = c["kit"].get("runtime", "agy")
+    rt = c["kit"].get("runtime", "local")
     claude_only = rt == "claude"
-    want_agy = rt in ("agy", "both")
-    want_claude = rt in ("claude", "both")
+    want_agy = rt in ("agy", "both", "local")
+    want_claude = rt in ("claude", "both", "local")
+    claude_cli = rt == "local"  # the Claude Code CLI next to agy, on the local board server
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     if claude_only:
@@ -644,6 +708,7 @@ def main(argv=None):
     if not claude_only:
         ins.put(".kit/git_watch.py", rd("kit", "git_watch.py"))
         ins.put(".kit/up", rd("kit", "up"))
+        ins.put(".kit/handover.py", rd("kit", "handover.py"))
         ins.put(".kit/step0_scan.py", rd("scripts", "step0_scan.py"))
         ins.put(".kit/twrp_wizard.py", rd("scripts", "twrp_wizard.py"))
     for h in HOOKS:
@@ -697,7 +762,7 @@ def main(argv=None):
             ins.put(".kit/agents/kit-cards.md", cards_tpl)
             ins.put(".agents/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
         if want_claude:
-            ins.put(".claude/agents/kit-cards.md", cards_tpl)
+            ins.put(".claude/agents/kit-cards.md", render(rd("kit", "claude-cli", "kit-cards.template.md"), c) if claude_cli else cards_tpl)
             ins.put(".claude/skills/board/SKILL.md", rd("kit", "claude", "SKILL.board.md") if claude_only else rd("kit", "skills", "board", "SKILL.md"))
     if parts["clerk"]:
         ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
@@ -715,6 +780,9 @@ def main(argv=None):
             ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
             ins.put(".kit/runner.md", render(rd("kit", "runner.template.md"), c))
             ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
+            if claude_cli:
+                for f in ("orchestrator", "ORCHESTRATOR", "consultant", "clerk", "part"):
+                    ins.put(".kit/claude-cli/%s.md" % f, render(rd("kit", "claude-cli", f + ".template.md"), c))
     mdir = c["kit"].get("memory_dir") or ".board/memory"
     for d in ("state", "issues", "lessons"):
         if not os.path.isdir(os.path.join(t, mdir, d)):
@@ -723,7 +791,8 @@ def main(argv=None):
         ins.put("%s/awaits.md" % mdir, "# What awaits the owner\n\n")
     gi = os.path.join(t, ".gitignore")
     cur = open(gi, encoding="utf-8").read() if os.path.exists(gi) else ""
-    gi_add = [x for x in ("%s/before-compaction.md" % mdir, ".kit/board_data/") if x not in cur]
+    gi_add = [x for x in ("%s/before-compaction.md" % mdir, ".kit/board_data/", ".kit/handover.flag", ".kit/handover.log",
+                                ".kit/handover-*.gen", ".kit/run/") if x not in cur]
     if gi_add:
         ins.log.append(".gitignore: + " + ", ".join(gi_add))
         if not a.dry_run:
@@ -990,7 +1059,7 @@ def main(argv=None):
         finally:
             store.close()
     if want_claude:
-        merge_claude_settings(t, a.dry_run, ins.log, parts["board"])
+        merge_claude_settings(t, a.dry_run, ins.log, parts["board"], CLAUDE_CLI_SETTINGS if claude_cli else CLAUDE_SETTINGS)
     import subprocess
     r = subprocess.run(["git", "-C", KIT, "log", "-1", "--format=%h %cI"], capture_output=True, text=True)
     kit_at = r.stdout.strip() or "unknown (not a git clone)"
@@ -1026,6 +1095,9 @@ def main(argv=None):
                     print("funnel: enabled on port %s (works on phone & NextDNS without Tailscale app)" % bport)
                 else:
                     print("funnel (one-time setup for phone + NextDNS + LMArena): sudo tailscale set --operator=$USER && tailscale funnel --bg %s" % bport)
+        cli = c["kit"].get("cli") or "agy"
+        print("cli: `%s` opens %s (the other one: `%s --%s`, or rerun with --cli %s)" % (
+            cmd_word, cli, cmd_word, "claude" if cli == "agy" else "agy", "claude" if cli == "agy" else "agy"))
         print("next: run `%s` from any terminal (starts board on %s, Funnel, and orchestrator + clerk)" % (cmd_word, c.get("board_url", "http://127.0.0.1:8765")))
     return 0
 

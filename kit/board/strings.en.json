@@ -244,6 +244,18 @@
   "kind": "js"
  },
  {
+  "en": "_prefs",
+  "kind": "js"
+ },
+ {
+  "en": "posts/_prefs",
+  "kind": "js"
+ },
+ {
+  "en": "summary.md-sec-h",
+  "kind": "js"
+ },
+ {
   "en": "A session",
   "kind": "js"
  },
@@ -892,6 +904,10 @@
   "kind": "js"
  },
  {
+  "en": "Review of the whole train: ",
+  "kind": "js"
+ },
+ {
   "en": "var(--muted)",
   "kind": "js"
  },
@@ -932,11 +948,15 @@
   "kind": "js"
  },
  {
-  "en": "Status",
+  "en": " · after ",
   "kind": "js"
  },
  {
-  "en": " · after ",
+  "en": "Review: ",
+  "kind": "js"
+ },
+ {
+  "en": "Status",
   "kind": "js"
  },
  {
@@ -968,11 +988,23 @@
   "kind": "js"
  },
  {
+  "en": "Check",
+  "kind": "js"
+ },
+ {
   "en": "No open issues",
   "kind": "js"
  },
  {
+  "en": " · Not checked: ",
+  "kind": "js"
+ },
+ {
   "en": "Issues",
+  "kind": "js"
+ },
+ {
+  "en": "Handoff",
   "kind": "js"
  },
  {

@@ -41,11 +41,15 @@ def default_selections(profile):
     scopes = profile.get("scope_options") or []
     scope_id = next((s["id"] for s in scopes if s.get("recommended")), "single")
 
+    clis = profile.get("cli_options") or []
+    cli_id = next((c["id"] for c in clis if c.get("recommended")), "agy")
+
     return {
         "palette": pal_id,
         "autonomy": auto_id,
         "runtime": rt_id,
         "scope": scope_id,
+        "cli": cli_id,
         "trunk_push": "yes" if auto_id == "full_auto" else "no",
     }
 
@@ -63,6 +67,8 @@ def build_install_argv(target_dir, profile, selections, report_path=None, dry_ru
         "--scope", selections["scope"],
         "--trunk-push", selections.get("trunk_push") or "no",
     ]
+    if selections.get("cli") and selections["runtime"] in ("local", "agy", "both"):
+        argv.extend(["--cli", "agy" if selections["runtime"] in ("agy", "both") else selections["cli"]])
     if chosen_pal:
         argv.extend(["--palette", chosen_pal["id"], "--palette-json", json.dumps(chosen_pal, ensure_ascii=False)])
     if report_path and os.path.isfile(report_path):
@@ -97,7 +103,11 @@ def run_curses_gui(profile, initial_selections):
             (r["id"], r["name"], "★ REC" if r.get("recommended") else "", "", "")
             for r in runtimes
         ]),
-        ("scope", "4. BOARD SCOPE (%d Discovered Projects)" % len(profile.get("discovered_projects") or []), [
+        ("cli", "4. YOUR ONE-WORD COMMAND OPENS (local / this computer)", [
+            (c["id"], c["name"], "★ REC" if c.get("recommended") else "", "", "")
+            for c in (profile.get("cli_options") or [])
+        ]),
+        ("scope", "5. BOARD SCOPE (%d Discovered Projects)" % len(profile.get("discovered_projects") or []), [
             (s["id"], s["name"], "★ REC" if s.get("recommended") else "", ", ".join(s.get("projects") or []), "")
             for s in scopes
         ]),
@@ -265,6 +275,8 @@ def render_ansi_summary(profile, selections):
         "║ Palette:   %-61s ║" % ("%s [%s]" % (pal.get("name", selections["palette"]), selections["palette"])),
         "║ Autonomy:  %-61s ║" % selections["autonomy"],
         "║ Runtime:   %-61s ║" % selections["runtime"],
+        "║ CLI:       %-61s ║" % selections.get("cli", "-"),
+        "║ Push main: %-61s ║" % selections.get("trunk_push", "no"),
         "║ Scope:     %-61s ║" % selections["scope"],
         "╚══════════════════════════════════════════════════════════════════════════╝",
     ]
@@ -278,7 +290,10 @@ def main(argv=None):
     ap.add_argument("--home", default=None, help="Override home directory for Step 0 discovery")
     ap.add_argument("--palette", default=None, help="Pre-select colour palette id")
     ap.add_argument("--autonomy", choices=["full_auto", "balanced", "gated"], default=None, help="Pre-select autonomy profile")
-    ap.add_argument("--runtime", choices=["agy", "claude", "arena", "generic", "both"], default=None, help="Pre-select runtime")
+    ap.add_argument("--runtime", choices=["local", "agy", "claude", "arena", "generic", "both"], default=None, help="Pre-select runtime")
+    ap.add_argument("--cli", choices=["agy", "claude"], default=None, help="Pre-select the CLI the one-word command opens")
+    ap.add_argument("--trunk-push", choices=["yes", "no"], default=None,
+                    help="The owner's standing permission to push the trunk (headless: 'no' unless given)")
     ap.add_argument("--scope", choices=["single", "all"], default=None, help="Pre-select project scope")
     ap.add_argument("--headless", action="store_true", help="Run non-interactively using Step 0 recommendations + CLI overrides")
     ap.add_argument("--print-choices", action="store_true", help="Print Step 0 profile + recommended selections as JSON and exit")
@@ -301,12 +316,20 @@ def main(argv=None):
         selections["runtime"] = a.runtime
     if a.scope:
         selections["scope"] = a.scope
+    if a.cli:
+        selections["cli"] = a.cli
+    interactive = not a.headless and sys.stdin.isatty() and sys.stdout.isatty()
+    if a.trunk_push:
+        selections["trunk_push"] = a.trunk_push
+    elif not interactive and not a.print_choices:
+        # Nobody saw the screen: pushing the trunk is the owner's permission to give, never a recommendation.
+        selections["trunk_push"] = "no"
 
     if a.print_choices:
         print(json.dumps({"profile": profile, "selections": selections}, indent=2, ensure_ascii=False))
         return 0
 
-    if not a.headless and sys.stdin.isatty() and sys.stdout.isatty():
+    if interactive:
         res = run_curses_gui(profile, selections)
         if not res or not res.get("confirmed"):
             print("Installation cancelled by user.")

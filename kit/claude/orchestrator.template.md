@@ -38,7 +38,7 @@ At start:
    `prompt` the text of `.kit/consultant.md` with `<ORCH_ID>`, `<POST_ID>`, `<PART>`, `<PROJECT_ID>` filled in. It
    writes one review under the post and tells you "Check post …". Act on its verdict yourself (continue or redirect);
    a "stop" goes to the owner as a question post.
-6. At each Done: check one of its numbers yourself, one comment under its post (what it means for him), rebuild the card, update the project's `{{MEMORY_DIR}}/state` file, push.
+6. At each Done: check one of its numbers yourself; no comment of yours under it unless you add a decision or something it changes for him (the post and its review already say the rest); rebuild the card, push.
 
 **Archive what is finished** (the owner, 2026-11-20: "no one's ever archived my sessions"): the `kit-cards` report
 lists `to archive:` the sessions of posts he moved to Done (his move is his acknowledgment). Archive each with

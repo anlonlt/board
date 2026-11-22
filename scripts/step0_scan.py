@@ -466,13 +466,60 @@ def evaluate_autonomy_and_sprawl(projects, transcript_stats):
     }
 
 
+CLIS = ("agy", "claude")
+
+
+def installed_clis():
+    """The agent CLIs on this computer's PATH (agy first)."""
+    import shutil
+    return [c for c in CLIS if shutil.which(c)]
+
+
+def running_cli():
+    """The CLI this process runs under: `claude` (the local Claude Code CLI, not Claude Code Web) or `agy`, else None.
+    Claude Code sets CLAUDECODE in its tools' environment; otherwise walk the parent processes by name (ps, any Unix)."""
+    if os.environ.get("CLAUDE_CODE_REMOTE"):
+        return None
+    if os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
+        return "claude"
+    import subprocess
+    pid = os.getppid()
+    for _ in range(12):
+        try:
+            out = subprocess.run(["ps", "-o", "ppid=,comm=", "-p", str(pid)], capture_output=True, text=True, timeout=3).stdout.split(None, 1)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if len(out) < 2:
+            return None
+        name = os.path.basename(out[1].strip()).lower()
+        for c in CLIS:
+            if name == c or name.startswith(c + "-") or name.startswith(c + "."):
+                return c
+        pid = int(out[0])
+        if pid <= 1:
+            return None
+    return None
+
+
+def pick_cli(installed=None, running=None):
+    """The CLI the one-word launcher opens when the owner named none: the one running the install, else the only
+    one installed, else agy if installed, else claude, else agy."""
+    installed = installed_clis() if installed is None else installed
+    running = running_cli() if running is None else running
+    if running:
+        return running
+    if installed:
+        return installed[0]
+    return "agy"
+
+
 def detect_current_runtime():
     if os.environ.get("KIT_EMBED_PREVIEW") or os.path.exists("/home/user"):
         return "arena"
-    if os.environ.get("CLAUDE_PROJECT_DIR") or os.environ.get("CLAUDE_CODE"):
+    if os.environ.get("CLAUDE_CODE_REMOTE"):
         return "claude"
-    if os.path.isdir(os.path.expanduser("~/.gemini/antigravity-cli")):
-        return "agy"
+    if running_cli() or installed_clis() or os.path.isdir(os.path.expanduser("~/.gemini/antigravity-cli")):
+        return "local"
     return "generic"
 
 
@@ -500,8 +547,18 @@ def build_step0_profile(target_dir, home_dir=None):
         },
     ]
 
+    clis_found = installed_clis()
+    cli_now = running_cli()
+    cli_pick = pick_cli(clis_found, cli_now)
+    cli_options = [
+        {"id": c, "name": {"agy": "Antigravity CLI (agy --mode auto)", "claude": "Claude Code CLI (claude --permission-mode auto)"}[c]
+                          + ("" if c in clis_found else " — not installed"),
+         "recommended": c == cli_pick, "installed": c in clis_found}
+        for c in CLIS
+    ]
     runtime_options = [
-        {"id": "agy", "name": "Antigravity CLI (agy — local board + Tailscale + hooks)", "recommended": detected_rt == "agy"},
+        {"id": "local", "name": "This computer: agy AND/OR Claude Code CLI (local board + Tailscale + hooks for both)", "recommended": detected_rt == "local"},
+        {"id": "agy", "name": "Antigravity CLI only (agy — local board + Tailscale + hooks)", "recommended": detected_rt == "agy"},
         {"id": "claude", "name": "Claude Code Web (claude.ai Artifact + cloud sessions)", "recommended": detected_rt == "claude"},
         {"id": "arena", "name": "LMArena / E2B Sandbox (--preview --embed-mode + 30m listener)", "recommended": detected_rt == "arena"},
         {"id": "both", "name": "Hybrid (agy local + Claude Code Web over Git mirror)", "recommended": False},
@@ -522,6 +579,9 @@ def build_step0_profile(target_dir, home_dir=None):
         "autonomy_assessment": autonomy,
         "palettes": palettes,
         "runtime_options": runtime_options,
+        "cli_options": cli_options,
+        "installed_clis": clis_found,
+        "running_cli": cli_now,
         "mcp_readers": mcp_info["readers"],
         "mcp_reader_details": mcp_info["details"],
         "mcp_capabilities": mcp_info["capabilities"],

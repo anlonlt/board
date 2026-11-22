@@ -161,33 +161,64 @@ with tempfile.TemporaryDirectory() as d:
     rc, out, _ = run("kit_pre_compact.py", {"hookEventName": "Stop", "conversation_id": "part-high-" + RUN, "transcript_path": tf_part}, proj)
     check("pre-compact: normal part above threshold is allowed", rc == 0 and out.get("decision") == "allow")
 
-    # Orchestrator above threshold (310k >= 300k) -> deny once with handover instructions, then allow
-    tf_orch = ctx_transcript("orch-high", "MyProj: you are the orchestrator.", 110000, 200000)
+    # Orchestrator above threshold (390k >= 380k) -> deny once with handover instructions, then allow
+    tf_orch = ctx_transcript("orch-high", "MyProj: you are the orchestrator.", 190000, 200000)
     orch_cid = "orch-high-" + RUN
     rc1, out1, _ = run("kit_pre_compact.py", {"hookEventName": "Stop", "conversation_id": orch_cid, "transcript_path": tf_orch}, proj)
     check("pre-compact: orchestrator above threshold is denied with handover & invoke_subagent instructions",
           rc1 == 0 and out1.get("decision") == "deny"
           and "HANDOVER REQUIRED" in out1.get("reason", "")
-          and "310k >= 300k" in out1.get("reason", "")
+          and "390k >= 380k" in out1.get("reason", "")
           and "invoke_subagent" in out1.get("reason", "")
           and "state/orchestrator.md" in out1.get("reason", ""))
     rc2, out2, _ = run("kit_pre_compact.py", {"hookEventName": "Stop", "conversation_id": orch_cid, "transcript_path": tf_orch}, proj)
     check("pre-compact: orchestrator second stop is allowed (flag prevents infinite loop)",
           rc2 == 0 and out2.get("decision") == "allow")
 
-    # Clerk above threshold (210k >= 200k) -> deny once with rotation instructions, then allow
-    tf_clerk = ctx_transcript("clerk-high", "MyProj: you are the board clerk.", 10000, 200000,
+    # Clerk above threshold (90k >= 80k) -> deny once with rotation instructions, then allow
+    tf_clerk = ctx_transcript("clerk-high", "MyProj: you are the board clerk.", 10000, 80000,
                               tool_cmd="python3 -I .kit/board_cli.py comments wait --timeout 300")
     clerk_cid = "clerk-high-" + RUN
     rc1, out1, _ = run("kit_pre_compact.py", {"hookEventName": "Stop", "conversation_id": clerk_cid, "transcript_path": tf_clerk}, proj)
     check("pre-compact: clerk above threshold is denied with rotation instructions",
           rc1 == 0 and out1.get("decision") == "deny"
           and "HANDOVER REQUIRED" in out1.get("reason", "")
-          and "210k >= 200k" in out1.get("reason", "")
+          and "90k >= 80k" in out1.get("reason", "")
           and "ready for replacement" in out1.get("reason", ""))
     rc2, out2, _ = run("kit_pre_compact.py", {"hookEventName": "Stop", "conversation_id": clerk_cid, "transcript_path": tf_clerk}, proj)
     check("pre-compact: clerk second stop is allowed (flag prevents infinite loop)",
           rc2 == 0 and out2.get("decision") == "allow")
+
+    # Claude Code CLI: the same limits, read from the transcript's usage; a context RESET via .kit/handover.py
+    def cc_transcript(name, opener_text, in_tok, cache_tok, creation_tok=0):
+        f = os.path.join(d, "cc-%s.jsonl" % name)
+        with open(f, "w") as fh:
+            fh.write(json.dumps({"type": "user", "message": {"role": "user", "content": opener_text}}) + "\n")
+            fh.write(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ok"}],
+                     "usage": {"input_tokens": in_tok, "cache_read_input_tokens": cache_tok,
+                               "cache_creation_input_tokens": creation_tok}}}) + "\n")
+        return f
+
+    def cc_stop(sid, tf, active=False):
+        return run("kit_pre_compact.py", {"hook_event_name": "Stop", "session_id": sid, "transcript_path": tf,
+                                          "stop_hook_active": active}, proj)
+
+    cc_low = cc_transcript("orch-low", "Read .kit/claude-cli/orchestrator.md and start as the orchestrator for this repository", 5000, 90000)
+    check("claude-cli: orchestrator below its limit stops normally", cc_stop("cc-low-" + RUN, cc_low)[1] == {})
+    cc_part = cc_transcript("part", "Your prompt is docs/prompts/p1.md: read it and do it.", 50000, 300000)
+    check("claude-cli: a part above the limit is never handed over", cc_stop("cc-part-" + RUN, cc_part)[1] == {})
+    cc_orch = cc_transcript("orch-high", "Read .kit/claude-cli/orchestrator.md and start as the orchestrator for this repository", 2000, 370000, 12000)
+    o1 = cc_stop("cc-orch-" + RUN, cc_orch)[1]
+    check("claude-cli: orchestrator at 384k is blocked once with the reset steps (trains current, kit.py resume, handover.py)",
+          o1.get("decision") == "block" and "384k >= 380k" in o1.get("reason", "") and "kit.py resume" in o1.get("reason", "")
+          and "state/orchestrator.md" in o1.get("reason", "") and "handover.py --role orchestrator" in o1.get("reason", ""))
+    check("claude-cli: orchestrator's next stop passes (flag)", cc_stop("cc-orch-" + RUN, cc_orch)[1] == {})
+    check("claude-cli: stop_hook_active never blocks", cc_stop("cc-orch2-" + RUN, cc_orch, active=True)[1] == {})
+    cc_clerk = cc_transcript("clerk-high", "Your prompt is .kit/claude-cli/clerk.md: read it and follow it.", 1000, 85000)
+    o1 = cc_stop("cc-clerk-" + RUN, cc_clerk)[1]
+    check("claude-cli: clerk at 86k is blocked once: no re-arm, handover.py --role clerk",
+          o1.get("decision") == "block" and "86k >= 80k" in o1.get("reason", "")
+          and "handover.py --role clerk" in o1.get("reason", "") and "re-arm" in o1.get("reason", ""))
 
     # Stop: closing message check using agy's transcript.jsonl format
     def transcript(step_id, closing, human=True):
@@ -271,6 +302,11 @@ with tempfile.TemporaryDirectory() as d:
     check("claude hook: say_it_once UserPromptSubmit emits hookSpecificOutput", rc_cup == 0 and "hookSpecificOutput" in out_cup and "123" in out_cup)
     rc_cpt, out_cpt, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse"})
     check("claude hook: say_it_once PostToolUse emits hookSpecificOutput with ·", rc_cpt == 0 and "hookSpecificOutput" in out_cpt and "·" in out_cpt)
+    _, out_cb, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "git status"}})
+    _, out_cbw, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse", "tool_name": "Bash",
+                                                      "tool_input": {"command": "python3 -I .kit/board_cli.py set comments c1 --data '{}'"}})
+    check("claude CLI hook: say_it_once PostToolUse on Bash stays silent unless it is a board write",
+          out_cb.strip() == "" and "·" in out_cbw)
     cf_t = os.path.join(d, "claude-t.jsonl")
     with open(cf_t, "w") as fh:
         fh.write(json.dumps({"type": "user", "uuid": "cu1", "origin": {"kind": "human"}, "message": {"content": "go"}}) + "\n")

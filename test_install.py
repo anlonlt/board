@@ -58,7 +58,7 @@ with tempfile.TemporaryDirectory() as d:
           and "KEPT" in out)
     page = open(os.path.join(t, ".kit", "board.html"), encoding="utf-8").read()
     check("page: the project's name, no Harmonize, no placeholder", "Tide Clock board" in page and "armoniz" not in page and "{{" not in page)
-    check(".gitignore appended, not replaced", open(os.path.join(t, ".gitignore")).read() == "build/\n.board/memory/before-compaction.md\n.kit/board_data/\n")
+    check(".gitignore appended, not replaced", open(os.path.join(t, ".gitignore")).read() == "build/\n.board/memory/before-compaction.md\n.kit/board_data/\n.kit/handover.flag\n.kit/handover.log\n.kit/handover-*.gen\n.kit/run/\n")
     rc, out = inst(t)
     check("a rerun changes nothing", rc == 0 and "nothing to change" in out)
     open(os.path.join(t, ".kit", "BOARD.md"), "a").write("my note\n")
@@ -76,16 +76,16 @@ with tempfile.TemporaryDirectory() as d:
           os.path.exists(os.path.join(t, ".kit", "consultant.md")) and 'Model="pro"' in orch and "consultant.md" in orch)
     cfg_k = json.load(open(os.path.join(t, ".kit", "config.json")))["kit"]
     guide = open(os.path.join(t, ".kit", "ORCHESTRATOR.md"), encoding="utf-8").read()
-    check("context_limit_k in config: orchestrator 300, clerk 200",
-          cfg_k.get("orchestrator", {}).get("context_limit_k") == 300
-          and cfg_k.get("clerk", {}).get("context_limit_k") == 200)
+    check("context_limit_k in config: orchestrator 380, clerk 80",
+          cfg_k.get("orchestrator", {}).get("context_limit_k") == 380
+          and cfg_k.get("clerk", {}).get("context_limit_k") == 80)
     check("rendered role models and automatic handover/clerk rotation in orchestrator & clerk prompts",
           'Role="Orchestrator <N+1>", Model="inherit"' in orch
           and 'Role="Board Clerk", Model="flash_lite"' in orch
           and 'Model="flash"' in orch
-          and '300' in orch and '200' in orch
+          and '380' in orch and '80' in orch
           and 'Role="Orchestrator <N+1>", Model="inherit"' in guide
-          and 'ready for replacement' in clerk and '200' in clerk
+          and 'ready for replacement' in clerk and '80' in clerk
           and "{{" not in orch and "{{" not in guide and "{{" not in clerk)
     check("the kit's commit recorded", "_kit_commit" in json.load(open(os.path.join(t, ".kit", "manifest.json"))))
     cw = open(os.path.join(t, ".kit", "runner.md"), encoding="utf-8").read()
@@ -127,6 +127,74 @@ with tempfile.TemporaryDirectory() as d:
                           input=json.dumps({"hookEventName": "SessionStart", "cwd": t_hyb}), capture_output=True, text=True)
     check("hybrid SessionStart automatically briefs new agy discussions on git_watch.py and skills",
           r_ss.returncode == 0 and "MODE (hybrid)" in r_ss.stdout and "git_watch.py" in r_ss.stdout)
+
+    # The default runtime `local`: agy AND the Claude Code CLI on the same local board
+    t_loc = os.path.join(d, "loc")
+    os.makedirs(t_loc)
+    rc, out = inst(t_loc, "--project", "Harmonize", "--survey", rep, "--no-cmd")
+    cfg_loc = json.load(open(os.path.join(t_loc, ".kit", "config.json")))["kit"]
+    st_loc = json.load(open(os.path.join(t_loc, ".claude", "settings.json")))["hooks"]
+    loc_matchers = {(ev, g.get("matcher")) for ev, gs in st_loc.items() for g in gs}
+    check("the default runtime `local` installs agy and Claude Code CLI configs on the local board",
+          rc == 0 and cfg_loc["runtime"] == "local"
+          and os.path.isfile(os.path.join(t_loc, ".agents", "hooks.json"))
+          and os.path.isfile(os.path.join(t_loc, ".claude", "hooks", "kit", "kit_guard.py"))
+          and os.path.isfile(os.path.join(t_loc, ".kit", "board_server.py"))
+          and cfg_loc["cli"] in ("agy", "claude")
+          and all(os.path.isfile(os.path.join(t_loc, ".kit", "claude-cli", f + ".md")) for f in ("orchestrator", "ORCHESTRATOR", "consultant", "clerk")))
+    check("`local` maps the agy hooks onto Claude Code tools (Bash, SendMessage), no Artifact or cloud-session matchers",
+          ("PreToolUse", "Bash") in loc_matchers and ("PreToolUse", "SendMessage") in loc_matchers
+          and ("PostToolUse", "SendMessage|Bash") in loc_matchers and ("PreCompact", None) in loc_matchers
+          and not any(m and ("Artifact" in m or "claude-code-remote" in m) for _, m in loc_matchers))
+    st_loc_all = json.load(open(os.path.join(t_loc, ".claude", "settings.json")))
+    check("the Claude Code CLI install: context reset (.kit/handover.py, Stop hook) and the task list as the train (hook + task tools on)",
+          os.path.isfile(os.path.join(t_loc, ".kit", "handover.py"))
+          and ("Stop", None) in loc_matchers
+          and any("kit_pre_compact.py" in h["command"] for g in st_loc.get("Stop", []) for h in g["hooks"])
+          and ("PostToolUse", "TaskCreate|TaskUpdate") in loc_matchers
+          and os.path.isfile(os.path.join(t_loc, ".claude", "hooks", "kit", "kit_task_train.py"))
+          and st_loc_all.get("env", {}).get("CLAUDE_CODE_ENABLE_TODO_TOOLS") == "1")
+    part_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "part.md"), encoding="utf-8").read()
+    board_md = open(os.path.join(t_loc, ".kit", "BOARD.md"), encoding="utf-8").read()
+    check("generated part prompts, the post format and the feature recipe installed; reviews on by default",
+          "{{" not in part_cli and "<POST_ID>" in part_cli and "kit.py done <POST_ID>" in part_cli
+          and "## The post format" in board_md and "## Which feature for what" in board_md and "board_cli.py reply" in board_md
+          and cfg_loc.get("review") == {"auto": "all", "train_every": 4} and cfg_loc.get("post_body_max") == 1500)
+    orch_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "orchestrator.md"), encoding="utf-8").read()
+    cards_cli = open(os.path.join(t_loc, ".claude", "agents", "kit-cards.md"), encoding="utf-8").read()
+    clerk_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "clerk.md"), encoding="utf-8").read()
+    check("the Claude Code CLI orchestrator starts a haiku clerk session and parts as named background sessions",
+          "claude --bg -n harmonize-clerk --model haiku --autocompact 120000 --permission-mode auto" in orch_cli
+          and '"train": "<project id>", "part": "<PART>"' in orch_cli and "380k" in orch_cli and "kit.py resume" in orch_cli
+          and "claude --bg -n harmonize-<part> -w <part>" in orch_cli
+          and "session_id\":\"harmonize-orchestrator\"" in orch_cli and "welcome --runtime claude-cli" in orch_cli
+          and not any(x in orch_cli + clerk_cli for x in ("invoke_subagent", "run_command", "send_message", "WaitMsBeforeAsync", "{{"))
+          and "model: haiku" in cards_cli and "tools: Bash, Read" in cards_cli)
+    check("the Claude Code CLI clerk listens in the background and forwards by session name",
+          "comments next --timeout 300" in clerk_cli and "run_in_background: true" in clerk_cli
+          and "SendMessage` to `target_session_id`" in clerk_cli and "harmonize-orchestrator" in clerk_cli)
+    up_loc = open(os.path.join(t_loc, ".kit", "up"), encoding="utf-8").read()
+    check("the launcher can open either CLI", "--permission-mode" in up_loc and "agy --mode auto" in up_loc and "--claude" in up_loc)
+    r_ss = subprocess.run([sys.executable, "-I", os.path.join(t_loc, ".claude", "hooks", "kit", "kit_session_start.py")],
+                          input=json.dumps({"hook_event_name": "SessionStart", "session_id": "abc-123", "cwd": t_loc}),
+                          capture_output=True, text=True)
+    os.makedirs(os.path.join(t_loc, ".board", "memory", "state"), exist_ok=True)
+    with open(os.path.join(t_loc, ".board", "memory", "state", "songs.md"), "w") as fh:
+        fh.write("# Songs\nNext: import the set\n")
+    role_out = {}
+    for role in ("", "part", "orchestrator"):
+        role_out[role] = subprocess.run(
+            [sys.executable, "-I", os.path.join(t_loc, ".claude", "hooks", "kit", "kit_session_start.py")],
+            input=json.dumps({"hook_event_name": "SessionStart", "session_id": "r", "cwd": t_loc}), capture_output=True,
+            text=True, env=dict(os.environ, CLAUDE_PROJECT_DIR=t_loc, KIT_ROLE=role)).stdout
+    check("session start depends on the role: a part gets the plan's pointer, not every workstream's Next line",
+          "import the set" in role_out[""] and "import the set" not in role_out["part"] and "PLAN:" in role_out["part"]
+          and "import the set" in role_out["orchestrator"] and "kit.py resume" in role_out["orchestrator"])
+    check("a Claude Code CLI session is briefed on the local board, its guide and its session id",
+          r_ss.returncode == 0 and "board_cli.py" in r_ss.stdout and ".kit/claude-cli/orchestrator.md" in r_ss.stdout
+          and "abc-123" in r_ss.stdout)
+    rc2, out2 = inst(t_loc, "--no-cmd")
+    check("a rerun of `local` changes nothing", rc2 == 0 and "nothing to change" in out2)
 
     # 1-command --bootstrap seeds _orchestrator and KIT-installed into local SQLite DB
     t_boot = os.path.join(d, "boot")

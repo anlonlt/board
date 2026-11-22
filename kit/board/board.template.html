@@ -625,6 +625,19 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
 .body li.md-task, .cmt .txt.md li.md-task { list-style: none; margin-left: -1.35em; display: flex; align-items: baseline; gap: 7px; }
 .md-chk { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--muted); display: inline-flex; align-items: center; justify-content: center; flex: none; transform: translateY(2px); }
 .md-chk.on { background: var(--done); border-color: var(--done); }
+/* Collapsible sections (## headings in posts and comments): the lead above the first heading always shows. */
+details.md-sec { margin: 6px 0; }
+details.md-sec > summary.md-sec-h { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 7px; }
+details.md-sec > summary.md-sec-h::-webkit-details-marker { display: none; }
+details.md-sec > summary.md-sec-h::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; }
+details.md-sec[open] > summary.md-sec-h::before { transform: rotate(45deg); }
+details.md-sec > summary.md-sec-h > h2, details.md-sec > summary.md-sec-h > h3, details.md-sec > summary.md-sec-h > h4 { display: inline; margin: 0; }
+details.md-sec:not([open]) > summary.md-sec-h { color: var(--muted); flex-wrap: wrap; }
+.md-sec-peek { display: none; flex-basis: 100%; padding-left: 13px; font-size: .86em; white-space: nowrap; overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, #000 55%, transparent); mask-image: linear-gradient(90deg, #000 55%, transparent); }
+details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
+.md-sec-b { padding-left: 13px; }
+.cmt-wait { color: var(--todo); display: inline-flex; align-items: center; opacity: .85; }
 .md-chk.on::after { content: ""; width: 7px; height: 4px; border-left: 2px solid var(--surface); border-bottom: 2px solid var(--surface); transform: rotate(-45deg) translate(1px, -1px); }
 .body blockquote, .cmt .txt.md blockquote {
   margin: .85em 0; padding: .55em .95em; border-left: 3px solid var(--ember);
@@ -1293,10 +1306,52 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       .replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/_blob\/)[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
       .replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:])/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
   }
+  /* Collapsible sections. Each ##/###/#### heading folds what follows it, up to the next heading of its level or
+     higher; the text above the first heading (the lead: what he must know) always shows. Open or folded, in order:
+     (1) his own toggle of this very section in this browser session; (2) what the board learned from his toggles of
+     sections with the same name, on any post or comment, on any device (posts/_prefs.sections, after two choices the
+     same way); (3) the author's hint, a trailing {fold} or {open} on the heading; (4) open, except audit-like names
+     (What I checked, Not checked, Commits, Details, Log...), folded. Agents read what he learned: `kit.py sections`. */
+  var SEC_AUDIT = /^(not checked|what i checked|what was checked|checks?|commits?|read|where|turn|audit|details?|logs?|raw|appendix|method)\b/;
+  function secKey(t) { return str(t).toLowerCase().replace(/`[^`]*`/g, " ").replace(/[^a-z ]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 40); }
+  function secHash(s) { var h = 5381; for (var k = 0; k < s.length; k++) h = ((h << 5) + h + s.charCodeAt(k)) | 0; return (h >>> 0).toString(36); }
+  function secLearned() { var d = state && state.special && state.special._prefs; return (d && d.sections) || {}; }
+  function secInst() { try { return JSON.parse(sessionStorage.getItem("kit-sec-inst") || "{}"); } catch (e) { return {}; } }
+  function secOpen(key, inst, hint) {
+    var mine = secInst()[inst];
+    if (mine === true || mine === false) return mine;
+    var l = secLearned()[key];
+    if (l && typeof l.score === "number" && Math.abs(l.score) >= 2) return l.score > 0;
+    if (hint === "fold") return false;
+    if (hint === "open") return true;
+    return !SEC_AUDIT.test(key);
+  }
+  function secRecord(key, inst, open) {
+    try { var m = secInst(); m[inst] = open; sessionStorage.setItem("kit-sec-inst", JSON.stringify(m)); } catch (e) {}
+    if (!key || !state.isOwner) return;  /* the board learns from the owner only, not from a viewer */
+    var all = Object.assign({}, secLearned()), cur = Object.assign({ score: 0, opened: 0, folded: 0 }, all[key] || {});
+    cur.score = Math.max(-5, Math.min(5, cur.score + (open ? 1 : -1)));
+    if (open) cur.opened++; else cur.folded++;
+    cur.at = new Date().toISOString();
+    all[key] = cur;
+    var doc = Object.assign({}, (state.special && state.special._prefs) || {}, { sections: all, updated_at: cur.at });
+    delete doc.id;
+    if (state.special) state.special._prefs = Object.assign({ id: "_prefs" }, doc);
+    try { db.doc("posts/_prefs").set(doc).catch(function () {}); } catch (e) {}
+  }
+  document.addEventListener("click", function (e) {
+    var sm = e.target && e.target.closest && e.target.closest("summary.md-sec-h");
+    if (!sm || e.target.closest("a")) return;
+    var d = sm.parentNode;
+    secRecord(d.getAttribute("data-sec"), d.getAttribute("data-inst"), !d.open);
+  }, true);
+  window._kitSecKey = secKey;
+
   function renderBody(text) {
     var lines = str(text).replace(/\r/g, "").split("\n");
-    var html = "", para = [], i = 0;
+    var html = "", para = [], i = 0, secs = [];
     function flush() { if (para.length) { html += "<p>" + para.map(inline).join("<br>") + "</p>"; para = []; } }
+    function closeSecs(lv) { while (secs.length && secs[secs.length - 1] >= lv) { html += "</div></details>"; secs.pop(); } }
     while (i < lines.length) {
       var l = lines[i];
       if (/^\s*```/.test(l)) {
@@ -1358,10 +1413,29 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       }
       if (!l.trim()) { flush(); i++; continue; }
       var h = /^(#{1,4})\s+(.*)$/.exec(l);
-      if (h) { flush(); var lv = h[1].length; html += "<h" + lv + ">" + inline(h[2]) + "</h" + lv + ">"; i++; continue; }
+      if (h) {
+        flush();
+        var lv = h[1].length, hm = /\s*\{(fold|open)\}\s*$/.exec(h[2]), title = hm ? h[2].slice(0, hm.index) : h[2];
+        closeSecs(lv);
+        if (lv === 1) { html += "<h1>" + inline(title) + "</h1>"; i++; continue; }
+        var key = secKey(title), inst = secHash(key + "|" + lines.slice(i + 1, i + 4).join("\n"));
+        /* folded, the section still shows its first line, fading out: enough to decide whether to open it */
+        var peek = "";
+        for (var pk = i + 1; pk < lines.length && !/^#{1,4}\s/.test(lines[pk]); pk++) {
+          var pl = lines[pk].replace(/^\s*(?:[-*>]|\d+\.|\|)\s*/, "").replace(/\|/g, " ").replace(/[*`]/g, "").replace(/\s+/g, " ").trim();
+          if (pl && !/^[-:\s]+$/.test(pl) && !/^```/.test(lines[pk].trim())) { peek = pl.slice(0, 160); break; }
+        }
+        html += '<details class="md-sec" data-sec="' + esc(key) + '" data-inst="' + inst + '"' + (secOpen(key, inst, hm && hm[1]) ? " open" : "") +
+          '><summary class="md-sec-h"><h' + lv + ">" + inline(title) + "</h" + lv + ">" +
+          (peek ? '<span class="md-sec-peek">' + esc(peek) + "</span>" : "") + '</summary><div class="md-sec-b">';
+        secs.push(lv);
+        i++;
+        continue;
+      }
       para.push(l); i++;
     }
     flush();
+    closeSecs(1);
     return html;
   }
   window._kitRenderBody = renderBody;
@@ -2589,6 +2663,14 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     m.appendChild(el("span", "part", c.from === "owner" ? "You" : (orch ? (c.kind === "review" ? "Orchestrator · review" : "Orchestrator") : (str(c.from) || "?"))));
     m.appendChild(el("span", null, when(isoOf(c))));
     if (state.unseen && state.unseen[c.id]) m.appendChild(el("span", "badge fresh", "new"));
+    /* The clerk marks his comment when nobody answered in time (a state, not a comment): a muted clock until an answer lands. */
+    if (str(c.waiting_note) && !(state.comments || []).some(function (x) {
+      return x.from !== "owner" && x.from !== "viewer" && !x.like && x.reply_to && (x.reply_to === c.id || (c.thread_id && x.reply_to === c.thread_id));
+    })) {
+      var wn = el("span", "cmt-wait"); wn.title = str(c.waiting_note); wn.setAttribute("aria-label", wn.title);
+      wn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>';
+      m.appendChild(wn);
+    }
     d.appendChild(m);
     // a session's or the orchestrator's comment is written like a post (bold, code, tables); his own words stay as typed
     if (c.from === "owner" || c.from === "viewer") d.appendChild(el("div", "txt", str(c.text)));
@@ -3578,7 +3660,25 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
           var clsB = document.createElement("button"); clsB.type = "button"; clsB.className = "btn small kit-icon-btn";
           clsB.title = "Close"; clsB.setAttribute("aria-label", "Close"); clsB.innerHTML = SVG_X;
           clsB.addEventListener("click", function () { ov.remove(); });
-          hdr.appendChild(bEl); hdr.appendChild(subEl); hdr.appendChild(cmtAll); hdr.appendChild(clsB);
+          function openPostAny(id) {
+            if (typeof window._kitOpenPostWindow === "function" && window.innerWidth >= 720) window._kitOpenPostWindow(id);
+            else { openPost(id); var sh = $("sheet"); if (sh) { window._kitTopZ = Math.max(window._kitTopZ || 60, 60) + 2; sh.style.zIndex = String(window._kitTopZ); } }
+          }
+          /* A review is a check on a step, not a step: a chip in the 5-state colors (continue = done, redirect or stop
+             = you). Its full text is the review comment; a tap opens the post it is under. */
+          function reviewChip(verdict, title, postId) {
+            var v = str(verdict).toLowerCase(), ch = document.createElement("button");
+            ch.type = "button"; ch.className = "kit-rv-chip rv-" + (v === "continue" ? "done" : "you");
+            ch.textContent = v || "review"; ch.title = title; ch.setAttribute("aria-label", title);
+            ch.addEventListener("click", function (aev) { aev.stopPropagation(); if (postId) openPostAny(postId); });
+            return ch;
+          }
+          var trReview = (state.comments || []).filter(function (c) {
+            return c.kind === "review" && !c.removed && str(c.train).replace(/^P-/i, "").toLowerCase() === trKey.toLowerCase();
+          }).sort(function (a, b) { return str(b.created_at).localeCompare(str(a.created_at)); })[0];
+          hdr.appendChild(bEl); hdr.appendChild(subEl);
+          if (trReview) hdr.appendChild(reviewChip(trReview.verdict, "Review of the whole train: " + (str(trReview.verdict) || "?") + (str(trReview.suggestion) ? ". " + str(trReview.suggestion) : ""), trReview.post_id));
+          hdr.appendChild(cmtAll); hdr.appendChild(clsB);
           ov.appendChild(hdr);
           var list = document.createElement("div"); list.className = "kit-tl-body";
           var stateColors = { you: "var(--todo)", running: "var(--info)", default: "var(--question)", done: "var(--done)", idle: "var(--muted)" };
@@ -3637,7 +3737,14 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
               s.appendChild(k); s.appendChild(v); foldIn.appendChild(s);
             }
             /* 1. Status */
-            addSec("Status", (stateLabels[stK] || c) + (p.parent ? " · after " + p.parent : "") + (p.created_at ? " · " + when(p.created_at) : ""));
+            var stTxt = (stateLabels[stK] || c) + (p.parent ? " · after " + p.parent : "") + (p.created_at ? " · " + when(p.created_at) : "");
+            if (str(p.review)) {
+              var stBox = document.createElement("span"); stBox.textContent = stTxt + " ";
+              var rvC = (state.comments || []).filter(function (x) { return x.kind === "review" && x.post_id === p.id && !x.removed; })
+                .sort(function (a, b) { return str(b.created_at).localeCompare(str(a.created_at)); })[0];
+              stBox.appendChild(reviewChip(p.review, "Review: " + str(p.review) + (rvC && str(rvC.suggestion) ? ". " + str(rvC.suggestion) : ""), p.id));
+              addSec("Status", stBox);
+            } else addSec("Status", stTxt);
             /* 2. Verdict */
             addSec("Verdict", verdictTxt);
             /* 3. Artifacts (clickable into Document/Image/HTML Viewer) */
@@ -3666,10 +3773,16 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
             /* 4. Bars / Checks */
             var barsList = Array.isArray(p.bars) && p.bars.length ? p.bars.join(" · ") : "None recorded";
             addSec("Bars", barsList);
+            /* The command that reproduces the main number (the orchestrator reruns it at Done) */
+            if (str(p.check)) addSec("Check", str(p.check));
             /* 5. Issues & Comments */
             var cmtsN = commentsFor(p.id).filter(function (x) { return !x.like && !x.removed; }).length;
-            var issTxt = (Array.isArray(p.issues) && p.issues.length ? p.issues.join(" · ") : "No open issues") + (cmtsN ? " · " + cmtsN + " comment" + (cmtsN === 1 ? "" : "s") : "");
+            var notChk = Array.isArray(p.not_checked) ? p.not_checked : (str(p.not_checked) ? [str(p.not_checked)] : []);
+            var issTxt = (Array.isArray(p.issues) && p.issues.length ? p.issues.join(" · ") : "No open issues") +
+              (notChk.length ? " · Not checked: " + notChk.join(" · ") : "") + (cmtsN ? " · " + cmtsN + " comment" + (cmtsN === 1 ? "" : "s") : "");
             addSec("Issues", issTxt);
+            /* What the next step needs from this one */
+            if (str(p.handoff)) addSec("Handoff", str(p.handoff));
 
             var acts = document.createElement("div"); acts.className = "kit-tl-acts";
             var bChk = document.createElement("button"); bChk.type = "button"; bChk.className = "btn small kit-icon-btn";

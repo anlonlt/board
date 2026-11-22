@@ -68,7 +68,16 @@ def main():
                    "is the bridge. Listen for new cards/comments from git with `python3 -I .kit/git_watch.py --runner computer` "
                    "(no local board server or Tailscale needed). Skills: `story`, `board`." % (url or "see .kit/config.json"))
     elif url:
-        if claude:
+        if claude and k.get("runtime") == "local":
+            out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s, CLI `.kit/board_cli.py`), "
+                       "made at turn 1 and updated in full. Every chat turn then ends with a single \"·\"; to the orchestrator: "
+                       "\"Done. Check post <id>.\" Skills: `memory`, `board`. Claude Code CLI: the orchestrator's guide is "
+                       "`.kit/claude-cli/orchestrator.md`." % url)
+            sid = str(data.get("session_id") or "") if isinstance(data, dict) else ""
+            if sid:
+                out.append("SESSION: your Claude Code session id is %s (the `session_id` of a post you write, unless the "
+                           "orchestrator gave you an agent name to use)." % sid)
+        elif claude:
             out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s), made at turn 1 and "
                        "updated in full. Every chat turn then ends with a single \"·\"; to the orchestrator: \"Done. Check post <id>.\"" % url)
         else:
@@ -99,6 +108,16 @@ def main():
         with open(pref, encoding="utf-8") as fh:
             out += ["PREFERENCES (%s/preferences.md):" % mrel] + ["  " + l.strip() for l in fh if l.startswith("- ")][:15]
     states = sorted(glob.glob(os.path.join(mdir, "state", "*.md")))
+    role = os.environ.get("KIT_ROLE", "")
+    if role in ("part", "clerk", "review"):
+        # Say it once: a part's plan is its prompt and its train (kit.py train --zoom), a review reads the train, the
+        # clerk only forwards. None needs every workstream's Next line in its context.
+        states = []
+        out.append("PLAN: the trains on the board are the plan (`python3 -I .kit/kit.py train <train>`); your prompt says "
+                   "which step is yours.")
+    elif role == "orchestrator":
+        out.append("PLAN: the trains on the board are your task list; after a context reset, `python3 -I .kit/kit.py "
+                   "resume` rebuilds it.")
     if states:
         out.append("MEMORY (%s/, skill memory): each workstream's next step:" % mrel)
         for s in states:

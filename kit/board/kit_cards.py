@@ -395,9 +395,9 @@ def build_trains(board, rows, now):
 def steps_from_train(r, links_by_train):
     """A workstream with a state file but no `## Steps` section: its steps are its train's parts on the board, in
     order (done ones first, then the ones still open), then its Next if it is not one of them. So "Where we are"
-    shows the same sequence as the train (the owner, 2026-11-22: "why doesn't Where we are follow the trains?")."""
-    if r.get("_explicit_steps"):
-        return r
+    shows the same sequence as the train (the owner, 2026-11-22: "why doesn't Where we are follow the trains?").
+    Say it once: the train is the plan (the orchestrator's task list puts every step on it), so when the train has
+    steps they win over a state file's `## Steps`, which is only the fallback for a workstream with no step yet."""
     wid = str(r.get("train") or "")[2:]
     parts = [lk for lk in links_by_train.get(wid, []) if lk["post_id"] != "P-" + wid]
     if not parts:

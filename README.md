@@ -149,12 +149,27 @@ https://github.com/anlonlt/board/blob/agy-local/README.md
 
 > [!TIP]
 > **For the agent reading this page:** auto-detect which environment you are running in and follow the matching collapsible install section below:
-> - **Antigravity (`agy`) on a local computer:** follow **Install (`agy` — default)**.
+> - **On a local computer — Antigravity (`agy`) or the Claude Code CLI (`claude`):** follow **Install (Local: `agy` or Claude Code CLI — default)**. One install serves both CLIs.
 > - **Claude Code Web (`claude.ai/code` with Artifacts):** follow **Install (Claude Code Web — `--runtime claude`)**.
 > - **LMArena / E2B / sandboxed preview iframe / Codex / Cursor / generic CLI agent:** follow **Install (LMArena / Sandbox / Generic Agent — `--runtime arena`)**.
 
 <details>
-<summary><strong>Install (<code>agy</code> / Local — default)</strong></summary>
+<summary><strong>Install (Local: <code>agy</code> or Claude Code CLI — default)</strong></summary>
+
+The default `--runtime local` installs the hooks for **both** CLIs (`.agents/` for agy, `.claude/` for Claude Code) on one local board, and records in `kit.cli` which CLI the one-word command opens: the CLI running the install, else the one installed (agy first). Override with `--cli agy|claude`, or per launch with `<cmd> --agy` / `<cmd> --claude`. Steps 3-5 below name agy's tools; a Claude Code CLI session follows `.kit/claude-cli/orchestrator.md` instead, which maps them:
+
+| agy | Claude Code CLI |
+|---|---|
+| `run_command` daemon (`IsDaemon`, `WaitMsBeforeAsync`) | `Bash` with `run_in_background: true` (woken when it exits) |
+| clerk subagent (`flash_lite`) | clerk **session** `claude --bg -n <slug>-clerk --model haiku` (only relays; the orchestrator never sees comments meant for a part) |
+| part subagent, `Workspace: "share"` | part **session** `claude --bg -n <slug>-<part> -w <part>` (its own worktree; the clerk reaches it by name) |
+| `send_message` to a conversation ID | `SendMessage` to a session name (`<slug>-orchestrator`, `<slug>-<part>`) |
+| `define_subagent` / `invoke_subagent` for `kit-cards`, consultant | `Agent` (`.claude/agents/kit-cards.md`) |
+| handover at the context limit | Claude Code compacts; `state/orchestrator.md` + the `SessionStart` hook re-brief it |
+
+All the kit's Claude sessions run in the same permission mode (`kit.claude_permission_mode`, default `auto`): a session in another mode holds cross-session messages for approval. `claude --bg` needs the folder trusted once: run `claude` in the project and accept the prompt (the one-word command does this on its first launch).
+
+**The wizard** (`--tui`) is a terminal screen: it shows only when the person runs it in their own terminal. Run by an agent (no terminal), it installs Step 0's recommendations silently, so an agent instead runs `python3 -I /tmp/board-kit/scripts/twrp_wizard.py . --print-choices`, asks the person each choice with its own question tool (palette, autonomy, runtime, CLI, scope — **trunk push is never assumed**), then runs it with `--headless` and the answers as flags.
 
 The hooks' "end your turn with `·`" reminder is about chat turns: your step reports go in the post.
 Steps marked **YOU** need a person; the agent prints each one with its direct link when it gets there. Everything else runs automatically.
@@ -174,7 +189,7 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
      --talk "<language>" \
      --survey survey/<date>/report.md
    ```
-   Optional flags: `--cmd <one-word-command>` (default: project slug, installed to `~/.local/bin/<cmd>`), `--memory-dir <path>` (default: `.story` if present, else `.board/memory`), `--board-port 8765`, `--notify-url https://ntfy.sh/<topic>` (pocket push alerts), `--runtime agy|claude|both`, `--mode local|hybrid`, `--attach <name=path>`, and partial flags (`--no-board`, `--no-clerk`, `--no-orchestrator`).
+   Optional flags: `--cli agy|claude` (which CLI the one-word command opens; default: detected), `--cmd <one-word-command>` (default: project slug, installed to `~/.local/bin/<cmd>`), `--memory-dir <path>` (default: `.story` if present, else `.board/memory`), `--board-port 8765`, `--notify-url https://ntfy.sh/<topic>` (pocket push alerts), `--runtime agy|claude|both`, `--mode local|hybrid`, `--attach <name=path>`, and partial flags (`--no-board`, `--no-clerk`, `--no-orchestrator`).
    It never deletes and never replaces a file it did not write (`KEPT` lists what it left alone). Existing hook configs are preserved and merged cleanly.
    Check: `python3 -I .agents/hooks/kit/test_hooks.py` ends `0 failed`.
    **Ask the owner once:** *"Every session ends by merging its work onto `<main branch>` and pushing it, never forced (a conflict stops it). Do you give that standing permission?"* Yes: rerun with `--trunk-push yes`. No: sessions push only their own branch. Either way each session ends with `python3 -I .kit/end_session.py`.
@@ -189,7 +204,7 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
         - Direct Tailscale IP fallback: `http://<tailscale-ip>:8765/`
      4. **Android Private DNS / NextDNS note (tell the owner upfront):** if their phone uses NextDNS or another Private DNS, Android + Tailscale DNS can conflict ("no network access"). Two fixes: (a) quick: toggle **Use Tailscale DNS = OFF** in the Tailscale app and use `http://<tailscale-ip>:8765/`; or (b) permanent: add NextDNS in Tailscale Admin → Global nameservers and set Android Private DNS to **Automatic**.
      5. Rerun step 2 with `--board-url <the working phone url>`.
-   - Commit `.kit .agents .board .gitignore` (or `.story` if already present; plus `.claude` if `--runtime both`) and push.
+   - Commit `.kit .agents .claude .board .gitignore` (or `.story` if already present) and push.
 4. **Post your first two posts** in one `board_cli.py batch` (`.kit/BOARD.md` § Post; `created_at` from `date -u +%Y-%m-%dT%H:%M:%SZ`):
    `_orchestrator` (`{title: "Ask the orchestrator", column: "info", part: "orchestrator", priority: 3, created_at, body: "Write here for anything that is not about one post."}`) and
    `KIT-installed` (`{title: "The board kit is installed", column: "info", part: "KIT", priority: 2, session_id: "<your conversationId>", created_at, body: "<what step 2 wrote and kept>"}`).
@@ -225,7 +240,7 @@ Open a Claude Code Web session on **your** repository (`https://claude.ai/code`)
    - Optional translation: `python3 -I .kit/strings.py template .kit/strings.json`, fill in translations, rerun step 2.
    - Publish `.kit/board.html` via `Artifact` `publish` (`icon: "board"`, `capabilities: {"assets": {}, "comments": {}, "db": {}, "user": {}, "downloads": true}`). If Step 0 / `install.py` detected MCP Link Readers, include the `mcp` entry it printed inside `capabilities`.
    - Rerun step 2 with `--board-url <artifact-url>`, then stop this session's watch (`ArtifactComments` `watch` with `on: false`).
-   - That rerun builds the full Artifact page (`kit/claude/build_artifact_page.py` injects the UI layer, `artifact_adapter.js`, and the pluggable MCP Link Reader in `artifact_ui.js`). **Publish `.kit/board.html` a second time** (same url, no `capabilities` unless updating `mcp`). Check it offline first: `KIT_PAGE=.kit/board.html node /tmp/board-kit/kit/claude/test_artifact_page.js` ends with `"errors": []`.
+   - That rerun builds the full Artifact page (`kit/claude/build_artifact_page.py` injects the UI layer, `artifact_adapter.js`, and the pluggable MCP Link Reader in `artifact_ui.js`). **Publish `.kit/board.html` a second time** (same url, no `capabilities` unless updating `mcp`). Check it offline first: `KIT_PAGE=.kit/board.html node /tmp/board-kit/kit/claude/test_artifact_page.js` ends with `"errors": []`. It needs no npm package: it uses Playwright if installed, else any Chrome / Edge / Brave / Chromium on the computer (`KIT_BROWSER=<path>` to point at one); with none it only compiles the page's scripts and says `skipped`.
    - Feed the Repo Docs reader and inline diffs: `python3 -I .kit/kit_artifact_sync.py docs --kit /tmp/board-kit --repo . --out /tmp/kas` and send each `batch-*.json` it prints with `ArtifactData` `batch` (pictures: upload `images.txt` with `Artifact` `publish` `asset: true`, then `assets`). Run again after docs changes and with `diffs --posts <kit.py sync dir>`.
    - Commit `.kit .claude <memory_dir> .gitignore` and push.
 4. **Optional phone push notifications (`ntfy.sh`):** ask the owner if they want pocket notifications when a post needs them or a session replies. If yes: install the [ntfy app](https://ntfy.sh) (Android/iOS), create an ntfy account + access token (avoids shared cloud-IP `429` limits), store it as a Claude Code Web environment secret via `request_credential` (`host: "ntfy.sh"`, `Authorization: Bearer ...`), pick a random topic (`https://ntfy.sh/board-<hex>`), rerun step 2 with `--notify-url <url>`, and send a test push (`kit_notify.py` omits post text by default; set `kit.notify_detail: true` to include previews).
@@ -298,6 +313,19 @@ flowchart LR
 
 ### How Trains & "Where we are" Work
 Each row in **Where we are** takes its steps from the workstream's state file (`## Steps`). If a state file has no `## Steps` section, `kit_cards.py` automatically derives the sequence from the workstream's **train** on the board — posts carrying `train: "<workstream>"` (and `parent: "<part>"` when continuing another), ordered done first, then open, then `Next:`.
+
+Each step in a train shows five sections: **Status**, **Verdict**, **Artifacts**, **Bars** and **Issues**, from the part's post fields (`verdict`, `artifacts`, `bars`, `issues`). Two optional fields join them: **Check** (`check`, the one command that reproduces the main number; the orchestrator reruns it at Done) and **Handoff** (`handoff`, what the next step needs).
+
+### Prompts, posts and reviews (Claude Code CLI)
+- **Prompts are generated:** the orchestrator writes only a step's task (goal, bars, holds) and the owner's comment ids in `TaskCreate`; the kit writes the step's post and `docs/prompts/<post id>.md` from `.kit/claude-cli/part.md` (how a part gets its context, reports and ends: written once, never copied) and returns the launch command. The owner's words are cited by comment id and read by the part itself, never paraphrased.
+- **One post format, checked:** `python3 -I .kit/kit.py done <post>` checks `verdict`, `bars` (numbers with denominators), `artifacts` (they exist), `not_checked`, `check` and `handoff` before a part says Done. Say it once, on the board: the post holds the whole result and messages only point to it; a repo doc only for a report to keep or one with pictures or diagrams, embedded by section. `.kit/BOARD.md` § Which feature for what maps each kind of content to the board's views (inline players and viewers, picture comparison rows, linked doc sections, one-tap questions).
+- **Replies in one command:** the clerk's forward carries `board_cli.py reply <post> --comment-id <id>`, which threads the answer and marks his comment read.
+- **Reviews are automatic:** completing a step starts a review session (`kit.py review <post>`) and every `kit.review.train_every` (default 4) completed steps a cross review of the whole train; each posts ONE complete `kind: "review"` comment under the step (fields `verdict`: continue / redirect / stop, and one `suggestion`) and sends the orchestrator a pointer to it; the owner's replies to a review go to the orchestrator. `kit.review.auto: "off"` turns them off.
+
+### Context Reset (Claude Code CLI)
+The orchestrator and the clerk do not live on compaction; the board is their only memory. The orchestrator plans with Claude Code's task tools, and each task carrying `metadata: {train, part}` becomes that train's step post (`kit_task_train.py`): its task list is the train. At `kit.orchestrator.context_limit_k` (default 380k) the Stop hook asks it to make the trains current and run `.kit/handover.py`: its session ends and `./.kit/up` opens a fresh one in the same terminal, which rebuilds its task list from `kit.py resume` (active trains, which part sessions still run, the owner's unanswered comments). The clerk resets itself the same way at `kit.clerk.context_limit_k` (default 80k). Both keep their session names, so every other session reaches them unchanged; Claude Code's own compaction is set just past each limit, only as a safety net.
+
+Why these limits: a takeover costs about 150k tokens, so at 300k half of every orchestrator session would go to getting going; past about 400k every turn re-reads more than it is worth. The clerk's takeover is a 1k prompt and each of its wakes re-reads its whole context, so a small limit is the cheap one.
 
 ### Runners (Code, Cloud, Browser & Human Work)
 Each workstream's state file declares `Runs in:` so the orchestrator routes each step to the right place:

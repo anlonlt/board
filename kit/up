@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Shortest launcher for the board kit: run your one-word command (e.g. `harmonize`) or `./.kit/up`.
 # Starts the local board server (with token auth + optional mirror seed), prints your phone URL(s),
-# and opens `agy --mode auto` directly into the orchestrator + clerk.
+# and opens the orchestrator (+ clerk) in your CLI: `agy --mode auto` or `claude --permission-mode auto`.
+# Pick the CLI with --agy / --claude, $KIT_CLI, or kit.cli in .kit/config.json (default auto: agy if installed, else claude).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,10 +24,46 @@ fi
 
 HYBRID=0
 BOARD_ONLY=0
+CLI="${KIT_CLI:-}"
 for arg in "$@"; do
   [ "$arg" = "--hybrid" ] && HYBRID=1
   [ "$arg" = "--board-only" ] && BOARD_ONLY=1
+  [ "$arg" = "--agy" ] && CLI=agy
+  [ "$arg" = "--claude" ] && CLI=claude
 done
+RUNTIME="local"
+if [ -f ".kit/config.json" ]; then
+  RUNTIME="$(python3 -I -c 'import json; print(json.load(open(".kit/config.json")).get("kit",{}).get("runtime") or "local")' 2>/dev/null || echo local)"
+  if [ -z "$CLI" ]; then
+    CLI="$(python3 -I -c 'import json; print(json.load(open(".kit/config.json")).get("kit",{}).get("cli") or "auto")' 2>/dev/null || echo auto)"
+  fi
+fi
+if [ -z "$CLI" ] || [ "$CLI" = "auto" ]; then
+  if [ "$RUNTIME" = "agy" ] || [ "$RUNTIME" = "both" ]; then
+    CLI=agy
+  elif command -v agy >/dev/null 2>&1; then
+    CLI=agy
+  elif command -v claude >/dev/null 2>&1; then
+    CLI=claude
+  else
+    CLI=agy
+  fi
+fi
+if [ "$CLI" != "agy" ] && [ "$CLI" != "claude" ]; then
+  echo "ERROR: unknown CLI '${CLI}' (use agy or claude)." >&2
+  exit 1
+fi
+if ! command -v "$CLI" >/dev/null 2>&1; then
+  echo "ERROR: '${CLI}' is not on your PATH. Install it, or pick the other CLI with --agy / --claude." >&2
+  exit 1
+fi
+if [ "$CLI" = "claude" ] && [ ! -f ".claude/settings.json" ]; then
+  echo "ERROR: this project has no Claude Code hooks (.claude/settings.json). Rerun install.py with --runtime local, or use --agy." >&2
+  exit 1
+fi
+ORCH_FILE=".kit/orchestrator.md"
+[ "$CLI" = "claude" ] && ORCH_FILE=".kit/claude-cli/orchestrator.md"
+[ ! -f "$ORCH_FILE" ] && HAS_ORCH=0
 
 STARTED_SERVER=0
 SERVER_PID=""
@@ -94,8 +131,10 @@ if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
     fi
   fi
   if [ "$BOARD_ONLY" -eq 1 ]; then
-    echo "Board-only mode: launching agy for board work (no orchestrator/clerk workflow)."
+    echo "Board-only mode: launching ${CLI} for board work (no orchestrator/clerk workflow)."
     PROMPT="Board-only mode: the board server is running on port ${PORT}. Do NOT start the orchestrator or board clerk workflow. You are working directly on the board itself (UI, server, CLI, kit, and synced board repo if attached). Follow docs/DESIGN-PRINCIPLES.md in the board repo (zero emojis, icon-first chrome, pointer-aware drawers, scroll containment, OS-style movable/resizable/snappable windows). Wait for the owner's instruction."
+  elif [ "$CLI" = "claude" ] && [ "$HAS_ORCH" -eq 1 ]; then
+    PROMPT="Read ${ORCH_FILE} and start as the orchestrator for this repository (it starts the board clerk session if none runs)."
   elif [ "$HAS_ORCH" -eq 1 ] && [ "$HAS_CLERK" -eq 1 ]; then
     PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Also launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md if not already running."
   elif [ "$HAS_ORCH" -eq 1 ]; then
@@ -111,8 +150,42 @@ else
   PROMPT="Read the project memory (state/ and awaits.md) and continue from the next step."
 fi
 
-if [ "$STARTED_SERVER" -eq 1 ]; then
-  agy --mode auto -i "$PROMPT"
+if [ "$CLI" = "claude" ]; then
+  # Unattended like `agy --mode auto`; kit_guard.py (PreToolUse on Bash) still blocks destructive commands.
+  # The mode is kit.claude_permission_mode (default auto): the clerk and part sessions use the same one.
+  # The session is named <slug>-orchestrator: the clerk and the parts reach it by that name (SendMessage).
+  read -r CMODE CNAME CLIMIT <<< "$(python3 -I -c 'import json,re; c=json.load(open(".kit/config.json")); k=c.get("kit",{}); print(k.get("claude_permission_mode") or "auto", re.sub(r"[^a-z0-9]+","-",(c.get("project") or "board").lower()).strip("-") or "project", int((k.get("orchestrator") or {}).get("context_limit_k", 380)))' 2>/dev/null || echo "auto project 380")"
+  # The orchestrator resets at CLIMIT k (kit_pre_compact.py + .kit/handover.py); Claude Code's own compaction only as
+  # a safety net 70k past it, in case a hand-over ever fails.
+  AC_ARGS=(--autocompact "$(( (CLIMIT + 70) * 1000 ))")
+  CMODE="${KIT_CLAUDE_PERMISSION_MODE:-$CMODE}"
+  NAME_ARGS=()
+  [ "$HAS_ORCH" -eq 1 ] && [ "$BOARD_ONLY" -eq 0 ] && NAME_ARGS=(-n "${CNAME}-orchestrator") && export KIT_ROLE=orchestrator
+  LAUNCH=(claude --permission-mode "$CMODE" "${AC_ARGS[@]}" ${NAME_ARGS[@]+"${NAME_ARGS[@]}"} "$PROMPT")
 else
-  exec agy --mode auto -i "$PROMPT"
+  LAUNCH=(agy --mode auto -i "$PROMPT")
+fi
+if [ "$CLI" = "claude" ]; then
+  # Background sessions (the clerk, the parts) never ask for folder trust: `claude --bg` refuses an untrusted
+  # folder instead. The orchestrator opened here asks once; say why before it does.
+  if ! python3 -I -c 'import json,os,sys; p=json.load(open(os.path.expanduser("~/.claude.json"))).get("projects",{}); sys.exit(0 if (p.get(sys.argv[1]) or {}).get("hasTrustDialogAccepted") else 1)' "$ROOT" 2>/dev/null; then
+    echo "First run here: Claude Code asks whether you trust this folder. Accept it: the board clerk and the part"
+    echo "sessions run in the background and can only start in a folder you trusted."
+  fi
+  # Context hand-over: at its context limit the orchestrator saves its state, writes .kit/handover.flag and ends
+  # its own session (.kit/handover.py); a fresh orchestrator, same name, empty context, opens here at once.
+  rm -f .kit/handover.flag
+  while :; do
+    "${LAUNCH[@]}" || true
+    [ -f .kit/handover.flag ] || break
+    NEXT_PROMPT="$(python3 -I -c 'import json; print(json.load(open(".kit/handover.flag"))["prompt"])' 2>/dev/null)"
+    rm -f .kit/handover.flag
+    [ -n "$NEXT_PROMPT" ] || break
+    echo "Context hand-over: opening a fresh orchestrator (same name, empty context)."
+    LAUNCH=(claude --permission-mode "$CMODE" "${AC_ARGS[@]}" ${NAME_ARGS[@]+"${NAME_ARGS[@]}"} "$NEXT_PROMPT")
+  done
+elif [ "$STARTED_SERVER" -eq 1 ]; then
+  "${LAUNCH[@]}"
+else
+  exec "${LAUNCH[@]}"
 fi

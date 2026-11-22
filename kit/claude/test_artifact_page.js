@@ -1,7 +1,9 @@
 // The built Artifact page in Chromium with a stub window.claude (db with get/where/onSnapshot, assets, comments,
 // downloads, user, mcp). Fails on any page error and checks the adapter + pluggable MCP Link Reader (SharePoint & Gmail).
 //   KIT_PAGE=.kit/board.html node kit/claude/test_artifact_page.js
-const { chromium } = require('playwright');
+// Runs in Playwright if installed, else in any Chrome/Edge/Brave/Chromium on the computer (no npm package needed);
+// with no browser at all it only compiles the page's scripts and says SKIPPED (KIT_REQUIRE_BROWSER=1 makes that a failure).
+const { launch, syntaxCheck } = require('./page_driver');
 const fs = require('fs');
 
 const STUB = `(function () {
@@ -80,45 +82,46 @@ const STUB = `(function () {
 (async () => {
   const html = fs.readFileSync(process.env.KIT_PAGE || '.kit/board.html', 'utf8')
     .replace('<script>', '<script>' + STUB + '</script><script>');
-  const b = await chromium.launch();
-  const ctx = await b.newContext({ viewport: { width: 1300, height: 900 } });
-  const p = await ctx.newPage();
-  const errors = [];
-  p.on('pageerror', e => errors.push(String(e)));
-  p.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
-  await p.route('**/*', r => r.request().url().startsWith('http://kit.test') ? r.fulfill({ body: html, contentType: 'text/html; charset=utf-8' }) : r.abort());
-  await p.goto('http://kit.test/');
-  await p.waitForTimeout(1500);
-  const res = {};
-  res.status = await p.textContent('#status').catch(() => '');
+  const syn = syntaxCheck(html);
+  const p = await launch();
+  if (!p) {
+    const out = { driver: 'none', scripts: syn.scripts, errors: syn.errors,
+      skipped: 'no Playwright and no Chrome/Edge/Brave/Chromium found (set KIT_BROWSER=<path>): scripts compiled, nothing executed' };
+    console.log(JSON.stringify(out, null, 1));
+    process.exit(syn.errors.length || process.env.KIT_REQUIRE_BROWSER === '1' ? 1 : 0);
+  }
+  const res = { driver: p.kind };
+  await p.open(html);
+  await p.wait(1500);
+  res.status = await p.evaluate(() => { const s = document.getElementById('status'); return s ? s.textContent : ''; });
   await p.evaluate(() => { const c = document.querySelector('.card .card-open'); if (c) c.click(); });
-  await p.waitForTimeout(600);
-  const hasAi = await p.$('#ai-share');
-  if (hasAi) { await p.evaluate(() => document.getElementById('ai-share').click()); await p.waitForTimeout(500); }
+  await p.wait(600);
+  const hasAi = await p.evaluate(() => !!document.getElementById('ai-share'));
+  if (hasAi) { await p.evaluate(() => document.getElementById('ai-share').click()); await p.wait(500); }
   res.aiShare = await p.evaluate(() => ({ note: (document.getElementById('c-note') || {}).textContent || '', saved: window.__saved.map(f => f.filename), prompted: !!window.__prompted }));
   res.deliverables = await p.evaluate(() => !!document.getElementById('kit-post-artifacts'));
   // Check disarmed SharePoint + Gmail links (no href attribute)
   res.disarmed = await p.evaluate(() => [...document.querySelectorAll('#p-body a[data-mcp-href]')].map(a => ({ adapter: a.getAttribute('data-mcp-adapter'), hasHref: a.hasAttribute('href') })));
   await p.evaluate(() => { const a = document.querySelector('#p-body a[data-mcp-adapter="sharepoint"]'); if (a) a.click(); });
-  await p.waitForTimeout(500);
+  await p.wait(500);
   res.sharepoint1 = await p.evaluate(() => { const w = document.getElementById('kit-mcp-win'); return w ? w.querySelector('pre').textContent.slice(0, 15) : 'no window'; });
   await p.evaluate(() => { const b = [...document.querySelectorAll('#kit-mcp-win button')].find(x => /Page 2/.test(x.textContent)); if (b) b.click(); });
-  await p.waitForTimeout(400);
+  await p.wait(400);
   res.sharepoint2 = await p.evaluate(() => { const w = document.getElementById('kit-mcp-win'); return w ? w.querySelector('pre').textContent : 'no window'; });
   await p.evaluate(() => { const a = document.querySelector('#p-body a[data-mcp-adapter="gmail"]'); if (a) a.click(); });
-  await p.waitForTimeout(500);
+  await p.wait(500);
   res.gmail = await p.evaluate(() => { const w = document.getElementById('kit-mcp-win'); return w ? { title: w.querySelector('b').textContent, hasBody: /Looks good/.test(w.querySelector('pre').textContent) } : 'no window'; });
   res.mcpCalls = await p.evaluate(() => (window.__mcp || []).map(c => c[0] + ':' + c[1]));
   // Check in-page confirm() dialog on Remove from the board
   await p.evaluate(() => { const w = document.getElementById('kit-mcp-win'); if (w) w.remove(); });
   await p.evaluate(() => { const b = document.getElementById('rm'); if (b) b.click(); });
-  await p.waitForTimeout(300);
+  await p.wait(300);
   res.confirmDialog = await p.evaluate(() => !!document.getElementById('kit-dlg'));
   await p.evaluate(() => { const ok = document.querySelector('#kit-dlg button.ember'); if (ok) ok.click(); });
-  await p.waitForTimeout(400);
+  await p.wait(400);
   res.removedWrite = await p.evaluate(() => (window.__writes || []).some(w => w[1] === 'posts/P-a' && w[2] && w[2].removed === true));
-  res.errors = errors.filter(e => !/net::ERR_FAILED|Failed to load resource/.test(e));
+  res.errors = syn.errors.concat(p.errors.filter(e => !/net::ERR_|Failed to load resource/.test(e)));
   console.log(JSON.stringify(res, null, 1));
-  await b.close();
+  await p.close();
   process.exit(res.errors.length ? 1 : 0);
 })();

@@ -7,7 +7,7 @@ One script, five agy events (dispatched by `hookEventName`):
       owner's words ("Board comment from the owner ...") is never cut.
   PreInvocation: when the owner typed a new prompt, injects a systemMessage reminder (once per prompt)
       to answer in at most `chat_answer_chars`, in `language.talk`.
-  PostToolUse (matcher: send_message|run_command): records a marker when `send_message` or a `board_cli.py`
+  PostToolUse (matcher: send_message|run_command; Claude Code: SendMessage|Bash|ArtifactData): records a marker when `send_message` or a `board_cli.py`
       write (set/update/str-replace/batch) runs; outputs `{}` per agy's PostToolUse contract.
   PostInvocation: if PostToolUse recorded a board write or send_message, injects the reminder to end
       the turn with a single "·".
@@ -213,6 +213,9 @@ def main():
 
     if ev == "PostToolUse":
         if claude and "toolCall" not in data:
+            # Claude Code CLI (--runtime local): Bash fires on every command; only a board_cli.py write counts.
+            if data.get("tool_name") == "Bash" and not BOARD_WRITE_RE.search(str((data.get("tool_input") or {}).get("command") or "")):
+                return 0
             claude_context(ev, "SAY IT ONCE: it is on the board or sent: if you end your turn now, end it with a single \"·\" "
                                "and nothing else.")
             return 0
