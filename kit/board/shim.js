@@ -2621,7 +2621,7 @@
           activePdfPage = hObj.page;
           var pIfrJ = viewEl.querySelector("iframe.kit-pdf-iframe");
           if (pIfrJ && activePdfUrl) {
-            pIfrJ.src = activePdfUrl.split("#")[0] + "#page=" + hObj.page;
+            pIfrJ.src = activePdfUrl.split("#")[0] + "#page=" + hObj.page + "&toolbar=0&navpanes=0";
           }
           var pInJ = modal.querySelector(".kit-pdf-page-in");
           if (pInJ) pInJ.value = String(hObj.page);
@@ -3450,32 +3450,38 @@
             activePdfPage = 1;
             activeHeadings = res.headings || [];
             var pBar = document.createElement("div");
-            pBar.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--sunk);flex:none;font-size:.8rem;";
-            var pLbl = document.createElement("span"); pLbl.className = "note"; pLbl.textContent = "Page";
+            pBar.style.cssText = "display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--sunk);flex:none;font-size:.8rem;";
+            var pPrev = document.createElement("button"); pPrev.type = "button"; pPrev.className = "btn small kit-icon-btn"; pPrev.title = "Previous page"; pPrev.setAttribute("aria-label", "Previous page");
+            pPrev.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
             var pIn = document.createElement("input"); pIn.type = "number"; pIn.min = "1"; pIn.value = "1"; pIn.className = "kit-pdf-page-in";
-            pIn.style.cssText = "width:64px;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;";
+            pIn.style.cssText = "width:54px;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;text-align:center;";
+            var pTot = document.createElement("span"); pTot.className = "note";
+            pTot.textContent = activeHeadings.length ? ("/ " + activeHeadings.length) : "";
+            var pNext = document.createElement("button"); pNext.type = "button"; pNext.className = "btn small kit-icon-btn"; pNext.title = "Next page"; pNext.setAttribute("aria-label", "Next page");
+            pNext.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
             var pIfr = document.createElement("iframe");
             pIfr.className = "kit-pdf-iframe";
-            pIfr.src = mediaUrl;
+            pIfr.src = mediaUrl.split("#")[0] + "#toolbar=0&navpanes=0";
             pIfr.title = shortName(res.path);
             pIfr.style.cssText = "width:100%;height:100%;min-height:480px;border:0;background:#fff;flex:1 1 auto;";
-            pIn.addEventListener("change", function () {
-              var pg = Math.max(1, parseInt(pIn.value, 10) || 1);
-              activePdfPage = pg;
-              pIfr.src = mediaUrl.split("#")[0] + "#page=" + pg;
-            });
+            function goPdfPage(pg) {
+              var maxP = activeHeadings.length || 9999;
+              pg = Math.max(1, Math.min(maxP, parseInt(pg, 10) || 1));
+              activePdfPage = pg; pIn.value = String(pg);
+              pIfr.src = mediaUrl.split("#")[0] + "#page=" + pg + "&toolbar=0&navpanes=0";
+            }
+            pIn.addEventListener("change", function () { goPdfPage(pIn.value); });
+            pPrev.addEventListener("click", function () { goPdfPage(activePdfPage - 1); });
+            pNext.addEventListener("click", function () { goPdfPage(activePdfPage + 1); });
             var pWrap = document.createElement("div");
             pWrap.style.cssText = "display:flex;flex-direction:column;width:100%;height:100%;";
-            pBar.appendChild(pLbl); pBar.appendChild(pIn);
+            pBar.appendChild(pPrev); pBar.appendChild(pIn); pBar.appendChild(pTot); pBar.appendChild(pNext);
             pWrap.appendChild(pBar); pWrap.appendChild(pIfr);
             viewEl.appendChild(pWrap);
           } else if (activeKind === "video") {
             var vWrap = document.createElement("div");
-            vWrap.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;padding:16px;box-sizing:border-box;background:#000;";
-            var vid = document.createElement("video");
-            vid.controls = true; vid.playsInline = true; vid.preload = "metadata"; vid.src = mediaUrl;
-            vid.style.cssText = "max-width:100%;max-height:100%;width:100%;border-radius:8px;";
-            vWrap.appendChild(vid);
+            vWrap.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;background:#000;";
+            vWrap.appendChild(buildCustomVideoPlayer(mediaUrl, { fullHeight: true }));
             viewEl.appendChild(vWrap);
           } else {
             var aWrap = document.createElement("div");
@@ -3488,10 +3494,9 @@
             aName.textContent = shortName(res.path);
             var aSub = document.createElement("div"); aSub.className = "note";
             aSub.textContent = activeDocMetaText;
-            var aud = document.createElement("audio");
-            aud.controls = true; aud.preload = "metadata"; aud.src = mediaUrl;
-            aud.style.cssText = "width:min(520px,100%);";
-            aWrap.appendChild(aIcon); aWrap.appendChild(aName); aWrap.appendChild(aSub); aWrap.appendChild(aud);
+            var audBox = buildCustomAudioPlayer(mediaUrl);
+            audBox.style.width = "min(520px,100%)";
+            aWrap.appendChild(aIcon); aWrap.appendChild(aName); aWrap.appendChild(aSub); aWrap.appendChild(audBox);
             viewEl.appendChild(aWrap);
           }
           renderOutline();
@@ -3820,6 +3825,127 @@
     return { applyMode: applyMode };
   }
 
+  function ensureMediaPlayerCss() {
+    if (document.getElementById("kit-media-css")) return;
+    var st = document.createElement("style");
+    st.id = "kit-media-css";
+    st.textContent =
+      ".kit-aud{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:12px;background:var(--sunk);border:1px solid var(--line);box-sizing:border-box;width:100%;user-select:none;}" +
+      ".kit-mbtn{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex:none;transition:background .15s,border-color .15s,color .15s;}" +
+      ".kit-mbtn:hover{border-color:var(--ember);color:var(--ember);}" +
+      ".kit-mbtn.playing{background:var(--ember);border-color:var(--ember);color:#fff;}" +
+      ".kit-mbtn svg{width:14px;height:14px;}" +
+      ".kit-mspd{height:26px;padding:0 6px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-family:var(--mono);font-size:.72rem;font-weight:700;cursor:pointer;flex:none;}" +
+      ".kit-mspd:hover{color:var(--ink);border-color:var(--ember);}" +
+      ".kit-mtime{font-family:var(--mono);font-size:.74rem;color:var(--muted);white-space:nowrap;flex:none;min-width:74px;text-align:center;}" +
+      ".kit-mtrack{position:relative;flex:1 1 0;min-width:60px;height:20px;display:flex;align-items:center;cursor:pointer;touch-action:none;}" +
+      ".kit-mbar{width:100%;height:5px;border-radius:999px;background:color-mix(in srgb,var(--line) 80%,transparent);overflow:hidden;position:relative;}" +
+      ".kit-mfill{height:100%;width:0%;background:var(--ember);border-radius:999px;pointer-events:none;}" +
+      ".kit-vid{position:relative;width:100%;background:#000;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;user-select:none;}" +
+      ".kit-vid.full{height:100%;border-radius:0;}" +
+      ".kit-vid video{width:100%;max-height:460px;display:block;cursor:pointer;}" +
+      ".kit-vid.full video{max-height:100%;height:100%;object-fit:contain;}" +
+      ".kit-vid-bar{position:absolute;left:8px;right:8px;bottom:8px;z-index:5;display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:10px;background:rgba(12,17,28,.76);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);color:#eef2f7;transition:opacity .28s ease;}" +
+      ".kit-vid.idle .kit-vid-bar{opacity:0;pointer-events:none;}" +
+      ".kit-vid:hover .kit-vid-bar,.kit-vid:focus-within .kit-vid-bar{opacity:1;pointer-events:auto;}" +
+      ".kit-vid-bar .kit-mbtn{background:transparent;border-color:rgba(255,255,255,.18);color:#eef2f7;width:28px;height:28px;}" +
+      ".kit-vid-bar .kit-mbtn.playing{background:var(--ember);border-color:var(--ember);color:#fff;}" +
+      ".kit-vid-bar .kit-mspd{background:transparent;border-color:rgba(255,255,255,.18);color:#cbd5e1;}" +
+      ".kit-vid-bar .kit-mtime{color:#cbd5e1;}" +
+      ".kit-vid-bar .kit-mbar{background:rgba(255,255,255,.22);}";
+    document.head.appendChild(st);
+  }
+  var SVG_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>';
+  var SVG_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
+  var SVG_VOL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+  var SVG_MUTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+  var SVG_FS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+
+  function wireMediaControls(mediaEl, barEl, wrapEl) {
+    var playB = document.createElement("button"); playB.type = "button"; playB.className = "kit-mbtn"; playB.title = "Play"; playB.setAttribute("aria-label", "Play"); playB.innerHTML = SVG_PLAY;
+    var track = document.createElement("div"); track.className = "kit-mtrack";
+    var bar = document.createElement("div"); bar.className = "kit-mbar";
+    var fill = document.createElement("div"); fill.className = "kit-mfill";
+    bar.appendChild(fill); track.appendChild(bar);
+    var tm = document.createElement("span"); tm.className = "kit-mtime"; tm.textContent = "00:00 / 00:00";
+    var speeds = [1, 1.5, 2], sIdx = 0;
+    var spdB = document.createElement("button"); spdB.type = "button"; spdB.className = "kit-mspd"; spdB.textContent = "1x"; spdB.title = "Playback speed";
+    var mutB = document.createElement("button"); mutB.type = "button"; mutB.className = "kit-mbtn"; mutB.title = "Mute"; mutB.setAttribute("aria-label", "Mute"); mutB.innerHTML = SVG_VOL;
+    barEl.appendChild(playB); barEl.appendChild(track); barEl.appendChild(tm); barEl.appendChild(spdB); barEl.appendChild(mutB);
+    function syncUi() {
+      var cur = mediaEl.currentTime || 0, dur = isFinite(mediaEl.duration) ? mediaEl.duration : 0;
+      fill.style.width = (dur > 0 ? Math.min(100, (cur / dur) * 100) : 0) + "%";
+      tm.textContent = fmtMediaTime(cur).split(".")[0] + " / " + (dur > 0 ? fmtMediaTime(dur).split(".")[0] : "00:00");
+      var on = !mediaEl.paused && !mediaEl.ended;
+      playB.classList.toggle("playing", on);
+      playB.innerHTML = on ? SVG_PAUSE : SVG_PLAY;
+      playB.title = on ? "Pause" : "Play";
+      mutB.innerHTML = mediaEl.muted ? SVG_MUTE : SVG_VOL;
+    }
+    function togglePlay() {
+      if (mediaEl.paused || mediaEl.ended) mediaEl.play().catch(function () {});
+      else mediaEl.pause();
+    }
+    playB.addEventListener("click", function (ev) { ev.stopPropagation(); togglePlay(); });
+    spdB.addEventListener("click", function (ev) {
+      ev.stopPropagation(); sIdx = (sIdx + 1) % speeds.length;
+      mediaEl.playbackRate = speeds[sIdx]; spdB.textContent = speeds[sIdx] + "x";
+    });
+    mutB.addEventListener("click", function (ev) { ev.stopPropagation(); mediaEl.muted = !mediaEl.muted; syncUi(); });
+    function seekAt(clientX) {
+      var dur = isFinite(mediaEl.duration) ? mediaEl.duration : 0;
+      if (dur <= 0) return;
+      var r = track.getBoundingClientRect();
+      var pct = Math.max(0, Math.min(1, (clientX - r.left) / Math.max(1, r.width)));
+      mediaEl.currentTime = pct * dur;
+      syncUi();
+    }
+    track.addEventListener("pointerdown", function (ev) {
+      ev.stopPropagation(); seekAt(ev.clientX);
+      var onMove = function (e2) { seekAt(e2.clientX); };
+      var onUp = function () { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+      window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp);
+    });
+    ["timeupdate", "loadedmetadata", "play", "pause", "ended", "volumechange"].forEach(function (e) { mediaEl.addEventListener(e, syncUi); });
+    if (wrapEl && mediaEl.tagName === "VIDEO") {
+      var fsB = document.createElement("button"); fsB.type = "button"; fsB.className = "kit-mbtn"; fsB.title = "Fullscreen"; fsB.setAttribute("aria-label", "Fullscreen"); fsB.innerHTML = SVG_FS;
+      fsB.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        if (document.fullscreenElement) document.exitFullscreen && document.exitFullscreen();
+        else if (wrapEl.requestFullscreen) wrapEl.requestFullscreen();
+      });
+      barEl.appendChild(fsB);
+      mediaEl.addEventListener("click", function (ev) { ev.stopPropagation(); togglePlay(); });
+      var idleT = null;
+      function wakeBar() {
+        wrapEl.classList.remove("idle");
+        clearTimeout(idleT);
+        if (!mediaEl.paused && !mediaEl.ended) idleT = setTimeout(function () { wrapEl.classList.add("idle"); }, 2200);
+      }
+      wrapEl.addEventListener("pointermove", wakeBar);
+      mediaEl.addEventListener("play", wakeBar);
+      mediaEl.addEventListener("pause", function () { clearTimeout(idleT); wrapEl.classList.remove("idle"); });
+    }
+    syncUi();
+  }
+  function buildCustomAudioPlayer(src) {
+    ensureMediaPlayerCss();
+    var wrap = document.createElement("div"); wrap.className = "kit-aud";
+    var aud = document.createElement("audio"); aud.preload = "metadata"; aud.src = src; aud.style.display = "none";
+    wrap.appendChild(aud);
+    wireMediaControls(aud, wrap, wrap);
+    return wrap;
+  }
+  function buildCustomVideoPlayer(src, opts) {
+    ensureMediaPlayerCss();
+    var wrap = document.createElement("div"); wrap.className = "kit-vid" + (opts && opts.fullHeight ? " full" : "");
+    var vid = document.createElement("video"); vid.playsInline = true; vid.preload = "metadata"; vid.src = src;
+    var bar = document.createElement("div"); bar.className = "kit-vid-bar";
+    wrap.appendChild(vid); wrap.appendChild(bar);
+    wireMediaControls(vid, bar, wrap);
+    return wrap;
+  }
+
   function fmtMediaTime(sec) {
     var s = Math.max(0, Number(sec) || 0);
     var m = Math.floor(s / 60);
@@ -4019,27 +4145,19 @@
       body.classList.add("media");
       body.textContent = "";
       var pIfr = document.createElement("iframe");
-      pIfr.src = withKitToken(resolveAssetUrl(fp, "", repoOverride));
+      pIfr.src = withKitToken(resolveAssetUrl(fp, "", repoOverride)).split("#")[0] + "#toolbar=0&navpanes=0";
       pIfr.title = fp;
       pIfr.style.cssText = "width:100%;height:460px;border:0;border-radius:8px;background:#fff;";
       body.appendChild(pIfr);
     } else if (isAudio) {
       body.textContent = "";
       body.style.padding = "10px 12px";
-      var aud = document.createElement("audio");
-      aud.controls = true; aud.preload = "metadata";
-      aud.src = withKitToken(resolveAssetUrl(fp, "", repoOverride));
-      aud.style.cssText = "width:100%;display:block;";
-      body.appendChild(aud);
+      body.appendChild(buildCustomAudioPlayer(withKitToken(resolveAssetUrl(fp, "", repoOverride))));
     } else if (isVideo) {
       card.classList.add("is-img");
       body.classList.add("media");
       body.textContent = "";
-      var vid = document.createElement("video");
-      vid.controls = true; vid.playsInline = true; vid.preload = "metadata";
-      vid.src = withKitToken(resolveAssetUrl(fp, "", repoOverride));
-      vid.style.cssText = "width:100%;max-height:460px;border-radius:8px;background:#000;display:block;";
-      body.appendChild(vid);
+      body.appendChild(buildCustomVideoPlayer(withKitToken(resolveAssetUrl(fp, "", repoOverride))));
     } else {
       var uM = "/_api/repo-doc?path=" + encodeURIComponent(fp) + (sec ? "&section=" + encodeURIComponent(sec) : "") + (repoOverride !== undefined ? "&repo=" + encodeURIComponent(repoOverride || "") : "");
       api("GET", uM).then(function (res) {
@@ -4114,15 +4232,16 @@
         var lbl = (a.getAttribute("download") || a.textContent || "").trim();
         var bUrl = withKitToken(hrefVal);
         if (/\.(?:mp3|wav|ogg|m4a|flac|aac|opus)$/i.test(lbl) && !a.nextElementSibling) {
-          var ba = document.createElement("audio"); ba.controls = true; ba.preload = "metadata"; ba.src = bUrl;
-          ba.style.cssText = "display:block;width:100%;max-width:520px;margin:6px 0;";
+          var ba = buildCustomAudioPlayer(bUrl);
+          ba.style.margin = "6px 0";
           a.insertAdjacentElement("afterend", ba);
         } else if (/\.(?:mp4|webm|mov|m4v)$/i.test(lbl) && !a.nextElementSibling) {
-          var bv = document.createElement("video"); bv.controls = true; bv.playsInline = true; bv.preload = "metadata"; bv.src = bUrl;
-          bv.style.cssText = "display:block;width:100%;max-width:640px;max-height:420px;border-radius:8px;background:#000;margin:6px 0;";
+          var bv = buildCustomVideoPlayer(bUrl);
+          bv.style.maxWidth = "640px";
+          bv.style.margin = "6px 0";
           a.insertAdjacentElement("afterend", bv);
         } else if (/\.pdf$/i.test(lbl) && !a.nextElementSibling) {
-          var bp = document.createElement("iframe"); bp.src = bUrl; bp.title = lbl;
+          var bp = document.createElement("iframe"); bp.src = bUrl.split("#")[0] + "#toolbar=0&navpanes=0"; bp.title = lbl;
           bp.style.cssText = "display:block;width:100%;height:460px;border:1px solid var(--line);border-radius:10px;background:#fff;margin:8px 0;";
           a.insertAdjacentElement("afterend", bp);
         }
