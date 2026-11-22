@@ -65,7 +65,7 @@ def shim_ui(kit):
     return ui[:-len("})();")].rstrip()
 
 
-def build(page, kit, board_url, project, mcp_readers=None):
+def build(page, kit, board_url, project, mcp_readers=None, talk=""):
     if MARK in page:                                   # rebuild from a fresh install.py page, never stack twice
         page = re.sub(re.escape(MARK) + r".*?" + re.escape(MARK + "end") + r"\n?", "", page, flags=re.S)
     adapter = open(os.path.join(HERE, "artifact_adapter.js"), encoding="utf-8").read()
@@ -73,8 +73,9 @@ def build(page, kit, board_url, project, mcp_readers=None):
     ui = shim_ui(kit)
     slug = re.sub(r"[^a-z0-9]+", "-", project.lower()).strip("-") or "board"
     mcp_js = ("window.__KIT_MCP_READERS__=%s;" % json.dumps(list(mcp_readers))) if mcp_readers is not None else ""
-    head = ("<script>window.__KIT_BOARD_URL__=%s;window.__KIT_PROJECT__=%s;%s</script>\n"
-            % (json.dumps(board_url), json.dumps(project), mcp_js))
+    talk_js = ("window.__KIT_TALK__=%s;" % json.dumps(str(talk))) if talk else ""
+    head = ("<script>window.__KIT_BOARD_URL__=%s;window.__KIT_PROJECT__=%s;%s%s</script>\n"
+            % (json.dumps(board_url), json.dumps(project), talk_js, mcp_js))
     block = (MARK + "\n" + head + "<script>\n(function () {\n" + adapter + "\n" + ui + "\n})();\n</script>\n"
              + MARK + "end\n")
     pos = page.find("<script>")
@@ -94,13 +95,14 @@ def main(argv):
     ap.add_argument("--board-url", required=True)
     ap.add_argument("--project", required=True)
     ap.add_argument("--mcp-readers", default=None, help="Comma-separated MCP reader adapters (e.g. sharepoint,gmail,gdrive; 'none' to disable)")
+    ap.add_argument("--talk", default="", help="Board language (e.g. en, fr) for in-page toast/dialog text")
     a = ap.parse_args(argv)
     readers = None
     if a.mcp_readers is not None:
         raw = a.mcp_readers.strip().lower()
         readers = [] if raw in ("", "none", "off") else [x.strip() for x in raw.split(",") if x.strip()]
     page = open(a.page, encoding="utf-8").read()
-    out = build(page, a.kit, a.board_url, a.project, mcp_readers=readers)
+    out = build(page, a.kit, a.board_url, a.project, mcp_readers=readers, talk=a.talk)
     open(a.page, "w", encoding="utf-8").write(out)
     print("artifact page: %s (%d KB), adapter + %d lines of the server UI layer + artifact_ui"
           % (a.page, len(out.encode("utf-8")) // 1024, shim_ui(a.kit).count("\n")))

@@ -677,7 +677,8 @@ def main(argv=None):
             sys.path.insert(0, os.path.join(KIT, "kit", "claude"))
             import build_artifact_page  # noqa: E402
             readers = c["kit"].get("mcp_readers")
-            page_out = build_artifact_page.build(page_out, KIT, c["board_url"], c.get("project") or "board", mcp_readers=readers)
+            talk_lang = (c.get("language") or {}).get("talk") or ""
+            page_out = build_artifact_page.build(page_out, KIT, c["board_url"], c.get("project") or "board", mcp_readers=readers, talk=talk_lang)
             if readers:
                 notes.append("mcp readers (%s): publish with capabilities.mcp = %s" % (
                     ",".join(readers), json.dumps(build_artifact_page.mcp_capabilities(readers))))

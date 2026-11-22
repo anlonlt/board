@@ -14,9 +14,9 @@
   function note(msg) { var n = document.getElementById("c-note"); if (n) n.textContent = msg; }
   function openPostId() { try { return sessionStorage.getItem("board-open") || ""; } catch (e) { return ""; } }
 
-  /* "Link for AI" (#ai-share): one self-contained text that works whatever the receiving AI is: the post itself
-     (title, body, latest 20 comments), its id, the deep link, and how Claude Code / Claude in Chrome / a plain chat
-     answers. Clipboard first; if the frame refuses it, downloads.save; last resort window.prompt. */
+  /* "Link for AI" (#ai-share): one self-contained text that works whatever the receiving AI is.
+     The report-back instructions come FIRST so an agent (e.g. Claude in Chrome) knows before starting
+     that its result must be posted back to the board, where, and in what shape. */
   function selfContained(pid) {
     var c = window.claude, head = (window.__KIT_AI_BRIEF__ || function () { return BOARD_URL; })(pid);
     if (!pid || !c || !c.use) return Promise.resolve(head);
@@ -30,19 +30,76 @@
         var cs = (r[1].docs || []).map(function (d) { return d.data(); }).filter(function (x) { return !x.like && !x.removed; })
           .sort(function (a, b) { return String(a.created_at).localeCompare(String(b.created_at)); }).slice(-20);
         return [
-          "# " + (p.title || pid) + "   (post id: " + pid + ")",
+          "# For the AI reading this: a task from the board \"" + (p.title || pid) + "\" (post " + pid + ")",
+          "",
+          "**When you finish, or as soon as you are blocked, you MUST post your result on the board** (not only in this chat). Your answer is not seen until it is there.",
+          "- **Claude in Chrome (the owner's browser):** open " + BOARD_URL + " , search `" + pid + "` (Ctrl+K / Cmd+K, or the search box), open the post, write your result in its comment box starting with `[chrome]`, press Send. Never send real emails, notices or shares, nor change real data, unless the post says the owner approved it.",
+          "- **Claude Code** (has the `ArtifactData` tool): steps at the end.",
+          "- **A chat with no board access:** end your reply with the result block below; the owner pastes it under the post.",
+          "",
+          "**Result block** (in the board's language):",
+          "```",
+          "[<your kind: chrome / code / chat>] Result for " + pid,
+          "Done: <what you did, in short steps>",
+          "Checked: <what you verified, with numbers or names>",
+          "Not done / blocked: <what and why; what the owner must do or approve>",
+          "```",
+          "",
+          "---",
+          "",
+          "## The task: " + (p.title || pid),
           "", String(p.body || "").trim(), "",
-          cs.length ? "## Comments (latest " + cs.length + ")\n" + cs.map(function (x) {
+          cs.length ? "## Comments so far (latest " + cs.length + ")\n" + cs.map(function (x) {
             return "- **" + (x.from === "owner" || x.from === "viewer" ? "Owner" : (x.from || "?")) + "** (" + String(x.created_at || "").slice(0, 16).replace("T", " ") + "): " + String(x.text || "").replace(/\n/g, "\n  ");
           }).join("\n") : "",
           "", "---", "",
-          head, "",
-          "## Other kinds of AI",
-          "- **Claude in Chrome (the owner's browser):** open " + BOARD_URL + ", press Ctrl+K (Cmd+K), type `" + pid + "`, open the post, write the answer in its comment box starting with `[chrome]`; it is sent like the owner's own comment.",
-          "- **A chat with no board access (claude.ai or any other):** answer from the post above; the owner pastes your answer as a comment on the post."
+          head
         ].join("\n");
       });
     }).catch(function () { return head; });
+  }
+
+  /* After "Link for AI": a floating card with a fresh-gesture Copy button, desktop app shortcuts
+     (Electron does not open claude.ai links from an Artifact), and a prefilled claude.ai/new?q= link in browsers. */
+  var Q_MAX = 6000;
+  var FR = /^fr/i.test(String(window.__KIT_TALK__ || ""));
+  var T = FR ? {
+    copied: "Texte copié. Donne-le à une IA :", give: "Donne-le à une IA :", copy: "Copier le texte", copiedBtn: "Copié",
+    open: "Ouvrir un nouveau chat Claude avec ce texte", app: "Dans l'app Claude : nouveau chat (Cmd+N sur Mac, Ctrl+N sur Windows), puis colle (Cmd+V / Ctrl+V).",
+    other: "Claude dans Chrome ou Cowork : colle (Cmd+V / Ctrl+V) dans sa boîte.", long: "Texte long : le lien n'en met que le début ; colle pour avoir tout.",
+    manual: "La copie automatique est bloquée ici : le texte est sélectionné, fais Cmd+C / Ctrl+C.", close: "Fermer"
+  } : {
+    copied: "Copied. Give it to an AI:", give: "Give it to an AI:", copy: "Copy the text", copiedBtn: "Copied",
+    open: "Open a new Claude chat with it", app: "In the Claude app: new chat (Cmd+N on Mac, Ctrl+N on Windows), then paste (Cmd+V / Ctrl+V).",
+    other: "Claude in Chrome or Cowork: paste (Cmd+V / Ctrl+V) in its box.", long: "Long text: the link only carries its start; paste for all of it.",
+    manual: "Automatic copy is blocked here: the text is selected, press Cmd+C / Ctrl+C.", close: "Close"
+  };
+  var IN_APP = /Electron|Claude\//i.test(navigator.userAgent || "");
+  function openChatToast(brief, copied) {
+    var old = document.getElementById("kit-ai-toast"); if (old) old.remove();
+    var short = brief.length > Q_MAX ? brief.slice(0, Q_MAX) + "\n\n[...]" : brief;
+    var t = document.createElement("div"); t.id = "kit-ai-toast"; t.setAttribute("role", "status");
+    t.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:70;max-width:min(440px,calc(100vw - 32px));background:var(--surface,#fff);color:var(--ink,#111);border:1px solid var(--line,#ccc);border-radius:14px;box-shadow:0 12px 36px rgba(0,0,0,.3);padding:12px 14px;display:flex;flex-direction:column;gap:8px;overscroll-behavior:contain;";
+    var m = document.createElement("div"); m.textContent = copied ? T.copied : T.give;
+    var cb = document.createElement("button"); cb.type = "button"; cb.className = "btn ember"; cb.textContent = copied ? T.copiedBtn : T.copy;
+    cb.onclick = function () {
+      copy(brief).then(function (ok) {
+        if (ok) { cb.textContent = T.copiedBtn; return; }
+        window.prompt(T.manual, brief);
+      });
+    };
+    t.appendChild(m); t.appendChild(cb);
+    var how = document.createElement("div"); how.className = "note"; how.textContent = T.app; t.appendChild(how);
+    if (!IN_APP) {
+      var a = document.createElement("a"); a.className = "btn"; a.target = "_blank"; a.rel = "noopener";
+      a.href = "https://claude.ai/new?q=" + encodeURIComponent(short); a.textContent = T.open; t.appendChild(a);
+      if (brief.length > Q_MAX) { var lg = document.createElement("div"); lg.className = "note"; lg.textContent = T.long; t.appendChild(lg); }
+    }
+    var n = document.createElement("div"); n.className = "note"; n.textContent = T.other; t.appendChild(n);
+    var x = document.createElement("button"); x.type = "button"; x.className = "btn small"; x.textContent = T.close;
+    x.onclick = function () { t.remove(); }; t.appendChild(x);
+    document.body.appendChild(t);
+    setTimeout(function () { if (t.parentNode) t.remove(); }, 90000);
   }
 
   document.addEventListener("click", function (ev) {
@@ -52,12 +109,13 @@
     var pid = openPostId();
     selfContained(pid).then(function (brief) { return copy(brief).then(function (ok) { return [ok, brief]; }); }).then(function (r) {
       var ok = r[0], brief = r[1];
+      openChatToast(brief, ok);
       if (ok) { note("Copied: the link to this post and how an AI answers it (it needs a Claude account the board is shared with)."); return; }
       var c = window.claude;
       (c && c.use ? c.use("downloads") : Promise.resolve(null)).then(function (dl) {
         if (dl) return dl.save({ filename: "ai-brief-" + (pid || "board") + ".md", data: brief })
           .then(function () { note("Saved ai-brief-" + (pid || "board") + ".md"); }, function () {});
-        window.prompt("Link and instructions for an AI (copy):", brief);
+        window.prompt(T.manual, brief);
       });
     });
   }, true);
