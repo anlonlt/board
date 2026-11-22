@@ -4315,6 +4315,41 @@ SHIM_JS = r"""(function () {
         note.textContent = "Mint a scoped link for a human collaborator or their AI (works over Tailscale Funnel without GitHub repo access).";
         body.appendChild(note);
 
+        /* Pocket Push Notifications (ntfy.sh / webhook) */
+        var pushWrap = document.createElement("div");
+        pushWrap.style.cssText = "padding:10px 12px;border-radius:10px;background:var(--sunk);border:1px solid var(--line);display:flex;flex-direction:column;gap:8px;";
+        var pushHdr = document.createElement("div");
+        pushHdr.style.cssText = "display:flex;align-items:center;gap:6px;font-size:.76rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);";
+        pushHdr.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span>Pocket Push Notifications</span>';
+        var pushRow = document.createElement("div");
+        pushRow.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center;";
+        var pushIn = document.createElement("input");
+        pushIn.type = "url"; pushIn.placeholder = "https://ntfy.sh/your-secret-topic";
+        pushIn.style.cssText = "flex:1 1 180px;min-width:0;padding:6px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:.82rem;";
+        var pushSave = document.createElement("button"); pushSave.type = "button"; pushSave.className = "btn small"; pushSave.textContent = "Save";
+        var pushTest = document.createElement("button"); pushTest.type = "button"; pushTest.className = "btn small"; pushTest.textContent = "Test";
+        var pushSt = document.createElement("div"); pushSt.className = "note"; pushSt.style.fontSize = ".76rem";
+        api("GET", "/_api/notify").then(function (r) { if (r && r.notify_url) pushIn.value = r.notify_url; }, function () {});
+        pushSave.addEventListener("click", function () {
+          pushSave.disabled = true;
+          api("POST", "/_api/notify", { notify_url: pushIn.value.trim() }).then(function (r) {
+            pushSave.disabled = false;
+            pushSt.textContent = (r && r.notify_url) ? "Push webhook saved." : "Push notifications disabled.";
+          }, function () { pushSave.disabled = false; pushSt.textContent = "Could not save push URL (must start with http:// or https://)."; });
+        });
+        pushTest.addEventListener("click", function () {
+          var u = pushIn.value.trim();
+          if (!u) { pushSt.textContent = "Enter an ntfy.sh or webhook URL first."; return; }
+          pushTest.disabled = true; pushSt.textContent = "Sending test push...";
+          api("POST", "/_api/notify", { notify_url: u, test: true }).then(function (r) {
+            pushTest.disabled = false;
+            pushSt.textContent = (r && r.sent) ? "Test push sent." : "Saved, but webhook did not accept the test push.";
+          }, function () { pushTest.disabled = false; pushSt.textContent = "Test push failed."; });
+        });
+        pushRow.appendChild(pushIn); pushRow.appendChild(pushSave); pushRow.appendChild(pushTest);
+        pushWrap.appendChild(pushHdr); pushWrap.appendChild(pushRow); pushWrap.appendChild(pushSt);
+        body.appendChild(pushWrap);
+
         var form = document.createElement("form");
         form.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;align-items:center;";
         var nmIn = document.createElement("input"); nmIn.type = "text"; nmIn.placeholder = "Collaborator name (e.g. alex)"; nmIn.required = true;
@@ -5629,23 +5664,29 @@ class BoardStore:
         return {"thread_id": thread_id, "replies": replies, "status": "replied"}
 
 
-def send_push(notify_url, title, body):
-    """Fire-and-forget phone push notification (works with free ntfy.sh or any webhook)."""
+def send_push(notify_url, title, body, click_url=None, sync=False):
+    """Phone push notification (works with free ntfy.sh or any HTTP webhook; includes Click deep link)."""
     if not notify_url:
-        return
+        return False
+    hdrs = {"Title": str(title or "Board")[:120], "Content-Type": "text/plain; charset=utf-8"}
+    if click_url and str(click_url).startswith(("http://", "https://")):
+        hdrs["Click"] = str(click_url)
     def _go():
         try:
             r = urllib.request.Request(
                 notify_url,
-                data=body.encode("utf-8"),
-                headers={"Title": title[:120], "Content-Type": "text/plain; charset=utf-8"},
+                data=str(body or "").encode("utf-8"),
+                headers=hdrs,
                 method="POST",
             )
             with urllib.request.urlopen(r, timeout=5):
-                pass
+                return True
         except Exception:
-            pass
+            return False
+    if sync:
+        return _go()
     threading.Thread(target=_go, daemon=True).start()
+    return True
 
 
 def read_git_diff(root_dir, ref):
@@ -5950,10 +5991,28 @@ class PayloadTooLarge(Exception):
 def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False, extra_stores=None):
     html_path = os.path.join(root_dir, ".kit", "board.html")
     project_name = "Board"
+    board_base_url = ""
     try:
-        project_name = json.load(open(os.path.join(root_dir, ".kit", "config.json"), encoding="utf-8")).get("project") or "Board"
+        _cfg_root = json.load(open(os.path.join(root_dir, ".kit", "config.json"), encoding="utf-8"))
+        project_name = _cfg_root.get("project") or "Board"
+        board_base_url = str(_cfg_root.get("board_url") or "").rstrip("/")
     except (OSError, ValueError):
         pass
+    notify_cfg = {"url": str(notify_url or "").strip()}
+
+    def _maybe_push(coll, doc_id, d, prev_col=None):
+        nurl = notify_cfg.get("url") or ""
+        if not nurl or not isinstance(d, dict):
+            return
+        if coll == "posts" and d.get("column") in ("todo", "question") and not str(doc_id or "").startswith("_"):
+            if prev_col is not None and prev_col == d.get("column"):
+                return
+            click = (board_base_url + "/#/post/" + urllib.parse.quote(str(doc_id))) if board_base_url.startswith(("http://", "https://")) else None
+            send_push(nurl, "%s (%s): %s" % (project_name, d.get("column"), d.get("title") or doc_id), str(d.get("body") or "")[:240], click_url=click)
+        elif coll == "comments" and d.get("from") not in (None, "", "owner", "viewer") and not d.get("removed") and not d.get("like"):
+            pid_c = str(d.get("post_id") or "")
+            click = (board_base_url + "/#/post/" + urllib.parse.quote(pid_c)) if (pid_c and board_base_url.startswith(("http://", "https://"))) else None
+            send_push(nurl, "%s replied on %s" % (d.get("from"), pid_c or project_name), str(d.get("text") or "")[:240], click_url=click)
     primary_repo_id = re.sub(r"[^a-z0-9_-]+", "-", project_name.lower()).strip("-") or "primary"
     stores_map = {primary_repo_id: store}
     roots_map = {primary_repo_id: root_dir}
@@ -6783,6 +6842,14 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 self._send_json(200, {"users": store.list_users()})
                 return
 
+            if path == "/_api/notify":
+                u = getattr(self, "_auth_user", None) or {"role": "owner"}
+                if u.get("role") != "owner":
+                    self._send_json(403, {"error": "forbidden", "required_role": "owner"})
+                    return
+                self._send_json(200, {"notify_url": notify_cfg.get("url") or ""})
+                return
+
             if path.startswith("/_api/posts/") and path.endswith("/artifacts"):
                 pid_a = urllib.parse.unquote(path[len("/_api/posts/"):-len("/artifacts")]).strip("/")
                 tstore, _ = self._store_for_doc(parsed, "posts", pid_a)
@@ -7144,12 +7211,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
-            if notify_url:
-                d = body.get("data") or {}
-                if coll == "posts" and d.get("column") in ("todo", "question") and not doc_id.startswith("_"):
-                    send_push(notify_url, "Board (%s): %s" % (d.get("column"), d.get("title") or doc_id), str(d.get("body") or "")[:240])
-                elif coll == "comments" and d.get("from") not in (None, "", "owner", "viewer"):
-                    send_push(notify_url, "%s replied on %s" % (d.get("from"), d.get("post_id") or "board"), str(d.get("text") or "")[:240])
+            _maybe_push(coll, doc_id, body.get("data") or {})
             self._send_json(200, res)
 
         def do_PATCH(self):
@@ -7181,10 +7243,18 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if sc_err:
                 self._send_json(403, {"error": sc_err})
                 return
+            prev_col = None
+            if coll == "posts":
+                prev_doc = tstore.get_doc("posts", doc_id)
+                if prev_doc.get("exists"):
+                    prev_col = (prev_doc.get("data") or {}).get("column")
             res, err = tstore.update_doc(coll, doc_id, patch_data, if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
+            if coll == "posts" and isinstance(patch_data, dict) and patch_data.get("column") in ("todo", "question"):
+                cur_doc = tstore.get_doc("posts", doc_id)
+                _maybe_push(coll, doc_id, cur_doc.get("data") or patch_data, prev_col=prev_col)
             self._send_json(200, res)
 
         def do_DELETE(self):
@@ -7477,6 +7547,34 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 self._send_json(200, res)
                 return
 
+            if path == "/_api/notify":
+                u = getattr(self, "_auth_user", None) or {"role": "owner"}
+                if u.get("role") != "owner":
+                    self._send_json(403, {"error": "forbidden", "required_role": "owner"})
+                    return
+                new_url = str(body.get("notify_url") or "").strip()
+                if new_url and not new_url.startswith(("http://", "https://")):
+                    self._send_json(400, {"error": "invalid_notify_url"})
+                    return
+                notify_cfg["url"] = new_url
+                cfg_p = os.path.join(root_dir, ".kit", "config.json")
+                try:
+                    if os.path.isfile(cfg_p):
+                        with open(cfg_p, encoding="utf-8") as fh:
+                            cfg_obj = json.load(fh)
+                        cfg_obj.setdefault("kit", {})["notify_url"] = new_url
+                        with open(cfg_p, "w", encoding="utf-8") as fh:
+                            json.dump(cfg_obj, fh, indent=1, ensure_ascii=False)
+                            fh.write("\n")
+                except (OSError, ValueError):
+                    pass
+                sent = False
+                if body.get("test") and new_url:
+                    click = (board_base_url + "/") if board_base_url.startswith(("http://", "https://")) else None
+                    sent = send_push(new_url, "%s: test push" % project_name, "Pocket push notifications are active.", click_url=click, sync=True)
+                self._send_json(200, {"ok": True, "notify_url": new_url, "sent": sent})
+                return
+
             if path == "/_api/db/batch":
                 ops = body.get("writes") if isinstance(body, dict) else body
                 results, err = store.batch_ops(ops or [])
@@ -7487,6 +7585,9 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     else:
                         self._send_json(409, {"error": "batch_conflict", "doc_id": doc_id, "detail": detail})
                     return
+                for op in (ops or []):
+                    if isinstance(op, dict) and op.get("op") in ("set", "update") and op.get("collection") in ("posts", "comments"):
+                        _maybe_push(op.get("collection"), op.get("doc_id"), op.get("data") or {})
                 self._send_json(200, {"ok": True, "results": results})
                 return
 

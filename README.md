@@ -59,7 +59,7 @@ Chat windows break down as soon as a real project lasts more than a day — even
 
 ### 1. A Live Two-Way Control Room
 - **Four views, four lanes:** switch seamlessly between **Lanes** (`Action`, `Decisions`, `Updates`, `Done`), **Trains**, **Feed**, and **Focus** — all deep-linkable (`#/post/<id>`, `#/focus`).
-- **Phone-first control:** tap to approve, pick a one-tap option, snooze a card for 24 h, bulk-approve, attach screenshots up to 20 MB, and watch live typing dots while an agent replies.
+- **Phone-first control & pocket push alerts:** tap to approve, pick a one-tap option, snooze a card for 24 h, bulk-approve, attach screenshots up to 20 MB, watch live typing dots, and get optional **pocket push notifications** (`ntfy.sh` / webhook via `--notify-url` or the in-board Share panel) that deep-link straight to the card.
 - **OS-style floating windows:** pop out posts, Ask the Orchestrator, Repo Docs, deliverables, and external links into movable, 8-edge-resizable, edge-snappable windows with strict scroll containment.
 
 ### 2. Everything Readable in One Place
@@ -84,7 +84,7 @@ Chat windows break down as soon as a real project lasts more than a day — even
 |---|---|---|---|
 | **Requires a terminal?** | One-word launcher (`<project>`) | **No** (runs in `claude.ai`) | Yes (inside sandbox / CLI) |
 | **Live UI, 4 views & OS windows** | Yes (desktop + phone via Tailscale) | Yes (browser + phone in `claude.ai`) | Yes (preview iframe / localhost) |
-| **Phone comment → right agent** | Clerk + SSE (0 tokens idle) | Clerk + ArtifactComments wake | `comments wait` live listener |
+| **Phone comment → right agent** | Clerk + SSE (0 tokens idle) + `ntfy.sh` push | Clerk + ArtifactComments wake | `comments wait` live listener |
 | **Where we are & Trains** | Auto-rebuilt by server | Rebuilt by `kit-cards` (+ reminder hook) | `kit-cards` |
 | **Repo Docs & live diffs** | Live from disk | Mirrored via `kit_artifact_sync.py` (256 KiB/doc) | Live from disk |
 | **MCP Link Reader (SharePoint, Gmail, Drive, ...)** | Local MCP / browser | **Yes** — viewer's own connector (Step 0 auto-detected) | Local MCP / browser |
@@ -173,7 +173,7 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
      --talk "<language>" \
      --survey survey/<date>/report.md
    ```
-   Optional flags: `--cmd <one-word-command>` (default: project slug, installed to `~/.local/bin/<cmd>`), `--memory-dir <path>` (default: `.story` if present, else `.board/memory`), `--board-port 8765`, `--runtime agy|claude|both`, `--mode local|hybrid`, `--attach <name=path>`, and partial flags (`--no-board`, `--no-clerk`, `--no-orchestrator`).
+   Optional flags: `--cmd <one-word-command>` (default: project slug, installed to `~/.local/bin/<cmd>`), `--memory-dir <path>` (default: `.story` if present, else `.board/memory`), `--board-port 8765`, `--notify-url https://ntfy.sh/<topic>` (pocket push alerts), `--runtime agy|claude|both`, `--mode local|hybrid`, `--attach <name=path>`, and partial flags (`--no-board`, `--no-clerk`, `--no-orchestrator`).
    It never deletes and never replaces a file it did not write (`KEPT` lists what it left alone). Existing hook configs are preserved and merged cleanly.
    Check: `python3 -I .agents/hooks/kit/test_hooks.py` ends `0 failed`.
    **Ask the owner once:** *"Every session ends by merging its work onto `<main branch>` and pushing it, never forced (a conflict stops it). Do you give that standing permission?"* Yes: rerun with `--trunk-push yes`. No: sessions push only their own branch. Either way each session ends with `python3 -I .kit/end_session.py`.
