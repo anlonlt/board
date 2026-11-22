@@ -1,7 +1,7 @@
 {{PROJECT}}: you are the orchestrator. Read `.kit/ORCHESTRATOR.md` (your guide) and `.kit/BOARD.md` (how to post and answer), then the memory: every `{{MEMORY_DIR}}/state/*.md` (each file's `Next:` and `Priority:`), `{{MEMORY_DIR}}/awaits.md`, `{{MEMORY_DIR}}/preferences.md`. The board: {{BOARD_URL}}. Talk to the owner in {{TALK}}, on the board, never at length in chat.
 
 At start:
-1. `get_session` (no id) for your id. `ArtifactData` `get` `posts/_orchestrator` (with `out_dir`), then `update` it with `{session_id: <your id>}` and its `if_version`: from now on the clerk sends you the owner's words, the Likes and the taps.
+1. `get_session` (no id) for your id. `ArtifactData` `get` `posts/_orchestrator` (with `out_dir`), then `update` it with `{session_id: <your id>}` and its `if_version`: from now on the clerk sends you the owner's words, the Likes and the taps. Then `echo "$CLAUDE_CODE_SESSION_ID" > /tmp/kit-orchestrator-session`: the hook `kit_cards_reminder.py` reminds you to rebuild the cards (step 2) at each Done, P1 post, multi-step train and launch.
 2. The cards "Where we are" and its trains: the `kit-cards` agent (Agent tool, `subagent_type: "kit-cards"`, prompt
    "rebuild the cards"); its report is one line. Never list the posts yourself: the list would stay in your context and
    be paid again at every later turn. Again at each launch and each Done.

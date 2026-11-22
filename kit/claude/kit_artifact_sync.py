@@ -23,8 +23,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
-MAX_DOC = 900 * 1024          # one db document stays under the batch body limit
-BATCH_BYTES = 950 * 1024
+MAX_DOC = 240 * 1024          # an Artifact db document is at most 256 KiB once serialized
 
 
 def server(kit):
@@ -39,21 +38,23 @@ def doc_id(path):
 
 
 def write_batches(out, writes, tag):
-    os.makedirs(out, exist_ok=True)
-    for f in glob.glob(os.path.join(out, "batch-%s-*.json" % tag)):
+    """Each document to its own JSON file, and batch files of <=50 entries that point at them with file_path
+    (ArtifactData reads the file, so nothing large passes through the conversation)."""
+    os.makedirs(os.path.join(out, tag), exist_ok=True)
+    for f in glob.glob(os.path.join(out, "batch-%s-*.json" % tag)) + glob.glob(os.path.join(out, tag, "*.json")):
         os.remove(f)
-    files, cur, size = [], [], 2
-    for w in writes:
-        n = len(json.dumps(w, ensure_ascii=False).encode("utf-8")) + 1
-        if cur and (len(cur) >= 50 or size + n > BATCH_BYTES):
-            files.append(cur); cur, size = [], 2
-        cur.append(w); size += n
-    if cur:
-        files.append(cur)
+    entries = []
+    for i, w in enumerate(writes):
+        e = {k: v for k, v in w.items() if k != "data"}
+        if "data" in w:
+            fp = os.path.join(os.path.abspath(out), tag, "%04d.json" % i)
+            json.dump(w["data"], open(fp, "w", encoding="utf-8"), ensure_ascii=False)
+            e["file_path"] = fp
+        entries.append(e)
     paths = []
-    for i, ws in enumerate(files, 1):
-        p = os.path.join(out, "batch-%s-%02d.json" % (tag, i))
-        json.dump(ws, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+    for n in range(0, len(entries), 50):
+        p = os.path.join(out, "batch-%s-%02d.json" % (tag, n // 50 + 1))
+        json.dump(entries[n:n + 50], open(p, "w", encoding="utf-8"), ensure_ascii=False)
         paths.append(p)
     for p in paths:
         print("ArtifactData batch, url the board, writes = the array in", p)
@@ -76,9 +77,11 @@ def cmd_docs(a):
             continue
         if res.get("kind") == "html":
             res["url"] = ""                       # no /_repo/ server: the viewer shows res.content
-        body = json.dumps(res, ensure_ascii=False)
-        if len(body.encode("utf-8")) > MAX_DOC:
-            res["content"] = res["content"][:MAX_DOC // 2] + "\n\n[... cut at the Artifact's document size: read it in the repository]"
+        if row["path"].startswith(".kit/board"):
+            continue                              # the page itself: never useful in its own reader
+        while len(json.dumps(res, ensure_ascii=False).encode("utf-8")) > MAX_DOC:
+            res["content"] = res["content"][:int(len(res["content"]) * 0.8)]
+            res["cut"] = True
         writes.append({"op": "set", "collection": "kit_docs", "doc_id": doc_id(row["path"]), "data": res})
         kept.append(row)
     index = {"docs": kept, "assets": {}, "mirrored_at": now(), "total": len(kept)}

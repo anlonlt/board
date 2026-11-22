@@ -28,7 +28,7 @@ import strings as page_strings  # noqa: E402
 PARTS = ("memory", "board", "clerk", "orchestrator")
 MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "test_hooks.py"}
 HOOKS = ["kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
-         "kit_say_it_once.py", "kit_board_typing.py", "test_hooks.py"]
+         "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "test_hooks.py"]
 # agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
 CMD = "python3 -I hooks/kit/%s"
 CLAUDE_CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.claude/hooks/kit/%s"'
@@ -39,6 +39,8 @@ CLAUDE_SETTINGS = [
     ("PostToolUse", "ArtifactData|mcp__claude-code-remote__send_message", "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_board_typing.py"),
+    ("UserPromptSubmit", None, "kit_cards_reminder.py"),
+    ("PostToolUse", "ArtifactData|mcp__claude-code-remote__create_session", "kit_cards_reminder.py"),
     ("Stop", None, "kit_stop.py"),
     ("Stop", None, "kit_say_it_once.py"),
     ("PreCompact", None, "kit_pre_compact.py"),

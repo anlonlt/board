@@ -147,6 +147,8 @@ def row(path, awaits):
         note += "".join("\n- Waits on you: " + m for m in mine)
     out = {"key": wid, "name": title, "steps": steps, "at": min(done, len(steps) - 1), "state": state,
            "note": note.strip(), "post": "P-" + wid, "train": "P-" + wid}
+    out["_explicit_steps"] = bool(sm)
+    out["_next"] = _step_summary(nxt) if nxt else ""
     if blockers:
         out["blocked_by"] = blockers
     return prio, out
@@ -390,6 +392,29 @@ def build_trains(board, rows, now):
     return {"title": "Trains", "column": "info", "rows": out, "updated_at": now, "created_at": now}
 
 
+def steps_from_train(r, links_by_train):
+    """A workstream with a state file but no `## Steps` section: its steps are its train's parts on the board, in
+    order (done ones first, then the ones still open), then its Next if it is not one of them. So "Where we are"
+    shows the same sequence as the train (the owner, 2026-11-22: "why doesn't Where we are follow the trains?")."""
+    if r.get("_explicit_steps"):
+        return r
+    wid = str(r.get("train") or "")[2:]
+    parts = [lk for lk in links_by_train.get(wid, []) if lk["post_id"] != "P-" + wid]
+    if not parts:
+        return r
+    done = [lk for lk in parts if post_state({"column": lk["column"], "status": lk["status"]}) == "done"]
+    open_ = [lk for lk in parts if lk not in done]
+    steps = [_step_summary(lk["title"] or lk["part"], max_len=90) for lk in done + open_]
+    nxt = r.get("_next") or ""
+    if nxt and nxt not in steps:
+        steps.append(nxt)
+    r["steps"] = steps
+    r["at"] = min(len(done), len(steps) - 1)
+    if any(post_state({"column": lk["column"], "status": lk["status"]}) == "running" for lk in open_) and r.get("state") in ("ready", "idle"):
+        r["state"] = "running"
+    return r
+
+
 def build(now, board=None):
     sd = memory_dir(ROOT)
     aw = os.path.join(sd, "awaits.md")
@@ -399,6 +424,14 @@ def build(now, board=None):
         existing_only = [r for _, r in scored_rows]
         scored_rows.extend(synthesize_linked_rows(board, existing_only))
     rows = [r for _, r in sorted(scored_rows, key=lambda x: x[0])]
+    if board:
+        by_train = {}
+        for lk in resolve_links(_load_board_posts(board)):
+            by_train.setdefault(lk["train"], []).append(lk)
+        rows = [steps_from_train(r, by_train) for r in rows]
+    for r in rows:
+        r.pop("_explicit_steps", None)
+        r.pop("_next", None)
     for i, r in enumerate(rows):
         r["key"] = KEYS[i] if i < len(KEYS) else str(i)
     return {"title": "Where we are", "column": "info", "rows": rows, "updated_at": now, "created_at": now}

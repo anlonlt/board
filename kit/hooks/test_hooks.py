@@ -286,5 +286,39 @@ with tempfile.TemporaryDirectory() as d:
     check("claude hook: kit_stop blocks with exit 2 on dirty tree and honors stop_hook_active",
           rc_cstop1 == 2 and "Before stopping" in err_cstop1 and rc_cstop2 == 0)
 
+    # kit_cards_reminder: only in the orchestrator's session, on Done / P1 / multi-step train / launch, once per burst
+    import tempfile as _tf
+    _mk = os.path.join(_tf.gettempdir(), "kit-orchestrator-session"); _last = os.path.join(_tf.gettempdir(), "kit-cards-reminder-last")
+    for _f in (_mk, _last):
+        try: os.remove(_f)
+        except OSError: pass
+    _done = {"hook_event_name": "PostToolUse", "tool_name": "ArtifactData",
+             "tool_input": {"action": "update", "collection": "posts", "doc_id": "P-x", "data": {"column": "done"}}}
+    _, o0, _ = run_claude("kit_cards_reminder.py", _done)
+    check("cards reminder: silent outside the orchestrator", o0.strip() == "{}")
+    open(_mk, "w").write("sess-orch")
+    os.environ["CLAUDE_CODE_SESSION_ID"] = "sess-orch"
+    _, o1, _ = run_claude("kit_cards_reminder.py", _done)
+    check("cards reminder: a post moved to Done reminds kit-cards", "kit-cards" in o1 and "moved to Done" in o1)
+    _, o2, _ = run_claude("kit_cards_reminder.py", _done)
+    check("cards reminder: once per burst", o2.strip() == "{}")
+    os.remove(_last)
+    _train = {"hook_event_name": "PostToolUse", "tool_name": "ArtifactData", "tool_input": {"action": "batch", "writes": [
+        {"op": "set", "collection": "posts", "doc_id": "a", "data": {"train": "t"}},
+        {"op": "set", "collection": "posts", "doc_id": "b", "data": {"train": "t", "parent": "a"}}]}}
+    _, o3, _ = run_claude("kit_cards_reminder.py", _train)
+    check("cards reminder: a multi-step train planned reminds", "several steps" in o3)
+    os.remove(_last)
+    _, o4, _ = run_claude("kit_cards_reminder.py", {"hook_event_name": "UserPromptSubmit", "prompt": "Done. Check post S-1."})
+    check("cards reminder: a part's Done message reminds", "S-1" in o4)
+    os.remove(_last)
+    _, o5, _ = run_claude("kit_cards_reminder.py", {"hook_event_name": "PostToolUse", "tool_name": "ArtifactData",
+        "tool_input": {"action": "set", "collection": "comments", "doc_id": "c", "data": {"column": "done"}}})
+    check("cards reminder: comments and other writes stay silent", o5.strip() == "{}")
+    for _f in (_mk, _last):
+        try: os.remove(_f)
+        except OSError: pass
+    os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)
