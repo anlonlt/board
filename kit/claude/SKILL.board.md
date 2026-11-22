@@ -12,3 +12,4 @@ The board is a claude.ai Artifact: its url is `board_url` in `.kit/config.json`.
 - Never republish the page from a working session; the installing session does that with `build_artifact_page.py`.
 - Lookups without dumping the board (`.kit/ORCHESTRATOR.md` § 3): `python3 -I .kit/kit.py post <id>`, `open`, `since <ISO>`, `session <post>`, after a sync.
 - The Repo Docs reader and inline git diffs read a mirror: after changing docs, run `.kit/kit_artifact_sync.py docs` (and `diffs`) and send the batches it prints.
+- Attached repos' boards (`.kit/config.json` `portfolio`) live under `repos/<id>/posts|comments`, mirrored by `.kit/kit_artifact_sync.py boards` from each repo's board-mirror branch; a post of an attached board is answered in `repos/<id>/comments` (the page's Link for AI names the right collection).

@@ -3270,6 +3270,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     user = await w.use("user");
     if (user) { try { state.isOwner = await user.isOwner(); } catch (e) {} }
     db = await w.use("db");
+    if (db && window.__KIT_WRAP_DB__) db = window.__KIT_WRAP_DB__(db);   /* cross-repo boards in an Artifact (kit/claude/artifact_repos.js) */
     if (!db) { clearTimeout(timer); var s = $("status"); s.textContent = "Sign in on claude.ai to see the board."; s.className = "status bad"; return; }
     /* His read marks, under his own user: the same on his phone and his computer. */
     var uid = null;

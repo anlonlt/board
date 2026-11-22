@@ -23,6 +23,7 @@ import json
 import os
 import re
 import sys
+import subprocess
 
 KIT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(KIT, "kit", "board"))
@@ -516,6 +517,31 @@ def install_cmd(t, cmd_name, dry, log, extra_args=""):
         os.chmod(dst, 0o755)
 
 
+
+def github_of(path):
+    """owner/repo of a clone's origin on github.com, or ""."""
+    try:
+        url = subprocess.run(["git", "-C", path, "remote", "get-url", "origin"], capture_output=True, text=True,
+                             timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    m = re.search(r"github\.com[:/]+([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$", url)
+    if not m:
+        m = re.search(r"/git/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$", url)   # a Claude Code web session's proxy
+    return m.group(1) if m else ""
+
+
+def attach_spec(spec):
+    """--attach name=path | path | name=github:owner/repo  ->  (name, absolute path or "", "owner/repo" or "")."""
+    spec = spec.strip()
+    aname, rest = (spec.split("=", 1) if "=" in spec else ("", spec))
+    aname, rest = aname.strip(), rest.strip()
+    if rest.startswith("github:"):
+        gh = rest[len("github:"):].strip().strip("/")
+        return aname or gh.split("/")[-1], "", gh
+    apath = os.path.abspath(os.path.expanduser(rest))
+    return aname or os.path.basename(apath), apath, github_of(apath) if os.path.isdir(apath) else ""
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("target")
@@ -537,7 +563,7 @@ def main(argv=None):
     ap.add_argument("--palette-json", help="Custom Step 0 colour palette JSON object (light & dark CSS variables)")
     ap.add_argument("--autonomy", choices=["full_auto", "balanced", "gated"], help="Step 0 autonomy & anti-sprawl profile")
     ap.add_argument("--scope", choices=["single", "all"], help="Step 0 board scope: single project or all discovered projects")
-    ap.add_argument("--attach", action="append", default=[], help="Attach another local repo board (name=path or path) into .kit/config.json portfolio")
+    ap.add_argument("--attach", action="append", default=[], help="Attach another repo's board (name=path, path, or name=github:owner/repo) into .kit/config.json portfolio; the GitHub name (read from the clone's origin) lets an Artifact board show it too")
     ap.add_argument("--mcp-readers", default=None, help="Claude Artifact MCP Link Readers: 'auto' (Step 0 scan), 'none', or comma list (sharepoint,gmail,gdrive,outlook,notion,linear)")
     ap.add_argument("--no-funnel", action="store_true", help="Disable default Tailscale Funnel auto-setup in .kit/up")
     ap.add_argument("--tui", "--wizard", dest="tui", action="store_true", help="Launch TWRP-style clickable terminal GUI installer seeded by Step 0 scan")
@@ -657,16 +683,24 @@ def main(argv=None):
     if a.attach:
         port_list = list(c.get("portfolio") or [])
         seen_paths = {os.path.abspath(x["path"]) for x in port_list if isinstance(x, dict) and x.get("path")}
+        seen_gh = {x.get("github") for x in port_list if isinstance(x, dict) and x.get("github")}
         for spec in a.attach:
-            if "=" in spec:
-                aname, apath = spec.split("=", 1)
-                aname, apath = aname.strip(), os.path.abspath(apath.strip())
-            else:
-                apath = os.path.abspath(spec.strip())
-                aname = os.path.basename(apath)
-            if apath not in seen_paths:
-                port_list.append({"name": aname, "path": apath})
+            aname, apath, gh = attach_spec(spec)
+            if apath and apath in seen_paths:
+                continue
+            if gh and gh in seen_gh:
+                for x in port_list:                       # the same repo attached again: fill in what was missing
+                    if isinstance(x, dict) and x.get("github") == gh and apath and not x.get("path"):
+                        x["path"] = apath
+                continue
+            row = {"name": aname}
+            if apath:
+                row["path"] = apath
                 seen_paths.add(apath)
+            if gh:
+                row["github"] = gh
+                seen_gh.add(gh)
+            port_list.append(row)
         c["portfolio"] = port_list
     if a.mcp_readers is not None:
         raw_mr = a.mcp_readers.strip().lower()
