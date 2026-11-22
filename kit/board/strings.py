@@ -20,6 +20,7 @@ TABLE = os.path.join(HERE, "strings.en.json")
 ATTRS = ("placeholder", "aria-label", "title")
 # Literals that look like words but are code (class names, keys, API names) or comment fragments: never translated.
 CODE = re.compile(r"^(?:[a-z][a-z0-9_-]*(?: [a-z][a-z0-9_-]*)*|use strict|IntersectionObserver|Enter|txt md)$")
+PROTOCOL_LITERALS = {"Answer: ", "\U0001f44d Like: he approves this", " [post ", "_orchestrator"}
 
 
 def split(page):
@@ -106,7 +107,10 @@ def extract(page):
             continue
         if code_use(js, lit, q, at, at + len(lit) + 2):
             continue
-        add(decode_js(lit), "js")
+        dec = decode_js(lit)
+        if dec in PROTOCOL_LITERALS:
+            continue
+        add(dec, "js")
     return rows
 
 

@@ -5,25 +5,26 @@
 <h1 align="center">board</h1>
 
 <p align="center">
-  <strong>One UI for everything your AI agents build. Local live board + private Git backup. Zero lost context.</strong><br />
-  A zero-dependency workflow kit — live mobile-ready board, persistent <code>.board/memory/</code> (or existing <code>.story/</code>) memory, automatic context-limit handovers, safety hooks, and a one-word launcher — with a local SQLite live store backed up to your own private Git repository. Works with <strong>agy</strong> and <strong>Claude Code</strong>, across desktop, phone, and cloud.
+  <strong>One workspace for everything you and your AI work on — from a single chat to a full team of agents.</strong><br />
+  Works on your computer, your phone, or inside <code>claude.ai</code> — for code, research, operations, or everyday office work.<br />
+  Zero dependencies. Private by default. Zero lost context.
 </p>
 
 <p align="center">
   <img alt="Zero Dependencies" src="https://img.shields.io/badge/dependencies-zero%20(Python%203%20stdlib)-2f7a4f?style=flat-square" />
   <img alt="Clients" src="https://img.shields.io/badge/works%20with-agy%20%7C%20Claude%20Code%20%7C%20Arena%20%7C%20CLI-e8894a?style=flat-square" />
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20Mobile-2b6c9e?style=flat-square" />
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows%20%7C%20Mobile%20%7C%20Web-2b6c9e?style=flat-square" />
   <img alt="Private by Default" src="https://img.shields.io/badge/privacy-your%20private%20repo-6a4fb3?style=flat-square" />
-  <img alt="Tests" src="https://img.shields.io/badge/test%20suites-6%20passing%20(154%2B%20checks)-2f7a4f?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/test%20suites-all%20passing-2f7a4f?style=flat-square" />
 </p>
 
 <p align="center">
-  <a href="#the-problem">The Problem</a> ·
-  <a href="#features">Features</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#measured-in-production">Measured Results</a> ·
+  <a href="#who-its-for">Who It's For</a> ·
+  <a href="#what-you-get">What You Get</a> ·
+  <a href="#choose-your-setup">What Works Where</a> ·
+  <a href="#quick-start">Quick Start</a> ·
   <a href="#install">Install</a> ·
-  <a href="#runners">Runners</a>
+  <a href="#security--privacy">Security</a>
 </p>
 
 <p align="center">
@@ -32,113 +33,127 @@
 
 ---
 
-## The Problem
+## Who It's For
 
-Chat windows break down as soon as a real project lasts more than a day — **even when you only run one session at a time**:
+`board` is built for **anyone doing multi-day work with AI** — whether it is your first week using AI or you run parallel coding agents every day:
 
-- **You dig through GitHub and dead chats** just to find what an agent actually built, measured, or decided.
-- **Sessions hit context limits, compact, or get reclaimed**, and decisions made in chat quietly vanish.
-- **Project sprawl takes over** — every new session starts with *"where are we?"*, *"what's waiting on me?"*, and re-explaining standing rules.
-- **Approvals tie you to your desk** — you can't review a report, inspect a screenshot, or unblock an agent from your phone in two seconds.
-- **Unchecked agents lose work** — `rm -rf`, `git reset --hard`, force pushes, stranded branches, or leaked `.env` files.
-
-`board` fixes all five with **a local SQLite live store backed up to your private Git repository** and **zero external dependencies** (pure Python 3 stdlib + a single-file HTML board with zero third-party network requests).
+- **Just getting started with AI?** Stop losing decisions across 20 dead chat tabs. Every new session starts already knowing where your project stands, what you decided, and what comes next.
+- **Managing operations, research, or office workflows?** Approve a draft or answer a question from your phone in two seconds; open linked **SharePoint files, Gmail threads, Google Drive docs, Notion pages, or Linear issues** right inside a reader window using your own account.
+- **Building software or orchestrating multiple agents?** Inspect live git diffs, screenshots, and deliverables in floating windows; let a 0-token clerk route your phone comments straight to the exact running session; hand over cleanly before context limits hit.
 
 ---
 
-## Features
+## Why `board`?
 
-### One Visual UI for Everything Agents Create
-Every piece of work lives as a structured card in four lanes — **`Action`**, **`Decisions`**, **`Updates`**, and **`Done`** — across four views (**Lanes**, **Trains**, **Feed**, and **Focus**) with hash deep-links (`#/post/<id>`, `#/focus`) instead of being buried across commits, PRs, and chat transcripts:
-- Rich Markdown reports, tables, side-by-side image comparisons, and one-click Markdown export.
-- **Phone-first, one-tap control:** tap 👍 to approve, tap a one-tap option to choose, attach screenshots up to 20 MB, and see live typing dots while an agent writes its reply.
-- **Live anywhere:** works natively in your browser and on your phone (via `claude.ai` Artifacts in the cloud, or locally via Tailscale — with automatic failover if a cloud plan hits its limit).
+Chat windows break down as soon as a real project lasts more than a day — even with a single session:
 
-### Zero Project Sprawl & Persistent Memory (`.board/memory/` or `.story/`)
-Fresh installs store committed memory under `.board/memory/` (`state/<workstream>.md`, `awaits.md`, `issues/`, `lessons/`, `preferences.md`). If your repo already has a `.story/` directory, `install.py` automatically keeps using `.story/` (override anytime with `--memory-dir`):
-- **Automatic `SessionStart` briefing:** every new session is automatically injected with every workstream's exact `Next:` step, open issues, lessons, and standing preferences before turn 1.
-- **At-a-glance cards:** **Where we are**, **Waiting for you**, and **Trains** are rebuilt automatically from your memory directory and the board — never hand-written, never stale.
-
-### Automatic Context-Limit Handovers & Independent Reviews
-- **Seamless continuity:** orchestrators and clerks hand over automatically before hitting context ceilings, preserving running work and decisions without losing the thread.
-- **Independent consultant:** at route-setting milestones, a fresh reviewer checks the whole train — rerunning numbers instead of rereading prose — and posts a verdict (`continue`, `redirect`, or `stop`).
-- **Reactive, low-cost routing:** a lightweight **board clerk** wakes only when you comment (0 tokens while idle), forwards your words verbatim to the exact session that wrote the post, marks it `✓ Seen`, and escalates if unanswered.
-
-### Built-In Safety & Token Discipline
-- **`kit_guard.py`** (`PreToolUse`): parses commands with `shlex` to block `rm -rf` outside `/tmp`, `git clean`, `git reset --hard`, force pushes, remote branch deletes, and staging secrets (`.env`, `*.pem`, `*.keystore`), while letting safe commands through cleanly.
-- **`kit_stop.py` + `end_session.py`:** stops sessions from exiting with uncommitted or unpushed work, and lands branches cleanly onto trunk (never forced; conflicts abort and name the file).
-- **`kit_say_it_once.py`:** keeps full reports in ONE place (the board post) and trims chat/inter-agent chatter to short pointers (`·`).
-- **Compact Git lookups (`kit.py`):** mirrors the board to an isolated `board-mirror` branch so agents read a post or open comments in hundreds of characters instead of dumping the whole database.
-
-### One-Word Launch & Modular Adoption
-- **One word from any terminal:** installing `board` creates a single-word command named after your project (e.g. `harmonize`) that starts the board, prints your phone link, and opens an unattended session directly into the orchestrator and clerk.
-- **Install only what you need:** Step 0 audits your project first and recommends only the layers that pay for themselves (`memory` + hooks, `+ board`, `+ clerk`, `+ orchestrator`). See [docs/KIT-GOALS.md](docs/KIT-GOALS.md) for every quoted problem and measured cost.
+- **Decisions vanish in dead chats** → `board` keeps durable project memory right in your private repository.
+- **Every new session asks *"where are we?"*** → every session automatically starts with each workstream's exact `Next:` step, open questions, and standing rules already injected.
+- **Passive trackers don't talk back** → commenting on a card from your phone wakes the exact agent that wrote it, with live typing dots and one-tap approvals.
+- **Docs, links, diffs, and outputs are scattered** → read repo docs, compare deliverables with live diffs, and open authenticated cloud links in one OS-style multi-window workspace.
+- **Unchecked agents lose work or burn tokens** → built-in safety hooks block destructive commands and secret leaks, while compact lookups cut context usage by up to 12x.
 
 ---
 
-## Architecture
+## What You Get
 
-```mermaid
-flowchart LR
-    UI["📱 Phone / 💻 Browser<br/>board.html (live UI)"] <-->|"Live sync · comments · blobs"| Inbox["Live Board Inbox<br/>posts · comments · typing"]
-    Inbox -->|"Reactive wake (0 tokens idle)"| Clerk["Board Clerk<br/>(lightweight forwarder)"]
-    Clerk -->|"verbatim message"| Orch["Orchestrator<br/>(auto hand-over)"]
-    Clerk -->|"verbatim message"| Parts["Working Sessions<br/>(isolated branches / worktrees)"]
-    Orch -->|"launch & coordinate"| Parts
-    Orch -->|"kit-cards subagent"| Inbox
-    Orch -->|"route-setting Done"| Cons["Consultant<br/>(independent review)"]
-    Inbox -->|"kit.py sync"| Git[("Your Private Git Repo<br/>.board/memory/ (or .story/) on main · board-mirror")]
-    Git -.->|"git_watch.py / --seed-from-mirror"| Inbox
-```
+### 1. A Live Two-Way Control Room
+- **Four views, four lanes:** switch seamlessly between **Lanes** (`Action`, `Decisions`, `Updates`, `Done`), **Trains**, **Feed**, and **Focus** — all deep-linkable (`#/post/<id>`, `#/focus`).
+- **Phone-first control:** tap to approve, pick a one-tap option, snooze a card for 24 h, bulk-approve, attach screenshots up to 20 MB, and watch live typing dots while an agent replies.
+- **OS-style floating windows:** pop out posts, Ask the Orchestrator, Repo Docs, deliverables, and external links into movable, 8-edge-resizable, edge-snappable windows with strict scroll containment.
 
-### Durability & Backup Cadence
+### 2. Everything Readable in One Place
+- **Pointer-aware Repo Docs & Memory Reader:** hover the left edge for the file switcher and the right edge for the document outline; pin key docs and comment on sections.
+- **Deliverables Drop-Box:** agents and collaborators attach scripts, docs, or HTML previews directly to any post — with automatic live diffs against the repo and zero GitHub write access required.
+- **Pluggable MCP Link Reader:** open **SharePoint / OneDrive files, Gmail threads, Google Drive docs, Outlook messages, Notion pages, and Linear issues** inside a floating reader window using *each viewer's own connector* (auto-detected during Step 0 setup).
 
-- **Live store (local SQLite):** `.kit/board_data/board.db` (and uploaded blobs in `.kit/board_data/blobs/`, gitignored) is the live store for instant reads, writes, and SSE updates.
-- **Git backup / mirror (`board-mirror`):** updated on `kit.py sync` + `kit.py push` — not on every individual HTTP write. Sync and push at every milestone, handover, and end of session (or on a recurring schedule) so the mirror stays fresh; any edits made after the last `kit.py sync` live only in `.kit/board_data/board.db` until synced. On a new machine or after DB loss, `--seed-from-mirror` restores the live DB from `board-mirror`.
-- **Committed memory (`.board/memory/`, or `.story/` if already present):** committed directly to your project branch at every save point.
+### 3. Memory That Compounds & Trains That Stay Current
+- **Committed memory (`.board/memory/`, or existing `.story/`):** workstream state (`Next:` + `## Steps`), open questions (`awaits.md`), issues, lessons, and standing preferences — automatically injected at session start.
+- **At-a-glance progress ("Where we are" & "Trains"):** tracks multi-step work automatically from `## Steps` or from linked train posts (`train` + `parent`), rebuilt live on the local server or nudged via `kit_cards_reminder.py` in Claude Code Web.
+- **Automatic handovers & independent reviews:** orchestrators and clerks hand over before context ceilings, and a fresh **consultant** verifies route-setting milestones before you commit to the next phase.
+
+### 4. Share Safely with People & Other AIs
+- **Board-scoped collaborators:** invite teammates (`viewer`, `member`, or `owner`) scoped to a specific board in multi-project portfolios, each with their own private Ask-the-Orchestrator channel.
+- **1-link AI bootstrap & Link for AI:** hand any external AI a 24 h expiring share link (`/_share/<token>`), a collaborator bootstrap brief (`/_invite/<token>.md`), or a self-contained post brief on Artifacts.
+
+---
+
+## Choose Your Setup
+
+| Capability | Local (`agy` / CLI) | Cloud (`claude.ai` Artifact) | Sandbox / Generic (`arena` / Codex / Cursor) |
+|---|---|---|---|
+| **Requires a terminal?** | One-word launcher (`<project>`) | **No** (runs in `claude.ai`) | Yes (inside sandbox / CLI) |
+| **Live UI, 4 views & OS windows** | Yes (desktop + phone via Tailscale) | Yes (browser + phone in `claude.ai`) | Yes (preview iframe / localhost) |
+| **Phone comment → right agent** | Clerk + SSE (0 tokens idle) | Clerk + ArtifactComments wake | `comments wait` live listener |
+| **Where we are & Trains** | Auto-rebuilt by server | Rebuilt by `kit-cards` (+ reminder hook) | `kit-cards` |
+| **Repo Docs & live diffs** | Live from disk | Mirrored via `kit_artifact_sync.py` (256 KiB/doc) | Live from disk |
+| **MCP Link Reader (SharePoint, Gmail, Drive, ...)** | Local MCP / browser | **Yes** — viewer's own connector (Step 0 auto-detected) | Local MCP / browser |
+| **Deliverables drop-box (w/ diff)** | Yes (`/_api/posts/<id>/artifacts`) | Yes (`kit_artifacts` collection) | Yes |
+| **Collaborators & Link for AI** | Board-scoped invites + 24 h `/_share` | Artifact Share menu + self-contained AI brief | Token links + invites |
+| **Offline outbox & multi-board portfolio** | Yes (SQLite + Git mirror) | No (cloud Artifact DB) | Partial (Git handoff) |
+
+---
+
+## How `board` Compares
+
+| | **`board`** | Local Kanban Trackers | CLI Issue Graphs | Cloud PM Tools (Linear / Notion) |
+|---|---|---|---|---|
+| **Built for non-developers too?** | **Yes** (code, ops, office, cloud Artifact) | Dev-focused | CLI-only | Yes, but manual |
+| **Active phone-to-agent loop** | **Yes** (0-token clerk + live typing dots) | Passive tracker | No UI | Third-party bots |
+| **Dependencies & hosting** | **Zero** (Python 3 stdlib + 1 HTML file) | Go / Node binary or paid cloud | Go + Dolt DB | Their cloud (per-seat) |
+| **Docs, diffs & cloud link reader** | **Built-in** (OS windows + MCP Reader) | Basic card editor | None | Separate tools |
+| **Built-in agent safety & handovers** | **Yes** (guardrails, handovers, consultant) | None | Schema guard | None |
 
 ---
 
 ## Measured in Production
 
-Real numbers measured on [anlonlt/harmonize](https://github.com/anlonlt/harmonize) (details in [docs/KIT-GOALS.md](docs/KIT-GOALS.md)):
+Real numbers measured on [anlonlt/harmonize](https://github.com/anlonlt/harmonize) ([full methodology](docs/KIT-GOALS.md)):
 
 | Metric | Measured Result |
 |---|---|
 | **Production volume** | **173 posts**, **1,279 comments**, **47 orchestrator handovers** across 22 workstreams |
-| **Median owner wait for a reply** | **0.8 min** (across 398 owner comments; 0 over 15 min in recent handover windows) |
-| **Context saved per post read** (`kit.py post`) | **35.9k → 2.9k characters** (12× smaller than full dumps) |
-| **Context saved checking open comments** (`kit.py open`) | **~120,000 tokens → 290 characters** |
-| **Card rebuild savings** (`kit-cards` via `kit.py`) | **−20% tokens** per run (124,535 → 99,354 tokens) |
-| **Startup memory footprint** (`SessionStart`) | **22 workstreams + 31 waiting items** served in **6.6k chars** (instead of 1.3 MB of docs) |
-| **Automated verification** | **6 Python test suites (154+ checks), 0 failures** (`python3 scripts/run_all_tests.py`, + browser Playwright test + 20/20 mutation tests on `kit.py`) |
+| **Median wait for an agent reply** | **0.8 min** across 398 owner comments (0 over 15 min in recent handover windows) |
+| **Context saved per read** | **12x smaller** post reads (35.9k → 2.9k chars); open comments **~120k tokens → 290 chars** |
+| **Startup memory footprint** | **22 workstreams + 31 waiting items** injected in **6.6k chars** (instead of 1.3 MB of docs) |
 
 ---
 
 ## Quick Start
 
-After installing into your project (e.g. `Harmonize`), open any terminal and type one word:
+**Starting fresh (works in `agy`, Claude Code Web, Codex, Cursor, or LMArena):**
+Open an AI session in your project and paste this single link — the agent auto-detects your environment, runs Step 0 to see what your project needs, and installs only the layers that pay for themselves:
 
-```bash
-harmonize
+```text
+https://github.com/anlonlt/board/blob/agy-local/README.md
 ```
 
-It starts the board server (seeding from `board-mirror` if needed), prints your local and phone links, and launches an unattended orchestrator + clerk session. Pass `harmonize --hybrid` to pair with a cloud Artifact over git (`git_watch.py`).
+**Already installed:**
+- **Local (`agy`):** open any terminal and type your project's one-word command (e.g. `harmonize`; add `--hybrid` to bridge with a cloud Artifact).
+- **Claude Code Web:** open your project's `claude.ai` Artifact board link.
+- **Chat-only (no repo):** start with `step0/survey-chat.md`.
+
+---
+
+## Security & Privacy
+
+- **Private by default:** your live board runs in local SQLite (or your private `claude.ai` Artifact) and backs up only to your own private Git repository. Zero third-party telemetry or hosting.
+- **Treat invite links as credentials:** `/_invite/<token>.md` and `/?token=` grant board access. Never paste them into public GitHub issues or chats. In Claude Code Web, store the token once as an environment secret (`request_credential`, header `X-Kit-Token`) and use the `proxy` placeholder.
+- **Artifact mirror visibility:** `kit_artifact_sync.py docs` copies your project's docs and memory into the Artifact DB, so anyone you share that Artifact with can read them.
+- **Per-viewer MCP permissions:** the MCP Link Reader always calls connectors using **each viewer's own account** — viewers only see SharePoint files, Gmail threads, or Drive docs they already have access to.
 
 ---
 
 ## Install
 
 > [!TIP]
-> **Universal one-line install (works on `agy`, Claude Code Web, LMArena / E2B, Codex, Cursor, and any coding agent):**
-> Open a session in your project repository and paste this direct link (no extra instructions needed):
-> ```text
-> https://github.com/anlonlt/board/blob/agy-local/README.md
-> ```
-> **For the agent reading this page:** auto-detect which environment you are running in and follow the matching install section below:
-> - **Antigravity (`agy`) on a local computer:** follow **Install (`agy` — default)** right below.
-> - **Claude Code Web (`claude.ai/code` with Artifacts):** follow **Install (Claude Code Web — `--runtime claude`)** below.
-> - **LMArena / E2B / sandboxed preview iframe / Codex / Cursor / generic CLI agent:** follow **Install (LMArena / Sandbox / Generic Agent — `--runtime arena`)** below (skips the Step-0 survey in sandbox demos, enables `--preview --embed-mode`, auto-bootstraps `_orchestrator` + watcher, and uses `inbox` / `reply` + the 30-min live listener).
+> **For the agent reading this page:** auto-detect which environment you are running in and follow the matching collapsible install section below:
+> - **Antigravity (`agy`) on a local computer:** follow **Install (`agy` — default)**.
+> - **Claude Code Web (`claude.ai/code` with Artifacts):** follow **Install (Claude Code Web — `--runtime claude`)**.
+> - **LMArena / E2B / sandboxed preview iframe / Codex / Cursor / generic CLI agent:** follow **Install (LMArena / Sandbox / Generic Agent — `--runtime arena`)**.
+
+<details>
+<summary><strong>Install (<code>agy</code> / Local — default)</strong></summary>
 
 The hooks' "end your turn with `·`" reminder is about chat turns: your step reports go in the post.
 Steps marked **YOU** need a person; the agent prints each one with its direct link when it gets there. Everything else runs automatically.
@@ -158,7 +173,7 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
      --talk "<language>" \
      --survey survey/<date>/report.md
    ```
-   Optional flags: `--cmd <one-word-command>` (default: project slug, installed to `~/.local/bin/<cmd>`), `--memory-dir <path>` (default: `.story` if present, else `.board/memory`), `--board-port 8765`, `--runtime agy|claude|both`, `--mode local|hybrid`, and partial flags (`--no-board`, `--no-clerk`, `--no-orchestrator`).
+   Optional flags: `--cmd <one-word-command>` (default: project slug, installed to `~/.local/bin/<cmd>`), `--memory-dir <path>` (default: `.story` if present, else `.board/memory`), `--board-port 8765`, `--runtime agy|claude|both`, `--mode local|hybrid`, `--attach <name=path>`, and partial flags (`--no-board`, `--no-clerk`, `--no-orchestrator`).
    It never deletes and never replaces a file it did not write (`KEPT` lists what it left alone). Existing hook configs are preserved and merged cleanly.
    Check: `python3 -I .agents/hooks/kit/test_hooks.py` ends `0 failed`.
    **Ask the owner once:** *"Every session ends by merging its work onto `<main branch>` and pushing it, never forced (a conflict stops it). Do you give that standing permission?"* Yes: rerun with `--trunk-push yes`. No: sessions push only their own branch. Either way each session ends with `python3 -I .kit/end_session.py`.
@@ -180,19 +195,21 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
 5. **Start the orchestrator and the clerk** (only those installed):
    - Launch the clerk via `invoke_subagent(TypeName="self", Role="Board Clerk", Model="flash_lite", Workspace="inherit", Prompt=<text of .kit/clerk.md>)`. It registers `comments watch --on`, listens in the background with `board_cli.py comments wait`, and notifies the orchestrator.
    - Run the orchestrator with `.kit/orchestrator.md`: it writes its conversation ID into `_orchestrator`, builds "Where we are" via `kit-cards`, and posts its welcome under `_orchestrator` (including the one-word launch command, phone links, and unattended mode).
-6. **YOU, the first comment:** open your phone or local board URL, open `KIT-installed`, write `"test"` and tap **Send comment**. The clerk wakes immediately, passes it to this session via `send_message`, marks it "✓ Seen" and replies "Passed to …". Answer it under the post (`board_cli.py set comments ...`).
+6. **YOU, the first comment:** open your phone or local board URL, open `KIT-installed`, write `"test"` and tap **Send comment**. The clerk wakes immediately, passes it to this session via `send_message`, marks it "Seen" and replies "Passed to ...". Answer it under the post (`board_cli.py set comments ...`).
 7. **The board's copy in git** (`.kit/ORCHESTRATOR.md` § 3):
    `python3 -I .kit/kit.py init`; `T0=$(date -u +%Y-%m-%dT%H:%M:%SZ)`; `python3 -I .kit/board_cli.py list posts --out-dir /tmp/kd`; `python3 -I .kit/board_cli.py list comments --out-dir /tmp/kd`; `python3 -I .kit/kit.py sync /tmp/kd --at "$T0" --full --commit`; `python3 -I .kit/kit.py post KIT-installed`; `python3 -I .kit/kit.py push`.
    *(Omitting `--limit` fetches every post and comment without truncating boards over 1,000 comments; pass `--limit N --all` to paginate explicitly.)*
 8. **Report**, then end the setup: `python3 -I /tmp/board-kit/install.py . --setup-done`, commit, push. Update `KIT-installed` (`board_cli.py update`) with each step's outcome.
 9. **Tell the person what now**, in their language (`language.talk`): their one-word terminal command (e.g. `harmonize`), their phone & local board URLs, what runners are ready, and how to import existing history.
 
+</details>
+
 <details>
-<summary><strong>Install (Claude Code Web only — <code>--runtime claude</code>)</strong></summary>
+<summary><strong>Install (Claude Code Web — <code>--runtime claude</code>)</strong></summary>
 
 Open a Claude Code Web session on **your** repository (`https://claude.ai/code`) and run:
 
-0. **Step 0 first:** run `step0/survey-code.md` or `step0/survey-chat.md` and show the report to the owner.
+0. **Step 0 first:** run `step0/survey-code.md` or `step0/survey-chat.md` and show the report to the owner. Step 0 also scans for external connectors (SharePoint, Gmail, Google Drive, Outlook, Notion, Linear) and prints the matching `capabilities.mcp` snippet.
 1. **Get the kit (pin a reviewed commit or tag):** `git clone https://github.com/anlonlt/board /tmp/board-kit && git -C /tmp/board-kit checkout <reviewed-commit-sha-or-tag>`
 2. **Install with `--runtime claude`:**
    ```bash
@@ -202,14 +219,13 @@ Open a Claude Code Web session on **your** repository (`https://claude.ai/code`)
      --talk "<language>" \
      --survey survey/<date>/report.md
    ```
-   Installs `.claude/hooks/kit/*`, `.claude/settings.json`, `.claude/skills/*`, `.claude/agents/kit-cards.md`, and native Claude Code Web templates (`ArtifactData`, `ArtifactComments`, `create_session`, `archive_session`). Check: `python3 -I .claude/hooks/kit/test_hooks.py` ends `0 failed`.
+   Installs `.claude/hooks/kit/*` (including `kit_cards_reminder.py`), `.claude/settings.json`, `.claude/skills/*`, `.claude/agents/kit-cards.md`, `.kit/kit_artifact_sync.py`, and native Claude Code Web templates (`ArtifactData`, `ArtifactComments`, `create_session`, `archive_session`). Pass `--mcp-readers sharepoint,gmail,...` (or `none`) to override Step 0's auto-detected MCP Link Readers. Check: `python3 -I .claude/hooks/kit/test_hooks.py` ends `0 failed`.
 3. **Translate & publish the board Artifact:**
    - Optional translation: `python3 -I .kit/strings.py template .kit/strings.json`, fill in translations, rerun step 2.
-   - Publish `.kit/board.html` via `Artifact` `publish` (`icon: "board"`, `capabilities: {"assets": {}, "comments": {}, "db": {}, "user": {}, "downloads": true}`). If Step 0 detected external connectors (SharePoint, Gmail, Google Drive, Notion, Linear, Outlook), include the `capabilities.mcp` snippet printed by Step 0 / `install.py` (or pass `--mcp-readers sharepoint,gmail,...` to `install.py`).
+   - Publish `.kit/board.html` via `Artifact` `publish` (`icon: "board"`, `capabilities: {"assets": {}, "comments": {}, "db": {}, "user": {}, "downloads": true}`). If Step 0 / `install.py` detected MCP Link Readers, include the `mcp` entry it printed inside `capabilities`.
    - Rerun step 2 with `--board-url <artifact-url>`, then stop this session's watch (`ArtifactComments` `watch` with `on: false`).
-   - That rerun builds the Artifact page: `install.py` adds the board server's UI layer (Repo Docs reader, windows, viewer, deliverables, collaborators, git diffs) wrapped by `kit/claude/artifact_adapter.js`, plus the pluggable MCP Link Reader in `kit/claude/artifact_ui.js` (opens matching SharePoint/Gmail/Drive/Notion/Linear links in an OS-style reader window using the viewer's own connector, without double-opening a browser tab). **Publish `.kit/board.html` again** (same url, no `capabilities` unless updating `mcp`). Check it offline first: `KIT_PAGE=.kit/board.html node /tmp/board-kit/kit/claude/test_artifact_page.js` ends with `"errors": []`.
-   - Feed the Repo Docs reader and inline diffs: `python3 -I .kit/kit_artifact_sync.py docs --kit /tmp/board-kit --repo . --out /tmp/kas` and send each `batch-*.json` it prints with `ArtifactData` `batch` (pictures: upload `images.txt` with `Artifact` `publish` `asset: true`, then `assets`). Again after each docs change and with `diffs --posts <kit.py sync dir>`.
-   - What has no Artifact equivalent: anonymous 24 h token links (`/_share`), offline outbox, the always-on server and its one-word launcher, live multi-repo federation. "Link for AI" copies the post's deep link and an ArtifactData brief instead; collaborators are claude.ai accounts the owner invites from the Artifact's Share menu (the panel keeps the list in `kit_users`).
+   - That rerun builds the full Artifact page (`kit/claude/build_artifact_page.py` injects the UI layer, `artifact_adapter.js`, and the pluggable MCP Link Reader in `artifact_ui.js`). **Publish `.kit/board.html` a second time** (same url, no `capabilities` unless updating `mcp`). Check it offline first: `KIT_PAGE=.kit/board.html node /tmp/board-kit/kit/claude/test_artifact_page.js` ends with `"errors": []`.
+   - Feed the Repo Docs reader and inline diffs: `python3 -I .kit/kit_artifact_sync.py docs --kit /tmp/board-kit --repo . --out /tmp/kas` and send each `batch-*.json` it prints with `ArtifactData` `batch` (pictures: upload `images.txt` with `Artifact` `publish` `asset: true`, then `assets`). Run again after docs changes and with `diffs --posts <kit.py sync dir>`.
    - Commit `.kit .claude <memory_dir> .gitignore` and push.
 4. **Post `_orchestrator` and `KIT-installed`** via `ArtifactData` `batch` (`.kit/BOARD.md` § Post).
 5. **Start the orchestrator, then the clerk** via `create_session` using `.kit/orchestrator.md` and `.kit/clerk.md` (with models/effort from `.kit/config.json` `kit.roles`).
@@ -235,61 +251,105 @@ For **LMArena (Agent Mode)**, **E2B / Codespaces preview iframes**, **Codex**, *
      --no-survey "sandbox/arena runtime install" \
      --setup-done
    ```
-   *(Pass `--demo` on a blank demo repo to populate sample `.board/memory/`, 4-lane cards, `_dashboard`, and `_trains`. Use `--runtime generic` if running locally outside a preview iframe.)*
+   *(Use `--runtime generic` if running locally outside a preview iframe.)*
 3. **Start the board server in sandbox preview + embedded mode:**
    ```bash
    python3 -I .kit/board_server.py --host 0.0.0.0 --port 8765 --preview --embed-mode
    ```
-   - `--preview`: allows `0.0.0.0` without `--token` behind a trusted sandbox reverse proxy, auto-seeds `posts/_orchestrator` on an empty DB, and auto-registers the default watcher (so comments never stall on `no_session`).
-   - `--embed-mode`: enables cookie-independent `X-Kit-Token` unlock, 5-second visibility-aware polling, and iframe-aware **Share** fallback (Copy Markdown modal + `GET /_api/export`).
+   - `--preview`: allows `0.0.0.0` without `--token` behind a trusted sandbox reverse proxy, auto-seeds `posts/_orchestrator` on an empty DB, and auto-registers the default watcher.
+   - `--embed-mode`: enables cookie-independent `X-Kit-Token` unlock, 5-second visibility-aware polling, and iframe-aware **Share** fallback.
    - *(Outside a trusted sandbox — e.g. on LAN/Tailscale — omit `--preview` and pass `--token <secret>`.)*
-4. **Post the idempotent runtime welcome once** (explains the universal board workflow + Arena's exact capabilities & limits under `_orchestrator` as `welcome-arena-1`), **then immediately arm the 30-minute live listener** so the owner can start commenting on the board right away without sending `.` in chat:
+4. **Post the idempotent runtime welcome once, then arm the 30-minute live listener:**
    ```bash
    python3 -I .kit/kit.py welcome --runtime arena --post
    python3 -I .kit/board_cli.py comments wait --timeout 1750
    ```
-5. **Operate the board (one-command inbox + reply + re-arm listener loop):**
-   - Whenever `comments wait` wakes with a comment (or the owner sends `.` in chat), check unread owner comments, 👍 likes, and one-tap answers in one call:
-     ```bash
-     python3 -I .kit/board_cli.py inbox
-     ```
-   - Reply in-thread (marks the owner's comment `read: true`, acks its thread, and posts with `reply_to`):
-     ```bash
-     python3 -I .kit/board_cli.py reply <post_id> --comment-id <owner_comment_id> --text "..."
-     ```
-   - **Always re-arm the ~30-minute listener** right after replying (`python3 -I .kit/board_cli.py comments wait --timeout 1750`, inside Arena's 1800 s bash cap) unless the owner tells you to stop. Once a wait times out and the turn ends, there is no 0-token background wake across turn boundaries — the owner sends `.` in chat to start the next turn.
-   - **Warm Git handoff (when a Git `origin` remote is configured):** run `python3 -I .kit/kit.py receive` before starting and `python3 -I .kit/kit.py publish` when done (atomic batch apply + monotonic `board-seen` merge + conflict rollback). Without remote push credentials, use the board's **Share** button (Copy Markdown / `/_api/export`) or export a git patch/zip.
+5. **Operate the board (inbox + reply + re-arm listener loop):**
+   ```bash
+   python3 -I .kit/board_cli.py inbox
+   python3 -I .kit/board_cli.py reply <post_id> --comment-id <owner_comment_id> --text "..."
+   python3 -I .kit/board_cli.py comments wait --timeout 1750
+   ```
+   - **Warm Git handoff (when `origin` is configured):** `python3 -I .kit/kit.py receive` before starting and `python3 -I .kit/kit.py publish` when done.
 
 </details>
 
 ---
 
-## Runners
+## Deeper Reference
 
-Not all work lives in code. Each project's `<memory_dir>/state/<project>.md` (`.board/memory/` by default, or `.story/` if present) says where it runs (`Runs in:`), and the orchestrator routes each step to the right runner:
+<details>
+<summary><strong>Architecture, Trains & Runners</strong></summary>
+
+```mermaid
+flowchart LR
+    UI["Phone / Browser<br/>board.html (live UI)"] <-->|"Live sync · comments · blobs"| Inbox["Live Board Inbox<br/>posts · comments · typing"]
+    Inbox -->|"Reactive wake (0 tokens idle)"| Clerk["Board Clerk<br/>(lightweight forwarder)"]
+    Clerk -->|"verbatim message"| Orch["Orchestrator<br/>(auto hand-over)"]
+    Clerk -->|"verbatim message"| Parts["Working Sessions<br/>(isolated branches / worktrees)"]
+    Orch -->|"launch & coordinate"| Parts
+    Orch -->|"kit-cards subagent"| Inbox
+    Orch -->|"route-setting Done"| Cons["Consultant<br/>(independent review)"]
+    Inbox -->|"kit.py sync"| Git[("Your Private Git Repo<br/>.board/memory/ (or .story/) · board-mirror")]
+    Git -.->|"git_watch.py / --seed-from-mirror"| Inbox
+```
+
+### How Trains & "Where we are" Work
+Each row in **Where we are** takes its steps from the workstream's state file (`## Steps`). If a state file has no `## Steps` section, `kit_cards.py` automatically derives the sequence from the workstream's **train** on the board — posts carrying `train: "<workstream>"` (and `parent: "<part>"` when continuing another), ordered done first, then open, then `Next:`.
+
+### Runners (Code, Cloud, Browser & Human Work)
+Each workstream's state file declares `Runs in:` so the orchestrator routes each step to the right place:
 
 | Kind | What it reaches | How a step gets there |
 |---|---|---|
 | `computer` | Local files, apps, browsers, local servers, VPN/intranet | Runs directly on your computer (or pulled via `.kit/runner.md` / `git_watch.py`) |
 | `cloud` | GitHub repo, web, cloud connectors & secrets | Cloud session (`create_session`) |
-| `chat` | Microsoft 365, Google, Slack connectors, Projects | A `todo` card with `runner: "<name>"` |
-| `owner` | Phone, ears, signature, money, login | A `todo` or `question` card with one-tap answers |
+| `chat` | Microsoft 365, Google, Slack connectors, browser agents | A `todo` card with `runner: "<name>"` |
+| `owner` | Phone, signature, approval, login | A `todo` or `question` card with one-tap answers |
 | `scheduled` | Periodic drafts, nightly checks | Recurring `schedule` / cron task |
 
----
+### Durability & Backup Cadence
+- **Live store (local SQLite):** `.kit/board_data/board.db` and blobs in `.kit/board_data/blobs/` (gitignored) power instant reads, writes, and SSE updates.
+- **Git mirror (`board-mirror`):** updated on `kit.py sync` + `kit.py push` at milestones, handovers, and session end. On a new machine or after DB loss, `--seed-from-mirror` restores the live DB.
+- **Committed memory (`.board/memory/`, or `.story/`):** committed directly to your project branch at every save point.
+
+</details>
 
 <details>
-<summary><strong>Import existing project or chat history</strong></summary>
+<summary><strong>Power-User CLI, Hooks, Scripts & Test Suite</strong></summary>
 
-- **Existing code repository:** run `step0/import-code.md` (rebuilds `state/*.md` and `awaits.md` in your memory directory — `.board/memory/` or `.story/` — from repo docs and session history; pass `--no-posts` without a board).
+| Script / Hook | Purpose |
+|---|---|
+| `kit/board/board_server.py` | Local HTTP + SSE + SQLite + `/_blob/` + multi-repo portfolio + board-scoped collaborators |
+| `kit/board/board_cli.py` | CLI for posts, comments, watch/wait/reply, inbox, batch writes, shares, and blob assets (`KIT_BOARD_REPO` supported) |
+| `kit/board/mcp_stdio.py` | Zero-dependency stdio MCP server exposing board tools to any MCP client |
+| `scripts/kit.py` | Git mirror (`board-mirror`) + compact lookups (`post`, `open`, `since`, `session`, `search`, `queue`, `train --zoom`, `report`, `portfolio`, `receive`, `publish`) |
+| `kit/hooks/kit_guard.py` | `PreToolUse` safety guard (blocks `rm -rf` outside `/tmp`, `git reset --hard`, force pushes, staging secrets) |
+| `kit/hooks/kit_stop.py` + `kit/end_session.py` | Prevents exiting with uncommitted/unpushed work; merges cleanly without force |
+| `kit/hooks/kit_say_it_once.py` | Keeps full reports on the board and trims chat chatter to short pointers (`·`) |
+| `kit/hooks/kit_cards_reminder.py` | Reminds the Claude Code Web orchestrator to run `kit-cards` on Done, P1, multi-step trains, or launches |
+| `kit/claude/kit_artifact_sync.py` | Mirrors repo docs (256 KiB cap), images, and commit diffs into `kit_docs/*` and `kit_git/*` for Artifacts |
+| `scripts/step0_scan.py` | Cross-platform Step 0 profiler (autonomy metrics, palettes, projects, and MCP Link Reader detection) |
+
+Run the unified regression suite (`python3 scripts/run_all_tests.py`):
+```bash
+python3 scripts/run_all_tests.py
+```
+
+</details>
+
+<details>
+<summary><strong>Import Existing Project or Chat History</strong></summary>
+
+- **Existing code repository:** run `step0/import-code.md` (rebuilds `state/*.md` and `awaits.md` from repo docs and session history; pass `--no-posts` without a board).
 - **Chat history:** paste `step0/export-chat.md` into a new chat to summarize past conversations into one private artifact, then run `python3 -I .kit/kit_import.py <file> --session <orchestrator id>`.
 
 </details>
 
 <details>
-<summary><strong>Updating an existing installation</strong></summary>
+<summary><strong>Updating an Existing Installation</strong></summary>
 
-Fetch updates, review the incoming diff, and check out a pinned commit SHA or tag (rather than blindly pulling a mutable branch):
+Fetch updates, review the incoming diff, and check out a pinned commit SHA or tag:
 ```bash
 git -C /tmp/board-kit fetch origin
 git -C /tmp/board-kit log --oneline HEAD..origin/agy-local
@@ -299,27 +359,6 @@ python3 -I /tmp/board-kit/install.py .
 - Keeps `.kit/config.json` and every file you customized (`KEPT` lists them).
 - Updates untouched kit files and merges any new hooks cleanly.
 - `.kit/manifest.json` (`_kit_commit`) records the exact kit commit installed.
-
-</details>
-
-<details>
-<summary><strong>Scripts & Test Suite (Python 3 stdlib, zero dependencies)</strong></summary>
-
-| Script | Purpose |
-|---|---|
-| `kit/board/board_server.py` | Local HTTP + SSE + SQLite + `/_blob/` board server with `--seed-from-mirror` failover |
-| `kit/board/board_cli.py` | CLI for posts, comments, watch/wait/reply, batch writes, and blob assets |
-| `kit/git_watch.py` | Lightweight `git ls-remote` listener for git-bridged hybrid mode |
-| `kit/up` | One-command launcher (installed as `~/.local/bin/<cmd>`) |
-| `scripts/kit.py` | Git mirror (`board-mirror`) + compact lookups (`post`, `open`, `since`, `session`, `diff`, `reads`) |
-| `scripts/what_fills.py` | Measures what fills a session's context window by source |
-| `scripts/mirror_holes.py` | Audits a board dump for fields written later without stamps |
-| `scripts/token_probe.py` | Measures exact token cost of a read from transcript usage |
-
-Run the unified regression suite (`python3 scripts/run_all_tests.py` — 6 suites / 154+ checks, 0 failures):
-```bash
-python3 scripts/run_all_tests.py
-```
 
 </details>
 

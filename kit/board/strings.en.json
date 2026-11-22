@@ -12,6 +12,10 @@
   "kind": "html"
  },
  {
+  "en": "Import",
+  "kind": "html"
+ },
+ {
   "en": "Connecting to the board...",
   "kind": "html"
  },
@@ -37,6 +41,10 @@
  },
  {
   "en": "0 selected",
+  "kind": "html"
+ },
+ {
+  "en": "Approve selected",
   "kind": "html"
  },
  {
@@ -116,7 +124,15 @@
   "kind": "attr"
  },
  {
+  "en": "Filter by runner",
+  "kind": "attr"
+ },
+ {
   "en": "Order of the posts",
+  "kind": "attr"
+ },
+ {
+  "en": "Import a Markdown or JSON card",
   "kind": "attr"
  },
  {
@@ -125,6 +141,18 @@
  },
  {
   "en": "Save this post and its comments as a Markdown file",
+  "kind": "attr"
+ },
+ {
+  "en": "Link for AI (mint scoped 24h link)",
+  "kind": "attr"
+ },
+ {
+  "en": "Link for AI",
+  "kind": "attr"
+ },
+ {
+  "en": "Snooze 24h",
   "kind": "attr"
  },
  {
@@ -144,7 +172,35 @@
   "kind": "attr"
  },
  {
+  "en": "Action",
+  "kind": "js"
+ },
+ {
+  "en": "var(--todo)",
+  "kind": "js"
+ },
+ {
+  "en": "Decisions",
+  "kind": "js"
+ },
+ {
+  "en": "var(--question)",
+  "kind": "js"
+ },
+ {
+  "en": "Updates",
+  "kind": "js"
+ },
+ {
+  "en": "var(--info)",
+  "kind": "js"
+ },
+ {
   "en": "Done",
+  "kind": "js"
+ },
+ {
+  "en": "var(--done)",
   "kind": "js"
  },
  {
@@ -156,7 +212,43 @@
   "kind": "js"
  },
  {
+  "en": "for:",
+  "kind": "js"
+ },
+ {
+  "en": "2-digit",
+  "kind": "js"
+ },
+ {
+  "en": "/_blob/",
+  "kind": "js"
+ },
+ {
+  "en": "https://",
+  "kind": "js"
+ },
+ {
+  "en": "http://",
+  "kind": "js"
+ },
+ {
+  "en": "data:",
+  "kind": "js"
+ },
+ {
+  "en": "/_api/repo-asset",
+  "kind": "js"
+ },
+ {
+  "en": "comments/",
+  "kind": "js"
+ },
+ {
   "en": "A session",
+  "kind": "js"
+ },
+ {
+  "en": "All roles",
   "kind": "js"
  },
  {
@@ -268,6 +360,10 @@
   "kind": "js"
  },
  {
+  "en": "posts/",
+  "kind": "js"
+ },
+ {
   "en": "Moved to Done.",
   "kind": "js"
  },
@@ -276,11 +372,51 @@
   "kind": "js"
  },
  {
+  "en": "Approve ",
+  "kind": "js"
+ },
+ {
+  "en": " selected post(s)?\n\n",
+  "kind": "js"
+ },
+ {
+  "en": "application/json",
+  "kind": "js"
+ },
+ {
+  "en": "X-Kit-Token",
+  "kind": "js"
+ },
+ {
+  "en": "/_api/shares",
+  "kind": "js"
+ },
+ {
+  "en": "POST",
+  "kind": "js"
+ },
+ {
+  "en": "HTTP ",
+  "kind": "js"
+ },
+ {
+  "en": "Scoped 24h link for external AI (copied if allowed):",
+  "kind": "js"
+ },
+ {
+  "en": "Could not create share link.",
+  "kind": "js"
+ },
+ {
   "en": "New since you last opened it",
   "kind": "js"
  },
  {
   "en": "(untitled)",
+  "kind": "js"
+ },
+ {
+  "en": "Unanswered for more than 24 hours",
   "kind": "js"
  },
  {
@@ -328,7 +464,19 @@
   "kind": "js"
  },
  {
+  "en": "  [attached: ",
+  "kind": "js"
+ },
+ {
+  "en": " at /_blob/",
+  "kind": "js"
+ },
+ {
   "en": " posts\n*Exported ",
+  "kind": "js"
+ },
+ {
+  "en": "-posts-",
   "kind": "js"
  },
  {
@@ -356,7 +504,19 @@
   "kind": "js"
  },
  {
+  "en": ", no words.",
+  "kind": "js"
+ },
+ {
+  "en": "board-draft:",
+  "kind": "js"
+ },
+ {
   "en": "Your unsent draft is back.",
+  "kind": "js"
+ },
+ {
+  "en": "] image ",
   "kind": "js"
  },
  {
@@ -365,6 +525,10 @@
  },
  {
   "en": "← Discussions",
+  "kind": "js"
+ },
+ {
+  "en": "Close",
   "kind": "js"
  },
  {
@@ -432,6 +596,14 @@
   "kind": "js"
  },
  {
+  "en": "groups:",
+  "kind": "js"
+ },
+ {
+  "en": "gallery:3",
+  "kind": "js"
+ },
+ {
   "en": "Pictures ",
   "kind": "js"
  },
@@ -472,11 +644,11 @@
   "kind": "js"
  },
  {
-  "en": "Sent to the agent",
+  "en": "✓ Seen",
   "kind": "js"
  },
  {
-  "en": "✓ Seen",
+  "en": "Sent to the agent",
   "kind": "js"
  },
  {
@@ -500,7 +672,27 @@
   "kind": "js"
  },
  {
+  "en": "👍 Like on the comment of ",
+  "kind": "js"
+ },
+ {
+  "en": "»): he agrees, no words.",
+  "kind": "js"
+ },
+ {
+  "en": "Export as Markdown",
+  "kind": "js"
+ },
+ {
   "en": "No discussion yet.",
+  "kind": "js"
+ },
+ {
+  "en": "annotated.png",
+  "kind": "js"
+ },
+ {
+  "en": "image/png",
   "kind": "js"
  },
  {
@@ -560,6 +752,14 @@
   "kind": "js"
  },
  {
+  "en": "[post ",
+  "kind": "js"
+ },
+ {
+  "en": "[image ",
+  "kind": "js"
+ },
+ {
   "en": "sending to Claude is not available in this view",
   "kind": "js"
  },
@@ -576,6 +776,10 @@
   "kind": "js"
  },
  {
+  "en": "_blank",
+  "kind": "js"
+ },
+ {
   "en": "Replying to ",
   "kind": "js"
  },
@@ -588,11 +792,31 @@
   "kind": "js"
  },
  {
+  "en": "(see the attached file)",
+  "kind": "js"
+ },
+ {
   "en": "The board's storage is not available in this view.",
   "kind": "js"
  },
  {
   "en": "Sending...",
+  "kind": "js"
+ },
+ {
+  "en": "(in reply to the comment ",
+  "kind": "js"
+ },
+ {
+  "en": "[discussion ",
+  "kind": "js"
+ },
+ {
+  "en": "\n[attached: ",
+  "kind": "js"
+ },
+ {
+  "en": ") at /_blob/",
   "kind": "js"
  },
  {
@@ -608,6 +832,10 @@
   "kind": "js"
  },
  {
+  "en": "(hover: hover) and (pointer: fine)",
+  "kind": "js"
+ },
+ {
   "en": "The board can't be reached yet.",
   "kind": "js"
  },
@@ -617,6 +845,14 @@
  },
  {
   "en": "Sign in on claude.ai to see the board.",
+  "kind": "js"
+ },
+ {
+  "en": "data/users/",
+  "kind": "js"
+ },
+ {
+  "en": "/board-seen",
   "kind": "js"
  },
  {
@@ -632,11 +868,199 @@
   "kind": "js"
  },
  {
+  "en": "Ask the orchestrator",
+  "kind": "js"
+ },
+ {
+  "en": "All trains",
+  "kind": "js"
+ },
+ {
+  "en": "View train as tasklist",
+  "kind": "js"
+ },
+ {
+  "en": "Comment on train ",
+  "kind": "js"
+ },
+ {
+  "en": "Re train `",
+  "kind": "js"
+ },
+ {
+  "en": "var(--muted)",
+  "kind": "js"
+ },
+ {
+  "en": "Waiting on you",
+  "kind": "js"
+ },
+ {
+  "en": "Running",
+  "kind": "js"
+ },
+ {
+  "en": "Ready / Default",
+  "kind": "js"
+ },
+ {
+  "en": "Queued / Idle",
+  "kind": "js"
+ },
+ {
+  "en": "var(--",
+  "kind": "js"
+ },
+ {
+  "en": "--st-c",
+  "kind": "js"
+ },
+ {
+  "en": "Reopen step",
+  "kind": "js"
+ },
+ {
+  "en": "Mark step Done",
+  "kind": "js"
+ },
+ {
+  "en": "No summary yet.",
+  "kind": "js"
+ },
+ {
+  "en": "Status",
+  "kind": "js"
+ },
+ {
+  "en": " · after ",
+  "kind": "js"
+ },
+ {
+  "en": "Verdict",
+  "kind": "js"
+ },
+ {
+  "en": "Open ",
+  "kind": "js"
+ },
+ {
+  "en": " in Viewer",
+  "kind": "js"
+ },
+ {
+  "en": "Artifacts",
+  "kind": "js"
+ },
+ {
+  "en": "None linked",
+  "kind": "js"
+ },
+ {
+  "en": "None recorded",
+  "kind": "js"
+ },
+ {
+  "en": "Bars",
+  "kind": "js"
+ },
+ {
+  "en": "No open issues",
+  "kind": "js"
+ },
+ {
+  "en": "Issues",
+  "kind": "js"
+ },
+ {
+  "en": "Mark Done",
+  "kind": "js"
+ },
+ {
+  "en": "Comment on ",
+  "kind": "js"
+ },
+ {
+  "en": "Re `",
+  "kind": "js"
+ },
+ {
+  "en": "Open post in window",
+  "kind": "js"
+ },
+ {
   "en": "Forked from ",
   "kind": "js"
  },
  {
   "en": "Branched from ",
+  "kind": "js"
+ },
+ {
+  "en": "Checks (",
+  "kind": "js"
+ },
+ {
+  "en": "👍 Like: he approves this post, no words.",
+  "kind": "js"
+ },
+ {
+  "en": "button, a, textarea, input",
+  "kind": "js"
+ },
+ {
+  "en": "a, button, summary, details, input, textarea",
+  "kind": "js"
+ },
+ {
+  "en": "Write a comment",
+  "kind": "js"
+ },
+ {
+  "en": "application/octet-stream",
+  "kind": "js"
+ },
+ {
+  "en": "Attach a picture or a file",
+  "kind": "js"
+ },
+ {
+  "en": "Send comment",
+  "kind": "js"
+ },
+ {
+  "en": "transform .42s cubic-bezier(.22, .85, .32, 1), opacity .42s ease",
+  "kind": "js"
+ },
+ {
+  "en": "translateX(",
+  "kind": "js"
+ },
+ {
+  "en": ") rotate(",
+  "kind": "js"
+ },
+ {
+  "en": "7deg",
+  "kind": "js"
+ },
+ {
+  "en": "-7deg",
+  "kind": "js"
+ },
+ {
+  "en": "✓ Done",
+  "kind": "js"
+ },
+ {
+  "en": "button, textarea, input, summary, a",
+  "kind": "js"
+ },
+ {
+  "en": "deg)",
+  "kind": "js"
+ },
+ {
+  "en": "transform .22s ease, opacity .22s ease",
   "kind": "js"
  },
  {
@@ -648,11 +1072,19 @@
   "kind": "js"
  },
  {
-  "en": "Ask the orchestrator",
+  "en": "header.top h1",
   "kind": "js"
  },
  {
-  "en": "Close",
+  "en": "board-title:",
+  "kind": "js"
+ },
+ {
+  "en": "posts/_board_meta",
+  "kind": "js"
+ },
+ {
+  "en": "post/",
   "kind": "js"
  },
  {
@@ -672,155 +1104,11 @@
   "kind": "js"
  },
  {
-  "en": "Checks (",
-  "kind": "js"
- },
- {
-  "en": "Action",
-  "kind": "js"
- },
- {
-  "en": "Decisions",
-  "kind": "js"
- },
- {
-  "en": "Updates",
-  "kind": "js"
- },
- {
-  "en": "Write a comment",
-  "kind": "js"
- },
- {
-  "en": "Attach a picture or a file",
-  "kind": "js"
- },
- {
-  "en": "Send comment",
-  "kind": "js"
- },
- {
-  "en": "✓ Done",
-  "kind": "js"
- },
- {
-  "en": "Export as Markdown",
-  "kind": "js"
- },
- {
-  "en": "All trains",
+  "en": "header.top",
   "kind": "js"
  },
  {
   "en": "Cancel",
-  "kind": "js"
- },
- {
-  "en": "Filter by runner",
-  "kind": "attr"
- },
- {
-  "en": "for:",
-  "kind": "js"
- },
- {
-  "en": "All roles",
-  "kind": "js"
- },
- {
-  "en": "post/",
-  "kind": "js"
- },
- {
-  "en": "Approve selected",
-  "kind": "html"
- },
- {
-  "en": "Approve ",
-  "kind": "js"
- },
- {
-  "en": " selected post(s)?\n\n",
-  "kind": "js"
- },
- {
-  "en": "Unanswered for more than 24 hours",
-  "kind": "js"
- },
- {
-  "en": "Snooze 24h",
-  "kind": "html"
- },
- {
-  "en": "Hide this post for 24 hours",
-  "kind": "attr"
- },
- {
-  "en": "Import",
-  "kind": "html"
- },
- {
-  "en": "Link for AI",
-  "kind": "html"
- },
- {
-  "en": "Import a Markdown or JSON card",
-  "kind": "attr"
- },
- {
-  "en": "Mint a scoped link for an external AI (LMArena, etc.)",
-  "kind": "attr"
- },
- {
-  "en": "application/json",
-  "kind": "js"
- },
- {
-  "en": "X-Kit-Token",
-  "kind": "js"
- },
- {
-  "en": "/_api/shares",
-  "kind": "js"
- },
- {
-  "en": "POST",
-  "kind": "js"
- },
- {
-  "en": "HTTP ",
-  "kind": "js"
- },
- {
-  "en": "Scoped 24h link for external AI (copied if allowed):",
-  "kind": "js"
- },
- {
-  "en": "Could not create share link.",
-  "kind": "js"
- },
- {
-  "en": "board-title:",
-  "kind": "js"
- },
- {
-  "en": "View train as tasklist",
-  "kind": "js"
- },
- {
-  "en": " · Tasklist (",
-  "kind": "js"
- },
- {
-  "en": "artifacts: ",
-  "kind": "js"
- },
- {
-  "en": "bars: ",
-  "kind": "js"
- },
- {
-  "en": "issues: ",
   "kind": "js"
  }
 ]
