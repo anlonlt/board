@@ -807,6 +807,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
 .cmt .cmt-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 .cmt .deliv { display: inline-flex; align-items: center; gap: 4px; font-size: .74rem; opacity: .78; margin-top: 2px; }
 .cmt .deliv.seen-ok { color: var(--info); opacity: 1; }
+.cmt .deliv.ans-ok { color: var(--done); opacity: 1; }
 .kit-av {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border-radius: 999px; font-size: .72rem; font-weight: 800;
@@ -2648,11 +2649,32 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   window.addEventListener("resize", function () { if (state.openId) renderPost(); });
 
   /* A reply's parent: reply_to is a comment's doc_id, or (tolerated) the thread id the clerk named. */
+  /* CL12 (his 22:04, "the new notification badge never disappears"): a reply to the thread of his 👍 got the Like as
+     its parent; Likes are never drawn as comments, so the reply was never on screen, never seen, and lit the badge for
+     good. A reply to a Like goes under what was liked; a parent the caller's map does not hold makes it a root: a
+     comment is never hidden because its parent is not shown. */
   function parentOf(c, byId) {
     var par = str(c.reply_to); if (!par || par === c.id) return "";
-    if (byId[par]) return par;
-    var hit = (ix().byThread[par] || NONE).filter(function (x) { return x.id !== c.id; })[0];
-    return hit ? hit.id : "";
+    var all = ix().byId, hit = byId[par] || all[par];
+    if (!hit) {
+      var th = (ix().byThread[par] || NONE).filter(function (x) { return x.id !== c.id; });
+      hit = th.filter(function (x) { return !x.like; })[0] || th[0];
+    }
+    for (var n = 0; hit && hit.like && n < 20; n++) {
+      var t = str(hit.comment_id);
+      hit = t && t !== c.id ? (byId[t] || all[t]) : null;
+    }
+    return hit && hit.id !== c.id && byId[hit.id] ? hit.id : "";
+  }
+  /* an agent's comment (not a Like) that answers c: it replies to c's id or thread, or lands under c */
+  function answeredBy(c) {
+    var all = ix().byId, th = str(c.thread_id);
+    return (state.comments || []).some(function (x) {
+      if (x.like || x.removed || x.from === "owner" || x.from === "viewer" || x.id === c.id) return false;
+      var r = str(x.reply_to); if (!r) return false;
+      if (r === c.id || (th && r === th)) return true;
+      return parentOf(x, all) === c.id;
+    });
   }
   function commentNode(c) {
     var orch = c.from === "orchestrator";
@@ -2687,8 +2709,11 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     if (c.from === "owner" || c.from === "viewer") {
       var info = el("div", "deliv");
       if (sending[c.id]) { info.textContent = "\u2026"; info.title = "Sending to Claude..."; }
-      else if (c.read === true) { info.classList.add("seen-ok"); info.textContent = "\u2713\u2713"; info.title = "\u2713 Seen" + (c.read_at ? " " + when(c.read_at) : ""); }
-      else if (c.delivered === true) { info.classList.add("ok"); info.textContent = "\u2713\u2713"; info.title = "Sent to the agent"; }
+      /* CL12 (his 22:18): grey and coloured double ticks for "passed on" and "seen" could not be told apart; each
+         state has its own word now: sent (the board passed it on), seen (the agent marked it read), answered. */
+      else if (answeredBy(c)) { info.classList.add("ans-ok"); info.textContent = "\u2713\u2713 answered"; info.title = "An agent answered" + (c.read_at ? "; seen " + when(c.read_at) : ""); }
+      else if (c.read === true) { info.classList.add("seen-ok"); info.textContent = "\u2713\u2713 seen"; info.title = "Seen by the agent" + (c.read_at ? " " + when(c.read_at) : "") + "; no answer yet"; }
+      else if (c.delivered === true) { info.classList.add("ok"); info.textContent = "\u2713 sent"; info.title = "Passed on to the agent; not seen yet"; }
       else { info.classList.add("err"); info.textContent = "\u2713"; info.title = "Saved on the board; not sent" + (c.delivery_error ? " (" + str(c.delivery_error) + ")" : "") + "."; }
       d.appendChild(info);
       if (c.delivered !== true && !sending[c.id] && cmts) {
@@ -2857,8 +2882,9 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     if (dr && dr.r) state.replyTo = dr.r;
     $("sheet").scrollTop = 0; renderPost();
     var p = current(), dl = discs();
-    var first = k && p ? newComments(p, seen[ORCH] ? seen[ORCH].at : "", true).filter(function (c) { return dl.of[c.id] === k; })[0] : null;
-    if (first) { unfoldFor(first.id); renderComments(); requestAnimationFrame(function () { goTo({ cid: first.id }); }); }
+    /* every reply he has not seen is unfolded (only the first was: a folded second one kept the badge lit) */
+    var fresh = k && p ? newComments(p, seen[ORCH] ? seen[ORCH].at : "", true).filter(function (c) { return dl.of[c.id] === k; }) : [], first = fresh[0];
+    if (first) { fresh.forEach(function (c) { unfoldFor(c.id); }); renderComments(); requestAnimationFrame(function () { goTo({ cid: first.id }); }); }
     if (k === "new") {
       setTimeout(function () { var ct = $("c-text"); if (ct) ct.focus(); }, 40);
     } else {
@@ -3523,6 +3549,17 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       return trKey.replace(/-/g, " ").replace(/^\w/, function (c) { return c.toUpperCase(); });
     }
 
+    /* Every post of a train, done ones included: its `train` (or, without one, its family) is one of the group's ids. */
+    function trainPosts(ids, tPosts) {
+      var tMap = trainTitleMap();
+      return (state.posts || []).filter(function (p) {
+        if (p.removed || str(p.id).charAt(0) === "_") return false;
+        var tr = str(p.train).replace(/^P-/, "").toLowerCase();
+        if (tr) return !!ids[tr] || tPosts.some(function (q) { return q.id === p.id; });
+        return !!ids[str(familyOf(p, tMap)).toLowerCase()] || tPosts.some(function (q) { return q.id === p.id; });
+      }).sort(function (a, b) { return tOf(a) - tOf(b); });
+    }
+    window._kitTrainPosts = trainPosts;
     function renderHorizontalTrains() {
       trainNetEl.textContent = "";
       var activePosts = (state.posts || []).filter(function (p) { return colOf(p) !== "done" && matches(p); });
@@ -3532,10 +3569,16 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       }
       var tMap = trainTitleMap();
       var links = resolveClientLinks();
-      var byTrain = {}, linkedIds = {}, parentCounts = {};
+      /* CL12 (his 22:03, "all the done tasks from the previous session disappeared from my train task view"): a group
+         is keyed by its display name (the dashboard's "Claude Code CLI runtime (...)"), but the tasklist matched the
+         posts' `train` ("cli") against that name, so only the open steps shown here (never a done one) made it in.
+         trainIds keeps, per group, the train ids its posts carry. */
+      var byTrain = {}, linkedIds = {}, parentCounts = {}, trainIds = {};
+      function idOf(tr, id) { if (id) (trainIds[tr] = trainIds[tr] || {})[str(id).replace(/^P-/, "").toLowerCase()] = true; }
       links.forEach(function (lk) {
         if (colOf(lk.post) === "done" || !matches(lk.post)) return;
         var tr = tMap[lk.train] || tMap[lk.part] || tMap[lk.id] || lk.train || familyOf(lk.post, tMap);
+        idOf(tr, lk.train || familyOf(lk.post, tMap)); idOf(tr, tr);
         (byTrain[tr] = byTrain[tr] || []).push(lk.post);
         linkedIds[lk.id] = true;
         if (lk.parent) parentCounts[lk.parent] = (parentCounts[lk.parent] || 0) + 1;
@@ -3544,6 +3587,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
         if (!linkedIds[p.id]) {
           var fk = familyOf(p, tMap);
           var tr = tMap[p.id] || tMap[str(p.part)] || tMap[fk] || fk;
+          idOf(tr, fk); idOf(tr, tr);
           (byTrain[tr] = byTrain[tr] || []).push(p);
           if (p.parent) parentCounts[str(p.parent)] = (parentCounts[str(p.parent)] || 0) + 1;
         }
@@ -3635,11 +3679,8 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
         ttl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/><polyline points="3 18 4 19 6 17"/></svg>';
         ttl.addEventListener("click", function (ev) {
           ev.stopPropagation();
-          var allInTrain = (state.posts || []).filter(function (p) {
-            if (p.removed) return false;
-            var tr = str(p.train).replace(/^P-/, "").toLowerCase();
-            return tr === trKey.toLowerCase() || tPosts.some(function (q) { return q.id === p.id; });
-          }).sort(function (a, b) { return tOf(a) - tOf(b); });
+          var ids = trainIds[trKey] || {};
+          var allInTrain = trainPosts(ids, tPosts);
           var ov = document.getElementById("kit-tl-modal");
           if (ov) ov.remove();
           var SVG_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
@@ -3674,7 +3715,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
             return ch;
           }
           var trReview = (state.comments || []).filter(function (c) {
-            return c.kind === "review" && !c.removed && str(c.train).replace(/^P-/i, "").toLowerCase() === trKey.toLowerCase();
+            return c.kind === "review" && !c.removed && !!ids[str(c.train).replace(/^P-/i, "").toLowerCase()];
           }).sort(function (a, b) { return str(b.created_at).localeCompare(str(a.created_at)); })[0];
           hdr.appendChild(bEl); hdr.appendChild(subEl);
           if (trReview) hdr.appendChild(reviewChip(trReview.verdict, "Review of the whole train: " + (str(trReview.verdict) || "?") + (str(trReview.suggestion) ? ". " + str(trReview.suggestion) : ""), trReview.post_id));

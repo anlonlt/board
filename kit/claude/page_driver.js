@@ -54,6 +54,7 @@ async function viaPlaywright() {
   };
   d.evaluate = (fn, arg) => p.evaluate(asExpression(fn, arg));
   d.press = (key) => p.keyboard.press(key);
+  d.viewport = (width, height) => p.setViewportSize({ width, height });
   d.wait = (ms) => p.waitForTimeout(ms);
   d.close = () => b.close();
   return d;
@@ -153,6 +154,8 @@ async function viaDevTools() {
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, text: key.length === 1 ? key : undefined, windowsVirtualKeyCode: vk });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk });
   };
+  // A phone or a desktop window: the page lays out again at that width (deviceScaleFactor 1, no touch).
+  d.viewport = (width, height) => send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 });
   d.wait = (ms) => new Promise((r) => setTimeout(r, ms));
   d.close = async () => {
     try { ws.close(); } catch (e) { /* closed */ }
