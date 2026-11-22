@@ -125,6 +125,8 @@ def continuation(resume_text, trunk="<trunk>"):
         prompt = "docs/prompts/%s.md" % pid
         if not os.path.exists(os.path.join(ROOT, prompt)):
             continue  # no prompt: not a part's step (a card, a demo post)
+        if re.search(r"· (complete|done)\b", rest):
+            continue  # finished; it waits for the owner's Done, not for a session
         brs = part_branches(remote, part)
         crashed = "not running" in rest or "unknown" in rest
         if box == "~" or crashed:
