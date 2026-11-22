@@ -2364,7 +2364,11 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     $("composer").hidden = orch && !inDisc;
     $("c-label").textContent = orch ? (state.disc === "new" ? "Your first message starts the discussion; it goes to the orchestrator." : "Your message goes to the orchestrator, in this discussion.")
       : "Your comment goes to the session that wrote this post. Write @o in it to ask the orchestrator instead.";
-    $("p-body").innerHTML = renderBody(p.body);
+    var bodyKey = p.id + "|" + str(p.body);
+    if ($("p-body").dataset.bodyKey !== bodyKey) {
+      $("p-body").dataset.bodyKey = bodyKey;
+      $("p-body").innerHTML = renderBody(p.body);
+    }
     $("p-body").classList.toggle("flash", flashing(""));
     /* Rebuild the strip only when its pictures change, so typed text and the scroll position survive live updates. */
     var key = p.id + "|" + str(p.title) + "|" + layoutOf(p).key + "|" + postImages(p).join(",") + "|" + (Array.isArray(p.captions) ? p.captions.join("\u0001") : "");

@@ -107,7 +107,11 @@
       if (s.limit) qs.push("limit=" + encodeURIComponent(String(s.limit)));
       var url = "/_api/db/" + encodeURIComponent(s.coll) + (qs.length ? "?" + qs.join("&") : "");
       api("GET", url).then(function (res) {
-        s.cb(makeSnap(res.docs || []));
+        var docs = res.docs || [];
+        var sig = (window.__KIT_ACTIVE_REPO__ || "") + "|" + JSON.stringify(docs);
+        if (s._lastSig === sig) return;
+        s._lastSig = sig;
+        s.cb(makeSnap(docs));
       }, function (e) {
         if (s.errCb) s.errCb(e);
       });
@@ -136,16 +140,26 @@
     var tag = (ae.tagName || "").toUpperCase();
     return tag === "TEXTAREA" || tag === "INPUT" || !!ae.isContentEditable;
   }
+  function activeMediaEl() {
+    if (typeof document === "undefined") return null;
+    var els = document.querySelectorAll("audio,video");
+    for (var i = 0; i < els.length; i++) {
+      if (!els[i].paused && !els[i].ended) return els[i];
+    }
+    return null;
+  }
   function triggerUiReload() {
     if (typeof window === "undefined" || !window.location) return;
-    if (isTypingNow()) {
+    var playing = activeMediaEl();
+    if (isTypingNow() || playing) {
       if (!reloadPending) {
         reloadPending = true;
-        var ae = document.activeElement;
+        var ae = playing || document.activeElement;
+        var evName = playing ? "pause" : "blur";
         if (ae && ae.addEventListener) {
-          ae.addEventListener("blur", function onDone() {
-            ae.removeEventListener("blur", onDone);
-            if (reloadPending) { reloadPending = false; window.location.reload(); }
+          ae.addEventListener(evName, function onDone() {
+            ae.removeEventListener(evName, onDone);
+            if (reloadPending && !isTypingNow() && !activeMediaEl()) { reloadPending = false; window.location.reload(); }
           });
         }
       }
@@ -609,6 +623,8 @@
     try { postId = sessionStorage.getItem("board-open") || ""; } catch (e) {}
     /* Upgrade Ask the Orchestrator popup to an OS-style window + add Pop-out window icon button on posts */
     if (sheet.classList.contains("orch-popup")) {
+      var oldB = document.getElementById("kit-post-ext-badges"); if (oldB) oldB.remove();
+      var oldA = document.getElementById("kit-post-artifacts"); if (oldA) oldA.remove();
       makeWindow(sheet, sheet.querySelector(".bar"), { minW: 360, minH: 320, winKey: "orch" });
       applySavedWindowGeom(sheet, "orch", { minW: 360, minH: 320 });
       linkRepoDocs(sheet);
@@ -4016,6 +4032,7 @@
       aud.style.cssText = "width:100%;display:block;";
       body.appendChild(aud);
     } else if (isVideo) {
+      card.classList.add("is-img");
       body.classList.add("media");
       body.textContent = "";
       var vid = document.createElement("video");
