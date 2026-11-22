@@ -51,7 +51,7 @@
  ".kit/end_session.py": "70a94d110ab92c8eba0c3d80e169b4d6caac2a59ed9c50bfc5ab28313ac2c07c",
  ".kit/git_watch.py": "0573bbb27c983c40a7394b695944b92068f69f15611561ee384e4e2ac9a0b08c",
  ".kit/handover.py": "f4f13516facc0d47c38605151e99801b3b0106bc0aa4725f313bd6bc97382d88",
- ".kit/kit.py": "4b2f860ba7355a48516eb488f9556278f15858e3ee946377fa54178116d0e625",
+ ".kit/kit.py": "3c3923f648c6305250977afd2af9e739d844605fe9f6ebb8b8e0a33a1720d9c7",
  ".kit/kit_cards.py": "303d3ed650385367703a6dc647b8aa47cef48ed5058069bc2ad0dc8ebfcc94d9",
  ".kit/kit_import.py": "7ee7050f20af4343885704ca613b86945472e9ceec08ec8e0fb47645578ba809",
  ".kit/mcp_stdio.py": "ff406e51f4037b8a93240edd324d2b3bcb4656910fdacd9893af39ef17997ec9",
@@ -65,6 +65,6 @@
  ".kit/up": "80856782305588bb4b30ee32914e93bfdce4d9efe2d4d148f622a75fffb563ad",
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
- ".kit/web_takeover.py": "f3ed94309fd9a1759e2131c751da13dccc71f8540ce07559fd79f5298030d76c",
+ ".kit/web_takeover.py": "fdee6b03ef8f1c8c019f741d80ed8c8c8ab97782b2ed6a9c1bbfc748f0387e97",
  "_kit_commit": "52b72ee 2026-11-22T16:49:13-05:00"
 }

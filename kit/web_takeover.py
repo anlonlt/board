@@ -116,28 +116,33 @@ def part_branches(remote_branches, part):
     return [b for b in remote_branches if re.search(r"(^|[-/_])%s$" % s, b.lower())]
 
 
-def continuation(resume_text):
+def continuation(resume_text, trunk="<trunk>"):
     rc, out = sh(["git", "branch", "-r", "--format=%(refname:short)"])
     remote = [b.split("/", 1)[1] for b in out.splitlines() if b.startswith("origin/") and "HEAD" not in b]
     lines = []
     for m in re.finditer(r"^- \[([~ ?!])\] (\S+) `([^`]+)` (.*)$", resume_text, re.M):
         box, part, pid, rest = m.groups()
-        crashed = "not running" in rest or "unknown" in rest
-        if box != "~" and not crashed:
-            continue
-        brs = part_branches(remote, part)
         prompt = "docs/prompts/%s.md" % pid
-        lines.append("- %s `%s`: branch %s; prompt %s%s" % (
-            part, pid, ", ".join("`%s`" % b for b in brs) or "(none: start from the trunk)", prompt,
-            "" if os.path.exists(os.path.join(ROOT, prompt)) else " (MISSING)"))
+        if not os.path.exists(os.path.join(ROOT, prompt)):
+            continue  # no prompt: not a part's step (a card, a demo post)
+        brs = part_branches(remote, part)
+        crashed = "not running" in rest or "unknown" in rest
+        if box == "~" or crashed:
+            state = "in progress when its session died"
+        elif brs:
+            state = "planned, but has saved work"
+        else:
+            continue
+        lines.append("- %s `%s` (%s): branch %s; prompt %s" % (
+            part, pid, state, ", ".join("`%s`" % b for b in brs) or "(none: start from the trunk)", prompt))
     if not lines:
         return ""
-    return ("\n## Steps to continue (in progress when their sessions died)\n" + "\n".join(lines) +
+    return ("\n## Steps to continue\n" + "\n".join(lines) +
             "\nContinue each as its own part (a subagent, or a new web session; no device cap in the cloud): \"You continue "
             "step <PART> (post <id>). git fetch origin && git checkout <branch>: it holds your earlier work (the last commit "
             "may be a WIP save). Your prompt is <prompt>: read it, compare with `git log origin/<trunk>..HEAD` and "
             "`git diff origin/<trunk>` to see what is done, finish it, push your branch (if a push to that branch is "
-            "refused, push the branch you are allowed to and name it in your post), then `kit.py done`.\"\n")
+            "refused, push the branch you are allowed to and name it in your post), then `kit.py done`.\"\n").replace("<trunk>", trunk)
 
 
 def cmd_start():
@@ -151,7 +156,7 @@ def cmd_start():
     rc, res = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "resume"], timeout=180)
     print()
     print(res)
-    print(continuation(res))
+    print(continuation(res, trunk=br or "<trunk>"))
     print("Before you stop: python3 -I .kit/web_takeover.py save (the Stop hook does it too, in a web session).")
     return 0
 

@@ -1696,8 +1696,8 @@ def resume(m, db_path=None, alive=None):
     if dl:
         out.append("")
         out.append("## This device")
-        out.append(dl + " A launch past the cap is refused (`.kit/device.py --gate`, the guard): the step waits, "
-                   "planned, until a session ends; launch it then.")
+        out.append(dl + ("" if dl.startswith("Device: cloud") else " A launch past the cap is refused "
+                   "(`.kit/device.py --gate`, the guard): the step waits, planned, until a session ends; launch it then."))
     out.append("")
     out.append("## The owner's unanswered comments")
     try:
