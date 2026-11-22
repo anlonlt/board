@@ -655,6 +655,9 @@
    "posts_removed": 0,
    "posts_written": 0,
    "removed": 0
+  },
+  {
+   "test": "divergence"
   }
  ]
 }
