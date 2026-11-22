@@ -2267,11 +2267,28 @@
         localZoom = z;
         if (activeKind === "img" && activeViewMode === "view" && activeImgDimKey) {
           try { localStorage.setItem(activeImgDimKey, String(z)); } catch (e) {}
-        } else if (isPrimary && activeKind !== "img" && activeKind !== "video") {
+        } else if (isPrimary && activeKind !== "img" && activeKind !== "video" && activeKind !== "pdf") {
           _kitDocsState.zoom = z;
           try { localStorage.setItem("kit_docs_zoom", String(z)); } catch (e) {}
         }
         var scaleVal = z / 100;
+        if (activeKind === "pdf") {
+          modal.style.setProperty("--docs-scale", "1");
+          var pdfWrap = viewEl.querySelector(".kit-pdf-wrap");
+          if (pdfWrap && typeof pdfWrap._kitSetZoom === "function") {
+            var zoomedW = pdfWrap._kitSetZoom(scaleVal);
+            if (zoomedW > 0 && window.innerWidth >= 720) {
+              var targetW = Math.max(420, Math.min(window.innerWidth - 24, Math.round(zoomedW + 44)));
+              modal.style.width = targetW + "px";
+              var curL = parseFloat(modal.style.left || "0");
+              if (curL + targetW > window.innerWidth - 8) {
+                modal.style.left = Math.max(8, window.innerWidth - targetW - 8) + "px";
+              }
+            }
+          }
+          if (!skipUrl && isPrimary) syncUrlWorkspaceState();
+          return;
+        }
         modal.style.setProperty("--docs-scale", String(scaleVal));
         var imgWrap = viewEl.querySelector(".kit-docs-img-wrap");
         if (imgWrap) {
@@ -2280,10 +2297,6 @@
         var vidEl = viewEl.querySelector(".kit-vid.full video");
         if (vidEl) {
           vidEl.style.transform = scaleVal === 1 ? "" : ("scale(" + scaleVal + ")");
-        }
-        var pdfPages = viewEl.querySelector(".kit-pdf-pages");
-        if (pdfPages) {
-          pdfPages.style.transform = scaleVal === 1 ? "" : ("scale(" + scaleVal + ")");
         }
         if (!skipUrl && isPrimary) syncUrlWorkspaceState();
       }
@@ -3938,15 +3951,29 @@
       ".kit-pdf-bar .sp{flex:1 1 0;}" +
       ".kit-pdf-scroll{flex:1 1 0;min-height:0;overflow:auto;overscroll-behavior:contain;padding:12px 10px 22px;box-sizing:border-box;width:100%;}" +
       ".kit-pdf-pages{display:flex;flex-direction:column;align-items:center;gap:14px;transform-origin:top center;width:100%;}" +
-      ".kit-pdf-page{position:relative;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;flex:none;line-height:0;}" +
-      ".kit-pdf-page canvas{display:block;width:100%;height:auto;}" +
-      ".kit-pdf-txt{position:absolute;inset:0;overflow:hidden;line-height:1;text-size-adjust:none;-webkit-text-size-adjust:none;}" +
+      ".kit-pdf-page{position:relative;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;flex:none;line-height:0;margin:0 auto;}" +
+      ".kit-pdf-page canvas{display:block;width:100%;height:100%;}" +
+      ".kit-pdf-txt{position:absolute;top:0;left:0;overflow:hidden;line-height:1;text-size-adjust:none;-webkit-text-size-adjust:none;transform-origin:0 0;}" +
       ".kit-pdf-txt span{position:absolute;white-space:pre;color:transparent;cursor:text;transform-origin:0% 0%;user-select:text;-webkit-user-select:text;}" +
       ".kit-pdf-txt span::selection{background:rgba(232,137,74,.38);color:transparent;}" +
       ".kit-pdf-sel-layer{position:absolute;inset:0;z-index:4;cursor:crosshair;touch-action:none;display:none;}" +
       ".kit-pdf-wrap.crop-on .kit-pdf-sel-layer{display:block;}" +
       ".kit-pdf-wrap.crop-on .kit-pdf-txt{pointer-events:none;}" +
-      ".kit-pdf-rect{position:absolute;border:2px solid var(--ember);background:rgba(232,137,74,.2);border-radius:3px;pointer-events:none;box-sizing:border-box;}";
+      ".kit-pdf-rect{position:absolute;border:2px solid var(--ember);background:rgba(232,137,74,.2);border-radius:3px;pointer-events:none;box-sizing:border-box;}" +
+      "@media (max-width:700px){" +
+        ".kit-inline-embed[data-kind='pdf'],.kit-inline-embed[data-kind='audio'],.kit-inline-embed[data-kind='video']{width:calc(100vw - 8px) !important;max-width:calc(100vw - 8px) !important;margin-left:50% !important;transform:translateX(-50%) !important;box-sizing:border-box !important;border-radius:10px;}" +
+        ".kit-aud{gap:4px;padding:6px;border-radius:10px;justify-content:center;}" +
+        ".kit-vid-bar{left:4px;right:4px;bottom:6px;gap:4px;padding:5px 6px;border-radius:9px;}" +
+        ".kit-pdf-bar{gap:4px;padding:5px 6px;}" +
+        ".kit-pdf-scroll{padding:8px 4px 18px;}" +
+        ".kit-mbtn{width:26px;height:26px;border-radius:7px;}" +
+        ".kit-mbtn svg{width:13px;height:13px;}" +
+        ".kit-vid-bar .kit-mbtn{width:25px;height:25px;}" +
+        ".kit-mspd{height:24px;padding:0 4px;font-size:.66rem;}" +
+        ".kit-mtime{font-size:.66rem;min-width:0;}" +
+        ".kit-mtrack{min-width:34px;}" +
+        ".kit-msep{margin:0;height:14px;}" +
+      "}";
     document.head.appendChild(st);
   }
   var SVG_CROP_M = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>';
@@ -4025,6 +4052,24 @@
     }
     wrap._kitGoPage = goPage;
     wrap._kitGetPage = function () { return curPage; };
+    wrap._kitSetZoom = function (scaleVal) {
+      var s = Math.max(0.55, Math.min(3, Number(scaleVal) || 1));
+      var maxW = 0;
+      for (var zi = 0; zi < pageEls.length; zi++) {
+        var pe = pageEls[zi];
+        if (!pe) continue;
+        var bw = Number(pe.dataset.baseW || "0"), bh = Number(pe.dataset.baseH || "0");
+        if (bw > 0 && bh > 0) {
+          var nw = Math.round(bw * s), nh = Math.round(bh * s);
+          pe.style.width = nw + "px";
+          pe.style.height = nh + "px";
+          if (nw > maxW) maxW = nw;
+          var tl = pe.querySelector(".kit-pdf-txt");
+          if (tl) tl.style.transform = s === 1 ? "" : ("scale(" + s + ")");
+        }
+      }
+      return maxW;
+    };
     pIn.addEventListener("change", function () { goPage(pIn.value); });
     prevB.addEventListener("click", function (ev) { ev.stopPropagation(); goPage(curPage - 1); });
     nextB.addEventListener("click", function (ev) { ev.stopPropagation(); goPage(curPage + 1); });
@@ -4110,7 +4155,9 @@
         pTot.textContent = "/ " + numPages;
         pIn.max = String(numPages);
         pagesEl.textContent = "";
-        var availW = Math.max(300, Math.min(860, (scrollEl.clientWidth || 720) - 28));
+        var availW = window.innerWidth <= 700
+          ? Math.max(260, (scrollEl.clientWidth || (window.innerWidth - 12)) - 8)
+          : Math.max(300, Math.min(860, (scrollEl.clientWidth || 720) - 28));
         var dpr = Math.min(2, window.devicePixelRatio || 1);
         var chain = Promise.resolve();
         for (var pNum = 1; pNum <= numPages; pNum++) {
@@ -4123,17 +4170,21 @@
                 var pgDiv = document.createElement("div");
                 pgDiv.className = "kit-pdf-page";
                 pgDiv.dataset.page = String(pn);
+                pgDiv.dataset.baseW = String(Math.round(vp.width));
+                pgDiv.dataset.baseH = String(Math.round(vp.height));
                 pgDiv.style.width = Math.round(vp.width) + "px";
                 pgDiv.style.height = Math.round(vp.height) + "px";
                 var cv = document.createElement("canvas");
                 cv.width = Math.round(vp.width * dpr);
                 cv.height = Math.round(vp.height * dpr);
-                cv.style.width = Math.round(vp.width) + "px";
-                cv.style.height = Math.round(vp.height) + "px";
+                cv.style.width = "100%";
+                cv.style.height = "100%";
                 var ctx = cv.getContext("2d");
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 var txtLayer = document.createElement("div");
                 txtLayer.className = "kit-pdf-txt";
+                txtLayer.style.width = Math.round(vp.width) + "px";
+                txtLayer.style.height = Math.round(vp.height) + "px";
                 pgDiv.appendChild(cv); pgDiv.appendChild(txtLayer);
                 attachCropHandler(pgDiv, cv, txtLayer, pn);
                 pagesEl.appendChild(pgDiv);
