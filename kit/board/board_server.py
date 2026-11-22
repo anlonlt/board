@@ -202,8 +202,9 @@ SHIM_JS = r"""(function () {
         var hdr = document.querySelector("header.top");
         var h1 = hdr && hdr.querySelector("h1");
         if (!hdr || !h1 || document.getElementById("kit-repo-wrap")) return;
+        var allOpts = info.repos.concat([{ id: "all", name: "All boards", primary: false }]);
         var cur = window.__KIT_ACTIVE_REPO__ || "";
-        if (!info.repos.some(function (r) { return (r.primary ? "" : r.id) === cur; })) {
+        if (!allOpts.some(function (r) { return (r.primary ? "" : r.id) === cur; })) {
           cur = ""; window.__KIT_ACTIVE_REPO__ = "";
         }
         if (!document.getElementById("kit-repo-css")) {
@@ -246,10 +247,10 @@ SHIM_JS = r"""(function () {
 
         function repoLabel(r) {
           var n = String(r.name || r.id || "Board");
-          return /board$/i.test(n) ? n : (n + " board");
+          return /boards?$/i.test(n) ? n : (n + " board");
         }
         function applyRepoTitle() {
-          var active = info.repos.filter(function (r) { return (r.primary ? "" : r.id) === (window.__KIT_ACTIVE_REPO__ || ""); })[0];
+          var active = allOpts.filter(function (r) { return (r.primary ? "" : r.id) === (window.__KIT_ACTIVE_REPO__ || ""); })[0];
           if (active) {
             var lbl = repoLabel(active);
             window.__KIT_REPO_TITLE__ = lbl;
@@ -262,7 +263,7 @@ SHIM_JS = r"""(function () {
         function renderMenu() {
           menu.textContent = "";
           var activeKey = window.__KIT_ACTIVE_REPO__ || "";
-          info.repos.forEach(function (r) {
+          allOpts.forEach(function (r) {
             var key = r.primary ? "" : r.id;
             if (key === activeKey) return;
             var it = document.createElement("button");
@@ -1790,6 +1791,20 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
+        def _is_all_repos(self, parsed):
+            qs = urllib.parse.parse_qs(parsed.query)
+            rid = (self.headers.get("X-Kit-Repo") or (qs.get("repo") or [""])[0] or "").strip().lower()
+            return rid == "all" and len(stores_map) > 1
+
+        def _store_for_doc(self, parsed, coll, doc_id):
+            if self._is_all_repos(parsed):
+                for rid, st in stores_map.items():
+                    if st.get_doc(coll, doc_id).get("exists"):
+                        return st, rid
+                return store, primary_repo_id
+            rid = self._repo_id(parsed)
+            return (stores_map.get(rid) or store), rid
+
         def _repo_id(self, parsed):
             qs = urllib.parse.parse_qs(parsed.query)
             rid = (self.headers.get("X-Kit-Repo") or (qs.get("repo") or [""])[0] or "").strip()
@@ -2271,6 +2286,45 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
             if path.startswith("/_api/db/"):
                 rest = [urllib.parse.unquote(x) for x in path[len("/_api/db/"):].strip("/").split("/") if x]
+                if len(rest) == 1 and self._is_all_repos(parsed):
+                    where = json.loads(qs["where"][0]) if "where" in qs else None
+                    order_by = (qs.get("order_by") or [None])[0]
+                    direction = (qs.get("dir") or ["asc"])[0]
+                    merged = []
+                    seen_ids = set()
+                    dash_rows, train_rows = [], []
+                    dash_doc, train_doc = None, None
+                    for rid, st in stores_map.items():
+                        res = st.list_docs(rest[0], where=where, order_by=order_by, direction=direction)
+                        for d in res.get("docs") or []:
+                            did = d.get("id") or ""
+                            if rest[0] == "posts" and did == "_dashboard":
+                                if dash_doc is None:
+                                    dash_doc = dict(d)
+                                dash_rows.extend((d.get("data") or {}).get("rows") or [])
+                                continue
+                            if rest[0] == "posts" and did == "_trains":
+                                if train_doc is None:
+                                    train_doc = dict(d)
+                                train_rows.extend((d.get("data") or {}).get("rows") or [])
+                                continue
+                            if did in seen_ids:
+                                continue
+                            seen_ids.add(did)
+                            dd = dict(d.get("data") or {})
+                            if not did.startswith("_"):
+                                dd["_repo"] = rid
+                            merged.append({**d, "data": dd})
+                    if dash_doc is not None:
+                        dd = dict(dash_doc.get("data") or {})
+                        dd["rows"] = dash_rows
+                        merged.append({**dash_doc, "data": dd})
+                    if train_doc is not None:
+                        td = dict(train_doc.get("data") or {})
+                        td["rows"] = train_rows
+                        merged.append({**train_doc, "data": td})
+                    self._send_json(200, {"docs": merged, "next_cursor": None})
+                    return
                 cur_store = self._store(parsed)
                 if len(rest) == 1:
                     where = json.loads(qs["where"][0]) if "where" in qs else None
@@ -2281,7 +2335,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     self._send_json(200, cur_store.list_docs(rest[0], where=where, order_by=order_by, direction=direction, limit=limit, cursor=cursor))
                     return
                 if len(rest) == 2:
-                    self._send_json(200, cur_store.get_doc(rest[0], rest[1]))
+                    tstore, _ = self._store_for_doc(parsed, rest[0], rest[1])
+                    self._send_json(200, tstore.get_doc(rest[0], rest[1]))
                     return
 
             self._send_json(404, {"error": "not found"})
@@ -2310,7 +2365,10 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if not coll:
                 self._send_json(404, {"error": "not found"})
                 return
-            res, err = self._store(parsed).set_doc(coll, doc_id, body.get("data", {}), if_version=body.get("if_version"))
+            tstore, _ = self._store_for_doc(parsed, coll, doc_id)
+            if coll == "comments" and self._is_all_repos(parsed) and (body.get("data") or {}).get("post_id"):
+                tstore, _ = self._store_for_doc(parsed, "posts", str(body["data"]["post_id"]))
+            res, err = tstore.set_doc(coll, doc_id, body.get("data", {}), if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
@@ -2346,7 +2404,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if not coll:
                 self._send_json(404, {"error": "not found"})
                 return
-            res, err = self._store(parsed).update_doc(coll, doc_id, body.get("data", {}), if_version=body.get("if_version"))
+            tstore, _ = self._store_for_doc(parsed, coll, doc_id)
+            res, err = tstore.update_doc(coll, doc_id, body.get("data", {}), if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
@@ -2513,9 +2572,10 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if path == "/_api/shares":
                 pid = str(body.get("post_id") or "").strip()
                 target_repo = str(body.get("repo") or "").strip()
-                if not target_repo or target_repo not in stores_map:
-                    target_repo = self._repo_id(parsed)
-                tstore = stores_map.get(target_repo) or store
+                if target_repo and target_repo in stores_map:
+                    tstore = stores_map[target_repo]
+                else:
+                    tstore, target_repo = self._store_for_doc(parsed, "posts", pid)
                 if not pid or not tstore.get_doc("posts", pid).get("exists"):
                     self._send_json(404, {"error": "post_not_found"})
                     return
@@ -2850,6 +2910,13 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
         ap_abs = os.path.abspath(apath)
         if os.path.isdir(ap_abs):
             ast = BoardStore(os.path.join(ap_abs, ".kit", "board_data"))
+            if not ast.list_docs("posts").get("docs"):
+                try:
+                    sinfo = seed_from_mirror(ap_abs, ast)
+                    if sinfo.get("imported"):
+                        print("board_server: auto-seeded attached repo %r from %s (%d docs)" % (aid, sinfo["ref"], sinfo["imported"]), flush=True)
+                except Exception:
+                    pass
             if auto_sync_interval and float(auto_sync_interval) > 0:
                 ast.enable_auto_sync(ap_abs, interval_sec=float(auto_sync_interval), push=auto_sync_push)
             aname = aid
