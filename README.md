@@ -131,7 +131,7 @@ https://github.com/anlonlt/board/blob/agy-local/README.md
 **Already installed:**
 - **Local (`agy`):** open any terminal and type your project's one-word command (e.g. `harmonize`; add `--hybrid` to bridge with a cloud Artifact).
 - **Claude Code Web:** open your project's `claude.ai` Artifact board link.
-- **Chat-only (no repo):** start with `step0/survey-chat.md`.
+- **Starting from scratch (any AI client, even with 0 prior chats):** paste [step0/survey-universal.md](step0/survey-universal.md) into Claude, Gemini, ChatGPT, `agy`, or Cursor — it inspects your connected MCPs (read-only, with consent) to map your active workstreams, detects which MCP Link Readers to enable, and sets up your private Git repo as permanent board memory.
 
 ---
 
@@ -161,7 +161,7 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
 
 **For the installing agent, in the project's session.** Do the steps in order; report each step's outcome in one line.
 
-0. **Step 0 first, always:** run the survey (`step0/survey-code.md` or `step0/survey-chat.md`). Show its report to the owner; their yes or changes decide the parts. `install.py` refuses a first install without `--survey <path>` (or `--no-survey "<why>"`).
+0. **Step 0 first, always:** run the universal survey (`step0/survey-universal.md` — works across any AI client & connected MCPs; or `step0/survey-code.md` / `step0/survey-chat.md`). Show its report to the owner; their yes or changes decide the parts. `install.py` refuses a first install without `--survey <path>` (or `--no-survey "<why>"` / `--quick`).
 1. **Get the kit (pin a reviewed commit or tag):** `install.py` copies executable hooks into your repository, so pin a reviewed commit SHA or release tag rather than blindly tracking a mutable branch:
    ```bash
    git clone https://github.com/anlonlt/board /tmp/board-kit

@@ -20,16 +20,16 @@ survey (it runs scripts) is `docs/WORKFLOW-KIT.md` § 0 in `anlonlt/harmonize`.
 | CR-WF1's review | recounted every number on fresh data, found what WF1 left "unknown" (1.7 chars per token, not 4; the board 22 % of context, not most) | Part 2: the second pass |
 | tokens from `usage` | measured, never at 4 chars | chat shows no usage: characters are counted; a token figure is marked "estimated" with the ratio used |
 
-**How to use:** the tester opens a NEW conversation on claude.ai and pastes everything between the two lines below.
+**How to use:** the tester opens a NEW conversation on claude.ai and pastes everything between the two lines below. *(For a platform-agnostic version that also works outside claude.ai or on day 1 with zero prior chats, use `step0/survey-universal.md`.)*
 Chat search must be on (Settings → **Memory** → "Search and reference chats"; it was under Capabilities in older versions: test 1, PR #1). The code tool (analysis) helps if on.
 
 ---
 
 You are running **step 0 of a workflow kit: the survey**, by yourself. The user does nothing until Part 4.
 
-**Before Part 0, once, in one message:** say what happens to the reports (anonymised: no names of people,
-organisations, vendors or accounts; they end in a PUBLIC repository) and ask for ONE go-ahead. Accept the first
-yes, even a short or cut one; never ask again. Check your own tool list before saying a tool is missing.
+**Before Part 0, once, in one message:**
+1. List every connected MCP / connector visible in your tool list (e.g. Gmail, Outlook, Microsoft 365 / SharePoint, Google Drive, Calendar, Notion, Slack, Linear, GitHub) and ask for **read-only consent** to sample the last 14–30 days (subjects, recent files, open tasks — never writing or sending anything) so you can map active projects even if chat history is sparse, and detect which MCP Link Reader adapters (`sharepoint`, `outlook`, `gmail`, `gdrive`, `notion`, `linear`) to enable.
+2. Explain that **their own private Git repository** will serve as the board's permanent, platform-agnostic memory (while an anonymized report PR to `anlonlt/board` is optional) and ask for ONE go-ahead. Accept the first yes, even a short or cut one; never ask again. Check your own tool list before saying a tool is missing.
 
 **Part 0, first question (issue #3 item 6):** from the chats, list the projects you see, then ask, in the same
 message as the go-ahead: "One board for all your projects, or one per project?" Survey and import only what is in
