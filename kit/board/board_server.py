@@ -638,45 +638,70 @@ SHIM_JS = r"""(function () {
     linkRepoDocs(sheet);
   }
 
-  /* Read-only Repo Docs & Memory Browser + "Comment on this section" -> Ask the Orchestrator */
+  /* Read-only Repo Docs & Memory Reader (recency-first groups, user pins, post-install new dots, Google-Docs outline, icon-only section comment) */
   function initRepoDocBrowser() {
     var tools = document.querySelector("header.top .tools");
     if (!tools || document.getElementById("kit-docs-btn")) return;
+    var SVG_BOOK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+    var SVG_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
+    var SVG_OUTLINE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="17" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>';
+    var SVG_CMT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>';
+    var SVG_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
     if (!document.getElementById("kit-docs-css")) {
       var st = document.createElement("style");
       st.id = "kit-docs-css";
       st.textContent =
         ".kit-doc-link{color:var(--ember);text-decoration:underline dotted;cursor:pointer;border-radius:4px;padding:0 2px;}" +
         ".kit-doc-link:hover{background:var(--sunk);}" +
-        ".kit-docs-modal{position:fixed;inset:20px;z-index:55;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 24px 64px rgba(0,0,0,.42);display:grid;grid-template-rows:auto 1fr;overflow:hidden;max-width:1180px;margin:auto;}" +
+        "#kit-docs-btn{position:relative;}" +
+        "#kit-docs-btn .newdot{position:absolute;top:-2px;right:-2px;margin:0;width:9px;height:9px;border:2px solid var(--bg);}" +
+        ".kit-docs-modal{position:fixed;inset:18px;z-index:55;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 24px 64px rgba(0,0,0,.42);display:grid;grid-template-rows:auto 1fr;overflow:hidden;max-width:1320px;margin:auto;}" +
         ".kit-docs-modal[hidden]{display:none !important;}" +
-        ".kit-docs-hdr{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--sunk);flex-wrap:wrap;}" +
-        ".kit-docs-hdr b{font-family:var(--display);font-size:1.1rem;margin-right:4px;}" +
-        ".kit-docs-hdr input{flex:1 1 180px;min-width:120px;font:inherit;font-size:.88rem;padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);}" +
-        ".kit-docs-cats{display:flex;gap:4px;flex-wrap:wrap;}" +
-        ".kit-docs-cats button{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:999px;padding:3px 9px;font-size:.78rem;cursor:pointer;}" +
-        ".kit-docs-cats button.on{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700;}" +
-        ".kit-docs-body{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:0;}" +
-        ".kit-docs-list{border-right:1px solid var(--line);overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:2px;}" +
-        ".kit-docs-item{text-align:left;background:none;border:0;border-radius:8px;padding:6px 8px;cursor:pointer;color:var(--ink);font-size:.83rem;display:flex;flex-direction:column;gap:1px;}" +
-        ".kit-docs-item:hover,.kit-docs-item.on{background:var(--sunk);}" +
-        ".kit-docs-item .dp{font-family:var(--mono);font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
-        ".kit-docs-item .dm{font-size:.7rem;color:var(--muted);}" +
-        ".kit-docs-view{overflow-y:auto;padding:0 20px 20px;min-width:0;position:relative;}" +
-        ".kit-docs-vbar{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;background:var(--surface);border-bottom:1px solid var(--line);margin-bottom:10px;flex-wrap:wrap;}" +
-        ".kit-docs-toc{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid var(--line);}" +
-        ".kit-docs-toc button{border:1px solid var(--line);background:var(--sunk);color:var(--ink);border-radius:999px;padding:2px 8px;font-size:.74rem;cursor:pointer;}" +
-        ".kit-docs-toc button:hover{border-color:var(--ember);color:var(--ember);}" +
-        ".kit-docs-md{font-size:.94rem;line-height:1.55;overflow-wrap:anywhere;}" +
-        ".kit-docs-md h1,.kit-docs-md h2,.kit-docs-md h3,.kit-docs-md h4{scroll-margin-top:58px;}" +
-        ".kit-docs-md .kit-sec-hit{background:color-mix(in srgb, var(--ember) 22%, transparent);border-radius:6px;padding:2px 6px;}" +
-        "@media (max-width:760px){.kit-docs-modal{inset:8px;}.kit-docs-body{grid-template-columns:1fr;grid-template-rows:190px minmax(0,1fr);}.kit-docs-list{border-right:0;border-bottom:1px solid var(--line);}}";
+        ".kit-docs-hdr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--sunk);}" +
+        ".kit-docs-hdr b{font-family:var(--display);font-size:1.12rem;white-space:nowrap;}" +
+        ".kit-docs-hdr input{flex:1 1 200px;max-width:420px;font:inherit;font-size:.88rem;padding:6px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);}" +
+        ".kit-docs-hdr .sp{margin-left:auto;}" +
+        ".kit-docs-body{display:grid;grid-template-columns:288px minmax(0,1fr) auto;min-height:0;}" +
+        ".kit-docs-list{border-right:1px solid var(--line);overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;background:color-mix(in srgb, var(--sunk) 35%, var(--surface));}" +
+        ".kit-docs-grp{display:flex;flex-direction:column;gap:2px;}" +
+        ".kit-docs-grp summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:4px 6px;font-size:.73rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border-radius:6px;user-select:none;}" +
+        ".kit-docs-grp summary::-webkit-details-marker{display:none;}" +
+        ".kit-docs-grp summary:hover{color:var(--ink);background:var(--sunk);}" +
+        ".kit-docs-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px;border-radius:8px;}" +
+        ".kit-docs-row:hover,.kit-docs-row.on{background:var(--sunk);}" +
+        ".kit-docs-item{text-align:left;background:none;border:0;padding:6px 8px;cursor:pointer;color:var(--ink);font-size:.83rem;display:flex;flex-direction:column;gap:2px;min-width:0;}" +
+        ".kit-docs-item .dp{display:flex;align-items:center;gap:5px;font-weight:600;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+        ".kit-docs-item .dp .newdot{width:7px;height:7px;margin:0;flex:none;}" +
+        ".kit-docs-item .dm{font-size:.71rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+        ".kit-docs-pin{background:none;border:0;width:28px;height:28px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer;opacity:0;transition:opacity .12s,color .12s,background .12s;margin-right:3px;}" +
+        ".kit-docs-row:hover .kit-docs-pin,.kit-docs-pin.on{opacity:1;}" +
+        ".kit-docs-pin.on{color:var(--ember);}" +
+        ".kit-docs-pin:hover{background:var(--surface);color:var(--ink);}" +
+        ".kit-docs-pin svg{width:14px;height:14px;}" +
+        ".kit-docs-view{overflow-y:auto;padding:0 36px 40px;min-width:0;position:relative;}" +
+        ".kit-docs-vbar{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;background:color-mix(in srgb, var(--surface) 92%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);margin-bottom:20px;}" +
+        ".kit-docs-vmeta{display:flex;flex-direction:column;gap:1px;min-width:0;}" +
+        ".kit-docs-vmeta code{font-size:.82rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+        ".kit-docs-vmeta span{font-size:.74rem;color:var(--muted);}" +
+        ".kit-docs-vacts{display:inline-flex;align-items:center;gap:6px;flex:none;}" +
+        ".kit-docs-md{margin:0 auto;max-width:72ch;}" +
+        ".kit-docs-md .kit-sec-hit{background:color-mix(in srgb, var(--ember) 18%, transparent);border-radius:6px;padding:2px 6px;}" +
+        ".kit-docs-outline{width:236px;border-left:1px solid var(--line);overflow-y:auto;padding:14px 10px;display:flex;flex-direction:column;gap:2px;background:color-mix(in srgb, var(--sunk) 25%, var(--surface));}" +
+        ".kit-docs-outline[hidden]{display:none !important;}" +
+        ".kit-docs-outline .otitle{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 8px 8px;}" +
+        ".kit-docs-outline button{text-align:left;background:none;border:0;border-left:2px solid transparent;padding:5px 8px;border-radius:0 6px 6px 0;cursor:pointer;color:var(--muted);font-size:.8rem;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+        ".kit-docs-outline button:hover{color:var(--ink);background:var(--sunk);}" +
+        ".kit-docs-outline button.active{color:var(--ember);border-left-color:var(--ember);font-weight:700;background:color-mix(in srgb, var(--ember) 8%, transparent);}" +
+        ".kit-docs-outline button.lvl-2{padding-left:16px;}" +
+        ".kit-docs-outline button.lvl-3,.kit-docs-outline button.lvl-4{padding-left:26px;font-size:.76rem;}" +
+        "@media (max-width:960px){.kit-docs-outline{display:none !important;}}" +
+        "@media (max-width:760px){.kit-docs-modal{inset:8px;}.kit-docs-body{grid-template-columns:1fr;grid-template-rows:200px minmax(0,1fr);}.kit-docs-list{border-right:0;border-bottom:1px solid var(--line);}.kit-docs-view{padding:0 16px 28px;}}";
       document.head.appendChild(st);
     }
     var btn = document.createElement("button");
     btn.id = "kit-docs-btn"; btn.type = "button"; btn.className = "btn small kit-icon-btn";
     btn.title = "Repo docs & memory"; btn.setAttribute("aria-label", "Repo docs & memory");
-    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+    btn.innerHTML = SVG_BOOK;
     var askEl = document.getElementById("ask");
     if (askEl && askEl.parentNode === tools) tools.insertBefore(btn, askEl); else tools.appendChild(btn);
 
@@ -684,80 +709,239 @@ SHIM_JS = r"""(function () {
     modal.id = "kit-docs-modal"; modal.className = "kit-docs-modal"; modal.hidden = true;
     modal.setAttribute("role", "dialog"); modal.setAttribute("aria-label", "Repo docs & memory");
     modal.innerHTML =
-      '<div class="kit-docs-hdr"><b>Repo Docs</b><input type="search" id="kit-docs-q" placeholder="Filter .md files..."><span class="kit-docs-cats" id="kit-docs-cats"></span><button type="button" class="btn small" id="kit-docs-close">Close</button></div>' +
-      '<div class="kit-docs-body"><div class="kit-docs-list" id="kit-docs-list"></div><div class="kit-docs-view" id="kit-docs-view"><div class="note" style="padding-top:14px">Select a document to read it directly from the repository.</div></div></div>';
+      '<div class="kit-docs-hdr"><b>Docs</b><input type="search" id="kit-docs-q" placeholder="Filter documents..."><span class="sp"></span><button type="button" class="btn small kit-icon-btn" id="kit-docs-close" title="Close" aria-label="Close">' + SVG_CLOSE + '</button></div>' +
+      '<div class="kit-docs-body"><div class="kit-docs-list" id="kit-docs-list"></div><div class="kit-docs-view" id="kit-docs-view"><div class="note" style="padding-top:20px">Select a document to read it directly from the repository.</div></div><aside class="kit-docs-outline" id="kit-docs-outline" hidden></aside></div>';
     document.body.appendChild(modal);
 
-    var allDocs = [], activeCat = "all", activePath = "", activeHeadings = [];
-    var cats = [["all", "All"], ["memory", "Memory"], ["docs", "Docs"], ["prompts", "Prompts"], ["root", "Root"]];
-    var catsEl = document.getElementById("kit-docs-cats");
+    var allDocs = [], activePath = "", activeHeadings = [], outlineOpen = true;
     var qEl = document.getElementById("kit-docs-q");
     var listEl = document.getElementById("kit-docs-list");
     var viewEl = document.getElementById("kit-docs-view");
+    var outlineEl = document.getElementById("kit-docs-outline");
 
-    function renderCats() {
-      catsEl.textContent = "";
-      cats.forEach(function (pair) {
-        var b = document.createElement("button"); b.type = "button"; b.textContent = pair[1];
-        if (pair[0] === activeCat) b.className = "on";
-        b.addEventListener("click", function () { activeCat = pair[0]; renderCats(); renderList(); });
-        catsEl.appendChild(b);
-      });
+    function repoKey() { return window.__KIT_ACTIVE_REPO__ || "primary"; }
+    function getBaseline() {
+      var k = "kit_docs_baseline:" + repoKey();
+      var b = "";
+      try { b = localStorage.getItem(k) || ""; } catch (e) {}
+      if (!b) {
+        b = new Date().toISOString();
+        try { localStorage.setItem(k, b); } catch (e) {}
+      }
+      return b;
+    }
+    function getDocSeen() {
+      try { return JSON.parse(localStorage.getItem("kit_docs_seen:" + repoKey()) || "{}"); } catch (e) { return {}; }
+    }
+    function markDocSeen(path, mtime) {
+      var s = getDocSeen();
+      s[path] = mtime || new Date().toISOString();
+      try { localStorage.setItem("kit_docs_seen:" + repoKey(), JSON.stringify(s)); } catch (e) {}
+      syncDocsBadge();
+    }
+    function isDocNew(d) {
+      if (!d || !d.mtime) return false;
+      var base = getBaseline();
+      var seenAt = getDocSeen()[d.path] || "";
+      var cutoff = seenAt > base ? seenAt : base;
+      return d.mtime > cutoff;
+    }
+    function syncDocsBadge() {
+      var dot = btn.querySelector(".newdot");
+      var anyNew = allDocs.some(isDocNew);
+      if (anyNew && !dot) {
+        var nd = document.createElement("span"); nd.className = "newdot"; nd.title = "Updated repo documents";
+        btn.appendChild(nd);
+      } else if (!anyNew && dot) {
+        dot.remove();
+      }
+    }
+    function fmtTime(iso) {
+      if (!iso) return "";
+      var t = Date.parse(iso);
+      if (isNaN(t)) return iso;
+      var diff = Math.max(0, Math.floor((Date.now() - t) / 1000));
+      var rel = diff < 60 ? "just now" : (diff < 3600 ? Math.floor(diff / 60) + "m ago" : (diff < 86400 ? Math.floor(diff / 3600) + "h ago" : Math.floor(diff / 86400) + "d ago"));
+      var dt = new Date(t);
+      var exact = dt.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ", " + dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+      return rel + " · " + exact;
     }
     function fmtKb(n) { return n >= 1024 ? (n / 1024).toFixed(1) + " KB" : n + " B"; }
-    function visibleHeadingText() {
-      if (!activeHeadings.length) return "";
-      var vTop = viewEl.getBoundingClientRect().top + 72;
-      var best = "";
+    function shortName(path) {
+      var parts = String(path || "").split("/");
+      return parts[parts.length - 1].replace(/\.md$/i, "");
+    }
+    function visibleHeading() {
+      if (!activeHeadings.length) return null;
+      var vTop = viewEl.getBoundingClientRect().top + 76;
+      var best = activeHeadings[0];
       for (var i = 0; i < activeHeadings.length; i++) {
         var el = document.getElementById(activeHeadings[i].id);
         if (!el) continue;
-        if (el.getBoundingClientRect().top <= vTop) best = activeHeadings[i].text;
+        if (el.getBoundingClientRect().top <= vTop) best = activeHeadings[i];
         else break;
       }
-      return best || (activeHeadings[0] && activeHeadings[0].text) || "";
+      return best;
     }
+    function syncOutlineActive() {
+      if (outlineEl.hidden || !activeHeadings.length) return;
+      var cur = visibleHeading();
+      var btns = outlineEl.querySelectorAll("button[data-hid]");
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle("active", !!(cur && btns[i].dataset.hid === cur.id));
+      }
+    }
+    viewEl.addEventListener("scroll", syncOutlineActive, { passive: true });
+
+    function togglePin(relPath, curPinned) {
+      api("POST", "/_api/repo-docs/pin", { path: relPath, pinned: !curPinned }).then(function (res) {
+        allDocs.forEach(function (d) { if (d.path === relPath) d.pinned = !!(res && res.pinned); });
+        renderList();
+        var vpin = document.getElementById("kit-doc-vpin");
+        if (vpin && activePath === relPath) {
+          var on = !!(res && res.pinned);
+          vpin.classList.toggle("ember", on);
+          vpin.title = on ? "Unpin document" : "Pin document";
+        }
+      }, function () {});
+    }
+
+    function makeDocRow(d) {
+      var row = document.createElement("div");
+      row.className = "kit-docs-row" + (d.path === activePath ? " on" : "");
+      var it = document.createElement("button"); it.type = "button"; it.className = "kit-docs-item";
+      var dp = document.createElement("span"); dp.className = "dp";
+      if (isDocNew(d)) { var nd = document.createElement("span"); nd.className = "newdot"; dp.appendChild(nd); }
+      var nm = document.createElement("span"); nm.textContent = shortName(d.path); dp.appendChild(nm);
+      var dm = document.createElement("span"); dm.className = "dm";
+      dm.textContent = fmtTime(d.mtime) + " · " + d.path;
+      it.appendChild(dp); it.appendChild(dm);
+      it.addEventListener("click", function () { openRepoDoc(d.path, ""); });
+      var pb = document.createElement("button"); pb.type = "button";
+      pb.className = "kit-docs-pin" + (d.pinned ? " on" : "");
+      pb.title = d.pinned ? "Unpin document" : "Pin document";
+      pb.setAttribute("aria-label", pb.title);
+      pb.innerHTML = SVG_PIN;
+      pb.addEventListener("click", function (ev) { ev.stopPropagation(); togglePin(d.path, !!d.pinned); });
+      row.appendChild(it); row.appendChild(pb);
+      return row;
+    }
+
+    function addGroup(title, docs, openByDefault) {
+      if (!docs.length) return;
+      var det = document.createElement("details"); det.className = "kit-docs-grp";
+      det.open = !!openByDefault;
+      var sm = document.createElement("summary");
+      sm.innerHTML = '<span></span><span></span>';
+      sm.children[0].textContent = title;
+      sm.children[1].textContent = String(docs.length);
+      det.appendChild(sm);
+      docs.forEach(function (d) { det.appendChild(makeDocRow(d)); });
+      listEl.appendChild(det);
+    }
+
     function renderList() {
       var ql = (qEl.value || "").trim().toLowerCase();
       listEl.textContent = "";
-      var shown = allDocs.filter(function (d) {
-        if (activeCat !== "all" && d.category !== activeCat) return false;
-        return !ql || d.path.toLowerCase().indexOf(ql) >= 0;
-      });
-      if (!shown.length) { listEl.innerHTML = '<div class="note">No matching Markdown files.</div>'; return; }
-      shown.slice(0, 300).forEach(function (d) {
-        var it = document.createElement("button"); it.type = "button";
-        it.className = "kit-docs-item" + (d.path === activePath ? " on" : "");
-        it.innerHTML = '<span class="dp"></span><span class="dm"></span>';
-        it.querySelector(".dp").textContent = (d.pinned ? "📌 " : "") + d.path;
-        it.querySelector(".dm").textContent = (d.pinned ? "pinned · " : "") + d.category + " · " + fmtKb(d.size);
-        it.addEventListener("click", function () { openRepoDoc(d.path, ""); });
-        listEl.appendChild(it);
+      if (ql) {
+        var hits = allDocs.filter(function (d) { return d.path.toLowerCase().indexOf(ql) >= 0; });
+        if (!hits.length) { listEl.innerHTML = '<div class="note" style="padding:8px">No matching documents.</div>'; return; }
+        addGroup("Matches", hits.slice(0, 120), true);
+        return;
+      }
+      var pinned = allDocs.filter(function (d) { return !!d.pinned; });
+      var byMtime = allDocs.slice().sort(function (a, b) { return String(b.mtime || "").localeCompare(String(a.mtime || "")); });
+      var recent = byMtime.filter(function (d) { return !d.pinned; }).slice(0, 10);
+      addGroup("Pinned", pinned, true);
+      addGroup("Recently updated", recent, true);
+      [["memory", "Memory"], ["docs", "Docs"], ["prompts", "Prompts"], ["root", "Root"], ["kit", "Kit"], ["other", "Other"]].forEach(function (pair) {
+        var sub = byMtime.filter(function (d) { return d.category === pair[0]; });
+        addGroup(pair[1], sub, false);
       });
     }
+
+    function renderOutline() {
+      outlineEl.textContent = "";
+      if (!outlineOpen || activeHeadings.length < 2) { outlineEl.hidden = true; return; }
+      outlineEl.hidden = false;
+      var t = document.createElement("div"); t.className = "otitle"; t.textContent = "Outline";
+      outlineEl.appendChild(t);
+      activeHeadings.slice(0, 60).forEach(function (h) {
+        var b = document.createElement("button"); b.type = "button";
+        b.className = "lvl-" + Math.min(4, Math.max(1, h.level || 1));
+        b.dataset.hid = h.id;
+        b.textContent = h.text;
+        b.title = h.text;
+        b.addEventListener("click", function () {
+          var el = document.getElementById(h.id);
+          if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        outlineEl.appendChild(b);
+      });
+      syncOutlineActive();
+    }
+
+    function loadDocsIndex(cb) {
+      api("GET", "/_api/repo-docs").then(function (r) {
+        allDocs = (r && r.docs) || [];
+        getBaseline();
+        syncDocsBadge();
+        if (cb) cb();
+      }, function () {});
+    }
+
     function openRepoDoc(relPath, section) {
       modal.hidden = false;
       activePath = relPath || "";
       activeHeadings = [];
-      if (!allDocs.length) {
-        api("GET", "/_api/repo-docs").then(function (r) { allDocs = (r && r.docs) || []; renderCats(); renderList(); }, function () {});
-      } else { renderList(); }
+      if (!allDocs.length) loadDocsIndex(renderList); else renderList();
       if (!relPath) return;
-      viewEl.innerHTML = '<div class="note" style="padding-top:14px">Loading ' + relPath + '...</div>';
+      viewEl.innerHTML = '<div class="note" style="padding-top:20px">Loading ' + relPath + '...</div>';
+      outlineEl.hidden = true;
       var u = "/_api/repo-doc?path=" + encodeURIComponent(relPath) + (section ? "&section=" + encodeURIComponent(section) : "");
       api("GET", u).then(function (res) {
+        markDocSeen(res.path, res.mtime);
+        renderList();
         viewEl.textContent = "";
         activeHeadings = res.headings || [];
+        var isPinned = allDocs.some(function (d) { return d.path === res.path && d.pinned; });
         var bar = document.createElement("div"); bar.className = "kit-docs-vbar";
-        var left = document.createElement("span"); left.style.cssText = "display:inline-flex;align-items:baseline;gap:8px;min-width:0;";
-        var pt = document.createElement("code"); pt.textContent = res.path; pt.style.fontWeight = "700";
-        var mt = document.createElement("span"); mt.className = "note"; mt.textContent = fmtKb(res.size);
-        left.appendChild(pt); left.appendChild(mt); bar.appendChild(left);
-        var cBtn = document.createElement("button"); cBtn.type = "button"; cBtn.className = "btn ember small";
-        cBtn.textContent = "Comment on this section";
-        cBtn.title = "Start an orchestrator discussion anchored to the currently visible section";
+        var meta = document.createElement("div"); meta.className = "kit-docs-vmeta";
+        var pt = document.createElement("code"); pt.textContent = res.path;
+        var mt = document.createElement("span"); mt.textContent = "Updated " + fmtTime(res.mtime) + " · " + fmtKb(res.size);
+        meta.appendChild(pt); meta.appendChild(mt); bar.appendChild(meta);
+
+        var acts = document.createElement("div"); acts.className = "kit-docs-vacts";
+        var pinB = document.createElement("button"); pinB.id = "kit-doc-vpin"; pinB.type = "button";
+        pinB.className = "btn small kit-icon-btn" + (isPinned ? " ember" : "");
+        pinB.title = isPinned ? "Unpin document" : "Pin document";
+        pinB.setAttribute("aria-label", pinB.title);
+        pinB.innerHTML = SVG_PIN;
+        pinB.addEventListener("click", function () {
+          var cur = allDocs.some(function (d) { return d.path === res.path && d.pinned; });
+          togglePin(res.path, cur);
+        });
+        acts.appendChild(pinB);
+
+        if (activeHeadings.length >= 2) {
+          var outB = document.createElement("button"); outB.type = "button";
+          outB.className = "btn small kit-icon-btn" + (outlineOpen ? " ember" : "");
+          outB.title = "Toggle document outline"; outB.setAttribute("aria-label", "Toggle document outline");
+          outB.innerHTML = SVG_OUTLINE;
+          outB.addEventListener("click", function () {
+            outlineOpen = !outlineOpen;
+            outB.classList.toggle("ember", outlineOpen);
+            renderOutline();
+          });
+          acts.appendChild(outB);
+        }
+
+        var cBtn = document.createElement("button"); cBtn.type = "button"; cBtn.className = "btn small kit-icon-btn ember";
+        cBtn.title = "Comment on this section"; cBtn.setAttribute("aria-label", "Comment on this section");
+        cBtn.innerHTML = SVG_CMT;
         cBtn.addEventListener("click", function () {
-          var secTxt = visibleHeadingText();
+          var vh = visibleHeading();
+          var secTxt = vh ? vh.text : "";
           var selTxt = "";
           try {
             var sel = window.getSelection ? window.getSelection() : null;
@@ -768,12 +952,12 @@ SHIM_JS = r"""(function () {
           var prefill = "Re `" + res.path + (secTxt ? " § " + secTxt : "") + "`:\n";
           if (selTxt) prefill += "> " + selTxt.replace(/\n+/g, "\n> ") + "\n\n";
           modal.hidden = true;
-          if (typeof window._kitOpenOrchNew === "function") {
-            window._kitOpenOrchNew(prefill);
-          }
+          if (typeof window._kitOpenOrchNew === "function") window._kitOpenOrchNew(prefill);
         });
-        bar.appendChild(cBtn);
+        acts.appendChild(cBtn);
+        bar.appendChild(acts);
         viewEl.appendChild(bar);
+
         var mdBox = document.createElement("div"); mdBox.className = "kit-docs-md body";
         if (typeof window._kitRenderBody === "function") {
           mdBox.innerHTML = window._kitRenderBody(res.content || "");
@@ -782,40 +966,29 @@ SHIM_JS = r"""(function () {
         }
         var hNodes = mdBox.querySelectorAll("h1,h2,h3,h4");
         for (var i = 0; i < hNodes.length && i < activeHeadings.length; i++) { hNodes[i].id = activeHeadings[i].id; }
-        if (activeHeadings.length > 1) {
-          var toc = document.createElement("div"); toc.className = "kit-docs-toc";
-          activeHeadings.slice(0, 30).forEach(function (h) {
-            var tb = document.createElement("button"); tb.type = "button"; tb.textContent = h.text.slice(0, 42);
-            tb.addEventListener("click", function () {
-              var el = document.getElementById(h.id);
-              if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
-            });
-            toc.appendChild(tb);
-          });
-          viewEl.appendChild(toc);
-        }
         viewEl.appendChild(mdBox);
+        renderOutline();
         if (res.match_heading) {
           var target = document.getElementById(res.match_heading);
           if (target) {
             target.classList.add("kit-sec-hit");
-            setTimeout(function () { target.scrollIntoView({ behavior: "smooth", block: "start" }); }, 30);
+            setTimeout(function () { target.scrollIntoView({ behavior: "smooth", block: "start" }); syncOutlineActive(); }, 40);
           }
         }
       }, function (e) {
-        viewEl.innerHTML = '<div class="note" style="padding-top:14px">Could not load ' + relPath + ' (' + (e && e.message || "error") + ').</div>';
+        viewEl.innerHTML = '<div class="note" style="padding-top:20px">Could not load ' + relPath + ' (' + (e && e.message || "error") + ').</div>';
       });
     }
     window._kitOpenRepoDoc = openRepoDoc;
     btn.addEventListener("click", function () {
       modal.hidden = false;
-      api("GET", "/_api/repo-docs").then(function (r) { allDocs = (r && r.docs) || []; renderCats(); renderList(); }, function () {});
+      loadDocsIndex(renderList);
       qEl.focus();
     });
     document.getElementById("kit-docs-close").addEventListener("click", function () { modal.hidden = true; });
     qEl.addEventListener("input", renderList);
     document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !modal.hidden) modal.hidden = true; });
-    renderCats();
+    loadDocsIndex();
   }
 
   function linkRepoDocs(root) {
@@ -1924,9 +2097,36 @@ def list_repo_docs(root_dir, query="", limit=1000):
                 break
         if len(items) >= limit:
             break
-    cat_order = {"memory": 0, "root": 1, "docs": 2, "prompts": 3, "kit": 4, "other": 5}
-    items.sort(key=lambda x: (0 if x.get("pinned") else 1, cat_order.get(x["category"], 9), x["path"].lower()))
+    items.sort(key=lambda x: (0 if x.get("pinned") else 1, -(datetime.strptime(x["mtime"], "%Y-%m-%dT%H:%M:%SZ").timestamp()), x["path"].lower()))
     return {"docs": items, "total": len(items)}
+
+
+def toggle_pinned_doc(root_dir, rel_path, pinned=None):
+    rel = (rel_path or "").strip().replace("\\", "/").lstrip("/")
+    if not rel or ".." in rel.split("/") or not rel.lower().endswith(".md"):
+        return None, "invalid_path"
+    root_real = os.path.realpath(root_dir)
+    target = os.path.realpath(os.path.join(root_real, rel))
+    if not (target.startswith(root_real + os.sep) and os.path.isfile(target)):
+        return None, "not_found"
+    norm = os.path.relpath(target, root_real).replace("\\", "/")
+    cfg_path = os.path.join(root_real, ".kit", "config.json")
+    try:
+        cfg = json.load(open(cfg_path, encoding="utf-8")) if os.path.isfile(cfg_path) else {}
+    except (OSError, ValueError):
+        cfg = {}
+    kit_cfg = cfg.setdefault("kit", {})
+    cur = [str(x).strip().replace("\\", "/").lstrip("/") for x in (kit_cfg.get("pinned_docs") or []) if isinstance(x, str) and x.strip()]
+    want = (norm not in cur) if pinned is None else bool(pinned)
+    if want and norm not in cur:
+        cur.append(norm)
+    elif not want and norm in cur:
+        cur = [x for x in cur if x != norm]
+    kit_cfg["pinned_docs"] = cur
+    os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
+    with open(cfg_path, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh, indent=1, ensure_ascii=False)
+    return {"path": norm, "pinned": want, "pinned_docs": cur}, None
 
 
 def read_repo_doc(root_dir, rel_path, section=""):
@@ -2950,6 +3150,16 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 return
             except ValueError:
                 self._send_json(400, {"error": "invalid json"})
+                return
+
+            if path == "/_api/repo-docs/pin":
+                rpath = str(body.get("path") or "")
+                want = body.get("pinned") if "pinned" in body else None
+                res_p, perr = toggle_pinned_doc(self._repo_root(parsed), rpath, pinned=want)
+                if perr:
+                    self._send_json(404 if perr == "not_found" else 400, {"error": perr})
+                    return
+                self._send_json(200, res_p)
                 return
 
             if path == "/_api/shares":
