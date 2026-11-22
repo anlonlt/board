@@ -65,6 +65,6 @@
  ".kit/up": "80856782305588bb4b30ee32914e93bfdce4d9efe2d4d148f622a75fffb563ad",
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
- ".kit/web_takeover.py": "fdee6b03ef8f1c8c019f741d80ed8c8c8ab97782b2ed6a9c1bbfc748f0387e97",
+ ".kit/web_takeover.py": "84ba1d788507f0eb6c978dbae219ea1399eb1c63173eeaf9f5136725da488c08",
  "_kit_commit": "52b72ee 2026-11-22T16:49:13-05:00"
 }

@@ -180,7 +180,12 @@ def cmd_save(quiet=False):
         return 0
     rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % mirror_branch()], timeout=120)
     if rc != 0:
-        rc2, out2 = sh(["git", "-C", m, "pull", "--no-rebase", "--no-edit", "origin", mirror_branch()], timeout=120)
+        # Both sides wrote (web + computer): merge; a conflicting hunk keeps this side (board/sync.json, the sync log,
+        # always conflicts). A per-post merge by updated_at is CL16's.
+        rc2, out2 = sh(["git", "-C", m, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", mirror_branch()],
+                       timeout=120)
+        if rc2 != 0:
+            sh(["git", "-C", m, "merge", "--abort"])
         if rc2 == 0:
             rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % mirror_branch()], timeout=120)
     if rc != 0:
