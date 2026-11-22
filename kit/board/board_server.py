@@ -2965,6 +2965,11 @@ def _file_sig(path):
 def _ensure_funnel_async(port, root_dir):
     """Best-effort, non-blocking Tailscale Funnel refresh on startup/reload."""
     import shutil
+    import tempfile
+    if os.environ.get("KIT_NO_FUNNEL") == "1":
+        return
+    if os.path.abspath(root_dir).startswith(os.path.abspath(tempfile.gettempdir()) + os.sep):
+        return
     if not shutil.which("tailscale"):
         return
     cfg_path = os.path.join(root_dir, ".kit", "config.json")

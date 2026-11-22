@@ -779,7 +779,10 @@ def main(argv=None):
         cmd_word = c["kit"].get("cmd") or "./.kit/up"
         port_m = re.search(r":(\d+)", c.get("board_url") or "")
         bport = port_m.group(1) if port_m else "8765"
-        if c["kit"].get("funnel", True) and not a.dry_run:
+        import tempfile as _tf
+        _tmp_prefix = os.path.abspath(_tf.gettempdir()) + os.sep
+        _in_tmp = os.path.abspath(t).startswith(_tmp_prefix)
+        if c["kit"].get("funnel", True) and not a.dry_run and not _in_tmp and os.environ.get("KIT_NO_FUNNEL") != "1":
             import shutil as _sh
             if _sh.which("tailscale"):
                 rf = subprocess.run(["tailscale", "funnel", "--bg", bport], capture_output=True, text=True)

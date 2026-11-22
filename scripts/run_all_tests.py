@@ -24,10 +24,12 @@ SUITES = [
 def main():
     results = []
     t0 = time.monotonic()
+    env = dict(os.environ)
+    env["KIT_NO_FUNNEL"] = "1"
     for name, cmd in SUITES:
         print("=== %s ===" % name, flush=True)
         st = time.monotonic()
-        r = subprocess.run(cmd, cwd=REPO_ROOT)
+        r = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
         dt = time.monotonic() - st
         ok = r.returncode == 0
         results.append((name, ok, r.returncode, dt))
