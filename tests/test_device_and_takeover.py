@@ -118,3 +118,112 @@ class WebTakeover(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TaskLoad(unittest.TestCase):
+    """CL19: the load per task, learned on the device."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.env = {"XDG_CONFIG_HOME": self.tmp}
+        self._old = os.environ.get("XDG_CONFIG_HOME")
+        os.environ["XDG_CONFIG_HOME"] = self.tmp
+
+    def tearDown(self):
+        if self._old is None:
+            os.environ.pop("XDG_CONFIG_HOME", None)
+        else:
+            os.environ["XDG_CONFIG_HOME"] = self._old
+
+    def test_kinds_inferred(self):
+        self.assertEqual(device.infer_kind(["yt-dlp", "u"]), "fetch")
+        self.assertEqual(device.infer_kind(["python3", "pipeline/bench/vr2/fetch_missing.py"]), "fetch")
+        self.assertEqual(device.infer_kind(["pip", "install", "-U", "yt-dlp"]), "install")
+        self.assertEqual(device.infer_kind(["python3", "chord_train.py", "train"]), "train")
+        self.assertEqual(device.infer_kind(["python3", "-m", "pytest"]), "tests")
+        self.assertEqual(device.infer_kind(["ls", "-la"]), "other")
+
+    def test_footprint_learns_and_default_holds_until_three_runs(self):
+        st = {}
+        device.learn(st, "fetch", 10, 1, False, 300)
+        self.assertEqual(device.footprint("fetch", st), 300)  # one tiny run does not make fetch light
+        device.learn(st, "fetch", 900, 1, False, 300)
+        device.learn(st, "fetch", 1000, 1, False, 300)
+        self.assertEqual(device.footprint("fetch", st), 1200)
+
+    def test_oom_raises_the_footprint(self):  # bar (b)
+        st = {}
+        for _ in range(3):
+            device.learn(st, "import", 700, 5, False, 800)
+        before = device.footprint("import", st)
+        device.learn(st, "import", 900, 5, True, before)
+        self.assertGreater(device.footprint("import", st), before)
+        self.assertIn("killed for memory", st["lessons"][-1])
+
+    def test_sigkill_with_memory_gone_is_an_oom(self):
+        self.assertTrue(device._was_oom(137, 100, 500))  # killed with memory nearly gone
+        self.assertFalse(device._was_oom(0, 100, 500))
+        self.assertFalse(device._was_oom(1, 100, 500))
+
+    def test_fit(self):  # bar (a), the rule
+        self.assertTrue(device.fits(2000, 0, 1000, 500, 0)[0])
+        self.assertFalse(device.fits(1400, 180, 1000, 500, 1)[0])
+        self.assertTrue(device.fits(600, 0, 1000, 500, 0)[0])  # alone it always runs: it can never fit better
+
+    def test_two_jobs_that_do_not_fit_run_one_after_the_other(self):  # bar (a), for real
+        import threading
+        import time
+        st = {"kinds": {"big": {"runs": 3, "ooms": 0, "peaks": [500, 500, 500]}}}
+        device.save_store(st)
+        orig = device.memory
+        device.memory = lambda *a, **k: {"total_mb": 2000, "available_mb": 1000, "swap_total_mb": 0,
+                                         "swap_free_mb": 0, "cgroup_limit_mb": None}
+        times = {}
+        job = [sys.executable, "-c", "import time; time.sleep(1.5)"]
+
+        def go(name):
+            times[name + "0"] = time.time()
+            device.run(job, kind="big", quiet=True)
+            times[name + "1"] = time.time()
+        try:
+            a = threading.Thread(target=go, args=("a",))
+            a.start()
+            time.sleep(0.5)
+            b = threading.Thread(target=go, args=("b",))
+            b.start()
+            a.join()
+            b.join()
+        finally:
+            device.memory = orig
+        self.assertGreaterEqual(times["b1"] - times["a1"], 1.4, "b must start only after a ended")
+
+    def test_cgroup_limit_beats_host_ram(self):  # bar (c)
+        root = os.path.join(self.tmp, "cg")
+        v1 = os.path.join(root, "memory", "user.slice")
+        os.makedirs(v1)
+        with open(os.path.join(v1, "memory.limit_in_bytes"), "w") as fh:
+            fh.write(str(1024 << 20))
+        with open(os.path.join(v1, "memory.usage_in_bytes"), "w") as fh:
+            fh.write(str(300 << 20))
+        pc = os.path.join(self.tmp, "cgroup")
+        with open(pc, "w") as fh:
+            fh.write("7:memory:/user.slice\n0::/\n")
+        self.assertEqual(device.cgroup_limit(pc, root), (1024, 300))
+        with open(os.path.join(self.tmp, "meminfo"), "w") as fh:
+            fh.write("MemTotal: 33554432 kB\nMemAvailable: 30000000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n")
+        m = device.memory(os.path.join(self.tmp, "meminfo"), cgroup=(1024, 300))
+        self.assertEqual((m["total_mb"], m["available_mb"], m["cgroup_limit_mb"]), (1024, 724, 1024))
+        v2 = os.path.join(root, "app")
+        os.makedirs(v2)
+        with open(os.path.join(v2, "memory.max"), "w") as fh:
+            fh.write("max")
+        with open(os.path.join(v2, "memory.current"), "w") as fh:
+            fh.write("1")
+        with open(pc, "w") as fh:
+            fh.write("0::/app\n")
+        self.assertIsNone(device.cgroup_limit(pc, root))  # unlimited
+
+    def test_load_line_in_plain_words(self):
+        st = {"kinds": {"train": {"runs": 3, "ooms": 1, "peaks": [1500] * 3, "oom_floor_mb": 2400}}}
+        s = device.survey(env={}, mem=dict(CHROMEBOOK), procs=[(1, 450, "claude")], running=1, store=st)
+        self.assertIn("train one at a time", device.load_line(s, st))
