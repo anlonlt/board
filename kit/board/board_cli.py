@@ -289,6 +289,11 @@ def main(argv=None):
     pwt = csub.add_parser("wait")
     pwt.add_argument("--timeout", type=int, default=300)
     pwt.add_argument("--lease", type=float, default=None, help="Lease seconds before unacknowledged thread re-queues (default 60)")
+    pnx = csub.add_parser("next", help="Atomic clerk loop: wait + route + mark seen/ack/reply + check pending in 1 call")
+    pnx.add_argument("--timeout", type=int, default=300)
+    pnx.add_argument("--lease", type=float, default=None)
+    pnx.add_argument("--pending-dir", default="/tmp/clerk")
+    pnx.add_argument("--no-auto-seen", action="store_true", help="Do not auto-mark seen/ack/reply (route only)")
     pr = csub.add_parser("read")
     pr.add_argument("thread_id")
     pack = csub.add_parser("ack")
@@ -463,6 +468,64 @@ def main(argv=None):
                 q += "&lease=%s" % a.lease
             res = call("GET", "/_api/comments/wait?" + q, timeout=a.timeout + 15)
             print(json.dumps(res, ensure_ascii=False))
+            return 0
+        if a.ccmd == "next":
+            q = "timeout=%d" % a.timeout
+            if a.lease is not None:
+                q += "&lease=%s" % a.lease
+            ev = call("GET", "/_api/comments/wait?" + q, timeout=a.timeout + 15)
+            out = dict(ev or {})
+            if out.get("event") == "comment" and out.get("thread_id"):
+                tid = str(out["thread_id"])
+                routed = _route_thread(call, tid)
+                out.update(routed)
+                if not a.no_auto_seen:
+                    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    cdoc_id = routed.get("comment_doc_id")
+                    if cdoc_id:
+                        call("PATCH", "/_api/db/comments/%s" % urllib.parse.quote(cdoc_id), {"data": {"read": True, "read_at": now_iso}})
+                        out["marked_read"] = True
+                    call("POST", "/_api/comments/threads/%s/ack" % urllib.parse.quote(tid), {})
+                    out["acked"] = True
+                    is_words = routed.get("kind") not in ("like", "answer")
+                    if is_words:
+                        tpart = routed.get("target_part") or "orchestrator"
+                        call("POST", "/_api/comments/threads/%s/reply" % urllib.parse.quote(tid), {"text": "Passed to %s (%s UTC)." % (tpart, now_iso[11:16])})
+                        out["replied"] = True
+                        if a.pending_dir and cdoc_id:
+                            os.makedirs(a.pending_dir, exist_ok=True)
+                            pfile = os.path.join(a.pending_dir, "pending.txt")
+                            existing_lines = open(pfile, encoding="utf-8").read().splitlines() if os.path.exists(pfile) else []
+                            if not any(l.split()[:1] == [cdoc_id] for l in existing_lines if l.strip()):
+                                with open(pfile, "a", encoding="utf-8") as fh:
+                                    fh.write("%s %s %s %s %s\n" % (cdoc_id, tid, routed.get("created_at") or now_iso, routed.get("post_id") or "_orchestrator", tpart))
+                                out["pending_added"] = True
+            if a.pending_dir:
+                pfile = os.path.join(a.pending_dir, "pending.txt")
+                if os.path.isfile(pfile) and open(pfile, encoding="utf-8").read().strip():
+                    lines_p = [l.split() for l in open(pfile, encoding="utf-8").read().splitlines() if len(l.split()) >= 5]
+                    if lines_p:
+                        by_post = {}
+                        for f in lines_p:
+                            did_p, _, _, post_p, _ = f[:5]
+                            if post_p not in by_post:
+                                wqs = urllib.parse.urlencode({"where": json.dumps([["post_id", "==", post_p]]), "limit": "1000"})
+                                by_post[post_p] = (call("GET", "/_api/db/comments?" + wqs).get("docs") or [])
+                            sub_p = os.path.join(a.pending_dir, "t", did_p)
+                            for d_p in by_post[post_p]:
+                                write_out(sub_p, "comments", d_p["id"], d_p.get("data") or {})
+                        cp_cands = [
+                            os.path.join(os.path.dirname(os.path.abspath(__file__)), "clerk_pending.py"),
+                            os.path.join(ROOT, ".kit", "clerk_pending.py"),
+                            os.path.join(ROOT, "kit", "clerk", "clerk_pending.py"),
+                        ]
+                        cp_p = next((p for p in cp_cands if os.path.isfile(p)), None)
+                        if cp_p:
+                            spec = importlib.util.spec_from_file_location("clerk_pending", cp_p)
+                            mod = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(mod)
+                            out["pending_actions"] = mod.run(a.pending_dir, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+            print(json.dumps(out, ensure_ascii=False))
             return 0
         if a.ccmd == "read":
             res = call("GET", "/_api/comments/threads/" + urllib.parse.quote(a.thread_id))
