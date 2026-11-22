@@ -30,7 +30,7 @@ import strings as page_strings  # noqa: E402
 
 PARTS = ("memory", "board", "clerk", "orchestrator")
 MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "test_hooks.py"}
-HOOKS = ["kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
+HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
          "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "kit_task_train.py",
          "test_hooks.py"]
 # agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
@@ -63,6 +63,7 @@ CLAUDE_CLI_SETTINGS = [
     ("Stop", None, "kit_stop.py"),
     ("Stop", None, "kit_say_it_once.py"),
     ("Stop", None, "kit_pre_compact.py"),
+    ("Stop", None, "kit_web_save.py"),
     ("PreCompact", None, "kit_pre_compact.py"),
 ]
 # Runtimes served by the local board server; `local` = agy + the Claude Code CLI in one install.
@@ -709,6 +710,8 @@ def main(argv=None):
         ins.put(".kit/git_watch.py", rd("kit", "git_watch.py"))
         ins.put(".kit/up", rd("kit", "up"))
         ins.put(".kit/handover.py", rd("kit", "handover.py"))
+        ins.put(".kit/web_takeover.py", rd("kit", "web_takeover.py"))
+        ins.put(".kit/device.py", rd("scripts", "device.py"))
         ins.put(".kit/step0_scan.py", rd("scripts", "step0_scan.py"))
         ins.put(".kit/twrp_wizard.py", rd("scripts", "twrp_wizard.py"))
     for h in HOOKS:
@@ -781,7 +784,7 @@ def main(argv=None):
             ins.put(".kit/runner.md", render(rd("kit", "runner.template.md"), c))
             ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
             if claude_cli:
-                for f in ("orchestrator", "ORCHESTRATOR", "consultant", "clerk", "part"):
+                for f in ("orchestrator", "ORCHESTRATOR", "consultant", "clerk", "part", "takeover"):
                     ins.put(".kit/claude-cli/%s.md" % f, render(rd("kit", "claude-cli", f + ".template.md"), c))
     mdir = c["kit"].get("memory_dir") or ".board/memory"
     for d in ("state", "issues", "lessons"):

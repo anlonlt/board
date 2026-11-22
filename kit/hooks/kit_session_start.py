@@ -84,6 +84,12 @@ def main():
             out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s, CLI `.kit/board_cli.py`), "
                        "made at turn 1 and updated in full. Every chat turn then ends with a single \"·\"; to the orchestrator: "
                        "\"Done. Check post <id>.\" Skills: `story`, `board`." % url)
+    if str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() == "true" and os.path.exists(
+            os.path.join(root, ".kit", "web_takeover.py")):
+        out.append("WEB: this is a Claude Code web session: no board server, no `claude --bg` here until you run "
+                   "`python3 -I .kit/web_takeover.py` (the board from git + the steps to continue). To take over the "
+                   "orchestrator: `.kit/claude-cli/takeover.md`. A part continues on its branch; the board goes back to "
+                   "git with `python3 -I .kit/web_takeover.py save` (the Stop hook runs it too).")
     talk = c.get("language", {}).get("talk")
     if talk:
         out.append("LANGUAGE: talk to the owner in %s." % talk)

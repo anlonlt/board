@@ -824,6 +824,9 @@ def render_welcome(runtime=None, project=None, board_url=None, memory_dir=None, 
             lines.append("- **%s** (`P%d`): %s" % (p["title"], p["priority"], p["next"]))
     else:
         lines.append("- Ready for your next instruction — tell me which task to start.")
+    dl = device_line()
+    if dl:
+        lines.append("- " + dl + " Past that, steps wait their turn instead of crashing the computer.")
     lines.extend(["", "A 👍 on this message launches them all; or tell me which."])
     return "\n".join(lines) + "\n"
 
@@ -1490,6 +1493,30 @@ def _all_posts(db_path=None):
     return posts
 
 
+def _device():
+    """.kit/device.py (scripts/device.py in the kit's own repo): the device's session cap (CL15); None if missing."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "device.py")
+    if not os.path.isfile(path):
+        return None
+    spec = importlib.util.spec_from_file_location("kit_device", path)
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:  # a broken probe never blocks the kit
+        return None
+    return mod
+
+
+def device_line(survey=None):
+    d = _device()
+    if d is None:
+        return None
+    try:
+        return d.summary(survey or d.survey())
+    except Exception as e:
+        return "Device: could not measure (%s)." % e
+
+
 def _launch_line(part, rel, model=None):
     c = _kit_config()
     k = c.get("kit") or {}
@@ -1498,8 +1525,12 @@ def _launch_line(part, rel, model=None):
     name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
     if str(k.get("cli") or "claude") == "agy":
         return "(agy) launch a part session with the prompt %s, in its own worktree, named %s" % (rel, name)
-    return "KIT_ROLE=part claude --bg -n %s -w %s --permission-mode %s%s \"Your prompt is %s: read it and do it.\"" % (
-        name, _slug(part, 24), mode, (" --model %s" % model) if model != "inherit" else "", rel)
+    if str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() == "true":
+        return ("(web) run it as a subagent here (Agent tool, isolation worktree) with the prompt \"Your prompt is %s: "
+                "read it and do it.\", or open a new Claude Code web session on this repo with that prompt" % rel)
+    gate = "python3 -I .kit/device.py --gate && " if _device() is not None else ""
+    return "%sKIT_ROLE=part claude --bg -n %s -w %s --permission-mode %s%s \"Your prompt is %s: read it and do it.\"" % (
+        gate, name, _slug(part, 24), mode, (" --model %s" % model) if model != "inherit" else "", rel)
 
 
 def _write_step_prompt(pid, doc, sources):
@@ -1661,6 +1692,12 @@ def resume(m, db_path=None, alive=None):
     if not n_active:
         out.append("")
         out.append("No train has an open step.")
+    dl = device_line()
+    if dl:
+        out.append("")
+        out.append("## This device")
+        out.append(dl + " A launch past the cap is refused (`.kit/device.py --gate`, the guard): the step waits, "
+                   "planned, until a session ends; launch it then.")
     out.append("")
     out.append("## The owner's unanswered comments")
     try:
@@ -1929,6 +1966,8 @@ def main(argv=None):
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None)
+    s = sp.add_parser("capacity", help="the device's session cap (.kit/device.py): --gate exits 1 when no slot is free")
+    s.add_argument("--gate", action="store_true"); s.add_argument("--json", action="store_true")
     s = sp.add_parser("done"); s.add_argument("post"); s.add_argument("--db", default=None)
     s = sp.add_parser("sections"); s.add_argument("--db", default=None)
     s = sp.add_parser("step", help="the train is the task list: new | start | complete | drop")
@@ -2032,6 +2071,12 @@ def main(argv=None):
     if a.cmd == "resume":
         print(resume(m, db_path=a.db), end="")
         return 0
+    if a.cmd == "capacity":
+        d = _device()
+        if d is None:
+            print("no .kit/device.py: reinstall the kit", file=sys.stderr)
+            return 2
+        return d.main((["--gate"] if a.gate else []) + (["--json"] if a.json else []))
     if a.cmd == "train":
         print(train_context(m, a.target, zoom=a.zoom, db_path=a.db, as_json=a.as_json), end="")
         return 0

@@ -92,6 +92,14 @@
             "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_pre_compact.py\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_web_save.py\""
+          }
+        ]
       }
     ],
     "PreCompact": [
