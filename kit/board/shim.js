@@ -2150,7 +2150,7 @@
       syncDocsScale(modal);
 
       var activePath = "", activeKind = "md", activeViewMode = "view", htmlMode = "desktop";
-      var activeHtmlUrl = "", activeHtmlSource = "", activeImgUrl = "", activeRepoOverride = undefined;
+      var activeHtmlUrl = "", activeHtmlSource = "", activeImgUrl = "", activePdfUrl = "", activePdfPage = 1, activeRepoOverride = undefined;
       var activeHeadings = [], leftTimer = null, rightTimer = null;
       var selectedHeadingId = "", scrollLockUntil = 0, activeDocMetaText = "";
       var localZoom = _kitDocsState.zoom || 100, savedDesktopWidth = 0;
@@ -2601,6 +2601,15 @@
       _kitDocsState.section = hObj.slug || hObj.text || "";
       syncUrlWorkspaceState();
       if (doScroll) {
+        if (activeKind === "pdf" && hObj.page) {
+          activePdfPage = hObj.page;
+          var pIfrJ = viewEl.querySelector("iframe.kit-pdf-iframe");
+          if (pIfrJ && activePdfUrl) {
+            pIfrJ.src = activePdfUrl.split("#")[0] + "#page=" + hObj.page;
+          }
+          var pInJ = modal.querySelector(".kit-pdf-page-in");
+          if (pInJ) pInJ.value = String(hObj.page);
+        }
         var el = document.getElementById(hObj.id);
         if (el) {
           scrollLockUntil = Date.now() + 700;
@@ -2871,6 +2880,32 @@
         var hPre = "Re `" + activePath + "`" + st.meta + ":\n";
         if (st.sel) hPre += "> " + st.sel.replace(/\n+/g, "\n> ") + "\n\n";
         if (typeof window._kitOpenOrchNew === "function") { window._kitOpenOrchNew(hPre); bringOrchAboveViewer(); watchOrchCloseForResume(); }
+        return;
+      }
+      if (activeKind === "pdf") {
+        var pCur = activePdfPage || 1;
+        var pH = selectedHeadingId ? findHeadingById(selectedHeadingId) : null;
+        var pPre = "Re `" + activePath + "` p. " + pCur + (pH && pH.text && pH.text.indexOf("Page ") !== 0 ? " (" + pH.text.replace(/\s*\(p\.\s*\d+\)\s*$/, "") + ")" : "") + ":\n";
+        if (typeof window._kitOpenOrchNew === "function") { window._kitOpenOrchNew(pPre); bringOrchAboveViewer(); }
+        return;
+      }
+      if (activeKind === "audio") {
+        var aEl = viewEl.querySelector("audio");
+        if (aEl && !aEl.paused) try { aEl.pause(); } catch (e) {}
+        var aTs = aEl ? fmtMediaTime(aEl.currentTime || 0) : "00:00";
+        if (typeof window._kitOpenOrchNew === "function") { window._kitOpenOrchNew("Re `" + activePath + "` @ " + aTs + ":\n"); bringOrchAboveViewer(); }
+        return;
+      }
+      if (activeKind === "video") {
+        var vEl = viewEl.querySelector("video");
+        if (vEl && !vEl.paused) try { vEl.pause(); } catch (e) {}
+        var vTs = vEl ? fmtMediaTime(vEl.currentTime || 0) : "00:00";
+        cmtHdrBtn.disabled = true;
+        captureVideoContactSheet(vEl).then(function (stripUrl) {
+          cmtHdrBtn.disabled = false;
+          var vPre = "Re `" + activePath + "` @ " + vTs + ":\n" + (stripUrl ? ("![Frames around " + vTs + "](" + stripUrl + ")\n\n") : "");
+          if (typeof window._kitOpenOrchNew === "function") { window._kitOpenOrchNew(vPre); bringOrchAboveViewer(); }
+        });
         return;
       }
       var vh = activeKind === "md" ? visibleHeading() : null, secTxt = vh ? vh.text : "", selTxt = "";
@@ -3395,11 +3430,29 @@
           viewEl.classList.add("media-mode");
           viewEl.textContent = "";
           if (activeKind === "pdf") {
+            activePdfUrl = mediaUrl;
+            activePdfPage = 1;
+            activeHeadings = res.headings || [];
+            var pBar = document.createElement("div");
+            pBar.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--line);background:var(--sunk);flex:none;font-size:.8rem;";
+            var pLbl = document.createElement("span"); pLbl.className = "note"; pLbl.textContent = "Page";
+            var pIn = document.createElement("input"); pIn.type = "number"; pIn.min = "1"; pIn.value = "1"; pIn.className = "kit-pdf-page-in";
+            pIn.style.cssText = "width:64px;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;";
             var pIfr = document.createElement("iframe");
+            pIfr.className = "kit-pdf-iframe";
             pIfr.src = mediaUrl;
             pIfr.title = shortName(res.path);
             pIfr.style.cssText = "width:100%;height:100%;min-height:480px;border:0;background:#fff;flex:1 1 auto;";
-            viewEl.appendChild(pIfr);
+            pIn.addEventListener("change", function () {
+              var pg = Math.max(1, parseInt(pIn.value, 10) || 1);
+              activePdfPage = pg;
+              pIfr.src = mediaUrl.split("#")[0] + "#page=" + pg;
+            });
+            var pWrap = document.createElement("div");
+            pWrap.style.cssText = "display:flex;flex-direction:column;width:100%;height:100%;";
+            pBar.appendChild(pLbl); pBar.appendChild(pIn);
+            pWrap.appendChild(pBar); pWrap.appendChild(pIfr);
+            viewEl.appendChild(pWrap);
           } else if (activeKind === "video") {
             var vWrap = document.createElement("div");
             vWrap.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;padding:16px;box-sizing:border-box;background:#000;";
@@ -3751,6 +3804,87 @@
     return { applyMode: applyMode };
   }
 
+  function fmtMediaTime(sec) {
+    var s = Math.max(0, Number(sec) || 0);
+    var m = Math.floor(s / 60);
+    var r = s - m * 60;
+    var whole = Math.floor(r);
+    var tenth = Math.floor((r - whole) * 10);
+    var mm = (m < 10 ? "0" : "") + m;
+    var ss = (whole < 10 ? "0" : "") + whole;
+    return tenth ? (mm + ":" + ss + "." + tenth) : (mm + ":" + ss);
+  }
+  function captureVideoContactSheet(videoEl) {
+    if (!videoEl || !videoEl.src) return Promise.resolve("");
+    return new Promise(function (resolve) {
+      var cur = Number(videoEl.currentTime) || 0;
+      var dur = Number(videoEl.duration) || 0;
+      var offsets = [-2, -1, 0, 1, 2];
+      var times = [];
+      offsets.forEach(function (d) {
+        var t = Math.max(0, dur ? Math.min(dur - 0.05, cur + d) : Math.max(0, cur + d));
+        t = Math.round(t * 10) / 10;
+        if (times.indexOf(t) < 0) times.push(t);
+      });
+      if (!times.length) times = [cur];
+      var probe = document.createElement("video");
+      probe.crossOrigin = "anonymous";
+      probe.muted = true;
+      probe.playsInline = true;
+      probe.preload = "auto";
+      probe.src = videoEl.currentSrc || videoEl.src;
+      var fw = 200, fh = 112, pad = 8, lblH = 22;
+      var canvas = document.createElement("canvas");
+      canvas.width = times.length * (fw + pad) + pad;
+      canvas.height = fh + lblH + pad * 2;
+      var ctx = canvas.getContext("2d");
+      if (!ctx) { resolve(""); return; }
+      ctx.fillStyle = "#0f1624";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      var idx = 0, done = false;
+      function finish() {
+        if (done) return;
+        done = true;
+        try {
+          canvas.toBlob(function (blob) {
+            if (!blob || !assets || !assets.upload) { resolve(""); return; }
+            var f = new File([blob], "video-frames-" + Math.round(cur) + "s.png", { type: "image/png" });
+            assets.upload(f).then(function (up) { resolve((up && up.url) || ""); }, function () { resolve(""); });
+          }, "image/png");
+        } catch (e) { resolve(""); }
+      }
+      var guard = setTimeout(finish, 6000);
+      function grabNext() {
+        if (idx >= times.length) { clearTimeout(guard); finish(); return; }
+        var t = times[idx];
+        var onSeek = function () {
+          probe.removeEventListener("seeked", onSeek);
+          var x = pad + idx * (fw + pad), y = pad;
+          try {
+            ctx.drawImage(probe, x, y, fw, fh);
+          } catch (e) {
+            ctx.fillStyle = "#1c2638"; ctx.fillRect(x, y, fw, fh);
+          }
+          var isCenter = Math.abs(t - Math.round(cur * 10) / 10) < 0.15;
+          ctx.strokeStyle = isCenter ? "#e8894a" : "#2e3b52";
+          ctx.lineWidth = isCenter ? 2.5 : 1;
+          ctx.strokeRect(x, y, fw, fh);
+          ctx.fillStyle = isCenter ? "#e8894a" : "#cbd5e1";
+          ctx.font = (isCenter ? "bold " : "") + "12px monospace";
+          ctx.textAlign = "center";
+          ctx.fillText(fmtMediaTime(t), x + fw / 2, y + fh + 16);
+          idx++;
+          grabNext();
+        };
+        probe.addEventListener("seeked", onSeek);
+        try { probe.currentTime = t; } catch (e) { probe.removeEventListener("seeked", onSeek); idx++; grabNext(); }
+      }
+      probe.addEventListener("loadeddata", function () { grabNext(); }, { once: true });
+      probe.addEventListener("error", function () { clearTimeout(guard); resolve(""); }, { once: true });
+      probe.load();
+    });
+  }
+
   function mountInlineViewerEmbed(anchorEl, fp, sec, repoOverride) {
     var postBody = anchorEl && anchorEl.closest ? anchorEl.closest("#p-body, .kit-post-win-body") : null;
     if (!postBody || (anchorEl.closest && anchorEl.closest(".kit-inline-embed, .kit-docs-modal"))) return;
@@ -3792,7 +3926,23 @@
     cmtB.title = "Comment on " + ttl.textContent; cmtB.setAttribute("aria-label", cmtB.title); cmtB.innerHTML = SVG_CMT2;
     cmtB.addEventListener("click", function (ev) {
       ev.stopPropagation();
-      if (typeof window._kitOpenOrchNew === "function") {
+      if (typeof window._kitOpenOrchNew !== "function") return;
+      if (isAudio) {
+        var ae = body.querySelector("audio");
+        if (ae && !ae.paused) try { ae.pause(); } catch (e) {}
+        window._kitOpenOrchNew("Re `" + fp + "` @ " + fmtMediaTime(ae ? ae.currentTime : 0) + ":\n");
+      } else if (isVideo) {
+        var ve = body.querySelector("video");
+        if (ve && !ve.paused) try { ve.pause(); } catch (e) {}
+        var vts = fmtMediaTime(ve ? ve.currentTime : 0);
+        cmtB.disabled = true;
+        captureVideoContactSheet(ve).then(function (stripUrl) {
+          cmtB.disabled = false;
+          window._kitOpenOrchNew("Re `" + fp + "` @ " + vts + ":\n" + (stripUrl ? ("![Frames around " + vts + "](" + stripUrl + ")\n\n") : ""));
+        });
+      } else if (isPdf) {
+        window._kitOpenOrchNew("Re `" + fp + "` p. 1:\n");
+      } else {
         window._kitOpenOrchNew("Re `" + fp + (sec ? " § " + sec : "") + "`:\n");
       }
     });
@@ -3961,8 +4111,8 @@
         }
       }
     }
-    /* Unified inline post media viewer: resolve repo images, follow zoomed image size, and synchronize pinch-to-zoom across side-by-side compare groups */
-    var postImgs = root.querySelectorAll("#p-imgs .pic img, .kit-inline-cmp img, #p-body img, .kit-post-win-body img, .cmt img");
+    /* Unified inline post media viewer: resolve repo images (#p-pics + body + comments), follow zoomed image size, and synchronize pinch-to-zoom across side-by-side compare groups */
+    var postImgs = root.querySelectorAll("#p-pics img, #p-imgs .pic img, .kit-inline-cmp img, #p-body img, .kit-post-win-body img, .cmt img");
     for (var m = 0; m < postImgs.length; m++) {
       var im = postImgs[m];
       if (im.dataset.kitInlineZoom) continue;

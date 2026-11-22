@@ -1420,6 +1420,36 @@ def read_repo_asset(root_dir, rel_path):
         return None, None, "read_error"
 
 
+def extract_pdf_headings(file_path):
+    """Extract PDF bookmarks/outline titles or page headings (zero-dep pure Python, with pdftotext fallback)."""
+    headings = []
+    try:
+        raw = open(file_path, "rb").read(2 * 1024 * 1024)
+    except OSError:
+        return headings
+    # Count /Type /Page objects (excluding /Pages)
+    pages = len(re.findall(rb"/Type\s*/Page\b(?!s)", raw))
+    # Extract bookmark /Title (...) entries from PDF outline dictionaries
+    titles = []
+    for m in re.finditer(rb"/Title\s*\(([^()]{1,120})\)", raw):
+        try:
+            t = m.group(1).decode("latin-1", errors="ignore").strip()
+            t = re.sub(r"\\([()\\])", r"\1", t).strip()
+            if t and len(t) >= 2 and t not in titles:
+                titles.append(t)
+        except Exception:
+            pass
+    if titles:
+        for idx, t in enumerate(titles[:60]):
+            pg = min(idx + 1, max(1, pages)) if pages else (idx + 1)
+            headings.append({"id": "pdf-p-%d" % pg, "text": "%s (p. %d)" % (t, pg), "level": 1, "slug": "page-%d" % pg, "page": pg})
+        return headings
+    if pages > 0:
+        for pg in range(1, min(pages, 100) + 1):
+            headings.append({"id": "pdf-p-%d" % pg, "text": "Page %d" % pg, "level": 1, "slug": "page-%d" % pg, "page": pg})
+    return headings
+
+
 def read_repo_doc(root_dir, rel_path, section="", repo_id="primary"):
     rel = (rel_path or "").strip().replace("\\", "/").lstrip("/")
     kind = _repo_file_kind(rel)
@@ -1439,13 +1469,14 @@ def read_repo_doc(root_dir, rel_path, section="", repo_id="primary"):
         max_sz = (100 * 1024 * 1024) if kind in ("audio", "video") else MAX_BLOB_BYTES
         if st.st_size > max_sz:
             return None, "too_large"
+        pdf_hs = extract_pdf_headings(target) if kind == "pdf" else []
         return {
             "path": norm,
             "kind": kind,
             "url": "/_api/repo-asset?path=" + urllib.parse.quote(norm, safe="/") + ("&repo=" + urllib.parse.quote(repo_id) if repo_id else ""),
             "size": st.st_size,
             "mtime": mtime_iso,
-            "headings": [],
+            "headings": pdf_hs,
             "match_heading": "",
             "content": "",
         }, None
@@ -2621,6 +2652,12 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if path == "/_api/repo-asset":
                 rpath = (qs.get("path") or [""])[0]
                 adata, actype, aerr = read_repo_asset(self._repo_root(parsed), rpath)
+                if aerr == "not_found" and len(roots_map) > 1 and not self._scoped_user_repo():
+                    for r_root in roots_map.values():
+                        adata2, actype2, aerr2 = read_repo_asset(r_root, rpath)
+                        if not aerr2:
+                            adata, actype, aerr = adata2, actype2, aerr2
+                            break
                 if aerr:
                     code = 404 if aerr == "not_found" else (413 if aerr == "too_large" else 400)
                     self._send_json(code, {"error": aerr})
