@@ -933,7 +933,27 @@ def doctor(m, db_path=None):
     return "\n".join(lines), (1 if issues else 0)
 
 
-def queue_cards(m, runner=None, for_owner=None, db_path=None):
+def _is_card_blocked(doc, posts):
+    """Return True if doc declares blocked_by items that are not yet done in posts."""
+    raw = doc.get("blocked_by")
+    if not raw:
+        return False
+    items = [raw] if isinstance(raw, str) else (list(raw) if isinstance(raw, (list, tuple)) else [])
+    for b in items:
+        s = str(b or "").strip()
+        if not s:
+            continue
+        ref = posts.get(s)
+        if not ref:
+            # Also match by part id (case-insensitive)
+            sl = s.lower()
+            ref = next((p for p in posts.values() if str(p.get("part") or "").strip().lower() == sl), None)
+        if ref is None or ref.get("column") != "done":
+            return True
+    return False
+
+
+def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=False):
     """List open cards attributed to a runner (e.g. lmarena, claude-chrome) or person/role from SQLite or mirror."""
     rf = (runner or "").strip().lower()
     ff = (for_owner or "").strip().lower()
@@ -958,6 +978,8 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None):
     rows = []
     for pid, d in posts.items():
         if d.get("removed") or d.get("column") == "done":
+            continue
+        if unblocked_only and _is_card_blocked(d, posts):
             continue
         pr = str(d.get("runner") or "").strip()
         pf = str(d.get("for") or d.get("assignee") or "").strip()
@@ -1407,7 +1429,7 @@ def main(argv=None):
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
     s = sp.add_parser("report"); s.add_argument("--db", default=None)
     s = sp.add_parser("portfolio"); s.add_argument("--config", dest="portfolio_config", default=None); s.add_argument("--roots", nargs="*", default=[])
-    s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None)
+    s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None); s.add_argument("--unblocked", action="store_true", help="Exclude cards with unresolved blocked_by dependencies")
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("welcome")
@@ -1457,7 +1479,7 @@ def main(argv=None):
         print(portfolio_summary(config_path=a.portfolio_config, roots=a.roots), end="")
         return 0
     if a.cmd == "queue":
-        print(queue_cards(m, runner=a.runner, for_owner=a.for_owner, db_path=a.db))
+        print(queue_cards(m, runner=a.runner, for_owner=a.for_owner, db_path=a.db, unblocked_only=a.unblocked))
         return 0
     if a.cmd == "search":
         print(search_all(a.query, db_path=a.db, limit=a.limit))

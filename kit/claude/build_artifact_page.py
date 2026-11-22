@@ -51,9 +51,13 @@ def mcp_capabilities(reader_ids):
 
 
 def shim_ui(kit):
-    src = open(os.path.join(kit, "kit", "board", "board_server.py"), encoding="utf-8").read()
-    i = src.index('SHIM_JS = r"""') + len('SHIM_JS = r"""')
-    shim = src[i:src.index('"""', i)]
+    shim_p = os.path.join(kit, "kit", "board", "shim.js")
+    if os.path.isfile(shim_p):
+        shim = open(shim_p, encoding="utf-8").read()
+    else:
+        src = open(os.path.join(kit, "kit", "board", "board_server.py"), encoding="utf-8").read()
+        i = src.index('SHIM_JS = r"""') + len('SHIM_JS = r"""')
+        shim = src[i:src.index('"""', i)]
     k = shim.index(UI_START)
     ui = shim[k:].rstrip()
     if not ui.endswith("})();"):

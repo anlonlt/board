@@ -42,6 +42,7 @@ TOOLS = [
             "properties": {
                 "runner": {"type": "string"},
                 "for_owner": {"type": "string"},
+                "unblocked_only": {"type": "boolean", "description": "Exclude cards with unresolved blocked_by dependencies"},
             },
         },
     },
@@ -139,6 +140,8 @@ class MCPServer:
                 cmd.extend(["--runner", str(args["runner"])])
             if args.get("for_owner"):
                 cmd.extend(["--for", str(args["for_owner"])])
+            if args.get("unblocked_only"):
+                cmd.append("--unblocked")
             return self._run_py(self.kit_py, cmd)
         if name == "board_search":
             cmd = ["search", str(args.get("query") or ""), "--limit", str(int(args.get("limit") or 20))]
