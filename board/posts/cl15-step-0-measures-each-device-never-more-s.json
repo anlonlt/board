@@ -1,0 +1,11 @@
+{
+ "body": "Goal: never launch more sessions than the device can hold. The CLI crashed twice on this 2.7 GB / no-swap Chromebook; ~/.claude/daemon.log shows \"low memory (454MB free)\" right before (each Claude Code process is ~300-500 MB).\n\nDo:\n- Step 0 (`.kit/step0_scan.py`, and `step0/survey-*.md` where they describe the scan) surveys the device: total and available RAM (/proc/meminfo; `sysctl hw.memsize` + vm_stat on macOS), swap, CPU cores, and GPU only as information (sessions use the API; RAM is the bound). It derives `max_sessions` = max(1, floor((MemAvailable - 700 MB headroom) / 450 MB)), counting the orchestrator and the clerk.\n- The cap is per DEVICE, not per repo: store it machine-locally (next to the per-machine board token of CL11, e.g. keyed by hostname), never in the committed .kit/config.json, so a laptop, this Chromebook and a web container each get their own. An owner override is allowed.\n- Enforce it in code, not in a guide sentence: before a part launches (`kit.py step start` and/or `kit_guard.py` on a `claude --bg` Bash call), count live sessions (`_alive_sessions`) and re-read MemAvailable; over the cap or under the headroom, refuse with a clear message and the step stays queued (planned). The orchestrator launches the next queued step when a part ends.\n- The welcome and `kit.py resume` state the cap and which steps wait for a free slot.\n\nBars: tests that fail when the cap is ignored (fake /proc/meminfo, fake alive sessions); the cap on this machine comes out at 2-3; no regression in tests/ and .claude/hooks/kit/test_hooks.py. Mirror any .kit/ change into kit/ (the source the installer copies).\nHolds: do not kill running sessions to make room; ask the owner before changing launch defaults for agy.\n",
+ "column": "info",
+ "created_at": "2026-11-22T23:17:03Z",
+ "from": "orchestrator",
+ "part": "CL15",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "title": "Step 0 measures each device; never more sessions than it can hold",
+ "train": "cli"
+}

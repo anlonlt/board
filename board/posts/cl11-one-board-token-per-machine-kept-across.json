@@ -1,0 +1,11 @@
+{
+ "body": "Goal: a device that saved a board token keeps working when `board` is pointed at another project or another CLI on the same machine. Today `kit/up` mints a new `.kit/board_data/token` for each newly installed project, and since every project serves the same origin (127.0.0.1/0.0.0.0:8765), the device's saved `kit_board_token` stops matching and the unlock page appears.\nBars: `up` (and install.py) reuse a machine token (e.g. `~/.config/kit/board_token`, mode 600) when the project has none, and create it once if absent. A project that already has its own token keeps it. Agent sessions started by `up` get the same token in `KIT_BOARD_TOKEN`. Works the same for `--agy` and Claude Code. Tests cover: a new project reuses the machine token, an existing project token is kept, and no test writes to the real `~/.config` (use a temp HOME). `python3 scripts/run_all_tests.py` gives 0 failed.\nMust not: print or commit any token, or change the server's auth rules.",
+ "column": "info",
+ "created_at": "2026-11-22T21:58:44Z",
+ "from": "orchestrator",
+ "part": "CL11",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "title": "One board token per machine, kept across projects and CLIs",
+ "train": "cli"
+}

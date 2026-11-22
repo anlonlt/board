@@ -1,0 +1,11 @@
+{
+ "body": "Open the board on a narrow viewport and verify the lane tabs and one-tap options.",
+ "column": "todo",
+ "created_at": "2026-11-21T23:29:25Z",
+ "minutes": 3,
+ "parent": "D1",
+ "part": "D2",
+ "priority": 3,
+ "title": "Spot-check mobile layout on phone",
+ "train": "demo"
+}

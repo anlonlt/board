@@ -1,0 +1,10 @@
+{
+ "body": "Added `<html lang>`, un-nested card like buttons, and raised muted-text contrast ≥ 4.5:1.",
+ "column": "done",
+ "created_at": "2026-11-21T18:59:25Z",
+ "done_at": "2026-11-21T19:09:25Z",
+ "part": "D0",
+ "priority": 3,
+ "title": "Accessibility pass complete",
+ "train": "demo"
+}

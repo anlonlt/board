@@ -1,0 +1,11 @@
+{
+ "body": "Goal: web takeover. Open Claude Code on the web (claude.ai/code) on this repo, say \"take over\", and the orchestrator and any crashed parts continue exactly where the board says they were, as if the web session had run the task list from the start. Builds on CL16 (board in git) and CL17 (parts checkpoint).\n\nDo:\n- Detect a web/cloud session in the SessionStart hook (e.g. the CLAUDE_CODE_REMOTE env var; verify what Claude Code web actually sets) and brief it for mode \"web\": no local board server, no Tailscale, no `claude --bg`; the board is read from and written to `board-mirror`.\n- A takeover prompt `.kit/claude-cli/takeover.md` (and a `board takeover` / `kit.py takeover` that prints it): pull, `kit.py resume` from the mirror, rebuild the task list (TaskCreate with {train, part}: existing posts adopted), mark the old orchestrator session as replaced, post the takeover notice under `_orchestrator`, then continue. Crashed parts run as the web session's subagents (Agent tool, worktree isolation) on their branches, within the device cap that step 0 measures inside the web container.\n- The owner's comments still reach it: from the phone board via the mirror (git_watch on the web side or a poll), and the clerk's role is done by a polling loop when no clerk runs.\n- Hand-back: when the local CLI starts again, it sees the web session's work on the mirror and resumes from it (no double runs: a step claimed by a live session is not relaunched).\n- README § Web takeover: the three steps for the owner.\n\nBars: an end-to-end test in a fresh clone with no .kit/board_data and the web env set: takeover rebuilds the same task list as the local orchestrator had, a crashed part's step continues from its checkpoint, and the result reaches the board after import locally. Mirror .kit/ changes into kit/.\nHolds: the web session never pushes the trunk unless kit.trunk_push allows it; ask the owner before any change to how the phone board authenticates.\n",
+ "column": "info",
+ "created_at": "2026-11-22T23:17:04Z",
+ "from": "orchestrator",
+ "part": "CL18",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "title": "Web takeover: Claude Code web continues where the board says",
+ "train": "cli"
+}

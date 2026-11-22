@@ -1,0 +1,29 @@
+{
+ "artifacts": [
+  "kit/hooks/kit_session_start.py",
+  "kit/clerk/clerk_pending.py"
+ ],
+ "bars": [
+  "session start for a part: 0 of 1 workstream Next lines (was 1 of 1)"
+ ],
+ "body": "For you: done in session https://claude.ai/code/session_01AE1HGkumNeaRX3RdUu25iM, committed in 2e74fce on cli-agnostic.\n\n## What it does\nKIT_ROLE, trains over state steps, kit.py step for agy, no Done comment, clerk mark, doc repeats.",
+ "check": "python3 test_install.py",
+ "column": "done",
+ "created_at": "2026-11-22T21:50:05Z",
+ "from": "orchestrator",
+ "handoff": "every kit launch sets KIT_ROLE",
+ "not_checked": [
+  "the clerk's waiting mark live"
+ ],
+ "parent": "CL6",
+ "part": "CL7",
+ "planned_by": "orchestrator",
+ "priority": 2,
+ "review_auto": false,
+ "session_id": "anon-37",
+ "status": "complete",
+ "title": "Say it once: the leaks closed",
+ "train": "cli",
+ "updated_at": "2026-11-22T21:50:06Z",
+ "verdict": "Sessions get only their role's context, the train is the only plan, and status is shown as marks instead of comments."
+}

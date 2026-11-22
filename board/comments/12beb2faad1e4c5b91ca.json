@@ -1,0 +1,13 @@
+{
+ "created_at": "2026-11-22T22:21:05.170Z",
+ "delivered": true,
+ "delivered_at": "2026-11-22T22:21:08.078Z",
+ "delivery_error": "",
+ "discussion": "welcome-claude-cli-1",
+ "from": "owner",
+ "post_id": "_orchestrator",
+ "read": true,
+ "read_at": "2026-11-22T22:21:32Z",
+ "text": "So there's another bug where your new messages aren't appearing at all in this thread...",
+ "thread_id": "thr_05a5a1741b91"
+}

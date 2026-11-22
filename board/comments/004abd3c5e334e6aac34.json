@@ -1,0 +1,13 @@
+{
+ "created_at": "2026-11-22T22:03:15.469Z",
+ "delivered": true,
+ "delivered_at": "2026-11-22T22:03:17.219Z",
+ "delivery_error": "",
+ "discussion": "welcome-claude-cli-1",
+ "from": "owner",
+ "post_id": "_orchestrator",
+ "read": true,
+ "read_at": "2026-11-22T22:17:10Z",
+ "text": "Also, why did all the done tasks from the previous session disappear from my train task view ? And also, there's a bug where the section headers on posts and comments (like your message) just continue to the left, out of the screen, when they're too long). This has been happening with quite a lot of things - buttons, titles, headers, etc. is there a reason why this keeps happening, and is there a way to make sure it never happens again, no matter what is changed or added ?",
+ "thread_id": "thr_134deed617e7"
+}

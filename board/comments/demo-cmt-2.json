@@ -1,0 +1,9 @@
+{
+ "created_at": "2026-11-22T00:56:25Z",
+ "delivered": true,
+ "from": "owner",
+ "post_id": "demo-todo",
+ "read": true,
+ "reply_to": "demo-cmt-1",
+ "text": "Looks crisp! Can we also verify dark mode?"
+}

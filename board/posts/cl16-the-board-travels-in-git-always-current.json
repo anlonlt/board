@@ -1,0 +1,11 @@
+{
+ "body": "Goal: the board travels in git, always current, so a clone anywhere (another computer, Claude Code web) sees the same trains. Today .kit/board_data/board.db is gitignored and board-mirror was last synced 2026-11-20 (two days stale), so after a crash or on the web `kit.py resume` finds nothing.\n\nDo:\n- Sync the board to the `board-mirror` branch automatically (`kit.py sync-db` / `sync`) after every step change (`kit.py step new|start|complete|drop`, so the kit_task_train hook covers it), after `kit.py done`, and in `end_session.py` and `handover.py`; debounce (e.g. at most one push per minute, a final one guaranteed) and never block the tool on a network failure (retry later, say so once).\n- `kit.py resume` (and `train`, `board_cli.py` reads) work without a local board.db: they read the mirror (fetch origin/board-mirror). When both exist, the newer wins and the older is merged, never lost; say which source was used and its age.\n- Writes from a machine without the board server (web, another computer) go to the mirror and are imported by the board server when it next runs (`kit_import.py` / `git_watch.py`), conflicts resolved per post by updated_at.\n\nBars: a test with a fresh clone and no .kit/board_data that gets the same `kit.py resume` output as the source; a test that a step change reaches origin/board-mirror; a write made from the mirror side shows on the local board after import. Mirror .kit/ changes into kit/.\nHolds: never force-push board-mirror; no secrets (the token) in the mirror.\n",
+ "column": "info",
+ "created_at": "2026-11-22T23:17:04Z",
+ "from": "orchestrator",
+ "part": "CL16",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "title": "The board travels in git, always current (mirror synced on every step)",
+ "train": "cli"
+}

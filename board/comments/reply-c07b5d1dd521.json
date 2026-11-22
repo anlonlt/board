@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-22T22:17:11Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_b797d028be64",
+ "text": "I don't know yet. My replies weren't marking your threads read (the first one landed outside the thread), which may be part of it. It's in CL12 too: find why the badge stays, fix it, add a test."
+}

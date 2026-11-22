@@ -1,0 +1,408 @@
+{
+ "column": "info",
+ "created_at": "2026-11-22T23:17:05Z",
+ "rows": [
+  {
+   "also": [],
+   "children": [
+    "CL1",
+    "CL10",
+    "CL11",
+    "CL12",
+    "CL13",
+    "CL14",
+    "CL15",
+    "CL16",
+    "CL17",
+    "CL18"
+   ],
+   "parent": "",
+   "part": "P-cli",
+   "post": "",
+   "prompt": "",
+   "session": "",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "R1",
+    "R0"
+   ],
+   "parent": "",
+   "part": "P-release",
+   "post": "demo-todo-2",
+   "prompt": "",
+   "session": "",
+   "state": "you",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "D0",
+    "D3",
+    "D2",
+    "D1"
+   ],
+   "parent": "",
+   "part": "P-demo",
+   "post": "demo-todo",
+   "prompt": "",
+   "session": "",
+   "state": "you",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-demo",
+   "part": "D0",
+   "post": "demo-done-4",
+   "prompt": "",
+   "session": "",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-release",
+   "part": "R1",
+   "post": "demo-done-3",
+   "prompt": "",
+   "session": "",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-release",
+   "part": "R0",
+   "post": "demo-done-2",
+   "prompt": "",
+   "session": "",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-demo",
+   "part": "D0",
+   "post": "demo-done",
+   "prompt": "",
+   "session": "",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-demo",
+   "part": "D3",
+   "post": "demo-q-3",
+   "prompt": "",
+   "session": "",
+   "state": "you",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-demo",
+   "part": "D2",
+   "post": "demo-todo-3",
+   "prompt": "",
+   "session": "",
+   "state": "you",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-demo",
+   "part": "D2",
+   "post": "demo-info-2",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "R1",
+   "part": "R2",
+   "post": "demo-q-2",
+   "prompt": "",
+   "session": "",
+   "state": "you",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "R1",
+   "part": "R2",
+   "post": "demo-todo-2",
+   "prompt": "",
+   "session": "",
+   "state": "you",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "R2"
+   ],
+   "parent": "P-release",
+   "part": "R1",
+   "post": "demo-info-1",
+   "prompt": "",
+   "session": "",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-demo",
+   "part": "D1",
+   "post": "demo-question",
+   "prompt": "",
+   "session": "",
+   "state": "you",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-demo",
+   "part": "D1",
+   "post": "demo-todo",
+   "prompt": "",
+   "session": "",
+   "state": "you",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL2"
+   ],
+   "parent": "P-cli",
+   "part": "CL1",
+   "post": "cl1-cli-agnostic-install",
+   "prompt": "",
+   "session": "anon-37",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL3"
+   ],
+   "parent": "CL1",
+   "part": "CL2",
+   "post": "cl2-context-reset-instead-of-compaction",
+   "prompt": "",
+   "session": "anon-37",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL4"
+   ],
+   "parent": "CL2",
+   "part": "CL3",
+   "post": "cl3-the-train-is-the-task-list",
+   "prompt": "",
+   "session": "anon-37",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL5"
+   ],
+   "parent": "CL3",
+   "part": "CL4",
+   "post": "cl4-generated-prompts-one-post-format-the-fe",
+   "prompt": "",
+   "session": "anon-37",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL6"
+   ],
+   "parent": "CL4",
+   "part": "CL5",
+   "post": "cl5-automatic-reviews-said-once-on-the-board",
+   "prompt": "",
+   "session": "anon-37",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL7"
+   ],
+   "parent": "CL5",
+   "part": "CL6",
+   "post": "cl6-collapsible-sections-that-learn",
+   "prompt": "",
+   "session": "anon-37",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL8"
+   ],
+   "parent": "CL6",
+   "part": "CL7",
+   "post": "cl7-say-it-once-the-leaks-closed",
+   "prompt": "",
+   "session": "anon-37",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL9"
+   ],
+   "parent": "CL7",
+   "part": "CL8",
+   "post": "cl8-design-principles-complete-and-no-emoji",
+   "prompt": "",
+   "session": "board-cl8",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL10",
+   "post": "cl10-see-the-new-ui-work-then-stop-tests-touc",
+   "prompt": "",
+   "session": "board-cl10",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "CL8",
+   "part": "CL9",
+   "post": "cl9-checks-that-must-be-able-to-fail-breaks",
+   "prompt": "",
+   "session": "board-cl9",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL11",
+   "post": "cl11-one-board-token-per-machine-kept-across",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL12",
+   "post": "cl12-board-ui-text-never-runs-off-screen-badg",
+   "prompt": "",
+   "session": "board-cl12",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL13",
+   "post": "cl13-a-launched-part-is-always-visible-on-the",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL14",
+   "post": "cl14-chat-ends-with-a-single-in-every-session",
+   "prompt": "",
+   "session": "board-cl14",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL15",
+   "post": "cl15-step-0-measures-each-device-never-more-s",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL16",
+   "post": "cl16-the-board-travels-in-git-always-current",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL17",
+   "post": "cl17-a-crashed-part-is-continued-from-its-las",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL18",
+   "post": "cl18-web-takeover-claude-code-web-continues-w",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  }
+ ],
+ "title": "Trains",
+ "updated_at": "2026-11-22T23:17:05Z"
+}

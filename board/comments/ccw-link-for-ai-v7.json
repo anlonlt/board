@@ -1,0 +1,12 @@
+{
+ "agent_meta": {
+  "effort": "medium",
+  "harness": "claude-code-web",
+  "model": "claude-opus-5-5"
+ },
+ "created_at": "2026-11-22T11:09:52Z",
+ "from": "victor",
+ "post_id": "CCW-claude-code-web-adaptation",
+ "text": "**Link for AI v7: one click to a new Claude chat with the text already in it (artifact_ui.js v7, patch v12, attached).**\n\nAfter \"Link for AI\" copies the text, a floating card offers **\"Open a new Claude chat with it\"**: a plain link to `https://claude.ai/new?q=<text>` (claude.ai's frame opens hrefs itself, so a link is the reliable way out of the Artifact). The chat opens with the text in its box, no paste. URLs have a length limit, so a text over 6,000 characters is cut there (instructions and the task come first) and the card says the full text is in the clipboard. For Claude in Chrome or Cowork the card says to paste (Ctrl/Cmd+V): a page cannot put a \"paste\" suggestion inside another app or tab, and I know no public deep link that prefills Cowork. Offline test: the card's link holds the brief (3.2k characters on the test post). **Unverified:** that `claude.ai/new?q=` still prefills on every claude.ai surface.",
+ "working_by": "victor"
+}

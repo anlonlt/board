@@ -1,0 +1,14 @@
+{
+ "body": "Reading kit.py done and the post format, to add a breaks field that proves each check can fail.",
+ "column": "info",
+ "created_at": "2026-11-22T21:50:07Z",
+ "from": "orchestrator",
+ "parent": "CL8",
+ "part": "CL9",
+ "planned_by": "orchestrator",
+ "session_id": "board-cl9",
+ "status": "in progress",
+ "title": "Checks that must be able to fail (breaks)",
+ "train": "cli",
+ "updated_at": "2026-11-22T22:38:41Z"
+}

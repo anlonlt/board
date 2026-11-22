@@ -1,0 +1,12 @@
+{
+ "created_at": "2026-11-22T22:20:02.969Z",
+ "delivered": true,
+ "delivered_at": "2026-11-22T22:20:05.337Z",
+ "delivery_error": "",
+ "from": "owner",
+ "post_id": "cl12-board-ui-text-never-runs-off-screen-badg",
+ "read": true,
+ "read_at": "2026-11-22T22:24:07Z",
+ "text": "So are these posts automatically made by the script ? Why are they so ugly though ? They don't seem to use any of the formatting ?",
+ "thread_id": "thr_14f977a3cdfe"
+}

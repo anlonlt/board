@@ -1,0 +1,29 @@
+{
+ "artifacts": [
+  "kit/claude/page_driver.js",
+  "scripts/twrp_wizard.py"
+ ],
+ "bars": [
+  "6 of 6 test suites pass",
+  "page checks run with Playwright, any Chromium, or a syntax-only fallback (caught 1 of 1 planted syntax error)"
+ ],
+ "body": "For you: done in session https://claude.ai/code/session_01AE1HGkumNeaRX3RdUu25iM, committed in 2e74fce on cli-agnostic.\n\n## What it does\nagy or Claude Code from one install; Playwright optional.",
+ "check": "python3 scripts/run_all_tests.py",
+ "column": "done",
+ "created_at": "2026-11-22T21:50:01Z",
+ "from": "orchestrator",
+ "handoff": "kit.cli in .kit/config.json chooses the CLI `board` opens",
+ "not_checked": [
+  "a real browser run of the page checks (no browser here)"
+ ],
+ "part": "CL1",
+ "planned_by": "orchestrator",
+ "priority": 2,
+ "review_auto": false,
+ "session_id": "anon-37",
+ "status": "complete",
+ "title": "CLI-agnostic install",
+ "train": "cli",
+ "updated_at": "2026-11-22T21:50:02Z",
+ "verdict": "One install serves agy and the Claude Code CLI: kit.cli picks the default, `board --agy` / `--claude` switch per launch."
+}

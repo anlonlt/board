@@ -1,0 +1,11 @@
+{
+ "body": "Three gaps hid that CL10 and CL12 had been launched and then died. (1) A post said \"planned\" because the post's status was only updated by TaskUpdate or by the part's turn-1 post. Fix: one launch command (`kit.py launch <post>`) that writes status in progress, session_id and launched_at on the post, then runs `claude --bg`. (2) `claude --bg -w` makes the worktree from main, which has no .kit, .claude hooks or prompt (CL12 ran with no hooks). Fix: launch creates or resets the worktree from the current branch first, and refuses if the prompt file is not committed. (3) `kit.py resume` must flag a step as \"launched, died\" when its post is planned or in progress but a worktree, branch or transcript exists and no session is live, and say what is uncommitted in that worktree. Must have tests. Run `python3 scripts/run_all_tests.py`: 0 failed.",
+ "column": "info",
+ "created_at": "2026-11-22T22:43:08Z",
+ "from": "orchestrator",
+ "part": "CL13",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "title": "A launched part is always visible on the board, on the right base",
+ "train": "cli"
+}

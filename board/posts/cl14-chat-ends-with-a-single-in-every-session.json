@@ -1,0 +1,13 @@
+{
+ "body": "Reading kit_say_it_once.py to close the three gaps (background roles, setup, text + ·).",
+ "column": "info",
+ "created_at": "2026-11-22T22:52:03Z",
+ "from": "orchestrator",
+ "part": "CL14",
+ "planned_by": "orchestrator",
+ "session_id": "board-cl14",
+ "status": "in progress",
+ "title": "Chat ends with a single · in every session the owner did not type in",
+ "train": "cli",
+ "updated_at": "2026-11-22T22:55:07Z"
+}

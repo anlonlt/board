@@ -1,0 +1,12 @@
+{
+ "agent_meta": {
+  "effort": "medium",
+  "harness": "claude-code-web",
+  "model": "claude-opus-5-5"
+ },
+ "created_at": "2026-11-22T11:12:40Z",
+ "from": "victor",
+ "post_id": "CCW-claude-code-web-adaptation",
+ "text": "**Link for AI v8: the Claude desktop app (artifact_ui.js v8, build_artifact_page.py, patch v13, attached).** Reported on the Mac app: \"Open a new Claude chat\" did nothing; the desktop app does not open a claude.ai link from inside an Artifact. The card now: (1) a **Copy the text** button (a fresh click, so the clipboard is allowed more often than after an await; if it is still refused, the text opens selected in an in-page dialog for ⌘C), (2) in the app (Electron user agent) the keys for a new chat, ⌘N / Ctrl+N then ⌘V, and no link; in a browser the `claude.ai/new?q=` link stays, (3) the Chrome/Cowork paste line. Card and in-page dialog texts follow `language.talk` (build passes `window.__KIT_TALK__`). Offline test unchanged and green; the app branch is not testable offline.",
+ "working_by": "victor"
+}

@@ -1,0 +1,12 @@
+{
+ "agent_meta": {
+  "effort": "medium",
+  "harness": "claude-code-web",
+  "model": "claude-opus-5-5"
+ },
+ "created_at": "2026-11-22T10:44:28Z",
+ "from": "victor",
+ "post_id": "CCW-claude-code-web-adaptation",
+ "text": "**ntfy notifications for an Artifact board (patch v10, 5 files attached).**\n\nLocally `board_server.py` pushes to `kit.notify_url` when a post lands in To do / Waiting on you and when a session answers. An Artifact has no server, so nothing was pushed. New hook **`kit_notify.py`** (PostToolUse `ArtifactData`, registered by install.py): the session that writes the post or the comment pushes it, same rule as the server.\n- **Privacy by default:** an ntfy.sh topic is readable by anyone who knows its name and ntfy keeps messages for hours, so the push says only what happened (\"A post needs you\" / \"<part> replied\") with a `Click` link to `#/post/<id>`; `kit.notify_detail: true` adds title and 240 characters as the server does. French when `language.talk` is French.\n- **Measured limit:** from a Claude Code Web container, anonymous ntfy.sh answered 200 once, then 429 on every try for minutes: visitor limits are per IP and cloud sessions share their egress IP. The hook retries once after 3 s, but reliable pushes need an ntfy account token stored as an environment secret (`request_credential`, host `ntfy.sh`, Bearer): limits then follow the account.\n- **Install guidance:** the Claude Code Web install now asks the owner once whether they want phone notifications and walks them through it step by step (README step 4: app links, account + access token, `request_credential`, a random `board-<hex>` topic via `--notify-url`, a test push, record in KIT-installed); `install.py` prints that reminder in its `next:` line while `notify_url` is empty.\n- Tests: 3 new hook checks against a local HTTP listener (pushed / not pushed, no text by default, detail mode), suites 0 failed.",
+ "working_by": "victor"
+}

@@ -1,0 +1,16 @@
+{
+ "body": "Keeping Done scoped to recent cards prevents an infinite scroll wall at production volume.",
+ "column": "question",
+ "created_at": "2026-11-22T00:11:25Z",
+ "default_option": "Last 7 days (Recommended)",
+ "options": [
+  "Last 7 days (Recommended)",
+  "Last 30 days",
+  "Show all"
+ ],
+ "parent": "R1",
+ "part": "R2",
+ "priority": 2,
+ "title": "Default Done lane window",
+ "train": "release"
+}

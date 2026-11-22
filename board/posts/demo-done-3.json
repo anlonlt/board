@@ -1,0 +1,11 @@
+{
+ "body": "HTML payload compressed ~75% with `Referrer-Policy` and minimal CSP active.",
+ "column": "done",
+ "created_at": "2026-11-21T19:59:25Z",
+ "done_at": "2026-11-21T20:09:25Z",
+ "parent": "R0",
+ "part": "R1",
+ "priority": 3,
+ "title": "Gzip & security headers enabled",
+ "train": "release"
+}

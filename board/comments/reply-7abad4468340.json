@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-22T22:24:07Z",
+ "from": "orchestrator",
+ "post_id": "cl12-board-ui-text-never-runs-off-screen-badg",
+ "reply_to": "thr_14f977a3cdfe",
+ "text": "Yes. A planned step's post is written automatically from my task note: one plain paragraph, with no sections, list or formatting. The step's session replaces it with a formatted result once it starts. Still, a planned post should be readable from the start. I can plan CL13: the kit formats each planned step as Goal, Bars and Must not, each as a short list. A 👍 here plans and launches it."
+}

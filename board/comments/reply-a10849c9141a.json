@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-22T22:17:10Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_134deed617e7",
+ "text": "Planned as CL12 (it reads your words). Headers, titles and buttons run off screen because the layout rules don't stop long text from overflowing its box, so each new component can break the same way. CL12 fixes it once in the base styles that every component inherits, and adds a check that fails whenever anything overflows on a phone or desktop screen. So it can't come back silently. CL12 will also find out why the finished steps vanished from your train view and fix it. A 👍 here launches CL12."
+}

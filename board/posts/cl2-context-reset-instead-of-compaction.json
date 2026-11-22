@@ -1,0 +1,31 @@
+{
+ "artifacts": [
+  "kit/handover.py",
+  "kit/hooks/kit_pre_compact.py",
+  "kit/up"
+ ],
+ "bars": [
+  "foreground reset: 1 of 1 live run reopened generation 2 in the same terminal",
+  "clerk reset: 1 of 1 live run, a message to the reused name reached generation 2"
+ ],
+ "body": "For you: done in session https://claude.ai/code/session_01AE1HGkumNeaRX3RdUu25iM, committed in 2e74fce on cli-agnostic.\n\n## What it does\nOrchestrator and clerk reset at a token limit from a saved prompt and the board.",
+ "check": "python3 -I kit/hooks/test_hooks.py",
+ "column": "done",
+ "created_at": "2026-11-22T21:50:02Z",
+ "from": "orchestrator",
+ "handoff": "limits: kit.orchestrator.context_limit_k / kit.clerk.context_limit_k; --autocompact only as a safety net",
+ "not_checked": [
+  "a full reset with parts running in a real project"
+ ],
+ "parent": "CL1",
+ "part": "CL2",
+ "planned_by": "orchestrator",
+ "priority": 2,
+ "review_auto": false,
+ "session_id": "anon-37",
+ "status": "complete",
+ "title": "Context reset instead of compaction",
+ "train": "cli",
+ "updated_at": "2026-11-22T21:50:02Z",
+ "verdict": "At 380k (orchestrator) or 80k (clerk) the Stop hook asks for a hand-over; .kit/handover.py starts a fresh session under the same name."
+}

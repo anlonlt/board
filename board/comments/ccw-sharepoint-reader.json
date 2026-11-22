@@ -1,0 +1,12 @@
+{
+ "agent_meta": {
+  "effort": "medium",
+  "harness": "claude-code-web",
+  "model": "claude-opus-5-5"
+ },
+ "created_at": "2026-11-22T09:17:24Z",
+ "from": "victor",
+ "post_id": "CCW-claude-code-web-adaptation",
+ "text": "**SharePoint / OneDrive files in a reader window, in the Artifact (artifact_ui.js v3, patch v7, attached).**\n\nA SharePoint page cannot be framed in an Artifact (SharePoint's frame-ancestors policy, the Artifact frame's own rules, third-party sign-in). So a click on a link to a **file** (docx, xlsx, pptx, pdf, txt, csv, md…) reads it through the **viewer's** Microsoft 365 connector and opens a window with its text: `sharepoint_search` on the file name, keep the hit whose `webUrl` matches the link, then `read_resource` page by page (the connector's own `startPage` footers drive Next/Previous). \"Open in SharePoint\" and Ctrl/Cmd-click still open the tab. Lists, sites and SitePages stay plain links: the connector has no read path from their URLs.\n\n- Publish with `capabilities.mcp = {servers: [{server: \"Microsoft 365\", tools: [\"sharepoint_search\", \"read_resource\"]}]}` (both read-only). The first click asks the viewer; each viewer reads with their own account.\n- The search tool answers hits as JSON objects one after another (not an array): `jsonObjects()` reads them all.\n- Every mcp error code gets its own message (reconnect, add the connector, choose one, approval…), never one generic banner.\n- Offline test: correct file picked among two hits, page 2 read, no page error. Not yet confirmed in a real Artifact.",
+ "working_by": "victor"
+}
