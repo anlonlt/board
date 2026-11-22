@@ -676,6 +676,7 @@
     /* Collaboration assignee & working-on controls (auto-hidden when 0 collaborators) */
     syncPostCollabControls(sheet, postId, barRow);
     renderPostArtifacts(sheet, postId);
+    renderPostExtBadges(sheet, postId);
     /* Link inline .md / § references inside open post & comments to the Repo Docs viewer */
     linkRepoDocs(sheet);
   }
@@ -4046,25 +4047,88 @@
   }
 
   var _kitMineOnly = false;
+  function ensureExtBadgeCss() {
+    if (document.getElementById("kit-ext-badge-css")) return;
+    var st = document.createElement("style");
+    st.id = "kit-ext-badge-css";
+    st.textContent =
+      ".kit-ext-badges{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px;}" +
+      ".kit-ext-badge{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:.72rem;font-weight:700;letter-spacing:.01em;border:1px solid var(--line);background:var(--sunk);color:var(--muted);text-decoration:none;}" +
+      "a.kit-ext-badge:hover{filter:brightness(1.1);text-decoration:underline;}" +
+      ".kit-ext-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex:none;}" +
+      ".kit-ext-badge[data-st='done']{color:var(--done,#2f7a4f);border-color:color-mix(in srgb,var(--done,#2f7a4f) 38%,var(--line));}" +
+      ".kit-ext-badge[data-st='running']{color:var(--info,#2b6c9e);border-color:color-mix(in srgb,var(--info,#2b6c9e) 38%,var(--line));}" +
+      ".kit-ext-badge[data-st='todo'],.kit-ext-badge[data-st='you']{color:var(--todo,#c4621a);border-color:color-mix(in srgb,var(--todo,#c4621a) 38%,var(--line));}" +
+      ".kit-ext-badge[data-st='question'],.kit-ext-badge[data-st='ready']{color:var(--question,#6a4fb3);border-color:color-mix(in srgb,var(--question,#6a4fb3) 38%,var(--line));}" +
+      ".kit-ext-badge[data-st='blocked'],.kit-ext-badge[data-st='idle']{color:var(--muted);}";
+    document.head.appendChild(st);
+  }
+  function buildExtBadgesEl(badges, key) {
+    if (!Array.isArray(badges) || !badges.length) return null;
+    ensureExtBadgeCss();
+    var wrap = document.createElement("div");
+    wrap.className = "kit-ext-badges";
+    if (key) wrap.dataset.badgeKey = key;
+    badges.slice(0, 8).forEach(function (b) {
+      if (!b || !b.label) return;
+      var safeUrl = (typeof b.url === "string" && /^https?:\/\//i.test(b.url)) ? b.url : "";
+      var el = document.createElement(safeUrl ? "a" : "span");
+      el.className = "kit-ext-badge";
+      el.dataset.st = String(b.state || "idle").toLowerCase();
+      el.textContent = String(b.label).slice(0, 64);
+      if (safeUrl) { el.href = safeUrl; el.target = "_blank"; el.rel = "noopener"; el.addEventListener("click", function (ev) { ev.stopPropagation(); }); }
+      wrap.appendChild(el);
+    });
+    return wrap.childNodes.length ? wrap : null;
+  }
+  function renderPostExtBadges(sheet, postId) {
+    if (!sheet || !postId || postId.charAt(0) === "_") {
+      var oldB = document.getElementById("kit-post-ext-badges");
+      if (oldB) oldB.remove();
+      return;
+    }
+    var metaEl = sheet.querySelector("#p-meta");
+    if (!metaEl) return;
+    var bKey = (window.__KIT_ACTIVE_REPO__ || "") + "|" + postId;
+    if (metaEl.dataset.kitBadgePost === bKey) return;
+    metaEl.dataset.kitBadgePost = bKey;
+    var stale = document.getElementById("kit-post-ext-badges");
+    if (stale) stale.remove();
+    api("GET", "/_api/db/posts/" + encodeURIComponent(postId)).then(function (r) {
+      if (metaEl.dataset.kitBadgePost !== bKey) return;
+      var badges = (r && r.data && r.data.badges) || [];
+      var cur = document.getElementById("kit-post-ext-badges");
+      if (cur) cur.remove();
+      var el = buildExtBadgesEl(badges, bKey);
+      if (el) { el.id = "kit-post-ext-badges"; metaEl.insertAdjacentElement("afterend", el); }
+    }, function () {});
+  }
   function applyCollabCardBadges() {
     var hasCollab = document.documentElement.dataset.collab === "1";
     var uid = curUserId();
-    if (!hasCollab) {
-      if (_kitMineOnly) {
-        _kitMineOnly = false;
-        var mb = document.getElementById("kit-mine-btn");
-        if (mb) mb.classList.remove("on");
-        var allC = document.querySelectorAll(".card[data-id], .ffeed-card[data-id]");
-        for (var i = 0; i < allC.length; i++) allC[i].style.display = "";
-      }
-      return;
+    if (!hasCollab && _kitMineOnly) {
+      _kitMineOnly = false;
+      var mb = document.getElementById("kit-mine-btn");
+      if (mb) mb.classList.remove("on");
+      var allC = document.querySelectorAll(".card[data-id], .ffeed-card[data-id]");
+      for (var i = 0; i < allC.length; i++) allC[i].style.display = "";
     }
+    var cards = document.querySelectorAll(".card[data-id], .ffeed-card[data-id]");
+    if (!cards.length) return;
     api("GET", "/_api/db/posts").then(function (res) {
       var byId = {};
       ((res && res.docs) || []).forEach(function (d) { byId[d.id] = d.data || {}; });
-      var cards = document.querySelectorAll(".card[data-id], .ffeed-card[data-id]");
-      for (var i = 0; i < cards.length; i++) {
-        var c = cards[i], pid = c.dataset.id, doc = byId[pid] || {};
+      var cardsNow = document.querySelectorAll(".card[data-id], .ffeed-card[data-id]");
+      for (var i = 0; i < cardsNow.length; i++) {
+        var c = cardsNow[i], pid = c.dataset.id, doc = byId[pid] || {};
+        var oldExt = c.querySelector(".kit-ext-badges");
+        var sig = JSON.stringify(doc.badges || []);
+        if (!oldExt || oldExt.dataset.badgeKey !== sig) {
+          if (oldExt) oldExt.remove();
+          var extEl = buildExtBadgesEl(doc.badges, sig);
+          if (extEl) c.appendChild(extEl);
+        }
+        if (!hasCollab) continue;
         var assigned = String(doc.assigned_to || "").trim();
         var working = String(doc.working_by || "").trim();
         var meta = c.querySelector(".meta");

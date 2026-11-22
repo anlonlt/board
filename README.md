@@ -122,7 +122,7 @@ Real numbers measured on [anlonlt/harmonize](https://github.com/anlonlt/harmoniz
 ## Quick Start
 
 **Starting fresh (works in `agy`, Claude Code Web, Codex, Cursor, or LMArena):**
-Open an AI session in your project and paste this single link — the agent auto-detects your environment, runs Step 0 to see what your project needs, and installs only the layers that pay for themselves:
+Open an AI session in your project and paste this single link — the agent auto-detects your environment, runs Step 0 to see what your project needs, and installs only the layers that pay for themselves (or pass `--quick` to `install.py` for a <60s trial setup):
 
 ```text
 https://github.com/anlonlt/board/blob/agy-local/README.md
@@ -322,10 +322,11 @@ Each workstream's state file declares `Runs in:` so the orchestrator routes each
 
 | Script / Hook | Purpose |
 |---|---|
-| `kit/board/board_server.py` | Local HTTP + SSE + SQLite + `/_blob/` + multi-repo portfolio + board-scoped collaborators |
+| `kit/board/board_server.py` + `shim.js` | Local HTTP + SSE + SQLite + `/_blob/` + multi-repo portfolio + board-scoped collaborators + `Tailscale-User-Login` identity auth |
 | `kit/board/board_cli.py` | CLI for posts, comments, watch/wait/reply, inbox, batch writes, shares, and blob assets (`KIT_BOARD_REPO` supported) |
-| `kit/board/mcp_stdio.py` | Zero-dependency stdio MCP server exposing board tools to any MCP client |
-| `scripts/kit.py` | Git mirror (`board-mirror`) + compact lookups (`post`, `open`, `since`, `session`, `search`, `queue`, `train --zoom`, `report`, `portfolio`, `receive`, `publish`) |
+| `kit/board/gh_sync.py` | Optional zero-dep GitHub PR & CI status badge sync (`badges: [{label, state, url}]`) via `gh` CLI |
+| `kit/board/mcp_stdio.py` | Zero-dependency stdio MCP server exposing board tools to any MCP client (`unblocked_only` supported) |
+| `scripts/kit.py` | Git mirror (`board-mirror`) + compact lookups (`post`, `open`, `since`, `session`, `search`, `queue --unblocked`, `train --zoom`, `report`, `compact`, `portfolio`, `receive`, `publish`) |
 | `kit/hooks/kit_guard.py` | `PreToolUse` safety guard (blocks `rm -rf` outside `/tmp`, `git reset --hard`, force pushes, staging secrets) |
 | `kit/hooks/kit_stop.py` + `kit/end_session.py` | Prevents exiting with uncommitted/unpushed work; merges cleanly without force |
 | `kit/hooks/kit_say_it_once.py` | Keeps full reports on the board and trims chat chatter to short pointers (`·`) |

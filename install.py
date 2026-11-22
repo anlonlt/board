@@ -484,6 +484,7 @@ def main(argv=None):
     ap.add_argument("--trunk-push", choices=["yes", "no"], help="the owner's standing permission to push the trunk")
     ap.add_argument("--survey", help="step 0's report (survey/<date>/report.md): required at the first install")
     ap.add_argument("--no-survey", metavar="WHY", help="install without step 0 (the reason is recorded)")
+    ap.add_argument("--quick", action="store_true", help="<60s trial install: skips Step 0 ceremony, defaults project/language, and bootstraps local DB")
     ap.add_argument("--parts", help="comma list among memory,board,clerk,orchestrator (memory always)")
     ap.add_argument("--no-board", action="store_true", help="memory and its hooks only (no page, clerk, orchestrator)")
     ap.add_argument("--no-clerk", action="store_true")
@@ -493,6 +494,15 @@ def main(argv=None):
     ap.add_argument("--uninstall", action="store_true", help="Remove unmodified kit files recorded in .kit/manifest.json")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
+    if a.quick:
+        if not a.survey and not a.no_survey:
+            a.no_survey = "quick install"
+        if not a.project:
+            a.project = os.path.basename(os.path.abspath(a.target)) or "board"
+        if not a.talk:
+            a.talk = "en"
+        if not a.no_bootstrap:
+            a.bootstrap = True
     t = os.path.abspath(a.target)
     if not os.path.isdir(t):
         raise SystemExit("install: %s is not a directory" % t)

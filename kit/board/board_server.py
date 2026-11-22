@@ -1526,11 +1526,26 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
     project_name = "Board"
     board_base_url = ""
     notify_detail_init = False
+    tailscale_users = {}
     try:
         _cfg_root = json.load(open(os.path.join(root_dir, ".kit", "config.json"), encoding="utf-8"))
         project_name = _cfg_root.get("project") or "Board"
         board_base_url = str(_cfg_root.get("board_url") or "").rstrip("/")
         notify_detail_init = bool((_cfg_root.get("kit") or {}).get("notify_detail", False))
+        raw_tsu = (_cfg_root.get("kit") or {}).get("tailscale_users") or {}
+        if isinstance(raw_tsu, dict):
+            for k_ts, v_ts in raw_tsu.items():
+                kl = str(k_ts or "").strip().lower()
+                if not kl:
+                    continue
+                if isinstance(v_ts, str):
+                    tailscale_users[kl] = {"role": v_ts.strip().lower(), "repo": "", "id": ""}
+                elif isinstance(v_ts, dict):
+                    tailscale_users[kl] = {
+                        "role": str(v_ts.get("role") or "member").strip().lower(),
+                        "repo": str(v_ts.get("repo") or "").strip(),
+                        "id": str(v_ts.get("id") or "").strip(),
+                    }
     except (OSError, ValueError):
         pass
     notify_cfg = {"url": str(notify_url or "").strip(), "detail": notify_detail_init}
@@ -2039,6 +2054,16 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                                 return True, False
                     except Exception:
                         pass
+            if tailscale_users:
+                peer_ip = self.client_address[0] if self.client_address else ""
+                ts_login = (self.headers.get("Tailscale-User-Login") or "").strip().lower()
+                if peer_ip in ("127.0.0.1", "::1", "::ffff:127.0.0.1") and ts_login and ts_login in tailscale_users:
+                    cfg_u = tailscale_users[ts_login]
+                    role_ts = cfg_u["role"] if cfg_u["role"] in ("viewer", "member", "owner") else "member"
+                    uid_ts = cfg_u["id"] or re.sub(r"[^a-z0-9_-]+", "-", ts_login.split("@")[0]).strip("-")[:24] or "user"
+                    nm_ts = (self.headers.get("Tailscale-User-Name") or "").strip() or uid_ts
+                    self._auth_user = {"id": uid_ts, "name": nm_ts, "role": role_ts, "repo": cfg_u.get("repo") or "", "token": "", "via": "tailscale"}
+                    return True, False
             self._auth_user = None
             return False, False
 

@@ -1007,6 +1007,78 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
     return "\n".join(out) + "\n(%d card%s)" % (len(rows), "" if len(rows) == 1 else "s")
 
 
+def compact_memory(days=30, dry_run=False, root_dir=None):
+    """Archive completed state files and aged lessons into <memory_dir>/archive/ + digest.md so SessionStart stays lean."""
+    import time
+    base = os.path.abspath(root_dir or ROOT)
+    rel_m = None
+    try:
+        rel_m = (json.load(open(os.path.join(base, ".kit", "config.json"), encoding="utf-8")).get("kit") or {}).get("memory_dir")
+    except (OSError, ValueError):
+        pass
+    if not rel_m:
+        rel_m = ".story" if os.path.isdir(os.path.join(base, ".story")) else ".board/memory"
+    mdir = os.path.join(base, rel_m)
+    if not os.path.isdir(mdir):
+        return "compact: no memory directory at %s" % mdir
+    cutoff = time.time() - max(0, int(days)) * 86400
+    state_dir = os.path.join(mdir, "state")
+    lessons_dir = os.path.join(mdir, "lessons")
+    arch_dir = os.path.join(mdir, "archive")
+    digest_path = os.path.join(arch_dir, "digest.md")
+    existing_digest = open(digest_path, encoding="utf-8").read() if os.path.isfile(digest_path) else ""
+    to_move = []
+    # 1. Completed state files (Next: done/closed/archived)
+    if os.path.isdir(state_dir):
+        for fn in sorted(os.listdir(state_dir)):
+            if not fn.endswith(".md"):
+                continue
+            fp = os.path.join(state_dir, fn)
+            try:
+                first = open(fp, encoding="utf-8", errors="ignore").readline().strip()
+            except OSError:
+                continue
+            if re.match(r"^Next:\s*(?:done|closed|archived|complete(?:d)?)\b", first, re.I):
+                to_move.append(("state", fn, fp, first))
+    # 2. Aged lessons (keep 15 newest; archive older than `days`)
+    if os.path.isdir(lessons_dir):
+        lfiles = [os.path.join(lessons_dir, fn) for fn in os.listdir(lessons_dir) if fn.endswith(".md")]
+        lfiles.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        for fp in lfiles[15:]:
+            if os.path.getmtime(fp) < cutoff:
+                fn = os.path.basename(fp)
+                first = ""
+                try:
+                    for ln in open(fp, encoding="utf-8", errors="ignore"):
+                        if ln.strip():
+                            first = ln.strip().lstrip("# ").strip()[:120]
+                            break
+                except OSError:
+                    pass
+                to_move.append(("lessons", fn, fp, first or fn))
+    if not to_move:
+        return "compact: nothing to archive (0 completed state files, 0 aged lessons >%dd)" % int(days)
+    if dry_run:
+        return "compact (dry-run): would archive %d file(s):\n" % len(to_move) + "\n".join(
+            "  - %s/%s: %s" % (k, fn, summ) for k, fn, _, summ in to_move
+        )
+    os.makedirs(os.path.join(arch_dir, "state"), exist_ok=True)
+    os.makedirs(os.path.join(arch_dir, "lessons"), exist_ok=True)
+    added_lines = []
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    for kind, fn, fp, summ in to_move:
+        dst = os.path.join(arch_dir, kind, fn)
+        os.replace(fp, dst)
+        key = "%s/%s" % (kind, fn)
+        if key not in existing_digest:
+            added_lines.append("- `%s` (%s): %s" % (key, stamp, summ))
+    if added_lines:
+        hdr = "" if existing_digest else "# Archived Memory Digest\n\n"
+        with open(digest_path, "a", encoding="utf-8") as fh:
+            fh.write(hdr + "\n".join(added_lines) + "\n")
+    return "compact: archived %d file(s) into %s (updated archive/digest.md)" % (len(to_move), os.path.relpath(arch_dir, base))
+
+
 def report_metrics(m, db_path=None):
     """Compute weekly ROI & board self-audit metrics (posts, open questions, owner wait p50/p95, DB/blob health)."""
     db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
@@ -1427,6 +1499,7 @@ def main(argv=None):
     s = sp.add_parser("session"); s.add_argument("post")
     s = sp.add_parser("reads"); s.add_argument("--at")
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
+    s = sp.add_parser("compact"); s.add_argument("--days", type=int, default=30); s.add_argument("--dry-run", action="store_true")
     s = sp.add_parser("report"); s.add_argument("--db", default=None)
     s = sp.add_parser("portfolio"); s.add_argument("--config", dest="portfolio_config", default=None); s.add_argument("--roots", nargs="*", default=[])
     s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None); s.add_argument("--unblocked", action="store_true", help="Exclude cards with unresolved blocked_by dependencies")
@@ -1472,6 +1545,9 @@ def main(argv=None):
         out, rc = doctor(m, db_path=a.db)
         print(out)
         return rc
+    if a.cmd == "compact":
+        print(compact_memory(days=a.days, dry_run=a.dry_run))
+        return 0
     if a.cmd == "report":
         print(report_metrics(m, db_path=a.db), end="")
         return 0
