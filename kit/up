@@ -81,10 +81,9 @@ if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
     fi
   fi
   if [ "$BOARD_ONLY" -eq 1 ]; then
-    echo "Board-only mode: server is running without launching the orchestrator/clerk workflow."
-    exit 0
-  fi
-  if [ "$HAS_ORCH" -eq 1 ] && [ "$HAS_CLERK" -eq 1 ]; then
+    echo "Board-only mode: launching agy for board work (no orchestrator/clerk workflow)."
+    PROMPT="Board-only mode: the board server is running on port ${PORT}. Do NOT start the orchestrator or board clerk workflow. You are working directly on the board itself (UI, server, CLI, kit, and synced board repo if attached). Wait for the owner's instruction."
+  elif [ "$HAS_ORCH" -eq 1 ] && [ "$HAS_CLERK" -eq 1 ]; then
     PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Also launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md if not already running."
   elif [ "$HAS_ORCH" -eq 1 ]; then
     PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository."
