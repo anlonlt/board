@@ -731,7 +731,7 @@ def _runtime_capability_lines(runtime, board_url, cmd, mem_rel):
         return [
             "- **Local board + phone access:** served by `board_server.py` at `%s` with Tailscale/PWA access (Android Private DNS / NextDNS users: use the direct Tailscale IP link if `*.ts.net` does not resolve)." % board_url,
             "- **One-word launcher:** type `%s` in any terminal to start the board, print your link, and launch `agy --mode auto` with `kit_guard.py` (unattended mode — destructive commands stay blocked)." % cmd,
-            "- **Live forwarding & parallel workers:** a `flash_lite` clerk auto-forwards your comments, 👍 Likes, and tapped answers; parallel git-worktree subagents (`Workspace=\"share\"`) isolate each part's edits.",
+            "- **Live forwarding & parallel workers:** a `flash_lite` clerk auto-forwards your comments, Likes, and tapped answers; parallel git-worktree subagents (`Workspace=\"share\"`) isolate each part's edits.",
             "- **Warm Git sync:** `kit.py receive` / `kit.py publish` sync board state cleanly with other runtimes.",
         ]
     if runtime == "claude-cli":
@@ -744,13 +744,13 @@ def _runtime_capability_lines(runtime, board_url, cmd, mem_rel):
     if runtime == "claude":
         return [
             "- **Cloud Artifact board:** hosted on `claude.ai` (`%s`) with `window.storage` persistence." % board_url,
-            "- **Auto-wakeup on comment:** comments and 👍 Likes wake the clerk/orchestrator automatically.",
+            "- **Auto-wakeup on comment:** comments and Likes wake the clerk/orchestrator automatically.",
             "- **Cloud subagents & hybrid bridge:** remote subagents run parts in parallel, and the `board-mirror` Git bridge (`kit.py sync` / `git_watch.py`) connects local computer runners.",
         ]
     if runtime == "arena":
         return [
             "- **Embedded preview mode:** runs `board_server.py --preview --embed-mode` (`KIT_EMBED_PREVIEW=1`) at `%s` with zero-config sandbox proxy binding, auto-seeded `_orchestrator`, cookie-independent `X-Kit-Token` unlock, 5s change polling, and iframe-safe Copy Markdown / `/_api/export` Share fallback." % board_url,
-            "- **30-min live listener + Pull-on-turn (no background clerk / no auto-wake across turns):** during an active turn, `board_cli.py comments wait --timeout 1750` catches your comments and 👍 Likes live for ~29 minutes without needing `.` in chat. Once a turn ends, there is no 0-token background wake — ping the Arena chat (e.g. `.`) whenever you want the agent to read `board_cli.py inbox` and reply.",
+            "- **30-min live listener + Pull-on-turn (no background clerk / no auto-wake across turns):** during an active turn, `board_cli.py comments wait --timeout 1750` catches your comments and Likes live for ~29 minutes without needing `.` in chat. Once a turn ends, there is no 0-token background wake — ping the Arena chat (e.g. `.`) whenever you want the agent to read `board_cli.py inbox` and reply.",
             "- **Handoff:** warm Git sync (`kit.py receive` / `kit.py publish`) when a remote is configured, or a downloadable patch/zip when the sandbox has no push credentials.",
         ]
     return [
@@ -824,7 +824,7 @@ def render_welcome(runtime=None, project=None, board_url=None, memory_dir=None, 
             lines.append("- **%s** (`P%d`): %s" % (p["title"], p["priority"], p["next"]))
     else:
         lines.append("- Ready for your next instruction — tell me which task to start.")
-    lines.extend(["", "A 👍 on this message launches them all; or tell me which."])
+    lines.extend(["", "A Like on this message launches them all; or tell me which."])
     return "\n".join(lines) + "\n"
 
 
