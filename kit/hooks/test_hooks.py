@@ -320,5 +320,35 @@ with tempfile.TemporaryDirectory() as d:
         except OSError: pass
     os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
 
+    # kit_notify: an Artifact board's ntfy pushes, from the session that writes
+    import http.server as _hs, threading as _th
+    _got = []
+    class _H(_hs.BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length") or 0)
+            _got.append((self.headers.get("Title", ""), self.rfile.read(n).decode("utf-8"), self.headers.get("Click", "")))
+            self.send_response(200); self.end_headers()
+        def log_message(self, *a): pass
+    _srv = _hs.HTTPServer(("127.0.0.1", 0), _H); _th.Thread(target=_srv.serve_forever, daemon=True).start()
+    _cfgp = os.path.join(proj, ".kit", "config.json"); os.makedirs(os.path.dirname(_cfgp), exist_ok=True)
+    _old = open(_cfgp).read() if os.path.exists(_cfgp) else None
+    _c = json.loads(_old) if _old else {}
+    _c.setdefault("kit", {})["notify_url"] = "http://127.0.0.1:%d/topic" % _srv.server_port
+    _c["board_url"] = "https://claude.ai/artifact/X"; _c["project"] = "Demo"
+    open(_cfgp, "w").write(json.dumps(_c))
+    run_claude("kit_notify.py", {"hook_event_name": "PostToolUse", "tool_name": "ArtifactData", "tool_input": {"action": "batch", "writes": [
+        {"op": "set", "collection": "posts", "doc_id": "P-1", "data": {"column": "question", "title": "Secret title", "body": "school data"}},
+        {"op": "set", "collection": "posts", "doc_id": "P-2", "data": {"column": "info", "title": "news"}},
+        {"op": "set", "collection": "comments", "doc_id": "c1", "data": {"post_id": "P-1", "from": "soutien-ti", "text": "done"}},
+        {"op": "set", "collection": "comments", "doc_id": "c2", "data": {"post_id": "P-1", "from": "owner", "text": "mine"}}]}})
+    check("notify: a question post and a session's answer are pushed, news and the owner's own words are not", len(_got) == 2)
+    check("notify: no post text by default, a link to the post", bool(_got) and "Secret" not in _got[0][1] and "school" not in _got[0][1] and _got[0][2].endswith("#/post/P-1"))
+    _c["kit"]["notify_detail"] = True; open(_cfgp, "w").write(json.dumps(_c)); del _got[:]
+    run_claude("kit_notify.py", {"hook_event_name": "PostToolUse", "tool_name": "ArtifactData", "tool_input": {"action": "set", "collection": "posts", "doc_id": "P-3", "data": {"column": "todo", "title": "Titre é", "body": "corps"}}})
+    check("notify: notify_detail adds the title and text", bool(_got) and "Titre é" in _got[0][1])
+    _srv.shutdown()
+    if _old is None: os.remove(_cfgp)
+    else: open(_cfgp, "w").write(_old)
+
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

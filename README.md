@@ -84,7 +84,7 @@ Chat windows break down as soon as a real project lasts more than a day — even
 |---|---|---|---|
 | **Requires a terminal?** | One-word launcher (`<project>`) | **No** (runs in `claude.ai`) | Yes (inside sandbox / CLI) |
 | **Live UI, 4 views & OS windows** | Yes (desktop + phone via Tailscale) | Yes (browser + phone in `claude.ai`) | Yes (preview iframe / localhost) |
-| **Phone comment → right agent** | Clerk + SSE (0 tokens idle) + `ntfy.sh` push | Clerk + ArtifactComments wake | `comments wait` live listener |
+| **Phone comment → right agent** | Clerk + SSE (0 tokens idle) + `ntfy.sh` push | Clerk + ArtifactComments wake + `ntfy.sh` push | `comments wait` live listener |
 | **Where we are & Trains** | Auto-rebuilt by server | Rebuilt by `kit-cards` (+ reminder hook) | `kit-cards` |
 | **Repo Docs & live diffs** | Live from disk | Mirrored via `kit_artifact_sync.py` (256 KiB/doc) | Live from disk |
 | **MCP Link Reader (SharePoint, Gmail, Drive, ...)** | Local MCP / browser | **Yes** — viewer's own connector (Step 0 auto-detected) | Local MCP / browser |
@@ -141,6 +141,7 @@ https://github.com/anlonlt/board/blob/agy-local/README.md
 - **Treat invite links as credentials:** `/_invite/<token>.md` and `/?token=` grant board access. Never paste them into public GitHub issues or chats. In Claude Code Web, store the token once as an environment secret (`request_credential`, header `X-Kit-Token`) and use the `proxy` placeholder.
 - **Artifact mirror visibility:** `kit_artifact_sync.py docs` copies your project's docs and memory into the Artifact DB, so anyone you share that Artifact with can read them.
 - **Per-viewer MCP permissions:** the MCP Link Reader always calls connectors using **each viewer's own account** — viewers only see SharePoint files, Gmail threads, or Drive docs they already have access to.
+- **Privacy-safe pocket pushes:** `ntfy.sh` notifications omit post titles and body text by default (`"A post needs you"` + deep link); opt in with `kit.notify_detail: true` only on private topics.
 
 ---
 
@@ -227,9 +228,10 @@ Open a Claude Code Web session on **your** repository (`https://claude.ai/code`)
    - That rerun builds the full Artifact page (`kit/claude/build_artifact_page.py` injects the UI layer, `artifact_adapter.js`, and the pluggable MCP Link Reader in `artifact_ui.js`). **Publish `.kit/board.html` a second time** (same url, no `capabilities` unless updating `mcp`). Check it offline first: `KIT_PAGE=.kit/board.html node /tmp/board-kit/kit/claude/test_artifact_page.js` ends with `"errors": []`.
    - Feed the Repo Docs reader and inline diffs: `python3 -I .kit/kit_artifact_sync.py docs --kit /tmp/board-kit --repo . --out /tmp/kas` and send each `batch-*.json` it prints with `ArtifactData` `batch` (pictures: upload `images.txt` with `Artifact` `publish` `asset: true`, then `assets`). Run again after docs changes and with `diffs --posts <kit.py sync dir>`.
    - Commit `.kit .claude <memory_dir> .gitignore` and push.
-4. **Post `_orchestrator` and `KIT-installed`** via `ArtifactData` `batch` (`.kit/BOARD.md` § Post).
-5. **Start the orchestrator, then the clerk** via `create_session` using `.kit/orchestrator.md` and `.kit/clerk.md` (with models/effort from `.kit/config.json` `kit.roles`).
-6. **Verify first comment**, initialize git mirror (`kit.py init` + `sync --full` + `push`), and finish with `python3 -I /tmp/board-kit/install.py . --setup-done`.
+4. **Optional phone push notifications (`ntfy.sh`):** ask the owner if they want pocket notifications when a post needs them or a session replies. If yes: install the [ntfy app](https://ntfy.sh) (Android/iOS), create an ntfy account + access token (avoids shared cloud-IP `429` limits), store it as a Claude Code Web environment secret via `request_credential` (`host: "ntfy.sh"`, `Authorization: Bearer ...`), pick a random topic (`https://ntfy.sh/board-<hex>`), rerun step 2 with `--notify-url <url>`, and send a test push (`kit_notify.py` omits post text by default; set `kit.notify_detail: true` to include previews).
+5. **Post `_orchestrator` and `KIT-installed`** via `ArtifactData` `batch` (`.kit/BOARD.md` § Post).
+6. **Start the orchestrator, then the clerk** via `create_session` using `.kit/orchestrator.md` and `.kit/clerk.md` (with models/effort from `.kit/config.json` `kit.roles`).
+7. **Verify first comment**, initialize git mirror (`kit.py init` + `sync --full` + `push`), and finish with `python3 -I /tmp/board-kit/install.py . --setup-done`.
 
 </details>
 

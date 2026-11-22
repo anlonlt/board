@@ -4328,11 +4328,18 @@ SHIM_JS = r"""(function () {
         pushIn.style.cssText = "flex:1 1 180px;min-width:0;padding:6px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:.82rem;";
         var pushSave = document.createElement("button"); pushSave.type = "button"; pushSave.className = "btn small"; pushSave.textContent = "Save";
         var pushTest = document.createElement("button"); pushTest.type = "button"; pushTest.className = "btn small"; pushTest.textContent = "Test";
+        var pushDetLbl = document.createElement("label");
+        pushDetLbl.style.cssText = "display:inline-flex;align-items:center;gap:6px;font-size:.78rem;color:var(--muted);cursor:pointer;";
+        var pushDet = document.createElement("input"); pushDet.type = "checkbox";
+        pushDetLbl.appendChild(pushDet); pushDetLbl.appendChild(document.createTextNode("Include post title & preview (off by default for ntfy privacy)"));
         var pushSt = document.createElement("div"); pushSt.className = "note"; pushSt.style.fontSize = ".76rem";
-        api("GET", "/_api/notify").then(function (r) { if (r && r.notify_url) pushIn.value = r.notify_url; }, function () {});
+        api("GET", "/_api/notify").then(function (r) {
+          if (r && r.notify_url) pushIn.value = r.notify_url;
+          if (r) pushDet.checked = !!r.notify_detail;
+        }, function () {});
         pushSave.addEventListener("click", function () {
           pushSave.disabled = true;
-          api("POST", "/_api/notify", { notify_url: pushIn.value.trim() }).then(function (r) {
+          api("POST", "/_api/notify", { notify_url: pushIn.value.trim(), notify_detail: !!pushDet.checked }).then(function (r) {
             pushSave.disabled = false;
             pushSt.textContent = (r && r.notify_url) ? "Push webhook saved." : "Push notifications disabled.";
           }, function () { pushSave.disabled = false; pushSt.textContent = "Could not save push URL (must start with http:// or https://)."; });
@@ -4341,13 +4348,13 @@ SHIM_JS = r"""(function () {
           var u = pushIn.value.trim();
           if (!u) { pushSt.textContent = "Enter an ntfy.sh or webhook URL first."; return; }
           pushTest.disabled = true; pushSt.textContent = "Sending test push...";
-          api("POST", "/_api/notify", { notify_url: u, test: true }).then(function (r) {
+          api("POST", "/_api/notify", { notify_url: u, notify_detail: !!pushDet.checked, test: true }).then(function (r) {
             pushTest.disabled = false;
             pushSt.textContent = (r && r.sent) ? "Test push sent." : "Saved, but webhook did not accept the test push.";
           }, function () { pushTest.disabled = false; pushSt.textContent = "Test push failed."; });
         });
         pushRow.appendChild(pushIn); pushRow.appendChild(pushSave); pushRow.appendChild(pushTest);
-        pushWrap.appendChild(pushHdr); pushWrap.appendChild(pushRow); pushWrap.appendChild(pushSt);
+        pushWrap.appendChild(pushHdr); pushWrap.appendChild(pushRow); pushWrap.appendChild(pushDetLbl); pushWrap.appendChild(pushSt);
         body.appendChild(pushWrap);
 
         var form = document.createElement("form");
@@ -5992,27 +5999,36 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
     html_path = os.path.join(root_dir, ".kit", "board.html")
     project_name = "Board"
     board_base_url = ""
+    notify_detail_init = False
     try:
         _cfg_root = json.load(open(os.path.join(root_dir, ".kit", "config.json"), encoding="utf-8"))
         project_name = _cfg_root.get("project") or "Board"
         board_base_url = str(_cfg_root.get("board_url") or "").rstrip("/")
+        notify_detail_init = bool((_cfg_root.get("kit") or {}).get("notify_detail", False))
     except (OSError, ValueError):
         pass
-    notify_cfg = {"url": str(notify_url or "").strip()}
+    notify_cfg = {"url": str(notify_url or "").strip(), "detail": notify_detail_init}
 
     def _maybe_push(coll, doc_id, d, prev_col=None):
         nurl = notify_cfg.get("url") or ""
         if not nurl or not isinstance(d, dict):
             return
+        detail = bool(notify_cfg.get("detail"))
         if coll == "posts" and d.get("column") in ("todo", "question") and not str(doc_id or "").startswith("_"):
             if prev_col is not None and prev_col == d.get("column"):
                 return
             click = (board_base_url + "/#/post/" + urllib.parse.quote(str(doc_id))) if board_base_url.startswith(("http://", "https://")) else None
-            send_push(nurl, "%s (%s): %s" % (project_name, d.get("column"), d.get("title") or doc_id), str(d.get("body") or "")[:240], click_url=click)
+            if detail:
+                send_push(nurl, "%s (%s): %s" % (project_name, d.get("column"), d.get("title") or doc_id), str(d.get("body") or "")[:240], click_url=click)
+            else:
+                send_push(nurl, project_name, "A post needs you (%s)." % d.get("column"), click_url=click)
         elif coll == "comments" and d.get("from") not in (None, "", "owner", "viewer") and not d.get("removed") and not d.get("like"):
             pid_c = str(d.get("post_id") or "")
             click = (board_base_url + "/#/post/" + urllib.parse.quote(pid_c)) if (pid_c and board_base_url.startswith(("http://", "https://"))) else None
-            send_push(nurl, "%s replied on %s" % (d.get("from"), pid_c or project_name), str(d.get("text") or "")[:240], click_url=click)
+            if detail:
+                send_push(nurl, "%s replied on %s" % (d.get("from"), pid_c or project_name), str(d.get("text") or "")[:240], click_url=click)
+            else:
+                send_push(nurl, project_name, "%s replied on your board." % d.get("from"), click_url=click)
     primary_repo_id = re.sub(r"[^a-z0-9_-]+", "-", project_name.lower()).strip("-") or "primary"
     stores_map = {primary_repo_id: store}
     roots_map = {primary_repo_id: root_dir}
@@ -6847,7 +6863,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 if u.get("role") != "owner":
                     self._send_json(403, {"error": "forbidden", "required_role": "owner"})
                     return
-                self._send_json(200, {"notify_url": notify_cfg.get("url") or ""})
+                self._send_json(200, {"notify_url": notify_cfg.get("url") or "", "notify_detail": bool(notify_cfg.get("detail"))})
                 return
 
             if path.startswith("/_api/posts/") and path.endswith("/artifacts"):
@@ -7557,12 +7573,15 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     self._send_json(400, {"error": "invalid_notify_url"})
                     return
                 notify_cfg["url"] = new_url
+                if "notify_detail" in body:
+                    notify_cfg["detail"] = bool(body.get("notify_detail"))
                 cfg_p = os.path.join(root_dir, ".kit", "config.json")
                 try:
                     if os.path.isfile(cfg_p):
                         with open(cfg_p, encoding="utf-8") as fh:
                             cfg_obj = json.load(fh)
                         cfg_obj.setdefault("kit", {})["notify_url"] = new_url
+                        cfg_obj["kit"]["notify_detail"] = bool(notify_cfg.get("detail"))
                         with open(cfg_p, "w", encoding="utf-8") as fh:
                             json.dump(cfg_obj, fh, indent=1, ensure_ascii=False)
                             fh.write("\n")
@@ -7572,7 +7591,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 if body.get("test") and new_url:
                     click = (board_base_url + "/") if board_base_url.startswith(("http://", "https://")) else None
                     sent = send_push(new_url, "%s: test push" % project_name, "Pocket push notifications are active.", click_url=click, sync=True)
-                self._send_json(200, {"ok": True, "notify_url": new_url, "sent": sent})
+                self._send_json(200, {"ok": True, "notify_url": new_url, "notify_detail": bool(notify_cfg.get("detail")), "sent": sent})
                 return
 
             if path == "/_api/db/batch":

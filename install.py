@@ -28,7 +28,7 @@ import strings as page_strings  # noqa: E402
 PARTS = ("memory", "board", "clerk", "orchestrator")
 MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "test_hooks.py"}
 HOOKS = ["kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
-         "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "test_hooks.py"]
+         "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "test_hooks.py"]
 # agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
 CMD = "python3 -I hooks/kit/%s"
 CLAUDE_CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.claude/hooks/kit/%s"'
@@ -41,6 +41,7 @@ CLAUDE_SETTINGS = [
     ("UserPromptSubmit", None, "kit_board_typing.py"),
     ("UserPromptSubmit", None, "kit_cards_reminder.py"),
     ("PostToolUse", "ArtifactData|mcp__claude-code-remote__create_session", "kit_cards_reminder.py"),
+    ("PostToolUse", "ArtifactData", "kit_notify.py"),
     ("Stop", None, "kit_stop.py"),
     ("Stop", None, "kit_say_it_once.py"),
     ("PreCompact", None, "kit_pre_compact.py"),
@@ -990,6 +991,8 @@ def main(argv=None):
         print("next: the memory is installed (no board): import the project's state into %s (README § Import), commit, push; then --setup-done" % mdir)
     elif claude_only:
         print("next: publish .kit/board.html as a claude.ai Artifact, rerun with --board-url <url>, then README § Install (Claude Code Web)")
+        if not c["kit"].get("notify_url"):
+            print("notify: ask the owner if they want phone push notifications (ntfy.sh app + account token via request_credential + --notify-url; see README § Install Claude Code Web)")
     elif rt == "arena":
         print("next: start the sandbox preview board server (`python3 -I .kit/board_server.py --host 0.0.0.0 --port 8765 --preview --embed-mode`), post `python3 -I .kit/kit.py welcome --runtime arena --post`, and immediately arm the 30-min listener (`python3 -I .kit/board_cli.py comments wait --timeout 1750`)" )
     else:
