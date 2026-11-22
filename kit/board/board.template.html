@@ -458,9 +458,8 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 [data-view="feed"] #kit-open-feed { display: flex; flex-direction: column; gap: 18px; max-width: 780px; margin: 16px auto 0; }
 [data-view="focus"] #kit-focus-view { display: flex; flex-direction: column; gap: 16px; max-width: 760px; margin: 16px auto 0; }
 
-/* Edge-to-edge Trains Flowchart + Interactive All-Trains Map + Clean Cards */
+/* Edge-to-edge Trains Flowchart + Clean Cards (uses standard Where we are #dash card above) */
 [data-view="trains"].wrap { max-width: none !important; }
-[data-view="trains"] #dash { display: none !important; }
 .tnet-map {
   margin-bottom: 14px; background: var(--surface); border: 1px solid var(--line);
   border-radius: 16px; padding: 10px 14px; box-shadow: var(--shadow);
@@ -3763,8 +3762,6 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         row.appendChild(chain);
         rowsBox.appendChild(row);
       });
-      mapDet.appendChild(mapGrid);
-      trainNetEl.appendChild(mapDet);
       matrix.appendChild(rowsBox);
       trainNetEl.appendChild(matrix);
       setTimeout(function () { matrix.scrollLeft = matrix.scrollWidth; }, 0);

@@ -8,6 +8,7 @@ Serves .kit/board.html with an injected window.claude shim (/_shim.js) backed by
 (/_api/events) for live onSnapshot updates and a local comment-watch queue for the board clerk.
 """
 import argparse
+import difflib
 import gzip
 import hashlib
 import hmac
@@ -643,6 +644,9 @@ SHIM_JS = r"""(function () {
         }
       }
     }
+    /* Collaboration assignee & working-on controls (auto-hidden when 0 collaborators) */
+    syncPostCollabControls(sheet, postId, barRow);
+    renderPostArtifacts(sheet, postId);
     /* Link inline .md / § references inside open post & comments to the Repo Docs viewer */
     linkRepoDocs(sheet);
   }
@@ -711,7 +715,7 @@ SHIM_JS = r"""(function () {
     _kitSharedGeoms[winKey] = nextList;
     var patch = { win_geoms: {} };
     patch.win_geoms[winKey] = nextList;
-    api("PATCH", "/_api/doc/data/users/owner/board-ui", { data: patch }).catch(function () {});
+    api("PATCH", "/_api/doc/data/users/" + encodeURIComponent(curUserId()) + "/board-ui", { data: patch }).catch(function () {});
   }
   function findMatchingGeom(winKey) {
     if (!winKey || isPhoneScreen()) return null;
@@ -757,7 +761,7 @@ SHIM_JS = r"""(function () {
     return applyProportionalRect(winEl, g, opts);
   }
   function loadSharedWindowGeoms() {
-    api("GET", "/_api/doc/data/users/owner/board-ui").then(function (res) {
+    api("GET", "/_api/doc/data/users/" + encodeURIComponent(curUserId()) + "/board-ui").then(function (res) {
       if (res && res.exists && res.data && res.data.win_geoms && typeof res.data.win_geoms === "object") {
         _kitSharedGeoms = res.data.win_geoms;
         var dm = document.getElementById("kit-docs-modal");
@@ -1394,7 +1398,7 @@ SHIM_JS = r"""(function () {
       inp.value = ""; winPendingFiles = []; renderWinFiles(); syncWinComposer();
       noteEl.textContent = "Sending...";
       var cid = "c-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      var rowData = { post_id: postId, text: txt, from: "owner", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+      var rowData = { post_id: postId, text: txt, from: curUserId(), created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
       if (readyFiles.length) rowData.files = readyFiles;
       var told = "[post " + postId + "] " + txt + readyFiles.map(function (x) { return "\n[attached: " + x.name + " (" + x.type + ") at /_blob/" + x.id + "]"; }).join("");
       var sendP = comments.sendToClaude({ anchor: { tag: "b", id: "", text: (ttl.textContent || postId).slice(0, 80) }, text: told }).then(function (r) {
@@ -1967,6 +1971,12 @@ SHIM_JS = r"""(function () {
         ".kit-tl-acts{display:flex;align-items:center;gap:6px;margin-top:4px;justify-content:flex-end;}" +
         ".kit-tl-acts .kit-icon-btn{width:28px;height:28px;padding:0;}" +
         ".kit-tl-acts .kit-icon-btn svg{width:14px;height:14px;}" +
+        ":root:not([data-collab='1']) .kit-collab-only{display:none !important;}" +
+        ".kit-assign-pill{font-family:var(--mono);font-size:.71rem;padding:1px 6px;border-radius:999px;background:var(--sunk);border:1px solid var(--line);color:var(--ink);}" +
+        ".kit-work-pill{font-family:var(--mono);font-size:.71rem;padding:1px 6px;border-radius:999px;background:color-mix(in srgb, var(--info) 14%, var(--sunk));border:1px solid var(--info);color:var(--info);display:inline-flex;align-items:center;gap:4px;}" +
+        ".kit-work-pill .wdot{width:6px;height:6px;border-radius:50%;background:var(--info);animation:kitTlBlink 1.3s ease-in-out infinite;}" +
+        ".kit-assign-sel{font:inherit;font-size:.78rem;padding:3px 7px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);max-width:110px;}" +
+        ".kit-mine-btn.on{background:var(--ember) !important;border-color:var(--ember) !important;color:var(--ember-ink) !important;}" +
         "#p-pics{width:100%;overflow:visible;}" +
         "#p-pics .pics-head,#p-imgs .grp > h4{max-width:72ch;width:100%;margin-left:0;margin-right:auto;box-sizing:border-box;}" +
         "#p-imgs.groups{overflow:visible !important;}" +
@@ -4002,6 +4012,345 @@ SHIM_JS = r"""(function () {
     }
   }
 
+  var _kitMineOnly = false;
+  function applyCollabCardBadges() {
+    var hasCollab = document.documentElement.dataset.collab === "1";
+    var uid = curUserId();
+    if (!hasCollab) {
+      if (_kitMineOnly) {
+        _kitMineOnly = false;
+        var mb = document.getElementById("kit-mine-btn");
+        if (mb) mb.classList.remove("on");
+        var allC = document.querySelectorAll(".card[data-id], .ffeed-card[data-id]");
+        for (var i = 0; i < allC.length; i++) allC[i].style.display = "";
+      }
+      return;
+    }
+    api("GET", "/_api/db/posts").then(function (res) {
+      var byId = {};
+      ((res && res.docs) || []).forEach(function (d) { byId[d.id] = d.data || {}; });
+      var cards = document.querySelectorAll(".card[data-id], .ffeed-card[data-id]");
+      for (var i = 0; i < cards.length; i++) {
+        var c = cards[i], pid = c.dataset.id, doc = byId[pid] || {};
+        var assigned = String(doc.assigned_to || "").trim();
+        var working = String(doc.working_by || "").trim();
+        var meta = c.querySelector(".meta");
+        if (meta) {
+          var oldA = meta.querySelector(".kit-assign-pill"); if (oldA) oldA.remove();
+          var oldW = meta.querySelector(".kit-work-pill"); if (oldW) oldW.remove();
+          if (working) {
+            var wp = document.createElement("span"); wp.className = "kit-work-pill kit-collab-only";
+            wp.innerHTML = '<span class="wdot" aria-hidden="true"></span><span></span>';
+            wp.children[1].textContent = "@" + working;
+            wp.title = "Actively worked on by @" + working;
+            meta.appendChild(wp);
+          }
+          if (assigned && assigned !== working) {
+            var ap = document.createElement("span"); ap.className = "kit-assign-pill kit-collab-only";
+            ap.textContent = "@" + assigned;
+            ap.title = "Assigned to @" + assigned;
+            meta.appendChild(ap);
+          }
+        }
+        if (_kitMineOnly) {
+          c.style.display = (assigned === uid || working === uid) ? "" : "none";
+        } else {
+          c.style.display = "";
+        }
+      }
+    }, function () {});
+  }
+  function renderPostArtifacts(sheet, postId) {
+    var oldBox = document.getElementById("kit-post-artifacts");
+    if (oldBox) oldBox.remove();
+    if (!sheet || !postId || postId.charAt(0) === "_") return;
+    var bodyEl = sheet.querySelector("#p-body");
+    if (!bodyEl) return;
+    api("GET", "/_api/posts/" + encodeURIComponent(postId) + "/artifacts").then(function (res) {
+      var list = (res && res.artifacts) || [];
+      if (!list.length) return;
+      var exist = document.getElementById("kit-post-artifacts");
+      if (exist) exist.remove();
+      var box = document.createElement("div"); box.id = "kit-post-artifacts";
+      box.style.cssText = "margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--sunk);display:flex;flex-direction:column;gap:6px;";
+      var hdr = document.createElement("div"); hdr.style.cssText = "font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);";
+      hdr.textContent = "Submitted Deliverables (" + list.length + ")";
+      box.appendChild(hdr);
+      list.forEach(function (a) {
+        var row = document.createElement("button"); row.type = "button";
+        row.style.cssText = "text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:7px 10px;cursor:pointer;display:flex;align-items:center;gap:8px;min-width:0;";
+        var m = a.agent_meta || {};
+        var metaStr = [m.harness, m.model, m.effort].filter(Boolean).join(" · ");
+        row.title = "@" + (a.by_user || "owner") + (metaStr ? " (" + metaStr + ")" : "") + (a.summary ? " — " + a.summary : "");
+        var pSp = document.createElement("span"); pSp.style.cssText = "font-family:var(--mono);font-size:.8rem;font-weight:700;color:var(--ember);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        pSp.textContent = a.path;
+        var sSp = document.createElement("span"); sSp.className = "note"; sSp.style.cssText = "flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        sSp.textContent = a.summary || ("@" + (a.by_user || "owner"));
+        var szSp = document.createElement("span"); szSp.className = "note"; szSp.style.cssText = "font-family:var(--mono);font-size:.72rem;flex:none;";
+        szSp.textContent = a.size >= 1024 ? (a.size / 1024).toFixed(1) + " KB" : (a.size + " B");
+        row.appendChild(pSp); row.appendChild(sSp); row.appendChild(szSp);
+        row.addEventListener("click", function () {
+          api("GET", "/_api/artifacts/" + encodeURIComponent(a.artifact_id)).then(function (full) {
+            var oldM = document.getElementById("kit-art-modal"); if (oldM) oldM.remove();
+            var mWin = document.createElement("section"); mWin.id = "kit-art-modal"; mWin.className = "kit-tl-win";
+            var mh = document.createElement("div"); mh.className = "kit-tl-hdr";
+            var mb = document.createElement("b"); mb.textContent = full.path;
+            var ms = document.createElement("span"); ms.className = "tlsub";
+            ms.textContent = "@" + (full.by_user || "owner") + (metaStr ? " · " + metaStr : "");
+            var mc = document.createElement("button"); mc.type = "button"; mc.className = "btn small kit-icon-btn";
+            mc.title = "Close"; mc.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+            mc.addEventListener("click", function () { mWin.remove(); });
+            mh.appendChild(mb); mh.appendChild(ms); mh.appendChild(mc); mWin.appendChild(mh);
+            var mBody = document.createElement("div"); mBody.className = "kit-tl-body";
+            if (full.diff) {
+              var dDet = document.createElement("details"); dDet.open = true;
+              var dSum = document.createElement("summary"); dSum.style.cssText = "cursor:pointer;font-weight:700;font-size:.82rem;color:var(--ember);margin-bottom:6px;";
+              dSum.textContent = "Diff vs repo " + (full.base_path || full.path);
+              var dPre = document.createElement("pre"); dPre.className = "kit-docs-code"; dPre.textContent = full.diff;
+              dDet.appendChild(dSum); dDet.appendChild(dPre); mBody.appendChild(dDet);
+            }
+            if (/\.html?$/i.test(full.path)) {
+              var ifr = document.createElement("iframe");
+              ifr.style.cssText = "width:100%;height:420px;border:1px solid var(--line);border-radius:10px;background:#fff;";
+              ifr.setAttribute("sandbox", "allow-scripts allow-forms allow-popups allow-same-origin");
+              ifr.srcdoc = full.content || "";
+              mBody.appendChild(ifr);
+            } else if (/\.md$/i.test(full.path)) {
+              var mdDiv = document.createElement("div"); mdDiv.className = "kit-docs-md body";
+              mdDiv.innerHTML = renderRichDocMarkdown(full.content || "", full.path);
+              mBody.appendChild(mdDiv);
+            } else {
+              var cPre = document.createElement("pre"); cPre.className = "kit-docs-code"; cPre.textContent = full.content || "";
+              mBody.appendChild(cPre);
+            }
+            mWin.appendChild(mBody);
+            document.body.appendChild(mWin);
+            makeWindow(mWin, mh, { minW: 360, minH: 260, winKey: "artifact" });
+            placeWindowLeftOfOthers(mWin, 740, 620, "artifact", "artifact", 360, 260);
+          });
+        });
+        box.appendChild(row);
+      });
+      bodyEl.insertAdjacentElement("afterend", box);
+    }, function () {});
+  }
+  function syncPostCollabControls(sheet, postId, barRow) {
+    var oldWrap = document.getElementById("kit-collab-post-ctrls");
+    if (oldWrap) oldWrap.remove();
+    if (document.documentElement.dataset.collab !== "1" || !postId || postId.charAt(0) === "_" || !barRow) return;
+    var me = window.__KIT_USER__ || { id: "owner", role: "owner", collaborators: [] };
+    if (me.role === "viewer") return;
+    var wrap = document.createElement("span"); wrap.id = "kit-collab-post-ctrls"; wrap.className = "kit-collab-only";
+    wrap.style.cssText = "display:inline-flex;align-items:center;gap:4px;";
+    var sel = document.createElement("select"); sel.className = "kit-assign-sel"; sel.title = "Assign post"; sel.setAttribute("aria-label", "Assign post");
+    var opts = [["", "Unassigned"], ["owner", "@owner"]];
+    (me.collaborators || []).forEach(function (u) { opts.push([u.id, "@" + u.id]); });
+    opts.forEach(function (pair) {
+      var o = document.createElement("option"); o.value = pair[0]; o.textContent = pair[1]; sel.appendChild(o);
+    });
+    var claimB = document.createElement("button"); claimB.type = "button"; claimB.className = "btn small kit-icon-btn";
+    claimB.title = "Mark as actively working on this"; claimB.setAttribute("aria-label", claimB.title);
+    claimB.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
+    api("GET", "/_api/db/posts/" + encodeURIComponent(postId)).then(function (r) {
+      var d = (r && r.data) || {};
+      sel.value = String(d.assigned_to || "");
+      claimB.classList.toggle("ember", d.working_by === curUserId());
+    }, function () {});
+    sel.addEventListener("change", function () {
+      api("PATCH", "/_api/db/posts/" + encodeURIComponent(postId), { data: { assigned_to: sel.value } }).then(applyCollabCardBadges, function () {});
+    });
+    claimB.addEventListener("click", function () {
+      var on = !claimB.classList.contains("ember");
+      claimB.classList.toggle("ember", on);
+      api("PATCH", "/_api/db/posts/" + encodeURIComponent(postId), { data: { working_by: on ? curUserId() : "" } }).then(applyCollabCardBadges, function () {});
+    });
+    wrap.appendChild(sel); wrap.appendChild(claimB);
+    barRow.insertBefore(wrap, barRow.firstChild);
+  }
+  function refreshCollabUiState(cb) {
+    api("GET", "/_api/me").then(function (me) {
+      if (me && me.id) window.__KIT_USER__ = me;
+      var hasC = !!(me && me.has_collaborators);
+      document.documentElement.dataset.collab = hasC ? "1" : "0";
+      var q = document.getElementById("q");
+      if (q && q.parentNode && !document.getElementById("kit-mine-btn")) {
+        var mb = document.createElement("button");
+        mb.id = "kit-mine-btn"; mb.type = "button"; mb.className = "btn small kit-mine-btn kit-collab-only";
+        mb.textContent = "Mine"; mb.title = "Show posts assigned to or worked on by you";
+        mb.addEventListener("click", function () {
+          _kitMineOnly = !_kitMineOnly;
+          mb.classList.toggle("on", _kitMineOnly);
+          applyCollabCardBadges();
+        });
+        q.parentNode.insertBefore(mb, q.nextSibling);
+      }
+      applyCollabCardBadges();
+      if (cb) cb(me);
+    }, function () {});
+  }
+  function curUserId() {
+    return (window.__KIT_USER__ && window.__KIT_USER__.id) || "owner";
+  }
+  function initCollaboratorShare() {
+    refreshCollabUiState(function (me) {
+      var role = (me && me.role) || "owner";
+      if (role !== "owner") return;
+      var tools = document.querySelector("header.top .tools");
+      if (!tools || document.getElementById("kit-users-btn")) return;
+      var SVG_USR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>';
+      var SVG_LNK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+      var SVG_TERM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
+      var SVG_DEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+      var SVG_X2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+      var uBtn = document.createElement("button");
+      uBtn.id = "kit-users-btn"; uBtn.type = "button"; uBtn.className = "btn small kit-icon-btn";
+      uBtn.title = "Share board & manage collaborators"; uBtn.setAttribute("aria-label", uBtn.title);
+      uBtn.innerHTML = SVG_USR;
+      var docsBtn = document.getElementById("kit-docs-btn");
+      if (docsBtn && docsBtn.parentNode === tools) tools.insertBefore(uBtn, docsBtn.nextSibling);
+      else tools.appendChild(uBtn);
+
+      uBtn.addEventListener("click", function () {
+        var mod = document.getElementById("kit-users-modal");
+        if (mod) { mod.remove(); return; }
+        mod = document.createElement("section"); mod.id = "kit-users-modal"; mod.className = "kit-tl-win";
+        mod.setAttribute("role", "dialog"); mod.setAttribute("aria-label", "Share and collaborators");
+        var hdr = document.createElement("div"); hdr.className = "kit-tl-hdr";
+        var bT = document.createElement("b"); bT.textContent = "Share & Collaborators";
+        var cls = document.createElement("button"); cls.type = "button"; cls.className = "btn small kit-icon-btn";
+        cls.title = "Close"; cls.setAttribute("aria-label", "Close"); cls.innerHTML = SVG_X2;
+        cls.addEventListener("click", function () { mod.remove(); });
+        hdr.appendChild(bT); hdr.appendChild(cls); mod.appendChild(hdr);
+
+        var body = document.createElement("div"); body.className = "kit-tl-body"; body.style.gap = "12px";
+        var note = document.createElement("div"); note.className = "note";
+        note.textContent = "Mint a scoped link for a human collaborator or their AI (works over Tailscale Funnel without GitHub repo access).";
+        body.appendChild(note);
+
+        var form = document.createElement("form");
+        form.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;align-items:center;";
+        var nmIn = document.createElement("input"); nmIn.type = "text"; nmIn.placeholder = "Collaborator name (e.g. alex)"; nmIn.required = true;
+        nmIn.style.cssText = "flex:1 1 150px;font:inherit;font-size:.88rem;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);";
+        var roleSel = document.createElement("select");
+        roleSel.style.cssText = "font:inherit;font-size:.86rem;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);";
+        roleSel.innerHTML = '<option value="member">Member (post & comment)</option><option value="viewer">Viewer (read-only)</option><option value="owner">Owner (full admin)</option>';
+        var addB = document.createElement("button"); addB.type = "submit"; addB.className = "btn small ember"; addB.textContent = "Create link";
+        form.appendChild(nmIn); form.appendChild(roleSel); form.appendChild(addB);
+        body.appendChild(form);
+
+        var statusEl = document.createElement("div"); statusEl.className = "note"; statusEl.style.color = "var(--ember)";
+        body.appendChild(statusEl);
+
+        var listBox = document.createElement("div"); listBox.style.cssText = "display:flex;flex-direction:column;gap:8px;";
+        body.appendChild(listBox);
+
+        var shHdr = document.createElement("div"); shHdr.style.cssText = "font-size:.76rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:8px;padding-top:10px;border-top:1px solid var(--line);";
+        shHdr.textContent = "Active AI Share Links (auto-expire in 24h)";
+        body.appendChild(shHdr);
+        var sharesBox = document.createElement("div"); sharesBox.style.cssText = "display:flex;flex-direction:column;gap:6px;";
+        body.appendChild(sharesBox);
+
+        function loadShares() {
+          api("GET", "/_api/shares").then(function (res) {
+            sharesBox.textContent = "";
+            var shs = ((res && res.shares) || []).filter(function (s) { return !s.revoked; });
+            if (!shs.length) { sharesBox.innerHTML = '<div class="note">No active AI share links.</div>'; return; }
+            shs.forEach(function (s) {
+              var row = document.createElement("div");
+              row.style.cssText = "display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;background:var(--sunk);border:1px solid var(--line);";
+              var info = document.createElement("div"); info.style.cssText = "flex:1 1 0;min-width:0;";
+              var t1 = document.createElement("div"); t1.style.cssText = "font-weight:700;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+              t1.textContent = s.post_id;
+              var t2 = document.createElement("div"); t2.className = "note"; t2.style.fontSize = ".72rem";
+              t2.textContent = (s.submissions || 0) + "/" + (s.max_submissions || 5) + " replies · expires " + String(s.expires_at || "").slice(0, 16).replace("T", " ");
+              info.appendChild(t1); info.appendChild(t2);
+              var bCopy = document.createElement("button"); bCopy.type = "button"; bCopy.className = "btn small kit-icon-btn";
+              bCopy.title = "Copy share link"; bCopy.innerHTML = SVG_LNK;
+              bCopy.addEventListener("click", function () { copyText(location.origin + s.path, "Copied AI share link for " + s.post_id); });
+              var bRev = document.createElement("button"); bRev.type = "button"; bRev.className = "btn small kit-icon-btn";
+              bRev.title = "Revoke share link"; bRev.innerHTML = SVG_DEL;
+              bRev.addEventListener("click", function () {
+                api("DELETE", "/_api/shares/" + encodeURIComponent(s.token)).then(function () {
+                  statusEl.textContent = "Revoked share link for " + s.post_id;
+                  loadShares();
+                });
+              });
+              row.appendChild(info); row.appendChild(bCopy); row.appendChild(bRev);
+              sharesBox.appendChild(row);
+            });
+          }, function () {});
+        }
+
+        function copyText(txt, msg) {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(txt).then(function () { statusEl.textContent = msg; }, function () { window.prompt(msg, txt); });
+          } else {
+            window.prompt(msg, txt);
+          }
+        }
+        function loadUsers() {
+          api("GET", "/_api/users").then(function (res) {
+            listBox.textContent = "";
+            var us = (res && res.users) || [];
+            if (!us.length) { listBox.innerHTML = '<div class="note">No collaborators yet. Create one above to generate a link.</div>'; return; }
+            us.forEach(function (u) {
+              var row = document.createElement("div");
+              row.style.cssText = "display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:10px;background:var(--sunk);border:1px solid var(--line);";
+              var info = document.createElement("div"); info.style.cssText = "flex:1 1 0;min-width:0;";
+              var nEl = document.createElement("div"); nEl.style.cssText = "font-weight:700;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+              nEl.textContent = u.name + " ";
+              var rBadge = document.createElement("span"); rBadge.className = "badge"; rBadge.textContent = u.role;
+              nEl.appendChild(rBadge);
+              var idEl = document.createElement("div"); idEl.className = "note"; idEl.style.fontFamily = "var(--mono)"; idEl.style.fontSize = ".73rem";
+              idEl.textContent = "@" + u.user_id;
+              info.appendChild(nEl); info.appendChild(idEl);
+
+              var linkUrl = location.origin + "/?token=" + u.token;
+              var aiInviteUrl = location.origin + "/_invite/" + u.token + ".md";
+              var bLnk = document.createElement("button"); bLnk.type = "button"; bLnk.className = "btn small kit-icon-btn";
+              bLnk.title = "Copy browser invite link"; bLnk.setAttribute("aria-label", bLnk.title); bLnk.innerHTML = SVG_LNK;
+              bLnk.addEventListener("click", function () { copyText(linkUrl, "Copied browser invite link for " + u.name); });
+
+              var bAi = document.createElement("button"); bAi.type = "button"; bAi.className = "btn small kit-icon-btn";
+              bAi.title = "Copy 1-link AI bootstrap URL"; bAi.setAttribute("aria-label", bAi.title); bAi.innerHTML = SVG_TERM;
+              bAi.addEventListener("click", function () { copyText(aiInviteUrl, "Copied 1-link AI bootstrap URL for " + u.name); });
+
+              var bRev = document.createElement("button"); bRev.type = "button"; bRev.className = "btn small kit-icon-btn";
+              bRev.title = "Revoke access"; bRev.setAttribute("aria-label", bRev.title); bRev.innerHTML = SVG_DEL;
+              bRev.addEventListener("click", function () {
+                api("DELETE", "/_api/users/" + encodeURIComponent(u.user_id)).then(function () {
+                  statusEl.textContent = "Revoked " + u.name;
+                  loadUsers();
+                  refreshCollabUiState();
+                });
+              });
+              row.appendChild(info); row.appendChild(bLnk); row.appendChild(bAi); row.appendChild(bRev);
+              listBox.appendChild(row);
+            });
+          }, function () {});
+        }
+        form.addEventListener("submit", function (ev) {
+          ev.preventDefault();
+          var nm = nmIn.value.trim();
+          if (!nm) return;
+          addB.disabled = true;
+          api("POST", "/_api/users", { name: nm, role: roleSel.value }).then(function (created) {
+            addB.disabled = false; nmIn.value = "";
+            if (created && created.link) copyText(created.link, "Created & copied link for " + created.name + " (" + created.role + ")");
+            loadUsers();
+            refreshCollabUiState();
+          }, function () { addB.disabled = false; statusEl.textContent = "Could not create collaborator."; });
+        });
+        mod.appendChild(body);
+        document.body.appendChild(mod);
+        makeWindow(mod, hdr, { minW: 340, minH: 260, winKey: "users" });
+        placeWindowLeftOfOthers(mod, 520, 520, "users", "users", 340, 260);
+        loadUsers();
+        loadShares();
+      });
+    }, function () {});
+  }
+
   if (typeof MutationObserver !== "undefined" && typeof document !== "undefined") {
     var _kitMoTimer = null;
     var _kitMo = new MutationObserver(function () {
@@ -4015,6 +4364,7 @@ SHIM_JS = r"""(function () {
     var _attachMo = function () {
       var initialHash = location.hash || "";
       initRepoDocBrowser();
+      initCollaboratorShare();
       loadSharedWindowGeoms();
       var target = document.body || document.documentElement;
       if (target) {
@@ -4224,6 +4574,31 @@ class BoardStore:
         )
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_links_train ON links(train, created_at)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_links_parent ON links(parent_part)")
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS users ("
+            "  user_id TEXT PRIMARY KEY,"
+            "  name TEXT NOT NULL,"
+            "  role TEXT NOT NULL DEFAULT 'member',"
+            "  token TEXT NOT NULL UNIQUE,"
+            "  created_at TEXT NOT NULL,"
+            "  revoked INTEGER NOT NULL DEFAULT 0"
+            ")"
+        )
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS artifacts ("
+            "  artifact_id TEXT PRIMARY KEY,"
+            "  post_id TEXT NOT NULL,"
+            "  path TEXT NOT NULL,"
+            "  base_path TEXT NOT NULL DEFAULT '',"
+            "  summary TEXT NOT NULL DEFAULT '',"
+            "  content TEXT NOT NULL,"
+            "  size INTEGER NOT NULL DEFAULT 0,"
+            "  by_user TEXT NOT NULL DEFAULT 'owner',"
+            "  agent_meta TEXT NOT NULL DEFAULT '{}',"
+            "  created_at TEXT NOT NULL"
+            ")"
+        )
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_post ON artifacts(post_id, created_at)")
         self.conn.commit()
         self.sse_clients = set()
         self.sse_lock = threading.Lock()
@@ -4315,6 +4690,155 @@ class BoardStore:
                     return
                 self._auto_sync_dirty = False
             self._run_auto_sync_once()
+
+    def save_artifact(self, post_id, rel_path, content, summary="", base_path="", by_user="owner", agent_meta=None):
+        pid = str(post_id or "").strip()
+        rp = str(rel_path or "").strip().replace("\\", "/").lstrip("/")
+        if not pid or not rp or ".." in rp.split("/"):
+            return None, "invalid_path"
+        txt = str(content or "")
+        raw_b = txt.encode("utf-8")
+        if len(raw_b) > MAX_REPO_DOC_BYTES:
+            return None, "too_large"
+        bp = str(base_path or "").strip().replace("\\", "/").lstrip("/")
+        if ".." in bp.split("/"):
+            bp = ""
+        meta = agent_meta if isinstance(agent_meta, dict) else {}
+        clean_meta = {
+            "harness": str(meta.get("harness") or "")[:40],
+            "model": str(meta.get("model") or "")[:64],
+            "effort": str(meta.get("effort") or "")[:24],
+            "user": str(meta.get("user") or by_user or "owner")[:32],
+        }
+        clean_meta = {k: v for k, v in clean_meta.items() if v}
+        aid = "art-" + secrets.token_hex(6)
+        now = utc_now()
+        sm = str(summary or "").strip()[:240]
+        with self.lock:
+            self.conn.execute(
+                "INSERT INTO artifacts(artifact_id, post_id, path, base_path, summary, content, size, by_user, agent_meta, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (aid, pid, rp, bp, sm, txt, len(raw_b), str(by_user or "owner")[:32], json.dumps(clean_meta, ensure_ascii=False), now),
+            )
+            self.conn.commit()
+        return {
+            "artifact_id": aid,
+            "post_id": pid,
+            "path": rp,
+            "base_path": bp,
+            "summary": sm,
+            "size": len(raw_b),
+            "by_user": str(by_user or "owner")[:32],
+            "agent_meta": clean_meta,
+            "created_at": now,
+        }, None
+
+    def list_artifacts(self, post_id=None):
+        with self.lock:
+            if post_id:
+                rows = self.conn.execute(
+                    "SELECT artifact_id, post_id, path, base_path, summary, size, by_user, agent_meta, created_at "
+                    "FROM artifacts WHERE post_id=? ORDER BY created_at DESC",
+                    (str(post_id),),
+                ).fetchall()
+            else:
+                rows = self.conn.execute(
+                    "SELECT artifact_id, post_id, path, base_path, summary, size, by_user, agent_meta, created_at "
+                    "FROM artifacts ORDER BY created_at DESC LIMIT 200"
+                ).fetchall()
+        out = []
+        for r in rows:
+            try:
+                am = json.loads(r[7] or "{}")
+            except ValueError:
+                am = {}
+            out.append({
+                "artifact_id": r[0], "post_id": r[1], "path": r[2], "base_path": r[3],
+                "summary": r[4], "size": r[5], "by_user": r[6], "agent_meta": am, "created_at": r[8],
+            })
+        return out
+
+    def get_artifact(self, artifact_id):
+        with self.lock:
+            r = self.conn.execute(
+                "SELECT artifact_id, post_id, path, base_path, summary, content, size, by_user, agent_meta, created_at "
+                "FROM artifacts WHERE artifact_id=?",
+                (str(artifact_id or ""),),
+            ).fetchone()
+        if not r:
+            return None
+        try:
+            am = json.loads(r[8] or "{}")
+        except ValueError:
+            am = {}
+        return {
+            "artifact_id": r[0], "post_id": r[1], "path": r[2], "base_path": r[3],
+            "summary": r[4], "content": r[5], "size": r[6], "by_user": r[7], "agent_meta": am, "created_at": r[9],
+        }
+
+    def delete_artifact(self, artifact_id):
+        with self.lock:
+            cur = self.conn.execute("DELETE FROM artifacts WHERE artifact_id=?", (str(artifact_id or ""),))
+            self.conn.commit()
+            return cur.rowcount > 0
+
+    def create_user(self, name, role="member"):
+        nm = str(name or "").strip()[:48]
+        if not nm:
+            return None
+        r = str(role or "member").strip().lower()
+        if r not in ("viewer", "member", "owner"):
+            r = "member"
+        base = re.sub(r"[^a-z0-9_-]+", "-", nm.lower()).strip("-")[:24] or "user"
+        if base in ("owner", "all", "system"):
+            base = base + "-" + secrets.token_hex(2)
+        now = utc_now()
+        tok = secrets.token_hex(16)
+        with self.lock:
+            uid = base
+            if self.conn.execute("SELECT 1 FROM users WHERE user_id=?", (uid,)).fetchone():
+                uid = base[:19] + "-" + secrets.token_hex(2)
+            self.conn.execute(
+                "INSERT INTO users(user_id, name, role, token, created_at, revoked) VALUES(?,?,?,?,?,0)",
+                (uid, nm, r, tok, now),
+            )
+            self.conn.commit()
+        return {"user_id": uid, "name": nm, "role": r, "token": tok, "created_at": now}
+
+    def list_users(self):
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT user_id, name, role, token, created_at FROM users WHERE revoked=0 ORDER BY created_at DESC"
+            ).fetchall()
+        return [{"user_id": r[0], "name": r[1], "role": r[2], "token": r[3], "created_at": r[4]} for r in rows]
+
+    def revoke_user(self, user_id):
+        uid = str(user_id or "")
+        with self.lock:
+            cur = self.conn.execute("UPDATE users SET revoked=1 WHERE user_id=? AND revoked=0", (uid,))
+            if cur.rowcount > 0:
+                rows = self.conn.execute("SELECT doc_id, data FROM docs WHERE collection='posts'").fetchall()
+                for did, raw in rows:
+                    try:
+                        d = json.loads(raw)
+                    except ValueError:
+                        continue
+                    if d.get("working_by") == uid:
+                        d["working_by"] = ""
+                        self.set_doc("posts", did, d)
+            self.conn.commit()
+            return cur.rowcount > 0
+
+    def lookup_user_by_token(self, tok):
+        t = str(tok or "").strip()
+        if not t:
+            return None
+        with self.lock:
+            rows = self.conn.execute("SELECT user_id, name, role, token FROM users WHERE revoked=0").fetchall()
+        for r in rows:
+            if hmac.compare_digest(str(r[3]), t):
+                return {"id": r[0], "name": r[1], "role": r[2], "token": r[3]}
+        return None
 
     def create_share(self, post_id, ttl_hours=24.0, allow_write=True, files=None, max_submissions=5, repo=""):
         tok = secrets.token_urlsafe(24)
@@ -5630,35 +6154,140 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         def log_message(self, fmt, *args):
             pass  # keep daemon stdout/stderr quiet
 
+        def _cur_uid(self):
+            u = getattr(self, "_auth_user", None) or {}
+            return str(u.get("id") or "owner")
+
+        def _ensure_user_orch(self, st, uid):
+            oid = "_orchestrator_" + uid
+            if not st.get_doc("posts", oid).get("exists"):
+                st.set_doc("posts", oid, {
+                    "title": "Ask the orchestrator (@" + uid + ")",
+                    "column": "info",
+                    "part": "orchestrator",
+                    "priority": 3,
+                    "owner_user": uid,
+                    "created_at": utc_now(),
+                    "body": "Private orchestrator channel for @" + uid + ".",
+                })
+            return st.get_doc("posts", oid)
+
+        def _scope_list_docs(self, st, coll, res):
+            uid = self._cur_uid()
+            if uid == "owner":
+                if coll == "posts":
+                    res["docs"] = [d for d in (res.get("docs") or []) if not str(d.get("id") or "").startswith("_orchestrator_")]
+                elif coll == "comments":
+                    res["docs"] = [d for d in (res.get("docs") or []) if not str((d.get("data") or {}).get("post_id") or "").startswith("_orchestrator_")]
+                return res
+            my_oid = "_orchestrator_" + uid
+            if coll == "posts":
+                self._ensure_user_orch(st, uid)
+                out = []
+                for d in (res.get("docs") or []):
+                    did = str(d.get("id") or "")
+                    if did == "_orchestrator":
+                        continue
+                    if did == my_oid:
+                        out.append({**d, "id": "_orchestrator"})
+                    elif did.startswith("_orchestrator_"):
+                        continue
+                    else:
+                        out.append(d)
+                res["docs"] = out
+            elif coll == "comments":
+                out = []
+                for d in (res.get("docs") or []):
+                    pid = str((d.get("data") or {}).get("post_id") or "")
+                    if pid == "_orchestrator":
+                        continue
+                    if pid == my_oid:
+                        dd = dict(d.get("data") or {})
+                        dd["post_id"] = "_orchestrator"
+                        out.append({**d, "data": dd})
+                    elif pid.startswith("_orchestrator_"):
+                        continue
+                    else:
+                        out.append(d)
+                res["docs"] = out
+            return res
+
+        def _scope_write_target(self, coll, doc_id, data):
+            uid = self._cur_uid()
+            if uid == "owner":
+                return doc_id, data, None
+            my_oid = "_orchestrator_" + uid
+            if coll == "posts":
+                if doc_id == "_orchestrator":
+                    return my_oid, data, None
+                if doc_id.startswith("_orchestrator_") and doc_id != my_oid:
+                    return doc_id, data, "forbidden"
+            elif coll == "comments" and isinstance(data, dict):
+                nd = dict(data)
+                pid = str(nd.get("post_id") or "")
+                if pid == "_orchestrator":
+                    nd["post_id"] = my_oid
+                elif pid.startswith("_orchestrator_") and pid != my_oid:
+                    return doc_id, data, "forbidden"
+                if nd.get("from") in (None, "", "owner"):
+                    nd["from"] = uid
+                return doc_id, nd, None
+            return doc_id, data, None
+
+        def _match_token(self, candidate):
+            c = str(candidate or "").strip()
+            if not c:
+                return None
+            if token and hmac.compare_digest(c, token):
+                return {"id": "owner", "name": "owner", "role": "owner", "token": token}
+            return store.lookup_user_by_token(c)
+
         def _check_auth(self, parsed):
+            self._auth_user = {"id": "owner", "name": "owner", "role": "owner", "token": token or ""}
             if not token:
                 return True, False
             if not embed_mode:
                 qs = urllib.parse.parse_qs(parsed.query)
                 qtok = (qs.get("token") or [""])[0]
-                if qtok and hmac.compare_digest(qtok, token):
+                u = self._match_token(qtok)
+                if u:
+                    self._auth_user = u
                     return True, True
             hdr = self.headers.get("X-Kit-Token") or ""
-            if hdr and hmac.compare_digest(hdr, token):
+            u = self._match_token(hdr)
+            if u:
+                self._auth_user = u
                 return True, False
             auth = self.headers.get("Authorization") or ""
-            if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:].strip(), token):
-                return True, False
+            if auth.startswith("Bearer "):
+                u = self._match_token(auth[7:].strip())
+                if u:
+                    self._auth_user = u
+                    return True, False
             if not embed_mode:
                 raw_cookie = self.headers.get("Cookie") or ""
                 if raw_cookie:
                     c = SimpleCookie()
                     try:
                         c.load(raw_cookie)
-                        if "kit_token" in c and hmac.compare_digest(c["kit_token"].value, token):
-                            return True, False
+                        if "kit_token" in c:
+                            u = self._match_token(c["kit_token"].value)
+                            if u:
+                                self._auth_user = u
+                                return True, False
                     except Exception:
                         pass
+            self._auth_user = None
             return False, False
 
-        def _require_auth(self, parsed):
+        def _require_auth(self, parsed, min_role="viewer"):
             ok, set_cookie = self._check_auth(parsed)
             if ok:
+                ranks = {"viewer": 1, "member": 2, "owner": 3}
+                u = getattr(self, "_auth_user", None) or {"role": "owner"}
+                if ranks.get(u.get("role", "viewer"), 1) < ranks.get(min_role, 1):
+                    self._send_json(403, {"error": "forbidden", "required_role": min_role})
+                    return None
                 return set_cookie
             accept = (self.headers.get("Accept") or "").lower()
             if (not embed_mode) and parsed.path in ("/", "/index.html") and "text/html" in accept:
@@ -5716,6 +6345,55 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
             if path == "/_api/health":
                 self._send_json(200, {"ok": True, "pid": os.getpid(), "auth": bool(token), "embed_mode": bool(embed_mode)})
+                return
+
+            if path.startswith("/_invite/") and path.endswith(".md"):
+                itok = urllib.parse.unquote(path[len("/_invite/"):-len(".md")]).strip("/")
+                iu = store.lookup_user_by_token(itok)
+                if not iu:
+                    self._send_json(410, {"error": "invite_invalid_or_revoked"})
+                    return
+                proto = (self.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip()
+                host_hdr = self.headers.get("Host") or ""
+                origin = ("%s://%s" % (proto, host_hdr)) if host_hdr else ""
+                uid = iu["id"]
+                role = iu["role"]
+                orch_id = "_orchestrator_" + uid
+                brief = "\n".join([
+                    "# Board Collaborator AI Bootstrap — %s (@%s)" % (project_name, uid),
+                    "",
+                    "You are connecting as collaborator **`@%s`** (role: **`%s`**) on **%s**'s live board.",
+                    "No GitHub repository access is required — everything runs over HTTPS using your scoped token.",
+                    "",
+                    "## 1. Environment",
+                    "```bash",
+                    'export KIT_BOARD_URL="%s"' % origin,
+                    'export KIT_BOARD_TOKEN="%s"' % itok,
+                    "```",
+                    "",
+                    "## 2. Fetch the Zero-Dependency CLI (1 command)",
+                    "```bash",
+                    'curl -sf -H "X-Kit-Token: $KIT_BOARD_TOKEN" "$KIT_BOARD_URL/_api/client/board_cli.py" -o /tmp/board_cli.py',
+                    "```",
+                    "",
+                    "## 3. Your Private Orchestrator Channel & Shared Board Rules",
+                    "- **Private Ask-the-Orchestrator (`@o`):** `%s` (isolated from the owner's `_orchestrator`)." % orch_id,
+                    "- **Shared project posts:** read/list all posts with `python3 /tmp/board_cli.py list posts`.",
+                    "- **Attribution & AI metadata:** set `\"from\": \"%s\"`, `\"working_by\": \"%s\"`, and `\"agent_meta\": {\"harness\": \"<cli>\", \"model\": \"<model>\", \"effort\": \"<low|medium|high>\"}` on posts/comments." % (uid, uid),
+                    "- **Submit scripts, improved docs & HTML (no GitHub write access needed):** `POST $KIT_BOARD_URL/_api/posts/<post_id>/artifacts` with JSON `{\"path\": \"docs/foo.md\", \"base_path\": \"docs/foo.md\", \"summary\": \"1-line summary\", \"content\": \"...\", \"agent_meta\": {\"harness\": \"...\", \"model\": \"...\", \"effort\": \"...\"}}`. Your deliverables are stored safely in the board, diffed against `base_path`, previewable in the Document/HTML Viewer, and queryable in compact manifests (`GET /_api/posts/<post_id>/artifacts`).",
+                    "- **Permissions (`%s`):** %s" % (role, "read-only" if role == "viewer" else ("read + post/comment/upload blobs" if role == "member" else "full admin")),
+                    "",
+                    "## 4. Browser / Phone Link",
+                    "Open `%s/?token=%s` on desktop or phone to view the board as `@%s`." % (origin, itok, uid),
+                ])
+                raw = brief.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/markdown; charset=utf-8")
+                self._send_security_headers()
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(raw)
                 return
 
             if path.startswith("/_share/") and not path.endswith("/submit"):
@@ -5918,6 +6596,83 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(raw)
+                return
+
+            if path == "/_api/me":
+                u = getattr(self, "_auth_user", None) or {"id": "owner", "name": "owner", "role": "owner"}
+                collabs = store.list_users()
+                self._send_json(200, {
+                    "id": u["id"],
+                    "name": u["name"],
+                    "role": u["role"],
+                    "has_collaborators": len(collabs) > 0,
+                    "collaborators": [{"id": x["user_id"], "name": x["name"], "role": x["role"]} for x in collabs] if collabs else [],
+                })
+                return
+
+            if path == "/_api/client/board_cli.py":
+                cli_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "board_cli.py")
+                if not os.path.isfile(cli_path):
+                    self._send_json(404, {"error": "board_cli_not_found"})
+                    return
+                with open(cli_path, "rb") as fh:
+                    raw_cli = fh.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/x-python; charset=utf-8")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Length", str(len(raw_cli)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(raw_cli)
+                return
+
+            if path == "/_api/users":
+                u = getattr(self, "_auth_user", None) or {"role": "owner"}
+                if u.get("role") != "owner":
+                    self._send_json(403, {"error": "forbidden", "required_role": "owner"})
+                    return
+                self._send_json(200, {"users": store.list_users()})
+                return
+
+            if path.startswith("/_api/posts/") and path.endswith("/artifacts"):
+                pid_a = urllib.parse.unquote(path[len("/_api/posts/"):-len("/artifacts")]).strip("/")
+                tstore, _ = self._store_for_doc(parsed, "posts", pid_a)
+                self._send_json(200, {"post_id": pid_a, "artifacts": tstore.list_artifacts(post_id=pid_a)})
+                return
+
+            if path.startswith("/_api/artifacts/"):
+                aid_req = urllib.parse.unquote(path[len("/_api/artifacts/"):]).strip("/")
+                art = self._store(parsed).get_artifact(aid_req)
+                if not art:
+                    for st_a in stores_map.values():
+                        art = st_a.get_artifact(aid_req)
+                        if art:
+                            break
+                if not art:
+                    self._send_json(404, {"error": "artifact_not_found"})
+                    return
+                if (qs.get("raw") or ["0"])[0] == "1":
+                    ext = os.path.splitext(art["path"])[1].lower()
+                    ct = REPO_ASSET_CTYPES.get(ext, "text/plain; charset=utf-8")
+                    raw_a = art["content"].encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", ct)
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.send_header("Content-Length", str(len(raw_a)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(raw_a)
+                    return
+                diff_txt = ""
+                bp = art.get("base_path") or ""
+                if bp:
+                    rroot = self._repo_root(parsed)
+                    orig_b, _, oerr = read_repo_asset(rroot, bp)
+                    if not oerr and orig_b is not None:
+                        orig_lines = orig_b.decode("utf-8", errors="replace").splitlines(True)
+                        new_lines = art["content"].splitlines(True)
+                        diff_txt = "".join(difflib.unified_diff(orig_lines, new_lines, fromfile="a/" + bp, tofile="b/" + art["path"], n=3))[:65536]
+                self._send_json(200, {**art, "diff": diff_txt})
                 return
 
             if path == "/_api/repos":
@@ -6180,18 +6935,29 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     direction = (qs.get("dir") or ["asc"])[0]
                     limit = int(qs["limit"][0]) if "limit" in qs and qs["limit"][0] else None
                     cursor = int((qs.get("cursor") or ["0"])[0])
-                    self._send_json(200, cur_store.list_docs(rest[0], where=where, order_by=order_by, direction=direction, limit=limit, cursor=cursor))
+                    res_list = cur_store.list_docs(rest[0], where=where, order_by=order_by, direction=direction, limit=limit, cursor=cursor)
+                    self._send_json(200, self._scope_list_docs(cur_store, rest[0], res_list))
                     return
                 if len(rest) == 2:
                     tstore, _ = self._store_for_doc(parsed, rest[0], rest[1])
-                    self._send_json(200, tstore.get_doc(rest[0], rest[1]))
+                    did_req = rest[1]
+                    uid_cur = self._cur_uid()
+                    if rest[0] == "posts" and uid_cur != "owner":
+                        if did_req == "_orchestrator":
+                            doc_o = self._ensure_user_orch(tstore, uid_cur)
+                            self._send_json(200, {**doc_o, "id": "_orchestrator"})
+                            return
+                        if did_req.startswith("_orchestrator_") and did_req != ("_orchestrator_" + uid_cur):
+                            self._send_json(403, {"error": "forbidden"})
+                            return
+                    self._send_json(200, tstore.get_doc(rest[0], did_req))
                     return
 
             self._send_json(404, {"error": "not found"})
 
         def do_PUT(self):
             parsed = urllib.parse.urlsplit(self.path)
-            if self._require_auth(parsed) is None:
+            if self._require_auth(parsed, min_role="member") is None:
                 return
             path = parsed.path
             try:
@@ -6216,7 +6982,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             tstore, _ = self._store_for_doc(parsed, coll, doc_id)
             if coll == "comments" and self._is_all_repos(parsed) and (body.get("data") or {}).get("post_id"):
                 tstore, _ = self._store_for_doc(parsed, "posts", str(body["data"]["post_id"]))
-            res, err = tstore.set_doc(coll, doc_id, body.get("data", {}), if_version=body.get("if_version"))
+            doc_id, put_data, sc_err = self._scope_write_target(coll, doc_id, body.get("data", {}))
+            if sc_err:
+                self._send_json(403, {"error": sc_err})
+                return
+            res, err = tstore.set_doc(coll, doc_id, put_data, if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
@@ -6230,7 +7000,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
         def do_PATCH(self):
             parsed = urllib.parse.urlsplit(self.path)
-            if self._require_auth(parsed) is None:
+            if self._require_auth(parsed, min_role="member") is None:
                 return
             path = parsed.path
             try:
@@ -6253,7 +7023,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 self._send_json(404, {"error": "not found"})
                 return
             tstore, _ = self._store_for_doc(parsed, coll, doc_id)
-            res, err = tstore.update_doc(coll, doc_id, body.get("data", {}), if_version=body.get("if_version"))
+            doc_id, patch_data, sc_err = self._scope_write_target(coll, doc_id, body.get("data", {}))
+            if sc_err:
+                self._send_json(403, {"error": sc_err})
+                return
+            res, err = tstore.update_doc(coll, doc_id, patch_data, if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
@@ -6261,9 +7035,19 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
         def do_DELETE(self):
             parsed = urllib.parse.urlsplit(self.path)
-            if self._require_auth(parsed) is None:
+            if self._require_auth(parsed, min_role="owner") is None:
                 return
             path = parsed.path
+            if path.startswith("/_api/artifacts/"):
+                aid_d = urllib.parse.unquote(path[len("/_api/artifacts/"):]).strip("/")
+                ok = store.delete_artifact(aid_d)
+                self._send_json(200 if ok else 404, {"deleted": ok, "artifact_id": aid_d})
+                return
+            if path.startswith("/_api/users/"):
+                uid = urllib.parse.unquote(path[len("/_api/users/"):]).strip("/")
+                ok = store.revoke_user(uid)
+                self._send_json(200 if ok else 404, {"revoked": ok, "user_id": uid})
+                return
             if path.startswith("/_api/shares/"):
                 stok = urllib.parse.unquote(path[len("/_api/shares/"):]).strip("/")
                 ok = store.revoke_share(stok)
@@ -6358,18 +7142,19 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     self._send_json(400, {"error": "invalid json"})
                     return
                 cand = str(body.get("token") or "")
-                if token and not hmac.compare_digest(cand, token):
+                u_match = self._match_token(cand)
+                if token and not u_match:
                     with unlock_lock:
                         unlock_fails.setdefault(ip, []).append(now_ts)
                     self._send_json(401, {"error": "unauthorized", "code": "unauthorized"})
                     return
                 with unlock_lock:
                     unlock_fails.pop(ip, None)
-                raw = json.dumps({"ok": True}).encode("utf-8")
+                raw = json.dumps({"ok": True, "user": ({"id": u_match["id"], "name": u_match["name"], "role": u_match["role"]} if u_match else {"id": "owner", "name": "owner", "role": "owner"})}).encode("utf-8")
                 self.send_response(200)
-                if token and not embed_mode:
+                if token and not embed_mode and u_match:
                     proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
-                    cookie = "kit_token=%s; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax" % token
+                    cookie = "kit_token=%s; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax" % u_match["token"]
                     if proto == "https":
                         cookie += "; Secure"
                     self.send_header("Set-Cookie", cookie)
@@ -6380,7 +7165,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 self.end_headers()
                 self.wfile.write(raw)
                 return
-            if self._require_auth(parsed) is None:
+            if self._require_auth(parsed, min_role="member") is None:
                 return
 
             if path == "/_api/blobs":
@@ -6425,6 +7210,44 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     self._send_json(404 if perr == "not_found" else 400, {"error": perr})
                     return
                 self._send_json(200, res_p)
+                return
+
+            if path.startswith("/_api/posts/") and path.endswith("/artifacts"):
+                pid_a = urllib.parse.unquote(path[len("/_api/posts/"):-len("/artifacts")]).strip("/")
+                tstore, _ = self._store_for_doc(parsed, "posts", pid_a)
+                if not pid_a or not tstore.get_doc("posts", pid_a).get("exists"):
+                    self._send_json(404, {"error": "post_not_found"})
+                    return
+                res_a, aerr = tstore.save_artifact(
+                    pid_a,
+                    body.get("path"),
+                    body.get("content", ""),
+                    summary=body.get("summary", ""),
+                    base_path=body.get("base_path", ""),
+                    by_user=self._cur_uid(),
+                    agent_meta=body.get("agent_meta"),
+                )
+                if aerr:
+                    self._send_json(413 if aerr == "too_large" else 400, {"error": aerr})
+                    return
+                self._send_json(200, res_a)
+                return
+
+            if path == "/_api/users":
+                u = getattr(self, "_auth_user", None) or {"role": "owner"}
+                if u.get("role") != "owner":
+                    self._send_json(403, {"error": "forbidden", "required_role": "owner"})
+                    return
+                created = store.create_user(body.get("name"), role=body.get("role", "member"))
+                if not created:
+                    self._send_json(400, {"error": "name_required"})
+                    return
+                proto = (self.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip()
+                host_hdr = self.headers.get("Host") or ""
+                origin = ("%s://%s" % (proto, host_hdr)) if host_hdr else ""
+                created["link"] = origin + "/?token=" + created["token"]
+                created["ai_env"] = 'export KIT_BOARD_URL="%s" KIT_BOARD_TOKEN="%s"' % (origin, created["token"])
+                self._send_json(200, created)
                 return
 
             if path == "/_api/shares":
