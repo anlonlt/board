@@ -3628,6 +3628,8 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         focusCmtBar = el("div", "focus-cmt-bar");
         var fFiles = el("div", "focus-cmt-files");
         var fTa = document.createElement("textarea"); fTa.placeholder = "Write a comment"; fTa.maxLength = 4000;
+        var fDr = loadDraft(p.id, 0);
+        if (fDr && fDr.t) { fTa.value = fDr.t; focusCmtBar.classList.add("has-text"); }
         var fFileIn = document.createElement("input"); fFileIn.type = "file"; fFileIn.multiple = true; fFileIn.hidden = true;
         var fPending = [];
         fFileIn.addEventListener("change", function () {
@@ -3655,14 +3657,17 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
           var row = { post_id: p.id, text: txt || "(see the attached file)", from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
           if (fPending.length) row.files = fPending.slice();
           var told = txt + fPending.map(function (x) { return "\n[attached: " + x.name + " (" + x.type + ") at /_blob/" + x.id + "]"; }).join("");
-          fTa.value = ""; fPending = []; fFiles.textContent = ""; focusCmtBar.classList.remove("has-text");
+          fTa.value = ""; saveDraft(p.id, 0, "", ""); fPending = []; fFiles.textContent = ""; focusCmtBar.classList.remove("has-text");
           var sendP = sendToClaude(p, 0, box, told);
           ref.set(row).then(function () { return sendP; }, function () { return sendP; }).then(function (res) {
             checkCanSend(); return ref.update(deliveryFields(res));
           }).catch(function () {});
           slideCardAndNext(box, 1, p, null);
         }
-        fTa.addEventListener("input", function () { focusCmtBar.classList.toggle("has-text", !!(fTa.value || "").trim()); });
+        fTa.addEventListener("input", function () {
+          saveDraft(p.id, 0, fTa.value, "");
+          focusCmtBar.classList.toggle("has-text", !!(fTa.value || "").trim());
+        });
         fTa.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendFocusComment(); } });
         fSnd.addEventListener("click", sendFocusComment);
         focusCmtBar.appendChild(fFiles); focusCmtBar.appendChild(fTa); focusCmtBar.appendChild(fFileIn); focusCmtBar.appendChild(fAtt); focusCmtBar.appendChild(fSnd);

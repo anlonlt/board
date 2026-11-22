@@ -158,6 +158,32 @@ SHIM_JS = r"""(function () {
   }
 
   var lastSeq = 0;
+  var knownBootId = "";
+  var reloadPending = false;
+  function isTypingNow() {
+    if (typeof document === "undefined") return false;
+    var ae = document.activeElement;
+    if (!ae) return false;
+    var tag = (ae.tagName || "").toUpperCase();
+    return tag === "TEXTAREA" || tag === "INPUT" || !!ae.isContentEditable;
+  }
+  function triggerUiReload() {
+    if (typeof window === "undefined" || !window.location) return;
+    if (isTypingNow()) {
+      if (!reloadPending) {
+        reloadPending = true;
+        var ae = document.activeElement;
+        if (ae && ae.addEventListener) {
+          ae.addEventListener("blur", function onDone() {
+            ae.removeEventListener("blur", onDone);
+            if (reloadPending) { reloadPending = false; window.location.reload(); }
+          });
+        }
+      }
+      return;
+    }
+    window.location.reload();
+  }
   function refreshAllSubs() {
     subs.forEach(function (s) { refreshSub(s); });
   }
@@ -167,9 +193,23 @@ SHIM_JS = r"""(function () {
     try {
       es = new EventSource("/_api/events");
       es.onopen = function () { flushOutbox(); refreshAllSubs(); };
+      es.addEventListener("boot", function (ev) {
+        var info = {};
+        try { info = JSON.parse(ev.data || "{}"); } catch (e) {}
+        if (!info.boot_id) return;
+        if (knownBootId && info.boot_id !== knownBootId) {
+          triggerUiReload();
+          return;
+        }
+        knownBootId = info.boot_id;
+      });
       es.addEventListener("change", function (ev) {
         var info = {};
         try { info = JSON.parse(ev.data || "{}"); } catch (e) {}
+        if (info.ui_reload) {
+          triggerUiReload();
+          return;
+        }
         subs.forEach(function (s) {
           if (s.kind === "coll" && (!info.collection || info.collection === s.coll)) {
             refreshSub(s);
@@ -983,6 +1023,18 @@ class BoardStore:
             for q in dead:
                 self.sse_clients.discard(q)
 
+    def notify_ui_reload(self, reason="ui"):
+        payload = json.dumps({"ui_reload": True, "reason": str(reason or "ui")})
+        with self.sse_lock:
+            dead = []
+            for q in self.sse_clients:
+                try:
+                    q.put_nowait(payload)
+                except queue.Full:
+                    dead.append(q)
+            for q in dead:
+                self.sse_clients.discard(q)
+
     def get_doc(self, collection, doc_id):
         with self.lock:
             row = self.conn.execute(
@@ -1615,6 +1667,8 @@ def read_git_diff(root_dir, ref):
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 SAFE_INLINE_BLOB_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"}
 MAX_BLOB_BYTES = 20 * 1024 * 1024
+SERVER_BOOT_ID = secrets.token_hex(4)
+
 MAX_JSON_BYTES = 5 * 1024 * 1024
 
 PWA_ICON_SVG = (
@@ -2208,7 +2262,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 with store.sse_lock:
                     store.sse_clients.add(q)
                 try:
-                    self.wfile.write(b": connected\n\n")
+                    self.wfile.write(("event: boot\ndata: " + json.dumps({"boot_id": SERVER_BOOT_ID}) + "\n\n").encode("utf-8"))
                     self.wfile.flush()
                     while True:
                         try:
@@ -3071,7 +3125,8 @@ def main(argv=None):
     if auto_reload:
         script_path = os.path.abspath(__file__)
         cfg_path = os.path.join(root, ".kit", "config.json")
-        watched = [script_path, cfg_path]
+        html_watch = os.path.join(root, ".kit", "board.html")
+        watched = [script_path, cfg_path, html_watch]
         interval = max(0.1, float(a.reload_interval or 1.5))
 
         def _watcher():
@@ -3083,6 +3138,11 @@ def main(argv=None):
                     continue
                 time.sleep(0.2)
                 new_sigs = {p: _file_sig(p) for p in watched}
+                if changed == [html_watch]:
+                    sigs[html_watch] = new_sigs[html_watch]
+                    print("board_server: detected UI update (board.html), pushing live browser reload", flush=True)
+                    store.notify_ui_reload("board.html")
+                    continue
                 if script_path in changed:
                     try:
                         py_compile.compile(script_path, doraise=True)
