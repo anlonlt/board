@@ -5,8 +5,9 @@
  "from": "orchestrator",
  "part": "CL15",
  "planned_by": "orchestrator",
+ "session_id": "anon-b8",
  "status": "in progress",
  "title": "Step 0 measures each device; never more sessions than it can hold",
  "train": "cli",
- "updated_at": "2026-11-22T23:31:52Z"
+ "updated_at": "2026-11-22T23:32:24Z"
 }
