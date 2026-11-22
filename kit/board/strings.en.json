@@ -802,5 +802,25 @@
  {
   "en": "board-title:",
   "kind": "js"
+ },
+ {
+  "en": "View train as tasklist",
+  "kind": "js"
+ },
+ {
+  "en": " · Tasklist (",
+  "kind": "js"
+ },
+ {
+  "en": "artifacts: ",
+  "kind": "js"
+ },
+ {
+  "en": "bars: ",
+  "kind": "js"
+ },
+ {
+  "en": "issues: ",
+  "kind": "js"
  }
 ]

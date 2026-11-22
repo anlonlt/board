@@ -634,7 +634,211 @@ SHIM_JS = r"""(function () {
         }
       }
     }
+    /* Link inline .md / § references inside open post & comments to the Repo Docs viewer */
+    linkRepoDocs(sheet);
   }
+
+  /* Read-only Repo Docs & Memory Browser + "Comment on this section" -> Ask the Orchestrator */
+  function initRepoDocBrowser() {
+    var tools = document.querySelector("header.top .tools");
+    if (!tools || document.getElementById("kit-docs-btn")) return;
+    if (!document.getElementById("kit-docs-css")) {
+      var st = document.createElement("style");
+      st.id = "kit-docs-css";
+      st.textContent =
+        ".kit-doc-link{color:var(--ember);text-decoration:underline dotted;cursor:pointer;border-radius:4px;padding:0 2px;}" +
+        ".kit-doc-link:hover{background:var(--sunk);}" +
+        ".kit-docs-modal{position:fixed;inset:20px;z-index:55;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 24px 64px rgba(0,0,0,.42);display:grid;grid-template-rows:auto 1fr;overflow:hidden;max-width:1180px;margin:auto;}" +
+        ".kit-docs-modal[hidden]{display:none !important;}" +
+        ".kit-docs-hdr{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--sunk);flex-wrap:wrap;}" +
+        ".kit-docs-hdr b{font-family:var(--display);font-size:1.1rem;margin-right:4px;}" +
+        ".kit-docs-hdr input{flex:1 1 180px;min-width:120px;font:inherit;font-size:.88rem;padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);}" +
+        ".kit-docs-cats{display:flex;gap:4px;flex-wrap:wrap;}" +
+        ".kit-docs-cats button{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:999px;padding:3px 9px;font-size:.78rem;cursor:pointer;}" +
+        ".kit-docs-cats button.on{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700;}" +
+        ".kit-docs-body{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:0;}" +
+        ".kit-docs-list{border-right:1px solid var(--line);overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:2px;}" +
+        ".kit-docs-item{text-align:left;background:none;border:0;border-radius:8px;padding:6px 8px;cursor:pointer;color:var(--ink);font-size:.83rem;display:flex;flex-direction:column;gap:1px;}" +
+        ".kit-docs-item:hover,.kit-docs-item.on{background:var(--sunk);}" +
+        ".kit-docs-item .dp{font-family:var(--mono);font-size:.76rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+        ".kit-docs-item .dm{font-size:.7rem;color:var(--muted);}" +
+        ".kit-docs-view{overflow-y:auto;padding:0 20px 20px;min-width:0;position:relative;}" +
+        ".kit-docs-vbar{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;background:var(--surface);border-bottom:1px solid var(--line);margin-bottom:10px;flex-wrap:wrap;}" +
+        ".kit-docs-toc{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid var(--line);}" +
+        ".kit-docs-toc button{border:1px solid var(--line);background:var(--sunk);color:var(--ink);border-radius:999px;padding:2px 8px;font-size:.74rem;cursor:pointer;}" +
+        ".kit-docs-toc button:hover{border-color:var(--ember);color:var(--ember);}" +
+        ".kit-docs-md{font-size:.94rem;line-height:1.55;overflow-wrap:anywhere;}" +
+        ".kit-docs-md h1,.kit-docs-md h2,.kit-docs-md h3,.kit-docs-md h4{scroll-margin-top:58px;}" +
+        ".kit-docs-md .kit-sec-hit{background:color-mix(in srgb, var(--ember) 22%, transparent);border-radius:6px;padding:2px 6px;}" +
+        "@media (max-width:760px){.kit-docs-modal{inset:8px;}.kit-docs-body{grid-template-columns:1fr;grid-template-rows:190px minmax(0,1fr);}.kit-docs-list{border-right:0;border-bottom:1px solid var(--line);}}";
+      document.head.appendChild(st);
+    }
+    var btn = document.createElement("button");
+    btn.id = "kit-docs-btn"; btn.type = "button"; btn.className = "btn small kit-icon-btn";
+    btn.title = "Repo docs & memory"; btn.setAttribute("aria-label", "Repo docs & memory");
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+    var askEl = document.getElementById("ask");
+    if (askEl && askEl.parentNode === tools) tools.insertBefore(btn, askEl); else tools.appendChild(btn);
+
+    var modal = document.createElement("section");
+    modal.id = "kit-docs-modal"; modal.className = "kit-docs-modal"; modal.hidden = true;
+    modal.setAttribute("role", "dialog"); modal.setAttribute("aria-label", "Repo docs & memory");
+    modal.innerHTML =
+      '<div class="kit-docs-hdr"><b>Repo Docs</b><input type="search" id="kit-docs-q" placeholder="Filter .md files..."><span class="kit-docs-cats" id="kit-docs-cats"></span><button type="button" class="btn small" id="kit-docs-close">Close</button></div>' +
+      '<div class="kit-docs-body"><div class="kit-docs-list" id="kit-docs-list"></div><div class="kit-docs-view" id="kit-docs-view"><div class="note" style="padding-top:14px">Select a document to read it directly from the repository.</div></div></div>';
+    document.body.appendChild(modal);
+
+    var allDocs = [], activeCat = "all", activePath = "", activeHeadings = [];
+    var cats = [["all", "All"], ["memory", "Memory"], ["docs", "Docs"], ["prompts", "Prompts"], ["root", "Root"]];
+    var catsEl = document.getElementById("kit-docs-cats");
+    var qEl = document.getElementById("kit-docs-q");
+    var listEl = document.getElementById("kit-docs-list");
+    var viewEl = document.getElementById("kit-docs-view");
+
+    function renderCats() {
+      catsEl.textContent = "";
+      cats.forEach(function (pair) {
+        var b = document.createElement("button"); b.type = "button"; b.textContent = pair[1];
+        if (pair[0] === activeCat) b.className = "on";
+        b.addEventListener("click", function () { activeCat = pair[0]; renderCats(); renderList(); });
+        catsEl.appendChild(b);
+      });
+    }
+    function fmtKb(n) { return n >= 1024 ? (n / 1024).toFixed(1) + " KB" : n + " B"; }
+    function visibleHeadingText() {
+      if (!activeHeadings.length) return "";
+      var vTop = viewEl.getBoundingClientRect().top + 72;
+      var best = "";
+      for (var i = 0; i < activeHeadings.length; i++) {
+        var el = document.getElementById(activeHeadings[i].id);
+        if (!el) continue;
+        if (el.getBoundingClientRect().top <= vTop) best = activeHeadings[i].text;
+        else break;
+      }
+      return best || (activeHeadings[0] && activeHeadings[0].text) || "";
+    }
+    function renderList() {
+      var ql = (qEl.value || "").trim().toLowerCase();
+      listEl.textContent = "";
+      var shown = allDocs.filter(function (d) {
+        if (activeCat !== "all" && d.category !== activeCat) return false;
+        return !ql || d.path.toLowerCase().indexOf(ql) >= 0;
+      });
+      if (!shown.length) { listEl.innerHTML = '<div class="note">No matching Markdown files.</div>'; return; }
+      shown.slice(0, 300).forEach(function (d) {
+        var it = document.createElement("button"); it.type = "button";
+        it.className = "kit-docs-item" + (d.path === activePath ? " on" : "");
+        it.innerHTML = '<span class="dp"></span><span class="dm"></span>';
+        it.querySelector(".dp").textContent = d.path;
+        it.querySelector(".dm").textContent = d.category + " · " + fmtKb(d.size);
+        it.addEventListener("click", function () { openRepoDoc(d.path, ""); });
+        listEl.appendChild(it);
+      });
+    }
+    function openRepoDoc(relPath, section) {
+      modal.hidden = false;
+      activePath = relPath || "";
+      activeHeadings = [];
+      if (!allDocs.length) {
+        api("GET", "/_api/repo-docs").then(function (r) { allDocs = (r && r.docs) || []; renderCats(); renderList(); }, function () {});
+      } else { renderList(); }
+      if (!relPath) return;
+      viewEl.innerHTML = '<div class="note" style="padding-top:14px">Loading ' + relPath + '...</div>';
+      var u = "/_api/repo-doc?path=" + encodeURIComponent(relPath) + (section ? "&section=" + encodeURIComponent(section) : "");
+      api("GET", u).then(function (res) {
+        viewEl.textContent = "";
+        activeHeadings = res.headings || [];
+        var bar = document.createElement("div"); bar.className = "kit-docs-vbar";
+        var left = document.createElement("span"); left.style.cssText = "display:inline-flex;align-items:baseline;gap:8px;min-width:0;";
+        var pt = document.createElement("code"); pt.textContent = res.path; pt.style.fontWeight = "700";
+        var mt = document.createElement("span"); mt.className = "note"; mt.textContent = fmtKb(res.size);
+        left.appendChild(pt); left.appendChild(mt); bar.appendChild(left);
+        var cBtn = document.createElement("button"); cBtn.type = "button"; cBtn.className = "btn ember small";
+        cBtn.textContent = "Comment on this section";
+        cBtn.title = "Start an orchestrator discussion anchored to the currently visible section";
+        cBtn.addEventListener("click", function () {
+          var secTxt = visibleHeadingText();
+          var selTxt = "";
+          try {
+            var sel = window.getSelection ? window.getSelection() : null;
+            if (sel && sel.toString().trim() && viewEl.contains(sel.anchorNode)) {
+              selTxt = sel.toString().trim().slice(0, 260);
+            }
+          } catch (e) {}
+          var prefill = "Re `" + res.path + (secTxt ? " § " + secTxt : "") + "`:\n";
+          if (selTxt) prefill += "> " + selTxt.replace(/\n+/g, "\n> ") + "\n\n";
+          modal.hidden = true;
+          if (typeof window._kitOpenOrchNew === "function") {
+            window._kitOpenOrchNew(prefill);
+          }
+        });
+        bar.appendChild(cBtn);
+        viewEl.appendChild(bar);
+        var mdBox = document.createElement("div"); mdBox.className = "kit-docs-md body";
+        if (typeof window._kitRenderBody === "function") {
+          mdBox.innerHTML = window._kitRenderBody(res.content || "");
+        } else {
+          var pre = document.createElement("pre"); pre.style.whiteSpace = "pre-wrap"; pre.textContent = res.content || ""; mdBox.appendChild(pre);
+        }
+        var hNodes = mdBox.querySelectorAll("h1,h2,h3,h4");
+        for (var i = 0; i < hNodes.length && i < activeHeadings.length; i++) { hNodes[i].id = activeHeadings[i].id; }
+        if (activeHeadings.length > 1) {
+          var toc = document.createElement("div"); toc.className = "kit-docs-toc";
+          activeHeadings.slice(0, 30).forEach(function (h) {
+            var tb = document.createElement("button"); tb.type = "button"; tb.textContent = h.text.slice(0, 42);
+            tb.addEventListener("click", function () {
+              var el = document.getElementById(h.id);
+              if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+            });
+            toc.appendChild(tb);
+          });
+          viewEl.appendChild(toc);
+        }
+        viewEl.appendChild(mdBox);
+        if (res.match_heading) {
+          var target = document.getElementById(res.match_heading);
+          if (target) {
+            target.classList.add("kit-sec-hit");
+            setTimeout(function () { target.scrollIntoView({ behavior: "smooth", block: "start" }); }, 30);
+          }
+        }
+      }, function (e) {
+        viewEl.innerHTML = '<div class="note" style="padding-top:14px">Could not load ' + relPath + ' (' + (e && e.message || "error") + ').</div>';
+      });
+    }
+    window._kitOpenRepoDoc = openRepoDoc;
+    btn.addEventListener("click", function () {
+      modal.hidden = false;
+      api("GET", "/_api/repo-docs").then(function (r) { allDocs = (r && r.docs) || []; renderCats(); renderList(); }, function () {});
+      qEl.focus();
+    });
+    document.getElementById("kit-docs-close").addEventListener("click", function () { modal.hidden = true; });
+    qEl.addEventListener("input", renderList);
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !modal.hidden) modal.hidden = true; });
+    renderCats();
+  }
+
+  function linkRepoDocs(root) {
+    if (!root || typeof window._kitOpenRepoDoc !== "function") return;
+    var codes = root.querySelectorAll("#p-body code, .cmt .txt code");
+    var mdRe = /^(?:docs\/|\.story\/|\.board\/|\.kit\/)?[A-Za-z0-9_./-]+\.md$/;
+    for (var i = 0; i < codes.length; i++) {
+      var c = codes[i];
+      if (c.dataset.kitDocLink) continue;
+      var raw = (c.textContent || "").trim();
+      var sec = "";
+      var sm = raw.match(/^([A-Za-z0-9_./-]+\.md)\s+§\s*([A-Za-z0-9._-]+)$/);
+      if (sm) { raw = sm[1]; sec = sm[2]; }
+      if (!mdRe.test(raw)) continue;
+      c.dataset.kitDocLink = "1";
+      c.classList.add("kit-doc-link");
+      c.title = "Open " + raw + (sec ? " § " + sec : "") + " from repo";
+      (function (fp, sc) {
+        c.addEventListener("click", function (ev) { ev.stopPropagation(); window._kitOpenRepoDoc(fp, sc); });
+      })(raw, sec);
+    }
+  }
+
   if (typeof MutationObserver !== "undefined" && typeof document !== "undefined") {
     var _kitMoTimer = null;
     var _kitMo = new MutationObserver(function () {
@@ -642,6 +846,7 @@ SHIM_JS = r"""(function () {
       _kitMoTimer = setTimeout(function () { _kitMoTimer = null; enhancePostSheet(); }, 50);
     });
     var _attachMo = function () {
+      initRepoDocBrowser();
       var target = document.getElementById("sheet") || document.body || document.documentElement;
       if (target) {
         _kitMo.observe(target, { attributes: true, childList: true, subtree: true, attributeFilter: ["hidden"] });
@@ -1664,6 +1869,99 @@ def read_git_diff(root_dir, ref):
     return {"ref": ref, "stat": r_stat.stdout.strip(), "diff": diff}, None
 
 
+REPO_DOC_SKIP_DIRS = {".git", "node_modules", ".pytest_cache", "data-cache", "__pycache__", ".venv", "venv", "build", "dist", "board_data"}
+MAX_REPO_DOC_BYTES = 2 * 1024 * 1024
+
+
+def _classify_repo_doc(rel):
+    r = rel.replace("\\", "/")
+    if r.startswith(".story/") or r.startswith(".board/memory/"):
+        return "memory"
+    if r.startswith("docs/prompts/"):
+        return "prompts"
+    if r.startswith("docs/"):
+        return "docs"
+    if r.startswith(".kit/"):
+        return "kit"
+    if "/" not in r:
+        return "root"
+    return "other"
+
+
+def list_repo_docs(root_dir, query="", limit=1000):
+    root_real = os.path.realpath(root_dir)
+    ql = (query or "").strip().lower()
+    items = []
+    for dirpath, dirs, files in os.walk(root_real):
+        dirs[:] = sorted(d for d in dirs if d not in REPO_DOC_SKIP_DIRS)
+        for fn in sorted(files):
+            if not fn.lower().endswith(".md"):
+                continue
+            fp = os.path.join(dirpath, fn)
+            rel = os.path.relpath(fp, root_real).replace("\\", "/")
+            if ql and ql not in rel.lower():
+                continue
+            try:
+                st = os.stat(fp)
+            except OSError:
+                continue
+            items.append({
+                "path": rel,
+                "category": _classify_repo_doc(rel),
+                "size": st.st_size,
+                "mtime": datetime.fromtimestamp(st.st_mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            })
+            if len(items) >= limit:
+                break
+        if len(items) >= limit:
+            break
+    cat_order = {"memory": 0, "root": 1, "docs": 2, "prompts": 3, "kit": 4, "other": 5}
+    items.sort(key=lambda x: (cat_order.get(x["category"], 9), x["path"].lower()))
+    return {"docs": items, "total": len(items)}
+
+
+def read_repo_doc(root_dir, rel_path, section=""):
+    rel = (rel_path or "").strip().replace("\\", "/").lstrip("/")
+    if not rel or ".." in rel.split("/") or not rel.lower().endswith(".md"):
+        return None, "invalid_path"
+    root_real = os.path.realpath(root_dir)
+    target = os.path.realpath(os.path.join(root_real, rel))
+    if not (target.startswith(root_real + os.sep) and os.path.isfile(target)):
+        return None, "not_found"
+    try:
+        st = os.stat(target)
+        if st.st_size > MAX_REPO_DOC_BYTES:
+            return None, "too_large"
+        with open(target, encoding="utf-8", errors="replace") as fh:
+            content = fh.read()
+    except OSError:
+        return None, "read_error"
+    headings = []
+    sec_q = (section or "").strip().lstrip("§").strip().lower()
+    match_h = ""
+    for i, line in enumerate(content.splitlines()):
+        m = re.match(r"^(#{1,4})\s+(.+?)\s*#*$", line)
+        if not m:
+            continue
+        lvl = len(m.group(1))
+        txt = m.group(2).strip()
+        hid = "h-%d-%s" % (i, re.sub(r"[^a-z0-9]+", "-", txt.lower()).strip("-")[:48] or "sec")
+        headings.append({"level": lvl, "text": txt, "id": hid})
+        if sec_q and not match_h:
+            tl = txt.lower()
+            if sec_q == tl or re.search(r"(?:^|[\s§(])" + re.escape(sec_q) + r"(?:\b|[\s.:)])", tl) or sec_q in tl:
+                match_h = hid
+    return {
+        "path": os.path.relpath(target, root_real).replace("\\", "/"),
+        "category": _classify_repo_doc(rel),
+        "size": st.st_size,
+        "mtime": datetime.fromtimestamp(st.st_mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "headings": headings,
+        "match_heading": match_h,
+        "content": content,
+    }, None
+
+
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 SAFE_INLINE_BLOB_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"}
 MAX_BLOB_BYTES = 20 * 1024 * 1024
@@ -1703,10 +2001,13 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         pass
     primary_repo_id = re.sub(r"[^a-z0-9_-]+", "-", project_name.lower()).strip("-") or "primary"
     stores_map = {primary_repo_id: store}
+    roots_map = {primary_repo_id: root_dir}
     repo_meta = [{"id": primary_repo_id, "name": project_name, "primary": True}]
     for rid, rinfo in (extra_stores or {}).items():
         if rid and rid != primary_repo_id and isinstance(rinfo, dict) and rinfo.get("store"):
             stores_map[rid] = rinfo["store"]
+            if rinfo.get("root"):
+                roots_map[rid] = rinfo["root"]
             repo_meta.append({"id": rid, "name": rinfo.get("name") or rid, "primary": False})
 
     def _build_embed_unlock_html():
@@ -1866,6 +2167,9 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
         def _store(self, parsed):
             return stores_map.get(self._repo_id(parsed)) or store
+
+        def _repo_root(self, parsed):
+            return roots_map.get(self._repo_id(parsed)) or root_dir
 
         def _send_security_headers(self, is_html=False):
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -2188,6 +2492,22 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
             if path == "/_api/repos":
                 self._send_json(200, {"primary": primary_repo_id, "repos": repo_meta})
+                return
+
+            if path == "/_api/repo-docs":
+                qstr = (qs.get("q") or [""])[0]
+                self._send_json(200, list_repo_docs(self._repo_root(parsed), query=qstr))
+                return
+
+            if path == "/_api/repo-doc":
+                rpath = (qs.get("path") or [""])[0]
+                sec = (qs.get("section") or [""])[0]
+                doc_res, derr = read_repo_doc(self._repo_root(parsed), rpath, section=sec)
+                if derr:
+                    code = 404 if derr == "not_found" else (413 if derr == "too_large" else 400)
+                    self._send_json(code, {"error": derr})
+                    return
+                self._send_json(200, doc_res)
                 return
 
             if path == "/_api/changes":

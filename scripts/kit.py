@@ -1133,6 +1133,190 @@ def portfolio_summary(config_path=None, roots=None):
     return "\n".join(lines) + "\n"
 
 
+def _load_board_docs(m, db_path=None):
+    """Load posts and comments dicts from local SQLite DB, falling back to mirror worktree."""
+    posts, comments = {}, {}
+    db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    if os.path.isfile(db):
+        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+        try:
+            for coll, did, raw in conn.execute("SELECT collection, doc_id, data FROM docs WHERE collection IN ('posts','comments')"):
+                try:
+                    doc = json.loads(raw)
+                except ValueError:
+                    continue
+                if coll == "posts":
+                    posts[did] = doc
+                else:
+                    comments[did] = doc
+        finally:
+            conn.close()
+        return posts, comments
+    for coll, target in (("posts", posts), ("comments", comments)):
+        d = os.path.join(m, "board", coll)
+        if not os.path.isdir(d):
+            continue
+        for fn in sorted(os.listdir(d)):
+            if not fn.endswith(".json"):
+                continue
+            try:
+                target[fn[:-5]] = json.load(open(os.path.join(d, fn), encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+    return posts, comments
+
+
+def _first_summary_line(body):
+    for line in str(body or "").splitlines():
+        s = line.strip().lstrip("#").strip()
+        if s and not s.startswith("|") and not s.startswith("```"):
+            return s[:160]
+    return ""
+
+
+def train_context(m, target, zoom=None, db_path=None, as_json=False):
+    """Build a low-token Train-as-Tasklist context pack: ancestor zoom-out + current-task zoom-in."""
+    posts, comments = _load_board_docs(m, db_path=db_path)
+    tq = (target or "").strip()
+    tql = tq.lower().lstrip("p-")
+    matched = []
+    for pid, p in posts.items():
+        if pid.startswith("_") or p.get("removed"):
+            continue
+        tr = str(p.get("train") or "").strip().lower()
+        tr_clean = tr[2:] if tr.startswith("p-") else tr
+        part = str(p.get("part") or "").strip()
+        part_l = part.lower()
+        pid_l = pid.lower()
+        fam = re.match(r"^([a-z]+)", part_l)
+        fam_s = fam.group(1) if fam else ""
+        if (
+            tr_clean == tql or tr == tq.lower()
+            or pid_l == tq.lower() or part_l == tq.lower()
+            or (len(tql) >= 2 and fam_s == tql)
+            or pid_l.startswith(tql + "-")
+        ):
+            matched.append((pid, p))
+    if not matched:
+        if as_json:
+            return json.dumps({"train": tq, "steps": [], "zoom": None}, ensure_ascii=False, indent=2)
+        return "train %r: no matching posts found" % tq
+    matched.sort(key=lambda x: (str(x[1].get("created_at") or ""), x[0]))
+
+    # Index comments by post_id
+    by_post = {}
+    for cid, c in comments.items():
+        if c.get("removed") or c.get("like"):
+            continue
+        pid = str(c.get("post_id") or "")
+        if pid:
+            by_post.setdefault(pid, []).append((cid, c))
+    for lst in by_post.values():
+        lst.sort(key=lambda x: str(x[1].get("created_at") or ""))
+
+    # Pick zoom target: explicit --zoom, else latest non-done post, else latest post
+    zoom_pid = None
+    if zoom:
+        zl = zoom.strip().lower()
+        for pid, p in matched:
+            if pid.lower() == zl or str(p.get("part") or "").strip().lower() == zl:
+                zoom_pid = pid
+                break
+    if not zoom_pid:
+        for pid, p in reversed(matched):
+            if str(p.get("column") or "info").lower() != "done":
+                zoom_pid = pid
+                break
+    if not zoom_pid:
+        zoom_pid = matched[-1][0]
+
+    steps_out = []
+    for pid, p in matched:
+        col = str(p.get("column") or "info").lower()
+        st = str(p.get("status") or "").lower()
+        box = "[x]" if col == "done" else ("[?]" if col == "question" else ("[!]" if col == "todo" else ("[~]" if "progress" in st else "[ ]")))
+        verdict = str(p.get("verdict") or "").strip() or _first_summary_line(p.get("body"))
+        bars = p.get("bars") or []
+        artifacts = p.get("artifacts") or []
+        issues = p.get("issues") or []
+        steps_out.append({
+            "id": pid,
+            "part": str(p.get("part") or pid),
+            "title": str(p.get("title") or pid),
+            "column": col,
+            "status": st,
+            "box": box,
+            "verdict": verdict,
+            "bars": bars if isinstance(bars, list) else [str(bars)],
+            "artifacts": artifacts if isinstance(artifacts, list) else [str(artifacts)],
+            "issues": issues if isinstance(issues, list) else [str(issues)],
+            "comments_count": len(by_post.get(pid, [])),
+            "is_zoom": pid == zoom_pid,
+        })
+
+    zpost = posts[zoom_pid]
+    zpart = str(zpost.get("part") or zoom_pid)
+    # Find matching prompt file if present
+    prompt_file = ""
+    pdir = os.path.join(ROOT, "docs", "prompts")
+    if os.path.isdir(pdir):
+        for fn in sorted(os.listdir(pdir)):
+            if fn.lower().startswith(zpart.lower() + "-") or fn.lower() == (zoom_pid.lower() + ".md"):
+                prompt_file = "docs/prompts/" + fn
+                break
+
+    z_cmts = [
+        {"id": cid, "from": str(c.get("from") or "?"), "kind": str(c.get("kind") or ""), "at": str(c.get("created_at") or "")[:16], "text": str(c.get("text") or "")[:600]}
+        for cid, c in by_post.get(zoom_pid, [])[-12:]
+    ]
+
+    if as_json:
+        return json.dumps({
+            "train": tq,
+            "steps": steps_out,
+            "zoom": {
+                "id": zoom_pid,
+                "part": zpart,
+                "title": str(zpost.get("title") or zoom_pid),
+                "column": str(zpost.get("column") or "info"),
+                "prompt_file": prompt_file,
+                "body": str(zpost.get("body") or ""),
+                "comments": z_cmts,
+            },
+        }, ensure_ascii=False, indent=2)
+
+    lines = ["# Train: %s (%d steps · zoom: %s)" % (tq, len(steps_out), zoom_pid), "", "## Tasklist (Zoom-out)"]
+    for s in steps_out:
+        mark = " **← CURRENT**" if s["is_zoom"] else ""
+        line = "- %s **%s** (`%s`): %s%s" % (s["box"], s["part"], s["id"], s["title"], mark)
+        if s["verdict"]:
+            line += "\n  - *Verdict:* %s" % s["verdict"]
+        meta_bits = []
+        if s["bars"]:
+            meta_bits.append("bars: " + ", ".join(str(x) for x in s["bars"][:5]))
+        if s["artifacts"]:
+            meta_bits.append("artifacts: " + ", ".join(str(x) for x in s["artifacts"][:6]))
+        if s["issues"]:
+            meta_bits.append("issues: " + ", ".join(str(x) for x in s["issues"][:4]))
+        if meta_bits:
+            line += "\n  - " + " | ".join(meta_bits)
+        lines.append(line)
+
+    lines.extend(["", "## Current Focus (Zoom-in: `%s`)" % zoom_pid])
+    if prompt_file:
+        lines.append("- **Prompt:** `%s`" % prompt_file)
+    lines.append("- **Column:** %s | **Title:** %s" % (zpost.get("column") or "info", zpost.get("title") or zoom_pid))
+    body_txt = str(zpost.get("body") or "").strip()
+    if body_txt:
+        lines.extend(["", body_txt[:4000] + ("\n...(truncated; full post via `kit.py post %s`)" % zoom_pid if len(body_txt) > 4000 else "")])
+    if z_cmts:
+        lines.extend(["", "### Recent Comments & Reviews (%d)" % len(z_cmts)])
+        for c in z_cmts:
+            tag = (" [%s]" % c["kind"]) if c["kind"] else ""
+            lines.append("- **%s%s** (%s): %s" % (c["from"], tag, c["at"], c["text"].replace("\n", " ")))
+    return "\n".join(lines) + "\n"
+
+
 def search_all(query, db_path=None, limit=25):
     """Search posts, comments (SQLite) and committed memory markdown files."""
     q = (query or "").strip()
@@ -1225,6 +1409,7 @@ def main(argv=None):
     s = sp.add_parser("portfolio"); s.add_argument("--config", dest="portfolio_config", default=None); s.add_argument("--roots", nargs="*", default=[])
     s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None)
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
+    s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("welcome")
     s.add_argument("--runtime", choices=WELCOME_RUNTIMES, default=None)
     s.add_argument("--post", action="store_true", help="Post welcome-<runtime>-1 under _orchestrator (idempotent)")
@@ -1276,6 +1461,9 @@ def main(argv=None):
         return 0
     if a.cmd == "search":
         print(search_all(a.query, db_path=a.db, limit=a.limit))
+        return 0
+    if a.cmd == "train":
+        print(train_context(m, a.target, zoom=a.zoom, db_path=a.db, as_json=a.as_json), end="")
         return 0
     if a.cmd == "receive":
         try:

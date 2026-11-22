@@ -1273,6 +1273,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     flush();
     return html;
   }
+  window._kitRenderBody = renderBody;
 
   /* Typing: typing/<post_id> {from, at} (one doc per post), or a field <post_id>: {from, at} of posts/_typing.
      Three dots while it is under 10 minutes old and no comment from the same writer came after it. */
@@ -2668,6 +2669,20 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
       $("back").focus({ preventScroll: true });
     }
   }
+  window._kitOpenOrchNew = function (prefill) {
+    if (!state.special._orchestrator) return;
+    openPost(ORCH);
+    openDisc("new");
+    if (prefill) {
+      var ct = $("c-text");
+      if (ct) {
+        ct.value = prefill;
+        saveDraft(ORCH, 0, prefill, "");
+        if ($("composer")) $("composer").classList.add("has-text");
+        setTimeout(function () { ct.focus(); ct.selectionStart = ct.selectionEnd = ct.value.length; }, 50);
+      }
+    }
+  };
   function renderComments() {
     var p = current(); if (!p) return;
     var imgs = postImages(p);
@@ -3389,7 +3404,49 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         tdl.title = "Export as Markdown"; tdl.setAttribute("aria-label", "Export as Markdown");
         tdl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>';
         tdl.addEventListener("click", function (ev) { ev.stopPropagation(); share(tPosts, $("status")); });
-        tpz.appendChild(tsq); tpz.appendChild(tdl); lbl.appendChild(tpz);
+        var ttl = el("button", "btn small kit-icon-btn train-dl-btn"); ttl.type = "button";
+        ttl.title = "View train as tasklist"; ttl.setAttribute("aria-label", "View train as tasklist");
+        ttl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/><polyline points="3 18 4 19 6 17"/></svg>';
+        ttl.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          var allInTrain = (state.posts || []).filter(function (p) {
+            if (p.removed) return false;
+            var tr = str(p.train).replace(/^P-/, "").toLowerCase();
+            return tr === trKey.toLowerCase() || tPosts.some(function (q) { return q.id === p.id; });
+          }).sort(function (a, b) { return tOf(a) - tOf(b); });
+          var ov = document.getElementById("kit-tl-modal");
+          if (ov) ov.remove();
+          ov = document.createElement("section"); ov.id = "kit-tl-modal";
+          ov.style.cssText = "position:fixed;inset:24px;max-width:740px;max-height:calc(100vh - 48px);margin:auto;z-index:54;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 24px 64px rgba(0,0,0,.42);display:flex;flex-direction:column;overflow:hidden;";
+          var hdr = document.createElement("div"); hdr.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--sunk);";
+          hdr.innerHTML = '<b></b><button type="button" class="btn small">Close</button>';
+          hdr.querySelector("b").textContent = hName + " · Tasklist (" + allInTrain.length + ")";
+          hdr.querySelector("button").addEventListener("click", function () { ov.remove(); });
+          ov.appendChild(hdr);
+          var list = document.createElement("div"); list.style.cssText = "overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px;";
+          allInTrain.forEach(function (p) {
+            var c = colOf(p), isDone = c === "done";
+            var row = document.createElement("button"); row.type = "button";
+            row.style.cssText = "text-align:left;background:var(--sunk);border:1px solid var(--line);border-left:4px solid var(--" + c + ");border-radius:10px;padding:10px 12px;cursor:pointer;display:flex;flex-direction:column;gap:4px;";
+            var top = document.createElement("div"); top.style.cssText = "display:flex;align-items:center;gap:8px;font-weight:700;font-size:.92rem;";
+            var chk = document.createElement("span"); chk.textContent = isDone ? "☑" : (c === "question" ? "❓" : (c === "todo" ? "⚡" : "☐"));
+            var ttlS = document.createElement("span"); ttlS.textContent = (p.part ? p.part + " · " : "") + (str(p.title) || p.id);
+            if (isDone) ttlS.style.opacity = ".75";
+            top.appendChild(chk); top.appendChild(ttlS); row.appendChild(top);
+            var sum = str(p.verdict) || firstLine(p.body);
+            if (sum) { var sd = document.createElement("div"); sd.className = "note"; sd.textContent = sum.slice(0, 160); row.appendChild(sd); }
+            var badges = [];
+            if (Array.isArray(p.artifacts) && p.artifacts.length) badges.push("artifacts: " + p.artifacts.slice(0, 4).join(", "));
+            if (Array.isArray(p.bars) && p.bars.length) badges.push("bars: " + p.bars.slice(0, 3).join(", "));
+            if (Array.isArray(p.issues) && p.issues.length) badges.push("issues: " + p.issues.slice(0, 3).join(", "));
+            if (badges.length) { var bd = document.createElement("div"); bd.style.cssText = "font-family:var(--mono);font-size:.72rem;color:var(--muted);"; bd.textContent = badges.join(" · "); row.appendChild(bd); }
+            row.addEventListener("click", function () { ov.remove(); openPost(p.id); });
+            list.appendChild(row);
+          });
+          ov.appendChild(list);
+          document.body.appendChild(ov);
+        });
+        tpz.appendChild(tsq); tpz.appendChild(ttl); tpz.appendChild(tdl); lbl.appendChild(tpz);
         row.appendChild(lbl);
 
         var chain = el("div", "tnet-chain");
