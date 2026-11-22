@@ -1,23 +1,37 @@
 // The built Artifact page in Chromium with a stub window.claude (db with get/where/onSnapshot, assets, comments,
-// downloads, user). Fails on any page error and checks what the adapter replaces.
-//   KIT_PAGE=.kit/board.html node docs/claude-web/test_artifact_page.js
+// downloads, user, mcp). Fails on any page error and checks the adapter + pluggable MCP Link Reader (SharePoint & Gmail).
+//   KIT_PAGE=.kit/board.html node kit/claude/test_artifact_page.js
 const { chromium } = require('playwright');
 const fs = require('fs');
 
 const STUB = `(function () {
   const now = new Date().toISOString();
   const store = {
-    posts: { "P-a": { title: "A post", column: "info", created_at: now, body: "See docs/guide.md and commit abc1234def", priority: 1 },
-             "_orchestrator": { title: "Ask the orchestrator", column: "info", created_at: now } },
+    posts: {
+      "P-a": {
+        title: "A post", column: "info", created_at: now, priority: 1,
+        body: "See docs/guide.md, commit abc1234def, [Budget](https://contoso.sharepoint.com/sites/fin/Shared%20Documents/Budget.xlsx) and [Thread](https://mail.google.com/mail/u/0/#inbox/FMfcgzQXJwThread123)."
+      },
+      "_orchestrator": { title: "Ask the orchestrator", column: "info", created_at: now }
+    },
     comments: { c1: { post_id: "P-a", from: "owner", text: "first", created_at: now } },
-    kit_docs: { "_index": { docs: [{ path: "docs/guide.md", kind: "md", category: "docs", pinned: false, size: 20, mtime: now }],
-                            assets: { "docs/pic.png": "/_blob/0123456789abcdef0123456789abcdef" }, mirrored_at: now },
-                "docs+2F~guide.md": { path: "docs/guide.md", kind: "md", category: "docs", size: 20, mtime: now,
-                                      headings: [{ level: 1, text: "Guide", id: "h-0-guide", slug: "guide" }], content: "# Guide\\nhello" } },
-    kit_artifacts: { a1: { post_id: "P-a", path: "docs/guide.md", base_path: "docs/guide.md", summary: "better guide",
-                           content: "# Guide\\nhello world", by_user: "victor", created_at: now } },
-    kit_users: {}, typing: {} };
-  window.__writes = []; window.__store = store;
+    kit_docs: {
+      "_index": {
+        docs: [{ path: "docs/guide.md", kind: "md", category: "docs", pinned: false, size: 20, mtime: now }],
+        assets: { "docs/pic.png": "/_blob/0123456789abcdef0123456789abcdef" }, mirrored_at: now
+      },
+      "docs+2F~guide.md": {
+        path: "docs/guide.md", kind: "md", category: "docs", size: 20, mtime: now,
+        headings: [{ level: 1, text: "Guide", id: "h-0-guide", slug: "guide" }], content: "# Guide\\nhello"
+      }
+    },
+    kit_artifacts: {
+      a1: { post_id: "P-a", path: "docs/guide.md", base_path: "docs/guide.md", summary: "better guide",
+            content: "# Guide\\nhello world", by_user: "victor", created_at: now }
+    },
+    kit_users: {}, typing: {}
+  };
+  window.__writes = []; window.__store = store; window.__mcp = [];
   const subs = [];
   const docsOf = (c, ws) => Object.entries(store[c] || {}).filter(([id, d]) => (ws || []).every(([f, op, v]) => op === "==" ? d[f] === v : true));
   function snap(c, ws) { return { metadata: { fromCache: false }, docs: docsOf(c, ws).map(([id, d]) => ({ id, data: () => d })) }; }
@@ -38,7 +52,24 @@ const STUB = `(function () {
   const db = { collection: coll, doc: docRef };
   window.__saved = [];
   window.confirm = () => true; window.prompt = (m, t) => { window.__prompted = t; return t; };
-  const caps = { db,
+  const mcp = {
+    callTool: async (srv, tool, args) => {
+      window.__mcp.push([srv, tool, args]);
+      if (tool === "sharepoint_search") {
+        const h1 = JSON.stringify({ uri: "sp://wrong", name: "Budget.xlsx", webUrl: "https://contoso.sharepoint.com/sites/other/Budget.xlsx" });
+        const h2 = JSON.stringify({ uri: "sp://right", name: "Budget.xlsx", webUrl: "https://contoso.sharepoint.com/sites/fin/Shared%20Documents/Budget.xlsx", lastModifiedDateTime: now });
+        return { content: [{ type: "text", text: h1 + "\\n" + h2 }] };
+      }
+      if (tool === "read_resource") {
+        return { content: [{ type: "text", text: args.startPage === 2 ? "Page two body" : "Page one body\\nre-call with startPage=2" }] };
+      }
+      if (tool === "gmail_read_thread") {
+        return { content: [{ type: "text", text: JSON.stringify({ subject: "Q4 Budget Review", messages: [{ from: "alice@example.com", body: "Looks good!" }] }) }] };
+      }
+      return { content: [{ type: "text", text: "" }] };
+    }
+  };
+  const caps = { db, mcp,
     user: { isOwner: async () => true, id: async () => "u1", me: async () => ({ id: "u1", name: "Owner" }), canEdit: async () => true },
     assets: { upload: async () => ({ id: "f".repeat(32), url: "/_blob/" + "f".repeat(32) }) },
     comments: { sendToClaude: async () => ({ threadId: "t1" }), anchorFor: async () => ({}), canSendToClaude: async () => "available" },
@@ -60,29 +91,26 @@ const STUB = `(function () {
   await p.waitForTimeout(1500);
   const res = {};
   res.status = await p.textContent('#status').catch(() => '');
-  // the adapter, through the same api() the UI layer uses
-  res.apiChecks = await p.evaluate(async () => {
-    const out = {};
-    // reach the adapter through a window hook the build does not expose: call it via the brief + db
-    out.brief = (window.__KIT_AI_BRIEF__ || (() => ''))('P-a').slice(0, 60);
-    return out;
-  });
-  // open a post, then the "Link for AI" button
   await p.evaluate(() => { const c = document.querySelector('.card .card-open'); if (c) c.click(); });
   await p.waitForTimeout(600);
   const hasAi = await p.$('#ai-share');
   if (hasAi) { await p.evaluate(() => document.getElementById('ai-share').click()); await p.waitForTimeout(500); }
   res.aiShare = await p.evaluate(() => ({ note: (document.getElementById('c-note') || {}).textContent || '', saved: window.__saved.map(f => f.filename), prompted: !!window.__prompted }));
   res.deliverables = await p.evaluate(() => !!document.getElementById('kit-post-artifacts'));
-  // Repo Docs reader, fed by kit_docs/* through the adapter
-  await p.evaluate(() => { const b = document.getElementById('back'); if (b) b.click(); });
-  await p.waitForTimeout(300);
-  await p.evaluate(() => { const d = document.getElementById('kit-docs-btn'); if (d) d.click(); });
-  await p.waitForTimeout(800);
-  res.docsReader = await p.evaluate(() => { const m = document.getElementById('kit-docs-modal'); return m ? (m.textContent.indexOf('guide.md') >= 0 ? 'lists docs/guide.md' : 'open, empty') : 'not opened'; });
+  // Check disarmed SharePoint + Gmail links (no href attribute)
+  res.disarmed = await p.evaluate(() => [...document.querySelectorAll('#p-body a[data-mcp-href]')].map(a => ({ adapter: a.getAttribute('data-mcp-adapter'), hasHref: a.hasAttribute('href') })));
+  await p.evaluate(() => { const a = document.querySelector('#p-body a[data-mcp-adapter="sharepoint"]'); if (a) a.click(); });
+  await p.waitForTimeout(500);
+  res.sharepoint1 = await p.evaluate(() => { const w = document.getElementById('kit-mcp-win'); return w ? w.querySelector('pre').textContent.slice(0, 15) : 'no window'; });
+  await p.evaluate(() => { const b = [...document.querySelectorAll('#kit-mcp-win button')].find(x => /Page 2/.test(x.textContent)); if (b) b.click(); });
+  await p.waitForTimeout(400);
+  res.sharepoint2 = await p.evaluate(() => { const w = document.getElementById('kit-mcp-win'); return w ? w.querySelector('pre').textContent : 'no window'; });
+  await p.evaluate(() => { const a = document.querySelector('#p-body a[data-mcp-adapter="gmail"]'); if (a) a.click(); });
+  await p.waitForTimeout(500);
+  res.gmail = await p.evaluate(() => { const w = document.getElementById('kit-mcp-win'); return w ? { title: w.querySelector('b').textContent, hasBody: /Looks good/.test(w.querySelector('pre').textContent) } : 'no window'; });
+  res.mcpCalls = await p.evaluate(() => (window.__mcp || []).map(c => c[0] + ':' + c[1]));
   res.errors = errors.filter(e => !/net::ERR_FAILED|Failed to load resource/.test(e));
   console.log(JSON.stringify(res, null, 1));
-  await p.screenshot({ path: process.env.SHOT || '/tmp/artifact-page.png' });
   await b.close();
   process.exit(res.errors.length ? 1 : 0);
 })();

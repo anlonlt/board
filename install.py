@@ -473,6 +473,7 @@ def main(argv=None):
     ap.add_argument("--autonomy", choices=["full_auto", "balanced", "gated"], help="Step 0 autonomy & anti-sprawl profile")
     ap.add_argument("--scope", choices=["single", "all"], help="Step 0 board scope: single project or all discovered projects")
     ap.add_argument("--attach", action="append", default=[], help="Attach another local repo board (name=path or path) into .kit/config.json portfolio")
+    ap.add_argument("--mcp-readers", default=None, help="Claude Artifact MCP Link Readers: 'auto' (Step 0 scan), 'none', or comma list (sharepoint,gmail,gdrive,outlook,notion,linear)")
     ap.add_argument("--no-funnel", action="store_true", help="Disable default Tailscale Funnel auto-setup in .kit/up")
     ap.add_argument("--tui", "--wizard", dest="tui", action="store_true", help="Launch TWRP-style clickable terminal GUI installer seeded by Step 0 scan")
     ap.add_argument("--bootstrap", action="store_true", help="1-command bootstrap: pre-seed _orchestrator & KIT-installed into local SQLite DB")
@@ -592,6 +593,22 @@ def main(argv=None):
                 port_list.append({"name": aname, "path": apath})
                 seen_paths.add(apath)
         c["portfolio"] = port_list
+    if a.mcp_readers is not None:
+        raw_mr = a.mcp_readers.strip().lower()
+        if raw_mr in ("none", "off", ""):
+            c["kit"]["mcp_readers"] = []
+        elif raw_mr == "auto":
+            sys.path.insert(0, os.path.join(KIT, "scripts"))
+            import step0_scan  # noqa: E402
+            c["kit"]["mcp_readers"] = step0_scan.detect_mcp_readers(t)["readers"]
+        else:
+            c["kit"]["mcp_readers"] = [x.strip().lower() for x in raw_mr.split(",") if x.strip()]
+    elif c["kit"].get("runtime") == "claude" and "mcp_readers" not in c["kit"]:
+        sys.path.insert(0, os.path.join(KIT, "scripts"))
+        import step0_scan  # noqa: E402
+        detected_mr = step0_scan.detect_mcp_readers(t)["readers"]
+        if detected_mr:
+            c["kit"]["mcp_readers"] = detected_mr
     ins = Installer(t, a.dry_run)
     trunk(t, c["kit"], a.main_branch, ins.log if (first or a.main_branch) else None) if (first or a.main_branch) else None
     parts = c["kit"]["parts"]
@@ -647,7 +664,11 @@ def main(argv=None):
             # Claude Code Web: the server UI layer + an adapter onto the Artifact's capabilities (kit/claude/build_artifact_page.py)
             sys.path.insert(0, os.path.join(KIT, "kit", "claude"))
             import build_artifact_page  # noqa: E402
-            page_out = build_artifact_page.build(page_out, KIT, c["board_url"], c.get("project") or "board")
+            readers = c["kit"].get("mcp_readers")
+            page_out = build_artifact_page.build(page_out, KIT, c["board_url"], c.get("project") or "board", mcp_readers=readers)
+            if readers:
+                notes.append("mcp readers (%s): publish with capabilities.mcp = %s" % (
+                    ",".join(readers), json.dumps(build_artifact_page.mcp_capabilities(readers))))
         ins.put(".kit/board.html", page_out)
         ins.put(".kit/strings.en.json", rd("kit", "board", "strings.en.json"))
         ins.put(".kit/strings.py", rd("kit", "board", "strings.py"))

@@ -508,6 +508,8 @@ def build_step0_profile(target_dir, home_dir=None):
         {"id": "generic", "name": "Generic CLI / Cursor / Codex (local server + AGENTS.md)", "recommended": detected_rt == "generic"},
     ]
 
+    mcp_info = detect_mcp_readers(target)
+
     return {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "target_dir": target,
@@ -520,6 +522,70 @@ def build_step0_profile(target_dir, home_dir=None):
         "autonomy_assessment": autonomy,
         "palettes": palettes,
         "runtime_options": runtime_options,
+        "mcp_readers": mcp_info["readers"],
+        "mcp_reader_details": mcp_info["details"],
+        "mcp_capabilities": mcp_info["capabilities"],
+    }
+
+
+MCP_READER_RULES = [
+    ("sharepoint", "Microsoft 365", ["sharepoint_search", "read_resource"],
+     [r"sharepoint\.com/", r"onedrive\.live\.com/"], ["microsoft 365", "microsoft365", "m365", "sharepoint"]),
+    ("outlook", "Microsoft 365", ["outlook_email_search", "read_resource"],
+     [r"outlook\.(?:office|office365|live)\.com/mail/"], ["outlook"]),
+    ("gmail", "Gmail", ["gmail_read_thread", "gmail_get_message"],
+     [r"mail\.google\.com/mail/"], ["gmail"]),
+    ("gdrive", "Google Drive", ["google_drive_fetch"],
+     [r"(?:docs|drive)\.google\.com/(?:document|spreadsheets|presentation|file)/d/"], ["google drive", "gdrive"]),
+    ("notion", "Notion", ["notion-fetch"],
+     [r"notion\.(?:so|site)/"], ["notion"]),
+    ("linear", "Linear", ["get_issue"],
+     [r"linear\.app/[^/\s]+/issue/"], ["linear"]),
+]
+
+
+def detect_mcp_readers(target_dir):
+    """Scan repo docs, memory, and MCP/Claude configs to detect which MCP Link Reader adapters are needed."""
+    target = os.path.abspath(target_dir)
+    found = {}
+    url_files = []
+    for root, dirs, files in os.walk(target):
+        dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", ".kit")]
+        for fn in files:
+            if fn.endswith((".md", ".txt", ".json")) and len(url_files) < 120:
+                url_files.append(os.path.join(root, fn))
+    for fp in url_files:
+        try:
+            if os.path.getsize(fp) > 262144:
+                continue
+            txt = open(fp, encoding="utf-8", errors="ignore").read()
+        except OSError:
+            continue
+        is_cfg = os.path.basename(fp) in (".mcp.json", "settings.json", "settings.local.json")
+        low = txt.lower()
+        for rid, srv, _tools, url_pats, cfg_keys in MCP_READER_RULES:
+            if rid in found:
+                continue
+            if any(re.search(pat, txt, re.I) for pat in url_pats):
+                found[rid] = {"id": rid, "server": srv, "reason": "URL found in " + os.path.relpath(fp, target)}
+            elif is_cfg and any(k in low for k in cfg_keys):
+                found[rid] = {"id": rid, "server": srv, "reason": "connector referenced in " + os.path.relpath(fp, target)}
+    ordered = [r[0] for r in MCP_READER_RULES if r[0] in found]
+    by_server = {}
+    srv_order = []
+    for rid, srv, tools, _, _ in MCP_READER_RULES:
+        if rid not in found:
+            continue
+        if srv not in by_server:
+            by_server[srv] = []
+            srv_order.append(srv)
+        for t in tools:
+            if t not in by_server[srv]:
+                by_server[srv].append(t)
+    return {
+        "readers": ordered,
+        "details": [found[rid] for rid in ordered],
+        "capabilities": {"servers": [{"server": s, "tools": by_server[s]} for s in srv_order]},
     }
 
 
@@ -559,6 +625,13 @@ def render_markdown_report(profile):
             pal["light"]["bg"], pal["light"]["ember"], pal["light"]["question"], pal["light"]["done"]))
         lines.append("   - *Dark:* `bg %s` · `ember %s` · `question %s` · `done %s`" % (
             pal["dark"]["bg"], pal["dark"]["ember"], pal["dark"]["question"], pal["dark"]["done"]))
+    mcp_details = profile.get("mcp_reader_details") or []
+    if mcp_details:
+        lines.append("")
+        lines.append("## 4. Detected MCP Link Readers")
+        for d in mcp_details:
+            lines.append("- **`%s`** (`%s`): %s" % (d["id"], d["server"], d["reason"]))
+        lines.append("- **Artifact `capabilities.mcp`:** `%s`" % json.dumps(profile.get("mcp_capabilities") or {"servers": []}))
     lines.append("")
     return "\n".join(lines)
 

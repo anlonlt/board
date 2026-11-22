@@ -1082,6 +1082,10 @@ SHIM_JS = r"""(function () {
       e.preventDefault();
     }, { passive: false });
   }
+  if (typeof window !== "undefined") {
+    window._kitMakeWindow = makeWindow;
+    window._kitPlaceWindow = placeWindowLeftOfOthers;
+  }
   function makeWindow(winEl, hdrEl, opts) {
     if (!winEl || winEl.dataset.kitWinReady) return;
     winEl.dataset.kitWinReady = "1";
