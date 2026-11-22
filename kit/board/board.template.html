@@ -1988,8 +1988,9 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         if (!r.ok) throw new Error("HTTP " + r.status);
         var j = await r.json();
         var url = location.origin + j.path;
-        if (navigator.clipboard && navigator.clipboard.writeText) { try { await navigator.clipboard.writeText(url); } catch (e) {} }
-        window.prompt("Scoped 24h link for external AI (copied if allowed):", url);
+        var clip = "Complete this task and POST your findings back using Option A in the brief: " + url;
+        if (navigator.clipboard && navigator.clipboard.writeText) { try { await navigator.clipboard.writeText(clip); } catch (e) {} }
+        window.prompt("Scoped 24h link for external AI (copied if allowed):", clip);
       } catch (e) {
         $("c-note").textContent = "Could not create share link.";
       } finally {

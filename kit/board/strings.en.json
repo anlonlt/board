@@ -400,6 +400,10 @@
   "kind": "js"
  },
  {
+  "en": "Complete this task and POST your findings back using Option A in the brief: ",
+  "kind": "js"
+ },
+ {
   "en": "Scoped 24h link for external AI (copied if allowed):",
   "kind": "js"
  },

@@ -6044,7 +6044,12 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         if not post_doc.get("exists"):
             return set(), set(), set()
         p = post_doc["data"] or {}
-        cmts = [c for c in tstore.list_docs("comments")["docs"] if (c["data"] or {}).get("post_id") == sh["post_id"]]
+        cmts = [
+            c for c in tstore.list_docs("comments")["docs"]
+            if (c["data"] or {}).get("post_id") == sh["post_id"]
+            and not (c["data"] or {}).get("removed")
+            and not (c["data"] or {}).get("like")
+        ]
         blob_ids = set()
         repo_paths = set()
         html_dirs = set()
@@ -6086,9 +6091,17 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         if not post_doc.get("exists"):
             return None
         p = post_doc["data"] or {}
-        cmts = [c for c in tstore.list_docs("comments")["docs"] if (c["data"] or {}).get("post_id") == sh["post_id"]]
+        cmts = [
+            c for c in tstore.list_docs("comments")["docs"]
+            if (c["data"] or {}).get("post_id") == sh["post_id"]
+            and not (c["data"] or {}).get("removed")
+            and not (c["data"] or {}).get("like")
+        ]
         cmts.sort(key=lambda c: str((c["data"] or {}).get("created_at") or ""))
         blob_ids, repo_paths, _ = _share_allowed_assets(sh)
+        max_sub = int(sh.get("max_submissions") or 5)
+        used_sub = int(sh.get("submissions") or 0)
+        rem_sub = max(0, max_sub - used_sub)
         lines = [
             "# External Task Brief — %s" % (p.get("title") or sh["post_id"]),
             "",
@@ -6096,6 +6109,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             "- **Column:** `%s`" % (p.get("column") or "info"),
             "- **Train / Part:** `%s` / `%s`" % (p.get("train") or "-", p.get("part") or "-"),
             "- **Expires:** `%s`" % sh["expires_at"],
+            "- **Write scope:** %s" % ("scoped to this card only (cannot read or modify other cards or the repository)" if sh["allow_write"] else "read-only"),
+            "- **Submissions remaining:** `%d/%d`" % (rem_sub, max_sub),
             "",
             "## Task & Context",
             "",
@@ -6123,8 +6138,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         if sh["allow_write"]:
             submit_url = (base_origin.rstrip("/") if base_origin else "") + "/_share/" + sh["token"] + "/submit"
             lines.extend([
-                "### Option A — Direct write-back (if you have outbound HTTP)",
-                "POST JSON to `%s`:" % submit_url,
+                "### Option A — Direct write-back (default when outbound HTTP is available)",
+                "If the user asked you to complete this card and you have outbound HTTP, POST JSON directly to `%s` as your final step (use Option B only if HTTP POST is blocked):" % submit_url,
                 "```json",
                 json.dumps({
                     "from": "lmarena",
@@ -6132,7 +6147,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     "text": "<your concise Markdown findings here>",
                 }, indent=2),
                 "```",
-                "*(Set `\"mode\": \"child_post\"` and `\"title\": \"...\"` to create a linked result card instead of a comment.)*",
+                "*(Set `\"mode\": \"child_post\"` and `\"title\": \"...\"` to create a linked result card instead of a comment; pass an optional `\"idempotency_key\": \"<slug>\"` to update the same child card across re-runs without duplicates.)*",
                 "",
             ])
         lines.extend([
@@ -7232,7 +7247,15 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 parent_doc = tstore.get_doc("posts", sh["post_id"])
                 pdata = parent_doc.get("data") or {}
                 if mode == "child_post":
-                    new_id = "%s-%s-%s" % (sh["post_id"][:40], sender[:12], secrets.token_hex(3))
+                    idem_raw = str(body.get("idempotency_key") or "").strip()[:64]
+                    if idem_raw:
+                        idem_slug = re.sub(r"[^a-z0-9_-]+", "-", idem_raw.lower()).strip("-")[:16] or "run"
+                        idem_hash = hashlib.sha256((stok + ":" + idem_raw).encode("utf-8")).hexdigest()[:6]
+                        new_id = "%s-%s-%s" % (sh["post_id"][:36], idem_slug, idem_hash)
+                    else:
+                        new_id = "%s-%s-%s" % (sh["post_id"][:40], sender[:12], secrets.token_hex(3))
+                    existing_child = tstore.get_doc("posts", new_id) if idem_raw else {"exists": False}
+                    created_ts = (existing_child.get("data") or {}).get("created_at") if existing_child.get("exists") else now
                     title = str(body.get("title") or ((pdata.get("title") or sh["post_id"]) + " — " + sender))[:180]
                     res, _ = tstore.set_doc("posts", new_id, {
                         "title": title,
@@ -7243,10 +7266,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                         "parent": sh["post_id"],
                         "train": pdata.get("train") or "",
                         "priority": 2,
-                        "created_at": now,
+                        "created_at": created_ts,
+                        "updated_at": now,
                     })
                     store.increment_share_submissions(stok)
-                    self._send_json(200, {"ok": True, "mode": "child_post", "repo": target_repo, "post_id": new_id, "version": res["version"]})
+                    self._send_json(200, {"ok": True, "mode": "child_post", "repo": target_repo, "post_id": new_id, "updated": bool(existing_child.get("exists")), "version": res["version"]})
                     return
                 cid = "ext-%s-%s" % (sender[:10], secrets.token_hex(4))
                 res, _ = tstore.set_doc("comments", cid, {
