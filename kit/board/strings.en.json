@@ -798,5 +798,9 @@
  {
   "en": "Could not create share link.",
   "kind": "js"
+ },
+ {
+  "en": "board-title:",
+  "kind": "js"
  }
 ]

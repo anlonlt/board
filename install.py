@@ -426,14 +426,15 @@ def merge_claude_settings(t, dry, log, board=True):
                 fh.write("\n")
 
 
-def install_cmd(t, cmd_name, dry, log):
+def install_cmd(t, cmd_name, dry, log, extra_args=""):
     """Install a one-word launcher in ~/.local/bin/<cmd_name> (override dir with $KIT_BIN_DIR)."""
     if not cmd_name or "/" in cmd_name or " " in cmd_name:
         return
     bin_dir = os.environ.get("KIT_BIN_DIR") or os.path.expanduser("~/.local/bin")
     dst = os.path.join(bin_dir, cmd_name)
     marker = "# kit-board launcher"
-    content = "#!/usr/bin/env bash\n%s\nexec %s \"$@\"\n" % (marker, json.dumps(os.path.join(t, ".kit", "up")))
+    suffix = (" " + extra_args.strip()) if extra_args.strip() else ""
+    content = "#!/usr/bin/env bash\n%s\nexec %s%s \"$@\"\n" % (marker, json.dumps(os.path.join(t, ".kit", "up")), suffix)
     if os.path.exists(dst):
         try:
             cur = open(dst, encoding="utf-8").read()
@@ -678,6 +679,8 @@ def main(argv=None):
         merge_hooks(t, a.dry_run, ins.log, parts["board"])
         if c["kit"].get("cmd"):
             install_cmd(t, c["kit"]["cmd"], a.dry_run, ins.log)
+            if parts["board"] and c["kit"]["cmd"] != "board":
+                install_cmd(t, "board", a.dry_run, ins.log, extra_args="--board-only")
     if rt in ("arena", "generic") and parts["board"]:
         ins.put("AGENTS.md", render(rd("kit", "AGENTS.template.md"), c))
     if a.demo and not a.dry_run:

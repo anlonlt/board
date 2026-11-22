@@ -250,10 +250,13 @@ SHIM_JS = r"""(function () {
         }
         function applyRepoTitle() {
           var active = info.repos.filter(function (r) { return (r.primary ? "" : r.id) === (window.__KIT_ACTIVE_REPO__ || ""); })[0];
-          if (active && document.activeElement !== h1) {
+          if (active) {
             var lbl = repoLabel(active);
-            h1.textContent = lbl;
-            document.title = lbl;
+            window.__KIT_REPO_TITLE__ = lbl;
+            if (document.activeElement !== h1) {
+              h1.textContent = lbl;
+              document.title = lbl;
+            }
           }
         }
         function renderMenu() {

@@ -22,8 +22,10 @@ fi
 [ ! -f ".kit/orchestrator.md" ] && HAS_ORCH=0
 
 HYBRID=0
+BOARD_ONLY=0
 for arg in "$@"; do
   [ "$arg" = "--hybrid" ] && HYBRID=1
+  [ "$arg" = "--board-only" ] && BOARD_ONLY=1
 done
 
 if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
@@ -77,6 +79,10 @@ if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
       TS_DNS="$(tailscale serve status 2>/dev/null | grep -oE 'https://[^ ]+' | head -n 1 || true)"
       [ -n "$TS_DNS" ] && echo "Board (HTTPS):  ${TS_DNS}"
     fi
+  fi
+  if [ "$BOARD_ONLY" -eq 1 ]; then
+    echo "Board-only mode: server is running without launching the orchestrator/clerk workflow."
+    exit 0
   fi
   if [ "$HAS_ORCH" -eq 1 ] && [ "$HAS_CLERK" -eq 1 ]; then
     PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Also launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md if not already running."

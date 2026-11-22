@@ -3849,11 +3849,15 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
 
     /* Google Docs-style inline editable board title (saves to posts/_board_meta & syncs automatically) */
     var titleEl = document.querySelector("header.top h1");
+    function boardTitleStorageKey() {
+      return window.__KIT_ACTIVE_REPO__ ? ("board-title:" + window.__KIT_ACTIVE_REPO__) : "board-title";
+    }
     function applySavedBoardTitle() {
       if (!titleEl || document.activeElement === titleEl) return;
       var meta = state.special._board_meta;
       var saved = (meta && str(meta.title).trim()) || "";
-      if (!saved) { try { saved = localStorage.getItem("board-title") || ""; } catch (e) {} }
+      if (!saved) { try { saved = localStorage.getItem(boardTitleStorageKey()) || ""; } catch (e) {} }
+      if (!saved && window.__KIT_REPO_TITLE__) saved = str(window.__KIT_REPO_TITLE__);
       if (saved && titleEl.textContent !== saved) { titleEl.textContent = saved; document.title = saved; }
     }
     if (titleEl && !titleEl.dataset.kitEditable) {
@@ -3866,7 +3870,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
         var next = (titleEl.textContent || "").replace(/\s+/g, " ").trim();
         if (!next) { titleEl.textContent = prevTitleText; return; }
         titleEl.textContent = next; document.title = next;
-        try { localStorage.setItem("board-title", next); } catch (e) {}
+        try { localStorage.setItem(boardTitleStorageKey(), next); } catch (e) {}
         if (db && next !== prevTitleText) {
           db.doc("posts/_board_meta").set({ title: next, updated_at: new Date().toISOString() }, { merge: true }).catch(function () {});
         }
