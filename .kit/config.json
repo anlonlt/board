@@ -1,0 +1,143 @@
+{
+ "project": "Board",
+ "language": {
+  "talk": "en"
+ },
+ "board_url": "http://127.0.0.1:8765",
+ "fields": {
+  "author": "from",
+  "owner": "owner",
+  "clerk": "clerk",
+  "reviewer": "reviewer",
+  "post": "post_id",
+  "reply_to": "reply_to",
+  "created": "created_at",
+  "later_flags": [
+   "read",
+   "read_at",
+   "delivered"
+  ],
+  "later_stamps": [
+   "read_at",
+   "delivered_at",
+   "arrived_at",
+   "updated_at"
+  ],
+  "post_updated": "updated_at",
+  "post_moved": "done_at",
+  "review_kind": [
+   "kind",
+   "review"
+  ]
+ },
+ "shell_buckets": [
+  {
+   "name": "Bash: git",
+   "all": [
+    "git (push|pull|commit|merge|log|status|fetch)"
+   ]
+  }
+ ],
+ "mirror": {
+  "branch": "board-mirror",
+  "path": "../board-board-mirror",
+  "overlap_hours": 1
+ },
+ "kit": {
+  "runtime": "local",
+  "cli": "claude",
+  "mode": "local",
+  "talk_language": "English",
+  "limits": {
+   "message_chars": 600,
+   "done_message_chars": 240,
+   "chat_answer_chars": 600
+  },
+  "guard": {
+   "never_add": [
+    "*.keystore",
+    "*.jks",
+    "*.pem",
+    ".env",
+    "keystore.properties"
+   ],
+   "allow_add": []
+  },
+  "session_start_lines": [],
+  "orchestrator": {
+   "context_limit_k": 380
+  },
+  "review": {
+   "auto": "all",
+   "train_every": 4
+  },
+  "post_body_max": 1500,
+  "clerk": {
+   "wait_minutes": 5,
+   "context_limit_k": 80
+  },
+  "roles": {
+   "orchestrator": {
+    "model": "inherit",
+    "effort": "medium"
+   },
+   "clerk": {
+    "model": "flash_lite",
+    "effort": "low"
+   },
+   "part": {
+    "model": "inherit",
+    "effort": "medium"
+   },
+   "consultant": {
+    "model": "pro",
+    "effort": "medium"
+   },
+   "cards": {
+    "model": "flash",
+    "effort": "low"
+   }
+  },
+  "autonomy": {
+   "level": "balanced",
+   "auto_consultant": true,
+   "auto_defaults": false,
+   "carry_on": false,
+   "park_tangents": true
+  },
+  "scope": "single",
+  "palette": null,
+  "funnel": true,
+  "main_branch": "main",
+  "trunk_push": false,
+  "claude_cli_roles": {
+   "clerk": {
+    "model": "haiku"
+   },
+   "part": {
+    "model": "inherit"
+   },
+   "consultant": {
+    "model": "opus"
+   },
+   "cards": {
+    "model": "haiku"
+   }
+  },
+  "claude_permission_mode": "auto",
+  "setup": true,
+  "parts": {
+   "memory": true,
+   "board": true,
+   "clerk": true,
+   "orchestrator": true
+  },
+  "survey": "skipped: the kit's own repo: testing the Claude Code CLI workflow on its own board",
+  "cmd": "board",
+  "memory_dir": ".board/memory",
+  "pinned_docs": [
+   "AGENTS.md",
+   "README.md"
+  ]
+ }
+}

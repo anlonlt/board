@@ -1,1 +1,7 @@
 __pycache__/
+.board/memory/before-compaction.md
+.kit/board_data/
+.kit/handover.flag
+.kit/handover.log
+.kit/handover-*.gen
+.kit/run/

@@ -1,0 +1,71 @@
+{
+  "kit-board": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "python3 -I hooks/kit/kit_session_start.py"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I hooks/kit/kit_guard.py"
+          }
+        ]
+      },
+      {
+        "matcher": "send_message",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I hooks/kit/kit_say_it_once.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 -I hooks/kit/kit_stop.py"
+      },
+      {
+        "type": "command",
+        "command": "python3 -I hooks/kit/kit_pre_compact.py"
+      },
+      {
+        "type": "command",
+        "command": "python3 -I hooks/kit/kit_say_it_once.py"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "send_message|run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I hooks/kit/kit_say_it_once.py"
+          }
+        ]
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python3 -I hooks/kit/kit_say_it_once.py"
+      },
+      {
+        "type": "command",
+        "command": "python3 -I hooks/kit/kit_board_typing.py"
+      }
+    ],
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "python3 -I hooks/kit/kit_say_it_once.py"
+      }
+    ]
+  }
+}

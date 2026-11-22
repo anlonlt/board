@@ -1,0 +1,1150 @@
+[
+ {
+  "en": "Newest first",
+  "kind": "html"
+ },
+ {
+  "en": "By priority",
+  "kind": "html"
+ },
+ {
+  "en": "Select posts",
+  "kind": "html"
+ },
+ {
+  "en": "Import",
+  "kind": "html"
+ },
+ {
+  "en": "Connecting to the board...",
+  "kind": "html"
+ },
+ {
+  "en": "Ask the orchestrator",
+  "kind": "html"
+ },
+ {
+  "en": "Waiting for you",
+  "kind": "html"
+ },
+ {
+  "en": "Where we are",
+  "kind": "html"
+ },
+ {
+  "en": "All trains",
+  "kind": "html"
+ },
+ {
+  "en": "Only the trains still moving",
+  "kind": "html"
+ },
+ {
+  "en": "0 selected",
+  "kind": "html"
+ },
+ {
+  "en": "Approve selected",
+  "kind": "html"
+ },
+ {
+  "en": "Move to Done",
+  "kind": "html"
+ },
+ {
+  "en": "Export as Markdown",
+  "kind": "html"
+ },
+ {
+  "en": "Cancel",
+  "kind": "html"
+ },
+ {
+  "en": "No posts yet.",
+  "kind": "html"
+ },
+ {
+  "en": "in the repository. Open a post to read it in full, comment on it or on one of its images, and your comment is sent to the session that wrote it.",
+  "kind": "html"
+ },
+ {
+  "en": "Share",
+  "kind": "html"
+ },
+ {
+  "en": "Remove from the board",
+  "kind": "html"
+ },
+ {
+  "en": "Picture size",
+  "kind": "html"
+ },
+ {
+  "en": "Auto",
+  "kind": "html"
+ },
+ {
+  "en": "Comments on the post",
+  "kind": "html"
+ },
+ {
+  "en": "Your comment goes to the session that wrote this post. Write @o in it to ask the orchestrator instead.",
+  "kind": "html"
+ },
+ {
+  "en": "Attach a picture or a file",
+  "kind": "html"
+ },
+ {
+  "en": "Up to 20 MB each: pictures, video, PDF, text. Not zip, audio or APK.",
+  "kind": "html"
+ },
+ {
+  "en": "Send comment",
+  "kind": "html"
+ },
+ {
+  "en": "Undo",
+  "kind": "html"
+ },
+ {
+  "en": "Image",
+  "kind": "html"
+ },
+ {
+  "en": "Close",
+  "kind": "html"
+ },
+ {
+  "en": "Search posts or a part",
+  "kind": "attr"
+ },
+ {
+  "en": "Search posts",
+  "kind": "attr"
+ },
+ {
+  "en": "Filter by runner",
+  "kind": "attr"
+ },
+ {
+  "en": "Order of the posts",
+  "kind": "attr"
+ },
+ {
+  "en": "Import a Markdown or JSON card",
+  "kind": "attr"
+ },
+ {
+  "en": "Write to the orchestrator: a question, a correction, anything",
+  "kind": "attr"
+ },
+ {
+  "en": "Save this post and its comments as a Markdown file",
+  "kind": "attr"
+ },
+ {
+  "en": "Link for AI (mint scoped 24h link)",
+  "kind": "attr"
+ },
+ {
+  "en": "Link for AI",
+  "kind": "attr"
+ },
+ {
+  "en": "Snooze 24h",
+  "kind": "attr"
+ },
+ {
+  "en": "The pictures before",
+  "kind": "attr"
+ },
+ {
+  "en": "The next pictures",
+  "kind": "attr"
+ },
+ {
+  "en": "Write a comment",
+  "kind": "attr"
+ },
+ {
+  "en": "Image",
+  "kind": "attr"
+ },
+ {
+  "en": "Action",
+  "kind": "js"
+ },
+ {
+  "en": "var(--todo)",
+  "kind": "js"
+ },
+ {
+  "en": "Decisions",
+  "kind": "js"
+ },
+ {
+  "en": "var(--question)",
+  "kind": "js"
+ },
+ {
+  "en": "Updates",
+  "kind": "js"
+ },
+ {
+  "en": "var(--info)",
+  "kind": "js"
+ },
+ {
+  "en": "Done",
+  "kind": "js"
+ },
+ {
+  "en": "var(--done)",
+  "kind": "js"
+ },
+ {
+  "en": "Orchestrator changes",
+  "kind": "js"
+ },
+ {
+  "en": "New discussion",
+  "kind": "js"
+ },
+ {
+  "en": "for:",
+  "kind": "js"
+ },
+ {
+  "en": "2-digit",
+  "kind": "js"
+ },
+ {
+  "en": "/_blob/",
+  "kind": "js"
+ },
+ {
+  "en": "https://",
+  "kind": "js"
+ },
+ {
+  "en": "http://",
+  "kind": "js"
+ },
+ {
+  "en": "data:",
+  "kind": "js"
+ },
+ {
+  "en": "/_api/repo-asset",
+  "kind": "js"
+ },
+ {
+  "en": "comments/",
+  "kind": "js"
+ },
+ {
+  "en": "_prefs",
+  "kind": "js"
+ },
+ {
+  "en": "posts/_prefs",
+  "kind": "js"
+ },
+ {
+  "en": "summary.md-sec-h",
+  "kind": "js"
+ },
+ {
+  "en": "A session",
+  "kind": "js"
+ },
+ {
+  "en": "All roles",
+  "kind": "js"
+ },
+ {
+  "en": "Nothing here.",
+  "kind": "js"
+ },
+ {
+  "en": "Loading...",
+  "kind": "js"
+ },
+ {
+  "en": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  "kind": "js"
+ },
+ {
+  "en": "Next: ",
+  "kind": "js"
+ },
+ {
+  "en": " waiting on you · ",
+  "kind": "js"
+ },
+ {
+  "en": "Open the post ›",
+  "kind": "js"
+ },
+ {
+  "en": "Nothing listed for this row in Waiting for you.",
+  "kind": "js"
+ },
+ {
+  "en": "Train ",
+  "kind": "js"
+ },
+ {
+  "en": "For: ",
+  "kind": "js"
+ },
+ {
+  "en": "Show everything",
+  "kind": "js"
+ },
+ {
+  "en": "Nothing listed for this row.",
+  "kind": "js"
+ },
+ {
+  "en": "Nothing waits on you.",
+  "kind": "js"
+ },
+ {
+  "en": "Everything else that waits on you (",
+  "kind": "js"
+ },
+ {
+  "en": "  · also after ",
+  "kind": "js"
+ },
+ {
+  "en": "Prompt: `",
+  "kind": "js"
+ },
+ {
+  "en": "Session: `",
+  "kind": "js"
+ },
+ {
+  "en": "Store: ",
+  "kind": "js"
+ },
+ {
+  "en": "No prompt, session or store on record.",
+  "kind": "js"
+ },
+ {
+  "en": " Open the post ›",
+  "kind": "js"
+ },
+ {
+  "en": " trains · ",
+  "kind": "js"
+ },
+ {
+  "en": "On their own (",
+  "kind": "js"
+ },
+ {
+  "en": "No train is moving.",
+  "kind": "js"
+ },
+ {
+  "en": "The orchestrator's thread is not there yet.",
+  "kind": "js"
+ },
+ {
+  "en": "A new answer",
+  "kind": "js"
+ },
+ {
+  "en": "Stop selecting",
+  "kind": "js"
+ },
+ {
+  "en": "Select posts",
+  "kind": "js"
+ },
+ {
+  "en": "Tap the posts to select them.",
+  "kind": "js"
+ },
+ {
+  "en": "posts/",
+  "kind": "js"
+ },
+ {
+  "en": "Moved to Done.",
+  "kind": "js"
+ },
+ {
+  "en": " posts moved to Done.",
+  "kind": "js"
+ },
+ {
+  "en": "Approve ",
+  "kind": "js"
+ },
+ {
+  "en": " selected post(s)?\n\n",
+  "kind": "js"
+ },
+ {
+  "en": "application/json",
+  "kind": "js"
+ },
+ {
+  "en": "X-Kit-Token",
+  "kind": "js"
+ },
+ {
+  "en": "/_api/shares",
+  "kind": "js"
+ },
+ {
+  "en": "POST",
+  "kind": "js"
+ },
+ {
+  "en": "HTTP ",
+  "kind": "js"
+ },
+ {
+  "en": "Complete this task and POST your findings back using Option A in the brief: ",
+  "kind": "js"
+ },
+ {
+  "en": "Scoped 24h link for external AI (copied if allowed):",
+  "kind": "js"
+ },
+ {
+  "en": "Could not create share link.",
+  "kind": "js"
+ },
+ {
+  "en": "New since you last opened it",
+  "kind": "js"
+ },
+ {
+  "en": "(untitled)",
+  "kind": "js"
+ },
+ {
+  "en": "Unanswered for more than 24 hours",
+  "kind": "js"
+ },
+ {
+  "en": "✓ reviewed",
+  "kind": "js"
+ },
+ {
+  "en": "You",
+  "kind": "js"
+ },
+ {
+  "en": "Orchestrator (review)",
+  "kind": "js"
+ },
+ {
+  "en": "Orchestrator",
+  "kind": "js"
+ },
+ {
+  "en": "post `",
+  "kind": "js"
+ },
+ {
+  "en": "**Options:** ",
+  "kind": "js"
+ },
+ {
+  "en": " (default)",
+  "kind": "js"
+ },
+ {
+  "en": "Picture ",
+  "kind": "js"
+ },
+ {
+  "en": " liked the post (",
+  "kind": "js"
+ },
+ {
+  "en": " · on picture ",
+  "kind": "js"
+ },
+ {
+  "en": " · seen",
+  "kind": "js"
+ },
+ {
+  "en": "  [attached: ",
+  "kind": "js"
+ },
+ {
+  "en": " at /_blob/",
+  "kind": "js"
+ },
+ {
+  "en": " posts\n*Exported ",
+  "kind": "js"
+ },
+ {
+  "en": "-posts-",
+  "kind": "js"
+ },
+ {
+  "en": "Saved ",
+  "kind": "js"
+ },
+ {
+  "en": "Could not save the file (",
+  "kind": "js"
+ },
+ {
+  "en": "👍 Liked",
+  "kind": "js"
+ },
+ {
+  "en": "👍 Like",
+  "kind": "js"
+ },
+ {
+  "en": "You approved this",
+  "kind": "js"
+ },
+ {
+  "en": "Approve without writing",
+  "kind": "js"
+ },
+ {
+  "en": ", no words.",
+  "kind": "js"
+ },
+ {
+  "en": "board-draft:",
+  "kind": "js"
+ },
+ {
+  "en": "Your unsent draft is back.",
+  "kind": "js"
+ },
+ {
+  "en": "] image ",
+  "kind": "js"
+ },
+ {
+  "en": "Something here has not been on your screen yet",
+  "kind": "js"
+ },
+ {
+  "en": "← Discussions",
+  "kind": "js"
+ },
+ {
+  "en": "Close",
+  "kind": "js"
+ },
+ {
+  "en": "← Board",
+  "kind": "js"
+ },
+ {
+  "en": "Messages",
+  "kind": "js"
+ },
+ {
+  "en": "Discussions",
+  "kind": "js"
+ },
+ {
+  "en": "Comments on the post",
+  "kind": "js"
+ },
+ {
+  "en": "Your message goes to the orchestrator, in this discussion.",
+  "kind": "js"
+ },
+ {
+  "en": "Your comment goes to the session that wrote this post. Write @o in it to ask the orchestrator instead.",
+  "kind": "js"
+ },
+ {
+  "en": "Reopen",
+  "kind": "js"
+ },
+ {
+  "en": "Move to Done",
+  "kind": "js"
+ },
+ {
+  "en": "Priority",
+  "kind": "js"
+ },
+ {
+  "en": "First",
+  "kind": "js"
+ },
+ {
+  "en": "Second",
+  "kind": "js"
+ },
+ {
+  "en": "Third",
+  "kind": "js"
+ },
+ {
+  "en": "Comment on this picture",
+  "kind": "js"
+ },
+ {
+  "en": "Comment on picture ",
+  "kind": "js"
+ },
+ {
+  "en": "Send",
+  "kind": "js"
+ },
+ {
+  "en": "Show picture ",
+  "kind": "js"
+ },
+ {
+  "en": "groups:",
+  "kind": "js"
+ },
+ {
+  "en": "gallery:3",
+  "kind": "js"
+ },
+ {
+  "en": "Pictures ",
+  "kind": "js"
+ },
+ {
+  "en": "Picture size in this post, on ",
+  "kind": "js"
+ },
+ {
+  "en": "Auto",
+  "kind": "js"
+ },
+ {
+  "en": "Scroll sideways for the rest of these pictures",
+  "kind": "js"
+ },
+ {
+  "en": "1 picture",
+  "kind": "js"
+ },
+ {
+  "en": "Scroll sideways for more",
+  "kind": "js"
+ },
+ {
+  "en": "Scroll back to the left for the start",
+  "kind": "js"
+ },
+ {
+  "en": "Orchestrator · review",
+  "kind": "js"
+ },
+ {
+  "en": "👍 orchestrator: taking care of it",
+  "kind": "js"
+ },
+ {
+  "en": "Sending to Claude...",
+  "kind": "js"
+ },
+ {
+  "en": "✓ Seen",
+  "kind": "js"
+ },
+ {
+  "en": "Sent to the agent",
+  "kind": "js"
+ },
+ {
+  "en": "Send to Claude again",
+  "kind": "js"
+ },
+ {
+  "en": "Remove",
+  "kind": "js"
+ },
+ {
+  "en": "Continued in ",
+  "kind": "js"
+ },
+ {
+  "en": "Reply",
+  "kind": "js"
+ },
+ {
+  "en": "Where this began: ",
+  "kind": "js"
+ },
+ {
+  "en": "👍 Like on the comment of ",
+  "kind": "js"
+ },
+ {
+  "en": "»): he agrees, no words.",
+  "kind": "js"
+ },
+ {
+  "en": "Export as Markdown",
+  "kind": "js"
+ },
+ {
+  "en": "No discussion yet.",
+  "kind": "js"
+ },
+ {
+  "en": "annotated.png",
+  "kind": "js"
+ },
+ {
+  "en": "image/png",
+  "kind": "js"
+ },
+ {
+  "en": "Show ",
+  "kind": "js"
+ },
+ {
+  "en": "Hide ",
+  "kind": "js"
+ },
+ {
+  "en": "No comments on the post as a whole yet.",
+  "kind": "js"
+ },
+ {
+  "en": "Write your first message below.",
+  "kind": "js"
+ },
+ {
+  "en": "New below ↓",
+  "kind": "js"
+ },
+ {
+  "en": "New above ↑",
+  "kind": "js"
+ },
+ {
+  "en": "Your answer (tap another to change it):",
+  "kind": "js"
+ },
+ {
+  "en": "Answer with one tap:",
+  "kind": "js"
+ },
+ {
+  "en": "Image",
+  "kind": "js"
+ },
+ {
+  "en": "Remove ",
+  "kind": "js"
+ },
+ {
+  "en": " from the board? It stays in the project's history.",
+  "kind": "js"
+ },
+ {
+  "en": "Could not move the post: ",
+  "kind": "js"
+ },
+ {
+  "en": "only editors of the board can send to Claude",
+  "kind": "js"
+ },
+ {
+  "en": "sending to Claude is off in this view",
+  "kind": "js"
+ },
+ {
+  "en": "[post ",
+  "kind": "js"
+ },
+ {
+  "en": "[image ",
+  "kind": "js"
+ },
+ {
+  "en": "sending to Claude is not available in this view",
+  "kind": "js"
+ },
+ {
+  "en": " (uploading...)",
+  "kind": "js"
+ },
+ {
+  "en": "over 20 MB, not sent",
+  "kind": "js"
+ },
+ {
+  "en": "not uploaded (",
+  "kind": "js"
+ },
+ {
+  "en": "_blank",
+  "kind": "js"
+ },
+ {
+  "en": "Replying to ",
+  "kind": "js"
+ },
+ {
+  "en": "Cancel the reply",
+  "kind": "js"
+ },
+ {
+  "en": "Wait: a file is still uploading.",
+  "kind": "js"
+ },
+ {
+  "en": "(see the attached file)",
+  "kind": "js"
+ },
+ {
+  "en": "The board's storage is not available in this view.",
+  "kind": "js"
+ },
+ {
+  "en": "Sending...",
+  "kind": "js"
+ },
+ {
+  "en": "(in reply to the comment ",
+  "kind": "js"
+ },
+ {
+  "en": "[discussion ",
+  "kind": "js"
+ },
+ {
+  "en": "\n[attached: ",
+  "kind": "js"
+ },
+ {
+  "en": ") at /_blob/",
+  "kind": "js"
+ },
+ {
+  "en": "Sent to the agent.",
+  "kind": "js"
+ },
+ {
+  "en": "Sent to the agent, but not saved on the board.",
+  "kind": "js"
+ },
+ {
+  "en": "Not saved and not sent. Your text is still in the box.",
+  "kind": "js"
+ },
+ {
+  "en": "(hover: hover) and (pointer: fine)",
+  "kind": "js"
+ },
+ {
+  "en": "The board can't be reached yet.",
+  "kind": "js"
+ },
+ {
+  "en": "Open this board on claude.ai to see its posts.",
+  "kind": "js"
+ },
+ {
+  "en": "Sign in on claude.ai to see the board.",
+  "kind": "js"
+ },
+ {
+  "en": "data/users/",
+  "kind": "js"
+ },
+ {
+  "en": "/board-seen",
+  "kind": "js"
+ },
+ {
+  "en": "Live",
+  "kind": "js"
+ },
+ {
+  "en": "The board stopped updating (",
+  "kind": "js"
+ },
+ {
+  "en": "). Reload to reconnect.",
+  "kind": "js"
+ },
+ {
+  "en": "Ask the orchestrator",
+  "kind": "js"
+ },
+ {
+  "en": "All trains",
+  "kind": "js"
+ },
+ {
+  "en": "View train as tasklist",
+  "kind": "js"
+ },
+ {
+  "en": "Comment on train ",
+  "kind": "js"
+ },
+ {
+  "en": "Re train `",
+  "kind": "js"
+ },
+ {
+  "en": "Review of the whole train: ",
+  "kind": "js"
+ },
+ {
+  "en": "var(--muted)",
+  "kind": "js"
+ },
+ {
+  "en": "Waiting on you",
+  "kind": "js"
+ },
+ {
+  "en": "Running",
+  "kind": "js"
+ },
+ {
+  "en": "Ready / Default",
+  "kind": "js"
+ },
+ {
+  "en": "Queued / Idle",
+  "kind": "js"
+ },
+ {
+  "en": "var(--",
+  "kind": "js"
+ },
+ {
+  "en": "--st-c",
+  "kind": "js"
+ },
+ {
+  "en": "Reopen step",
+  "kind": "js"
+ },
+ {
+  "en": "Mark step Done",
+  "kind": "js"
+ },
+ {
+  "en": "No summary yet.",
+  "kind": "js"
+ },
+ {
+  "en": " · after ",
+  "kind": "js"
+ },
+ {
+  "en": "Review: ",
+  "kind": "js"
+ },
+ {
+  "en": "Status",
+  "kind": "js"
+ },
+ {
+  "en": "Verdict",
+  "kind": "js"
+ },
+ {
+  "en": "Open ",
+  "kind": "js"
+ },
+ {
+  "en": " in Viewer",
+  "kind": "js"
+ },
+ {
+  "en": "Artifacts",
+  "kind": "js"
+ },
+ {
+  "en": "None linked",
+  "kind": "js"
+ },
+ {
+  "en": "None recorded",
+  "kind": "js"
+ },
+ {
+  "en": "Bars",
+  "kind": "js"
+ },
+ {
+  "en": "Check",
+  "kind": "js"
+ },
+ {
+  "en": "No open issues",
+  "kind": "js"
+ },
+ {
+  "en": " · Not checked: ",
+  "kind": "js"
+ },
+ {
+  "en": "Issues",
+  "kind": "js"
+ },
+ {
+  "en": "Handoff",
+  "kind": "js"
+ },
+ {
+  "en": "Mark Done",
+  "kind": "js"
+ },
+ {
+  "en": "Comment on ",
+  "kind": "js"
+ },
+ {
+  "en": "Re `",
+  "kind": "js"
+ },
+ {
+  "en": "Open post in window",
+  "kind": "js"
+ },
+ {
+  "en": "Forked from ",
+  "kind": "js"
+ },
+ {
+  "en": "Branched from ",
+  "kind": "js"
+ },
+ {
+  "en": "Checks (",
+  "kind": "js"
+ },
+ {
+  "en": "👍 Like: he approves this post, no words.",
+  "kind": "js"
+ },
+ {
+  "en": "button, a, textarea, input",
+  "kind": "js"
+ },
+ {
+  "en": "a, button, summary, details, input, textarea",
+  "kind": "js"
+ },
+ {
+  "en": "Write a comment",
+  "kind": "js"
+ },
+ {
+  "en": "application/octet-stream",
+  "kind": "js"
+ },
+ {
+  "en": "Attach a picture or a file",
+  "kind": "js"
+ },
+ {
+  "en": "Send comment",
+  "kind": "js"
+ },
+ {
+  "en": "transform .42s cubic-bezier(.22, .85, .32, 1), opacity .42s ease",
+  "kind": "js"
+ },
+ {
+  "en": "translateX(",
+  "kind": "js"
+ },
+ {
+  "en": ") rotate(",
+  "kind": "js"
+ },
+ {
+  "en": "7deg",
+  "kind": "js"
+ },
+ {
+  "en": "-7deg",
+  "kind": "js"
+ },
+ {
+  "en": "✓ Done",
+  "kind": "js"
+ },
+ {
+  "en": "button, textarea, input, summary, a",
+  "kind": "js"
+ },
+ {
+  "en": "deg)",
+  "kind": "js"
+ },
+ {
+  "en": "transform .22s ease, opacity .22s ease",
+  "kind": "js"
+ },
+ {
+  "en": "By priority",
+  "kind": "js"
+ },
+ {
+  "en": "Newest first",
+  "kind": "js"
+ },
+ {
+  "en": "header.top h1",
+  "kind": "js"
+ },
+ {
+  "en": "board-title:",
+  "kind": "js"
+ },
+ {
+  "en": "posts/_board_meta",
+  "kind": "js"
+ },
+ {
+  "en": "post/",
+  "kind": "js"
+ },
+ {
+  "en": "Lanes",
+  "kind": "js"
+ },
+ {
+  "en": "Trains",
+  "kind": "js"
+ },
+ {
+  "en": "Feed",
+  "kind": "js"
+ },
+ {
+  "en": "Focus",
+  "kind": "js"
+ },
+ {
+  "en": "header.top",
+  "kind": "js"
+ },
+ {
+  "en": "Cancel",
+  "kind": "js"
+ }
+]
