@@ -2,6 +2,7 @@
 
 When making any change to `kit/`, `scripts/`, `install.py`, or `tests/` in this repository:
 
+0. **Read `docs/DESIGN-PRINCIPLES.md` first** before any UI change (zero emojis, icon-first chrome, pointer-aware drawers, scroll containment, OS-style movable/resizable/snappable windows, editorial Markdown typography, 5-state colors, zero dependencies).
 1. Run the unified regression suite before committing:
    ```bash
    python3 scripts/run_all_tests.py

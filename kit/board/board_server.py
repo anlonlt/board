@@ -634,17 +634,265 @@ SHIM_JS = r"""(function () {
         }
       }
     }
+    /* Upgrade Ask the Orchestrator popup to an OS-style window + add Pop-out window icon button on posts */
+    if (sheet.classList.contains("orch-popup")) {
+      makeWindow(sheet, sheet.querySelector(".bar"), { minW: 360, minH: 320 });
+    } else if (postId && postId !== "_orchestrator" && barRow && !document.getElementById("kit-popout-btn")) {
+      var popB = document.createElement("button");
+      popB.id = "kit-popout-btn"; popB.type = "button"; popB.className = "btn small kit-icon-btn";
+      popB.title = "Open in floating window (or Shift-click any card)";
+      popB.setAttribute("aria-label", "Open in floating window");
+      popB.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="M14 9l3 3-3 3"/></svg>';
+      popB.addEventListener("click", function () {
+        var pid = ""; try { pid = sessionStorage.getItem("board-open") || ""; } catch (e) {}
+        var backB = document.getElementById("back");
+        if (backB) backB.click();
+        if (pid) openPostWindow(pid);
+      });
+      barRow.insertBefore(popB, barRow.firstChild);
+    }
+    var popEx = document.getElementById("kit-popout-btn");
+    if (popEx) popEx.hidden = !postId || postId === "_orchestrator" || sheet.classList.contains("orch-popup");
+
     /* Link inline .md / § references inside open post & comments to the Repo Docs viewer */
     linkRepoDocs(sheet);
   }
 
-  /* Read-only Repo Docs & Memory Reader (recency-first groups, user pins, post-install new dots, Google-Docs outline, icon-only section comment) */
+  /* OS-style Window Manager: header drag, 8-edge resize, edge/corner snap preview, z-index focus, and strict scroll containment */
+  var _kitWinZ = 56;
+  var _kitSnapGhost = null;
+  function getSnapGhost() {
+    if (_kitSnapGhost) return _kitSnapGhost;
+    _kitSnapGhost = document.createElement("div");
+    _kitSnapGhost.id = "kit-snap-ghost";
+    _kitSnapGhost.style.cssText = "position:fixed;z-index:54;pointer-events:none;border-radius:14px;border:2px solid var(--ember);background:color-mix(in srgb, var(--ember) 14%, transparent);transition:all .12s ease;display:none;";
+    document.body.appendChild(_kitSnapGhost);
+    return _kitSnapGhost;
+  }
+  function snapRectFor(x, y) {
+    var w = window.innerWidth, h = window.innerHeight, m = 10, edge = 26, cEdge = 80;
+    if (w < 720) return null;
+    var left = x <= edge, right = x >= w - edge, top = y <= 20;
+    var nearTop = y <= cEdge, nearBot = y >= h - cEdge;
+    if (left && nearTop) return { l: m, t: m, w: Math.floor(w / 2 - m * 1.5), h: Math.floor(h / 2 - m * 1.5) };
+    if (left && nearBot) return { l: m, t: Math.floor(h / 2 + m * 0.5), w: Math.floor(w / 2 - m * 1.5), h: Math.floor(h / 2 - m * 1.5) };
+    if (right && nearTop) return { l: Math.floor(w / 2 + m * 0.5), t: m, w: Math.floor(w / 2 - m * 1.5), h: Math.floor(h / 2 - m * 1.5) };
+    if (right && nearBot) return { l: Math.floor(w / 2 + m * 0.5), t: Math.floor(h / 2 + m * 0.5), w: Math.floor(w / 2 - m * 1.5), h: Math.floor(h / 2 - m * 1.5) };
+    if (left) return { l: m, t: m, w: Math.floor(w / 2 - m * 1.5), h: h - m * 2 };
+    if (right) return { l: Math.floor(w / 2 + m * 0.5), t: m, w: Math.floor(w / 2 - m * 1.5), h: h - m * 2 };
+    if (top) return { l: m, t: m, w: w - m * 2, h: h - m * 2 };
+    return null;
+  }
+  function trapWheelScroll(winEl) {
+    if (!winEl || winEl.dataset.kitWheelTrap) return;
+    winEl.dataset.kitWheelTrap = "1";
+    winEl.addEventListener("wheel", function (e) {
+      var cur = e.target;
+      while (cur && cur !== winEl) {
+        var st = window.getComputedStyle(cur);
+        var oy = st.overflowY;
+        if ((oy === "auto" || oy === "scroll") && cur.scrollHeight > cur.clientHeight + 1) {
+          var atTop = cur.scrollTop <= 0 && e.deltaY < 0;
+          var atBot = cur.scrollTop + cur.clientHeight >= cur.scrollHeight - 1 && e.deltaY > 0;
+          if (!atTop && !atBot) return;
+          e.preventDefault();
+          return;
+        }
+        cur = cur.parentNode;
+      }
+      e.preventDefault();
+    }, { passive: false });
+  }
+  function makeWindow(winEl, hdrEl, opts) {
+    if (!winEl || winEl.dataset.kitWinReady) return;
+    winEl.dataset.kitWinReady = "1";
+    opts = opts || {};
+    var minW = opts.minW || 340, minH = opts.minH || 260, edgePx = 8;
+    trapWheelScroll(winEl);
+    function bringFront() { _kitWinZ += 1; winEl.style.zIndex = String(_kitWinZ); }
+    winEl.addEventListener("mousedown", bringFront);
+    function ensureGeom() {
+      var r = winEl.getBoundingClientRect();
+      winEl.style.inset = "auto";
+      winEl.style.margin = "0";
+      winEl.style.transform = "none";
+      winEl.style.left = Math.round(r.left) + "px";
+      winEl.style.top = Math.round(r.top) + "px";
+      winEl.style.width = Math.round(r.width) + "px";
+      winEl.style.height = Math.round(r.height) + "px";
+      return r;
+    }
+    function hitEdges(e) {
+      if (window.innerWidth < 680) return "";
+      var r = winEl.getBoundingClientRect();
+      var x = e.clientX - r.left, y = e.clientY - r.top;
+      var s = "";
+      if (y <= edgePx) s += "n"; else if (y >= r.height - edgePx) s += "s";
+      if (x <= edgePx) s += "w"; else if (x >= r.width - edgePx) s += "e";
+      return s;
+    }
+    var curMap = { n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize", ne: "nesw-resize", sw: "nesw-resize", nw: "nwse-resize", se: "nwse-resize" };
+    winEl.addEventListener("mousemove", function (e) {
+      if (winEl.dataset.kitDragging) return;
+      var ed = hitEdges(e);
+      winEl.style.cursor = ed ? curMap[ed] : "";
+    });
+    winEl.addEventListener("mousedown", function (e) {
+      if (e.button !== 0) return;
+      var ed = hitEdges(e);
+      if (!ed) return;
+      e.preventDefault();
+      bringFront();
+      var r0 = ensureGeom(), sx = e.clientX, sy = e.clientY;
+      winEl.dataset.kitDragging = "1";
+      function onMove(ev) {
+        var dx = ev.clientX - sx, dy = ev.clientY - sy;
+        var l = r0.left, t = r0.top, w = r0.width, h = r0.height;
+        if (ed.indexOf("e") >= 0) w = Math.max(minW, Math.min(window.innerWidth - l - 4, r0.width + dx));
+        if (ed.indexOf("s") >= 0) h = Math.max(minH, Math.min(window.innerHeight - t - 4, r0.height + dy));
+        if (ed.indexOf("w") >= 0) {
+          var nw = Math.max(minW, r0.width - dx);
+          l = Math.max(4, r0.right - nw); w = r0.right - l;
+        }
+        if (ed.indexOf("n") >= 0) {
+          var nh = Math.max(minH, r0.height - dy);
+          t = Math.max(4, r0.bottom - nh); h = r0.bottom - t;
+        }
+        winEl.style.left = Math.round(l) + "px"; winEl.style.top = Math.round(t) + "px";
+        winEl.style.width = Math.round(w) + "px"; winEl.style.height = Math.round(h) + "px";
+      }
+      function onUp() {
+        delete winEl.dataset.kitDragging;
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      }
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+    if (hdrEl) {
+      hdrEl.style.cursor = "grab";
+      hdrEl.addEventListener("mousedown", function (e) {
+        if (e.button !== 0 || hitEdges(e)) return;
+        if (e.target && e.target.closest && e.target.closest("button,input,select,textarea,a,[contenteditable='true']")) return;
+        e.preventDefault();
+        bringFront();
+        var r0 = ensureGeom(), sx = e.clientX, sy = e.clientY, lastSnap = null;
+        hdrEl.style.cursor = "grabbing";
+        winEl.dataset.kitDragging = "1";
+        var ghost = getSnapGhost();
+        function onMove(ev) {
+          var nl = Math.max(4 - r0.width + 80, Math.min(window.innerWidth - 80, r0.left + (ev.clientX - sx)));
+          var nt = Math.max(4, Math.min(window.innerHeight - 44, r0.top + (ev.clientY - sy)));
+          winEl.style.left = Math.round(nl) + "px";
+          winEl.style.top = Math.round(nt) + "px";
+          lastSnap = snapRectFor(ev.clientX, ev.clientY);
+          if (lastSnap) {
+            ghost.style.display = "block";
+            ghost.style.left = lastSnap.l + "px"; ghost.style.top = lastSnap.t + "px";
+            ghost.style.width = lastSnap.w + "px"; ghost.style.height = lastSnap.h + "px";
+          } else {
+            ghost.style.display = "none";
+          }
+        }
+        function onUp() {
+          delete winEl.dataset.kitDragging;
+          hdrEl.style.cursor = "grab";
+          ghost.style.display = "none";
+          if (lastSnap) {
+            winEl.style.left = lastSnap.l + "px"; winEl.style.top = lastSnap.t + "px";
+            winEl.style.width = lastSnap.w + "px"; winEl.style.height = lastSnap.h + "px";
+          }
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+        }
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+      });
+    }
+  }
+
+  /* Multi-post floating windows (open as many posts side-by-side as needed, movable/resizable/snappable) */
+  var _kitWinOffset = 0;
+  function openPostWindow(postId) {
+    if (!postId) return;
+    var existing = document.querySelector('.kit-post-win[data-pid="' + postId.replace(/"/g, "") + '"]');
+    if (existing) { _kitWinZ += 1; existing.style.zIndex = String(_kitWinZ); return; }
+    var SVG_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    var SVG_SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
+    var win = document.createElement("section");
+    win.className = "kit-post-win"; win.dataset.pid = postId;
+    win.setAttribute("role", "dialog");
+    var off = (_kitWinOffset++ % 6) * 26;
+    var w = Math.min(540, window.innerWidth - 24), h = Math.min(640, window.innerHeight - 64);
+    var l = Math.max(16, Math.min(window.innerWidth - w - 16, Math.round((window.innerWidth - w) / 2) + off));
+    var t = Math.max(16, Math.min(window.innerHeight - h - 16, 48 + off));
+    _kitWinZ += 1;
+    win.style.cssText = "position:fixed;left:" + l + "px;top:" + t + "px;width:" + w + "px;height:" + h + "px;z-index:" + _kitWinZ + ";background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 48px rgba(0,0,0,.32);display:grid;grid-template-rows:auto 1fr auto;overflow:hidden;";
+    var hdr = document.createElement("div");
+    hdr.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);background:var(--sunk);";
+    var ttl = document.createElement("b"); ttl.style.cssText = "font-family:var(--display);font-size:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"; ttl.textContent = postId;
+    var cls = document.createElement("button"); cls.type = "button"; cls.className = "btn small kit-icon-btn"; cls.title = "Close"; cls.setAttribute("aria-label", "Close"); cls.innerHTML = SVG_X;
+    cls.addEventListener("click", function () { win.remove(); });
+    hdr.appendChild(ttl); hdr.appendChild(cls);
+    var body = document.createElement("div");
+    body.style.cssText = "overflow-y:auto;overscroll-behavior:contain;padding:16px 20px;min-height:0;";
+    body.innerHTML = '<div class="note">Loading...</div>';
+    var foot = document.createElement("form");
+    foot.style.cssText = "display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--line);background:var(--surface);align-items:center;";
+    var inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Reply..."; inp.style.cssText = "flex:1;min-width:0;font:inherit;font-size:.88rem;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--sunk);color:var(--ink);";
+    var snd = document.createElement("button"); snd.type = "submit"; snd.className = "btn small kit-icon-btn ember"; snd.title = "Send comment"; snd.setAttribute("aria-label", "Send comment"); snd.innerHTML = SVG_SEND;
+    foot.appendChild(inp); foot.appendChild(snd);
+    win.appendChild(hdr); win.appendChild(body); win.appendChild(foot);
+    document.body.appendChild(win);
+    makeWindow(win, hdr, { minW: 320, minH: 240 });
+
+    function loadPostWin() {
+      Promise.all([
+        api("GET", "/_api/db/posts/" + encodeURIComponent(postId)),
+        api("GET", "/_api/db/comments?where=" + encodeURIComponent(JSON.stringify([["post_id", "==", postId]])))
+      ]).then(function (pair) {
+        var doc = pair[0] && pair[0].data ? pair[0].data : {};
+        var cmts = ((pair[1] && pair[1].docs) || []).map(function (x) { return Object.assign({ id: x.id }, x.data || {}); }).filter(function (c) { return !c.removed && !c.like; });
+        cmts.sort(function (a, b) { return String(a.created_at || "").localeCompare(String(b.created_at || "")); });
+        ttl.textContent = doc.title || postId;
+        body.textContent = "";
+        var md = document.createElement("div"); md.className = "body";
+        md.innerHTML = typeof window._kitRenderBody === "function" ? window._kitRenderBody(doc.body || "") : (doc.body || "");
+        body.appendChild(md);
+        if (cmts.length) {
+          var ch = document.createElement("div"); ch.style.cssText = "margin-top:18px;padding-top:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px;";
+          cmts.forEach(function (c) {
+            var item = document.createElement("div"); item.style.cssText = "background:var(--sunk);border-radius:10px;padding:8px 11px;font-size:.88rem;";
+            var wh = document.createElement("div"); wh.style.cssText = "font-size:.75rem;font-weight:700;color:var(--muted);margin-bottom:3px;";
+            wh.textContent = (c.from === "owner" ? "You" : (c.from || "?")) + " · " + String(c.created_at || "").slice(0, 16).replace("T", " ");
+            var tx = document.createElement("div"); tx.className = "body"; tx.style.fontSize = ".88rem";
+            tx.innerHTML = typeof window._kitRenderBody === "function" ? window._kitRenderBody(c.text || "") : (c.text || "");
+            item.appendChild(wh); item.appendChild(tx); ch.appendChild(item);
+          });
+          body.appendChild(ch);
+        }
+        linkRepoDocs(win);
+      }, function () { body.innerHTML = '<div class="note">Could not load post.</div>'; });
+    }
+    foot.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var txt = (inp.value || "").trim(); if (!txt) return;
+      inp.value = "";
+      var cid = "c-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      api("PUT", "/_api/db/comments/" + encodeURIComponent(cid), {
+        data: { post_id: postId, text: txt, from: "owner", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false }
+      }).then(loadPostWin, function () {});
+    });
+    loadPostWin();
+  }
+  window._kitOpenPostWindow = openPostWindow;
+
+  /* Read-only Repo Docs & Memory Reader (pointer-aware left doc-list & right outline, OS window drag/resize/snap, user pins, post-install new dots, zero emojis) */
   function initRepoDocBrowser() {
     var tools = document.querySelector("header.top .tools");
     if (!tools || document.getElementById("kit-docs-btn")) return;
     var SVG_BOOK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
     var SVG_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
-    var SVG_OUTLINE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="17" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>';
     var SVG_CMT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>';
     var SVG_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
     if (!document.getElementById("kit-docs-css")) {
@@ -655,14 +903,24 @@ SHIM_JS = r"""(function () {
         ".kit-doc-link:hover{background:var(--sunk);}" +
         "#kit-docs-btn{position:relative;}" +
         "#kit-docs-btn .newdot{position:absolute;top:-2px;right:-2px;margin:0;width:9px;height:9px;border:2px solid var(--bg);}" +
-        ".kit-docs-modal{position:fixed;inset:18px;z-index:55;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 24px 64px rgba(0,0,0,.42);display:grid;grid-template-rows:auto 1fr;overflow:hidden;max-width:1320px;margin:auto;}" +
+        ".kit-docs-modal{position:fixed;left:max(24px,calc(50% - 490px));top:32px;width:min(980px,calc(100vw - 48px));height:min(760px,calc(100vh - 64px));z-index:55;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 24px 64px rgba(0,0,0,.42);display:grid;grid-template-rows:auto 1fr;overflow:hidden;}" +
         ".kit-docs-modal[hidden]{display:none !important;}" +
-        ".kit-docs-hdr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--sunk);}" +
-        ".kit-docs-hdr b{font-family:var(--display);font-size:1.12rem;white-space:nowrap;}" +
-        ".kit-docs-hdr input{flex:1 1 200px;max-width:420px;font:inherit;font-size:.88rem;padding:6px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);}" +
+        ".kit-docs-hdr{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--sunk);user-select:none;}" +
+        ".kit-docs-hdr b{font-family:var(--display);font-size:1.08rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}" +
+        ".kit-docs-hdr .hsub{font-size:.76rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}" +
         ".kit-docs-hdr .sp{margin-left:auto;}" +
-        ".kit-docs-body{display:grid;grid-template-columns:288px minmax(0,1fr) auto;min-height:0;}" +
-        ".kit-docs-list{border-right:1px solid var(--line);overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;background:color-mix(in srgb, var(--sunk) 35%, var(--surface));}" +
+        ".kit-docs-stage{position:relative;min-height:0;overflow:hidden;}" +
+        ".kit-docs-view{height:100%;overflow-y:auto;overscroll-behavior:contain;padding:22px 44px 48px;min-width:0;}" +
+        ".kit-docs-md{margin:0 auto;max-width:72ch;}" +
+        ".kit-docs-md .kit-sec-hit{background:color-mix(in srgb, var(--ember) 18%, transparent);border-radius:6px;padding:2px 6px;}" +
+        ".kit-docs-drawer{position:absolute;top:0;bottom:0;z-index:6;background:color-mix(in srgb, var(--surface) 95%, var(--sunk));backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 10px 32px rgba(0,0,0,.22);overflow-y:auto;overscroll-behavior:contain;transition:transform .18s cubic-bezier(.22,.85,.32,1),opacity .15s ease;}" +
+        ".kit-docs-list{left:0;width:min(300px,82%);border-right:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:8px;transform:translateX(-100%);opacity:0;pointer-events:none;}" +
+        ".kit-docs-list.open{transform:translateX(0);opacity:1;pointer-events:auto;}" +
+        ".kit-docs-list input{width:100%;font:inherit;font-size:.86rem;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);}" +
+        ".kit-docs-outline{right:0;width:min(256px,76%);border-left:1px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:2px;transform:translateX(100%);opacity:0;pointer-events:none;}" +
+        ".kit-docs-outline.open{transform:translateX(0);opacity:1;pointer-events:auto;}" +
+        ".kit-docs-edge-hint{position:absolute;top:50%;transform:translateY(-50%);width:4px;height:44px;border-radius:99px;background:var(--line);opacity:.55;pointer-events:none;z-index:4;transition:opacity .15s;}" +
+        ".kit-docs-edge-hint.l{left:5px;} .kit-docs-edge-hint.r{right:5px;}" +
         ".kit-docs-grp{display:flex;flex-direction:column;gap:2px;}" +
         ".kit-docs-grp summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:4px 6px;font-size:.73rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border-radius:6px;user-select:none;}" +
         ".kit-docs-grp summary::-webkit-details-marker{display:none;}" +
@@ -678,24 +936,13 @@ SHIM_JS = r"""(function () {
         ".kit-docs-pin.on{color:var(--ember);}" +
         ".kit-docs-pin:hover{background:var(--surface);color:var(--ink);}" +
         ".kit-docs-pin svg{width:14px;height:14px;}" +
-        ".kit-docs-view{overflow-y:auto;padding:0 36px 40px;min-width:0;position:relative;}" +
-        ".kit-docs-vbar{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;background:color-mix(in srgb, var(--surface) 92%, transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);margin-bottom:20px;}" +
-        ".kit-docs-vmeta{display:flex;flex-direction:column;gap:1px;min-width:0;}" +
-        ".kit-docs-vmeta code{font-size:.82rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
-        ".kit-docs-vmeta span{font-size:.74rem;color:var(--muted);}" +
-        ".kit-docs-vacts{display:inline-flex;align-items:center;gap:6px;flex:none;}" +
-        ".kit-docs-md{margin:0 auto;max-width:72ch;}" +
-        ".kit-docs-md .kit-sec-hit{background:color-mix(in srgb, var(--ember) 18%, transparent);border-radius:6px;padding:2px 6px;}" +
-        ".kit-docs-outline{width:236px;border-left:1px solid var(--line);overflow-y:auto;padding:14px 10px;display:flex;flex-direction:column;gap:2px;background:color-mix(in srgb, var(--sunk) 25%, var(--surface));}" +
-        ".kit-docs-outline[hidden]{display:none !important;}" +
         ".kit-docs-outline .otitle{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 8px 8px;}" +
         ".kit-docs-outline button{text-align:left;background:none;border:0;border-left:2px solid transparent;padding:5px 8px;border-radius:0 6px 6px 0;cursor:pointer;color:var(--muted);font-size:.8rem;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
         ".kit-docs-outline button:hover{color:var(--ink);background:var(--sunk);}" +
         ".kit-docs-outline button.active{color:var(--ember);border-left-color:var(--ember);font-weight:700;background:color-mix(in srgb, var(--ember) 8%, transparent);}" +
         ".kit-docs-outline button.lvl-2{padding-left:16px;}" +
         ".kit-docs-outline button.lvl-3,.kit-docs-outline button.lvl-4{padding-left:26px;font-size:.76rem;}" +
-        "@media (max-width:960px){.kit-docs-outline{display:none !important;}}" +
-        "@media (max-width:760px){.kit-docs-modal{inset:8px;}.kit-docs-body{grid-template-columns:1fr;grid-template-rows:200px minmax(0,1fr);}.kit-docs-list{border-right:0;border-bottom:1px solid var(--line);}.kit-docs-view{padding:0 16px 28px;}}";
+        "@media (max-width:700px){.kit-docs-modal{inset:8px !important;width:auto !important;height:auto !important;}.kit-docs-view{padding:16px 16px 32px;}}";
       document.head.appendChild(st);
     }
     var btn = document.createElement("button");
@@ -709,87 +956,118 @@ SHIM_JS = r"""(function () {
     modal.id = "kit-docs-modal"; modal.className = "kit-docs-modal"; modal.hidden = true;
     modal.setAttribute("role", "dialog"); modal.setAttribute("aria-label", "Repo docs & memory");
     modal.innerHTML =
-      '<div class="kit-docs-hdr"><b>Docs</b><input type="search" id="kit-docs-q" placeholder="Filter documents..."><span class="sp"></span><button type="button" class="btn small kit-icon-btn" id="kit-docs-close" title="Close" aria-label="Close">' + SVG_CLOSE + '</button></div>' +
-      '<div class="kit-docs-body"><div class="kit-docs-list" id="kit-docs-list"></div><div class="kit-docs-view" id="kit-docs-view"><div class="note" style="padding-top:20px">Select a document to read it directly from the repository.</div></div><aside class="kit-docs-outline" id="kit-docs-outline" hidden></aside></div>';
+      '<div class="kit-docs-hdr" id="kit-docs-hdr"><b id="kit-docs-title">Docs</b><span class="hsub" id="kit-docs-sub"></span><span class="sp"></span>' +
+      '<button type="button" class="btn small kit-icon-btn" id="kit-doc-vpin" title="Pin document" aria-label="Pin document" hidden>' + SVG_PIN + '</button>' +
+      '<button type="button" class="btn small kit-icon-btn ember" id="kit-doc-vcmt" title="Comment on this section" aria-label="Comment on this section" hidden>' + SVG_CMT + '</button>' +
+      '<button type="button" class="btn small kit-icon-btn" id="kit-docs-close" title="Close" aria-label="Close">' + SVG_CLOSE + '</button></div>' +
+      '<div class="kit-docs-stage" id="kit-docs-stage">' +
+        '<span class="kit-docs-edge-hint l" id="kit-docs-hint-l"></span><span class="kit-docs-edge-hint r" id="kit-docs-hint-r" hidden></span>' +
+        '<aside class="kit-docs-drawer kit-docs-list open" id="kit-docs-list"><input type="search" id="kit-docs-q" placeholder="Filter documents..."><div id="kit-docs-groups"></div></aside>' +
+        '<div class="kit-docs-view" id="kit-docs-view"><div class="note" style="padding-top:16px">Move pointer to the left edge to pick a document.</div></div>' +
+        '<aside class="kit-docs-drawer kit-docs-outline" id="kit-docs-outline"></aside>' +
+      '</div>';
     document.body.appendChild(modal);
 
-    var allDocs = [], activePath = "", activeHeadings = [], outlineOpen = true;
+    var hdrEl = document.getElementById("kit-docs-hdr");
+    var stageEl = document.getElementById("kit-docs-stage");
+    var titleEl = document.getElementById("kit-docs-title");
+    var subEl = document.getElementById("kit-docs-sub");
+    var pinHdrBtn = document.getElementById("kit-doc-vpin");
+    var cmtHdrBtn = document.getElementById("kit-doc-vcmt");
     var qEl = document.getElementById("kit-docs-q");
-    var listEl = document.getElementById("kit-docs-list");
+    var listDrawer = document.getElementById("kit-docs-list");
+    var groupsEl = document.getElementById("kit-docs-groups");
     var viewEl = document.getElementById("kit-docs-view");
-    var outlineEl = document.getElementById("kit-docs-outline");
+    var outlineDrawer = document.getElementById("kit-docs-outline");
+    var hintR = document.getElementById("kit-docs-hint-r");
+    makeWindow(modal, hdrEl, { minW: 400, minH: 300 });
+
+    var allDocs = [], activePath = "", activeHeadings = [], leftTimer = null, rightTimer = null;
+
+    /* Pointer-aware edge drawers: left edge -> document list, right edge -> document outline */
+    function setLeft(open) {
+      clearTimeout(leftTimer);
+      if (!open && (!activePath || document.activeElement === qEl)) return;
+      listDrawer.classList.toggle("open", !!open);
+    }
+    function setRight(open) {
+      clearTimeout(rightTimer);
+      if (open && activeHeadings.length < 2) return;
+      outlineDrawer.classList.toggle("open", !!open);
+      if (open) syncOutlineActive();
+    }
+    stageEl.addEventListener("mousemove", function (e) {
+      if (modal.dataset.kitDragging) return;
+      var r = stageEl.getBoundingClientRect();
+      var x = e.clientX - r.left, edge = 28;
+      if (x <= edge) setLeft(true);
+      else if (listDrawer.classList.contains("open") && !listDrawer.contains(e.target) && x > listDrawer.offsetWidth + 14) {
+        clearTimeout(leftTimer); leftTimer = setTimeout(function () { setLeft(false); }, 180);
+      }
+      if (activeHeadings.length >= 2) {
+        if (x >= r.width - edge) setRight(true);
+        else if (outlineDrawer.classList.contains("open") && !outlineDrawer.contains(e.target) && x < r.width - outlineDrawer.offsetWidth - 14) {
+          clearTimeout(rightTimer); rightTimer = setTimeout(function () { setRight(false); }, 180);
+        }
+      }
+    });
+    stageEl.addEventListener("mouseleave", function () {
+      clearTimeout(leftTimer); leftTimer = setTimeout(function () { setLeft(false); }, 220);
+      clearTimeout(rightTimer); rightTimer = setTimeout(function () { setRight(false); }, 220);
+    });
+    listDrawer.addEventListener("mouseenter", function () { clearTimeout(leftTimer); });
+    outlineDrawer.addEventListener("mouseenter", function () { clearTimeout(rightTimer); });
 
     function repoKey() { return window.__KIT_ACTIVE_REPO__ || "primary"; }
     function getBaseline() {
       var k = "kit_docs_baseline:" + repoKey();
       var b = "";
       try { b = localStorage.getItem(k) || ""; } catch (e) {}
-      if (!b) {
-        b = new Date().toISOString();
-        try { localStorage.setItem(k, b); } catch (e) {}
-      }
+      if (!b) { b = new Date().toISOString(); try { localStorage.setItem(k, b); } catch (e) {} }
       return b;
     }
     function getDocSeen() {
       try { return JSON.parse(localStorage.getItem("kit_docs_seen:" + repoKey()) || "{}"); } catch (e) { return {}; }
     }
     function markDocSeen(path, mtime) {
-      var s = getDocSeen();
-      s[path] = mtime || new Date().toISOString();
+      var s = getDocSeen(); s[path] = mtime || new Date().toISOString();
       try { localStorage.setItem("kit_docs_seen:" + repoKey(), JSON.stringify(s)); } catch (e) {}
       syncDocsBadge();
     }
     function isDocNew(d) {
       if (!d || !d.mtime) return false;
-      var base = getBaseline();
-      var seenAt = getDocSeen()[d.path] || "";
-      var cutoff = seenAt > base ? seenAt : base;
-      return d.mtime > cutoff;
+      var base = getBaseline(), seenAt = getDocSeen()[d.path] || "";
+      return d.mtime > (seenAt > base ? seenAt : base);
     }
     function syncDocsBadge() {
-      var dot = btn.querySelector(".newdot");
-      var anyNew = allDocs.some(isDocNew);
-      if (anyNew && !dot) {
-        var nd = document.createElement("span"); nd.className = "newdot"; nd.title = "Updated repo documents";
-        btn.appendChild(nd);
-      } else if (!anyNew && dot) {
-        dot.remove();
-      }
+      var dot = btn.querySelector(".newdot"), anyNew = allDocs.some(isDocNew);
+      if (anyNew && !dot) { var nd = document.createElement("span"); nd.className = "newdot"; nd.title = "Updated repo documents"; btn.appendChild(nd); }
+      else if (!anyNew && dot) dot.remove();
     }
     function fmtTime(iso) {
       if (!iso) return "";
-      var t = Date.parse(iso);
-      if (isNaN(t)) return iso;
+      var t = Date.parse(iso); if (isNaN(t)) return iso;
       var diff = Math.max(0, Math.floor((Date.now() - t) / 1000));
       var rel = diff < 60 ? "just now" : (diff < 3600 ? Math.floor(diff / 60) + "m ago" : (diff < 86400 ? Math.floor(diff / 3600) + "h ago" : Math.floor(diff / 86400) + "d ago"));
       var dt = new Date(t);
-      var exact = dt.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ", " + dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
-      return rel + " · " + exact;
+      return rel + " · " + dt.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ", " + dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
     }
     function fmtKb(n) { return n >= 1024 ? (n / 1024).toFixed(1) + " KB" : n + " B"; }
-    function shortName(path) {
-      var parts = String(path || "").split("/");
-      return parts[parts.length - 1].replace(/\.md$/i, "");
-    }
+    function shortName(path) { var parts = String(path || "").split("/"); return parts[parts.length - 1].replace(/\.md$/i, ""); }
     function visibleHeading() {
       if (!activeHeadings.length) return null;
-      var vTop = viewEl.getBoundingClientRect().top + 76;
-      var best = activeHeadings[0];
+      var vTop = viewEl.getBoundingClientRect().top + 48, best = activeHeadings[0];
       for (var i = 0; i < activeHeadings.length; i++) {
         var el = document.getElementById(activeHeadings[i].id);
         if (!el) continue;
-        if (el.getBoundingClientRect().top <= vTop) best = activeHeadings[i];
-        else break;
+        if (el.getBoundingClientRect().top <= vTop) best = activeHeadings[i]; else break;
       }
       return best;
     }
     function syncOutlineActive() {
-      if (outlineEl.hidden || !activeHeadings.length) return;
-      var cur = visibleHeading();
-      var btns = outlineEl.querySelectorAll("button[data-hid]");
-      for (var i = 0; i < btns.length; i++) {
-        btns[i].classList.toggle("active", !!(cur && btns[i].dataset.hid === cur.id));
-      }
+      if (!activeHeadings.length) return;
+      var cur = visibleHeading(), btns = outlineDrawer.querySelectorAll("button[data-hid]");
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", !!(cur && btns[i].dataset.hid === cur.id));
     }
     viewEl.addEventListener("scroll", syncOutlineActive, { passive: true });
 
@@ -797,31 +1075,25 @@ SHIM_JS = r"""(function () {
       api("POST", "/_api/repo-docs/pin", { path: relPath, pinned: !curPinned }).then(function (res) {
         allDocs.forEach(function (d) { if (d.path === relPath) d.pinned = !!(res && res.pinned); });
         renderList();
-        var vpin = document.getElementById("kit-doc-vpin");
-        if (vpin && activePath === relPath) {
+        if (activePath === relPath) {
           var on = !!(res && res.pinned);
-          vpin.classList.toggle("ember", on);
-          vpin.title = on ? "Unpin document" : "Pin document";
+          pinHdrBtn.classList.toggle("ember", on);
+          pinHdrBtn.title = on ? "Unpin document" : "Pin document";
         }
       }, function () {});
     }
 
     function makeDocRow(d) {
-      var row = document.createElement("div");
-      row.className = "kit-docs-row" + (d.path === activePath ? " on" : "");
+      var row = document.createElement("div"); row.className = "kit-docs-row" + (d.path === activePath ? " on" : "");
       var it = document.createElement("button"); it.type = "button"; it.className = "kit-docs-item";
       var dp = document.createElement("span"); dp.className = "dp";
       if (isDocNew(d)) { var nd = document.createElement("span"); nd.className = "newdot"; dp.appendChild(nd); }
       var nm = document.createElement("span"); nm.textContent = shortName(d.path); dp.appendChild(nm);
-      var dm = document.createElement("span"); dm.className = "dm";
-      dm.textContent = fmtTime(d.mtime) + " · " + d.path;
+      var dm = document.createElement("span"); dm.className = "dm"; dm.textContent = fmtTime(d.mtime) + " · " + d.path;
       it.appendChild(dp); it.appendChild(dm);
       it.addEventListener("click", function () { openRepoDoc(d.path, ""); });
-      var pb = document.createElement("button"); pb.type = "button";
-      pb.className = "kit-docs-pin" + (d.pinned ? " on" : "");
-      pb.title = d.pinned ? "Unpin document" : "Pin document";
-      pb.setAttribute("aria-label", pb.title);
-      pb.innerHTML = SVG_PIN;
+      var pb = document.createElement("button"); pb.type = "button"; pb.className = "kit-docs-pin" + (d.pinned ? " on" : "");
+      pb.title = d.pinned ? "Unpin document" : "Pin document"; pb.setAttribute("aria-label", pb.title); pb.innerHTML = SVG_PIN;
       pb.addEventListener("click", function (ev) { ev.stopPropagation(); togglePin(d.path, !!d.pinned); });
       row.appendChild(it); row.appendChild(pb);
       return row;
@@ -829,143 +1101,98 @@ SHIM_JS = r"""(function () {
 
     function addGroup(title, docs, openByDefault) {
       if (!docs.length) return;
-      var det = document.createElement("details"); det.className = "kit-docs-grp";
-      det.open = !!openByDefault;
-      var sm = document.createElement("summary");
-      sm.innerHTML = '<span></span><span></span>';
-      sm.children[0].textContent = title;
-      sm.children[1].textContent = String(docs.length);
-      det.appendChild(sm);
-      docs.forEach(function (d) { det.appendChild(makeDocRow(d)); });
-      listEl.appendChild(det);
+      var det = document.createElement("details"); det.className = "kit-docs-grp"; det.open = !!openByDefault;
+      var sm = document.createElement("summary"); sm.innerHTML = '<span></span><span></span>';
+      sm.children[0].textContent = title; sm.children[1].textContent = String(docs.length);
+      det.appendChild(sm); docs.forEach(function (d) { det.appendChild(makeDocRow(d)); });
+      groupsEl.appendChild(det);
     }
 
     function renderList() {
       var ql = (qEl.value || "").trim().toLowerCase();
-      listEl.textContent = "";
+      groupsEl.textContent = "";
       if (ql) {
         var hits = allDocs.filter(function (d) { return d.path.toLowerCase().indexOf(ql) >= 0; });
-        if (!hits.length) { listEl.innerHTML = '<div class="note" style="padding:8px">No matching documents.</div>'; return; }
+        if (!hits.length) { groupsEl.innerHTML = '<div class="note" style="padding:8px">No matching documents.</div>'; return; }
         addGroup("Matches", hits.slice(0, 120), true);
         return;
       }
       var pinned = allDocs.filter(function (d) { return !!d.pinned; });
       var byMtime = allDocs.slice().sort(function (a, b) { return String(b.mtime || "").localeCompare(String(a.mtime || "")); });
-      var recent = byMtime.filter(function (d) { return !d.pinned; }).slice(0, 10);
       addGroup("Pinned", pinned, true);
-      addGroup("Recently updated", recent, true);
+      addGroup("Recently updated", byMtime.filter(function (d) { return !d.pinned; }).slice(0, 10), true);
       [["memory", "Memory"], ["docs", "Docs"], ["prompts", "Prompts"], ["root", "Root"], ["kit", "Kit"], ["other", "Other"]].forEach(function (pair) {
-        var sub = byMtime.filter(function (d) { return d.category === pair[0]; });
-        addGroup(pair[1], sub, false);
+        addGroup(pair[1], byMtime.filter(function (d) { return d.category === pair[0]; }), false);
       });
     }
 
     function renderOutline() {
-      outlineEl.textContent = "";
-      if (!outlineOpen || activeHeadings.length < 2) { outlineEl.hidden = true; return; }
-      outlineEl.hidden = false;
+      outlineDrawer.textContent = "";
+      hintR.hidden = activeHeadings.length < 2;
+      if (activeHeadings.length < 2) { outlineDrawer.classList.remove("open"); return; }
       var t = document.createElement("div"); t.className = "otitle"; t.textContent = "Outline";
-      outlineEl.appendChild(t);
+      outlineDrawer.appendChild(t);
       activeHeadings.slice(0, 60).forEach(function (h) {
         var b = document.createElement("button"); b.type = "button";
         b.className = "lvl-" + Math.min(4, Math.max(1, h.level || 1));
-        b.dataset.hid = h.id;
-        b.textContent = h.text;
-        b.title = h.text;
+        b.dataset.hid = h.id; b.textContent = h.text; b.title = h.text;
         b.addEventListener("click", function () {
           var el = document.getElementById(h.id);
           if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
         });
-        outlineEl.appendChild(b);
+        outlineDrawer.appendChild(b);
       });
       syncOutlineActive();
     }
 
     function loadDocsIndex(cb) {
       api("GET", "/_api/repo-docs").then(function (r) {
-        allDocs = (r && r.docs) || [];
-        getBaseline();
-        syncDocsBadge();
+        allDocs = (r && r.docs) || []; getBaseline(); syncDocsBadge();
         if (cb) cb();
       }, function () {});
     }
 
+    pinHdrBtn.addEventListener("click", function () {
+      if (!activePath) return;
+      var cur = allDocs.some(function (d) { return d.path === activePath && d.pinned; });
+      togglePin(activePath, cur);
+    });
+    cmtHdrBtn.addEventListener("click", function () {
+      if (!activePath) return;
+      var vh = visibleHeading(), secTxt = vh ? vh.text : "", selTxt = "";
+      try {
+        var sel = window.getSelection ? window.getSelection() : null;
+        if (sel && sel.toString().trim() && viewEl.contains(sel.anchorNode)) selTxt = sel.toString().trim().slice(0, 260);
+      } catch (e) {}
+      var prefill = "Re `" + activePath + (secTxt ? " § " + secTxt : "") + "`:\n";
+      if (selTxt) prefill += "> " + selTxt.replace(/\n+/g, "\n> ") + "\n\n";
+      if (typeof window._kitOpenOrchNew === "function") window._kitOpenOrchNew(prefill);
+    });
+
     function openRepoDoc(relPath, section) {
-      modal.hidden = false;
-      activePath = relPath || "";
-      activeHeadings = [];
+      modal.hidden = false; _kitWinZ += 1; modal.style.zIndex = String(_kitWinZ);
+      activePath = relPath || ""; activeHeadings = [];
       if (!allDocs.length) loadDocsIndex(renderList); else renderList();
-      if (!relPath) return;
-      viewEl.innerHTML = '<div class="note" style="padding-top:20px">Loading ' + relPath + '...</div>';
-      outlineEl.hidden = true;
+      if (!relPath) { setLeft(true); return; }
+      setLeft(false);
+      titleEl.textContent = shortName(relPath);
+      subEl.textContent = relPath;
+      pinHdrBtn.hidden = false; cmtHdrBtn.hidden = false;
+      viewEl.innerHTML = '<div class="note" style="padding-top:16px">Loading ' + relPath + '...</div>';
       var u = "/_api/repo-doc?path=" + encodeURIComponent(relPath) + (section ? "&section=" + encodeURIComponent(section) : "");
       api("GET", u).then(function (res) {
         markDocSeen(res.path, res.mtime);
         renderList();
-        viewEl.textContent = "";
         activeHeadings = res.headings || [];
         var isPinned = allDocs.some(function (d) { return d.path === res.path && d.pinned; });
-        var bar = document.createElement("div"); bar.className = "kit-docs-vbar";
-        var meta = document.createElement("div"); meta.className = "kit-docs-vmeta";
-        var pt = document.createElement("code"); pt.textContent = res.path;
-        var mt = document.createElement("span"); mt.textContent = "Updated " + fmtTime(res.mtime) + " · " + fmtKb(res.size);
-        meta.appendChild(pt); meta.appendChild(mt); bar.appendChild(meta);
-
-        var acts = document.createElement("div"); acts.className = "kit-docs-vacts";
-        var pinB = document.createElement("button"); pinB.id = "kit-doc-vpin"; pinB.type = "button";
-        pinB.className = "btn small kit-icon-btn" + (isPinned ? " ember" : "");
-        pinB.title = isPinned ? "Unpin document" : "Pin document";
-        pinB.setAttribute("aria-label", pinB.title);
-        pinB.innerHTML = SVG_PIN;
-        pinB.addEventListener("click", function () {
-          var cur = allDocs.some(function (d) { return d.path === res.path && d.pinned; });
-          togglePin(res.path, cur);
-        });
-        acts.appendChild(pinB);
-
-        if (activeHeadings.length >= 2) {
-          var outB = document.createElement("button"); outB.type = "button";
-          outB.className = "btn small kit-icon-btn" + (outlineOpen ? " ember" : "");
-          outB.title = "Toggle document outline"; outB.setAttribute("aria-label", "Toggle document outline");
-          outB.innerHTML = SVG_OUTLINE;
-          outB.addEventListener("click", function () {
-            outlineOpen = !outlineOpen;
-            outB.classList.toggle("ember", outlineOpen);
-            renderOutline();
-          });
-          acts.appendChild(outB);
-        }
-
-        var cBtn = document.createElement("button"); cBtn.type = "button"; cBtn.className = "btn small kit-icon-btn ember";
-        cBtn.title = "Comment on this section"; cBtn.setAttribute("aria-label", "Comment on this section");
-        cBtn.innerHTML = SVG_CMT;
-        cBtn.addEventListener("click", function () {
-          var vh = visibleHeading();
-          var secTxt = vh ? vh.text : "";
-          var selTxt = "";
-          try {
-            var sel = window.getSelection ? window.getSelection() : null;
-            if (sel && sel.toString().trim() && viewEl.contains(sel.anchorNode)) {
-              selTxt = sel.toString().trim().slice(0, 260);
-            }
-          } catch (e) {}
-          var prefill = "Re `" + res.path + (secTxt ? " § " + secTxt : "") + "`:\n";
-          if (selTxt) prefill += "> " + selTxt.replace(/\n+/g, "\n> ") + "\n\n";
-          modal.hidden = true;
-          if (typeof window._kitOpenOrchNew === "function") window._kitOpenOrchNew(prefill);
-        });
-        acts.appendChild(cBtn);
-        bar.appendChild(acts);
-        viewEl.appendChild(bar);
-
+        pinHdrBtn.classList.toggle("ember", isPinned);
+        pinHdrBtn.title = isPinned ? "Unpin document" : "Pin document";
+        subEl.textContent = res.path + " · " + fmtTime(res.mtime) + " · " + fmtKb(res.size);
+        viewEl.textContent = "";
         var mdBox = document.createElement("div"); mdBox.className = "kit-docs-md body";
-        if (typeof window._kitRenderBody === "function") {
-          mdBox.innerHTML = window._kitRenderBody(res.content || "");
-        } else {
-          var pre = document.createElement("pre"); pre.style.whiteSpace = "pre-wrap"; pre.textContent = res.content || ""; mdBox.appendChild(pre);
-        }
+        mdBox.innerHTML = typeof window._kitRenderBody === "function" ? window._kitRenderBody(res.content || "") : (res.content || "");
         var hNodes = mdBox.querySelectorAll("h1,h2,h3,h4");
-        for (var i = 0; i < hNodes.length && i < activeHeadings.length; i++) { hNodes[i].id = activeHeadings[i].id; }
+        for (var i = 0; i < hNodes.length && i < activeHeadings.length; i++) hNodes[i].id = activeHeadings[i].id;
         viewEl.appendChild(mdBox);
         renderOutline();
         if (res.match_heading) {
@@ -976,18 +1203,24 @@ SHIM_JS = r"""(function () {
           }
         }
       }, function (e) {
-        viewEl.innerHTML = '<div class="note" style="padding-top:20px">Could not load ' + relPath + ' (' + (e && e.message || "error") + ').</div>';
+        viewEl.innerHTML = '<div class="note" style="padding-top:16px">Could not load ' + relPath + ' (' + (e && e.message || "error") + ').</div>';
       });
     }
     window._kitOpenRepoDoc = openRepoDoc;
     btn.addEventListener("click", function () {
-      modal.hidden = false;
+      modal.hidden = false; _kitWinZ += 1; modal.style.zIndex = String(_kitWinZ);
       loadDocsIndex(renderList);
-      qEl.focus();
+      if (!activePath) setLeft(true);
     });
     document.getElementById("kit-docs-close").addEventListener("click", function () { modal.hidden = true; });
     qEl.addEventListener("input", renderList);
     document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !modal.hidden) modal.hidden = true; });
+    /* Upgrade Ask the Orchestrator popup & open-post sheet with OS window drag/resize/snap + Pop-out button */
+    document.addEventListener("click", function (e) {
+      if (!e.shiftKey) return;
+      var card = e.target && e.target.closest ? e.target.closest(".card[data-id], .ffeed-card[data-id]") : null;
+      if (card && card.dataset.id) { e.preventDefault(); e.stopPropagation(); openPostWindow(card.dataset.id); }
+    }, true);
     loadDocsIndex();
   }
 
