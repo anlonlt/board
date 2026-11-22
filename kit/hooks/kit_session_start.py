@@ -27,6 +27,28 @@ def first(path, prefix):
     return None
 
 
+def state_next(path):
+    """Read `Next: ...` or fall back to the first non-empty line under a legacy `## Next step` heading."""
+    v = first(path, "Next:")
+    if v:
+        return v
+    try:
+        in_sec = False
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                s = line.strip()
+                if in_sec:
+                    if s.startswith("#"):
+                        break
+                    if s:
+                        return s.lstrip("-* ").strip()
+                elif s.lower() in ("## next step", "## next", "### next step", "### next"):
+                    in_sec = True
+    except OSError:
+        pass
+    return None
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -80,7 +102,7 @@ def main():
     if states:
         out.append("MEMORY (%s/, skill memory): each workstream's next step:" % mrel)
         for s in states:
-            out.append("  %s: %s" % (os.path.basename(s)[:-3], (first(s, "Next:") or "(no Next: line)")[:160]))
+            out.append("  %s: %s" % (os.path.basename(s)[:-3], (state_next(s) or "(no Next: line)")[:160]))
     aw = os.path.join(mdir, "awaits.md")
     if os.path.exists(aw):
         with open(aw, encoding="utf-8") as fh:

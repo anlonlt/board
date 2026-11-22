@@ -1250,6 +1250,18 @@ REPO_ASSET_CTYPES = {
     ".avif": "image/avif",
     ".svg": "image/svg+xml",
     ".ico": "image/x-icon",
+    ".pdf": "application/pdf",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".flac": "audio/flac",
+    ".aac": "audio/aac",
+    ".opus": "audio/opus",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".m4v": "video/mp4",
     ".html": "text/html; charset=utf-8",
     ".htm": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -1262,6 +1274,8 @@ REPO_ASSET_CTYPES = {
     ".woff": "font/woff",
     ".woff2": "font/woff2",
 }
+REPO_AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".opus"}
+REPO_VIDEO_EXTS = {".mp4", ".webm", ".mov", ".m4v"}
 
 
 def _repo_file_kind(rel):
@@ -1272,6 +1286,12 @@ def _repo_file_kind(rel):
         return "img"
     if ext in REPO_HTML_EXTS:
         return "html"
+    if ext == ".pdf":
+        return "pdf"
+    if ext in REPO_AUDIO_EXTS:
+        return "audio"
+    if ext in REPO_VIDEO_EXTS:
+        return "video"
     return ""
 
 
@@ -1281,6 +1301,8 @@ def _classify_repo_doc(rel):
         return "images"
     if kind == "html":
         return "html"
+    if kind in ("pdf", "audio", "video"):
+        return "media"
     r = rel.replace("\\", "/")
     if r.startswith(".story/") or r.startswith(".board/memory/"):
         return "memory"
@@ -1413,12 +1435,13 @@ def read_repo_doc(root_dir, rel_path, section="", repo_id="primary"):
         return None, "read_error"
     norm = os.path.relpath(target, root_real).replace("\\", "/")
     mtime_iso = datetime.fromtimestamp(st.st_mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    if kind == "img":
-        if st.st_size > MAX_BLOB_BYTES:
+    if kind in ("img", "pdf", "audio", "video"):
+        max_sz = (100 * 1024 * 1024) if kind in ("audio", "video") else MAX_BLOB_BYTES
+        if st.st_size > max_sz:
             return None, "too_large"
         return {
             "path": norm,
-            "kind": "img",
+            "kind": kind,
             "url": "/_api/repo-asset?path=" + urllib.parse.quote(norm, safe="/") + ("&repo=" + urllib.parse.quote(repo_id) if repo_id else ""),
             "size": st.st_size,
             "mtime": mtime_iso,
@@ -1487,7 +1510,12 @@ def read_repo_doc(root_dir, rel_path, section="", repo_id="primary"):
 
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
-SAFE_INLINE_BLOB_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"}
+SAFE_INLINE_BLOB_TYPES = {
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/avif",
+    "application/pdf",
+    "audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/flac", "audio/aac", "audio/opus", "audio/webm",
+    "video/mp4", "video/webm", "video/quicktime",
+}
 MAX_BLOB_BYTES = 20 * 1024 * 1024
 SERVER_BOOT_ID = secrets.token_hex(4)
 
@@ -1643,7 +1671,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: blob: https: /_blob/ /_api/repo-asset; "
-        "media-src 'self' /_blob/; "
+        "media-src 'self' blob: /_blob/ /_api/repo-asset /_repo/; "
+        "frame-src 'self' blob: /_blob/ /_api/repo-asset /_repo/; "
         "connect-src 'self'; "
         "object-src 'none'; "
         "base-uri 'none'"
@@ -1833,6 +1862,48 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             self.send_header("Referrer-Policy", "no-referrer")
             if is_html:
                 self.send_header("Content-Security-Policy", HTML_CSP)
+
+        def _send_range_bytes(self, data, ctype, cache_hdr, disp=None):
+            total = len(data)
+            rng = (self.headers.get("Range") or "").strip()
+            if rng.startswith("bytes=") and total > 0:
+                spec = rng[6:].split(",")[0].strip()
+                if "-" in spec:
+                    s_a, s_b = spec.split("-", 1)
+                    try:
+                        if s_a == "":
+                            n_tail = int(s_b)
+                            start = max(0, total - n_tail)
+                            end = total - 1
+                        else:
+                            start = int(s_a)
+                            end = int(s_b) if s_b else (total - 1)
+                        if 0 <= start <= end < total:
+                            chunk = data[start:end + 1]
+                            self.send_response(206)
+                            self.send_header("Content-Type", ctype)
+                            self.send_header("X-Content-Type-Options", "nosniff")
+                            self.send_header("Accept-Ranges", "bytes")
+                            self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, total))
+                            self.send_header("Content-Length", str(len(chunk)))
+                            if disp:
+                                self.send_header("Content-Disposition", disp)
+                            self.send_header("Cache-Control", cache_hdr)
+                            self.end_headers()
+                            self.wfile.write(chunk)
+                            return
+                    except ValueError:
+                        pass
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Accept-Ranges", "bytes")
+            if disp:
+                self.send_header("Content-Disposition", disp)
+            self.send_header("Cache-Control", cache_hdr)
+            self.send_header("Content-Length", str(total))
+            self.end_headers()
+            self.wfile.write(data)
 
         def _send_html_bytes(self, code, raw, extra_headers=None, head_only=False):
             ae = (self.headers.get("Accept-Encoding") or "").lower()
@@ -2554,13 +2625,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     code = 404 if aerr == "not_found" else (413 if aerr == "too_large" else 400)
                     self._send_json(code, {"error": aerr})
                     return
-                self.send_response(200)
-                self.send_header("Content-Type", actype)
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.send_header("Content-Length", str(len(adata)))
-                self.send_header("Cache-Control", "public, max-age=3600")
-                self.end_headers()
-                self.wfile.write(adata)
+                self._send_range_bytes(adata, actype, "public, max-age=3600")
                 return
 
             if path == "/_api/changes":
@@ -2659,19 +2724,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     self._send_json(404, {"error": "blob not found"})
                     return
                 raw_ctype = (meta.get("contentType") or mimetypes.guess_type(meta.get("name", ""))[0] or "application/octet-stream").split(";")[0].strip().lower()
-                self.send_response(200)
-                self.send_header("X-Content-Type-Options", "nosniff")
                 if raw_ctype in SAFE_INLINE_BLOB_TYPES:
-                    self.send_header("Content-Type", raw_ctype)
-                    self.send_header("Cache-Control", "public, max-age=31536000")
+                    self._send_range_bytes(data, raw_ctype, "public, max-age=31536000")
                 else:
-                    self.send_header("Content-Type", "application/octet-stream")
                     fname = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(meta.get("name") or blob_id)) or blob_id
-                    self.send_header("Content-Disposition", 'attachment; filename="%s"' % fname)
-                    self.send_header("Cache-Control", "private, no-store")
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
+                    self._send_range_bytes(data, "application/octet-stream", "private, no-store", disp='attachment; filename="%s"' % fname)
                 return
 
             if path == "/_api/comments/status":

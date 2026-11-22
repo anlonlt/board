@@ -3388,6 +3388,47 @@
           renderHtmlView();
           return;
         }
+        if (activeKind === "pdf" || activeKind === "audio" || activeKind === "video") {
+          var mediaUrl = withKitToken(res.url || resolveAssetUrl(res.path, "", repoOverride));
+          cmtHdrBtn.title = "Comment on " + shortName(res.path);
+          cmtHdrBtn.setAttribute("aria-label", cmtHdrBtn.title);
+          viewEl.classList.add("media-mode");
+          viewEl.textContent = "";
+          if (activeKind === "pdf") {
+            var pIfr = document.createElement("iframe");
+            pIfr.src = mediaUrl;
+            pIfr.title = shortName(res.path);
+            pIfr.style.cssText = "width:100%;height:100%;min-height:480px;border:0;background:#fff;flex:1 1 auto;";
+            viewEl.appendChild(pIfr);
+          } else if (activeKind === "video") {
+            var vWrap = document.createElement("div");
+            vWrap.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;padding:16px;box-sizing:border-box;background:#000;";
+            var vid = document.createElement("video");
+            vid.controls = true; vid.playsInline = true; vid.preload = "metadata"; vid.src = mediaUrl;
+            vid.style.cssText = "max-width:100%;max-height:100%;width:100%;border-radius:8px;";
+            vWrap.appendChild(vid);
+            viewEl.appendChild(vWrap);
+          } else {
+            var aWrap = document.createElement("div");
+            aWrap.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;width:100%;height:100%;padding:28px;box-sizing:border-box;";
+            var aIcon = document.createElement("div");
+            aIcon.style.cssText = "width:56px;height:56px;border-radius:16px;background:var(--sunk);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--ember);";
+            aIcon.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+            var aName = document.createElement("div");
+            aName.style.cssText = "font-weight:700;font-size:1rem;text-align:center;word-break:break-word;";
+            aName.textContent = shortName(res.path);
+            var aSub = document.createElement("div"); aSub.className = "note";
+            aSub.textContent = activeDocMetaText;
+            var aud = document.createElement("audio");
+            aud.controls = true; aud.preload = "metadata"; aud.src = mediaUrl;
+            aud.style.cssText = "width:min(520px,100%);";
+            aWrap.appendChild(aIcon); aWrap.appendChild(aName); aWrap.appendChild(aSub); aWrap.appendChild(aud);
+            viewEl.appendChild(aWrap);
+          }
+          renderOutline();
+          updateHeaderModeButtons();
+          return;
+        }
         viewEl.classList.remove("media-mode");
         viewEl.textContent = "";
         var mdBox = document.createElement("div"); mdBox.className = "kit-docs-md body";
@@ -3721,9 +3762,12 @@
     }
     var isImg = /\.(?:png|jpe?g|gif|webp|avif|svg)$/i.test(fp);
     var isHtml = /\.html?$/i.test(fp);
+    var isPdf = /\.pdf$/i.test(fp);
+    var isAudio = /\.(?:mp3|wav|ogg|m4a|flac|aac|opus)$/i.test(fp);
+    var isVideo = /\.(?:mp4|webm|mov|m4v)$/i.test(fp);
     var isMd = /\.md$/i.test(fp);
-    /* Embed images, HTML pages, and Markdown section links inline right under their referencing block */
-    if (!isImg && !isHtml && !(isMd && sec)) return;
+    /* Embed images, HTML, PDF, audio, video, and Markdown section links inline right under their referencing block */
+    if (!isImg && !isHtml && !isPdf && !isAudio && !isVideo && !(isMd && sec)) return;
 
     var SVG_POP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
     var SVG_CMT2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>';
@@ -3731,7 +3775,7 @@
     var SVG_DK2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
     var SVG_CD2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/><line x1="14" y1="4" x2="10" y2="20"/></svg>';
 
-    var kindTag = isHtml ? "html" : (isImg ? "img" : "md");
+    var kindTag = isHtml ? "html" : (isImg ? "img" : (isPdf ? "pdf" : (isAudio ? "audio" : (isVideo ? "video" : "md"))));
     var postIdCtx = "";
     try { postIdCtx = (postBody.closest(".kit-post-win") && postBody.closest(".kit-post-win").dataset.pid) || sessionStorage.getItem("board-open") || ""; } catch (e) {}
     var card = document.createElement("div"); card.className = "kit-inline-embed"; card.dataset.kind = kindTag; card.dataset.ekey = key;
@@ -3805,6 +3849,30 @@
       im.src = resolveAssetUrl(fp, "", repoOverride);
       im.alt = fp;
       body.appendChild(im);
+    } else if (isPdf) {
+      body.classList.add("media");
+      body.textContent = "";
+      var pIfr = document.createElement("iframe");
+      pIfr.src = withKitToken(resolveAssetUrl(fp, "", repoOverride));
+      pIfr.title = fp;
+      pIfr.style.cssText = "width:100%;height:460px;border:0;border-radius:8px;background:#fff;";
+      body.appendChild(pIfr);
+    } else if (isAudio) {
+      body.textContent = "";
+      body.style.padding = "10px 12px";
+      var aud = document.createElement("audio");
+      aud.controls = true; aud.preload = "metadata";
+      aud.src = withKitToken(resolveAssetUrl(fp, "", repoOverride));
+      aud.style.cssText = "width:100%;display:block;";
+      body.appendChild(aud);
+    } else if (isVideo) {
+      body.classList.add("media");
+      body.textContent = "";
+      var vid = document.createElement("video");
+      vid.controls = true; vid.playsInline = true; vid.preload = "metadata";
+      vid.src = withKitToken(resolveAssetUrl(fp, "", repoOverride));
+      vid.style.cssText = "width:100%;max-height:460px;border-radius:8px;background:#000;display:block;";
+      body.appendChild(vid);
     } else {
       var uM = "/_api/repo-doc?path=" + encodeURIComponent(fp) + (sec ? "&section=" + encodeURIComponent(sec) : "") + (repoOverride !== undefined ? "&repo=" + encodeURIComponent(repoOverride || "") : "");
       api("GET", uM).then(function (res) {
@@ -3842,7 +3910,7 @@
   function linkRepoDocs(root) {
     if (!root || typeof window._kitOpenRepoDoc !== "function") return;
     var codes = root.querySelectorAll("#p-body code, .cmt .txt code, .kit-post-win-body code, .ffeed-card .body code");
-    var fileRe = /^(?:docs\/|\.story\/|\.board\/|\.kit\/)?[A-Za-z0-9_./-]+\.(?:md|html?|png|jpe?g|gif|webp|avif|svg)$/i;
+    var fileRe = /^(?:docs\/|\.story\/|\.board\/|\.kit\/)?[A-Za-z0-9_./-]+\.(?:md|html?|png|jpe?g|gif|webp|avif|svg|pdf|mp3|wav|ogg|m4a|flac|aac|opus|mp4|webm|mov|m4v)$/i;
     for (var i = 0; i < codes.length; i++) {
       var c = codes[i];
       if (c.dataset.kitDocLink) continue;
@@ -3868,12 +3936,29 @@
       var a = anchors[j];
       if (a.dataset.kitGhChecked) continue;
       a.dataset.kitGhChecked = "1";
-      var pl = parseAssociatedDocLink(a.getAttribute("href") || "", "");
+      var hrefVal = a.getAttribute("href") || "";
+      var pl = parseAssociatedDocLink(hrefVal, "");
       if (pl && !pl.anchorOnly) {
         a.classList.add("kit-doc-link");
         a.removeAttribute("target");
         a.title = "Open " + pl.path + (pl.section ? " § " + pl.section : "") + " in Document Viewer";
         mountInlineViewerEmbed(a, pl.path, pl.section || "", pl.repoId);
+      } else if (/^\/_blob\/[0-9a-f]{16,64}$/i.test(hrefVal)) {
+        var lbl = (a.getAttribute("download") || a.textContent || "").trim();
+        var bUrl = withKitToken(hrefVal);
+        if (/\.(?:mp3|wav|ogg|m4a|flac|aac|opus)$/i.test(lbl) && !a.nextElementSibling) {
+          var ba = document.createElement("audio"); ba.controls = true; ba.preload = "metadata"; ba.src = bUrl;
+          ba.style.cssText = "display:block;width:100%;max-width:520px;margin:6px 0;";
+          a.insertAdjacentElement("afterend", ba);
+        } else if (/\.(?:mp4|webm|mov|m4v)$/i.test(lbl) && !a.nextElementSibling) {
+          var bv = document.createElement("video"); bv.controls = true; bv.playsInline = true; bv.preload = "metadata"; bv.src = bUrl;
+          bv.style.cssText = "display:block;width:100%;max-width:640px;max-height:420px;border-radius:8px;background:#000;margin:6px 0;";
+          a.insertAdjacentElement("afterend", bv);
+        } else if (/\.pdf$/i.test(lbl) && !a.nextElementSibling) {
+          var bp = document.createElement("iframe"); bp.src = bUrl; bp.title = lbl;
+          bp.style.cssText = "display:block;width:100%;height:460px;border:1px solid var(--line);border-radius:10px;background:#fff;margin:8px 0;";
+          a.insertAdjacentElement("afterend", bp);
+        }
       }
     }
     /* Unified inline post media viewer: resolve repo images, follow zoomed image size, and synchronize pinch-to-zoom across side-by-side compare groups */
