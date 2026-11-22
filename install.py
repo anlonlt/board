@@ -698,6 +698,87 @@ def main(argv=None):
         if "Confirm demo setup" not in cur_aw:
             with open(awaits_p, "w", encoding="utf-8") as fh:
                 fh.write(cur_aw.rstrip() + "\n- [demo] Confirm demo setup works in your browser\n")
+        if not os.path.exists(os.path.join(t, "docs", "demo-guide.md")):
+            ins.put("docs/demo-guide.md", (
+                "# Board Demo Guide\n\n"
+                "Welcome to the interactive **board** demo.\n\n"
+                "## Viewer Features\n\n"
+                "The unified Document Viewer handles **Markdown**, **live HTML**, and **Images** both in floating OS-style windows and directly inline inside posts:\n\n"
+                "- **Zero-chrome pinch-to-zoom:** pinch on trackpad or phone to scale content without scaling UI chrome.\n"
+                "- **Side-by-side image compare & Draw-to-Annotate:** compare multiple screenshots inline, circle bugs on a transparent canvas, and send annotated PNGs straight to the orchestrator.\n"
+                "- **Sandboxed HTML preview:** switch between Mobile, Desktop (with crisp vector zoom on mobile), and `</>` source code; commenting captures live `#hash`, scroll %, and active section.\n\n"
+                "```mermaid\nflowchart LR\n  Post[Board Post] --> Inline[Inline Viewer]\n  Inline --> Window[Floating Window]\n  Window --> Orch[Ask the Orchestrator]\n```\n\n"
+                "## Section Anchoring\n\n"
+                "Clicking any heading in the right outline (or highlighting text) locks the active section so commenting always references the exact `§ Section`.\n"
+            ))
+        if not os.path.exists(os.path.join(t, "docs", "demo-preview.html")):
+            ins.put("docs/demo-preview.html", (
+                "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
+                "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                "<title>Interactive HTML Preview</title>"
+                "<style>"
+                "body{font-family:system-ui,sans-serif;margin:0;padding:20px;background:#f4f6f9;color:#1b2433;}"
+                ".card{max-width:760px;margin:0 auto;background:#fff;border:1px solid #cfd7e1;border-radius:14px;padding:18px;box-shadow:0 8px 24px rgba(0,0,0,.06);}"
+                ".tabs{display:flex;gap:8px;margin:12px 0 16px;}"
+                ".tabs button{border:1px solid #cfd7e1;background:#eef2f6;color:#1b2433;padding:6px 12px;border-radius:999px;cursor:pointer;font-weight:600;}"
+                ".tabs button[aria-selected='true']{background:#b8561c;color:#fff;border-color:#b8561c;}"
+                ".pulse{display:inline-block;width:10px;height:10px;border-radius:50%;background:#2f7a4f;margin-right:6px;animation:p 1.4s ease-in-out infinite;}"
+                "@keyframes p{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.45);opacity:.45}}"
+                ".grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px;}"
+                ".kpi{background:#eef2f6;border-radius:10px;padding:12px;}"
+                ".kpi b{display:block;font-size:1.35rem;color:#b8561c;}"
+                "@media (max-width:520px){.grid{grid-template-columns:1fr;}}"
+                "</style></head><body><div class=\"card\">"
+                "<h2 id=\"sec-hdr\"><span class=\"pulse\"></span>Interactive HTML Sandbox</h2>"
+                "<p>Switch tabs below, toggle <b>Mobile / Desktop / &lt;/&gt;</b> in the header, then tap <b>Comment</b> to see live hash &amp; section capture + animation auto-pause.</p>"
+                "<div class=\"tabs\" role=\"tablist\">"
+                "<button type=\"button\" role=\"tab\" aria-selected=\"true\" data-tab=\"overview\">Overview</button>"
+                "<button type=\"button\" role=\"tab\" aria-selected=\"false\" data-tab=\"metrics\">Metrics</button>"
+                "<button type=\"button\" role=\"tab\" aria-selected=\"false\" data-tab=\"notes\">QA Notes</button>"
+                "</div>"
+                "<div id=\"panel-overview\"><h3>Overview Panel</h3><p>Live client-side HTML/CSS/JS running inside a sandboxed repo frame.</p>"
+                "<div class=\"grid\"><div class=\"kpi\"><b>12x</b>Smaller reads</div><div class=\"kpi\"><b>0.8m</b>Median wait</div><div class=\"kpi\"><b>0</b>Dependencies</div></div></div>"
+                "<div id=\"panel-metrics\" hidden><h3>Metrics Panel</h3><p>Hash is now <code>#metrics</code> — click Comment to verify it captures this exact state.</p></div>"
+                "<div id=\"panel-notes\" hidden><h3>QA Notes Panel</h3><p>Try pinching to zoom in Desktop mode on portrait mobile.</p></div>"
+                "</div><script>"
+                "var btns=document.querySelectorAll('.tabs button');"
+                "function show(k){location.hash=k;btns.forEach(function(b){var on=b.dataset.tab===k;b.setAttribute('aria-selected',on?'true':'false');document.getElementById('panel-'+b.dataset.tab).hidden=!on;});}"
+                "btns.forEach(function(b){b.addEventListener('click',function(){show(b.dataset.tab);});});"
+                "if(location.hash&&document.getElementById('panel-'+location.hash.slice(1)))show(location.hash.slice(1));"
+                "</script></body></html>\n"
+            ))
+        if not os.path.exists(os.path.join(t, "docs", "assets", "demo-before.svg")):
+            ins.put("docs/assets/demo-before.svg", (
+                "<svg xmlns='http://www.w3.org/2000/svg' width='640' height='400' viewBox='0 0 640 400'>"
+                "<rect width='640' height='400' rx='16' fill='#e2e8ef'/>"
+                "<rect x='24' y='24' width='592' height='54' rx='10' fill='#ffffff' stroke='#cfd7e1'/>"
+                "<text x='44' y='57' font-family='system-ui,sans-serif' font-size='20' font-weight='700' fill='#465162'>BEFORE — Dense Text Toolbar</text>"
+                "<rect x='24' y='98' width='284' height='274' rx='12' fill='#ffffff' stroke='#cfd7e1'/>"
+                "<rect x='332' y='98' width='284' height='274' rx='12' fill='#ffffff' stroke='#cfd7e1'/>"
+                "<rect x='44' y='124' width='180' height='16' rx='6' fill='#cfd7e1'/>"
+                "<rect x='44' y='154' width='240' height='12' rx='6' fill='#e2e8ef'/>"
+                "<rect x='44' y='178' width='210' height='12' rx='6' fill='#e2e8ef'/>"
+                "<rect x='352' y='124' width='160' height='16' rx='6' fill='#cfd7e1'/>"
+                "<rect x='352' y='154' width='240' height='12' rx='6' fill='#e2e8ef'/>"
+                "<text x='44' y='348' font-family='monospace' font-size='14' fill='#a33b2b'>Status: High chrome clutter</text>"
+                "</svg>\n"
+            ))
+        if not os.path.exists(os.path.join(t, "docs", "assets", "demo-after.svg")):
+            ins.put("docs/assets/demo-after.svg", (
+                "<svg xmlns='http://www.w3.org/2000/svg' width='640' height='400' viewBox='0 0 640 400'>"
+                "<rect width='640' height='400' rx='16' fill='#111826'/>"
+                "<rect x='24' y='24' width='592' height='54' rx='10' fill='#1a2335' stroke='#2c3850'/>"
+                "<text x='44' y='57' font-family='system-ui,sans-serif' font-size='20' font-weight='700' fill='#e6ebf2'>AFTER — Zero-Chrome Floating Viewer</text>"
+                "<circle cx='556' cy='51' r='12' fill='none' stroke='#e8894a' stroke-width='2.5'/>"
+                "<circle cx='590' cy='51' r='12' fill='none' stroke='#aab6c8' stroke-width='2'/>"
+                "<rect x='24' y='98' width='592' height='274' rx='12' fill='#1a2335' stroke='#e8894a' stroke-width='2'/>"
+                "<rect x='48' y='128' width='260' height='18' rx='6' fill='#e8894a'/>"
+                "<rect x='48' y='162' width='520' height='12' rx='6' fill='#2c3850'/>"
+                "<rect x='48' y='186' width='460' height='12' rx='6' fill='#2c3850'/>"
+                "<rect x='48' y='210' width='490' height='12' rx='6' fill='#2c3850'/>"
+                "<text x='48' y='348' font-family='monospace' font-size='14' fill='#6cc492'>Status: Crisp editorial canvas + pinch zoom</text>"
+                "</svg>\n"
+            ))
     should_bootstrap = (a.bootstrap or a.demo or rt in ("arena", "generic")) and not a.no_bootstrap
     if should_bootstrap and parts["board"] and not claude_only and not a.dry_run:
         from datetime import datetime, timezone
@@ -727,18 +808,111 @@ def main(argv=None):
                 base_dt = datetime.now(timezone.utc)
                 ts = lambda mins: (base_dt - timedelta(minutes=mins)).strftime("%Y-%m-%dT%H:%M:%SZ")
                 demo_posts = [
-                    ("demo-todo", {"title": "Try replying or tapping 👍", "column": "todo", "part": "D1", "train": "demo", "priority": 2, "minutes": 2, "created_at": ts(5), "body": "Leave a comment below or tap **👍 Like** to test the live round-trip."}),
-                    ("demo-todo-2", {"title": "Review release checklist for v0.1", "column": "todo", "part": "R2", "train": "release", "parent": "R1", "priority": 1, "minutes": 5, "created_at": ts(35), "body": "CI is green across all 6 suites. Confirm tag name and changelog notes before publishing."}),
-                    ("demo-todo-3", {"title": "Spot-check mobile layout on phone", "column": "todo", "part": "D2", "train": "demo", "parent": "D1", "priority": 3, "minutes": 3, "created_at": ts(90), "body": "Open the board on a narrow viewport and verify the lane tabs and one-tap options."}),
-                    ("demo-question", {"title": "Pick your preferred workflow mode", "column": "question", "part": "D1", "train": "demo", "priority": 2, "created_at": ts(12), "options": ["Live 30-min listener", "Manual '.' check"], "default_option": "Live 30-min listener", "body": "One-tap answers let you decide from your phone without typing."}),
-                    ("demo-q-2", {"title": "Default Done lane window", "column": "question", "part": "R2", "train": "release", "parent": "R1", "priority": 2, "created_at": ts(48), "options": ["Last 7 days (Recommended)", "Last 30 days", "Show all"], "default_option": "Last 7 days (Recommended)", "body": "Keeping Done scoped to recent cards prevents an infinite scroll wall at production volume."}),
-                    ("demo-q-3", {"title": "Enable daily digest notifications?", "column": "question", "part": "D3", "train": "demo", "parent": "D2", "priority": 3, "created_at": ts(140), "options": ["Yes, via ntfy", "No, board only"], "default_option": "No, board only", "body": "Optional push summary when questions wait longer than 30 minutes."}),
-                    ("demo-info-1", {"title": "Benchmark: mirror reads 12× smaller", "column": "info", "part": "R1", "train": "release", "priority": 3, "status": "in progress", "created_at": ts(20), "body": "Measured `kit.py post` vs full JSON dump:\n\n| Operation | Full dump | `kit.py` mirror |\n|---|---|---|\n| Single post | 35.9k chars | 2.9k chars |\n| Open comments | ~120k tokens | 290 chars |"}),
-                    ("demo-info-2", {"title": "Nightly doctor check passed", "column": "info", "part": "D2", "train": "demo", "parent": "D1", "priority": 3, "created_at": ts(75), "body": "`kit.py doctor` verified SQLite integrity (`ok`), zero missing blobs, and clean mirror branch."}),
-                    ("demo-done", {"title": "Board kit installed", "column": "done", "part": "D0", "train": "demo", "priority": 3, "created_at": ts(180), "done_at": ts(175), "body": "SQLite board store, local server, and single-file UI are ready."}),
-                    ("demo-done-2", {"title": "Safety hooks verified (kit_guard)", "column": "done", "part": "R0", "train": "release", "priority": 3, "created_at": ts(240), "done_at": ts(230), "body": "Destructive `rm -rf`, `git reset --hard`, force-push, and secret staging all blocked cleanly."}),
-                    ("demo-done-3", {"title": "Gzip & security headers enabled", "column": "done", "part": "R1", "train": "release", "parent": "R0", "priority": 3, "created_at": ts(300), "done_at": ts(290), "body": "HTML payload compressed ~75% with `Referrer-Policy` and minimal CSP active."}),
-                    ("demo-done-4", {"title": "Accessibility pass complete", "column": "done", "part": "D0", "train": "demo", "priority": 3, "created_at": ts(360), "done_at": ts(350), "body": "Added `<html lang>`, un-nested card like buttons, and raised muted-text contrast ≥ 4.5:1."}),
+                    ("demo-lmarena-research", {
+                        "title": "LMArena research: compare board to competitors",
+                        "column": "todo",
+                        "part": "RS1",
+                        "train": "research",
+                        "priority": 1,
+                        "minutes": 10,
+                        "created_at": ts(2),
+                        "body": (
+                            "Run a hands-on competitive benchmark comparing **`anlonlt/board`** against adjacent tools "
+                            "(e.g. **Vibe Kanban**, **Linear**, **Pad**, **FlowState**, **Conductor**, and **GitHub Projects / Trello**).\n\n"
+                            "### Evaluation Criteria\n"
+                            "1. **Visual & mobile UX:** desktop + phone layout, dark/light themes, floating multi-window workflow, and one-tap approval ergonomics.\n"
+                            "2. **Architecture & durability:** zero-dependency footprint (Python 3 stdlib + single-file HTML), local SQLite + `board-mirror` Git backup, and sandbox/iframe embed support.\n"
+                            "3. **Agent contract & token economics:** compact `kit.py` reads, `SessionStart` `.board/memory/` injection, automatic context-limit handovers, and `kit_guard` safety hooks.\n"
+                            "4. **Honest gaps & roadmap:** where competitors win (e.g. built-in execution plane, multi-user RBAC, integrations) and the top prioritized upgrades for `board`.\n\n"
+                            "Post your scorecard, screenshots, and prioritized recommendations directly as a reply below or a new report card."
+                        ),
+                    }),
+                    ("demo-viewer-0", {
+                        "title": "Unified Document & Media Viewer foundation",
+                        "column": "done",
+                        "part": "V0",
+                        "train": "viewer",
+                        "priority": 3,
+                        "created_at": ts(260),
+                        "done_at": ts(220),
+                        "verdict": "Shipped OS-style floating viewer with pointer-aware drawers and zero-chrome pinch zoom.",
+                        "artifacts": ["docs/demo-guide.md"],
+                        "bars": ["9/9 checklist tests pass"],
+                        "body": "Built the floating Document Viewer with Markdown, Mermaid, and repo asset rendering.",
+                    }),
+                    ("demo-html-embed", {
+                        "title": "Live HTML viewer: test mobile, desktop & code modes",
+                        "column": "todo",
+                        "part": "V1",
+                        "train": "viewer",
+                        "parent": "V0",
+                        "priority": 1,
+                        "minutes": 3,
+                        "created_at": ts(18),
+                        "verdict": "Waiting on you to verify Mobile, Desktop, and </> code toggles.",
+                        "artifacts": ["docs/demo-preview.html"],
+                        "body": (
+                            "Below is an interactive HTML prototype embedded directly inline from `docs/demo-preview.html`.\n\n"
+                            "- Switch tabs inside the preview, toggle **Mobile / Desktop / `</>`** in the viewer header, or pop it out into a floating window.\n"
+                            "- Tap **Comment** while on a specific tab to see live `#hash` + section capture and animation auto-pause."
+                        ),
+                    }),
+                    ("demo-image-compare", {
+                        "title": "Side-by-side visual compare: Before vs After UI",
+                        "column": "question",
+                        "part": "V2",
+                        "train": "viewer",
+                        "parent": "V1",
+                        "priority": 1,
+                        "created_at": ts(10),
+                        "verdict": "Defaulting to After pass unless you pick another option.",
+                        "artifacts": ["docs/assets/demo-before.svg", "docs/assets/demo-after.svg"],
+                        "images": ["docs/assets/demo-before.svg", "docs/assets/demo-after.svg"],
+                        "captions": ["Before: dense text toolbar", "After: zero-chrome floating viewer"],
+                        "image_groups": [{"title": "Before vs After (Pinch to zoom, tap to open / draw-to-annotate)", "count": 2}],
+                        "options": ["Approve After (Recommended)", "Keep Before", "Tweak spacing"],
+                        "default_option": "Approve After (Recommended)",
+                        "body": "Compare the two UI passes side-by-side inline below. Pinch to zoom directly in the post, or tap either image to open the full Image Viewer with **Gallery**, **Auto-Fade Header**, and **Draw-to-Annotate**.",
+                    }),
+                    ("demo-md-section", {
+                        "title": "Inline Markdown section viewer & deep links",
+                        "column": "info",
+                        "status": "in progress",
+                        "part": "V3",
+                        "train": "viewer",
+                        "parent": "V2",
+                        "priority": 2,
+                        "created_at": ts(5),
+                        "verdict": "Running live verification of inline Markdown section embeds.",
+                        "artifacts": ["docs/demo-guide.md"],
+                        "body": (
+                            "Referencing a Markdown section like `docs/demo-guide.md § Viewer Features` automatically embeds a scrollable inline viewer scrolled directly to that heading, with one-click **Comment** and **Open in Document Viewer** pop-out."
+                        ),
+                    }),
+                    ("demo-viewer-later", {
+                        "title": "Planned: PDF & audio inline preview",
+                        "column": "info",
+                        "status": "later",
+                        "part": "V4",
+                        "train": "viewer",
+                        "parent": "V3",
+                        "priority": 3,
+                        "created_at": ts(1),
+                        "verdict": "Queued for next wave after HTML and image viewer sign-off.",
+                        "body": "Extend the unified viewer to preview repo PDFs and audio clips inline with timestamped comments.",
+                    }),
+                    ("demo-todo", {"title": "Try replying or tapping 👍", "column": "todo", "part": "D2", "train": "demo", "parent": "D1", "priority": 2, "minutes": 2, "created_at": ts(15), "body": "Leave a comment below or tap **👍 Like** to test the live round-trip."}),
+                    ("demo-todo-2", {"title": "Review release checklist for v0.1", "column": "todo", "part": "R3", "train": "release", "parent": "R2", "priority": 1, "minutes": 5, "created_at": ts(16), "body": "CI is green across all 6 suites. Confirm tag name and changelog notes before publishing."}),
+                    ("demo-question", {"title": "Pick your preferred workflow mode", "column": "question", "part": "D3", "train": "demo", "parent": "D2", "priority": 2, "created_at": ts(8), "options": ["Live 30-min listener", "Manual '.' check"], "default_option": "Live 30-min listener", "body": "One-tap answers let you decide from your phone without typing."}),
+                    ("demo-q-2", {"title": "Default Done lane window", "column": "question", "part": "R4", "train": "release", "parent": "R3", "priority": 2, "created_at": ts(7), "options": ["Last 7 days (Recommended)", "Last 30 days", "Show all"], "default_option": "Last 7 days (Recommended)", "body": "Keeping Done scoped to recent cards prevents an infinite scroll wall at production volume."}),
+                    ("demo-info-1", {"title": "Benchmark: mirror reads 12× smaller", "column": "info", "part": "R2", "train": "release", "parent": "R1", "priority": 3, "status": "in progress", "created_at": ts(12), "body": "Measured `kit.py post` vs full JSON dump:\n\n| Operation | Full dump | `kit.py` mirror |\n|---|---|---|\n| Single post | 35.9k chars | 2.9k chars |\n| Open comments | ~120k tokens | 290 chars |"}),
+                    ("demo-info-2", {"title": "Nightly doctor check passed", "column": "done", "part": "D1", "train": "demo", "parent": "D0", "priority": 3, "created_at": ts(120), "done_at": ts(110), "body": "`kit.py doctor` verified SQLite integrity (`ok`), zero missing blobs, and clean mirror branch."}),
+                    ("demo-demo-later", {"title": "Planned: Configure daily ntfy digest", "column": "info", "status": "later", "part": "D4", "train": "demo", "parent": "D3", "priority": 3, "created_at": ts(2), "verdict": "Scheduled after workflow mode is confirmed.", "body": "Optional push summary when questions wait longer than 30 minutes."}),
+                    ("demo-release-later", {"title": "Planned: Tag v0.2 & publish release notes", "column": "info", "status": "later", "part": "R5", "train": "release", "parent": "R4", "priority": 3, "created_at": ts(1), "verdict": "Waiting on v0.1 checklist and Done window sign-off.", "body": "Cut signed tag and publish SHA-256 manifest."}),
+                    ("demo-done", {"title": "Board kit installed", "column": "done", "part": "D0", "train": "demo", "priority": 3, "created_at": ts(280), "done_at": ts(275), "body": "SQLite board store, local server, and single-file UI are ready."}),
+                    ("demo-done-2", {"title": "Safety hooks verified (kit_guard)", "column": "done", "part": "R0", "train": "release", "priority": 3, "created_at": ts(300), "done_at": ts(290), "body": "Destructive `rm -rf`, `git reset --hard`, force-push, and secret staging all blocked cleanly."}),
+                    ("demo-done-3", {"title": "Gzip & security headers enabled", "column": "done", "part": "R1", "train": "release", "parent": "R0", "priority": 3, "created_at": ts(240), "done_at": ts(230), "body": "HTML payload compressed ~75% with `Referrer-Policy` and minimal CSP active."}),
+                    ("demo-done-4", {"title": "Accessibility pass complete", "column": "done", "part": "D0b", "train": "demo", "priority": 3, "created_at": ts(260), "done_at": ts(250), "body": "Added `<html lang>`, un-nested card like buttons, and raised muted-text contrast ≥ 4.5:1."}),
                 ]
                 for dpid, ddoc in demo_posts:
                     if not store.get_doc("posts", dpid).get("exists"):
@@ -748,6 +922,7 @@ def main(argv=None):
                     ("demo-cmt-2", {"post_id": "demo-todo", "from": "owner", "text": "Looks crisp! Can we also verify dark mode?", "reply_to": "demo-cmt-1", "read": True, "delivered": True, "created_at": ts(3)}),
                     ("demo-cmt-3", {"post_id": "demo-todo", "from": "D1", "text": "Checked dark mode: per-lane tinted cards and ≥ 4.5:1 contrast both pass.", "reply_to": "demo-cmt-2", "created_at": ts(2)}),
                     ("demo-cmt-4", {"post_id": "demo-question", "from": "orchestrator", "text": "Defaulting to **Live 30-min listener** if you don't tap another option.", "created_at": ts(10)}),
+                    ("demo-cmt-5", {"post_id": "demo-lmarena-research", "from": "orchestrator", "text": "Focus on what makes `board` genuinely distinct (phone-first approvals, token economics, session memory/handovers, zero-dep deployability) alongside an honest scorecard of where competitors beat it.", "created_at": ts(1)}),
                 ]
                 for dcid, cdoc in demo_comments:
                     if not store.get_doc("comments", dcid).get("exists"):
@@ -762,7 +937,7 @@ def main(argv=None):
                     _kc.ROOT = prev_root
                 store.set_doc("posts", "_dashboard", dash_doc)
                 store.set_doc("posts", "_trains", trains_doc)
-                ins.log.append("demo: seeded 12 sample posts, 4 comments, _dashboard, and _trains in .kit/board_data/board.db")
+                ins.log.append("demo: seeded 13 sample posts, 5 comments, _dashboard, and _trains in .kit/board_data/board.db")
             ins.log.append("bootstrap: seeded _orchestrator and KIT-installed in .kit/board_data/board.db")
         finally:
             store.close()
