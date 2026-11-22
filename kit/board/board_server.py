@@ -2021,7 +2021,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 return
-            if path in ("/_shim.js", "/_manifest.webmanifest", "/_icon.svg", "/_sw.js"):
+            if path in ("/_shim.js", "/_manifest.webmanifest", "/_icon.svg", "/_sw.js", "/_vendor/pdf.min.js", "/_vendor/pdf.worker.min.js"):
                 self.send_response(200)
                 self._send_security_headers()
                 self.send_header("Content-Length", "0")
@@ -2440,6 +2440,23 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(raw)
+                return
+
+            if path in ("/_vendor/pdf.min.js", "/_vendor/pdf.worker.min.js"):
+                vname = path.rsplit("/", 1)[-1]
+                vpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor", vname)
+                if os.path.isfile(vpath):
+                    with open(vpath, "rb") as vf:
+                        raw = vf.read()
+                    self.send_response(200)
+                    self._send_security_headers()
+                    self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.send_header("Cache-Control", "public, max-age=86400")
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
+                self._send_json(404, {"error": "vendor asset not found"})
                 return
 
             set_cookie = self._require_auth(parsed)

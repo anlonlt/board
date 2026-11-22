@@ -661,6 +661,10 @@ def main(argv=None):
         if not claude_only:
             ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))
             ins.put(".kit/shim.js", rd("kit", "board", "shim.js"))
+            for _vf in ("pdf.min.js", "pdf.worker.min.js"):
+                _vp = os.path.join(KIT, "kit", "board", "vendor", _vf)
+                if os.path.isfile(_vp):
+                    ins.put(".kit/vendor/" + _vf, open(_vp, "rb").read())
             ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
             ins.put(".kit/mcp_stdio.py", rd("kit", "board", "mcp_stdio.py"))
         page = rd("kit", "board", "board.template.html")
