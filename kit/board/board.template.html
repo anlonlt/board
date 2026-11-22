@@ -2178,7 +2178,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
     var day = new Date().toISOString().slice(0, 10);
     var text = posts.length === 1 ? postMd(posts[0])
       : "# {{PROJECT}} board: " + posts.length + " posts\n*Exported " + utc(Date.now()) + "; posts in the order they were posted.*\n\n" + posts.map(postMd).join("\n---\n\n");
-    var name = posts.length === 1 ? "harmonize-" + posts[0].id.replace(/^_/, "") + ".md" : "harmonize-board-" + posts.length + "-posts-" + day + ".md";
+    var name = posts.length === 1 ? "{{SLUG}}-" + posts[0].id.replace(/^_/, "") + ".md" : "{{SLUG}}-board-" + posts.length + "-posts-" + day + ".md";
     return { filename: name, data: text };
   }
   function share(posts, note) {
@@ -2699,7 +2699,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
           var ms = (dl.list[k] || []).filter(function (c) { return !c.like; });
           return "# " + discTitle(k) + "\n\n" + ms.map(function (c) { return "**" + whoMd(c) + "** (" + utc(tOf(c)) + ")\n\n" + str(c.text); }).join("\n\n---\n\n");
         }).join("\n\n===\n\n");
-        downloads.save({ filename: "harmonize-orchestrator-" + selKeys.length + ".md", data: md }).catch(function () {});
+        downloads.save({ filename: "{{SLUG}}-orchestrator-" + selKeys.length + ".md", data: md }).catch(function () {});
       });
       tools.appendChild(expB);
       if (db) {

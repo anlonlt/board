@@ -609,6 +609,8 @@ def main(argv=None):
     want_claude = rt in ("claude", "both")
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
+    if claude_only:
+        ins.put(".kit/kit_artifact_sync.py", rd("kit", "claude", "kit_artifact_sync.py"))
     if not claude_only:
         ins.put(".kit/git_watch.py", rd("kit", "git_watch.py"))
         ins.put(".kit/up", rd("kit", "up"))
@@ -638,7 +640,13 @@ def main(argv=None):
             tr = json.load(open(sp, encoding="utf-8"))
             page, used, missing = page_strings.apply(page, page_strings.load_table(), tr.get("strings") or {})
             notes.append("page: %d strings in %s, %d untranslated (.kit/strings.json; add them there, never in the page)" % (used, tr.get("language", "?"), len(missing)))
-        ins.put(".kit/board.html", render(page, c))
+        page_out = render(page, c)
+        if claude_only and c.get("board_url"):
+            # Claude Code Web: the server UI layer + an adapter onto the Artifact's capabilities (kit/claude/build_artifact_page.py)
+            sys.path.insert(0, os.path.join(KIT, "kit", "claude"))
+            import build_artifact_page  # noqa: E402
+            page_out = build_artifact_page.build(page_out, KIT, c["board_url"], c.get("project") or "board")
+        ins.put(".kit/board.html", page_out)
         ins.put(".kit/strings.en.json", rd("kit", "board", "strings.en.json"))
         ins.put(".kit/strings.py", rd("kit", "board", "strings.py"))
         ins.put(".kit/kit_cards.py", rd("kit", "board", "kit_cards.py"))
@@ -650,7 +658,7 @@ def main(argv=None):
             ins.put(".agents/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
         if want_claude:
             ins.put(".claude/agents/kit-cards.md", cards_tpl)
-            ins.put(".claude/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
+            ins.put(".claude/skills/board/SKILL.md", rd("kit", "claude", "SKILL.board.md") if claude_only else rd("kit", "skills", "board", "SKILL.md"))
     if parts["clerk"]:
         ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
         clerk_tpl = rd("kit", "claude", "clerk.template.md") if claude_only else rd("kit", "clerk", "clerk.template.md")

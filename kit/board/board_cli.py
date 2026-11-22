@@ -224,7 +224,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Local board CLI for agy")
     ap.add_argument("--url", default=None, help="Board server URL (default: from .kit/config.json)")
     ap.add_argument("--token", default=None, help="Auth token (default: $KIT_BOARD_TOKEN or .kit/board_data/token)")
-    ap.add_argument("--repo", default=None, help="Target attached repo id (sends X-Kit-Repo header)")
+    ap.add_argument("--repo", default=None, help="Target attached repo id (default: $KIT_BOARD_REPO; sends X-Kit-Repo header)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("get")
@@ -358,7 +358,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     base = (a.url or default_url()).rstrip("/")
     tok = a.token if a.token is not None else default_token()
-    base_hdrs = {"X-Kit-Repo": a.repo} if a.repo else {}
+    repo_id = (a.repo or os.environ.get("KIT_BOARD_REPO") or "").strip()
+    base_hdrs = {"X-Kit-Repo": repo_id} if repo_id else {}
     call = lambda m, p, body=None, headers=None, timeout=60: req(base, m, p, body=body, headers={**base_hdrs, **(headers or {})}, timeout=timeout, token=tok)
 
     if a.cmd == "changes":

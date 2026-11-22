@@ -234,8 +234,14 @@ SHIM_JS = r"""(function () {
   }
   if (typeof window !== "undefined") {
     try {
-      var savedRepo = localStorage.getItem("kit_active_repo") || "";
-      if (savedRepo) window.__KIT_ACTIVE_REPO__ = savedRepo;
+      var urlRepo = new URLSearchParams(location.search).get("repo") || "";
+      if (urlRepo) {
+        window.__KIT_ACTIVE_REPO__ = urlRepo;
+        localStorage.setItem("kit_active_repo", urlRepo);
+      } else {
+        var savedRepo = localStorage.getItem("kit_active_repo") || "";
+        if (savedRepo) window.__KIT_ACTIVE_REPO__ = savedRepo;
+      }
     } catch (e) {}
     function initRepoSwitcher() {
       rawApi("GET", "/_api/repos").then(function (info) {
@@ -4061,17 +4067,31 @@ SHIM_JS = r"""(function () {
     }, function () {});
   }
   function renderPostArtifacts(sheet, postId) {
-    var oldBox = document.getElementById("kit-post-artifacts");
-    if (oldBox) oldBox.remove();
-    if (!sheet || !postId || postId.charAt(0) === "_") return;
+    if (!sheet || !postId || postId.charAt(0) === "_") {
+      var oldBox = document.getElementById("kit-post-artifacts");
+      if (oldBox) oldBox.remove();
+      return;
+    }
     var bodyEl = sheet.querySelector("#p-body");
     if (!bodyEl) return;
+    var artKey = (window.__KIT_ACTIVE_REPO__ || "") + "|" + postId;
+    if (bodyEl.dataset.kitArtPost === artKey && (bodyEl.dataset.kitArtEmpty === "1" || document.getElementById("kit-post-artifacts"))) return;
+    bodyEl.dataset.kitArtPost = artKey;
+    bodyEl.dataset.kitArtEmpty = "0";
+    var staleBox = document.getElementById("kit-post-artifacts");
+    if (staleBox && staleBox.dataset.artKey !== artKey) staleBox.remove();
     api("GET", "/_api/posts/" + encodeURIComponent(postId) + "/artifacts").then(function (res) {
+      if (bodyEl.dataset.kitArtPost !== artKey) return;
       var list = (res && res.artifacts) || [];
-      if (!list.length) return;
       var exist = document.getElementById("kit-post-artifacts");
+      if (!list.length) {
+        bodyEl.dataset.kitArtEmpty = "1";
+        if (exist) exist.remove();
+        return;
+      }
       if (exist) exist.remove();
       var box = document.createElement("div"); box.id = "kit-post-artifacts";
+      box.dataset.artKey = artKey;
       box.style.cssText = "margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--sunk);display:flex;flex-direction:column;gap:6px;";
       var hdr = document.createElement("div"); hdr.style.cssText = "font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);";
       hdr.textContent = "Submitted Deliverables (" + list.length + ")";
@@ -4136,11 +4156,20 @@ SHIM_JS = r"""(function () {
   }
   function syncPostCollabControls(sheet, postId, barRow) {
     var oldWrap = document.getElementById("kit-collab-post-ctrls");
-    if (oldWrap) oldWrap.remove();
-    if (document.documentElement.dataset.collab !== "1" || !postId || postId.charAt(0) === "_" || !barRow) return;
+    if (document.documentElement.dataset.collab !== "1" || !postId || postId.charAt(0) === "_" || !barRow) {
+      if (oldWrap) oldWrap.remove();
+      return;
+    }
     var me = window.__KIT_USER__ || { id: "owner", role: "owner", collaborators: [] };
-    if (me.role === "viewer") return;
+    if (me.role === "viewer") {
+      if (oldWrap) oldWrap.remove();
+      return;
+    }
+    var cKey = (window.__KIT_ACTIVE_REPO__ || "") + "|" + postId + "|" + (me.collaborators || []).length;
+    if (oldWrap && oldWrap.dataset.collabKey === cKey && oldWrap.parentNode === barRow) return;
+    if (oldWrap) oldWrap.remove();
     var wrap = document.createElement("span"); wrap.id = "kit-collab-post-ctrls"; wrap.className = "kit-collab-only";
+    wrap.dataset.collabKey = cKey;
     wrap.style.cssText = "display:inline-flex;align-items:center;gap:4px;";
     var sel = document.createElement("select"); sel.className = "kit-assign-sel"; sel.title = "Assign post"; sel.setAttribute("aria-label", "Assign post");
     var opts = [["", "Unassigned"], ["owner", "@owner"]];
@@ -4301,11 +4330,15 @@ SHIM_JS = r"""(function () {
               nEl.textContent = u.name + " ";
               var rBadge = document.createElement("span"); rBadge.className = "badge"; rBadge.textContent = u.role;
               nEl.appendChild(rBadge);
+              if (u.repo) {
+                var bBadge = document.createElement("span"); bBadge.className = "badge"; bBadge.style.marginLeft = "4px"; bBadge.textContent = u.repo;
+                nEl.appendChild(bBadge);
+              }
               var idEl = document.createElement("div"); idEl.className = "note"; idEl.style.fontFamily = "var(--mono)"; idEl.style.fontSize = ".73rem";
               idEl.textContent = "@" + u.user_id;
               info.appendChild(nEl); info.appendChild(idEl);
 
-              var linkUrl = location.origin + "/?token=" + u.token;
+              var linkUrl = location.origin + "/?token=" + u.token + (u.repo ? ("&repo=" + encodeURIComponent(u.repo)) : "");
               var aiInviteUrl = location.origin + "/_invite/" + u.token + ".md";
               var bLnk = document.createElement("button"); bLnk.type = "button"; bLnk.className = "btn small kit-icon-btn";
               bLnk.title = "Copy browser invite link"; bLnk.setAttribute("aria-label", bLnk.title); bLnk.innerHTML = SVG_LNK;
@@ -4334,7 +4367,8 @@ SHIM_JS = r"""(function () {
           var nm = nmIn.value.trim();
           if (!nm) return;
           addB.disabled = true;
-          api("POST", "/_api/users", { name: nm, role: roleSel.value }).then(function (created) {
+          var activeRepo = (window.__KIT_ACTIVE_REPO__ && window.__KIT_ACTIVE_REPO__ !== "all") ? window.__KIT_ACTIVE_REPO__ : "";
+          api("POST", "/_api/users", { name: nm, role: roleSel.value, repo: activeRepo }).then(function (created) {
             addB.disabled = false; nmIn.value = "";
             if (created && created.link) copyText(created.link, "Created & copied link for " + created.name + " (" + created.role + ")");
             loadUsers();
@@ -4580,10 +4614,15 @@ class BoardStore:
             "  name TEXT NOT NULL,"
             "  role TEXT NOT NULL DEFAULT 'member',"
             "  token TEXT NOT NULL UNIQUE,"
+            "  repo TEXT NOT NULL DEFAULT '',"
             "  created_at TEXT NOT NULL,"
             "  revoked INTEGER NOT NULL DEFAULT 0"
             ")"
         )
+        try:
+            self.conn.execute("ALTER TABLE users ADD COLUMN repo TEXT NOT NULL DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS artifacts ("
             "  artifact_id TEXT PRIMARY KEY,"
@@ -4782,13 +4821,14 @@ class BoardStore:
             self.conn.commit()
             return cur.rowcount > 0
 
-    def create_user(self, name, role="member"):
+    def create_user(self, name, role="member", repo=""):
         nm = str(name or "").strip()[:48]
         if not nm:
             return None
         r = str(role or "member").strip().lower()
         if r not in ("viewer", "member", "owner"):
             r = "member"
+        rp = str(repo or "").strip()[:64]
         base = re.sub(r"[^a-z0-9_-]+", "-", nm.lower()).strip("-")[:24] or "user"
         if base in ("owner", "all", "system"):
             base = base + "-" + secrets.token_hex(2)
@@ -4799,18 +4839,18 @@ class BoardStore:
             if self.conn.execute("SELECT 1 FROM users WHERE user_id=?", (uid,)).fetchone():
                 uid = base[:19] + "-" + secrets.token_hex(2)
             self.conn.execute(
-                "INSERT INTO users(user_id, name, role, token, created_at, revoked) VALUES(?,?,?,?,?,0)",
-                (uid, nm, r, tok, now),
+                "INSERT INTO users(user_id, name, role, token, repo, created_at, revoked) VALUES(?,?,?,?,?,?,0)",
+                (uid, nm, r, tok, rp, now),
             )
             self.conn.commit()
-        return {"user_id": uid, "name": nm, "role": r, "token": tok, "created_at": now}
+        return {"user_id": uid, "name": nm, "role": r, "token": tok, "repo": rp, "created_at": now}
 
     def list_users(self):
         with self.lock:
             rows = self.conn.execute(
-                "SELECT user_id, name, role, token, created_at FROM users WHERE revoked=0 ORDER BY created_at DESC"
+                "SELECT user_id, name, role, token, repo, created_at FROM users WHERE revoked=0 ORDER BY created_at DESC"
             ).fetchall()
-        return [{"user_id": r[0], "name": r[1], "role": r[2], "token": r[3], "created_at": r[4]} for r in rows]
+        return [{"user_id": r[0], "name": r[1], "role": r[2], "token": r[3], "repo": r[4] or "", "created_at": r[5]} for r in rows]
 
     def revoke_user(self, user_id):
         uid = str(user_id or "")
@@ -4834,10 +4874,10 @@ class BoardStore:
         if not t:
             return None
         with self.lock:
-            rows = self.conn.execute("SELECT user_id, name, role, token FROM users WHERE revoked=0").fetchall()
+            rows = self.conn.execute("SELECT user_id, name, role, token, repo FROM users WHERE revoked=0").fetchall()
         for r in rows:
             if hmac.compare_digest(str(r[3]), t):
-                return {"id": r[0], "name": r[1], "role": r[2], "token": r[3]}
+                return {"id": r[0], "name": r[1], "role": r[2], "token": r[3], "repo": r[4] or ""}
         return None
 
     def create_share(self, post_id, ttl_hours=24.0, allow_write=True, files=None, max_submissions=5, repo=""):
@@ -6058,7 +6098,17 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
+        def _scoped_user_repo(self):
+            u = getattr(self, "_auth_user", None)
+            if u and u.get("role") != "owner":
+                ur = str(u.get("repo") or "").strip()
+                if ur and ur in stores_map:
+                    return ur
+            return ""
+
         def _is_all_repos(self, parsed):
+            if self._scoped_user_repo():
+                return False
             qs = urllib.parse.parse_qs(parsed.query)
             rid = (self.headers.get("X-Kit-Repo") or (qs.get("repo") or [""])[0] or "").strip().lower()
             return rid == "all" and len(stores_map) > 1
@@ -6073,6 +6123,9 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             return (stores_map.get(rid) or store), rid
 
         def _repo_id(self, parsed):
+            scoped = self._scoped_user_repo()
+            if scoped:
+                return scoped
             qs = urllib.parse.parse_qs(parsed.query)
             rid = (self.headers.get("X-Kit-Repo") or (qs.get("repo") or [""])[0] or "").strip()
             return rid if rid in stores_map else primary_repo_id
@@ -6358,17 +6411,39 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 origin = ("%s://%s" % (proto, host_hdr)) if host_hdr else ""
                 uid = iu["id"]
                 role = iu["role"]
+                req_repo = str(iu.get("repo") or (qs.get("repo") or [""])[0] or "").strip()
+                target_repo = req_repo if (req_repo and req_repo in stores_map) else ""
+                target_name = project_name
+                if target_repo:
+                    for rm in repo_meta:
+                        if rm.get("id") == target_repo:
+                            target_name = rm.get("name") or target_repo
+                            break
+                is_non_primary = bool(target_repo and target_repo != primary_repo_id)
                 orch_id = "_orchestrator_" + uid
+                env_lines = [
+                    'export KIT_BOARD_URL="%s"' % origin,
+                    'export KIT_BOARD_TOKEN="%s"' % itok,
+                ]
+                if is_non_primary:
+                    env_lines.append('export KIT_BOARD_REPO="%s"' % target_repo)
+                browser_link = "%s/?token=%s%s" % (origin, itok, ("&repo=" + urllib.parse.quote(target_repo)) if is_non_primary else "")
                 brief = "\n".join([
-                    "# Board Collaborator AI Bootstrap — %s (@%s)" % (project_name, uid),
+                    "# Board Collaborator AI Bootstrap — %s (@%s)" % (target_name, uid),
                     "",
-                    "You are connecting as collaborator **`@%s`** (role: **`%s`**) on **%s**'s live board.",
+                    "You are connecting as collaborator **`@%s`** (role: **`%s`**) on **%s**'s live board." % (uid, role, target_name),
                     "No GitHub repository access is required — everything runs over HTTPS using your scoped token.",
+                    "",
+                    "## 0. In Claude Code Web (a claude.ai cloud session): the token as an environment secret first",
+                    "Do not paste the token into commands or files. Before any call to the board:",
+                    "1. Call `request_credential` with `host: \"%s\"`, `header_name: \"X-Kit-Token\"`, `display_name: \"%s board (@%s)\"`, and a reason naming this board. The owner pastes the token below into the secure form once; the network proxy then adds the header to every request to this host, from this session and the environment's later ones (it also opens the host)." % (urllib.parse.urlparse(origin).hostname or origin, target_name, uid),
+                    "2. Then use the steps below with `export KIT_BOARD_TOKEN=\"proxy\"` (a placeholder the proxy replaces), never the real value.",
+                    "3. So the session can act without asking each time, the owner adds a permission rule to the project's `.claude/settings.json` (`permissions.allow`): `Bash(curl -sS * %s/_api/*)` and `Bash(python3 /tmp/board_cli.py *)`, and writes in its memory that posting to this board is approved." % origin,
+                    "4. On 401/403 (token revoked or expired): stop and say so on your own board; never look for another token.",
                     "",
                     "## 1. Environment",
                     "```bash",
-                    'export KIT_BOARD_URL="%s"' % origin,
-                    'export KIT_BOARD_TOKEN="%s"' % itok,
+                ] + env_lines + [
                     "```",
                     "",
                     "## 2. Fetch the Zero-Dependency CLI (1 command)",
@@ -6384,7 +6459,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     "- **Permissions (`%s`):** %s" % (role, "read-only" if role == "viewer" else ("read + post/comment/upload blobs" if role == "member" else "full admin")),
                     "",
                     "## 4. Browser / Phone Link",
-                    "Open `%s/?token=%s` on desktop or phone to view the board as `@%s`." % (origin, itok, uid),
+                    "Open `%s` on desktop or phone to view the board as `@%s`." % (browser_link, uid),
                 ])
                 raw = brief.encode("utf-8")
                 self.send_response(200)
@@ -6676,6 +6751,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 return
 
             if path == "/_api/repos":
+                scoped = self._scoped_user_repo()
+                if scoped:
+                    only = [dict(rm, primary=True) for rm in repo_meta if rm.get("id") == scoped]
+                    self._send_json(200, {"primary": scoped, "repos": only or [{"id": scoped, "name": scoped, "primary": True}]})
+                    return
                 self._send_json(200, {"primary": primary_repo_id, "repos": repo_meta})
                 return
 
@@ -7238,15 +7318,25 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 if u.get("role") != "owner":
                     self._send_json(403, {"error": "forbidden", "required_role": "owner"})
                     return
-                created = store.create_user(body.get("name"), role=body.get("role", "member"))
+                req_repo = str(body.get("repo") or "").strip()
+                if not req_repo and not self._is_all_repos(parsed):
+                    cand = self._repo_id(parsed)
+                    if cand != primary_repo_id:
+                        req_repo = cand
+                if req_repo and (req_repo == "all" or req_repo not in stores_map):
+                    req_repo = ""
+                created = store.create_user(body.get("name"), role=body.get("role", "member"), repo=req_repo)
                 if not created:
                     self._send_json(400, {"error": "name_required"})
                     return
                 proto = (self.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip()
                 host_hdr = self.headers.get("Host") or ""
                 origin = ("%s://%s" % (proto, host_hdr)) if host_hdr else ""
-                created["link"] = origin + "/?token=" + created["token"]
-                created["ai_env"] = 'export KIT_BOARD_URL="%s" KIT_BOARD_TOKEN="%s"' % (origin, created["token"])
+                is_np = bool(req_repo and req_repo != primary_repo_id)
+                created["link"] = origin + "/?token=" + created["token"] + (("&repo=" + urllib.parse.quote(req_repo)) if is_np else "")
+                created["ai_env"] = 'export KIT_BOARD_URL="%s" KIT_BOARD_TOKEN="%s"%s' % (
+                    origin, created["token"], (' KIT_BOARD_REPO="%s"' % req_repo) if is_np else ""
+                )
                 self._send_json(200, created)
                 return
 

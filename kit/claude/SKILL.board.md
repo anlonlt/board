@@ -1,0 +1,14 @@
+---
+name: board
+description: How a Claude Code Web session reports on this project's board (a claude.ai Artifact) and answers the owner there: the post at turn 1, columns, comments, typing dots, deliverables, the git copy read through kit. Use at the start of any session that works on a task, when a "Board comment from the owner" arrives, or when asked about the board, the clerk or kit.
+---
+
+# board (from the kit, anlonlt/board — Claude Code Web)
+
+The board is a claude.ai Artifact: its url is `board_url` in `.kit/config.json`. Read `.kit/BOARD.md` before your first board write; the orchestrator also reads `.kit/ORCHESTRATOR.md`.
+
+- Every write goes through `ArtifactData` (`ToolSearch` `select:ArtifactData` once): posts in `posts`, comments in `comments` (`reply_to` = the doc_id of the comment you answer), typing dots in `typing/<post_id>`.
+- Files you deliver for a post (scripts, docs, HTML): `ArtifactData` `set` in `kit_artifacts`, `{post_id, path, base_path, summary, content, by_user, agent_meta: {harness: "claude-code-web", model, effort}, created_at}`; the page lists them under the post with a diff against `base_path`.
+- Never republish the page from a working session; the installing session does that with `build_artifact_page.py`.
+- Lookups without dumping the board (`.kit/ORCHESTRATOR.md` § 3): `python3 -I .kit/kit.py post <id>`, `open`, `since <ISO>`, `session <post>`, after a sync.
+- The Repo Docs reader and inline git diffs read a mirror: after changing docs, run `.kit/kit_artifact_sync.py docs` (and `diffs`) and send the batches it prints.
