@@ -488,9 +488,21 @@ def merge_claude_settings(t, dry, log, board=True, spec=None):
                 fh.write("\n")
 
 
+def under_tempdir(t):
+    """True when t is inside the system temp folder (tempfile.gettempdir(), /tmp, $TMPDIR)."""
+    import tempfile
+    real = os.path.realpath(t)
+    roots = {os.path.realpath(r) for r in (tempfile.gettempdir(), "/tmp", os.environ.get("TMPDIR") or "/tmp")}
+    return any(real == r or real.startswith(r.rstrip(os.sep) + os.sep) for r in roots)
+
+
 def install_cmd(t, cmd_name, dry, log, extra_args=""):
     """Install a one-word launcher in ~/.local/bin/<cmd_name> (override dir with $KIT_BIN_DIR)."""
     if not cmd_name or "/" in cmd_name or " " in cmd_name:
+        return
+    if not os.environ.get("KIT_BIN_DIR") and under_tempdir(t):
+        # A trial install in /tmp would point the real `board` at a folder that disappears.
+        log.append("SKIPPED command `%s`: %s is a temp folder (set KIT_BIN_DIR to install its launcher)" % (cmd_name, t))
         return
     bin_dir = os.environ.get("KIT_BIN_DIR") or os.path.expanduser("~/.local/bin")
     dst = os.path.join(bin_dir, cmd_name)
