@@ -6,7 +6,6 @@
    "also": [],
    "children": [
     "CL1",
-    "CL10",
     "CL11",
     "CL13",
     "CL14",
@@ -298,17 +297,6 @@
    "also": [],
    "children": [],
    "parent": "P-cli",
-   "part": "CL10",
-   "post": "cl10-see-the-new-ui-work-then-stop-tests-touc",
-   "prompt": "",
-   "session": "board-cl10",
-   "state": "running",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [],
-   "parent": "P-cli",
    "part": "CL11",
    "post": "cl11-one-board-token-per-machine-kept-across",
    "prompt": "",
@@ -423,6 +411,17 @@
    "post": "cl20-resume-reads-attached-boards",
    "prompt": "",
    "session": "session_01AE1HGipTLNXUp5F9rr6qHP",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "CL9",
+   "part": "CL10",
+   "post": "cl10-see-the-new-ui-work-then-stop-tests-touc",
+   "prompt": "",
+   "session": "session_01AE1HGjnw5W8z3Gs4aJi6fe",
    "state": "idle",
    "store": []
   }
