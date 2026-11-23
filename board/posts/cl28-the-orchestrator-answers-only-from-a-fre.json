@@ -1,6 +1,6 @@
 {
- "body": "Built: kit.py brief, kit_brief_guard.py hook, Trains card done/held/closed. 14 of 16 new tests red on main, 16 of 16 green. Full suite running; then merge main, push, post the result.",
+ "body": "All four parts built and pushed on branch cl28-brief (brief, reply guard, Trains card, clerk, train adoption). Full suite running; then the result here and a merge onto main.",
  "session_id": "82a1406c-69a0-5fb0-aacc-9c6cbe2ed5a5",
  "status": "in progress",
- "updated_at": "2026-11-23T07:47:23Z"
+ "updated_at": "2026-11-23T07:59:39Z"
 }
