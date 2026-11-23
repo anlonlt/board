@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T02:34:58Z",
+ "created_at": "2026-11-23T03:42:32Z",
  "rows": [
   {
    "also": [],
@@ -16,7 +16,8 @@
     "CL19",
     "CL20",
     "CL21",
-    "CL12"
+    "CL12",
+    "CL23"
    ],
    "parent": "",
    "part": "P-cli",
@@ -438,8 +439,19 @@
    "session": "session_01AE1HGhgv7nxdCEvuM9YNsN",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL23",
+   "post": "cl23-first-item-freeze",
+   "prompt": "",
+   "session": "session_01AE1HGhgv7nxdCEvuM9YNsN",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T02:34:58Z"
+ "updated_at": "2026-11-23T03:42:32Z"
 }
