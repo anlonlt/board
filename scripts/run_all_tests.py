@@ -28,7 +28,7 @@ SUITES = [
 
 # Variables a kit session exports (its role, a board token or url). Inherited, they make the
 # suites depend on who runs them (KIT_ROLE=clerk fails the hook tests), so every suite runs without them.
-SESSION_VARS = ("KIT_ROLE", "KIT_BOARD_TOKEN", "KIT_BOARD_URL", "KIT_BOARD_REPO")
+SESSION_VARS = ("KIT_ROLE", "KIT_BOARD_TOKEN", "KIT_BOARD_URL", "KIT_BOARD_REPO", "KIT_BREAKS_COPY", "CLAUDE_PROJECT_DIR")
 
 
 def bin_snapshot(path):

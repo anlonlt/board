@@ -1819,6 +1819,10 @@ def check_done(p, root=ROOT, body_max=1500):
                     "the rest under ## headings (they fold; see `kit.py sections`)" % len(body))
     if any(re.search(r"\d", b) for b in bars if not b.lower().startswith("none")) and not str(p.get("check") or "").strip():
         warn.append("check: missing (the one command that reproduces the main number; the orchestrator and the review rerun it)")
+    if str(p.get("check") or "").strip() and not str(p.get("breaks") or "").strip():
+        err.append("breaks: missing (how to make `check` fail: a command that plants a fault or feeds a bad input, e.g. "
+                   "`sed -i 's/a + b/a - b/' calc.py`, or `manual: <what the review does>` for a browser step); "
+                   "a check that cannot fail proves nothing")
     if not str(p.get("handoff") or "").strip():
         warn.append("handoff: missing (what the next step needs from yours)")
     return err, warn
@@ -1840,12 +1844,123 @@ def sections(db_path=None):
         "Put what he opens in the lead or in those sections; never put what he must know under a heading he folds."])
 
 
-def done(pid, db_path=None):
+MANUAL = "manual:"
+
+
+def _as_command(v):
+    """A `check` or `breaks` value as a shell command, or None when it is `manual: ...` (the review performs it)."""
+    s = str(v or "").strip()
+    if len(s) >= 2 and s[0] == s[-1] == "`":
+        s = s.strip("`").strip()
+    if not s or s.lower().startswith(MANUAL):
+        return None
+    return s
+
+
+def _git(root, *args, **kw):
+    return subprocess.run(["git", "-C", root] + list(args), capture_output=True, **kw)
+
+
+@contextlib.contextmanager
+def throwaway_copy(root=ROOT):
+    """A copy of the work as it stands (commits, uncommitted edits and new files): a detached git worktree when root
+    is a git checkout with a commit, else a plain directory copy. Removed afterwards; root itself is never touched."""
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="kit-breaks-")
+    dst = os.path.join(tmp, "work")
+    top = _git(root, "rev-parse", "--show-toplevel", text=True)
+    use_git = (top.returncode == 0 and os.path.realpath(top.stdout.strip()) == os.path.realpath(root)
+               and _git(root, "rev-parse", "--verify", "-q", "HEAD").returncode == 0)
+    try:
+        if use_git:
+            r = _git(root, "worktree", "add", "--detach", "-q", dst, "HEAD", text=True)
+            if r.returncode != 0:
+                raise RuntimeError("git worktree add failed: " + (r.stderr or "").strip()[-300:])
+            diff = _git(root, "diff", "HEAD", "--binary").stdout
+            if diff.strip():
+                r = subprocess.run(["git", "-C", dst, "apply", "--whitespace=nowarn", "-"], input=diff, capture_output=True)
+                if r.returncode != 0:
+                    raise RuntimeError("could not carry uncommitted edits into the copy: "
+                                       + r.stderr.decode("utf-8", "replace").strip()[-300:])
+            new = _git(root, "ls-files", "--others", "--exclude-standard", "-z").stdout.decode("utf-8", "replace")
+            for rel in filter(None, new.split("\0")):
+                src, out = os.path.join(root, rel), os.path.join(dst, rel)
+                if os.path.isfile(src) or os.path.islink(src):
+                    os.makedirs(os.path.dirname(out), exist_ok=True)
+                    shutil.copy2(src, out, follow_symlinks=False)
+        else:
+            shutil.copytree(root, dst, symlinks=True, ignore=shutil.ignore_patterns(".git"))
+        yield dst
+    finally:
+        if use_git:
+            _git(root, "worktree", "remove", "--force", dst)
+            _git(root, "worktree", "prune")
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _run_in(cmd, cwd, timeout):
+    """(exit code, last lines of its output) of a shell command run in cwd; a timeout counts as exit 124."""
+    env = dict(os.environ, KIT_BREAKS_COPY="1")
+    try:
+        r = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env,
+                           stdin=subprocess.DEVNULL)
+        rc, out = r.returncode, (r.stdout or "") + (r.stderr or "")
+    except subprocess.TimeoutExpired:
+        rc, out = 124, "timed out after %d s" % timeout
+    tail = " / ".join([l.strip() for l in out.splitlines() if l.strip()][-3:])
+    return rc, tail[-300:]
+
+
+def prove_check(p, root=ROOT, timeout=900):
+    """(errors, notes) of running a post's `check` and `breaks` in a throwaway copy of the work: `check` must pass,
+    then, after `breaks` is applied, it must fail. A `manual: ...` check or breaks is left to the review."""
+    err, notes = [], []
+    raw_check, raw_breaks = str(p.get("check") or "").strip(), str(p.get("breaks") or "").strip()
+    if not raw_check or not raw_breaks:
+        return err, notes  # check_done already says what is missing
+    check, breaks = _as_command(raw_check), _as_command(raw_breaks)
+    if check is None:
+        notes.append("check is manual: the review performs it, and the breaks, by hand")
+        return err, notes
+    if os.environ.get("KIT_BREAKS_COPY"):
+        notes.append("check not run: already inside a breaks copy")
+        return err, notes
+    try:
+        with throwaway_copy(root) as work:
+            rc, tail = _run_in(check, work, timeout)
+            if rc != 0:
+                err.append("check: fails before breaks (exit %d) in a copy of the work: %s" % (rc, tail or "no output"))
+                return err, notes
+            if breaks is None:
+                notes.append("check passes (exit 0); breaks is manual: the review performs it and sees check fail")
+                return err, notes
+            rc_b, tail_b = _run_in(breaks, work, timeout)
+            if rc_b != 0:
+                err.append("breaks: did not apply (exit %d): %s. Write it as a command that plants the fault, "
+                           "or as `manual: <what the review does>`" % (rc_b, tail_b or "no output"))
+                return err, notes
+            rc2, _ = _run_in(check, work, timeout)
+            if rc2 == 0:
+                err.append("check: still passes after breaks: a check that cannot fail is refused (make check test what "
+                           "breaks plants, or make breaks plant a fault that check sees)")
+            else:
+                notes.append("check passes (exit 0) and fails after breaks (exit %d): it can fail" % rc2)
+    except (OSError, RuntimeError) as e:
+        err.append("breaks: no throwaway copy of the work: %s" % e)
+    return err, notes
+
+
+def done(pid, db_path=None, root=None):
     p = _get_post(pid, db_path=db_path)
     if not p:
         return 1, "NOT READY: no post %s on the board" % pid
     k = _kit_config().get("kit") or {}
-    err, warn = check_done(p, body_max=int(k.get("post_body_max", 1500)))
+    root = root or ROOT
+    err, warn = check_done(p, root=root, body_max=int(k.get("post_body_max", 1500)))
+    if not err:
+        e2, notes = prove_check(p, root=root, timeout=int(k.get("check_timeout_s", 900)))
+        err += e2
+        warn += notes
     lines = (["NOT READY: %s" % pid] if err else ["OK: %s follows the post format" % pid])
     lines += ["  fix: " + e for e in err] + ["  note: " + w for w in warn]
     if not err:
@@ -2754,6 +2869,7 @@ def train_context(m, target, zoom=None, db_path=None, as_json=False):
             "artifacts": artifacts if isinstance(artifacts, list) else [str(artifacts)],
             "issues": issues if isinstance(issues, list) else [str(issues)],
             "check": str(p.get("check") or "").strip(),
+            "breaks": str(p.get("breaks") or "").strip(),
             "handoff": str(p.get("handoff") or "").strip(),
             "comments_count": len(by_post.get(pid, [])),
             "is_zoom": pid == zoom_pid,
@@ -2811,6 +2927,8 @@ def train_context(m, target, zoom=None, db_path=None, as_json=False):
             meta_bits.append("check: `%s`" % s["check"])
         if meta_bits:
             line += "\n  - " + " | ".join(meta_bits)
+        if s["breaks"]:
+            line += "\n  - *Breaks:* %s" % s["breaks"]
         if s["handoff"]:
             line += "\n  - *Handoff:* %s" % s["handoff"]
 

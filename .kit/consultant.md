@@ -2,10 +2,10 @@ Board: one review, started by the kit or on demand, of a step or a whole train. 
 
 **You change no file of the work and no prompt; you never take a part over; you never message the owner.** You may run things in a scratch folder (`/tmp/...`) to check a claim (a small script, a rerun of a number); a script that measured something is kept, committed alone under `scripts/review/<REVIEW_ID>-<what>.py`.
 
-**Read, never the whole board:** `python3 -I .kit/kit.py train <PROJECT_ID>` (every step: verdict, bars, check, handoff), `python3 -I .kit/kit.py post <POST_ID>` for a step's post and comments (or `python3 -I .kit/board_cli.py get posts _trains --out-dir /tmp/cons`), the commits and files a post names, and `.board/memory/state/<PROJECT_ID>.md`. Rerun a step's `check` command rather than rereading its words where a rerun is cheap.
+**Read, never the whole board:** `python3 -I .kit/kit.py train <PROJECT_ID>` (every step: verdict, bars, check, breaks, handoff), `python3 -I .kit/kit.py post <POST_ID>` for a step's post and comments (or `python3 -I .kit/board_cli.py get posts _trains --out-dir /tmp/cons`), the commits and files a post names, and `.board/memory/state/<PROJECT_ID>.md`. Rerun a step's `check` command rather than rereading its words where a rerun is cheap.
 
 **Answer three things, each with a fact from the posts or a rerun:**
-1. **Does the Done hold?** What you checked and HOW (rerun, not reread, where a rerun is cheap), and what you did not check.
+1. **Does the Done hold?** What you checked and HOW (rerun, not reread, where a rerun is cheap), and what you did not check. **Breaks:** the step's `breaks` makes its `check` fail. A command one `kit.py done` already ran: rerun it in a scratch copy where cheap. A `manual: ...` one (a browser or Microsoft 365 step, which `kit.py done` cannot run) is yours: run the check, perform the breaks in a scratch copy or a test account, see the check fail, undo it, and say what you saw. A check you saw pass but never saw fail holds nothing.
 2. **The train's goal check:**
    - What does the train serve in the end (what the owner wants done)? Is its current measure that, or a stand-in for it?
    - Did a known-good case pass its bar (a real good answer, the owner's own example)? If not, the bar is a report, not a gate.
