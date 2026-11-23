@@ -2233,6 +2233,14 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 if ranks.get(u.get("role", "viewer"), 1) < ranks.get(min_role, 1):
                     self._send_json(403, {"error": "forbidden", "required_role": min_role})
                     return None
+                # CL32: a read or write for a board this server does not hold is refused; it used to fall back to the
+                # primary board, so `--repo board` in Harmonize's cloud clone read Harmonize's own posts
+                rq = (self.headers.get("X-Kit-Repo") or (urllib.parse.parse_qs(parsed.query).get("repo") or [""])[0] or "").strip()
+                if rq and parsed.path.startswith("/_api/") and rq not in stores_map and rq.lower() != "all":
+                    self._send_json(404, {"error": "unknown_repo", "repo": rq, "boards": sorted(stores_map),
+                                          "hint": "this board server holds no board %r: put its clone next to this repo "
+                                                  "(or run `kit.py artifact load` after a pull of repos/%s), then restart it" % (rq, rq)})
+                    return None
                 return set_cookie
             accept = (self.headers.get("Accept") or "").lower()
             if (not embed_mode) and parsed.path in ("/", "/index.html") and "text/html" in accept:
@@ -3240,6 +3248,25 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 self._send_json(200, res_a)
                 return
 
+            if path == "/_api/attach":
+                # CL32: `kit.py artifact load` attaches a board this container has no clone of (its posts come from the
+                # Artifact's repos/<id>/): a store under .kit/attached/<id>, never pushed anywhere
+                u = getattr(self, "_auth_user", None) or {"role": "owner"}
+                if u.get("role") != "owner":
+                    self._send_json(403, {"error": "forbidden", "required_role": "owner"})
+                    return
+                aid = re.sub(r"[^a-z0-9_-]+", "-", str(body.get("id") or "").lower()).strip("-")
+                if not aid or aid == "all" or aid == primary_repo_id:
+                    self._send_json(400, {"error": "bad_repo_id", "repo": aid})
+                    return
+                if aid not in stores_map:
+                    adir = attached_store_dir(root_dir, aid)
+                    stores_map[aid] = BoardStore(os.path.join(adir, ".kit", "board_data"))
+                    roots_map[aid] = adir
+                    repo_meta.append({"id": aid, "name": str(body.get("name") or aid), "primary": False, "github_slugs": []})
+                self._send_json(200, {"ok": True, "repo": aid, "boards": sorted(stores_map)})
+                return
+
             if path == "/_api/users":
                 u = getattr(self, "_auth_user", None) or {"role": "owner"}
                 if u.get("role") != "owner":
@@ -3623,6 +3650,40 @@ def export_markdown(store, post_id=None):
     return ("\n\n---\n\n".join(blocks) + "\n") if blocks else "# Board export\n\n(No posts yet.)\n", fname
 
 
+def attached_store_dir(root_dir, aid):
+    """Where an attached board with no clone in this container keeps its posts (CL32): what `kit.py artifact load`
+    puts there from the Artifact's repos/<id>/, so `kit.py launch` finds the board's steps."""
+    return os.path.join(os.path.abspath(root_dir), ".kit", "attached", aid)
+
+
+def resolve_attached(root_dir, item):
+    """(id, path or None, why) of one portfolio entry, in any container (CL32). The entry's path names a folder on
+    the computer it was written on (Harmonize's names /home/anon/board); a cloud clone has none, and the board then
+    attached nothing, silently. In order: the path when it exists; a clone next to this repo named after its github
+    repo, its name or its id; the store `kit.py artifact load` made for it (.kit/attached/<id>). Else None and why."""
+    if not isinstance(item, dict):
+        return "", None, "not an entry"
+    gh = str(item.get("github") or "")
+    gh = (gh[len("github:"):] if gh.startswith("github:") else gh).strip("/")
+    raw = str(item.get("path") or "")
+    aname = str(item.get("name") or (gh.split("/")[-1] if gh else "") or os.path.basename(os.path.abspath(raw)) if (item.get("name") or gh or raw) else "")
+    aid = re.sub(r"[^a-z0-9_-]+", "-", aname.lower()).strip("-")
+    if not aid:
+        return "", None, "no name, github or path"
+    up = os.path.dirname(os.path.abspath(root_dir))
+    cands = [raw] if raw else []
+    cands += [os.path.join(up, n) for n in (gh.split("/")[-1] if gh else "", aname, aid) if n]
+    for c in cands:
+        c = os.path.abspath(os.path.expanduser(c))
+        if os.path.isdir(c) and c != os.path.abspath(root_dir) and (os.path.isdir(os.path.join(c, ".git")) or os.path.isdir(os.path.join(c, ".kit"))):
+            return aid, c, ""
+    made = attached_store_dir(root_dir, aid)
+    if os.path.isdir(os.path.join(made, ".kit", "board_data")):
+        return aid, made, ""
+    return aid, None, ("no folder %s here and no clone next to this repo (%s); clone %s next to it, or pull the Artifact's "
+                       "repos/%s and run `kit.py artifact load`" % (raw or "(none named)", up, gh or aid, aid))
+
+
 def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None, embed_mode=False, preview=False, default_watcher=None, auto_sync_interval=0.0, auto_sync_push=False, attach=None):
     if host.strip().lower() not in LOOPBACK_HOSTS and not token and not preview:
         raise ValueError("refusing to bind to non-loopback host %r without --token / KIT_BOARD_TOKEN" % host)
@@ -3640,12 +3701,16 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
         cfg_data = json.load(open(cfg_path, encoding="utf-8"))
     except (OSError, ValueError):
         cfg_data = {}
+    unresolved = {}
     for item in (cfg_data.get("portfolio") or []):
-        if isinstance(item, dict) and item.get("path"):
-            aname = str(item.get("name") or os.path.basename(os.path.abspath(item["path"])))
-            aid = re.sub(r"[^a-z0-9_-]+", "-", aname.lower()).strip("-")
-            if aid and aid not in attach_specs:
-                attach_specs[aid] = item["path"]
+        aid, apath, why = resolve_attached(root_dir, item)
+        if aid and aid not in attach_specs:
+            if apath:
+                attach_specs[aid] = apath
+            else:
+                unresolved[aid] = why
+    for aid, why in unresolved.items():
+        print("board_server: attached board %r NOT attached: %s" % (aid, why), file=sys.stderr, flush=True)
     for aid, apath in attach_specs.items():
         ap_abs = os.path.abspath(apath)
         if os.path.isdir(ap_abs):
@@ -3658,7 +3723,9 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
                 except Exception:
                     pass
             if auto_sync_interval and float(auto_sync_interval) > 0:
-                ast.enable_auto_sync(ap_abs, interval_sec=float(auto_sync_interval), push=auto_sync_push)
+                # CL32: never push another repo's board-mirror from here: this clone does not own that board (an
+                # orchestrator's Harmonize clone pushed seeded posts to anlonlt/board's board-mirror on 11-23 22:04)
+                ast.enable_auto_sync(ap_abs, interval_sec=float(auto_sync_interval), push=False)
             aname = aid
             try:
                 aname = json.load(open(os.path.join(ap_abs, ".kit", "config.json"), encoding="utf-8")).get("project") or aid

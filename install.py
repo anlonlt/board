@@ -983,6 +983,7 @@ def main(argv=None):
         ins.put(".claude/skills/memory/SKILL.md", rd("kit", "skills", "memory", "SKILL.md"))
     if parts["board"]:
         ins.put(".kit/kit.py", rd("scripts", "kit.py"))
+        ins.put(".kit/lessons.md", rd("kit", "lessons.md"))     # CL32: the kit's lessons, tagged with their roles
         ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))   # also the Artifact mode's local copy
         ins.put(".kit/shim.js", rd("kit", "board", "shim.js"))
         ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
