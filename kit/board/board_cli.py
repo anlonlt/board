@@ -41,7 +41,10 @@ def default_url():
         return os.environ["KIT_BOARD_URL"].rstrip("/")
     cfg_path = os.path.join(ROOT, ".kit", "config.json")
     try:
-        u = json.load(open(cfg_path, encoding="utf-8")).get("board_url") or ""
+        c = json.load(open(cfg_path, encoding="utf-8"))
+        u = c.get("board_url") or ""
+        if "claude.ai/" in u:   # an Artifact board: the scripts use its local copy (`kit.py artifact pull|push`)
+            return "http://127.0.0.1:%d" % int(os.environ.get("KIT_BOARD_PORT") or (c.get("kit") or {}).get("board_port") or 8765)
         if u.startswith("http://") or u.startswith("https://"):
             return u.rstrip("/")
     except (OSError, ValueError):

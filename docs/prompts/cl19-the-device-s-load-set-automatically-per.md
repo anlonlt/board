@@ -1,0 +1,27 @@
+Board, part CL19: The device's load set automatically per task, learned from what tasks took here. Train `cli`, after `cl15-step-0-measures-each-device-never-more-s`. Your step's post: `cl19-the-device-s-load-set-automatically-per` (it exists already).
+
+## The task
+Goal: the device's load is set automatically, per task, from what tasks really took on THIS device, so the owner never again finds "a rhythm that works for my RAM" by trial and crash. CL15 caps SESSIONS (~450 MB each); the work inside sessions is what got killed:
+- harmonize .story/state/songs.md: "Heavy jobs one at a time: two imports were killed for memory (exit 137) beside the oracles."
+- harmonize .story/lessons/2026-11-10-a-parallel-run-died-of-memory-unseen.md: two chord_train.py runs side by side, one OOM-killed (6.3 GB beside 3-4 GB), unseen for 45 min.
+- The billboard / downtify fetch sessions on this 2.7 GB Chromebook took several tries before their pace held.
+
+Do (build on .kit/device.py, CL15):
+- Measure: a part's heavy commands run through a thin wrapper (`python3 -I .kit/device.py run --kind <kind> -- <cmd>`) that records peak RSS of the process tree, duration and exit code (137 / dmesg "Out of memory" = an OOM) per task kind (e.g. `fetch`, `import`, `train`, `tests`, `build`) in the machine-local store ~/.config/board-kit/device.json (never the repo). A kind not given is inferred from the command (yt-dlp, pip, pytest, chord_train.py...).
+- Learn: per kind, the footprint is the high percentile of measured peaks (a default until measured); an OOM raises it and is logged as a lesson line for that kind. No hand tuning.
+- Fit: before a heavy command starts, the wrapper waits (queues) until its learned footprint fits in MemAvailable minus headroom, given what already runs; so heavy jobs serialize by themselves on a small device and run in parallel on a big one. Part launches (CL15's gate) count the learned footprint of the step's expected kinds, not only 450 MB per session.
+- Tell: `python3 -I .kit/device.py` shows per kind the footprint, how many fit at once here, and the last OOM; the welcome and resume say "here: fetches one at a time, tests 2 at a time" in plain words; the part prompt (.kit/claude-cli/part.md) tells parts to run heavy commands through the wrapper.
+- Device-agnostic as CL15: Linux /proc and cgroup limits (a container's memory.max beats MemTotal), macOS, Windows; a cloud session measures its own container, with no session cap but the same per-kind fit inside it.
+
+Bars: tests that fail when (a) two jobs whose footprints do not fit start together, (b) an OOM does not raise the footprint, (c) the cgroup limit is ignored; a real run on this Chromebook of two heavy jobs that serializes them. Mirror .kit/ changes into kit/ and update .kit/manifest.json.
+Holds: never kill a running job to make room; the wrapper must not slow a light command noticeably (< 50 ms overhead).
+
+## What this step answers (the owner's words, or a review's)
+(none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## How you work (the same for every part; written by the kit, not the orchestrator)
+1. **Context, not a summary:** `python3 -I .kit/kit.py train cli --zoom CL19` shows the train so far: what each earlier step found, its `check` and `handoff`. Read the owner's words above yourself (never trust a paraphrase of them, this prompt's included); a number from an earlier step is rechecked with its `check` command before you build on it.
+2. **Turn 1:** `python3 -I .kit/board_cli.py update posts cl19-the-device-s-load-set-automatically-per --data '{"session_id":"board-cl19","status":"in progress","body":"<one line: what you are doing first>"}'`. Keep your own working checklist with TaskCreate/TaskUpdate if it helps you; it stays yours.
+3. **Your result is the post, in the kit's format** (`.kit/BOARD.md` § The post format): `verdict` (one plain sentence answering the task), `bars` (each number with its denominator), `artifacts` (repo paths: they open in the board's viewers), `not_checked`, `check` (the one command that reproduces your main number), `handoff` (what the next step needs), and the `body`: the whole result, after a first line saying what the owner must know or do. Say it once, on the board: the post is complete, messages only point to it; the lead says what he must know, the rest under `##` sections, which fold as he likes (`.kit/BOARD.md` § Sections fold, `kit.py sections`); a repo document (`docs/CL19.md`) only for a report to keep or what a post body cannot show (pictures inline, diagrams), embedded as `` `docs/CL19.md § Section` `` and never restated. Pick the board feature for each kind of content from `.kit/BOARD.md` § Which feature for what (audio takes, pictures to compare, a question for the owner).
+4. **Done:** `python3 -I .kit/kit.py done cl19-the-device-s-load-set-automatically-per` must say OK (it checks the format and that your artifacts exist); commit and push your work; `python3 -I .kit/end_session.py`; then `SendMessage` to `board-orchestrator`: `Done. Check post cl19-the-device-s-load-set-automatically-per.` (if the send fails, the orchestrator is mid hand-over: wait 30 s and send again). A review of your step starts by itself.
+5. **Then stay available:** the board clerk forwards the owner's comments on your post to you, each with the one command that answers it in his thread (`board_cli.py reply`). Talk to him in en, plainly, on the board, never at length in chat; each chat turn ends with `·`.
