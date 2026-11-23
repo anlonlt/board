@@ -251,9 +251,10 @@ def main():
         orch_model = ((k.get("roles") or {}).get("orchestrator") or {}).get("model") or "inherit"
         reason = (
             "HANDOVER REQUIRED (context at %dk >= %dk): "
-            "1. Write %s/state/orchestrator.md (running parts + conversation IDs, clerk conversation ID, open timers, next step), commit and push. "
+            "1. Make the trains current (`kit.py step`), write %s/state/orchestrator.md (open timers, and running parts + conversation IDs if any), commit and push. "
             "2. Post \"Hand-over: orchestrator <N+1>...\" under _orchestrator. "
-            "3. Immediately spawn your successor via invoke_subagent("
+            "3. If no part subagents are actively running, do a clean context RESET: run `python3 -I .kit/handover.py --role orchestrator --cli agy` as your last action (`up` opens a fresh orchestrator in this terminal that resumes via `kit.py resume`). "
+            "If part subagents are mid-flight and must stay alive, spawn your successor via invoke_subagent("
             "TypeName=\"self\", Role=\"Orchestrator <N+1>\", Model=\"%s\", Workspace=\"inherit\", "
             "Prompt=\"Your prompt is %s/state/orchestrator.md: read it, rewrite _orchestrator.session_id to your conversation ID, "
             "tell the clerk and any running parts your new ID, post your takeover notice, and continue.\")."

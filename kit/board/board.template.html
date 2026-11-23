@@ -635,7 +635,7 @@ header.top h1:focus { border-color: var(--ember); background: var(--surface); bo
 .md-chk.on { background: var(--done); border-color: var(--done); }
 /* Collapsible sections (## headings in posts and comments): the lead above the first heading always shows. */
 details.md-sec { margin: 6px 0; }
-details.md-sec > summary.md-sec-h { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 7px; }
+details.md-sec > summary.md-sec-h { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 7px; }
 details.md-sec > summary.md-sec-h::-webkit-details-marker { display: none; }
 details.md-sec > summary.md-sec-h::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; }
 details.md-sec[open] > summary.md-sec-h::before { transform: rotate(45deg); }
@@ -645,7 +645,7 @@ details.md-sec:not([open]) > summary.md-sec-h { color: var(--muted); flex-wrap: 
   -webkit-mask-image: linear-gradient(90deg, #000 55%, transparent); mask-image: linear-gradient(90deg, #000 55%, transparent); }
 details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
 .md-sec-b { padding-left: 13px; }
-.cmt-wait { color: var(--todo); display: inline-flex; align-items: center; opacity: .85; }
+.cmt-wait { color: var(--muted); display: inline-flex; align-items: center; opacity: .85; } /* CL10: it waits on an agent, not on him: gray (principle 12), not the orange of "you" */
 .md-chk.on::after { content: ""; width: 7px; height: 4px; border-left: 2px solid var(--surface); border-bottom: 2px solid var(--surface); transform: rotate(-45deg) translate(1px, -1px); }
 .body blockquote, .cmt .txt.md blockquote {
   margin: .85em 0; padding: .55em .95em; border-left: 3px solid var(--ember);

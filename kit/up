@@ -156,6 +156,11 @@ else
   PROMPT="Read the project memory (state/ and awaits.md) and continue from the next step."
 fi
 
+export KIT_CLI="$CLI"
+if [ "$HAS_ORCH" -eq 1 ] && [ "$BOARD_ONLY" -eq 0 ]; then
+  export KIT_ROLE=orchestrator
+fi
+
 if [ "$CLI" = "claude" ]; then
   # Unattended like `agy --mode auto`; kit_guard.py (PreToolUse on Bash) still blocks destructive commands.
   # The mode is kit.claude_permission_mode (default auto): the clerk and part sessions use the same one.
@@ -166,7 +171,7 @@ if [ "$CLI" = "claude" ]; then
   AC_ARGS=(--autocompact "$(( (CLIMIT + 70) * 1000 ))")
   CMODE="${KIT_CLAUDE_PERMISSION_MODE:-$CMODE}"
   NAME_ARGS=()
-  [ "$HAS_ORCH" -eq 1 ] && [ "$BOARD_ONLY" -eq 0 ] && NAME_ARGS=(-n "${CNAME}-orchestrator") && export KIT_ROLE=orchestrator
+  [ "$HAS_ORCH" -eq 1 ] && [ "$BOARD_ONLY" -eq 0 ] && NAME_ARGS=(-n "${CNAME}-orchestrator")
   LAUNCH=(claude --permission-mode "$CMODE" "${AC_ARGS[@]}" ${NAME_ARGS[@]+"${NAME_ARGS[@]}"} "$PROMPT")
 else
   LAUNCH=(agy --mode auto -i "$PROMPT")
@@ -178,20 +183,20 @@ if [ "$CLI" = "claude" ]; then
     echo "First run here: Claude Code asks whether you trust this folder. Accept it: the board clerk and the part"
     echo "sessions run in the background and can only start in a folder you trusted."
   fi
-  # Context hand-over: at its context limit the orchestrator saves its state, writes .kit/handover.flag and ends
-  # its own session (.kit/handover.py); a fresh orchestrator, same name, empty context, opens here at once.
-  rm -f .kit/handover.flag
-  while :; do
-    "${LAUNCH[@]}" || true
-    [ -f .kit/handover.flag ] || break
-    NEXT_PROMPT="$(python3 -I -c 'import json; print(json.load(open(".kit/handover.flag"))["prompt"])' 2>/dev/null)"
-    rm -f .kit/handover.flag
-    [ -n "$NEXT_PROMPT" ] || break
-    echo "Context hand-over: opening a fresh orchestrator (same name, empty context)."
-    LAUNCH=(claude --permission-mode "$CMODE" "${AC_ARGS[@]}" ${NAME_ARGS[@]+"${NAME_ARGS[@]}"} "$NEXT_PROMPT")
-  done
-elif [ "$STARTED_SERVER" -eq 1 ]; then
-  "${LAUNCH[@]}"
-else
-  exec "${LAUNCH[@]}"
 fi
+# Context hand-over (both Claude Code CLI and agy): at its context limit the orchestrator saves its state, writes
+# .kit/handover.flag and ends its own session (.kit/handover.py); a fresh orchestrator, empty context, opens here at once.
+rm -f .kit/handover.flag
+while :; do
+  "${LAUNCH[@]}" || true
+  [ -f .kit/handover.flag ] || break
+  NEXT_PROMPT="$(python3 -I -c 'import json; print(json.load(open(".kit/handover.flag"))["prompt"])' 2>/dev/null)"
+  rm -f .kit/handover.flag
+  [ -n "$NEXT_PROMPT" ] || break
+  echo "Context hand-over: opening a fresh orchestrator (${CLI}, empty context)."
+  if [ "$CLI" = "claude" ]; then
+    LAUNCH=(claude --permission-mode "$CMODE" "${AC_ARGS[@]}" ${NAME_ARGS[@]+"${NAME_ARGS[@]}"} "$NEXT_PROMPT")
+  else
+    LAUNCH=(agy --mode auto -i "$NEXT_PROMPT")
+  fi
+done
