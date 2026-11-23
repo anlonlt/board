@@ -7,6 +7,7 @@
 <SOURCES>
 
 ## How you work (the same for every part; written by the kit, not the orchestrator)
+0. **Start from one command:** `python3 -I .kit/kit.py resume --role part --post <POST_ID>`: your post, this prompt, the lessons that touch your files, your test command, the real projects you test on and how to report Done.
 1. **Context, not a summary:** `python3 -I .kit/kit.py train <TRAIN> --zoom <PART>` shows the train so far: what each earlier step found, its `check` and `handoff`. Read the owner's words above yourself (never trust a paraphrase of them, this prompt's included); a number from an earlier step is rechecked with its `check` command before you build on it.
 1b. **Reuse before you build:** before writing any code, run `python3 -I .kit/kit.py commands` with a word for each thing (e.g. `kit.py commands artifact`) your task touches (board, train, Artifact, memory...) and read the commands it names; build on them. A new script only for what none does, and your post's `handoff` names the commands you checked (CL28: a step rebuilt what `resume` and `artifact load` already did).
 2. **Turn 1:** read your `conversationId` from `<user_information>`, then run `python3 -I .kit/board_cli.py update posts <POST_ID> --data '{"session_id":"<your conversationId>","status":"in progress","body":"<one line: what you are doing first>"}'`.

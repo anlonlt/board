@@ -80,6 +80,29 @@ def git_identity():
         sh(["git", "config", "user.email", e])
 
 
+def owns_board():
+    """(True, "") when this session may push this clone's board to its board-mirror, else (False, why) (CL32: an
+    orchestrator's clone of anlonlt/board and a check's clone pushed seeded posts to its board-mirror on 11-23 22:04).
+    A review or a check never pushes; a clone a launch from another project uses (KIT_ATTACHED_CLONE) never pushes;
+    a clone that is not this session's project (CLAUDE_PROJECT_DIR names another) never pushes."""
+    role = str(os.environ.get("KIT_ROLE") or "").strip().lower()
+    if str(os.environ.get("KIT_NO_BOARD_PUSH") or "").lower() in ("1", "true", "yes"):
+        return False, "KIT_NO_BOARD_PUSH is set"
+    if role in ("review", "check", "consultant"):
+        return False, "a %s never pushes a board" % role
+    if os.environ.get("KIT_ATTACHED_CLONE"):
+        return False, "this clone serves a launch from another project (%s)" % (os.environ.get("KIT_HOST_ROOT") or "?")
+    art = (cfg().get("kit") or {}).get("artifact")
+    if isinstance(art, dict) and str(art.get("prefix") or "").strip("/"):
+        # O53: this board lives in another project's Artifact board (kit.artifact.prefix, e.g. the kit's repos/board/):
+        # the Artifact is its record; a part's web session must not seed it from git nor push its board-mirror
+        return False, "this board is attached to the Artifact board %s (%s)" % (art.get("url") or "?", art["prefix"])
+    proj = os.environ.get("CLAUDE_PROJECT_DIR")
+    if proj and os.path.realpath(proj) != os.path.realpath(ROOT):
+        return False, "this clone (%s) is not this session's project (%s)" % (ROOT, proj)
+    return True, ""
+
+
 def start_board():
     p = port()
     if healthy(p):
@@ -97,13 +120,22 @@ def start_board():
         tok = fh.read().strip()
     log = open(os.path.join(RUN, "web-board.log"), "a")
     seed = [] if os.path.exists(os.path.join(KIT, "board_data", "board.db")) else ["--seed-from-mirror"]
+    own, why = owns_board()
+    art = (cfg().get("kit") or {}).get("artifact")
+    if os.environ.get("KIT_ATTACHED_CLONE") or (isinstance(art, dict) and str(art.get("prefix") or "").strip("/")):
+        seed = []          # the posts it needs come from the Artifact (the launch hands it the post), never a git seed
+    sync = ["--auto-sync-interval", "15", "--auto-sync-push"] if own else ["--auto-sync-interval", "0"]
+    env = dict(os.environ)
+    if not own:
+        env.pop("KIT_AUTO_SYNC_PUSH", None)
     subprocess.Popen([sys.executable, "-I", os.path.join(KIT, "board_server.py"), "--host", "127.0.0.1", "--port", str(p),
-                      "--root", ROOT, "--token", tok, "--auto-sync-interval", "15", "--auto-sync-push"] + seed,
-                     stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True, cwd=ROOT)
+                      "--root", ROOT, "--token", tok] + sync + seed,
+                     stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True, cwd=ROOT, env=env)
     for _ in range(60):
         if healthy(p):
-            return "Board: started on 127.0.0.1:%d%s (log .kit/run/web-board.log)." % (
-                p, ", seeded from origin/%s" % mirror_branch() if seed else "")
+            return "Board: started on 127.0.0.1:%d%s%s (log .kit/run/web-board.log)." % (
+                p, ", seeded from origin/%s" % mirror_branch() if seed else "",
+                "" if own else ", no push to origin/%s (%s)" % (mirror_branch(), why))
         time.sleep(0.5)
     return "Board: DID NOT START (see .kit/run/web-board.log)."
 
@@ -160,7 +192,8 @@ def cmd_start():
     print(start_board())
     ensure_mirror_worktree()
     # the board here against git: what the computer saved before it stopped (or crashed) comes in, newer copy wins
-    rc, rec = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "reconcile"], timeout=240)
+    own, why = owns_board()
+    rc, rec = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "reconcile"] + ([] if own else ["--no-push"]), timeout=240)
     print(rec.splitlines()[-1] if rec else "reconcile: no output")
     rc, res = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "resume"], timeout=180)
     print()
@@ -175,6 +208,11 @@ def cmd_save(quiet=False):
     if not healthy(port()) and not os.path.exists(os.path.join(KIT, "board_data", "board.db")):
         if not quiet:
             print("save: no board here (run `python3 -I .kit/web_takeover.py` first).")
+        return 0
+    own, why = owns_board()
+    if not own:
+        if not quiet:
+            print("save: not pushed: %s. This session's board is its own project's." % why)
         return 0
     ensure_mirror_worktree()
     rc, out = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "sync-db", "--commit"], timeout=180)

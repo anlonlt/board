@@ -45,22 +45,20 @@ def slug_of(c):
 def successor_prompt(role, gen, cli="claude"):
     if cli == "agy":
         if role == "orchestrator":
-            return ("Read .kit/orchestrator.md and start as the orchestrator for this repository: you are orchestrator %d, "
-                    "after a context reset; the welcome is already posted. Update _orchestrator.session_id to your "
-                    "conversationId, launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md, then resume "
-                    "from the board alone: run `python3 -I .kit/kit.py sync-db` and `python3 -I .kit/kit.py resume` "
-                    "(every active train, its steps, what of the owner's is unanswered); the memory's "
-                    "state/orchestrator.md holds only open timers. Post one line under _orchestrator: "
-                    "\"Orchestrator %d took over.\" and continue." % (gen, gen))
+            return ("You are orchestrator %d of this repository (.kit/orchestrator.md), after a context reset; the welcome "
+                    "is already posted. Start from one command: `python3 -I .kit/kit.py resume --role orchestrator` (the "
+                    "trains, open questions, the owner's unanswered comments, attached boards, how you launch, your "
+                    "lessons, the save points) and do what it says: update _orchestrator.session_id to your "
+                    "conversationId, launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md, rebuild the "
+                    "task list. Post one line under _orchestrator: \"Orchestrator %d took over.\" and continue." % (gen, gen))
         return ("Your prompt is .kit/clerk.md: read it and follow it. You are clerk %d, replacing the previous clerk "
                 "after its context hand-over." % gen)
     if role == "orchestrator":
-        return ("Read .kit/claude-cli/orchestrator.md and start as the orchestrator for this repository: you are "
-                "orchestrator %d, after a context reset; the welcome is already posted. Resume from the board alone: "
-                "run `python3 -I .kit/kit.py sync-db` then `python3 -I .kit/kit.py resume` (every active train, its "
-                "steps, which part sessions still run, what of the owner's is unanswered) and rebuild your task list "
-                "from it as it says; the memory's state/orchestrator.md holds only open timers. Post one line under "
-                "_orchestrator: \"Orchestrator %d took over.\" and continue." % (gen, gen))
+        return ("You are orchestrator %d of this repository (.kit/claude-cli/orchestrator.md), after a context reset; "
+                "the welcome is already posted. Start from one command: `python3 -I .kit/kit.py resume --role "
+                "orchestrator` (the trains, open questions, the owner's unanswered comments, attached boards, how you "
+                "launch, your lessons, the save points) and rebuild your task list from it as it says. Post one line "
+                "under _orchestrator: \"Orchestrator %d took over.\" and continue." % (gen, gen))
     return ("Your prompt is .kit/claude-cli/clerk.md: read it and follow it. You are clerk %d, replacing the previous "
             "clerk after its context hand-over." % gen)
 
