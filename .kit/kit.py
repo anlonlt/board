@@ -2184,6 +2184,38 @@ def _active_cli(explicit=None):
     return cfg_cli if cfg_cli in ("agy", "claude") else "claude"
 
 
+def review_sample(bars, seed=None):
+    """The bars a step review reruns: one in five picked at random (at least one), plus every bar marked [visual].
+    The part cannot know which, so cutting corners on any claim does not pay; the review stays a few thousand tokens."""
+    import random
+    bars = [str(b).strip() for b in _as_list(bars) if str(b).strip()]
+    if seed is None and os.environ.get("KIT_SAMPLE_SEED"):
+        seed = int(os.environ["KIT_SAMPLE_SEED"])
+    rng = random.Random(seed) if seed is not None else random.SystemRandom()
+    visual = [b for b in bars if "[visual]" in b.lower()]
+    rest = [b for b in bars if b not in visual]
+    n = max(1, (len(rest) + 4) // 5) if rest else 0
+    picked = set(rng.sample(rest, n)) if rest else set()
+    return [b for b in bars if b in picked or b in visual]
+
+
+def review_brief(p, seed=None):
+    """What a step review rechecks, written into its prompt: his words (`asked`) and the sampled bars."""
+    lines = []
+    asked = [a for a in _as_list(p.get("asked")) if isinstance(a, dict)]
+    if asked:
+        lines.append("His words that started this step (judge the work against them, not against the post's summary):")
+        lines += ['- "%s" (comment %s)' % (str(a.get("quote") or "").strip(), a.get("id")) for a in asked]
+    picked = review_sample(p.get("bars"), seed=seed)
+    if picked:
+        lines.append("Recheck these claims (a random sample: one bar in five, and every [visual] one); rerun, do not reread:")
+        lines += ["- recheck: %s" % b for b in picked]
+    if str(p.get("shot") or "").strip():
+        lines.append("Visual: run `python3 -I .kit/kit.py pair %s`, look at the two pictures blind, answer with "
+                     "`--answer A|B`, and say what you saw." % (p.get("_id") or "<post>"))
+    return "\n" + "\n".join(lines) if lines else ""
+
+
 def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=None):
     """Write a review prompt and start it as a background session (Claude Code CLI or agy): a step review
     (pid) or a whole-train review (train). Idempotent: a review already started is not started again."""
@@ -2207,6 +2239,7 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
         part, project = str(p.get("part") or pid), str(p.get("train") or "")
         scope = ("The step `%s` (part %s, train `%s`) is complete: review it AND the question its train serves, not only "
                  "this step." % (pid, part, project))
+        scope = scope + review_brief(dict(p, _id=pid))
     if force:
         # a second review of the same step is a new review: its own id and comment, the first one kept
         base, n = rid, 2
