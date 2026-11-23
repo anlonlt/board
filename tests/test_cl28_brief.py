@@ -152,6 +152,18 @@ class Guard(unittest.TestCase):
         self.assertEqual(json.loads(r.stdout)["decision"], "deny")
 
 
+    def test_agy_without_a_session_id_a_resume_unlocks_the_reply(self):
+        with open(os.path.join(self.proj, ".kit", "config.json"), "w") as fh:
+            json.dump({"kit": {"runtime": "agy"}}, fh)
+        reply = {"hookEventName": "PreToolUse",
+                 "toolCall": {"name": "run_command", "args": {"CommandLine": "python3 -I .kit/board_cli.py reply p c --text x"}}}
+        self.assertEqual(json.loads(hook(reply, self.proj).stdout)["decision"], "deny")
+        ran = {"hookEventName": "PostToolUse",
+               "toolCall": {"name": "run_command", "args": {"CommandLine": "python3 -I .kit/kit.py resume"}}}
+        hook(ran, self.proj)
+        self.assertEqual(json.loads(hook(reply, self.proj).stdout)["decision"], "allow")
+
+
 class TrainsCard(unittest.TestCase):
     def test_states(self):
         ps = kit_cards.post_state

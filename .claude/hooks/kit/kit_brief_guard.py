@@ -127,10 +127,12 @@ def main():
         cmd = str(ti.get("CommandLine") or ti.get("command") or "")
         resp = data.get("tool_response") or {}
         failed = isinstance(resp, dict) and (resp.get("interrupted") or resp.get("exit_code") not in (None, 0))
-        if BRIEF_CMD.search(cmd) and not failed and sid_of(data):
+        if BRIEF_CMD.search(cmd) and not failed:
+            # with no session id in the payload (an agy hook may send none), the stamp is `last`, the one the check
+            # below reads for such a payload: so a resume there unlocks the reply (CL28, O52's review)
             try:
                 os.makedirs(stamp_dir(data), exist_ok=True)
-                with open(os.path.join(stamp_dir(data), sid_of(data)), "w", encoding="utf-8") as fh:
+                with open(os.path.join(stamp_dir(data), sid_of(data) or "last"), "w", encoding="utf-8") as fh:
                     fh.write(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "\n")
             except OSError:
                 pass

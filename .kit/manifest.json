@@ -1,6 +1,6 @@
 {
  ".agents/hooks/kit/kit_board_typing.py": "b96bc2ffa26ede4d87dcf018d67092f5c9fb8d07c196d4c6f88843340d4811a9",
- ".agents/hooks/kit/kit_brief_guard.py": "7346aa89a36576f31e0921a2769b6bc136436ca73c18b55d087a687c70e01f36",
+ ".agents/hooks/kit/kit_brief_guard.py": "b3d6b882aec336f0e50ee25fcbd6316b268e688d58232adb1bd3593edcfdf77d",
  ".agents/hooks/kit/kit_cards_reminder.py": "9dbf9c731f0e2270cad55d0afcc7bccc3d6cd8fdd73f9af868a30c87a581bcf8",
  ".agents/hooks/kit/kit_config.py": "da30203450d3936fa7f167def458f08f507e91cedd50dc16ce9c138e01142734",
  ".agents/hooks/kit/kit_guard.py": "5c5cb9c5ad52b62c35fe438fe0353c8d48caf1aad9d203d5042f841f0da751f8",
@@ -21,7 +21,7 @@
  ".board/memory/state/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
  ".claude/agents/kit-cards.md": "4cb2cf8423c3c5c8a86b3f0bd7908bf709bd2aa5feae69b711d273377af3d614",
  ".claude/hooks/kit/kit_board_typing.py": "b96bc2ffa26ede4d87dcf018d67092f5c9fb8d07c196d4c6f88843340d4811a9",
- ".claude/hooks/kit/kit_brief_guard.py": "7346aa89a36576f31e0921a2769b6bc136436ca73c18b55d087a687c70e01f36",
+ ".claude/hooks/kit/kit_brief_guard.py": "b3d6b882aec336f0e50ee25fcbd6316b268e688d58232adb1bd3593edcfdf77d",
  ".claude/hooks/kit/kit_cards_reminder.py": "9dbf9c731f0e2270cad55d0afcc7bccc3d6cd8fdd73f9af868a30c87a581bcf8",
  ".claude/hooks/kit/kit_config.py": "da30203450d3936fa7f167def458f08f507e91cedd50dc16ce9c138e01142734",
  ".claude/hooks/kit/kit_guard.py": "5c5cb9c5ad52b62c35fe438fe0353c8d48caf1aad9d203d5042f841f0da751f8",
@@ -73,5 +73,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "6c4c7d537524f7c6977d900f09caa6aa07373c0ee70dae2d3ac5e9e40680b081",
- "_kit_commit": "0a13032 2026-11-23T09:16:53+00:00"
+ "_kit_commit": "84bbcef 2026-11-23T09:17:00+00:00"
 }
