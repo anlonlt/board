@@ -1,0 +1,11 @@
+{
+ "body": "The owner, 2026-11-23 22:2x: \"plan that kit step\"; \"shouldn't there be a resume specific to every role, with a need to know basis of what to read?\". Goal: a session starts from `kit.py resume --role <orchestrator|part|clerk|review>` alone, with no reading list in its prompt.\n- orchestrator: today's resume (trains, open questions, decisions, unanswered comments, attached boards), plus the launch workflow for its runtime (including a step on an attached board: launch from the train's repo clone, with no seeded local board and no auto-sync push to another repo's board-mirror), plus the lessons that apply to the orchestrator, plus the parts' context and save-point checks.\n- part: its own post, its prompt, the lessons that touch its files, its test command, and how to report Done.\n- clerk: the comment routing and the session ids only.\n- review: the step, its acceptance conditions, and the real-project check.\nLessons move into the kit's memory, each one tagged with its roles. A lesson that lives only in a project's docs is refused. Example: Harmonize's lesson 51a in docs/ORCHESTRATION.md.\nAlso fix the gaps O53 hit tonight: `kit.py launch` from Harmonize finds no post for a step on the attached board (`repos/board/posts`); `launch_text` raises KeyError 'board'; a board server's auto-sync pushed seeded posts to anlonlt/board board-mirror.\nAcceptance: a fresh orchestrator session, given only \"run `kit.py resume --role orchestrator`\", launches a cli-train step the kit way with no hand step. A part's acceptance includes a dry run on the real project (Harmonize), not only the kit's suite. Every orchestrator hand-over template drops its reading list.",
+ "column": "info",
+ "created_at": "2026-11-23T22:24:25Z",
+ "from": "orchestrator",
+ "part": "CL32",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "title": "resume per role: what each role needs, the lessons and the workflow included",
+ "train": "cli"
+}
