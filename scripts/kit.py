@@ -1977,9 +1977,9 @@ def throwaway_copy(root=ROOT):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _run_in(cmd, cwd, timeout):
+def _run_in(cmd, cwd, timeout, extra_env=None):
     """(exit code, last lines of its output) of a shell command run in cwd; a timeout counts as exit 124."""
-    env = dict(os.environ, KIT_BREAKS_COPY="1")
+    env = dict(os.environ, KIT_BREAKS_COPY="1", **(extra_env or {}))
     try:
         r = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env,
                            stdin=subprocess.DEVNULL)
@@ -2070,6 +2070,86 @@ def prove_check(p, root=ROOT, timeout=900):
     except (OSError, RuntimeError) as e:
         err.append("breaks: no throwaway copy of the work: %s" % e)
     return err, notes
+
+
+def pair(pid, answer=None, db_path=None, root=None, timeout=900):
+    """A blind before/after pair for a visual step (3 to 5k tokens for the reviewer, against 30k+ for a full review):
+    the post's `shot` (a command that writes a PNG to $KIT_SHOT) renders the work as it is and as reverted (the old
+    version, as `breaks: revert` does), saved as A and B in random order under .kit/run/pairs/<post>/, the key aside.
+    The brief holds his quoted words and the two pictures, nothing else. `answer` scores the reviewer's pick."""
+    import secrets
+    root = root or ROOT
+    d = os.path.join(root, ".kit", "run", "pairs", _slug(pid, 60))
+    key_path = os.path.join(d, "key.json")
+    if answer:
+        try:
+            with open(key_path, encoding="utf-8") as fh:
+                key = json.load(fh)
+        except (OSError, ValueError):
+            return 1, "no pair for %s yet: run `kit.py pair %s` first" % (pid, pid)
+        pick = str(answer).strip().upper()
+        ok = pick == key.get("new")
+        key.setdefault("answers", []).append({"pick": pick, "right": ok, "at": _now_z()})
+        with open(key_path, "w", encoding="utf-8") as fh:
+            json.dump(key, fh)
+        if ok:
+            return 0, "right: %s is the new version (the one his words asked for); %s is the old one" % (pick, key.get("old"))
+        return 1, ("wrong: %s is the old version. The reviewer could not tell the new work from what was there before: "
+                   "the change does not answer his words where it shows, or the reviewer did not look" % pick)
+    p = _get_post(pid, db_path=db_path)
+    if not p:
+        return 1, "no post %s on the board" % pid
+    shot = _as_command(p.get("shot"))
+    if not shot:
+        return 1, ("shot: missing on %s (a command that renders the step's picture and writes a PNG to $KIT_SHOT, e.g. "
+                   "`node scripts/shot.js --scene night --out \"$KIT_SHOT\"`)" % pid)
+    m_rev = REVERT.match(_as_command(p.get("breaks")) or "")
+    base = m_rev.group(1) if m_rev else None
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="kit-pair-")
+    new_png, old_png = os.path.join(tmp, "new.png"), os.path.join(tmp, "old.png")
+    try:
+        with throwaway_copy(root) as work:
+            rc, tail = _run_in(shot, work, timeout, {"KIT_SHOT": new_png})
+            if rc != 0 or not os.path.isfile(new_png):
+                return 1, "shot: did not write a picture of the work (exit %d): %s" % (rc, tail or "no output")
+            ok, msg = _revert_in(work, root, base)
+            if not ok:
+                return 1, msg
+            rc, tail = _run_in(shot, work, timeout, {"KIT_SHOT": old_png})
+            if rc != 0 or not os.path.isfile(old_png):
+                return 1, "shot: did not write a picture of the old version (exit %d): %s" % (rc, tail or "no output")
+        with open(new_png, "rb") as fh:
+            nb = fh.read()
+        with open(old_png, "rb") as fh:
+            ob = fh.read()
+        if nb == ob:
+            return 1, ("the change is not visible: the step's picture is the same before and after (%s). A visual claim "
+                       "needs a shot that shows it" % msg)
+        os.makedirs(d, exist_ok=True)
+        new = secrets.choice("AB")
+        old = "B" if new == "A" else "A"
+        for lab, data in ((new, nb), (old, ob)):
+            with open(os.path.join(d, lab + ".png"), "wb") as fh:
+                fh.write(data)
+        with open(key_path, "w", encoding="utf-8") as fh:
+            json.dump({"post": pid, "new": new, "old": old, "made_at": _now_z()}, fh)
+    except (OSError, RuntimeError) as e:
+        return 1, "pair: no throwaway copy of the work: %s" % e
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    rel = os.path.relpath(d, root)
+    lines = ["Blind pair for %s. Read only this, his words and the two pictures (not the code, not the board)." % pid]
+    asked = [a for a in _as_list(p.get("asked")) if isinstance(a, dict)]
+    if asked:
+        lines.append("His words:")
+        lines += ['- "%s" (comment %s)' % (str(a.get("quote") or "").strip(), a.get("id")) for a in asked]
+    else:
+        lines.append("His words: none on the post (add `asked` so the reviewer judges against them)")
+    lines += ["Picture A: %s/A.png" % rel, "Picture B: %s/B.png" % rel,
+              "Which picture answers his words? Answer: python3 -I .kit/kit.py pair %s --answer A|B" % pid,
+              "Then say in the review what you saw. Whether it is what he meant stays his call."]
+    return 0, "\n".join(lines)
 
 
 def done(pid, db_path=None, root=None):
@@ -3197,6 +3277,7 @@ def main(argv=None):
     s.add_argument("--model", default=None); s.add_argument("--reset", action="store_true")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s = sp.add_parser("done"); s.add_argument("post"); s.add_argument("--db", default=None)
+    s = sp.add_parser("pair"); s.add_argument("post"); s.add_argument("--answer", default=None); s.add_argument("--db", default=None)
     s = sp.add_parser("sections"); s.add_argument("--db", default=None)
     s = sp.add_parser("step", help="the train is the task list: new | start | complete | drop")
     s.add_argument("action", choices=["new", "start", "complete", "drop"]); s.add_argument("post", nargs="?")
@@ -3289,6 +3370,10 @@ def main(argv=None):
         return 0
     if a.cmd == "done":
         rc, msg = done(a.post, db_path=a.db)
+        print(msg)
+        return rc
+    if a.cmd == "pair":
+        rc, msg = pair(a.post, answer=a.answer, db_path=a.db)
         print(msg)
         return rc
     if a.cmd == "review":
