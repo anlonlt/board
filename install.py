@@ -33,7 +33,12 @@ PARTS = ("memory", "board", "clerk", "orchestrator")
 MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "test_hooks.py"}
 HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
          "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "kit_task_train.py",
-         "kit_orchestrator_guard.py", "kit_brief_guard.py", "test_hooks.py"]
+         "kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "test_hooks.py"]
+# CL30: the kit's guards. One whose file is in a present Claude Code runtime but that has no settings.json line (or a
+# narrower matcher than the kit's) is a hole, not a choice (Harmonize: kit_cards_reminder.py wired nowhere, the brief
+# guard on Bash only): --update wires it. Other kit hooks (a project's own hand-over, its Stop) are left as they are.
+GUARD_HOOKS = ("kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "kit_task_train.py",
+               "kit_cards_reminder.py")
 # agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
 CMD = "python3 -I hooks/kit/%s"
 CLAUDE_CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.claude/hooks/kit/%s"'
@@ -50,6 +55,9 @@ CLAUDE_SETTINGS = [
     ("UserPromptSubmit", None, "kit_cards_reminder.py"),
     ("PostToolUse", "ArtifactData|mcp__claude-code-remote__create_session", "kit_cards_reminder.py"),
     ("PostToolUse", "ArtifactData", "kit_notify.py"),
+    ("PostToolUse", "TaskCreate|TaskUpdate", "kit_task_train.py"),
+    ("PostToolUse", "Bash|mcp__claude-code-remote__create_session", "kit_board_guard.py"),
+    ("Stop", None, "kit_board_guard.py"),
     ("Stop", None, "kit_stop.py"),
     ("Stop", None, "kit_say_it_once.py"),
     ("PreCompact", None, "kit_pre_compact.py"),
@@ -66,6 +74,9 @@ CLAUDE_CLI_SETTINGS = [
     ("PostToolUse", "Bash", "kit_brief_guard.py"),
     ("UserPromptSubmit", None, "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_board_typing.py"),
+    ("UserPromptSubmit", None, "kit_cards_reminder.py"),
+    ("PostToolUse", "Bash", "kit_board_guard.py"),
+    ("Stop", None, "kit_board_guard.py"),
     ("Stop", None, "kit_stop.py"),
     ("Stop", None, "kit_say_it_once.py"),
     ("Stop", None, "kit_pre_compact.py"),
@@ -625,6 +636,17 @@ def merge_claude_settings(t, dry, log, board=True, spec=None):
         cmd = CLAUDE_CMD % f
         groups = hooks.setdefault(ev, [])
         if any(h.get("command") == cmd for g in groups for h in g.get("hooks", []) if (g.get("matcher") or None) == matcher):
+            continue
+        # CL30: the same kit hook already there under a matcher that covers the kit's: kept; a narrower one is widened
+        # (Harmonize's brief guard on Bash only let ArtifactData replies pass), never doubled
+        want = set(matcher.split("|")) if matcher else None
+        mine = [g for g in groups if any(h.get("command") == cmd for h in g.get("hooks", []))]
+        if any(not g.get("matcher") or (want is not None and want <= set(str(g["matcher"]).split("|"))) for g in mine):
+            continue
+        narrow = next((g for g in mine if len(g.get("hooks", [])) == 1), None)
+        if narrow is not None and matcher:
+            narrow["matcher"] = "|".join(list(dict.fromkeys(str(narrow["matcher"]).split("|") + matcher.split("|"))))
+            added += 1
             continue
         g = {"hooks": [{"type": "command", "command": cmd}]}
         if matcher:
@@ -1308,8 +1330,10 @@ def main(argv=None):
             store.close()
     if want_claude:
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], CLAUDE_CLI_SETTINGS if claude_cli_hooks else CLAUDE_SETTINGS)
-    elif new_hooks.get(RUNTIME_HOOK_DIRS["claude"]):
-        added_h = set(new_hooks[RUNTIME_HOOK_DIRS["claude"]])
+    elif "claude" in present:
+        added_h = set(new_hooks.get(RUNTIME_HOOK_DIRS["claude"]) or [])
+        # CL30: the kit's guards whose files are there are wired too (and their matchers widened)
+        added_h |= {h for h in GUARD_HOOKS if os.path.isfile(os.path.join(t, RUNTIME_HOOK_DIRS["claude"], h))}
         # the web runtime (ArtifactData replies) when the config names an Artifact board or the target's settings
         # already carry the kit's web hooks (Harmonize: runtime agy in the config, Claude Code web hooks in .claude)
         try:

@@ -60,6 +60,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -453,6 +454,10 @@ def session(m, pid):
 
 
 # ---------------------------------------------------------------- warm handoff (receive / publish)
+# CL30: the reads that need a fresh copy of an Artifact board (pull + load first)
+STALE_GATED = ("resume", "train", "post", "open", "since", "session", "search", "queue", "sections", "report")
+
+
 class Conflict(Exception):
     pass
 
@@ -1012,7 +1017,64 @@ def artifact_load(url=None, token=None, in_dir=None):
     return {"taken": taken, "kept_here": kept, "merged": merged, "not_there": len(stale)}
 
 
+def stale_copy():
+    """CL30: '' when the scripts may read the local copy, else why not (an Artifact board whose copy was never loaded,
+    or loaded longer ago than kit.artifact.fresh_min, 15). $KIT_STALE_OK=1 reads it anyway."""
+    if not attached_board() or os.environ.get("KIT_STALE_OK"):
+        return ""
+    k = _kit_config().get("kit") or {}
+    try:
+        cap = float(((k.get("artifact") if isinstance(k.get("artifact"), dict) else {}) or {}).get("fresh_min", 15))
+    except (TypeError, ValueError):
+        cap = 15.0
+    at = str(_art_state().get("loaded_at") or "")
+    way = ("run `python3 -I .kit/kit.py artifact pull`, make the ArtifactData calls it prints, then `python3 -I "
+           ".kit/kit.py artifact load`; then this command again (KIT_STALE_OK=1 reads the old copy anyway)")
+    if not at:
+        return "STALE: this copy of the Artifact board (%s) was never loaded here: %s." % (artifact_url(), way)
+    try:
+        age = (datetime.now(timezone.utc) - datetime.strptime(at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+               ).total_seconds() / 60.0
+    except ValueError:
+        age = cap + 1
+    if age <= cap:
+        return ""
+    return "STALE: this copy of the Artifact board was loaded %d min ago (more than %d): %s." % (age, cap, way)
+
+
+def artifact_unsent(url=None, token=None):
+    """CL30: how many documents of the local copy differ from what the Artifact last had, and the batch files built
+    but never recorded sent: {"changed": n, "batches": [paths]}."""
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    n = 0
+    for coll in ART_COLLS:
+        for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
+            if _read_json(_base_path(coll, row["id"])) != (row.get("data") or {}):
+                n += 1
+    return {"changed": n, "batches": sorted(glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")))}
+
+
+def launch_mark(pid, prompt):
+    """CL30: the mark `kit.py launch --web` leaves for the orchestrator guard (this part's create_session may go out);
+    prompt None removes it (the second half, --session-id, ran)."""
+    p = os.path.join(ROOT, ".kit", "run", "launch", pid + ".json")
+    if prompt is None:
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+        return
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    write_doc(p, {"prompt": prompt, "at": time.time()})
+
+
 def artifact_push(url=None, token=None, out_dir=None):
+    if attached_board() and not _art_state().get("loaded_at"):
+        # CL28's open item: a web part's copy came from git; its push built 78 writes without if_version
+        raise Conflict("this copy was never loaded from the Artifact, so a push would overwrite the board with an old "
+                       "copy: run `python3 -I .kit/kit.py artifact pull`, the calls it prints, `kit.py artifact load`, "
+                       "then push")
     url = url or local_board_url()
     token = _resolve_board_token(token)
     out_dir = out_dir or os.path.join(_art_dir(), "out")
@@ -2349,7 +2411,7 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
     if run == "web":
         call = {"title": "Review %s" % rid, "source_url": _github_url(),
                 "source_revision": _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "main",
-                "prompt": text}
+                "prompt": text, "tags": ["review"]}      # CL30: the guard checks a tagged launch's prompt
         start = ("review %s NOT STARTED by the kit (a web session cannot start one): prompt %s written; start it "
                  "now with the claude-code-remote `create_session` tool: %s" % (rid, os.path.relpath(out, ROOT),
                                                                                json.dumps(call, ensure_ascii=False)))
@@ -2720,6 +2782,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     text = "Your prompt is %s: read it and do it." % rel
     if session_id:                                   # the second half of a web launch: create_session answered
         sess = session_id
+        launch_mark(pid, None)
     else:
         why = _prompt_problem(rel)
         if why:
@@ -2731,6 +2794,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                                      "source_url": _github_url(), "source_revision": base, "outcome_branch": branch,
                                      "prompt": text}
             sess = "pending: create_session (%s)" % name
+            launch_mark(pid, text)                     # CL30: the orchestrator guard lets this create_session out
         else:
             if not shutil.which("claude"):     # CL26: never an OSError on an absent binary
                 return dict(out, ok=False, error=(NO_RUNTIME.replace("neither `claude` nor `agy`", "no `claude`") +
@@ -3645,7 +3709,7 @@ def main(argv=None):
     s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
     s.add_argument("--dry-run", action="store_true"); s.add_argument("--db", default=None)
     s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
-    s.add_argument("action", choices=["pull", "load", "push", "sent", "pin"]); s.add_argument("args", nargs="*")
+    s.add_argument("action", choices=["pull", "load", "push", "sent", "pin", "status"]); s.add_argument("args", nargs="*")
     s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("reconcile", help="the board here vs its git copy: the newer copy of each post and comment wins")
@@ -3690,6 +3754,11 @@ def main(argv=None):
     elif os.path.exists(os.path.join(ROOT, ".kit", "config.json")):  # an installed kit: <project>/.kit/kit.py
         configure(os.path.join(ROOT, ".kit", "config.json"))
     m = mirror_dir(a)
+    if a.cmd in STALE_GATED and not getattr(a, "db", None):   # --db: a named database, not the Artifact's copy
+        why = stale_copy()
+        if why:
+            print(why)
+            return 3
     if a.cmd == "init":
         print(init(m)); return 0
     if a.cmd == "push":
@@ -3783,6 +3852,16 @@ def main(argv=None):
                 print("recorded: %d writes" % sum(artifact_sent(p) for p in a.args))
             elif a.action == "pin":
                 print("pinned: %d" % artifact_pin(a.args))
+            elif a.action == "status":
+                r = artifact_unsent(url=a.board_url, token=a.token)
+                if not (r["changed"] or r["batches"]):
+                    print("sent: the Artifact has every change made here")
+                    return 0
+                print("NOT SENT: %d document(s) changed here since the Artifact last had them; %d batch file(s) built, "
+                      "never recorded sent (%s). Run `python3 -I .kit/kit.py artifact push`, make each ArtifactData "
+                      "batch, then `kit.py artifact sent <batch>`." % (r["changed"], len(r["batches"]),
+                                                                       ", ".join(r["batches"]) or "none"))
+                return 1
         except (Conflict, urllib.error.URLError, OSError) as e:
             print("artifact %s: NOT DONE (%s)" % (a.action, e))
             return 1

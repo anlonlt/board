@@ -77,11 +77,16 @@ class PresentRuntimes(unittest.TestCase):
         self.assertIn("# the project's own rule", own.read_text())
         self.assertIn("KEPT (not the kit's, or changed since): .claude/hooks/kit/kit_config.py", out)
         # nothing added to the present runtime but the hook the kit added since (CL28), and no absent runtime installed
+        # (CL30: kit_board_guard.py is such a hook too; and the kit's guards present there are wired, kit_task_train.py
+        # here, while its other hooks, kit_pre_compact.py, stay as the project has them)
         self.assertEqual(sorted(p.name for p in self.cl.iterdir()),
-                         ["kit_brief_guard.py", "kit_config.py", "kit_pre_compact.py", "kit_task_train.py"])
+                         ["kit_board_guard.py", "kit_brief_guard.py", "kit_config.py", "kit_pre_compact.py",
+                          "kit_task_train.py"])
         st = json.loads((self.t / ".claude" / "settings.json").read_text())
         cmds = [h["command"] for ev in st["hooks"].values() for g in ev for h in g["hooks"]]
-        self.assertTrue(cmds and all("kit_brief_guard.py" in c for c in cmds), cmds)
+        self.assertTrue(cmds and all(any(g in c for g in ("kit_brief_guard.py", "kit_board_guard.py", "kit_task_train.py"))
+                                     for c in cmds), cmds)
+        self.assertEqual(st["env"]["CLAUDE_CODE_ENABLE_TODO_TOOLS"], "1")
         cfg = json.loads((self.t / ".kit" / "config.json").read_text())
         self.assertEqual((cfg["kit"]["runtime"], cfg["kit"]["cli"]), ("agy", "agy"))
         man = json.loads(man_p.read_text())
@@ -109,13 +114,15 @@ class PresentRuntimes(unittest.TestCase):
         out = r.stdout + r.stderr
         self.assertEqual(r.returncode, 0, out)
         self.assertEqual((self.cl / "kit_brief_guard.py").read_bytes(), (HOOKS / "kit_brief_guard.py").read_bytes(), out)
-        self.assertEqual(sorted(p.name for p in self.cl.iterdir()), ["kit_brief_guard.py", "kit_config.py"])
+        self.assertEqual(sorted(p.name for p in self.cl.iterdir()), ["kit_board_guard.py", "kit_brief_guard.py",
+                                                                      "kit_config.py"])   # CL30's new hook too
         s = json.loads(st.read_text())
         self.assertEqual(s["permissions"], mine["permissions"])
-        self.assertEqual(s["hooks"]["Stop"], mine["hooks"]["Stop"])
+        self.assertEqual(s["hooks"]["Stop"][0], mine["hooks"]["Stop"][0])         # the project's own Stop kept, first
         cmds = [h["command"] for ev in s["hooks"].values() for g in ev for h in g["hooks"]]
         self.assertEqual(sum("kit_brief_guard.py" in c for c in cmds), 2, cmds)
-        self.assertEqual(sum("/hooks/kit/" in c for c in cmds), 2, cmds)  # no other kit hook added
+        self.assertEqual(sum("kit_board_guard.py" in c for c in cmds), 2, cmds)   # CL30's new hook: Post Bash, Stop
+        self.assertEqual(sum("/hooks/kit/" in c for c in cmds), 4, cmds)  # no other kit hook added
         # the target's Claude Code hooks are the web ones (an ArtifactData guard is there): the reply tool is matched too
         st.write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": "ArtifactData|mcp__claude-code-remote__create_session",
                       "hooks": [{"type": "command", "command": "python3 -I x/.claude/hooks/kit/kit_orchestrator_guard.py"}]}]}}))

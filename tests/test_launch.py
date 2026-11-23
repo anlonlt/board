@@ -239,6 +239,9 @@ class Launch(Base):
             base.parent.mkdir(parents=True, exist_ok=True)
             base.write_text(json.dumps(data))
         k.artifact_pin(["posts/cl99-launch-me=2", "posts/_trains=7"])
+        st = k._art_state()
+        st["loaded_at"] = k.zstamp(k.datetime.now(k.timezone.utc))      # CL30: push needs a copy loaded once
+        k._art_save(st)
         r = k.launch("cl99-launch-me", url=self.url, token=TOKEN)
         self.assertTrue(r["ok"], r)
         call = r["create_session"]                                      # what the session passes to create_session

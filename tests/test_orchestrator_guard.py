@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 from pathlib import Path
@@ -19,6 +20,15 @@ class OrchestratorGuard(unittest.TestCase):
     def setUp(self):
         self.proj = tempfile.mkdtemp()
         os.makedirs(os.path.join(self.proj, ".kit"))
+        # CL30: a part starts only after `kit.py launch <post>`, which leaves this mark for each prompt below
+        for pid in ("cl22", "cl24-orchestrator-guard-gaps", "cl9-x"):
+            self.mark(pid)
+
+    def mark(self, pid):
+        d = os.path.join(self.proj, ".kit", "run", "launch")
+        os.makedirs(d, exist_ok=True)
+        json.dump({"prompt": "Your prompt is docs/prompts/%s.md: read it and do it." % pid, "at": time.time()},
+                  open(os.path.join(d, pid + ".json"), "w"))
 
     def run_hook(self, tool, ti, role="orchestrator", prompt=None):
         env = {k: v for k, v in os.environ.items() if k not in ("KIT_ROLE", "HARMONIZE_ROLE")}
@@ -50,8 +60,9 @@ class OrchestratorGuard(unittest.TestCase):
         rc, err = self.run_hook("ArtifactData", {"action": "set", "collection": "posts", "doc_id": "CL22-x", "data": {}})
         self.assertEqual(rc, 2)
         self.assertIn("TaskCreate", err)
-        self.assertEqual(self.run_hook("ArtifactData", {"action": "set", "collection": "posts", "doc_id": "_trains", "data": {}})[0], 0)
-        self.assertEqual(self.run_hook("ArtifactData", {"action": "set", "collection": "comments", "doc_id": "c", "data": {}})[0], 0)
+        # CL30: a card or a comment by hand is refused too (kit_cards.py / board_cli.py write them, then artifact push)
+        self.assertEqual(self.run_hook("ArtifactData", {"action": "set", "collection": "posts", "doc_id": "_trains", "data": {}})[0], 2)
+        self.assertEqual(self.run_hook("ArtifactData", {"action": "set", "collection": "comments", "doc_id": "c", "data": {}})[0], 2)
         out = os.path.join(self.proj, ".kit", "run", "artifact", "out", "docs", "0000.json")
         self.assertEqual(self.run_hook("ArtifactData", {"action": "batch", "writes": [
             {"op": "set", "collection": "posts", "doc_id": "CL22-x", "file_path": out}]})[0], 0)
@@ -64,8 +75,11 @@ class OrchestratorGuard(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("docs/prompts/<id>.md", err)
         for ti in ({"prompt": "Your prompt is docs/prompts/cl22.md: read it and do it."},
-                   {"prompt": "...", "tags": ["orchestrator"]}, {"prompt": "...", "tags": ["board-clerk"]},
-                   {"prompt": "...", "title": "CR-CL22 review", "tags": ["review"]}):
+                   {"prompt": "Read .kit/claude-cli/orchestrator.md and start as the orchestrator: you are 53.",
+                    "tags": ["orchestrator"]},
+                   {"prompt": "Your prompt is .kit/claude-cli/clerk.md: read it and follow it.", "tags": ["board-clerk"]},
+                   {"prompt": "Your prompt is .kit/run/review-cl22.md: read it and do it.", "title": "CR-CL22 review",
+                    "tags": ["review"]}):
             self.assertEqual(self.run_hook("mcp__claude-code-remote__create_session", ti)[0], 0, ti)
 
     def test_inline_prompt_naming_a_path_is_refused(self):
@@ -87,8 +101,9 @@ class OrchestratorGuard(unittest.TestCase):
         cs = "mcp__claude-code-remote__create_session"
         for title in ("CR-CL22 review", "Harmonize board clerk", "Harmonize orchestrator"):
             self.assertEqual(self.run_hook(cs, {"prompt": "Do CL22 inline...", "title": title})[0], 2, title)
+        # CL30: nor does a tag any more, with an inline prompt (test_cl30_kit_scripts: what each tag's prompt must be)
         for tag in ("review", "board-clerk", "orchestrator"):
-            self.assertEqual(self.run_hook(cs, {"prompt": "Do CL22 inline...", "tags": [tag]})[0], 0, tag)
+            self.assertEqual(self.run_hook(cs, {"prompt": "Do CL22 inline...", "tags": [tag]})[0], 2, tag)
 
     def test_attached_boards_reads(self):
         """CL24 gap 3: an attached board's repos/<id>/posts|comments is read through the kit like the host's."""
@@ -115,11 +130,14 @@ class OrchestratorGuard(unittest.TestCase):
         rc, err = self.run_hook(ad, {"action": "set", "collection": "repos/board/posts", "doc_id": "cl24-x", "data": {}})
         self.assertEqual(rc, 2)
         self.assertIn("TaskCreate", err)
+        # CL30: a card or a comment by hand too; the new session on _orchestrator has no kit form and passes
         for did in ("_orchestrator", "_trains", "_dashboard"):
             self.assertEqual(self.run_hook(ad, {"action": "set", "collection": "repos/board/posts", "doc_id": did,
-                                                "data": {}})[0], 0, did)
+                                                "data": {}})[0], 2, did)
+        self.assertEqual(self.run_hook(ad, {"action": "update", "collection": "repos/board/posts", "doc_id": "_orchestrator",
+                                            "data": {"session_id": "s"}})[0], 0)
         self.assertEqual(self.run_hook(ad, {"action": "set", "collection": "repos/board/comments", "doc_id": "c",
-                                            "data": {}})[0], 0)
+                                            "data": {}})[0], 2)
 
     def test_docstring_says_subagents_are_exempt(self):
         """CL24 gap 5: the exemption of the orchestrator's subagents is by design and written down."""
@@ -135,13 +153,15 @@ class OrchestratorGuard(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
 
     def test_only_the_orchestrator(self):
-        self.assertEqual(self.run_hook("ArtifactData", {"action": "list", "collection": "posts"}, role="part")[0], 0)
+        # CL30: the board rules hold every session (a part's raw dump is refused too); the launch rules stay the
+        # orchestrator's, and it is still recognised without KIT_ROLE
+        self.assertEqual(self.run_hook("ArtifactData", {"action": "list", "collection": "posts"}, role="part")[0], 2)
+        cs, inline = "mcp__claude-code-remote__create_session", {"prompt": "Do CL9 inline, all of it."}
+        self.assertEqual(self.run_hook(cs, inline, role="part")[0], 0)
         # no KIT_ROLE: recognised from its launch prompt (Harmonize's "you are the fiftieth orchestrator")
-        rc, _ = self.run_hook("ArtifactData", {"action": "list", "collection": "posts"}, role="",
-                              prompt="Harmonize: you are the fiftieth orchestrator, after orchestrator 49.")
+        rc, _ = self.run_hook(cs, inline, role="", prompt="Harmonize: you are the fiftieth orchestrator, after orchestrator 49.")
         self.assertEqual(rc, 2)
-        rc, _ = self.run_hook("ArtifactData", {"action": "list", "collection": "posts"}, role="",
-                              prompt="Your prompt is docs/prompts/cl9.md: read it and do it.")
+        rc, _ = self.run_hook(cs, inline, role="", prompt="Your prompt is docs/prompts/cl9.md: read it and do it.")
         self.assertEqual(rc, 0)
 
 
