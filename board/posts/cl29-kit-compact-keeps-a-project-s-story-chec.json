@@ -1,5 +1,5 @@
 {
- "body": "The owner's yes (08:23, CL28's chat: \"take state files and issues out of memory\"). On Harmonize, `kit.py compact` (compact_memory) moved 23 state files, awaits.md and 38 closed issues to .story/archive/ but left `.story/awaits-anlon.md` tagging the moved workstreams: Harmonize's story checker (.claude/skills/story/scripts/check.py) gave 31 faults (\"awaits-anlon.md: [app] has no state in .story/state/\"), the push gate refused, it was reverted (1c6a49c2); the compacted tree is on Harmonize branch `o51-story-compact`. Also the SessionStart hook's STATES section would print nothing. Fix in the kit: compact must handle every awaits file the project has (config memory names, not only awaits.md): either post each open awaits point as a question post and archive the file, or move the awaits points of archived workstreams with them; and it must run the project's memory checker (dry run shows its result) and refuse to leave it red. Test first: a fixture with an awaits-anlon.md tagging a workstream, red on the current kit, green after. Done: kit tests green, kit main fast-forwarded per the trunk push; then a dry run on a fresh Harmonize clone printed in the post (compaction on Harmonize itself is applied by the orchestrator after the check, own commit of git renames).",
+ "body": "Reading compact_memory and writing a failing fixture (awaits-anlon.md tagging an archived workstream) first.",
  "branch": "cl29",
  "column": "info",
  "created_at": "2026-11-23T09:00:42Z",
@@ -7,9 +7,9 @@
  "launched_at": "2026-11-23T22:03:49Z",
  "part": "CL29",
  "planned_by": "orchestrator",
- "session_id": "pending: create_session (board-cl29)",
+ "session_id": "147d5df5-9a16-54c3-9da2-61460d0358e7",
  "status": "in progress",
  "title": "kit compact keeps a project's story checker green",
  "train": "cli",
- "updated_at": "2026-11-23T22:03:49Z"
+ "updated_at": "2026-11-23T22:04:19Z"
 }
