@@ -2245,14 +2245,15 @@ def _attached_step_detail(board, pid, p, stopped):
         out.append("  branch %s%s" % (", ".join("`%s`" % x for x in brs), (" · last checkpoint %s" % ck[:100]) if ck else ""))
     elif p.get("updated_at"):
         out.append("  no branch found · last update %s" % str(p["updated_at"])[:16].replace("T", " "))
-    if stopped:
+    st = str(p.get("status") or "").lower()
+    if stopped and ("progress" in st or st == "planned") and str(p.get("column") or "info").lower() == "info":
         prompt = "docs/prompts/%s.md" % pid
         has = bool(board.get("clone")) and os.path.exists(os.path.join(board["clone"], prompt))
         where = "in %s's clone (%s)" % (board["id"], board["clone"]) if board.get("clone") else "in a clone of %s" % (board.get("github") or board["id"])
         if has or brs:
             out.append("  relaunch %s: %s" % (where, _launch_line(part or pid, prompt) if has else
                        "continue from branch `%s` (no prompt file %s there)" % (brs[0], prompt)))
-        else:
+        elif p.get("session_id"):
             out.append("  relaunch %s: no prompt file and no branch for it; ask its orchestrator or the owner" % where)
     return out
 
