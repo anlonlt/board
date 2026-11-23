@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T22:03:41Z",
+ "created_at": "2026-11-23T22:03:45Z",
  "rows": [
   {
    "also": [],
@@ -590,12 +590,12 @@
    "parent": "P-cli",
    "part": "CL31",
    "post": "cl31-kit-artifact-push-never-overwrites-a-new",
-   "prompt": "",
-   "session": "",
-   "state": "idle",
+   "prompt": "docs/prompts/cl31-kit-artifact-push-never-overwrites-a-new.md",
+   "session": "pending: create_session (board-cl31)",
+   "state": "running",
    "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T22:03:41Z"
+ "updated_at": "2026-11-23T22:03:45Z"
 }
