@@ -114,6 +114,17 @@ class CrossRepoSync(unittest.TestCase):
         self.assertEqual([r["id"] for r in idx["repos"]], ["songs", "elsewhere"])
         self.assertFalse(any(r["collection"].startswith("repos/elsewhere/") for r in batch_entries(self.out)))
 
+    def test_attach_flag_without_config(self):
+        bare = Path(self.tmp) / "bare"
+        bare.mkdir()
+        kas.main(["boards", "--repo", str(bare), "--out", self.out, "--project", "Harmonize",
+                  "--attach", "board=anlonlt/board", "--clone", "board=%s" % self.clone])
+        rows = batch_entries(self.out)
+        idx = json.load(open(rows[0]["file_path"]))
+        self.assertEqual(idx["repos"], [{"id": "board", "name": "board", "github": "anlonlt/board"}])
+        self.assertEqual(idx["primary"]["name"], "Harmonize")
+        self.assertIn("repos/board/posts", {r["collection"] for r in rows})
+
     def test_docs_into_attached_repo(self):
         self.assertEqual(kas.prefix(type("A", (), {"into": "Songs"})()), "repos/songs/")
         self.assertEqual(kas.prefix(type("A", (), {"into": ""})()), "")

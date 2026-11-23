@@ -17,7 +17,7 @@ call to make: `ArtifactData` `batch`, `url` the board, `writes` = the file's JSO
 
     python3 -I kit_artifact_sync.py boards --repo . --out /tmp/kas [--clone harmonize=/home/user/harmonize]
 
-It reads .kit/config.json's portfolio; each attached repo must be cloned here (add_repo, then git clone): --clone,
+It reads .kit/config.json's portfolio (and --attach name=owner/repo, for a board without the kit's config); each attached repo must be cloned here (add_repo, then git clone): --clone,
 else its recorded path, else ../<name>. Only what changed since the last run is written (boards-state.json in --out;
 --full rewrites all), and a post or comment gone from a mirror is deleted. A write to a document already in the
 Artifact needs its version: pass --versions (a {"<collection>/<doc_id>": version} map from ArtifactData list). `docs` and `diffs` take --into <id> to
@@ -128,10 +128,16 @@ def cmd_boards(a):
     except (OSError, ValueError):
         cfg = {}
     clones = dict(x.split("=", 1) for x in (a.clone or []) if "=" in x)
+    portfolio = list(cfg.get("portfolio") or [])
+    for spec in a.attach or []:                        # a board without the kit's config (or one more repo)
+        name, _, gh = spec.partition("=")
+        gh = gh[len("github:"):] if gh.startswith("github:") else gh
+        if name and not any(isinstance(x, dict) and repo_id(x.get("name") or "") == repo_id(name) for x in portfolio):
+            portfolio.append({"name": name, "github": gh.strip("/")})
     state_p = os.path.join(a.out, "boards-state.json")
     old = {} if a.full or not os.path.exists(state_p) else json.load(open(state_p, encoding="utf-8"))
     new, writes, rows, report = {}, [], [], []
-    for item in cfg.get("portfolio") or []:
+    for item in portfolio:
         if not isinstance(item, dict):
             continue
         gh = str(item.get("github") or "")
@@ -176,7 +182,7 @@ def cmd_boards(a):
         if k.split("/", 1)[0] in gone_repos:
             _, coll, did = k.split("/", 2)
             writes.append({"op": "delete", "collection": "repos/%s/%s" % (k.split("/", 1)[0], coll), "doc_id": did})
-    index = {"repos": rows, "primary": {"name": cfg.get("project") or os.path.basename(os.path.abspath(a.repo))},
+    index = {"repos": rows, "primary": {"name": a.project or cfg.get("project") or os.path.basename(os.path.abspath(a.repo))},
              "mirrored_at": now()}
     writes.insert(0, {"op": "set", "collection": "kit_repos", "doc_id": "_index", "data": index})
     vers = json.load(open(a.versions, encoding="utf-8")) if a.versions else {}
@@ -263,6 +269,9 @@ def main(argv):
     b = sub.add_parser("boards"); b.add_argument("--repo", default="."); b.add_argument("--out", default="/tmp/kas")
     b.add_argument("--clone", action="append", default=[], help="name=path of an attached repo's clone")
     b.add_argument("--full", action="store_true", help="write every post and comment again")
+    b.add_argument("--attach", action="append", default=[], help="name=owner/repo: attach a repo not in .kit/config.json "
+                   "(every run lists every attached repo: a repo left out disappears from the board)")
+    b.add_argument("--project", default="", help="the primary board's name (default: .kit/config.json project)")
     b.add_argument("--versions", default="", help='JSON {"<collection>/<doc_id>": version} of the documents already in the Artifact '
                    "(from ArtifactData list/get), added as if_version so existing documents can be rewritten")
     a = ap.parse_args(argv)
