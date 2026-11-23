@@ -141,7 +141,12 @@ class ResumeReadsAttachedBoards(unittest.TestCase):
             fh.write(src)
         old = load("kit_cl20_old", old_p)
         old.ROOT, old.CONFIG = self.kit.ROOT, self.kit.CONFIG   # loaded from a temp file: same repo as the new one
-        old.device_line = self.kit.device_line   # reads paths from its own file; not changed by CL20
+        # reads paths from its own file; not changed by CL20. Pinned (CL26): it measures free memory live, so two calls
+        # differed by 1 MB off the web (on the web it prints nothing, which hid the flake)
+        fixed = lambda *a, **k: "Device: fixed for this comparison."  # noqa: E731
+        old.device_line = fixed
+        self.addCleanup(setattr, self.kit, "device_line", self.kit.device_line)
+        self.kit.device_line = fixed
         posts = {"P1-a": {"title": "one", "part": "P1", "train": "t", "column": "info", "status": "in progress",
                           "session_id": "s1", "created_at": "2099-01-01T00:00:00Z"},
                  "P2-b": {"title": "two", "part": "P2", "train": "t", "column": "info", "status": "planned",

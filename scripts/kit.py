@@ -2184,6 +2184,47 @@ def _active_cli(explicit=None):
     return cfg_cli if cfg_cli in ("agy", "claude") else "claude"
 
 
+def _ancestor(comm_name):
+    """True when a process named `comm_name` (e.g. agy) encloses this one (/proc; False where there is none)."""
+    pid, seen = os.getppid(), set()
+    while pid > 1 and pid not in seen and os.path.exists("/proc/%d/comm" % pid):
+        seen.add(pid)
+        try:
+            with open("/proc/%d/comm" % pid, encoding="utf-8") as fh:
+                if fh.read().strip() == comm_name:
+                    return True
+            with open("/proc/%d/stat" % pid, encoding="utf-8") as fh:
+                st = fh.read()
+            pid = int(st[st.rindex(")") + 2:].split()[1])
+        except (OSError, ValueError, IndexError):
+            return False
+    return False
+
+
+def _launcher(explicit=None):
+    """CL26: the runtime a launcher (review, part, clerk) starts a session with: the one it runs in, never a binary
+    that is absent. "web" (a Claude Code web/cloud session: a script cannot start one, the orchestrator makes the
+    create_session call), "agy", "claude" (`claude --bg`), or None (nothing runnable here: the caller says so).
+    Order: the web; inside agy with agy on PATH; inside Claude Code with claude on PATH; the preferred CLI (explicit,
+    $KIT_CLI, kit.cli) when on PATH; any CLI on PATH."""
+    if _is_web():
+        return "web"
+    have = lambda b: shutil.which(b) is not None  # noqa: E731
+    if (os.environ.get("AGY_PID") or _ancestor("agy")) and have("agy"):
+        return "agy"
+    if (os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID")) and have("claude"):
+        return "claude"
+    pref = [explicit, os.environ.get("KIT_CLI"), (_kit_config().get("kit") or {}).get("cli")]
+    for b in [str(x or "").strip().lower() for x in pref] + ["claude", "agy"]:
+        if b in ("agy", "claude") and have(b):
+            return b
+    return None
+
+
+NO_RUNTIME = ("NOT STARTED: no runtime to start a session here (not a Claude Code web session; neither `claude` nor "
+              "`agy` on PATH)")
+
+
 def review_sample(bars, seed=None):
     """The bars a step review reruns: one in five picked at random (at least one), plus every bar marked [visual].
     The part cannot know which, so cutting corners on any claim does not pay; the review stays a few thousand tokens."""
@@ -2247,7 +2288,10 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
             rid = "%s-%d" % (base, n)
             n += 1
     session = "%s-review-%s" % (slug, _slug(rid[3:], 30))
-    if active == "agy":
+    # a dry run shows what an explicitly named CLI would run (nothing runs, so its binary need not be here)
+    run = cli if (dry_run and cli in ("agy", "claude")) else _launcher(cli)
+    # the guide of the runtime that runs the review; on the web, kit.cli's (Harmonize: agy's send_message <ORCH_ID>)
+    if (run if run in ("agy", "claude") else active) == "agy":
         cands = (os.path.join(ROOT, ".kit", "consultant.md"), os.path.join(ROOT, ".kit", "claude-cli", "consultant.md"))
     else:
         cands = (os.path.join(ROOT, ".kit", "claude-cli", "consultant.md"), os.path.join(ROOT, ".kit", "consultant.md"))
@@ -2269,28 +2313,45 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
     out = os.path.join(run_dir, rid + ".md")
     if os.path.exists(out) and not force and not dry_run:
         return 0, "review %s already started (prompt %s); --force to start it again" % (rid, os.path.relpath(out, ROOT))
-    if active == "agy":
-        cmd = ["agy", "--mode", "auto", "-p", "Your prompt is %s: read it and do it." % os.path.relpath(out, ROOT)]
+    text = "Your prompt is %s: read it and do it." % os.path.relpath(out, ROOT)
+    # CL26: `run` is the runtime this runs in, never kit.cli's binary when it is absent
+    if run == "web":
+        call = {"title": "Review %s" % rid, "source_url": _github_url(),
+                "source_revision": _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "main",
+                "prompt": text}
+        start = ("review %s NOT STARTED by the kit (a web session cannot start one): prompt %s written; start it "
+                 "now with the claude-code-remote `create_session` tool: %s" % (rid, os.path.relpath(out, ROOT),
+                                                                               json.dumps(call, ensure_ascii=False)))
+    elif run == "agy":
+        cmd = ["agy", "--mode", "auto", "-p", text]
+    elif run is None:
+        start = None
     else:
         mode = k.get("claude_permission_mode") or "auto"
         model = ((k.get("claude_cli_roles") or {}).get("consultant") or {}).get("model") or "opus"
         cmd = ["claude", "--bg", "-n", session, "--permission-mode", mode]
         if model != "inherit":
             cmd += ["--model", model]
-        cmd.append("Your prompt is %s: read it and do it." % os.path.relpath(out, ROOT))
+        cmd.append(text)
     if dry_run:
-        return 0, "would write %s and run: %s\n\n%s" % (os.path.relpath(out, ROOT), " ".join(cmd), tpl)
+        how = " ".join(cmd) if run in ("agy", "claude") else ("create_session (web)" if run == "web" else NO_RUNTIME)
+        return 0, "would write %s and run: %s\n\n%s" % (os.path.relpath(out, ROOT), how, tpl)
     os.makedirs(run_dir, exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(tpl)
     if os.environ.get("KIT_NO_LAUNCH"):
         return 0, "review %s prompt written (KIT_NO_LAUNCH: not started)" % rid
+    if run == "web":
+        return 0, start
+    if run is None:
+        return 1, "review %s %s. Its prompt is %s: start it by hand." % (rid, NO_RUNTIME, os.path.relpath(out, ROOT))
     try:
         subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True, env=dict(os.environ, KIT_ROLE="review"))
     except OSError as e:
-        return 1, "could not start the review session: %s" % e
-    return 0, "review %s started (%s)" % (rid, "agy -p" if active == "agy" else ("session " + session))
+        return 1, "review %s NOT STARTED: %s could not run (%s). Its prompt is %s." % (rid, cmd[0], e,
+                                                                                        os.path.relpath(out, ROOT))
+    return 0, "review %s started (%s)" % (rid, "agy -p" if run == "agy" else ("session " + session))
 
 
 # ---------------------------------------------------------------- steps: the train is the task list (any CLI)
@@ -2608,7 +2669,8 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     answered. Refuses a prompt that is not committed."""
     url = url or local_board_url()
     token = _resolve_board_token(token)
-    web = _is_web() if web is None else web
+    run = _launcher(cli)
+    web = (run == "web") if web is None else web
     try:
         d = _board_request(url, "doc/posts/" + urllib.parse.quote(pid, safe=""), token=token)
     except Exception as e:
@@ -2639,6 +2701,9 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                                      "prompt": text}
             sess = "pending: create_session (%s)" % name
         else:
+            if not shutil.which("claude"):     # CL26: never an OSError on an absent binary
+                return dict(out, ok=False, error=(NO_RUNTIME.replace("neither `claude` nor `agy`", "no `claude`") +
+                            "; an agy orchestrator starts a part with: %s" % _launch_line(part, rel, model, cli="agy")))
             if gate and _device() is not None:
                 try:
                     ok, why = _device().gate(_device().survey())

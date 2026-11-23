@@ -19,6 +19,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -84,9 +85,16 @@ def find_ancestor_pid(comm_name):
     return 0
 
 
+def is_web():
+    return str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes")
+
+
 def detect_cli(explicit, k):
+    """agy, claude, or "web" (CL26: a Claude Code web/cloud session, where a successor is a create_session call)."""
     if explicit and explicit != "auto":
         return explicit
+    if is_web():
+        return "web"
     env_cli = os.environ.get("KIT_CLI", "").strip().lower()
     if env_cli in ("agy", "claude"):
         return env_cli
@@ -143,7 +151,24 @@ def main():
     mode = os.environ.get("KIT_CLAUDE_PERMISSION_MODE") or k.get("claude_permission_mode") or "auto"
     model = ((k.get("claude_cli_roles") or {}).get(a.role) or {}).get("model") or ("haiku" if a.role == "clerk" else "inherit")
     gen = 2 if a.dry_run else next_gen(a.role)
-    prompt = successor_prompt(a.role, gen, cli=cli)
+    prompt = successor_prompt(a.role, gen, cli="claude" if cli == "web" else cli)
+
+    if cli == "web":
+        # CL26: a script cannot start a cloud session, and killing CLAUDE_PID would end this one with no successor.
+        call = {"title": "%s %d" % (name, gen), "prompt": prompt}
+        plan = {"how": "web", "cli": "web", "create_session": call}
+        if a.dry_run:
+            print(json.dumps(plan, indent=1))
+            return 0
+        print("handover: %s %d NOT STARTED by the kit (a web session cannot start one): call the claude-code-remote "
+              "`create_session` tool with %s, tell the sessions that reach this one its new id (skill "
+              "orchestrator-handoff), then end your turn; this session is not killed." % (
+                  name, gen, json.dumps(call, ensure_ascii=False)))
+        return 0
+    if not shutil.which(cli) and not a.dry_run:
+        print("handover: %s %d NOT STARTED: `%s` is not on PATH here (and this is not a Claude Code web session). "
+              "Start the successor by hand with: %s" % (name, gen, cli, prompt), file=sys.stderr)
+        return 1
 
     if cli == "agy":
         if a.role == "clerk":

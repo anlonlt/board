@@ -125,6 +125,18 @@ def background():
     return os.environ.get("KIT_ROLE", "").strip().lower() not in FOREGROUND_ROLES
 
 
+LAUNCH_RE = re.compile(r"^\s*Your prompt is \S+: read it and (do|follow) it\.?\s*$")
+
+
+def not_typed(prompt):
+    """CL26: a turn the owner did not type, judged from its opening prompt alone (before the turn): a background
+    session's, the clerk's forward, another session's message, a timer or task notice, or the kit's launch line (a web
+    part, started by create_session, has no KIT_ROLE to tell it is in the background)."""
+    head = prompt.lstrip()[:400]
+    return (background() or prompt.startswith(FORWARD) or "<cross-session" in head or "SYSTEM NOTIFICATION" in head
+            or head.startswith("<task-notification>") or bool(LAUNCH_RE.match(prompt)))
+
+
 def owner_typed(path):
     """True only when the transcript shows the owner typed this turn (no transcript: unknown, so False)."""
     if background():
@@ -203,7 +215,18 @@ def main():
     if ev in ("PreInvocation", "UserPromptSubmit"):
         p = str(data.get("lastUserInput") or data.get("prompt") or "")
         cap = limit("chat_answer_chars", 600, data)
-        if not p or background() or chat_verbose(data) or cap <= 0 or p.startswith(FORWARD) or "<cross-session" in p[:200] or "SYSTEM NOTIFICATION" in p[:200]:
+        if p and not_typed(p):
+            # CL26: neither platform has a hook between the model's text and the screen (Claude Code: Stop and
+            # SubagentStop run after the closing text is shown; agy: PostInvocation and Stop likewise), so a Stop
+            # block always comes after a long relay was read. The earliest the rule can act is here, before the turn.
+            rule = ("SAY IT ONCE: the owner did not type this turn (a session's message, a timer, a launch): end it "
+                    "with a single \"\u00b7\" and nothing else; the result goes in your board post.")
+            if claude and ev == "UserPromptSubmit":
+                claude_context(ev, rule)
+            else:
+                inject(rule)
+            return 0
+        if not p or chat_verbose(data) or cap <= 0:
             if not claude:
                 print("{}")
             return 0
