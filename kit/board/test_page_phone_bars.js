@@ -35,6 +35,10 @@ const leftText = (p) => p.evaluate(() => {
     const ctx = await b.newContext({ viewport: { width, height: 860 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
     const p = await ctx.newPage();
     await p.goto(URL0 + '/?token=' + encodeURIComponent(TOK)); await p.waitForTimeout(1500);
+    await p.goto(URL0 + '/#/lanes'); await p.waitForTimeout(2000);
+    const top = await span('header.top')(p);
+    check(width + ' px: the board header fills the top edge to edge (' + JSON.stringify(top) + ')', fullWidth(top) && top.t <= 0);
+    if (process.argv[2]) await p.screenshot({ path: process.argv[2] + '-lanes-' + width + '.png' });
     await p.goto(URL0 + '/#/post/' + encodeURIComponent(POST)); await p.waitForTimeout(2500);
     const bar = await span('#sheet .bar')(p);
     check(width + ' px: the post bar spans the screen edge to edge, from the top (' + JSON.stringify(bar) + ')', fullWidth(bar) && bar.t <= 0);

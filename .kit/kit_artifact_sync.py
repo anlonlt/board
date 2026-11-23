@@ -346,7 +346,8 @@ def cmd_diffs(a):
 # "All the pictures don't show up here": every file a post or comment names that the board's viewers open is put in
 # the Artifact when the post is written (`kit.py artifact push` prints these steps; `files` alone does the same for
 # posts written with ArtifactData). Limits measured on the Artifact's asset store (2026-11-23): 20 MiB a file (SVG
-# 2 MiB), up to 25 files a call (a text file in a call of its own), 1 GiB and 5,000 files a store; accepted types
+# 2 MiB), up to 25 files a call (a text file in a call of its own); the store's total shows in `Artifact` `list`
+# `scope: "assets"` (a store-full refusal comes from the upload call itself); accepted types
 # png jpg jpeg gif webp svg mp4 webm pdf docx xlsx woff woff2 ttf otf csv md markdown json txt ts css js mjs cjs.
 # Markdown and HTML documents are not uploaded: they are mirrored as text in kit_docs (2 MiB a file, cut to fit a db
 # document). Anything else (audio, .mov, .avif, a larger file) stays a repo link, and the steps say so for the post.
@@ -427,6 +428,8 @@ def plan_files(repo, docs, st):
                     plan["upload"].append([ref, os.path.abspath(full), sha])
             elif ext in (".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".opus", ".mov", ".m4v", ".avif"):
                 plan["links"].append([ref, "the Artifact's store does not take %s files" % ext])
+            elif ref not in (x[0] for x in plan["links"]):
+                plan["links"].append([ref, "the board's viewers do not open %s files" % (ext or "extension-less")])
     return plan
 
 
@@ -442,9 +445,12 @@ def plan_text(plan, board, out, into):
         lines.append("  Save what each call returns as {\"<repo path>\": \"/_blob/<id>\"} in %s (paths: %s)." % (
             os.path.join(out, "uploaded.json"), ", ".join(u[0] for u in ups)))
     if ups or plan["mirror"]:
-        lines.append("Then: `python3 -I .kit/kit_artifact_sync.py files-sent --repo . --out %s%s`: it records them and "
-                     "writes the batch that maps them (kit_docs) for the page%s." % (
-                         out, " --into %s" % into if into else "", " and mirrors %d document(s)" % len(plan["mirror"]) if plan["mirror"] else ""))
+        lines.append("Then: `ArtifactData` `get`, `url` %s, `collection: \"%skit_docs\"`, `doc_id: \"_index\"`, `out_dir: \"%s\"`; "
+                     "and `python3 -I .kit/kit_artifact_sync.py files-sent --repo . --out %s%s --index <the saved _index.json> "
+                     "--index-version <its version>` (or `--index-missing` if there is none): it records them and writes the "
+                     "batch that merges them into the map (kit_docs) for the page%s." % (
+                         board, ("repos/%s/" % repo_id(into)) if into else "", os.path.join(out, "index"), out,
+                         " --into %s" % into if into else "", " and mirrors %d document(s)" % len(plan["mirror"]) if plan["mirror"] else ""))
     for ref, why in plan["links"]:
         lines.append("- `%s` stays a repo link (%s): say so in the post." % (ref, why))
     return "\n".join(lines) + ("\n" if lines else "")
@@ -489,10 +495,21 @@ def cmd_files_sent(a):
     writes = []
     amap = {k: v["url"] for k, v in st["assets"].items() if v.get("url")}
     if up or amap:
-        e = {"op": "update" if st.get("index_version") else "set", "collection": prefix(a) + "kit_docs", "doc_id": "_index",
-             "data": {"assets": amap, "mirrored_at": now()}}
-        if st.get("index_version"):
-            e["if_version"] = int(st["index_version"])
+        # The index also holds the Repo Docs reader's list (docs, total): it is never replaced. Its current copy is read
+        # (ArtifactData get, out_dir) and the map merged into it with an update pinned to its version; only an index
+        # confirmed missing is created. (O50's check, 2026-11-23: a `set` here would have wiped docs/total.)
+        if a.index_missing:
+            e = {"op": "set", "collection": prefix(a) + "kit_docs", "doc_id": "_index", "data": {"assets": amap, "mirrored_at": now()}}
+        elif a.index and a.index_version:
+            cur = json.load(open(a.index, encoding="utf-8"))
+            cur = cur.get("data") if isinstance(cur.get("data"), dict) else cur
+            merged = dict(cur.get("assets") or {}); merged.update(amap)
+            e = {"op": "update", "collection": prefix(a) + "kit_docs", "doc_id": "_index", "if_version": int(a.index_version),
+                 "data": {"assets": merged, "mirrored_at": now()}}
+        else:
+            raise SystemExit("files-sent needs the board's current %skit_docs/_index: `ArtifactData` `get` it with an out_dir, "
+                             "then pass --index <that file> --index-version <its version>; or --index-missing if the get "
+                             "says there is none. Nothing was written." % prefix(a))
         writes.append(e)
     here = os.path.dirname(os.path.abspath(__file__))       # kit/claude in the kit, .kit in an install
     bs = server(a.kit or (os.path.dirname(os.path.dirname(here)) if os.path.basename(here) == "claude" else here))
@@ -512,15 +529,13 @@ def cmd_files_sent(a):
             e["if_version"] = int(v)
         writes.append(e)
         st["docs"][did] = {"version": int(v or 0) + 1, "sha": sha256_of(os.path.join(a.repo, ref))}
-    if writes and writes[0]["doc_id"] == "_index":
-        st["index_version"] = int(st.get("index_version") or 0) + 1
     os.makedirs(os.path.dirname(files_state_path(a.repo, a.into)), exist_ok=True)
     json.dump(st, open(files_state_path(a.repo, a.into), "w", encoding="utf-8"), indent=1)
     write_batches(a.out, writes, "files" + ("-" + repo_id(a.into) if a.into else ""))
     if missing:
         print("Not in uploaded.json, so not mapped: %s" % ", ".join(missing))
-    print("A refused write names the document's real version: `files-pin --into <id> <doc_id>=<version>` "
-          "(`_index` for the map), then files-sent again.")
+    print("A refused write names the document's real version: `files-pin --into <id> <doc_id>=<version>` for a "
+          "mirrored document, or get _index again for the map, then files-sent again.")
 
 
 def cmd_files_pin(a):
@@ -550,6 +565,8 @@ def main(argv):
     f.add_argument("--board", default="")
     fs = sub.add_parser("files-sent", help="after the uploads: record them, and the batch that maps them")
     fs.add_argument("--repo", default="."); fs.add_argument("--out", default="/tmp/kas-files"); fs.add_argument("--kit", default="")
+    fs.add_argument("--index", default="", help="the current kit_docs/_index, saved by ArtifactData get with out_dir")
+    fs.add_argument("--index-version", type=int, default=0); fs.add_argument("--index-missing", action="store_true")
     fp = sub.add_parser("files-pin"); fp.add_argument("pairs", nargs="+"); fp.add_argument("--repo", default=".")
     fp.add_argument("--out", default="/tmp/kas-files")
     for x in (d, g, s, f, fs, fp):
