@@ -21,9 +21,10 @@
   "memory holds only what no post holds: 1 of 1 compact test red before, green after; session-start hook tests 2 of 2 red before, green after; full suite 10 of 10 (test_install updated to the new rule)",
   "command index: 3 of 3 tests red before, green after; 34 of 34 kit.py commands indexed (a test fails on any missing); part prompt step 1b and session start name it",
   "resume carries the brief's additions: 4 of 4 tests red before, green after; on Harmonize's board 6,036 characters (~1,500 tokens) after adoption",
-  "guard on agy with no session id: 1 of 1 test red before, green after (a resume stamps `last`)"
+  "guard on agy with no session id: 1 of 1 test red before, green after (a resume stamps `last`)",
+  "done refuses a post not on the Artifact: 1 of 1 test red before, green after; this post was on the local copy only until 09:40 (Artifact version 1, planned), now sent through artifact pull/load/push"
  ],
- "body": "**What you must know:** `kit.py brief` and adopt's own write path are deleted (they rebuilt `resume` and `artifact load/push`). What remains changes existing scripts: `docs/CL28.md § Changes to existing scripts` lists each, the roles and runtimes.\n\n## Resume\nNow also lists each open question (age, default, what it blocks), your decisions of the last 3 days, and a stale `_orchestrator` id.\n\n## The guard\nThe orchestrator's reply to your comment is refused unless `kit.py resume` ran in that session in the last 15 min.\n\n## Command index\n`kit.py commands [word]`, read before any code (part prompt step 1b, session start), in every runtime.\n\n## Memory\nWhere things stand is the board only; memory keeps lessons, the workflow, preferences, timers.\n\n## Idea: decisions distilled into principles (your question)\n`principles.md` in memory, one line each: the rule, your words quoted, the comment id and date, its scope (a train or all). Guardrails: only from your own words, never a session's guess; you confirm each with a Like; at most 30 lines; a new one that contradicts an old one replaces it, both ids kept; a train's principles archive when it is done. `resume` prints them, so old comments need not be reread.",
+ "body": "**What you must know:** `kit.py brief` and adopt's own write path are deleted (they rebuilt `resume` and `artifact load/push`). What remains changes existing scripts: `docs/CL28.md § Changes to existing scripts` lists each, the roles and runtimes.\n\n## Resume\nNow also lists each open question (age, default, what it blocks), your decisions of the last 3 days, and a stale `_orchestrator` id.\n\n## The guard\nThe orchestrator's reply to your comment is refused unless `kit.py resume` ran in that session in the last 15 min.\n\n## Command index\n`kit.py commands [word]`, read before any code (part prompt step 1b, session start), in every runtime.\n\n## Memory\nWhere things stand is the board only; memory keeps lessons, the workflow, preferences, timers.\n\n## Idea: decisions distilled into principles (your question)\n`principles.md` in memory, one line each: the rule, your words quoted, the comment id and date, its scope (a train or all). Guardrails: only from your own words, never a session's guess; you confirm each with a Like; at most 30 lines; a new one that contradicts an old one replaces it, both ids kept; a train's principles archive when it is done. `resume` prints them, so old comments need not be reread.\n\n## Done means on the board\n`kit.py done` now refuses while the live board lacks the post's latest version (my own post had stayed 'planned' there).",
  "breaks": "revert 911718f",
  "check": "python3 -m unittest tests.test_cl28_brief tests.test_clerk_starts_orchestrator tests.test_install_present_runtimes",
  "column": "info",
@@ -47,6 +48,6 @@
  "status": "complete",
  "title": "the orchestrator answers only from a fresh brief",
  "train": "cli",
- "updated_at": "2026-11-23T09:40:00Z",
+ "updated_at": "2026-11-23T09:59:07Z",
  "verdict": "Before answering you, the orchestrator must have run kit.py resume in the last 15 min or its reply is refused; the brief that repeated resume is removed."
 }
