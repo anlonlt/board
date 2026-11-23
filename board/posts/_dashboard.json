@@ -1,14 +1,14 @@
 {
  "column": "info",
- "created_at": "2026-11-23T07:38:46Z",
+ "created_at": "2026-11-23T08:33:24Z",
  "rows": [
   {
-   "at": 7,
+   "at": 17,
    "key": "A",
-   "name": "Claude Code CLI runtime (the kit run by Claude Code, tested on its own board)",
-   "note": "Next: CL8 design principles complete + no emoji Like, then CL9 breaks, then CL10 see the new UI work",
-   "post": "P-cli",
-   "state": "running",
+   "name": "Cli",
+   "note": "Next: The Trains view: task lists (A) or the old flow map (B)?",
+   "post": "cl27-q-trains-view",
+   "state": "you",
    "steps": [
     "CLI-agnostic install",
     "Context reset instead of compaction",
@@ -18,12 +18,7 @@
     "Collapsible sections that learn",
     "Say it once: the leaks closed",
     "Design principles, complete, and no emoji Like",
-    "One board token per machine, kept across projects and CLIs",
-    "A launched part is always visible on the board, on the right base",
-    "Chat ends with a single · in every session the owner did not type in",
     "Step 0 measures each device; never more sessions than it can hold",
-    "The board travels in git, always current (mirror synced on every step)",
-    "A crashed part is continued from its last checkpoint",
     "Web takeover: Claude Code web continues where the board says",
     "The device's load set automatically per task, learned from what tasks took here",
     "resume reads the attached boards too",
@@ -32,8 +27,12 @@
     "See the new UI work, then stop tests touching ~/.local/bin",
     "Board UI: text never runs off screen, badge clears when seen, Done steps stay in the tr...",
     "Opening the first thread or post no longer freezes the board",
-    "The Trains view: task lists (A) or the old flow map (B)?",
-    "CL8 design principles complete + no emoji Like, then CL9 breaks, then CL10 see the new UI work"
+    "One board token per machine, kept across projects and CLIs",
+    "A launched part is always visible on the board, on the right base",
+    "Chat ends with a single · in every session the owner did not type in",
+    "The board travels in git, always current (mirror synced on every step)",
+    "A crashed part is continued from its last checkpoint",
+    "The Trains view: task lists (A) or the old flow map (B)?"
    ],
    "train": "P-cli"
   },
@@ -73,5 +72,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-23T07:38:46Z"
+ "updated_at": "2026-11-23T08:33:24Z"
 }
