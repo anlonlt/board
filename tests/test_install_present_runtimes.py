@@ -116,6 +116,20 @@ class PresentRuntimes(unittest.TestCase):
         cmds = [h["command"] for ev in s["hooks"].values() for g in ev for h in g["hooks"]]
         self.assertEqual(sum("kit_brief_guard.py" in c for c in cmds), 2, cmds)
         self.assertEqual(sum("/hooks/kit/" in c for c in cmds), 2, cmds)  # no other kit hook added
+        # the target's Claude Code hooks are the web ones (an ArtifactData guard is there): the reply tool is matched too
+        st.write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": "ArtifactData|mcp__claude-code-remote__create_session",
+                      "hooks": [{"type": "command", "command": "python3 -I x/.claude/hooks/kit/kit_orchestrator_guard.py"}]}]}}))
+        (self.cl / "kit_brief_guard.py").unlink()
+        man = json.loads(man_p.read_text())
+        man.pop(".claude/hooks/kit/kit_brief_guard.py", None)
+        man["_kit_commit"] = before + "^ x"
+        man_p.write_text(json.dumps(man))
+        r = install(self.t, "--update")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        s = json.loads(st.read_text())
+        pre = [g["matcher"] for g in s["hooks"]["PreToolUse"] if any("kit_brief_guard.py" in h["command"] for h in g["hooks"])]
+        self.assertEqual(len(pre), 1)
+        self.assertIn("ArtifactData", pre[0])
 
     def test_a_kit_hook_the_project_removed_is_not_put_back(self):
         man_p = self.t / ".kit" / "manifest.json"

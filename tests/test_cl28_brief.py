@@ -8,6 +8,7 @@
 python3 -m unittest tests.test_cl28_brief -v
 """
 import json
+import re
 import os
 import subprocess
 import sys
@@ -275,6 +276,77 @@ class Adopt(unittest.TestCase):
         self.assertIn("[h] HL6", out)
         self.assertIn("[?] VR5", out)
         self.assertNotIn("Train A (", out)  # A3's posts are done: no open step
+
+
+class AdoptOnAnArtifactBoard(unittest.TestCase):
+    """A web container has no board server: adopt prints the ArtifactData writes, pinned, and never calls the server."""
+
+    def test_batches_without_a_server(self):
+        kit = load_kit()
+        posts = json.loads(json.dumps(POSTS))
+        kit._load_board_docs = lambda m, db_path=None: (posts, {})
+        kit.attached_board = lambda: {"url": "https://claude.ai/artifact/X", "prefix": "repos/board/"}
+        kit.artifact_url = lambda: "https://claude.ai/artifact/X"
+        versions = {"posts/%s" % k: 3 for k in posts if k != "K3i-switch"}
+        kit._art_state = lambda: {"versions": versions}
+
+        def no_server(*a, **k):
+            raise AssertionError("adopt called the board server")
+        kit._local_update = kit._board_request = no_server
+        with tempfile.TemporaryDirectory() as d:
+            r = kit.adopt_trains(out_dir=d)
+            writes = [w for pth in r["batches"] for w in json.load(open(pth))]
+        hl6 = [w for w in writes if w["doc_id"] == "HL6-retrain-all"][0]
+        self.assertEqual(hl6, {"op": "update", "collection": "repos/board/posts", "doc_id": "HL6-retrain-all",
+                               "data": {"train": "HL"}, "if_version": 3})
+        self.assertEqual(r["need_pin"], ["posts/K3i-switch"])
+        self.assertIn("ArtifactData` `batch`", kit.adopt_text(r))
+
+
+class CommandIndex(unittest.TestCase):
+    """The owner, 2026-11-23: "Why are all the sessions skipping the kit's scripts???": an index read before any code."""
+
+    def test_every_kit_command_is_in_the_index(self):
+        kit = load_kit()
+        import argparse
+        names = set()
+        orig = argparse.ArgumentParser.parse_args
+
+        def grab(self, args=None, namespace=None):
+            for act in self._actions:
+                if isinstance(act, argparse._SubParsersAction):
+                    names.update(act.choices)
+            raise SystemExit(0)
+        argparse.ArgumentParser.parse_args = grab
+        try:
+            kit.main(["resume"])
+        except SystemExit:
+            pass
+        finally:
+            argparse.ArgumentParser.parse_args = orig
+        self.assertGreater(len(names), 25)
+        indexed = " ".join(c for _, c, _ in kit.COMMANDS)
+        missing = sorted(n for n in names if not re.search(r"\b%s\b" % re.escape(n), indexed))
+        self.assertEqual(missing, [])
+
+    def test_a_word_finds_the_existing_command(self):
+        out = subprocess.run([sys.executable, "-I", KIT, "commands", "artifact"], capture_output=True, text=True).stdout
+        self.assertIn("kit.py artifact pull|load|push", out)
+        self.assertIn("starts the local board", out)
+
+    def test_read_before_any_code(self):
+        for p in ("kit/part.template.md", "kit/claude-cli/part.template.md"):
+            with open(os.path.join(ROOT, p), encoding="utf-8") as fh:
+                self.assertIn("kit.py commands artifact", fh.read())
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".kit"))
+            open(os.path.join(d, ".kit", "kit.py"), "w").close()
+            env = dict(os.environ, CLAUDE_PROJECT_DIR=d)
+            env.pop("KIT_ROLE", None)
+            r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "kit", "hooks", "kit_session_start.py")],
+                               input=json.dumps({"hook_event_name": "SessionStart", "cwd": d}), capture_output=True,
+                               text=True, env=env)
+            self.assertIn(".kit/kit.py commands", r.stdout)
 
 
 class MemoryHoldsWhatNoPostHolds(unittest.TestCase):

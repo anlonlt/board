@@ -2965,11 +2965,12 @@ def _short(s, n):
     return s if len(s) <= n else s[:n - 1].rstrip() + "…"
 
 
-def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
+def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None, out_dir=None):
     """CL28, once per board: a post made before the kit's trains has a `part` but no `train`, so neither `resume`, the
-    brief nor the orchestrator's task list sees it (Harmonize: HL6, VR5, HL5, the A3 posts). Give each its train from
-    its part's letters (HL6 -> HL, A3-data -> A), written through the local board, then `artifact push` when the board
-    is an attached Artifact. Returns {train: [post ids]}."""
+    brief nor the orchestrator's task list sees it (Harmonize: HL6, VR5, HL5, the A3 posts). Each gets its train from
+    its part's letters (HL6 -> HL, A3-data -> A). An Artifact board (kit.artifact or a claude.ai board_url): the
+    ArtifactData `batch` files to send (`update` {train}, pinned to the version `artifact pull` saw), no server needed;
+    else written through the local board. Returns {trains: {train: [post ids]}, written, batches, need_pin}."""
     posts, _ = _load_board_docs(m or ROOT, db_path=db_path)
     plan = {}
     for pid, p in sorted(posts.items()):
@@ -2980,6 +2981,27 @@ def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
             plan.setdefault(t, []).append(pid)
     if dry_run or not plan:
         return {"trains": plan, "written": 0}
+    if attached_board():
+        st = _art_state()
+        out_dir = out_dir or os.path.join(_art_dir(), "out")
+        os.makedirs(out_dir, exist_ok=True)
+        for f in glob.glob(os.path.join(out_dir, "adopt-*.json")):
+            os.remove(f)
+        entries, need_pin = [], []
+        for t, ids in sorted(plan.items()):
+            for pid in ids:
+                key = "posts/%s" % pid
+                if key not in st["versions"]:
+                    need_pin.append(key)
+                    continue
+                entries.append({"op": "update", "collection": _art_prefix() + "posts", "doc_id": pid,
+                                "data": {"train": t}, "if_version": int(st["versions"][key])})
+        paths = []
+        for i in range(0, len(entries), 50):
+            pth = os.path.join(out_dir, "adopt-%02d.json" % (i // 50 + 1))
+            write_doc(pth, entries[i:i + 50])
+            paths.append(pth)
+        return {"trains": plan, "written": 0, "batches": paths, "need_pin": need_pin, "board": artifact_url()}
     url = url or local_board_url()
     token = _resolve_board_token(token)
     n = 0
@@ -2987,14 +3009,85 @@ def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
         for pid in ids:
             if _local_update(url, token, "posts", pid, {"train": t}) is not None:
                 n += 1
-    out = {"trains": plan, "written": n}
-    if attached_board():
-        try:
-            r = artifact_push(url=url, token=token)
-            out.update({"batches": r["batches"], "need_pin": r["need_pin"]})
-        except Exception as e:  # the local copy has it; the next `artifact push` carries it
-            out["push_error"] = str(e)
-    return out
+    return {"trains": plan, "written": n}
+
+
+def adopt_text(r):
+    n = sum(len(v) for v in r["trains"].values())
+    lines = ["%d post(s) without a train, in %d train(s): %s" % (n, len(r["trains"]), ", ".join(
+        "%s (%d)" % (t, len(v)) for t, v in sorted(r["trains"].items())))]
+    if r.get("batches") is not None:
+        for pth in r["batches"]:
+            lines.append("- `ArtifactData` `batch`, `url` %s, `writes`: the list in %s" % (r.get("board"), pth))
+        if r.get("need_pin"):
+            lines.append("%d post(s) not pinned (no version seen): run `kit.py artifact pull` and `load`, then adopt "
+                         "again: %s" % (len(r["need_pin"]), ", ".join(r["need_pin"][:10])))
+        lines.append("Then `python3 -I .kit/kit.py artifact pull` and `load`, and `kit.py resume` lists them.")
+    elif r.get("written"):
+        lines.append("%d written on the local board." % r["written"])
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------- the command index (CL28)
+# The owner, 2026-11-23: "Why are all the sessions skipping the kit's scripts???" A session asked to build something
+# wrote new code before looking for the kit's own command (CL28 itself: a brief that repeated resume, an adoption that
+# bypassed artifact load). `kit.py commands [word]` is the index a session reads BEFORE it writes any code; a test
+# keeps every kit.py command in it, so it cannot go stale.
+COMMANDS = [
+    # (need, command, what it does)
+    ("read the board", "kit.py resume", "every train's open steps (the task list), live sessions, the owner's unanswered comments, attached boards"),
+    ("read the board", "kit.py brief", "before answering the owner: open questions (age, default, what each blocks), the owner's recent decisions, trains"),
+    ("read the board", "kit.py train <train> [--zoom <part>]", "a train's steps: verdict, bars, check, breaks, handoff of each"),
+    ("read the board", "kit.py post <id> [--head N]", "one post and its comments"),
+    ("read the board", "kit.py open [--since ISO]", "the owner's comments not answered yet"),
+    ("read the board", "kit.py since <ISO>", "what changed on the board since a time"),
+    ("read the board", "kit.py session <post>", "the session a post names, and what it left"),
+    ("read the board", "kit.py search <words>", "find posts and comments by words"),
+    ("read the board", "kit.py queue [--runner R]", "the steps waiting for a runner"),
+    ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
+    ("read the board", "kit.py report / doctor", "the board's size, columns, oldest question, missing files / its health"),
+    ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
+    ("read the board", "board_cli.py get|list|query <coll> ...", "raw documents of the local board (prefer the lookups above)"),
+    ("read the board", "board_cli.py inbox", "unread owner comments, Likes and option taps, compact"),
+    ("write the board", "TaskCreate {train, part} (Claude Code) / kit.py step new", "plan a step: its post and its prompt docs/prompts/<id>.md, never by hand"),
+    ("write the board", "kit.py step start|complete|drop", "move a step on its train"),
+    ("write the board", "kit.py adopt", "once: give posts made before the trains their train (from their part)"),
+    ("write the board", "board_cli.py set|update|batch <coll> <id> --data JSON", "write a post or a comment on the local board"),
+    ("write the board", "board_cli.py reply <post> <comment> --text T", "answer the owner's comment in the owner's thread (marks it read)"),
+    ("write the board", "kit_cards.py (agent kit-cards)", "rebuild the Where we are card and the Trains card, never by hand"),
+    ("launch and finish", "kit.py launch <post>", "start a part: post in progress, Trains row running, then claude --bg or the create_session call"),
+    ("launch and finish", "kit.py capacity / device.py run -- <cmd>", "the device's session cap / run a heavy job when it fits in memory"),
+    ("launch and finish", "kit.py done <post>", "check a step's post: format, artifacts, check passes, breaks makes it fail"),
+    ("launch and finish", "kit.py review <post> | --train T", "start the review of a step or a train"),
+    ("launch and finish", "kit.py pair <post>", "a blind before/after picture pair for a visual step"),
+    ("launch and finish", "end_session.py", "commit check, push, merge onto the trunk when allowed"),
+    ("launch and finish", "handover.py --role R", "a context reset: a fresh session under the same name"),
+    ("Artifact and web", "web_takeover.py [save]", "a web session: the board from git and the steps to continue / the board back to git"),
+    ("Artifact and web", "kit.py artifact pull|load|push|sent|pin", "the Artifact board to the local copy (starts the local board) and back, as pinned batches"),
+    ("Artifact and web", "kit.py reconcile", "the board here vs its git copy: the newer copy of each document wins"),
+    ("Artifact and web", "kit_artifact_sync.py", "the repo's documents and files into the Artifact for its viewers"),
+    ("Artifact and web", "update_board.py", "the Artifact's page to the kit's current page"),
+    ("git copy", "kit.py init|sync|sync-db|reads|receive|publish|diff|push", "the board's git copy (board-mirror): make it, fill it, compare it, send it"),
+    ("memory", "kit.py compact", "archive memory the board now holds (state files, awaits.md, closed issues) and old lessons"),
+    ("setup", "kit.py welcome [--post]", "the welcome post: what the board does and what can run now"),
+    ("setup", "install.py <project> [--update]", "install or update the kit in a project (every present runtime)"),
+    ("setup", "kit_import.py / step0_scan.py", "a person's state from their chats / a project's step 0 profile"),
+    ("index", "kit.py commands [word]", "this list"),
+]
+
+
+def commands_text(word=None):
+    rows = [r for r in COMMANDS if not word or word.lower() in " ".join(r).lower()]
+    out = ["# The kit's commands (python3 -I .kit/<script>; read this before writing any code: reuse, never rebuild)"]
+    need = None
+    for n, cmd, what in rows:
+        if n != need:
+            out += ["", "## " + n]
+            need = n
+        out.append("- `%s`: %s" % (cmd, what))
+    if not rows:
+        out.append("nothing matches %r: `kit.py commands` lists all" % word)
+    return "\n".join(out) + "\n"
 
 def brief_stamp_dir():
     return os.path.join(ROOT, ".kit", "run", "brief")
@@ -3627,6 +3720,8 @@ def main(argv=None):
     s.add_argument("--days", type=int, default=3); s.add_argument("--db", default=None)
     s.add_argument("--board", dest="board_dir", default=None, help="a folder of posts/ and comments/ JSON instead of the local board")
     s.add_argument("--session", default=None)
+    s = sp.add_parser("commands", help="the index of the kit's commands: read it before writing any code")
+    s.add_argument("word", nargs="?", default=None)
     s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
     s.add_argument("--dry-run", action="store_true"); s.add_argument("--db", default=None)
     s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
@@ -3785,9 +3880,12 @@ def main(argv=None):
     if a.cmd == "resume":
         print(resume(m, db_path=a.db, cli=a.cli), end="")
         return 0
+    if a.cmd == "commands":
+        print(commands_text(a.word), end="")
+        return 0
     if a.cmd == "adopt":
         r = adopt_trains(url=a.board_url if hasattr(a, "board_url") else None, dry_run=a.dry_run, db_path=a.db, m=m)
-        print(json.dumps(r, ensure_ascii=False, indent=1))
+        print(adopt_text(r), end="")
         return 0
     if a.cmd == "brief":
         sess = a.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
