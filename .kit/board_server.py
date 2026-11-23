@@ -33,6 +33,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 _SHIM_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shim.js")
 
 
+def tar_name(n):
+    """A path without its leading "./" (CL30: `lstrip("./")` also ate the dot of `.story/` and `.kit/`)."""
+    n = str(n or "")
+    while n.startswith("./"):
+        n = n[2:]
+    return n
+
+
 def load_shim_js():
     try:
         with open(_SHIM_PATH, encoding="utf-8") as fh:
@@ -3454,7 +3462,7 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
         for member in tf.getmembers():
             if not member.isfile():
                 continue
-            name = member.name.lstrip("./")
+            name = tar_name(member.name)
             parts = name.split("/")
             if len(parts) == 3 and parts[0] == "board" and parts[1] == "blobs":
                 bfn = parts[2]

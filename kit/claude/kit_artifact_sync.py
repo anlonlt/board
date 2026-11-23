@@ -43,6 +43,14 @@ from datetime import datetime, timezone
 MAX_DOC = 240 * 1024          # an Artifact db document is at most 256 KiB once serialized
 
 
+def tar_name(n):
+    """A path without its leading "./" (CL30: `lstrip("./")` also ate the dot of `.story/` and `.kit/`)."""
+    n = str(n or "")
+    while n.startswith("./"):
+        n = n[2:]
+    return n
+
+
 def server(kit):
     d = os.path.join(kit, "kit", "board")
     sys.path.insert(0, d if os.path.isdir(d) else os.path.join(kit, ".kit") if os.path.isdir(os.path.join(kit, ".kit")) else kit)
@@ -132,7 +140,7 @@ def read_mirror(clone, branch=None):
         return ref, out
     with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
         for m in tf.getmembers():
-            parts = m.name.lstrip("./").split("/")
+            parts = tar_name(m.name).split("/")
             if not m.isfile() or len(parts) != 3 or parts[0] != "board" or parts[1] not in out or not parts[2].endswith(".json"):
                 continue
             try:
@@ -375,6 +383,9 @@ MAX_ASSET, MAX_SVG, PER_CALL = 20 * 1024 * 1024, 2 * 1024 * 1024, 25
 REF_RE = re.compile(r"`([^`\s]+?\.[A-Za-z0-9]{2,5})(?:\s*§[^`]*)?`|\]\((?!https?:|/_blob/|#)([^)\s]+?\.[A-Za-z0-9]{2,5})\)")
 
 
+SPAN_PATH_RE = re.compile(r"(?<![\w/.-])(\.?[\w-][\w.-]*(?:/[\w.-]+)*\.[A-Za-z0-9]{2,5})(?![\w/])")
+
+
 def post_refs(doc):
     """The repo paths a post or comment names: its images and artifacts, code spans and links in its text."""
     out = []
@@ -383,11 +394,16 @@ def post_refs(doc):
             if isinstance(v, str):
                 out.append(v)
     for k in ("body", "text"):
-        for m in REF_RE.finditer(str(doc.get(k) or "")):
+        txt = str(doc.get(k) or "")
+        for m in REF_RE.finditer(txt):
             out.append(m.group(1) or m.group(2))
+        # CL30: a path inside a code span with other words (`read docs/prompts/x.md first`); a word that is no repo
+        # file is dropped later (plan_files checks the file exists)
+        for span in re.findall(r"`([^`\n]+)`", txt):
+            out.extend(SPAN_PATH_RE.findall(span))
     seen, refs = set(), []
     for r in out:
-        r = r.split("#")[0].split("?")[0].strip().lstrip("./")
+        r = tar_name(r.split("#")[0].split("?")[0].strip())
         if r and r not in seen and not r.startswith(("/_blob/", "http:", "https:", "data:")) and ".." not in r.split("/"):
             seen.add(r); refs.append(r)
     return refs

@@ -458,6 +458,14 @@ def session(m, pid):
 STALE_GATED = ("resume", "train", "post", "open", "since", "session", "search", "queue", "sections", "report")
 
 
+def tar_name(n):
+    """A path without its leading "./" (CL30: `lstrip("./")` also ate the dot of `.story/` and `.kit/`)."""
+    n = str(n or "")
+    while n.startswith("./"):
+        n = n[2:]
+    return n
+
+
 class Conflict(Exception):
     pass
 
@@ -674,7 +682,7 @@ def _git_board_docs(repo, ref):
         return docs
     with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
         for mem in tf.getmembers():
-            parts = mem.name.lstrip("./").split("/")
+            parts = tar_name(mem.name).split("/")
             if not mem.isfile() or len(parts) != 3 or parts[1] not in ("posts", "comments", "seen") or not parts[2].endswith(".json"):
                 continue
             try:
@@ -3404,7 +3412,7 @@ def _read_mirror_board(clone):
     import tarfile
     with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
         for mem in tf.getmembers():
-            parts = mem.name.lstrip("./").split("/")
+            parts = tar_name(mem.name).split("/")
             if not mem.isfile() or len(parts) != 3 or parts[0] != "board" or parts[1] not in out or not parts[2].endswith(".json"):
                 continue
             try:
