@@ -1022,9 +1022,11 @@ html.kit-kbd .sheet:not([hidden]), html.kit-kbd .kit-post-win {
 html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-height: var(--kit-box-max, 35vh); }
 /* CL27 (his 08:30): a folded train card hides its done steps; they slide out above the open ones on a tap on its name */
 .kit-tl-inline .kit-tl-hdr b, .kit-tl-inline .kit-tl-hdr .tlsub { cursor: pointer; }
-.kit-tl-inline .kit-tl-item.is-done { transition: max-height .28s ease, opacity .22s ease, padding .28s ease, margin .28s ease; max-height: 160px; }
-.kit-tl-inline .kit-tl-item.is-done.open { max-height: none; }
-.kit-tl-inline.tl-collapsed .kit-tl-item.is-done { max-height: 0; opacity: 0; padding-block: 0; margin: 0; overflow: hidden; pointer-events: none; }
+/* folded: the done steps take no room at all (a zero-height box kept the list's gaps: his 08:55 "random spaces");
+   unfolded: they slide down into place */
+.kit-tl-inline.tl-collapsed .kit-tl-item.is-done { display: none; }
+.kit-tl-inline:not(.tl-collapsed) .kit-tl-item.is-done { animation: kitTlPull .26s ease both; }
+@keyframes kitTlPull { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 </style>
 
 <div class="wrap">
@@ -3934,8 +3936,9 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
         if (st === "later" || st === "planned" || st === "queued" || st === "blocked" || st === "idle") return "idle";
         if (c === "question") return Array.isArray(p.options) && p.options.length ? "default" : "you";
         if (c === "todo") return "you";
-        if (hasSuccessor(p)) return "done";
+        /* CL27 (his 08:55): a step still running stays running when its next step is planned */
         if (st.indexOf("progress") >= 0 || st === "running") return "running";
+        if (hasSuccessor(p)) return "done";
         return "done";
       }
       var mapDet = el("details", "tnet-map"); mapDet.open = true;
@@ -4006,7 +4009,8 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
           var SVG_CMT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>';
           var SVG_CHK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
           var SVG_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
-          var doneCnt = allInTrain.filter(function (p) { return colOf(p) === "done"; }).length;
+          /* CL27 (his 08:55): done means what the green dot says (the Done column, or a step the train has moved past) */
+          var doneCnt = allInTrain.filter(function (p) { return colOf(p) === "done" || postStateKey(p) === "done"; }).length;
           ov = mount || document.createElement("section");
           if (!mount) { ov.id = "kit-tl-modal"; ov.className = "kit-tl-win"; }
           ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", hName + " tasklist");
@@ -4066,7 +4070,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
             var c = colOf(p), isDone = c === "done", stK = postStateKey(p);
             var stColor = stateColors[stK] || "var(--" + c + ")";
             var item = document.createElement("div");
-            item.className = "kit-tl-item" + (isDone ? " is-done" : "") + (stK === "idle" ? " is-later" : "");
+            item.className = "kit-tl-item" + (isDone || stK === "done" ? " is-done" : "") + (stK === "idle" ? " is-later" : "");
             item.style.setProperty("--st-c", stColor);
 
             var dot = document.createElement("button"); dot.type = "button";
@@ -4084,7 +4088,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
                 item.classList.toggle("is-done", nextCol === "done");
                 dot.className = "kit-tl-dot st-" + postStateKey(p);
                 item.style.setProperty("--st-c", stateColors[postStateKey(p)] || "var(--" + nextCol + ")");
-                var dc2 = allInTrain.filter(function (q) { return colOf(q) === "done"; }).length;
+                var dc2 = allInTrain.filter(function (q) { return colOf(q) === "done" || postStateKey(q) === "done"; }).length;
                 subEl.textContent = dc2 + " / " + allInTrain.length + " done";
               }).catch(function () {});
             });

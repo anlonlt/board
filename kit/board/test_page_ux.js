@@ -54,6 +54,9 @@ const VV = `(() => {
   await put('posts', '_trains', { column: 'info', created_at: at(500), rows: [] });
   await put('posts', 'cl1-done', { title: 'CL1 a done step', part: 'CL1', train: 'cli', column: 'done', status: 'complete', created_at: at(400), done_at: at(390), verdict: 'Done and checked.', body: 'done' });
   await put('posts', 'cl2-open', { title: 'CL2 the step running now', part: 'CL2', parent: 'CL1', train: 'cli', column: 'info', status: 'in progress', created_at: at(300), verdict: 'Working on it.', body: 'Lead.\n\nSee `docs/t.md § Looked at, not a problem`, `docs/t.md § Third` and `docs/t.md § What is left`.\n\n## What I did\n\n' + LONG.repeat(12) });
+  for (let k = 1; k <= 7; k++) await put('posts', 'clz' + k, { title: 'CLZ' + k + ' an older done step', part: 'CLZ' + k, train: 'cli', column: 'done', status: 'complete', created_at: at(480 - k), done_at: at(470 - k), verdict: 'Done.', body: 'x' });
+  await put('posts', 'cl0-past', { title: 'CL0 a step the train moved past', part: 'CL0', train: 'cli', column: 'info', status: 'complete', created_at: at(450), verdict: 'Finished, never moved to Done.', body: 'x' });
+  await put('posts', 'cl3-next', { title: 'CL3 the next step', part: 'CL3', parent: 'CL2', train: 'cli', column: 'info', status: 'planned', created_at: at(250), body: 'later' });
   await put('posts', 'd1-q', { title: 'D1 a question for him', part: 'D1', train: 'demo', column: 'question', created_at: at(200), body: 'Which one?', options: ['A', 'B'] });
   for (let i = 0; i < 8; i++) await put('comments', 'c' + i, { post_id: 'cl2-open', from: i % 2 ? 'owner' : 'orchestrator', text: LONG.repeat(3), created_at: at(100 - i), delivered: true, read: true });
   await put('comments', 'w1', { post_id: '_orchestrator', from: 'orchestrator', text: 'Welcome. ' + LONG.repeat(4), created_at: at(90) });
@@ -113,7 +116,10 @@ const VV = `(() => {
       const vis = () => p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); if (!s) return null;
         return [...s.querySelectorAll('.kit-tl-item')].map((i) => ({ t: (i.querySelector('.kit-tl-part') || {}).textContent, done: i.classList.contains('is-done'), h: Math.round(i.getBoundingClientRect().height), y: Math.round(i.getBoundingClientRect().top) })); });
       const before = await vis();
-      check('411 px: a folded train card shows only its open steps (CL2), not its done one (CL1)', before && before.filter((x) => x.h > 2).map((x) => x.t).join() === 'CL2', before);
+      const shown = before ? before.filter((x) => x.h > 2).map((x) => x.t).join() : '';
+      check('411 px: a folded train card shows only its open steps (CL2, CL3), not its done ones (CL1, nor CL0 that the train moved past: his 08:55)', shown === 'CL2,CL3', before.map((x) => x.t + ':' + x.h).join(' '));
+      const gapF = await p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); const bd = s.querySelector('.kit-tl-body'); const its = [...bd.querySelectorAll('.kit-tl-item')].filter((i) => i.getBoundingClientRect().height > 2); return Math.round(its[0].getBoundingClientRect().top - bd.getBoundingClientRect().top); });
+      check('411 px: no blank band where the done steps are folded (first open step ' + gapF + ' px under the card\'s list top, at most 16; his 08:55)', gapF <= 16, gapF);
       await p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); s.querySelector('.kit-tl-hdr b').click(); }); await p.waitForTimeout(500);
       const after = await vis();
       const cl1 = after && after.find((x) => x.t === 'CL1'), cl2 = after && after.find((x) => x.t === 'CL2');
