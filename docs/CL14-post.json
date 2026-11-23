@@ -1,0 +1,29 @@
+{
+ "session_id": "03f1451f-f75f-592a-b2d4-47aad7d7d3fd",
+ "status": "done",
+ "column": "done",
+ "created_at": "2026-11-23T02:01:10Z",
+ "verdict": "Closing \"·\" is now required in every background session (KIT_ROLE other than orchestrator), also during setup, and only \"·\" alone passes; the owner's own chat turns keep their words.",
+ "bars": [
+  "hook tests 114 of 114 pass (98 before, 16 new CL14 checks)",
+  "run_all_tests: 5 of 6 suites pass; kit/board/test_strings.py has 2 failures that are identical on origin/main (not this step)"
+ ],
+ "artifacts": [
+  "kit/hooks/kit_say_it_once.py",
+  "kit/hooks/test_hooks.py",
+  ".claude/hooks/kit/kit_say_it_once.py",
+  ".claude/hooks/kit/test_hooks.py",
+  "docs/CL14.md"
+ ],
+ "not_checked": [
+  "a real background clerk session on his machine (needs his device): only planted transcripts were run",
+  "the board post itself: this cloud session could not reach his board (127.0.0.1:8765 refused, no kit board artifact named in docs), so the post lives in docs/CL14.md until he or the orchestrator copies it"
+ ],
+ "issues": [
+  "kit/board/test_strings.py: 2 failures already on origin/main (strings table not current; test_page.js 'Remove on a post writes removed: true') - belongs to another part",
+  "not merged into main: no permission to push main from this session (kit.trunk_push off); the branch merges clean"
+ ],
+ "check": "python3 -I kit/hooks/test_hooks.py | tail -1",
+ "handoff": "Background roles are detected by KIT_ROLE not in ('', 'orchestrator'); any new launch path must set KIT_ROLE. SendMessage limits untouched.",
+ "body": "Nothing to do: the three gaps of kit_say_it_once.py are closed and tested; the board was unreachable from the cloud, so this post is in docs/CL14.md.\n\n## What changed\n- (1) `background()`: KIT_ROLE set and not `orchestrator` (clerk, part, consultant, cards, review) makes every turn non-human: Stop requires \"·\", PostToolUse/PostInvocation give the \"·\" reminder, UserPromptSubmit no longer says \"answer in 600 characters\".\n- (2) While `kit.setup` is true, Stop still runs for a background session (Claude Code and agy); everything else stays quiet in setup as before.\n- (3) `stop_verdict` passes only an empty closing or \"·\" alone (whitespace trimmed); \"text\\n\\n·\" and short words like \"ok.\" now fail.\n- Tests pin KIT_ROLE per call (`role_env`), so the suite gives the same result when run from inside a part. The installed copy `.claude/hooks/kit/` was synced (its test_hooks.py was a stale older version).\n\n## Merge\n`git merge origin/main` into worktree-cl14 (30 commits): no conflicts.\n"
+}
