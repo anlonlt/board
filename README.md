@@ -328,6 +328,9 @@ The orchestrator and the clerk do not live on compaction; the board is their onl
 
 Why these limits: a takeover costs about 150k tokens, so at 300k half of every orchestrator session would go to getting going; past about 400k every turn re-reads more than it is worth. The clerk's takeover is a 1k prompt and each of its wakes re-reads its whole context, so a small limit is the cheap one.
 
+### Continuity between the computer and the web
+The board travels in git (`board-mirror`), and both sides pick it up where the other stopped. A web session (a usage limit on the computer, or any time) runs `python3 -I .kit/web_takeover.py`, works on the board, and saves it back to git (its Stop hook too). When the terminal keyword starts the board again, `kit.py reconcile` compares this board with git document by document: a post or comment git changed after this board did is taken from git, one only in git is added, one only here stays, read marks are merged, nothing is deleted; the result goes back to git. The orchestrator then rebuilds its task list from `kit.py resume`, so steps planned or finished on the web are in it. The inverse (the computer crashed): the web takeover reconciles the same way and resumes from what the computer last saved (its board pushes to git about 15 s after each change). While a board runs, a refused auto-push (git moved meanwhile) triggers the same reconcile, at most every 5 minutes.
+
 ### Runners (Code, Cloud, Browser & Human Work)
 Each workstream's state file declares `Runs in:` so the orchestrator routes each step to the right place:
 

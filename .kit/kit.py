@@ -645,6 +645,146 @@ def publish(m, url=None, db_path=None, branch=None, token=None, at=None):
     return {"sha": sha, "received": rec, "status": "published"}
 
 
+
+def _git_board_docs(repo, ref):
+    """{(coll, id): (data, commit time)} of posts, comments and seen at ref, read from git objects only."""
+    import io
+    import tarfile
+    arc = subprocess.run(["git", "-C", repo, "archive", "--format=tar", ref, "board"], capture_output=True, timeout=180)
+    docs = {}
+    if arc.returncode != 0 or not arc.stdout:
+        return docs
+    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
+        for mem in tf.getmembers():
+            parts = mem.name.lstrip("./").split("/")
+            if not mem.isfile() or len(parts) != 3 or parts[1] not in ("posts", "comments", "seen") or not parts[2].endswith(".json"):
+                continue
+            try:
+                data = json.loads(tf.extractfile(mem).read().decode("utf-8"))
+            except (ValueError, UnicodeDecodeError, AttributeError):
+                continue
+            if isinstance(data, dict):
+                docs[(parts[1], parts[2][:-5])] = [data, ""]
+    # when each file last changed in git: the first time `git log` (newest first) names it
+    log = subprocess.run(["git", "-C", repo, "log", "--format=@%cI", "--name-only", ref, "--", "board/posts",
+                          "board/comments", "board/seen"], capture_output=True, text=True, timeout=180).stdout
+    when = ""
+    for line in log.splitlines():
+        if line.startswith("@"):
+            when = _utc(line[1:])
+            continue
+        parts = line.strip().split("/")
+        if len(parts) == 3 and parts[2].endswith(".json"):
+            k = (parts[1], parts[2][:-5])
+            if k in docs and not docs[k][1]:
+                docs[k][1] = when
+    return {k: (v[0], v[1]) for k, v in docs.items()}
+
+
+def _utc(ts):
+    """An ISO time as UTC 'YYYY-MM-DDTHH:MM:SSZ' (comparable as text); '' if unreadable."""
+    try:
+        t = datetime.fromisoformat(str(ts).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
+    """The board here against its git copy (origin/<branch>), document by document; the more recent copy wins.
+
+    Run by the terminal keyword (`up`) before the orchestrator opens, and by web_takeover.py: work saved to git
+    elsewhere (a web session during a usage limit, another computer) comes back here, and what only this board has
+    stays and goes to git. A post or comment in git only is added here; one in both, different, is taken from git
+    when git changed it after this board did (git: the commit that last touched the file; here: the board's own
+    write time); read marks are merged. Nothing is deleted. Then the git copy is brought up to date and pushed."""
+    import sqlite3
+    url = _resolve_board_url(url)
+    token = _resolve_board_token(token)
+    branch = branch or BRANCH
+    repo = m if os.path.isdir(os.path.join(m, ".git")) or os.path.isfile(os.path.join(m, ".git")) else ROOT
+    ref = "refs/remotes/origin/" + branch
+    git(repo, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:%s" % (branch, ref))
+    if git(repo, "rev-parse", "--verify", "--quiet", ref).returncode != 0:
+        return {"status": "no git copy (origin/%s)" % branch, "from_git": 0, "added": 0, "kept_here": 0}
+    head = _git_checked(repo, "rev-parse", ref).strip()
+    remote = _git_board_docs(repo, ref)
+    db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    local_t = {}
+    if os.path.isfile(db):
+        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+        try:
+            for coll, did, ut in conn.execute("SELECT collection, doc_id, updated_at FROM docs WHERE collection IN "
+                                              "('posts', 'comments') OR (collection LIKE 'data/users/%' AND doc_id='board-seen')"):
+                if coll.startswith("data/users/"):
+                    local_t[("seen", coll[len("data/users/"):])] = _utc(ut)
+                else:
+                    local_t[(coll, did)] = _utc(ut)
+        finally:
+            conn.close()
+    writes, n_git, n_add, n_here = [], 0, 0, 0
+    for (kind, key), (data, gt) in sorted(remote.items()):
+        if kind == "seen":
+            coll, doc_id = "data/users/" + key, "board-seen"
+        else:
+            coll, doc_id = kind, key
+        api = "doc/" + "/".join(urllib.parse.quote(x, safe="") for x in coll.split("/") + [doc_id])
+        d = _board_request(url, api, token=token)
+        local = d["data"] if d.get("exists") else None
+        if kind == "seen":
+            new = merge_board_seen(local, data)
+            if new != local:
+                writes.append({"op": "set", "collection": coll, "doc_id": doc_id, "data": new, "if_version": d["version"]})
+            continue
+        if local == data:
+            continue
+        if local is None:
+            n_add += 1
+        elif gt and gt > local_t.get((kind, key), ""):
+            n_git += 1
+        else:
+            n_here += 1
+            continue
+        writes.append({"op": "set", "collection": coll, "doc_id": doc_id, "data": data, "if_version": d["version"]})
+    # one document at a time: a write can touch another (a step post updates the trains card), so each is pinned to
+    # the version read just before it; one that moved meanwhile is read again once
+    for w in writes:
+        for attempt in (1, 2):
+            try:
+                _board_request(url, "db/batch", {"writes": [w]}, token=token)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code != 409 or attempt == 2:
+                    raise Conflict("The board kept changing under %s/%s; run it again." % (w["collection"], w["doc_id"])) from e
+                api = "doc/" + "/".join(urllib.parse.quote(x, safe="") for x in w["collection"].split("/") + [w["doc_id"]])
+                cur = _board_request(url, api, token=token)
+                if w["collection"].startswith("data/users/"):
+                    w["data"] = merge_board_seen(cur.get("data") if cur.get("exists") else None, w["data"])
+                w["if_version"] = cur["version"]
+    receipt_key = "mirror-" + branch.encode("utf-8").hex()
+    rc = _board_request(url, "doc/kit-receipts/" + receipt_key, token=token)
+    _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": "kit-receipts", "doc_id": receipt_key,
+                                                 "data": {"sha": head}, "if_version": rc.get("version", 0)}]}, token=token)
+    pushed = ""
+    if repo == m and push:
+        # the git copy: origin's history first, then this board in full on top (it now holds both sides)
+        if git(m, "status", "--porcelain", "board").stdout.strip():
+            commit(m, "kit reconcile: this board before taking origin", branch=branch)
+        if git(m, "merge", "--ff-only", "origin/" + branch).returncode != 0:
+            r = git(m, "merge", "--no-edit", "-X", "ours", "origin/" + branch)
+            if r.returncode != 0:
+                git(m, "merge", "--abort")
+        if os.path.isfile(db):
+            sync_db(m, db_path=db, at=zstamp(datetime.now(timezone.utc)), full=True)
+            if git(m, "status", "--porcelain", "board").stdout.strip():
+                commit(m, "kit reconcile: local and git, the newer copy of each post", branch=branch)
+        r = git(m, "push", "-q", "origin", "HEAD:" + branch)
+        pushed = "pushed" if r.returncode == 0 else "push refused: " + (r.stdout + r.stderr).strip()[-200:]
+    return {"status": "reconciled with origin/%s" % branch, "from_git": n_git, "added": n_add, "kept_here": n_here,
+            "git": pushed or "git copy not updated here"}
+
 # ---------------------------------------------------------------- runtime welcomes
 WELCOME_RUNTIMES = ("agy", "claude-cli", "claude", "arena", "generic")
 
@@ -1966,6 +2106,9 @@ def main(argv=None):
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None)
+    s = sp.add_parser("reconcile", help="the board here vs its git copy: the newer copy of each post and comment wins")
+    s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--branch", default=None)
+    s.add_argument("--db", default=None); s.add_argument("--no-push", action="store_true")
     s = sp.add_parser("capacity", help="the device's session cap (.kit/device.py): --gate exits 1 when no slot is free")
     s.add_argument("--gate", action="store_true"); s.add_argument("--json", action="store_true")
     s = sp.add_parser("done"); s.add_argument("post"); s.add_argument("--db", default=None)
@@ -2068,6 +2211,16 @@ def main(argv=None):
         rc, msg = review(a.post, train=a.train, dry_run=a.dry_run, force=a.force, db_path=a.db)
         print(msg)
         return rc
+    if a.cmd == "reconcile":
+        try:
+            with _sync_lock(m) if os.path.isdir(m) else contextlib.nullcontext():
+                r = reconcile(m, url=a.board_url, token=a.token, branch=a.branch, db_path=a.db, push=not a.no_push)
+        except (Conflict, urllib.error.URLError, OSError) as e:
+            print("reconcile: NOT DONE (%s); the board here is unchanged." % e)
+            return 1
+        print("Board vs git: %s; %d from git (newer there), %d new from git, %d kept from here (newer here); %s."
+              % (r["status"], r["from_git"], r["added"], r["kept_here"], r.get("git", "")))
+        return 0
     if a.cmd == "resume":
         print(resume(m, db_path=a.db), end="")
         return 0

@@ -315,6 +315,15 @@ with tempfile.TemporaryDirectory() as d:
     check("claude hook: say_it_once Stop parses Claude transcript and blocks with exit 2", rc_cst == 2 and "French" in err_cst)
     rc_cst2, _, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "Stop", "transcript_path": cf_t, "session_id": "cs1-" + RUN})
     check("claude hook: say_it_once Stop passes on second try", rc_cst2 == 0)
+    check("claude hook: a long answer to the owner is retried shorter, never as a lone ·",
+          "shorter" in err_cst and "a single" not in err_cst)
+    _, out_cph, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse", "transcript_path": cf_t})
+    check("claude hook: no · reminder after a board write on a turn the owner typed", out_cph.strip() == "")
+    cf_n = os.path.join(d, "claude-n.jsonl")
+    with open(cf_n, "w") as fh:
+        fh.write(json.dumps({"type": "user", "uuid": "cn1", "message": {"content": "<task-notification>done</task-notification>"}}) + "\n")
+    _, out_cpn, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse", "transcript_path": cf_n})
+    check("claude hook: · reminder after a board write on a turn a session opened", "·" in out_cpn)
     with open(os.path.join(proj, "f.txt"), "w") as fh:
         fh.write("dirty-claude")
     rc_cstop1, _, err_cstop1 = run_claude("kit_stop.py", {"hook_event_name": "Stop"})

@@ -107,6 +107,12 @@ if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
       sleep 0.2
     done
   fi
+  # The board here against its git copy (a web session or another computer may have carried on while this one was
+  # stopped: a usage limit, a crash): the newer copy of each post wins, nothing is deleted, git gets the result.
+  if [ -f ".kit/kit.py" ]; then
+    TO=""; command -v timeout >/dev/null 2>&1 && TO="timeout 180"
+    $TO python3 -I .kit/kit.py reconcile --board-url "http://127.0.0.1:${PORT}" --token "$TOK" 2>&1 | tail -n 1 || true
+  fi
   echo "Board (local):  http://127.0.0.1:${PORT}/"
   echo "Board token:    ${TOK}  (paste once in the unlock prompt; never needed in URLs)"
   USE_FUNNEL=1
@@ -136,9 +142,9 @@ if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
   elif [ "$CLI" = "claude" ] && [ "$HAS_ORCH" -eq 1 ]; then
     PROMPT="Read ${ORCH_FILE} and start as the orchestrator for this repository (it starts the board clerk session if none runs)."
   elif [ "$HAS_ORCH" -eq 1 ] && [ "$HAS_CLERK" -eq 1 ]; then
-    PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Also launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md if not already running."
+    PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Also launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md if not already running. First rebuild your task list from the board: python3 -I .kit/kit.py resume."
   elif [ "$HAS_ORCH" -eq 1 ]; then
-    PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository."
+    PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. First rebuild your task list from the board: python3 -I .kit/kit.py resume."
   else
     PROMPT="Check the project memory and board posts (.kit/BOARD.md) and continue from the next step."
   fi

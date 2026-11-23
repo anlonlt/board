@@ -6,7 +6,7 @@
     python3 -I .kit/web_takeover.py --stop-hook   # the Stop hook: `save`, only in a web session, quiet when nothing changed
 
 `start` (the default): fetches every branch; starts a board server on 127.0.0.1 seeded from `origin/board-mirror` (the
-board's git copy) unless one answers already; prints `kit.py resume` and, for each step in progress whose session is
+board's git copy) unless one answers already; reconciles it with git (`kit.py reconcile`: the newer copy of each post); prints `kit.py resume` and, for each step in progress whose session is
 gone, the branch that holds its saved work and how to continue it.
 
 Nothing here needs the computer that crashed: the board, the prompts (docs/prompts/) and each part's work (its branch)
@@ -155,6 +155,9 @@ def cmd_start():
     print("Branch: %s" % br)
     print(start_board())
     ensure_mirror_worktree()
+    # the board here against git: what the computer saved before it stopped (or crashed) comes in, newer copy wins
+    rc, rec = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "reconcile"], timeout=240)
+    print(rec.splitlines()[-1] if rec else "reconcile: no output")
     rc, res = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "resume"], timeout=180)
     print()
     print(res)
