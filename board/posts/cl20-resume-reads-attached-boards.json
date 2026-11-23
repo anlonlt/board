@@ -1,0 +1,12 @@
+{
+ "body": "Working: kit.py resume lists each attached board (kit_repos/_index, repos/<id>/posts|comments): its open steps and the owner's unanswered comments there, with the board id.",
+ "column": "info",
+ "created_at": "2026-11-23T02:03:21Z",
+ "from": "CL20",
+ "part": "CL20",
+ "priority": 1,
+ "session_id": "28b46b80-c031-5e0d-a4b4-23ace846ca3d",
+ "status": "in progress",
+ "title": "resume reads the attached boards too",
+ "train": "cli"
+}
