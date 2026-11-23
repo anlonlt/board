@@ -1676,12 +1676,18 @@
     var html = "", para = [], i = 0;
     function flush() {
       if (para.length) {
-        var joined = para.map(renderInlineRich).join("<br>");
+        /* CL27 (his 08:20): a paragraph's wrapped source lines are one paragraph, as in any Markdown reader; a line
+           ending in two spaces or a backslash keeps its break */
+        var joined = para.map(function (pl, k) { var br = k < para.length - 1 && /(?: {2,}|\\)$/.test(pl); return renderInlineRich(pl.replace(/(?: {2,}|\\)$/, "")) + (k < para.length - 1 ? (br ? "<br>" : " ") : ""); }).join("");
         if (/^\s*<(?:p|h[1-4]|div|ul|ol|table|blockquote|pre|hr)\b/i.test(joined)) html += joined;
         else html += "<p>" + joined + "</p>";
         para = [];
       }
     }
+    /* CL27 (his 08:20, "some of the text in markdown lists are cut out of the paragraph"): a list item's wrapped
+       source lines continue the item; only a blank line or a new block ends it */
+    function blockStart(s) { return !s.trim() || /^\s*(?:[-*]\s+|\d+\.\s+|#{1,4}\s|```|>|\|.*\|\s*$|(?:---+|___+|\*\*\*+)\s*$|<(?:p|h[1-4]|div|details|table|ul|ol|blockquote)\b)/i.test(s); }
+    function itemWithRest(first) { var t = first; while (i + 1 < lines.length && !blockStart(lines[i + 1])) { i++; t += " " + lines[i].trim(); } return t; }
     while (i < lines.length) {
       var l = lines[i];
       if (/^\s*<!--/.test(l)) {
@@ -1746,7 +1752,7 @@
         flush();
         var ul = [];
         while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
-          var item = lines[i].replace(/^\s*[-*]\s+/, "");
+          var item = itemWithRest(lines[i].replace(/^\s*[-*]\s+/, ""));
           var tk = /^\[([ xX])\]\s+(.*)$/.exec(item);
           if (tk) ul.push('<li class="md-task"><span class="md-chk' + (tk[1] !== " " ? " on" : "") + '" aria-hidden="true"></span><span>' + renderInlineRich(tk[2]) + "</span></li>");
           else ul.push("<li>" + renderInlineRich(item) + "</li>");
@@ -1759,7 +1765,7 @@
         flush();
         var ol = [];
         while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-          ol.push("<li>" + renderInlineRich(lines[i].replace(/^\s*\d+\.\s+/, "")) + "</li>");
+          ol.push("<li>" + renderInlineRich(itemWithRest(lines[i].replace(/^\s*\d+\.\s+/, ""))) + "</li>");
           i++;
         }
         html += "<ol>" + ol.join("") + "</ol>";
@@ -3631,7 +3637,7 @@
           }
         }
         if (matchTarget && matchTarget.id) {
-          setTimeout(function () { selectAndScrollToHeading(matchTarget.id, true); }, 40);
+          setTimeout(function () { selectAndScrollToHeading(matchTarget.id, true); if (window._kitPinHeading) window._kitPinHeading(viewEl, matchTarget, 18); }, 40);
         } else {
           syncOutlineActive();
         }
@@ -4460,6 +4466,27 @@
     });
   }
 
+  /* CL27 (his 08:20, "Shouldn't the section linked always be the first visible thing in the viewer ?"): the heading is
+     put at the top of its scroller from their two rects (offsetTop counted from another box and landed on a later
+     section), and kept there while the pictures above and in it load, until he scrolls himself (3 s at most) */
+  function pinHeading(scroller, h, gap) {
+    var stop = false, until = Date.now() + 3000;
+    /* a last, short section can only reach the top with room below it: a spacer as tall as what is missing */
+    var room = scroller.querySelector(":scope > .kit-sec-room");
+    if (!room) { room = document.createElement("div"); room.className = "kit-sec-room"; room.setAttribute("aria-hidden", "true"); scroller.appendChild(room); }
+    function put() {
+      if (stop || Date.now() > until || !h.isConnected) return;
+      room.style.height = "0px";
+      var below = scroller.scrollHeight - (scroller.scrollTop + h.getBoundingClientRect().top - scroller.getBoundingClientRect().top - gap);
+      if (below < scroller.clientHeight) room.style.height = Math.ceil(scroller.clientHeight - below) + "px";
+      var d = h.getBoundingClientRect().top - scroller.getBoundingClientRect().top - gap; if (Math.abs(d) > 1) scroller.scrollTop += d;
+    }
+    ["wheel", "touchstart", "keydown", "mousedown"].forEach(function (ev) { scroller.addEventListener(ev, function () { stop = true; }, { once: true, passive: true }); });
+    put(); requestAnimationFrame(put); setTimeout(put, 60);
+    Array.prototype.forEach.call(scroller.querySelectorAll("img"), function (im) { if (!im.complete) im.addEventListener("load", put); });
+    if (window.ResizeObserver) { var ro = new ResizeObserver(put); Array.prototype.forEach.call(scroller.children, function (c) { ro.observe(c); }); setTimeout(function () { ro.disconnect(); }, 3000); }
+  }
+  window._kitPinHeading = pinHeading;
   function mountInlineViewerEmbed(anchorEl, fp, sec, repoOverride) {
     var postBody = anchorEl && anchorEl.closest ? anchorEl.closest("#p-body, .kit-post-win-body") : null;
     if (!postBody || (anchorEl.closest && anchorEl.closest(".kit-inline-embed, .kit-docs-modal"))) return;
@@ -4680,8 +4707,7 @@
             var hslug = ht.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
             if (hslug === sq || ht.indexOf(String(sec).toLowerCase()) >= 0) {
               hs[i].classList.add("kit-sec-hit");
-              var targetH = hs[i];
-              setTimeout(function () { body.scrollTop = Math.max(0, targetH.offsetTop - 10); }, 20);
+              pinHeading(body, hs[i], 10);
               break;
             }
           }
@@ -4712,7 +4738,8 @@
       if (c.closest && c.closest("a[href]")) continue;
       var raw = (c.textContent || "").trim();
       var sec = "";
-      var sm = raw.match(/^([A-Za-z0-9_./-]+\.md)\s+§\s*([A-Za-z0-9._\s-]+)$/);
+      /* CL27 (his 08:20): a section name is any text after the §, commas and the rest included */
+      var sm = raw.match(/^([A-Za-z0-9_./-]+\.md)\s+§\s*(.+)$/);
       if (sm) { raw = sm[1]; sec = sm[2].trim(); }
       if (!fileRe.test(raw)) continue;
       c.dataset.kitDocLink = "1";

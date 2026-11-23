@@ -1020,6 +1020,11 @@ html.kit-kbd .sheet:not([hidden]), html.kit-kbd .kit-post-win {
 .kit-tl-inline .kit-tl-item.is-done:not(.open) .kit-tl-verdict { display: none; }
 .kit-tl-inline .kit-tl-item.is-done:not(.open) { padding-block: 3px; }
 html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-height: var(--kit-box-max, 35vh); }
+/* CL27 (his 08:30): a folded train card hides its done steps; they slide out above the open ones on a tap on its name */
+.kit-tl-inline .kit-tl-hdr b, .kit-tl-inline .kit-tl-hdr .tlsub { cursor: pointer; }
+.kit-tl-inline .kit-tl-item.is-done { transition: max-height .28s ease, opacity .22s ease, padding .28s ease, margin .28s ease; max-height: 160px; }
+.kit-tl-inline .kit-tl-item.is-done.open { max-height: none; }
+.kit-tl-inline.tl-collapsed .kit-tl-item.is-done { max-height: 0; opacity: 0; padding-block: 0; margin: 0; overflow: hidden; pointer-events: none; }
 </style>
 
 <div class="wrap">
@@ -4036,6 +4041,23 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
           if (trReview) hdr.appendChild(reviewChip(trReview.verdict, "Review of the whole train: " + (str(trReview.verdict) || "?") + (str(trReview.suggestion) ? ". " + str(trReview.suggestion) : ""), trReview.post_id));
           hdr.appendChild(cmtAll);
           if (mount) { tdl.classList.add("kit-tl-dl"); hdr.appendChild(tdl); } else hdr.appendChild(clsB);
+          /* CL27 (his 08:30): a train card shows its name and its open steps; a tap on the name pulls the done steps out
+             above them, and again folds them. Each train remembers it, on this device. */
+          if (mount) {
+            var foldKey = "kit-tl-open:" + hName, wasOpen = false;
+            try { wasOpen = localStorage.getItem(foldKey) === "1"; } catch (e) {}
+            ov.classList.toggle("tl-collapsed", !wasOpen);
+            bEl.setAttribute("role", "button"); bEl.tabIndex = 0; bEl.setAttribute("aria-expanded", wasOpen ? "true" : "false");
+            bEl.title = "Show or hide the done steps";
+            var toggleDone = function () {
+              var nowOpen = ov.classList.contains("tl-collapsed");
+              ov.classList.toggle("tl-collapsed", !nowOpen);
+              bEl.setAttribute("aria-expanded", nowOpen ? "true" : "false");
+              try { if (nowOpen) localStorage.setItem(foldKey, "1"); else localStorage.removeItem(foldKey); } catch (e) {}
+            };
+            bEl.addEventListener("click", toggleDone); subEl.addEventListener("click", toggleDone);
+            bEl.addEventListener("keydown", function (kev) { if (kev.key === "Enter" || kev.key === " ") { kev.preventDefault(); toggleDone(); } });
+          }
           ov.appendChild(hdr);
           var list = document.createElement("div"); list.className = "kit-tl-body";
           var stateColors = { you: "var(--todo)", running: "var(--info)", default: "var(--question)", done: "var(--done)", idle: "var(--muted)" };

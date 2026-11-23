@@ -39,7 +39,7 @@
  ".kit/BOARD.md": "9a46b51004f0160debc2626664fcae9ff6acb71259b7a0058a1f986078664cf7",
  ".kit/ORCHESTRATOR.md": "8d48f37f71b0080998b7942eae31bbd36d7087e1447d182703aa9cc583960336",
  ".kit/agents/kit-cards.md": "fa0459d4c6d7e1416f8bf73952b9ae732873bd36d74d9b34cfa3ed6869094485",
- ".kit/board.html": "e17a92ca44f5bff613abc2b56d42cfeaf3383367a6c59289e6d256c4e29b9778",
+ ".kit/board.html": "df260bbc80037b18ffa44cb3718722b905705cccb4fc7f36144586c979ea7dd7",
  ".kit/board_cli.py": "491f3bae9feb806ba098e36f18b227b0f5f8e0ff1c885d046c6aca4cf9b30533",
  ".kit/board_server.py": "68eefde45d036c7a2d1ab8cc3de13fb7e8ae17fd20aa28f00af6d225697f2195",
  ".kit/board_token.py": "4b8607937b41d4f265308cc80dc964eda78dd374e17fb8808e0ba06b8c5150a8",
@@ -64,14 +64,14 @@
  ".kit/orchestrator.md": "3f0050d040571766e2970719eeb4a138a75dd2ab1443e9512f9c8ddb3dcf2d4e",
  ".kit/part.md": "24e155ca4e7470b3addedc340a552011f03091240c8ff0a349db7810ad3e0c2e",
  ".kit/runner.md": "71d6c50e8b088f539254f1435631e00cd5cc9a3da3cc280f929de414b4cf0a7d",
- ".kit/shim.js": "a2bbf7d2cc8ded8d3fef78c52c0ab9282a7929e3bae6a6827e27a1e7c3bf20dd",
+ ".kit/shim.js": "60941013f34fd3cd86e4bec217e4ab3e7c5fb7fd40e5528d0a711ba5f82487c4",
  ".kit/step0_scan.py": "1484aa361dd3a3bcbbfcfb79273d7a59948eaf5cdf7fb2247d4081f30764012d",
- ".kit/strings.en.json": "a3bc0e39fa7e67527db753175dc8ad16f9c1c3377d788124f4f8a116e94b1f47",
+ ".kit/strings.en.json": "9b3c62438a1949b37c2db34598015e4b9e14d5249ecee2f18d25d1fff59ff98e",
  ".kit/strings.py": "9ca7fdcd27a5f74100c7ab78fd33132cdda11ebe5c8f5b1a3c9dbc5e204deb1a",
  ".kit/twrp_wizard.py": "a930ad5cedc7143a0a67c44ac7184a9e87a97b9f528a5d4eb3b7629f250dd00e",
  ".kit/up": "50c7351eab5b1550353c0c23bf692bc3b898612189d74d89ecbeb2456e6757bf",
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "6c4c7d537524f7c6977d900f09caa6aa07373c0ee70dae2d3ac5e9e40680b081",
- "_kit_commit": "41370df 2026-11-23T08:43:32+00:00"
+ "_kit_commit": "a3d05f4 2026-11-23T08:43:32+00:00"
 }
