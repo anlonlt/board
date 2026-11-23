@@ -1156,10 +1156,10 @@
    "removed": 0
   },
   {
-   "at": "2026-11-23T02:37:37Z",
+   "at": "2026-11-23T02:38:31Z",
    "changed": 0,
    "comments_read": 0,
-   "db_seq": 3,
+   "db_seq": 169,
    "full": false,
    "new": 0,
    "posts": 39,
@@ -1168,22 +1168,10 @@
    "removed": 0
   },
   {
-   "at": "2026-11-23T02:38:35Z",
-   "changed": 0,
-   "comments_read": 0,
-   "db_seq": 3,
-   "full": false,
-   "new": 0,
-   "posts": 39,
-   "posts_removed": 0,
-   "posts_written": 0,
-   "removed": 0
-  },
-  {
-   "at": "2026-11-23T02:38:38Z",
+   "at": "2026-11-23T02:43:10Z",
    "changed": 0,
    "comments_read": 1,
-   "db_seq": 160,
+   "db_seq": 170,
    "full": false,
    "new": 0,
    "posts": 39,
@@ -1192,21 +1180,10 @@
    "removed": 0
   },
   {
-   "at": "2026-11-23T02:38:40Z",
-   "changed": 0,
-   "comments_read": 34,
-   "full": true,
-   "new": 0,
-   "posts": 39,
-   "posts_removed": 0,
-   "posts_written": 0,
-   "removed": 0
-  },
-  {
-   "at": "2026-11-23T02:38:46Z",
+   "at": "2026-11-23T02:43:18Z",
    "changed": 0,
    "comments_read": 0,
-   "db_seq": 164,
+   "db_seq": 170,
    "full": false,
    "new": 0,
    "posts": 39,
@@ -1215,10 +1192,10 @@
    "removed": 0
   },
   {
-   "at": "2026-11-23T02:38:54Z",
+   "at": "2026-11-23T02:43:25Z",
    "changed": 0,
    "comments_read": 0,
-   "db_seq": 164,
+   "db_seq": 170,
    "full": false,
    "new": 0,
    "posts": 39,
@@ -1227,46 +1204,10 @@
    "removed": 0
   },
   {
-   "at": "2026-11-23T02:38:57Z",
+   "at": "2026-11-23T02:45:50Z",
    "changed": 0,
    "comments_read": 0,
-   "db_seq": 164,
-   "full": false,
-   "new": 0,
-   "posts": 39,
-   "posts_removed": 0,
-   "posts_written": 0,
-   "removed": 0
-  },
-  {
-   "at": "2026-11-23T02:39:12Z",
-   "changed": 0,
-   "comments_read": 0,
-   "db_seq": 164,
-   "full": false,
-   "new": 0,
-   "posts": 39,
-   "posts_removed": 0,
-   "posts_written": 0,
-   "removed": 0
-  },
-  {
-   "at": "2026-11-23T02:39:40Z",
-   "changed": 0,
-   "comments_read": 0,
-   "db_seq": 164,
-   "full": false,
-   "new": 0,
-   "posts": 39,
-   "posts_removed": 0,
-   "posts_written": 0,
-   "removed": 0
-  },
-  {
-   "at": "2026-11-23T02:42:26Z",
-   "changed": 0,
-   "comments_read": 0,
-   "db_seq": 160,
+   "db_seq": 159,
    "full": false,
    "new": 0,
    "posts": 39,
