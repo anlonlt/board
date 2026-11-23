@@ -1,8 +1,34 @@
 {
- "body": "Continued in a cloud session from the WIP on worktree-cl12 (main merged in): first finishing the text-overflow base rule and its layout check, then the badge and the missing Done steps.",
+ "artifacts": [
+  "kit/board/board.template.html",
+  "kit/board/test_page_layout.js",
+  "scripts/run_all_tests.py",
+  "kit/board/strings.py",
+  "docs/assets/cl12/before-02-phone-discussion.png",
+  "docs/assets/cl12/after-02-phone-discussion.png",
+  "docs/assets/cl12/before-03-phone-trains.png",
+  "docs/assets/cl12/after-03-phone-trains.png",
+  "docs/assets/cl12/before-05-desktop-discussion.png",
+  "docs/assets/cl12/after-05-desktop-discussion.png"
+ ],
+ "bars": [
+  "test_page_layout.js: 21 of 21 checks pass on this branch; 8 of 21 fail on origin/main (same page, long text)",
+  "run_all_tests.py: 7 of 7 suites pass, 0 failed (KIT_ROLE unset)",
+  "his board: 2 of 2 orchestrator replies addressed to a Like's thread were hidden; both drawn now (stub of the same shape)"
+ ],
+ "body": "Your three bugs are fixed on branch worktree-cl12 and in main; your installed board shows them after its next kit update.\n\n## Text off screen (root cause, fixed once)\nA flex or grid child keeps min-width:auto, so a long word or name pushes it out of its box. Each earlier fix was per component. Now one base rule covers every element, present and future. Your comment headers had their own cause: a popup-title rule (`h2 {flex:none}`) hit every ## in the orchestrator's comments. A train's name ran off the left (box wider than its scroll area). The \"New below\" pill floated outside the orchestrator panel on a desktop.\nThe guard: `kit/board/test_page_layout.js` (now in run_all_tests) fails when any text line runs off screen or is cut, at phone and desktop widths. Pictures: `docs/assets/cl12/before-02-phone-discussion.png` and `docs/assets/cl12/after-02-phone-discussion.png`.\n\n## The badge that never cleared\nA reply to the thread of your Like was hung under the Like, which is never drawn: never on screen, never seen. Your board has 2 such replies (22:01, 22:19). They now show under what you liked, and every unseen reply unfolds.\n\n## Done steps missing from the train view\nThe tasklist matched posts' train (\"cli\") against the group's display name, so only open steps matched. It now keys by train id.\n\n## Also\nYour sent / seen / answered marks each have their own word. A translated board wrote removals to a translated \"posts/\" path (fixed).",
+ "check": "node kit/board/test_page_layout.js",
  "column": "info",
- "created_at": "2026-11-23T01:58:36Z",
+ "created_at": "2026-11-23T02:19:16Z",
  "from": "orchestrator",
+ "handoff": "CL8/CL10: a new component needs nothing for overflow; if test_page_layout.js reports a short label cut, give it flex:none. strings.py extract now drops the never-translate tokens.",
+ "issues": [
+  "the base rule lets a short no-wrap label shrink too; such a label needs flex:none (the layout check reports it)"
+ ],
+ "not_checked": [
+  "needs his device: his real phone and browser on his real board (checked in headless Chromium at 390 and 1300 px, on a stub page with long text)",
+  "his installed .kit/board.html is not updated here: it takes the fix at the next kit update"
+ ],
  "part": "CL12",
  "planned_by": "orchestrator",
  "session_id": "session_01AE1HGhgv7nxdCEvuM9YNsN",
@@ -10,8 +36,9 @@
   "004abd3c5e334e6aac34",
   "e2a98c49d8f14e068c54"
  ],
- "status": "in progress",
+ "status": "complete",
  "title": "Board UI: text never runs off screen, badge clears when seen, Done steps stay in the train view",
  "train": "cli",
- "updated_at": "2026-11-23T01:58:36Z"
+ "updated_at": "2026-11-23T02:19:16Z",
+ "verdict": "Fixed all three: text overflow at the base layer with a browser check that fails on any cut text, the badge (hidden replies to a Like), and Done steps in the train view."
 }
