@@ -1,0 +1,34 @@
+{
+ "artifacts": [
+  "kit/board/board.template.html",
+  "kit/board/test_page_speed.js",
+  "scripts/run_all_tests.py"
+ ],
+ "bars": [
+  "his kit-board first thread: blocked 6.8 s + 2.9 s before, 3 ms + 2 ms after (live v39 data)",
+  "test_page_speed.js: 4 of 4 pass with the fix; on main the page is still frozen after 5 s",
+  "run_all_tests.py: 9 of 9 suites pass, 0 failed (main merged in)"
+ ],
+ "body": "Opening the first thread froze the board for 6 to 7 seconds, then 3 more. The fix is a one-rule CSS change on branch worktree-cl12 (ccd7d52 = main + the fix); the live page needs a republish.\n\n## Which build has it\nBoth: the live page (v39) and kit main (0ce9353), reproduced in Chromium with a copy of your Artifact's data (Harmonize and the kit board). On the kit board, opening the first thread in Ask the orchestrator blocked the page 6.8 s, then 2.9 s. A post opens the same way when its comments nest deep.\n\n## Cause\nEach reply is drawn inside the one it answers, and those boxes were CSS grids, one inside the other. A grid sizes its items more than once, so the cost multiplied with each level. Your first kit-board thread is 6 replies deep: one layout of the orchestrator window took 6.3 s (Chrome trace), and the \"New below\" pill forced that layout on open. It hit the first thread because it is the newest, and the deepest.\n\n## Fix\nThreads and replies are plain block boxes; the space between replies is a margin. Same look. On your data: 6.8 s to 3 ms.\n\n## Test\n`kit/board/test_page_speed.js` (in run_all_tests): a thread 7 replies deep, in the orchestrator window and as a post's comments, at desktop and phone widths, must open in under 1 s. On main the page is still frozen after 5 s; with the fix it opens in 6 to 25 ms.",
+ "branch": "worktree-cl12",
+ "check": "node kit/board/test_page_speed.js",
+ "column": "info",
+ "created_at": "2026-11-23T03:42:19Z",
+ "done_at": "2026-11-23T03:42:19Z",
+ "from": "part",
+ "handoff": "Merge worktree-cl12 (ccd7d52) into main, then republish the Artifact page (install --update in Harmonize, board-publish).",
+ "issues": [
+  "branch: this session may push only worktree-cl12, so the fix is there (ccd7d52, main + fix); cl23-first-item-freeze exists only locally at the same commit"
+ ],
+ "not_checked": [
+  "needs his device: his phone and browser on the republished page",
+  "the live page is not republished by me"
+ ],
+ "part": "CL23",
+ "session_id": "session_01AE1HGhgv7nxdCEvuM9YNsN",
+ "status": "complete",
+ "title": "Opening the first thread or post no longer freezes the board",
+ "train": "cli",
+ "updated_at": "2026-11-23T03:42:19Z",
+ "verdict": "The freeze was nested CSS grids for reply threads (6 levels cost 6 s per layout); now block boxes: 6.8 s to 3 ms on his data, with a test that fails on main."
+}
