@@ -551,6 +551,7 @@ def main(argv):
     fs = sub.add_parser("files-sent", help="after the uploads: record them, and the batch that maps them")
     fs.add_argument("--repo", default="."); fs.add_argument("--out", default="/tmp/kas-files"); fs.add_argument("--kit", default="")
     fp = sub.add_parser("files-pin"); fp.add_argument("pairs", nargs="+"); fp.add_argument("--repo", default=".")
+    fp.add_argument("--out", default="/tmp/kas-files")
     for x in (d, g, s, f, fs, fp):
         x.add_argument("--into", default="", help="an attached repo's name: write under repos/<id>/ (run from its clone)")
     b = sub.add_parser("boards"); b.add_argument("--repo", default="."); b.add_argument("--out", default="/tmp/kas")
