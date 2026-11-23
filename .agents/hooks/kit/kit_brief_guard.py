@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The orchestrator answers the owner only from a fresh brief (CL28). Claude Code (CLI and web) and agy.
+"""The orchestrator answers the owner only from a fresh read of the board, `kit.py resume` (CL28). Claude Code (CLI and web) and agy.
 
 The owner, 2026-11-23, after orchestrator 51 told the owner A3 waited on their choice (a speaker memory line unchanged since
 11-16, A3 held since then) and missed two open decision posts: "Isn't there a hook, or a memory, or something that's
@@ -8,8 +8,8 @@ you check before answering?" This hook is that check:
 
   - PreToolUse, for the orchestrator only: a reply to the owner (ArtifactData set/update/batch of a comment with
     `reply_to` in comments or repos/<id>/comments; `board_cli.py reply` in Bash / run_command) is refused unless
-    `kit.py brief` ran in this session in the last `kit.brief.max_age_min` minutes (15); the refusal names the command.
-  - PostToolUse on Bash / run_command: a `kit.py brief` that ran stamps the session (.kit/run/brief/<session>).
+    `kit.py resume` ran in this session in the last `kit.brief.max_age_min` minutes (15); the refusal names the command.
+  - PostToolUse on Bash / run_command: a `kit.py resume` that ran stamps the session (.kit/run/brief/<session>).
 Everyone else (parts, the clerk, the owner's own sessions) is never refused. Exit 2 with the reason on stderr (Claude
 Code), {"decision": "deny"} (agy).
 """
@@ -24,9 +24,9 @@ from kit_config import config, is_claude_payload, project_dir  # noqa: E402
 
 COMMENTS = re.compile(r"^(repos/[^/]+/)?comments$")
 REPLY_CMD = re.compile(r"board_cli\.py\b[^\n;&|]*\breply\b")
-BRIEF_CMD = re.compile(r"\bkit\.py\b[^\n;&|]*\bbrief\b")
+BRIEF_CMD = re.compile(r"\bkit\.py\b[^\n;&|]*\bresume\b")
 DEFAULT_MAX_AGE_MIN = 15
-WAY = "python3 -I .kit/kit.py brief"
+WAY = "python3 -I .kit/kit.py resume"
 
 
 def sid_of(data):
@@ -46,7 +46,7 @@ def max_age_min(data):
 
 
 def brief_age_min(data):
-    """Minutes since this session's last brief (its own stamp; with no session id, kit.py's `last`), None if never."""
+    """Minutes since this session's last `kit.py resume` (its stamp), None if never."""
     sid = sid_of(data)
     path = os.path.join(stamp_dir(data), sid or "last")
     try:
@@ -145,9 +145,9 @@ def main():
     if age is not None and age <= cap:
         return allow(claude)
     return refuse(claude, (
-        "NOT SENT: you answer the owner only from a fresh brief (the kit's brief guard, CL28). Last brief in this "
-        "session: %s. Run `%s` first: the open decision posts and what each blocks, the owner's decisions of the last days "
-        "(on the board), each train's real state from its posts. Then answer from it, and send this reply again."
+        "NOT SENT: you answer the owner only from a fresh read of the board (the kit's guard, CL28). Last read in this "
+        "session: %s. Run `%s` first: every train's open steps from their posts, questions included, and the owner's "
+        "unanswered comments. Then answer from it, and send this reply again."
         % ("never" if age is None else "%d min ago (more than %d)" % (age, cap), WAY)))
 
 

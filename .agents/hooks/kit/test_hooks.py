@@ -130,8 +130,8 @@ with tempfile.TemporaryDirectory() as d:
     check("session start: board, language, project line, preferences",
           all(x in start_txt for x in ("127.0.0.1:8765", "French", "BUILD: make test", "ask before any real action")))
     # CL28: where things stand comes from the board, never a memory file's Next: line or awaits count
-    check("session start: no memory Next: line nor awaits count; the board's brief instead",
-          "ship the login screen" not in start_txt and "2 points" not in start_txt and "kit.py brief" in start_txt
+    check("session start: no memory Next: line nor awaits count; the board's resume instead",
+          "ship the login screen" not in start_txt and "2 points" not in start_txt and "kit.py resume" in start_txt
           and "OLD MEMORY (2 files" in start_txt)
 
     git(proj, "init", "-q"); git(proj, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a")
@@ -328,7 +328,7 @@ with tempfile.TemporaryDirectory() as d:
     check("claude hook: guard allows with exit 0", rc_cg_ok == 0 and out_cg_ok.strip() == "")
     rc_cs, out_cs, _ = run_claude("kit_session_start.py", {"hook_event_name": "SessionStart"})
     check("claude hook: SessionStart prints plain text stdout",
-          rc_cs == 0 and "kit.py brief" in out_cs and not out_cs.lstrip().startswith("{"))
+          rc_cs == 0 and "kit.py resume" in out_cs and not out_cs.lstrip().startswith("{"))
     rc_ct, out_ct, _ = run_claude("kit_board_typing.py", {"hook_event_name": "UserPromptSubmit", "prompt": "Board comment from the owner on your post P1-x, thread t, 10:00, verbatim: \"a\""})
     check("claude hook: board_typing emits hookSpecificOutput with ArtifactData",
           rc_ct == 0 and "hookSpecificOutput" in out_ct and "ArtifactData" in out_ct)
