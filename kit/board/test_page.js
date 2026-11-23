@@ -32,14 +32,12 @@ const fs = require('fs'), path = require('path');
   check('no keyboard shortcut in an open post (L likes it on the old page)', (await p.evaluate(() => window.__writes.length)) === 0);
   await p.evaluate(() => document.getElementById('remove').click()); await p.wait(300);
   const w = await p.evaluate(() => window.__writes);
-  if (process.env.KIT_DEBUG) console.log(JSON.stringify(w));
   check('Remove on a post writes removed: true', w.length === 1 && w[0][0] === 'posts/P-a' && w[0][1].removed === true);
   await p.evaluate(() => { const a = document.getElementById('ask'); if (a) a.click(); }); await p.wait(400);
-  // the discussions' Remove is in their Edit mode (top right since BD7): Select, tick the discussion, Remove
-  // (found by place, not by label: the same test runs on a translated page) Edit is the last tool, Remove the one before
-  await p.evaluate(() => [...document.querySelectorAll('#orch-hdr-tools button')].pop().click()); await p.wait(200);
+  // A discussion is removed in select mode (the pencil, last in #orch-hdr-tools): tick its square, then the bin (2nd tool).
+  await p.evaluate(() => document.querySelector('#orch-hdr-tools button:last-child').click()); await p.wait(200);
   await p.evaluate(() => document.querySelector('.discrow .kit-pick-sq').click()); await p.wait(200);
-  await p.evaluate(() => { const b = [...document.querySelectorAll('#orch-hdr-tools button')]; b[b.length - 2].click(); }); await p.wait(300);
+  await p.evaluate(() => document.querySelector('#orch-hdr-tools button:nth-child(2)').click()); await p.wait(300);
   check('Remove on a discussion hides all its messages', (await p.evaluate(() => window.__writes.map(x => x[0]))).includes('comments/c3')
         && !(await text('#sheet')).includes('a discussion'));
   check('no page error', errs.length === 0);

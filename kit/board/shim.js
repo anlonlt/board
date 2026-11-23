@@ -2055,9 +2055,10 @@
         "@media (hover:none),(pointer:coarse){" +
           ".kit-docs-pin{opacity:.48;}" +
         "}" +
+        /* CL10: the bar bleeds 16px each side (margin-inline:-16px); a 100% cap cut 32px off it and hid the bin past an invisible scroll at 390px */
         "@media (max-width:700px){" +
           ".kit-tl-win{inset:8px !important;left:8px !important;top:8px !important;width:calc(100vw - 16px) !important;height:calc(100dvh - 16px) !important;border-radius:14px;}" +
-          ".sheet .bar{gap:4px !important;flex-wrap:nowrap !important;max-width:100%;box-sizing:border-box;overflow-x:auto;scrollbar-width:none;}" +
+          ".sheet .bar{gap:4px !important;flex-wrap:nowrap !important;max-width:calc(100% + 32px);box-sizing:border-box;overflow-x:auto;scrollbar-width:none;}" +
           ".sheet .bar .row{gap:4px !important;flex-wrap:nowrap !important;min-width:0;align-items:center;}" +
           ".sheet .bar .kit-icon-btn{width:30px;height:30px;flex:none;}" +
           ".sheet .bar .btn{padding:4px 7px;font-size:.8rem;white-space:nowrap;flex:none;}" +
