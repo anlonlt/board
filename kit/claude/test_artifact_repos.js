@@ -10,7 +10,9 @@ const STUB = `(function () {
   const store = {
     "posts": { "P-main": { title: "Main post", column: "info", created_at: t(1) } },
     "comments": {},
-    "repos/songs/posts": { "P-song": { title: "Song post", column: "info", created_at: t(2) } },
+    "repos/songs/posts": { "P-song": { title: "Song post", column: "info", created_at: t(2), images: ["docs/song.png"] } },
+    "kit_docs": { "_index": { assets: { "docs/main.png": "/_blob/" + "b".repeat(32) } } },   /* the primary has its own map, as Harmonize does */
+    "repos/songs/kit_docs": { "_index": { assets: { "docs/song.png": "/_blob/" + "a".repeat(32) } } },
     "repos/songs/comments": {},
     "kit_repos": { "_index": { repos: [{ id: "songs", name: "Songs", github: "o/songs" }], primary: { name: "Harmonize" } } }
   };
@@ -67,6 +69,12 @@ const STUB = `(function () {
   res.checks.pickedAll = await pick('All boards');
   await p.wait(500);
   res.checks.allMerged = (await titles()) === 'Main post,Song post';
+  // CL10 (his 02:22): under "All boards" a picture of the attached board's post resolves through ITS index
+  await p.evaluate(() => { const c = [...document.querySelectorAll('.card')].find(x => /Song post/.test(x.textContent)); (c.querySelector('.card-open') || c).click(); });
+  await p.wait(800);
+  res.checks.attachedPictureInAll = await p.evaluate(() => [...document.querySelectorAll('#p-imgs img')].some(i => (i.getAttribute('src') || '').indexOf('/_blob/' + 'a'.repeat(32)) === 0));
+  await p.evaluate(() => { const b = document.getElementById('back'); if (b) b.click(); });
+  await p.wait(300);
   // a comment on the attached board's post, written through the page's wrapped db while in "All boards"
   await p.evaluate(async () => { const w = window.__KIT_WRAP_DB__(); const r = w.collection('comments').doc(); await r.set({ post_id: 'P-song', text: 'hi' }); });
   await p.wait(200);

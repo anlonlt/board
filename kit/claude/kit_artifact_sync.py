@@ -20,7 +20,7 @@ call to make: `ArtifactData` `batch`, `url` the board, `writes` = the file's JSO
 It reads .kit/config.json's portfolio (and --attach name=owner/repo, for a board without the kit's config); each attached repo must be cloned here (add_repo, then git clone): --clone,
 else its recorded path, else ../<name>. Only what changed since the last run is written (boards-state.json in --out;
 --full rewrites all), and a post or comment gone from a mirror is deleted. A write to a document already in the
-Artifact needs its version: pass --versions (a {"<collection>/<doc_id>": version} map from ArtifactData list). `docs` and `diffs` take --into <id> to
+Artifact needs its version: pass --versions (a {"<collection>/<doc_id>": version} map from ArtifactData list). `docs`, `assets` and `diffs` take --into <id> to
 fill an attached board's Repo Docs reader and diffs (repos/<id>/kit_docs, repos/<id>/kit_git) from its clone.
 `boards-back` is the other way: comments written in the Artifact on an attached board's posts (dump them with
 `ArtifactData list collection repos/<id>/comments, out_dir <dump>`) go to that repo's board-mirror branch, where its
@@ -44,7 +44,8 @@ MAX_DOC = 240 * 1024          # an Artifact db document is at most 256 KiB once 
 
 
 def server(kit):
-    sys.path.insert(0, os.path.join(kit, "kit", "board"))
+    d = os.path.join(kit, "kit", "board")
+    sys.path.insert(0, d if os.path.isdir(d) else os.path.join(kit, ".kit") if os.path.isdir(os.path.join(kit, ".kit")) else kit)
     import board_server  # noqa: E402  (the kit's own readers, so the shapes match the server exactly)
     return board_server
 
@@ -336,7 +337,10 @@ def cmd_docs(a):
 def cmd_assets(a):
     up = json.load(open(a.uploaded, encoding="utf-8"))
     up = {k: (v if v.startswith("/_blob/") or v.startswith("https://") else "/_blob/" + v) for k, v in up.items()}
-    write_batches(a.out, [{"op": "update", "collection": "kit_docs", "doc_id": "_index", "data": {"assets": up}}], "assets")
+    # CL10: an attached board's pictures go to its own index (repos/<id>/kit_docs/_index): the page reads that one when
+    # the board is shown, so a map written to the primary's index left every picture of the attached board broken
+    write_batches(a.out, [{"op": "update", "collection": prefix(a) + "kit_docs", "doc_id": "_index", "data": {"assets": up}}],
+                  "assets" + ("-" + repo_id(a.into) if a.into else ""))
     print("%d pictures mapped (pin it with the _index version you read: if_version)." % len(up))
 
 
@@ -356,6 +360,217 @@ def cmd_diffs(a):
     print("%d commits named in posts, %d diffs mirrored." % (len(shas), len(writes)))
 
 
+# ---------------------------------------------------------------- files a post names (CL10, the owner 2026-11-23)
+# "All the pictures don't show up here": every file a post or comment names that the board's viewers open is put in
+# the Artifact when the post is written (`kit.py artifact push` prints these steps; `files` alone does the same for
+# posts written with ArtifactData). Limits measured on the Artifact's asset store (2026-11-23): 20 MiB a file (SVG
+# 2 MiB), up to 25 files a call (a text file in a call of its own); the store's total shows in `Artifact` `list`
+# `scope: "assets"` (a store-full refusal comes from the upload call itself); accepted types
+# png jpg jpeg gif webp svg mp4 webm pdf docx xlsx woff woff2 ttf otf csv md markdown json txt ts css js mjs cjs.
+# Markdown and HTML documents are not uploaded: they are mirrored as text in kit_docs (2 MiB a file, cut to fit a db
+# document). Anything else (audio, .mov, .avif, a larger file) stays a repo link, and the steps say so for the post.
+UPLOAD_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".pdf", ".mp4", ".webm"}   # viewer kinds the store takes
+MIRROR_EXT = {".md", ".html", ".htm"}
+MAX_ASSET, MAX_SVG, PER_CALL = 20 * 1024 * 1024, 2 * 1024 * 1024, 25
+REF_RE = re.compile(r"`([^`\s]+?\.[A-Za-z0-9]{2,5})(?:\s*§[^`]*)?`|\]\((?!https?:|/_blob/|#)([^)\s]+?\.[A-Za-z0-9]{2,5})\)")
+
+
+def post_refs(doc):
+    """The repo paths a post or comment names: its images and artifacts, code spans and links in its text."""
+    out = []
+    for k in ("images", "artifacts"):
+        for v in doc.get(k) or []:
+            if isinstance(v, str):
+                out.append(v)
+    for k in ("body", "text"):
+        for m in REF_RE.finditer(str(doc.get(k) or "")):
+            out.append(m.group(1) or m.group(2))
+    seen, refs = set(), []
+    for r in out:
+        r = r.split("#")[0].split("?")[0].strip().lstrip("./")
+        if r and r not in seen and not r.startswith(("/_blob/", "http:", "https:", "data:")) and ".." not in r.split("/"):
+            seen.add(r); refs.append(r)
+    return refs
+
+
+def files_state_path(repo, into):
+    base = os.environ.get("KIT_ARTIFACT_DIR") or os.path.join(repo, ".kit", "run", "artifact")   # kit.py's Artifact copy
+    return os.path.join(base, "files-%s.json" % (repo_id(into) if into else "primary"))
+
+
+def load_files_state(repo, into):
+    try:
+        st = json.load(open(files_state_path(repo, into), encoding="utf-8"))
+    except (OSError, ValueError):
+        st = {}
+    st.setdefault("assets", {}); st.setdefault("docs", {})
+    return st
+
+
+def sha256_of(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def plan_files(repo, docs, st):
+    """{upload: [[path, abs, sha]], mirror: [path], have: {path: url}, links: [[path, why]]} for what the docs name."""
+    plan = {"upload": [], "mirror": [], "have": {}, "links": []}
+    for d in docs:
+        for ref in post_refs(d):
+            full = os.path.join(repo, ref)
+            ext = os.path.splitext(ref)[1].lower()
+            if not os.path.isfile(full):
+                continue                                   # not a repo file (a word with a dot, a URL path)
+            if any(ref == x[0] for x in plan["upload"]) or ref in plan["mirror"] or ref in plan["have"]:
+                continue
+            size = os.path.getsize(full)
+            if ext in MIRROR_EXT:
+                if size > 2 * 1024 * 1024:
+                    plan["links"].append([ref, "over the 2 MiB a mirrored document can hold"])
+                elif st["docs"].get(doc_id(ref), {}).get("sha") != sha256_of(full):
+                    plan["mirror"].append(ref)
+            elif ext in UPLOAD_EXT:
+                cap = MAX_SVG if ext == ".svg" else MAX_ASSET
+                if size > cap:
+                    plan["links"].append([ref, "%.1f MiB, over the store's %d MiB a file" % (size / 1048576.0, cap // 1048576)])
+                    continue
+                sha = sha256_of(full)
+                known = st["assets"].get(ref) or {}
+                if known.get("sha") == sha and known.get("url"):
+                    plan["have"][ref] = known["url"]
+                else:
+                    plan["upload"].append([ref, os.path.abspath(full), sha])
+            elif ext in (".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".opus", ".mov", ".m4v", ".avif"):
+                plan["links"].append([ref, "the Artifact's store does not take %s files" % ext])
+            elif ref not in (x[0] for x in plan["links"]):
+                plan["links"].append([ref, "the board's viewers do not open %s files" % (ext or "extension-less")])
+    return plan
+
+
+def plan_text(plan, board, out, into):
+    """The steps, in order: the uploads, then `files-sent`."""
+    lines = []
+    ups = plan["upload"]
+    if ups:
+        lines.append("Files the posts name, for the Artifact (%d to upload):" % len(ups))
+        for n in range(0, len(ups), PER_CALL):
+            lines.append("- `Artifact` `publish`, `url` %s, `asset: true`, `file_paths`: %s" % (
+                board, json.dumps([u[1] for u in ups[n:n + PER_CALL]])))
+        lines.append("  Save what each call returns as {\"<repo path>\": \"/_blob/<id>\"} in %s (paths: %s)." % (
+            os.path.join(out, "uploaded.json"), ", ".join(u[0] for u in ups)))
+    if ups or plan["mirror"]:
+        lines.append("Then: `ArtifactData` `get`, `url` %s, `collection: \"%skit_docs\"`, `doc_id: \"_index\"`, `out_dir: \"%s\"`; "
+                     "and `python3 -I .kit/kit_artifact_sync.py files-sent --repo . --out %s%s --index <the saved _index.json> "
+                     "--index-version <its version>` (or `--index-missing` if there is none): it records them and writes the "
+                     "batch that merges them into the map (kit_docs) for the page%s." % (
+                         board, ("repos/%s/" % repo_id(into)) if into else "", os.path.join(out, "index"), out,
+                         " --into %s" % into if into else "", " and mirrors %d document(s)" % len(plan["mirror"]) if plan["mirror"] else ""))
+    for ref, why in plan["links"]:
+        lines.append("- `%s` stays a repo link (%s): say so in the post." % (ref, why))
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def read_docs(paths):
+    docs = []
+    for p in paths:
+        for f in ([p] if os.path.isfile(p) else glob.glob(os.path.join(p, "**", "*.json"), recursive=True)):
+            try:
+                d = json.load(open(f, encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(d, dict):
+                docs.append(d.get("data") if isinstance(d.get("data"), dict) else d)
+    return docs
+
+
+def cmd_files(a):
+    st = load_files_state(a.repo, a.into)
+    plan = plan_files(a.repo, read_docs(a.docs), st)
+    os.makedirs(a.out, exist_ok=True)
+    json.dump(plan, open(os.path.join(a.out, "plan.json"), "w", encoding="utf-8"), indent=1)
+    txt = plan_text(plan, a.board or "<the board's claude.ai/artifact url>", a.out, a.into)
+    print(txt or "Nothing to put in the Artifact: every file these posts name is there already (or is not a repo file).", end="")
+
+
+def cmd_files_sent(a):
+    st = load_files_state(a.repo, a.into)
+    try:
+        plan = json.load(open(os.path.join(a.out, "plan.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        plan = {"upload": [], "mirror": [], "have": {}}
+    up = {}
+    if os.path.exists(os.path.join(a.out, "uploaded.json")):
+        up = json.load(open(os.path.join(a.out, "uploaded.json"), encoding="utf-8"))
+    sha = {u[0]: u[2] for u in plan.get("upload") or []}
+    for path, url in up.items():
+        url = url if url.startswith(("/_blob/", "https://")) else "/_blob/" + url
+        st["assets"][path] = {"url": url, "sha": sha.get(path) or ""}
+    missing = [u[0] for u in plan.get("upload") or [] if u[0] not in up]
+    writes = []
+    amap = {k: v["url"] for k, v in st["assets"].items() if v.get("url")}
+    if up or amap:
+        # The index also holds the Repo Docs reader's list (docs, total): it is never replaced. Its current copy is read
+        # (ArtifactData get, out_dir) and the map merged into it with an update pinned to its version; only an index
+        # confirmed missing is created. (O50's check, 2026-11-23: a `set` here would have wiped docs/total.)
+        if a.index_missing:
+            e = {"op": "set", "collection": prefix(a) + "kit_docs", "doc_id": "_index", "data": {"assets": amap, "mirrored_at": now()}}
+        elif a.index and a.index_version:
+            cur = json.load(open(a.index, encoding="utf-8"))
+            cur = cur.get("data") if isinstance(cur.get("data"), dict) else cur
+            merged = dict(cur.get("assets") or {}); merged.update(amap)
+            e = {"op": "update", "collection": prefix(a) + "kit_docs", "doc_id": "_index", "if_version": int(a.index_version),
+                 "data": {"assets": merged, "mirrored_at": now()}}
+        else:
+            raise SystemExit("files-sent needs the board's current %skit_docs/_index: `ArtifactData` `get` it with an out_dir, "
+                             "then pass --index <that file> --index-version <its version>; or --index-missing if the get "
+                             "says there is none. Nothing was written." % prefix(a))
+        writes.append(e)
+    here = os.path.dirname(os.path.abspath(__file__))       # kit/claude in the kit, .kit in an install
+    bs = server(a.kit or (os.path.dirname(os.path.dirname(here)) if os.path.basename(here) == "claude" else here))
+    for ref in list(plan.get("mirror") or []) + list(up):
+        res, err = bs.read_repo_doc(a.repo, ref)
+        if err or not res:
+            continue
+        if res.get("kind") == "html":
+            res["url"] = ""
+        while len(json.dumps(res, ensure_ascii=False).encode("utf-8")) > MAX_DOC:
+            res["content"] = res["content"][:int(len(res["content"]) * 0.8)]
+            res["cut"] = True
+        did = doc_id(ref)
+        e = {"op": "set", "collection": prefix(a) + "kit_docs", "doc_id": did, "data": res}
+        v = (st["docs"].get(did) or {}).get("version")
+        if v:
+            e["if_version"] = int(v)
+        writes.append(e)
+        st["docs"][did] = {"version": int(v or 0) + 1, "sha": sha256_of(os.path.join(a.repo, ref))}
+    os.makedirs(os.path.dirname(files_state_path(a.repo, a.into)), exist_ok=True)
+    json.dump(st, open(files_state_path(a.repo, a.into), "w", encoding="utf-8"), indent=1)
+    write_batches(a.out, writes, "files" + ("-" + repo_id(a.into) if a.into else ""))
+    if missing:
+        print("Not in uploaded.json, so not mapped: %s" % ", ".join(missing))
+    print("A refused write names the document's real version: `files-pin --into <id> <doc_id>=<version>` for a "
+          "mirrored document, or get _index again for the map, then files-sent again.")
+
+
+def cmd_files_pin(a):
+    st = load_files_state(a.repo, a.into)
+    for pair in a.pairs:
+        k, _, v = pair.partition("=")
+        if not v.strip().isdigit():
+            continue
+        if k == "_index":
+            st["index_version"] = int(v)
+        else:
+            st["docs"].setdefault(k, {})["version"] = int(v)
+    os.makedirs(os.path.dirname(files_state_path(a.repo, a.into)), exist_ok=True)
+    json.dump(st, open(files_state_path(a.repo, a.into), "w", encoding="utf-8"), indent=1)
+    print("pinned %d" % len(a.pairs))
+
+
 def main(argv):
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -363,7 +578,16 @@ def main(argv):
     s = sub.add_parser("assets"); s.add_argument("--uploaded", required=True); s.add_argument("--out", default="/tmp/kas")
     g = sub.add_parser("diffs"); g.add_argument("--kit", required=True); g.add_argument("--repo", default=".")
     g.add_argument("--posts", required=True); g.add_argument("--out", default="/tmp/kas")
-    for x in (d, g):
+    f = sub.add_parser("files", help="what the posts (ArtifactData JSON, files or folders) name, for the Artifact")
+    f.add_argument("docs", nargs="+"); f.add_argument("--repo", default="."); f.add_argument("--out", default="/tmp/kas-files")
+    f.add_argument("--board", default="")
+    fs = sub.add_parser("files-sent", help="after the uploads: record them, and the batch that maps them")
+    fs.add_argument("--repo", default="."); fs.add_argument("--out", default="/tmp/kas-files"); fs.add_argument("--kit", default="")
+    fs.add_argument("--index", default="", help="the current kit_docs/_index, saved by ArtifactData get with out_dir")
+    fs.add_argument("--index-version", type=int, default=0); fs.add_argument("--index-missing", action="store_true")
+    fp = sub.add_parser("files-pin"); fp.add_argument("pairs", nargs="+"); fp.add_argument("--repo", default=".")
+    fp.add_argument("--out", default="/tmp/kas-files")
+    for x in (d, g, s, f, fs, fp):
         x.add_argument("--into", default="", help="an attached repo's name: write under repos/<id>/ (run from its clone)")
     b = sub.add_parser("boards"); b.add_argument("--repo", default="."); b.add_argument("--out", default="/tmp/kas")
     b.add_argument("--clone", action="append", default=[], help="name=path of an attached repo's clone")
@@ -379,7 +603,7 @@ def main(argv):
     k.add_argument("--clone", action="append", default=[]); k.add_argument("--attach", action="append", default=[])
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
-    {"docs": cmd_docs, "assets": cmd_assets, "diffs": cmd_diffs, "boards": cmd_boards, "boards-back": cmd_boards_back}[a.cmd](a)
+    {"files": cmd_files, "files-sent": cmd_files_sent, "files-pin": cmd_files_pin, "docs": cmd_docs, "assets": cmd_assets, "diffs": cmd_diffs, "boards": cmd_boards, "boards-back": cmd_boards_back}[a.cmd](a)
     return 0
 
 

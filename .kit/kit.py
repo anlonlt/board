@@ -1037,12 +1037,34 @@ def artifact_push(url=None, token=None, out_dir=None):
         p = os.path.join(out_dir, "batch-%02d.json" % (i + 1))
         write_doc(p, b)
         paths.append(p)
-    return {"batches": paths, "need_pin": need_pin, "writes": len(entries), "board": artifact_url()}
+    files_text = _artifact_files([_read_json(e["file_path"]) for e in entries], os.path.join(out_dir, "files"))
+    return {"batches": paths, "need_pin": need_pin, "writes": len(entries), "board": artifact_url(), "files": files_text}
+
+
+def _artifact_files(docs, out):
+    """CL10 (the owner, 2026-11-23: "All the pictures don't show up here"): the files these posts and comments name that
+    the board's viewers open, put in the Artifact with the posts (kit_artifact_sync.py files: uploads, then files-sent)."""
+    for d in (os.path.join(ROOT, "kit", "claude"), os.path.join(ROOT, ".kit")):   # the kit itself, else an install
+        if os.path.isfile(os.path.join(d, "kit_artifact_sync.py")):
+            spec = importlib.util.spec_from_file_location("kit_artifact_sync_files", os.path.join(d, "kit_artifact_sync.py"))
+            kas = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(kas)
+            break
+    else:
+        return ""
+    plan = kas.plan_files(ROOT, [x for x in docs if isinstance(x, dict)], kas.load_files_state(ROOT, ""))
+    if not (plan["upload"] or plan["mirror"] or plan["links"]):
+        return ""
+    os.makedirs(out, exist_ok=True)
+    write_doc(os.path.join(out, "plan.json"), plan)
+    return kas.plan_text(plan, artifact_url() or "<the board's url>", out, "")
 
 
 def artifact_push_text(r):
     board = r["board"] or "<the board's url>"
     out = []
+    if r.get("files"):
+        out.append(r["files"].rstrip("\n") + "\n(The posts' own batches below can go before or after; the page shows a file once it is mapped.)")
     if r["need_pin"]:
         out.append("First, their versions (changed here, never sent from this copy): for each, `ArtifactData` `get`, `url` %s, "
                    "that collection and doc_id, `out_dir: \"/tmp/kit-pin\"`; then one command: `python3 -I .kit/kit.py "

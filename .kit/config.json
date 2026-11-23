@@ -114,7 +114,7 @@
   "palette": null,
   "funnel": true,
   "main_branch": "main",
-  "trunk_push": false,
+  "trunk_push": true,
   "claude_cli_roles": {
    "clerk": {
     "model": "haiku"

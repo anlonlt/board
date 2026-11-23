@@ -28,6 +28,11 @@ if HERE not in sys.path:
 import step0_scan  # noqa: E402
 
 
+def push_default(profile, auto_id):
+    """The repo's own grant (CLAUDE.md / AGENTS.md) is the owner's answer already given; else full_auto's yes, or no."""
+    return "yes" if profile.get("trunk_push_grant") or auto_id == "full_auto" else "no"
+
+
 def default_selections(profile):
     palettes = profile.get("palettes") or []
     pal_id = next((p["id"] for p in palettes if p.get("recommended")), palettes[0]["id"] if palettes else "ember-classic")
@@ -50,7 +55,7 @@ def default_selections(profile):
         "runtime": rt_id,
         "scope": scope_id,
         "cli": cli_id,
-        "trunk_push": "yes" if auto_id == "full_auto" else "no",
+        "trunk_push": push_default(profile, auto_id),
     }
 
 
@@ -240,7 +245,7 @@ def run_curses_gui(profile, initial_selections):
                     return
                 state[b["sec"]] = b["id"]
                 if ch in (10, 13, curses.KEY_ENTER) and b["sec"] == "autonomy":
-                    state["trunk_push"] = "yes" if b["id"] == "full_auto" else "no"
+                    state["trunk_push"] = push_default(profile, b["id"])
             elif ch == curses.KEY_MOUSE:
                 try:
                     _, mx, my, _, bstate = curses.getmouse()
@@ -254,7 +259,7 @@ def run_curses_gui(profile, initial_selections):
                                     return
                                 state[b["sec"]] = b["id"]
                                 if b["sec"] == "autonomy":
-                                    state["trunk_push"] = "yes" if b["id"] == "full_auto" else "no"
+                                    state["trunk_push"] = push_default(profile, b["id"])
                                 break
                 except Exception:
                     pass
@@ -276,7 +281,8 @@ def render_ansi_summary(profile, selections):
         "║ Autonomy:  %-61s ║" % selections["autonomy"],
         "║ Runtime:   %-61s ║" % selections["runtime"],
         "║ CLI:       %-61s ║" % selections.get("cli", "-"),
-        "║ Push main: %-61s ║" % selections.get("trunk_push", "no"),
+        "║ Push main: %-61s ║" % (selections.get("trunk_push", "no") + (" (granted in %s)" % profile["trunk_push_grant"]
+                                                                           if profile.get("trunk_push_grant") else "")),
         "║ Scope:     %-61s ║" % selections["scope"],
         "╚══════════════════════════════════════════════════════════════════════════╝",
     ]
@@ -311,7 +317,7 @@ def main(argv=None):
         selections["palette"] = a.palette
     if a.autonomy:
         selections["autonomy"] = a.autonomy
-        selections["trunk_push"] = "yes" if a.autonomy == "full_auto" else "no"
+        selections["trunk_push"] = push_default(profile, a.autonomy)
     if a.runtime:
         selections["runtime"] = a.runtime
     if a.scope:
@@ -322,8 +328,9 @@ def main(argv=None):
     if a.trunk_push:
         selections["trunk_push"] = a.trunk_push
     elif not interactive and not a.print_choices:
-        # Nobody saw the screen: pushing the trunk is the owner's permission to give, never a recommendation.
-        selections["trunk_push"] = "no"
+        # Nobody saw the screen: pushing the trunk is the owner's permission to give, never a recommendation;
+        # one the repo's own instructions already give stands.
+        selections["trunk_push"] = "yes" if profile.get("trunk_push_grant") else "no"
 
     if a.print_choices:
         print(json.dumps({"profile": profile, "selections": selections}, indent=2, ensure_ascii=False))

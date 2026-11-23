@@ -128,28 +128,61 @@
   function loadAssets() {
     if (assetMap) return Promise.resolve(assetMap);
     var c = window.claude;
-    return (c && c.use ? c.use("db") : Promise.resolve(null)).then(function (db) {
-      if (!db) return {};
-      if (window.__KIT_WRAP_DB__) db = window.__KIT_WRAP_DB__(db);
-      return db.doc("kit_docs/_index").get().then(function (s) { assetMap = (s.exists && s.data().assets) || {}; return assetMap; });
+    /* CL10 (his 02:22 "All the pictures don't show up here"): a post of an attached board shown under "All boards" or
+       the primary board names pictures mapped in ITS index (repos/<id>/kit_docs/_index): every board's map is read,
+       the shown board's last so its own pictures win. */
+    return (c && c.use ? c.use("db") : Promise.resolve(null)).then(function (raw) {
+      if (!raw) return {};
+      var R = window.__KIT_REPOS__, act = R ? R.active() : "";
+      var keys = [""].concat(R ? R.list().map(function (r) { return r.id; }) : []);
+      keys.sort(function (a, b) { return (a === act) - (b === act); });
+      return Promise.all(keys.map(function (k) {
+        return raw.doc((k ? "repos/" + k + "/" : "") + "kit_docs/_index").get()
+          .then(function (s) { return (s.exists && s.data().assets) || {}; }, function () { return {}; });
+      })).then(function (maps) {
+        assetMap = {};
+        maps.forEach(function (m) { Object.keys(m).forEach(function (k) { assetMap[k] = m[k]; }); });
+        return assetMap;
+      });
     }).catch(function () { return {}; });
   }
-  function fixImg(img) {
-    var src = img.getAttribute("src") || "";
-    if (src.indexOf("/_api/repo-asset") !== 0) return;
-    var m = /[?&]path=([^&]+)/.exec(src); if (!m) return;
-    var path = decodeURIComponent(m[1]);
-    loadAssets().then(function (map) { if (map[path]) img.setAttribute("src", map[path]); else img.alt = img.alt || path + " (not mirrored)"; });
+  /* Every repo file the page names resolves to /_api/repo-asset?path=... (shim.js resolveAssetUrl), which only the local
+     server serves. Here each one is rewritten to its uploaded asset (CL10: not only pictures, every file the viewers
+     open: video, PDF, Office files, text) on the element that loads it, and fetch() of it (the PDF reader) is redirected. */
+  var SRC_ATTRS = { IMG: "src", VIDEO: "src", AUDIO: "src", SOURCE: "src", IFRAME: "src", EMBED: "src", OBJECT: "data", A: "href" };
+  function repoPath(u) {
+    if (String(u || "").indexOf("/_api/repo-asset") !== 0) return "";
+    var m = /[?&]path=([^&]+)/.exec(u); return m ? decodeURIComponent(m[1]) : "";
   }
+  function fixEl(el) {
+    var at = SRC_ATTRS[el.tagName]; if (!at) return;
+    var path = repoPath(el.getAttribute(at) || ""); if (!path) return;
+    loadAssets().then(function (map) {
+      if (map[path]) el.setAttribute(at, map[path]);
+      else if (el.tagName === "IMG") el.alt = el.alt || path + " (not mirrored)";
+    });
+  }
+  if (window.fetch && !window.fetch.__kitAssets) {
+    var origFetch = window.fetch;
+    window.fetch = function (input, init) {
+      var u = typeof input === "string" ? input : (input && input.url) || "";
+      var path = repoPath(u.replace(/^https?:\/\/[^/]+/, ""));
+      if (!path) return origFetch.apply(this, arguments);
+      var self = this;
+      return loadAssets().then(function (map) { return origFetch.call(self, map[path] || input, init); });
+    };
+    window.fetch.__kitAssets = true;
+  }
+  var SEL = Object.keys(SRC_ATTRS).map(function (t) { return t.toLowerCase(); }).join(",");
   new MutationObserver(function (ms) {
     ms.forEach(function (m) {
-      if (m.type === "attributes" && m.target.tagName === "IMG") fixImg(m.target);
+      if (m.type === "attributes") fixEl(m.target);
       (m.addedNodes || []).forEach(function (n) {
         if (n.nodeType !== 1) return;
-        if (n.tagName === "IMG") fixImg(n); else if (n.querySelectorAll) [].forEach.call(n.querySelectorAll("img"), fixImg);
+        fixEl(n); if (n.querySelectorAll) [].forEach.call(n.querySelectorAll(SEL), fixEl);
       });
     });
-  }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["src"] });
+  }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["src", "href", "data"] });
 
   /* =========================================================================
      Pluggable MCP Link Reader (provider-agnostic)

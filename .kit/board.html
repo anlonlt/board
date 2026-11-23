@@ -393,6 +393,8 @@ body {
   background-attachment: fixed;
 }
 header.top { position: sticky; top: 0; z-index: 12; background: var(--bg); padding-top: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+/* CL10 (his 02:34, O50 at 411 px): on a phone the header fills the top edge to edge, no inset from the page's padding */
+@media (max-width: 700px) { header.top { margin: -16px -16px 14px; padding-left: 16px; padding-right: 16px; padding-top: max(8px, env(safe-area-inset-top, 0px)); } }
 h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 
 /* View switcher pill (Lanes | Trains | Feed | Focus) */
@@ -1079,6 +1081,42 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     return h.toString(36) + "." + t.length.toString(36);
   }
   function postById(id) { return state.special[id] || state.posts.filter(function (p) { return p.id === id; })[0]; }
+  /* CL21: one read doc holds every board's marks, so a post of an attached board is kept under "repos/<board>/<id>"
+     (the primary board's under its bare id, as before): two boards' "_orchestrator" (or any shared id) no longer
+     share one mark. The board of a post: in the Artifact, the board picker's (kit/claude/artifact_repos.js); on the
+     local server, the post's _repo in "All boards", else the board picked. */
+  function boardOf(id) {
+    var R = window.__KIT_REPOS__;
+    if (R && R.prefixOf) { var pre = R.prefixOf("posts", id) || ""; return pre ? pre.slice(6, -1) : ""; }
+    var a = window.__KIT_ACTIVE_REPO__ || "", p = postById(id), info = window.__KIT_REPOS_INFO__ || [];
+    var rid = a === "all" ? str(p && p._repo) : a;
+    var prim = info.filter(function (r) { return r && r.primary; })[0];
+    return !rid || (prim && rid === prim.id) ? "" : rid;
+  }
+  function seenKey(id) { var b = boardOf(id); return b ? "repos/" + b + "/" + id : id; }
+  /* His mark for a post. An attached board's post read before CL21 was kept under its bare id, mixed with the
+     primary board's: that mark is taken only when it was made on this very text (same sig) or names a comment of
+     this very post (comment ids are unique); the next mark goes under the board's key. */
+  function markOf(id) {
+    var k = seenKey(id), m = seen[k];
+    if (k === id) return m;
+    var b = oldMarkOf(id);
+    if (!b) return m;
+    if (!m) return b;
+    /* both: the board's own mark began after the old one (a page that did not read it yet); the later read wins */
+    var r = Object.assign({}, b.at > m.at ? b : m), o = r.at === b.at && b.at > m.at ? m : b;
+    var u = (r.v || []).concat((o.v || []).filter(function (x) { return (r.v || []).indexOf(x) < 0; }));
+    if (u.length) r.v = u;
+    if (o.bt && (!r.bt || o.bt > r.bt)) { r.bt = o.bt; r.sig = o.sig; }
+    return r;
+  }
+  function oldMarkOf(id) {
+    var b = seen[id], p = postById(id); if (!b) return undefined;
+    if (p && b.sig && b.sig === sigOf(p)) return b;
+    if (!b.v || !b.v.length) return undefined;
+    var own = {}; postCmts(id).forEach(function (c) { own[c.id] = true; });
+    return b.v.some(function (x) { return own[x]; }) ? b : undefined;
+  }
   function saveLocal() { try { localStorage.setItem("board-seen", JSON.stringify(seen)); } catch (e) {} }
   /* One write at a time to his read doc; marks made meanwhile wait and go together. */
   function pushSeen(ids) {
@@ -1096,12 +1134,12 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   /* Everything in the post counts as seen (the fallback when this browser cannot tell what was on screen). */
   function markSeen(id) {
     var p = postById(id);
-    seen[id] = { at: new Date().toISOString(), sig: p ? sigOf(p) : "" };
+    seen[seenKey(id)] = { at: new Date().toISOString(), sig: p ? sigOf(p) : "" };
     pushMarks(id);
   }
   function pushMarks(id) {
     /* the read marks first made in this browser before the db answered travel with this one */
-    var ids = [id]; Object.keys(seen).forEach(function (k) { if (seen[k].base) { delete seen[k].base; ids.push(k); } });
+    var ids = [seenKey(id)]; Object.keys(seen).forEach(function (k) { if (seen[k].base) { delete seen[k].base; ids.push(k); } });
     pushSeen(ids);
   }
   /* The db's copy and this browser's: the later read wins, post by post. */
@@ -1125,12 +1163,14 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   /* A read made before sigs were kept: the post as it is now counts as read (kept with the next write). */
   function baseline() {
     state.posts.concat(Object.keys(state.special).map(function (k) { return state.special[k]; })).forEach(function (p) {
-      var v = seen[p.id]; if (v && !v.sig) { v.sig = sigOf(p); v.base = true; }
+      var v = seen[seenKey(p.id)]; if (v && !v.sig) { v.sig = sigOf(p); v.base = true; }
     });
   }
   function changed(p) {
-    var v = seen[p.id]; if (!v) return false;
-    if (v.sig && v.sig !== sigOf(p)) return true;
+    var v = markOf(p.id); if (!v) return false;
+    /* CL21: new is text he has not seen (title, body, column, pictures: the sig), never a move of updated_at alone
+       (a session's status, session id or launch time): with a sig, only the sig decides */
+    if (v.sig) return v.sig !== sigOf(p);
     var u = str(p.updated_at); return !!u && u > (v.bt && v.bt > v.at ? v.bt : v.at);
   }
   function agentFrom(c) { return c.from && c.from !== "owner" && c.from !== "viewer"; }
@@ -1209,20 +1249,20 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     return l ? (l.length > 60 ? l.slice(0, 59) + "\u2026" : l) : "New discussion";
   }
   function newComments(p, since, shown) {
-    var t0 = since ? Date.parse(since) : -Infinity, v = seen[p.id], past = v && v.v ? v.v : [];
+    var t0 = since ? Date.parse(since) : -Infinity, v = markOf(p.id), past = v && v.v ? v.v : [];
     var mv = moved().ids;
     return postCmts(p.id).filter(function (c) { return c.post_id === p.id && agentFrom(c) && !(shown && c.like) && tOf(c) > t0 && past.indexOf(c.id) < 0 && !mv[c.id]; })
       .sort(function (a, b) { return tOf(a) - tOf(b); });
   }
   /* What has not been on his screen yet: session comments, and the post's text if it is new or changed. */
   function unseenOf(p) {
-    var v = seen[p.id];
+    var v = markOf(p.id);
     return { cids: newComments(p, v ? v.at : "", true).map(function (c) { return c.id; }), body: p.id !== ORCH && (!v || changed(p)) };
   }
   function isNew(p) {
     if (colOf(p) === "done") return false;
     if (p.id === ORCH) return unseenOf(p).cids.length > 0;
-    var v = seen[p.id]; if (!v) return true;
+    var v = markOf(p.id); if (!v) return true;
     /* BD5 (his 20:05 on PA3): the same test as what the open post waits for; an agent's Like (orchestrator's
        "taking care of it") is never on screen as a comment, so it lit a dot nothing could clear */
     var u = unseenOf(p); return u.cids.length > 0 || u.body;
@@ -1230,16 +1270,16 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   /* One thing (a comment id, or "body") has been on his screen: keep it; once nothing is left, fold it all into `at`. */
   function markViewed(id, k) {
     var p = postById(id); if (!p) return;
-    var r = Object.assign({ at: "", sig: "" }, seen[id] || {});
+    var key = seenKey(id), r = Object.assign({ at: "", sig: "" }, markOf(id) || {});
     if (k === "body") { r.sig = sigOf(p); r.bt = new Date().toISOString(); }
     else { r.v = (r.v || []).filter(function (x) { return x !== k; }).concat([k]); }
-    seen[id] = r;
+    seen[key] = r;
     var u = unseenOf(p);
     if (!u.cids.length && !u.body) {
       var top = r.at;
       postCmts(id).forEach(function (c) { if (c.post_id === id) { var t = new Date(tOf(c)).toISOString(); if (t > top) top = t; } });
       if (r.bt && r.bt > top) top = r.bt;
-      seen[id] = { at: top || new Date().toISOString(), sig: sigOf(p), v: [] }; /* v: [] clears the db's copy too */
+      seen[key] = { at: top || new Date().toISOString(), sig: sigOf(p), v: [] }; /* v: [] clears the db's copy too */
     }
     pushMarks(id);
   }
@@ -2383,7 +2423,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       }
     } catch (e) {}
     /* What lit the dot: the first comment since his last read, else the post's changed text. */
-    var p = postById(id), v = seen[id], target = null;
+    var p = postById(id), v = markOf(id), target = null;
     state.flash = null;
     if (p && v && id !== ORCH) {
       var fresh = newComments(p, v.at, true)[0];
@@ -2939,7 +2979,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     $("sheet").scrollTop = 0; renderPost();
     var p = current(), dl = discs();
     /* every reply he has not seen is unfolded (only the first was: a folded second one kept the badge lit) */
-    var fresh = k && p ? newComments(p, seen[ORCH] ? seen[ORCH].at : "", true).filter(function (c) { return dl.of[c.id] === k; }) : [], first = fresh[0];
+    var fresh = k && p ? newComments(p, markOf(ORCH) ? markOf(ORCH).at : "", true).filter(function (c) { return dl.of[c.id] === k; }) : [], first = fresh[0];
     if (first) { fresh.forEach(function (c) { unfoldFor(c.id); }); renderComments(); requestAnimationFrame(function () { goTo({ cid: first.id }); }); }
     if (k === "new") {
       setTimeout(function () { var ct = $("c-text"); if (ct) ct.focus(); }, 40);
@@ -2952,10 +2992,23 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     if (state.openId !== ORCH) openPost(ORCH);
     if (discKey) openDisc(discKey);
   };
+  /* CL10 (his 02:35): a comment made from a viewer opened on a post's picture or document goes to THAT post (and its
+     session), not to the orchestrator. The post is the one the last pointer press came from (its sheet, its window,
+     its feed card); a press inside a viewer keeps it, a press anywhere else (header, Repo Docs, a train) clears it. */
+  var ctxPost = "";
+  document.addEventListener("pointerdown", function (e) {
+    var t = e.target; if (!t || !t.closest) return;
+    if (t.closest(".kit-docs-modal")) return;
+    var w = t.closest(".kit-post-win[data-pid]"); if (w) { ctxPost = w.dataset.pid; return; }
+    var f = t.closest(".ffeed-card[data-id]"); if (f) { ctxPost = f.dataset.id; return; }
+    ctxPost = t.closest("#sheet") && state.openId ? state.openId : "";
+  }, true);
+  window._kitCommentTarget = function () { return ctxPost && ctxPost !== ORCH && postById(ctxPost) ? ctxPost : ""; };
   window._kitOpenOrchNew = function (prefill, attachFiles) {
-    if (!state.special._orchestrator) return;
-    openPost(ORCH);
-    openDisc("new");
+    var onPost = window._kitCommentTarget();
+    if (!onPost && !state.special._orchestrator) return;
+    openPost(onPost || ORCH);
+    if (!onPost) openDisc("new");
     var sh = $("sheet");
     if (sh) {
       window._kitTopZ = Math.max(window._kitTopZ || 60, 60) + 2;
@@ -2972,7 +3025,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       var ct = $("c-text");
       if (ct) {
         ct.value = prefill;
-        saveDraft(ORCH, 0, prefill, "");
+        saveDraft(onPost || ORCH, 0, prefill, "");
         if ($("composer")) $("composer").classList.add("has-text");
         setTimeout(function () { ct.focus(); ct.selectionStart = ct.selectionEnd = ct.value.length; }, 50);
       }
@@ -3123,6 +3176,50 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     j.onclick = function () { goTo(off.dataset.cid ? { cid: off.dataset.cid } : { body: true }); };
   }
   document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible" && state.openId) watchSeen(); });
+  /* CL21: a post read outside its sheet counts as well (Feed, Focus, a post window): an element that carries
+     data-seen-post (the post id) and data-seen-k ("body" or a comment id), on screen as the sheet's rule says (half
+     of it, or half the screen) for a second, is marked as the sheet marks it. Under the open sheet nothing counts. */
+  var seenAnyObs = null, seenAnyT = [];
+  function seenAnyUnseen(n) {
+    var p = postById(n.dataset.seenPost || ""), k = n.dataset.seenK || "";
+    if (!p || !k || colOf(p) === "done") return false;
+    var u = unseenOf(p);
+    return k === "body" ? !!u.body : u.cids.indexOf(k) >= 0;
+  }
+  function seenAnyClear(n) { seenAnyT = seenAnyT.filter(function (t) { if (t[0] !== n) return true; clearTimeout(t[1]); return false; }); }
+  function watchSeenAny(n) {
+    if (!n || n.__kitSeen || !("IntersectionObserver" in window)) return;
+    n.__kitSeen = true;
+    if (!seenAnyObs) {
+      var th = []; for (var i = 0; i <= 20; i++) th.push(i / 20);
+      seenAnyObs = new IntersectionObserver(function (es) {
+        es.forEach(function (e) {
+          var n = e.target, rh = e.rootBounds ? e.rootBounds.height : innerHeight;
+          seenAnyClear(n);
+          if (!n.isConnected) { seenAnyObs.unobserve(n); n.__kitSeen = false; return; }
+          if (!(e.isIntersecting && (e.intersectionRatio >= 0.5 || e.intersectionRect.height >= 0.5 * rh))) return;
+          seenAnyT.push([n, setTimeout(function () {
+            seenAnyClear(n);
+            if (document.visibilityState === "hidden" || !n.isConnected) return;
+            var sh = $("sheet"); if (sh && !sh.hidden && !sh.contains(n)) return;
+            if (!seenAnyUnseen(n)) return;
+            markViewed(n.dataset.seenPost, n.dataset.seenK);
+            later("board");
+          }, SEEN_MS)]);
+        });
+      }, { threshold: th });
+    }
+    seenAnyObs.observe(n);
+  }
+  if ("MutationObserver" in window) new MutationObserver(function (ms) {
+    ms.forEach(function (m) {
+      Array.prototype.forEach.call(m.addedNodes, function (n) {
+        if (n.nodeType !== 1) return;
+        if (n.dataset && n.dataset.seenPost) watchSeenAny(n);
+        if (n.querySelectorAll) Array.prototype.forEach.call(n.querySelectorAll("[data-seen-post]"), watchSeenAny);
+      });
+    });
+  }).observe(document.documentElement, { childList: true, subtree: true });
   /* A question's answers as buttons: the post's options (and default_option); one tap sends "Answer: X". */
   function renderOpts(p, cs) {
     var box = $("p-opts"), opts = Array.isArray(p.options) ? p.options.map(str).filter(Boolean) : [];
@@ -4095,6 +4192,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       var body = el("div", "body");
       body.innerHTML = renderBody(rawBody);
       enhanceRenderedBody(body);
+      body.dataset.seenPost = p.id; body.dataset.seenK = "body";   /* CL21: read here counts (hidden while clamped) */
       bodyWrap.appendChild(body);
       var prev = null;
       function makePreview() {
@@ -4266,6 +4364,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
         det.appendChild(sum);
         cs.slice(-5).forEach(function (c) {
           var item = el("div", "ffeed-cmt-item");
+          item.dataset.seenPost = p.id; item.dataset.seenK = c.id;
           var cm = el("div", "meta");
           var who = c.from === "owner" ? "You" : (c.from === "orchestrator" ? (c.kind === "review" ? "Orchestrator (review)" : "Orchestrator") : (str(c.from) || "A session"));
           cm.appendChild(el("span", "part", who));
