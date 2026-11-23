@@ -565,7 +565,7 @@ def main(argv=None):
                             spec = importlib.util.spec_from_file_location("clerk_pending", cp_p)
                             mod = importlib.util.module_from_spec(spec)
                             spec.loader.exec_module(mod)
-                            out["pending_actions"] = mod.run(a.pending_dir, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+                            out["pending_actions"] = mod.run(a.pending_dir, datetime.now(timezone.utc))
             print(json.dumps(out, ensure_ascii=False))
             return 0
         if a.ccmd == "read":

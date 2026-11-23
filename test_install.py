@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import tempfile as _tf; os.environ["XDG_CONFIG_HOME"] = _tf.mkdtemp(prefix="kit-xdg-")  # CL11: install.py writes the machine token there, never in the real ~/.config
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 fails = 0

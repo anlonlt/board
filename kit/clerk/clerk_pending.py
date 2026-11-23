@@ -57,6 +57,8 @@ def answered(doc_id, thread, at, comments):
 
 
 def run(d, now):
+    if isinstance(now, str):  # an ISO string from a caller is read as UTC
+        now = ts(now)
     path = os.path.join(d, "pending.txt")
     lines = [l.split() for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
     keep, out = [], []

@@ -11,6 +11,7 @@ import threading
 import unittest
 import urllib.request
 from pathlib import Path
+import tempfile as _tf; os.environ["XDG_CONFIG_HOME"] = _tf.mkdtemp(prefix="kit-xdg-")  # CL11: install.py writes the machine token there, never in the real ~/.config
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT / "kit" / "board") not in sys.path:
