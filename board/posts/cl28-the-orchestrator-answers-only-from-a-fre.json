@@ -1,6 +1,31 @@
 {
- "body": "All four parts built and pushed on branch cl28-brief (brief, reply guard, Trains card, clerk, train adoption). Full suite running; then the result here and a merge onto main.",
+ "artifacts": [
+  "scripts/kit.py",
+  "kit/hooks/kit_brief_guard.py",
+  "kit/board/kit_cards.py",
+  "kit/claude/clerk.template.md",
+  "tests/test_cl28_brief.py",
+  "tests/test_clerk_starts_orchestrator.py"
+ ],
+ "bars": [
+  "new tests: 15 of 17 red on main's kit, 17 of 17 green (tests/test_cl28_brief.py)",
+  "clerk tests: 3 of 3 red on main's templates, 3 of 3 green (tests/test_clerk_starts_orchestrator.py)",
+  "brief on Harmonize's board: 1,638 characters (about 410 tokens) vs resume 4,904 after adoption; 4 of 4 open decisions listed, VR5 blocks HL6 shown",
+  "adoption on Harmonize's board (dry, in memory): 161 of 175 posts without a train given one, 31 trains",
+  "full suite: 10 of 10 suites pass, 0 failed"
+ ],
+ "body": "**What you must know:** the orchestrator now has to run `kit.py brief` before it answers you, or the kit refuses its reply. The clerk stops starting new orchestrators. Harmonize still needs the update (I was refused access to that repo).\n\n## The brief\n`python3 -I .kit/kit.py brief`: open decision posts (age, default, what each blocks), your comments, Likes and answers of the last 3 days, each train's state from its posts. Board only: a chat decision is written on the board as a comment by the orchestrator. Flags an `_orchestrator` post naming another session.\n\n## The guard\n`kit_brief_guard.py` (Claude Code CLI, web, agy): an orchestrator reply to your comment (`board_cli.py reply`, or an ArtifactData comment with `reply_to`) is refused unless a brief ran in that session in the last 15 min.\n\n## Trains and task list\nA status 'done' is done (HL1 no longer runs); held and closed show as such on the card and in resume (`[h]`). `kit.py adopt` gives older posts (HL6, VR5, HL5, A3...) their train once, so resume and the task list see them.\n\n## The clerk\nStarts a fresh orchestrator only if the named one failed, completed, is archived or unreachable; an idle one is woken. The orchestrator writes its id on every `_orchestrator` it serves.\n\n## Your question: why a brief if the task list follows the train?\nIt overlaps. It adds only your recent decisions, a fresh read before each reply, and the stale _orchestrator check. My advice: cut it down to the task list refreshed from the board plus what changed since it was loaded. Your call.",
+ "breaks": "revert",
+ "check": "python3 -m unittest tests.test_cl28_brief tests.test_clerk_starts_orchestrator",
+ "column": "info",
+ "handoff": "In Harmonize: install.py --update from kit main, then `python3 -I .kit/kit.py adopt` once, then `kit.py artifact push`; the orchestrator runs `kit.py brief` before each answer.",
+ "not_checked": [
+  "Harmonize: install.py --update, `kit.py adopt` and the republish not done: this session was refused access to anlonlt/harmonize (add_repo denied)",
+  "the guard in a live orchestrator session (tested with planted hook payloads only)",
+  "the brief's _orchestrator check covers the host board, not attached boards' repos/<id>/posts/_orchestrator"
+ ],
  "session_id": "82a1406c-69a0-5fb0-aacc-9c6cbe2ed5a5",
- "status": "in progress",
- "updated_at": "2026-11-23T07:59:39Z"
+ "status": "complete",
+ "updated_at": "2026-11-23T08:03:00Z",
+ "verdict": "Before answering you, the orchestrator must run kit.py brief (board only, ~410 tokens on Harmonize) or its reply is refused; the clerk no longer replaces an idle orchestrator."
 }
