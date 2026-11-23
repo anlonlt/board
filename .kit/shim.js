@@ -625,6 +625,9 @@
     if (sheet.classList.contains("orch-popup")) {
       var oldB = document.getElementById("kit-post-ext-badges"); if (oldB) oldB.remove();
       var oldA = document.getElementById("kit-post-artifacts"); if (oldA) oldA.remove();
+      /* CL27: the git diff of the post opened before is not the orchestrator's */
+      var oldG = document.getElementById("kit-git-diff"); if (oldG) oldG.remove();
+      var bEl = document.getElementById("p-body"); if (bEl) bEl.dataset.kitDiffPost = "";
       makeWindow(sheet, sheet.querySelector(".bar"), { minW: 360, minH: 320, winKey: "orch" });
       applySavedWindowGeom(sheet, "orch", { minW: 360, minH: 320 });
       linkRepoDocs(sheet);
@@ -635,6 +638,8 @@
     var existingSel = document.getElementById("kit-col-move");
     if (!postId || postId.charAt(0) === "_" || (moveBtn && moveBtn.hidden)) {
       if (existingSel) existingSel.hidden = true;
+      var oldG2 = document.getElementById("kit-git-diff"); if (oldG2) oldG2.remove();
+      var bEl2 = document.getElementById("p-body"); if (bEl2) bEl2.dataset.kitDiffPost = "";
       return;
     }
     if (existingSel) existingSel.hidden = false;

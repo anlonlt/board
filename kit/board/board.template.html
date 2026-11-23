@@ -936,6 +936,87 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
 /* CL12: in the orchestrator's window (a panel at the right on a desktop), the pill sits in that window, not at the
    middle of the screen over the board */
 .sheet.orch-popup .newjump { position: absolute; }
+
+/* ==== CL27 (the owner's audit, 2026-11-23 07:08): docs/CL27.md lists each problem, its picture and its check
+   (kit/board/test_page_ux.js). ==== */
+/* "blue highlights appearing whenever you tap something on mobile": no tap flash; a press shows as a slight dim */
+html { -webkit-tap-highlight-color: transparent; }
+button:active, summary:active, .card:active, .ffeed-card:active, a:active { -webkit-tap-highlight-color: transparent; }
+/* "Live" is the normal state: the header says only what is wrong (offline, sign in, pending sync) */
+.status.live { display: none !important; }
+/* "All the buttons on the header that sometimes don't seem to fit on mobile": on a phone the header is two full rows,
+   never a third: the board's name and its actions (Import, Repo docs, Share, Ask), then the views and the list tools */
+@media (max-width: 640px) {
+  .wrap:not([data-view="focus"]) header.top { display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; row-gap: 8px; }
+  .wrap:not([data-view="focus"]) header.top .tools { display: contents; }
+  .wrap:not([data-view="focus"]) header.top > h1, .wrap:not([data-view="focus"]) header.top > .kit-repo-wrap { order: 0; flex: 1 1 0; min-width: 0; }
+  .wrap:not([data-view="focus"]) header.top > h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wrap:not([data-view="focus"]) header.top #imp-btn, .wrap:not([data-view="focus"]) header.top #status,
+  .wrap:not([data-view="focus"]) header.top #kit-docs-btn, .wrap:not([data-view="focus"]) header.top #kit-users-btn,
+  .wrap:not([data-view="focus"]) header.top #ask { order: 1; flex: none; }
+  .wrap:not([data-view="focus"]) header.top #status { max-width: 40vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wrap:not([data-view="focus"]) header.top::after { content: ""; order: 2; flex-basis: 100%; height: 0; }
+  .wrap:not([data-view="focus"]) header.top #kit-views { order: 3; flex: 1 1 auto; min-width: 0; justify-content: space-between; }
+  .wrap:not([data-view="focus"]) header.top #kit-views button { flex: 1 1 auto; padding-inline: 6px; }
+  .wrap:not([data-view="focus"]) header.top #kit-search-wrap, .wrap:not([data-view="focus"]) header.top #kit-sort-btn,
+  .wrap:not([data-view="focus"]) header.top #sel-toggle, .wrap:not([data-view="focus"]) header.top #kit-mine-btn,
+  .wrap:not([data-view="focus"]) header.top #runner-filter { order: 4; flex: none; }
+  /* the search opens over the views (they come back when it closes), never past the screen's edge */
+  header.top:has(.kit-search-wrap.open) #kit-views { display: none !important; }
+  .wrap:not([data-view="focus"]) header.top .kit-search-wrap.open { flex: 1 1 auto; min-width: 0; }
+  .wrap:not([data-view="focus"]) header.top .kit-search-wrap.open #q { width: auto; flex: 1 1 auto; min-width: 0; }
+}
+#imp-btn.kit-icon-btn { font-size: 0; }
+/* "the send button and attachment buttons that cover up text": the box is a row, paperclip | text | send, the buttons
+   beside the text (never over it); the text box grows with what is typed, up to a cap, then scrolls */
+.composer {
+  display: grid !important; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: end;
+  grid-template-areas: "reply reply reply" "files files files" "att text send" "note note note"; padding: 4px 0;
+}
+.composer > #c-reply { grid-area: reply; }
+.composer > #c-files, .composer > .files { grid-area: files; }
+.composer textarea {
+  grid-area: text; order: 0; padding: 10px 4px !important; min-height: 42px !important; height: 42px; max-height: min(40vh, 220px);
+  field-sizing: content; resize: none; border-radius: 0 !important; overflow-y: auto;
+}
+.composer #c-attach-row:not([hidden]) { display: contents !important; }
+.composer #c-attach, .composer #c-send { grid-area: att; position: static; justify-self: center; margin-bottom: 4px; }
+.composer #c-send { grid-area: send; }
+.composer #c-note { grid-area: note; position: static; padding: 0 14px 4px; text-align: left; white-space: normal; pointer-events: auto; }
+.focus-cmt-bar.open { display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; grid-template-areas: "files files files" "att text snd"; align-items: end; }
+.focus-cmt-bar .focus-cmt-files { grid-area: files; }
+.focus-cmt-bar textarea { grid-area: text; padding: 10px 4px; min-height: 42px; height: 42px; max-height: min(40vh, 220px); field-sizing: content; resize: none; overflow-y: auto; }
+.focus-cmt-bar .fc-btn { position: static; justify-self: center; margin-bottom: 5px; }
+.focus-cmt-bar .fc-btn.att { grid-area: att; }
+.focus-cmt-bar .fc-btn.snd { grid-area: snd; }
+/* "the comment box ... not adapted to the mobile keyboard appearing, there being a huge margin on the top": while the
+   keyboard is open the open sheet (post, orchestrator, feed comments) is exactly the part of the screen the keyboard
+   leaves (the visual viewport), so its bar stays at the top and its comment box sits right on the keyboard */
+html.kit-kbd .sheet:not([hidden]), html.kit-kbd .kit-post-win {
+  top: var(--kit-vv-top, 0px) !important; bottom: auto !important; height: var(--kit-vv-h, 100%) !important; max-height: none !important;
+}
+/* on a phone the orchestrator and a feed post's comments are full sheets like a post (DESIGN-PRINCIPLES § 7), no
+   rounded card floating 8-12 px from the edges */
+@media (max-width: 640px) {
+  .sheet.orch-popup, .sheet.feed-comments-overlay { inset: 0; width: auto; height: auto; max-height: none; transform: none; border-radius: 0; border: 0; box-shadow: none; }
+}
+/* CL27: the comment box is the bottom of the sheet: nothing scrolls visibly under or below it */
+.sheet.orch-popup .sheet-in { padding-bottom: 0 !important; }
+.sheet.orch-popup .composer { margin-bottom: 0; }
+.sheet:not(.orch-popup) .composer { bottom: 10px; margin-bottom: 10px; }
+.sheet:not(.orch-popup) .composer::after { content: ""; position: absolute; left: -24px; right: -24px; top: 100%; height: 10px; background: var(--bg); pointer-events: none; }
+.sheet.feed-comments-overlay .composer::after { background: var(--surface); }
+.composer textarea { height: auto; }
+/* CL27: the Trains view as task lists, one card per train, its steps one compact row each (done ones one line) */
+.kit-tl-list { display: flex; flex-direction: column; gap: 14px; max-width: 900px; margin: 0 auto; }
+.kit-tl-inline { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+.kit-tl-inline .kit-tl-hdr { position: static; display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; background: var(--sunk); border-bottom: 1px solid var(--line); }
+.kit-tl-inline .kit-tl-hdr b { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1rem; }
+.kit-tl-inline .kit-tl-hdr .tlsub { flex: none; font-size: .8rem; color: var(--muted); }
+.kit-tl-inline .kit-tl-body { max-height: none; overflow: visible; padding: 6px 4px 8px; }
+.kit-tl-inline .kit-tl-item.is-done:not(.open) .kit-tl-verdict { display: none; }
+.kit-tl-inline .kit-tl-item.is-done:not(.open) { padding-block: 3px; }
+html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-height: var(--kit-box-max, 35vh); }
 </style>
 
 <div class="wrap">
@@ -2357,6 +2438,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   function share(posts, note) {
     if (!downloads || !posts.length) return;
     var f = exportMd(posts);
+    if (note && note.classList) note.classList.remove("live");
     downloads.save(f).then(function () { if (note) note.textContent = "Saved " + f.filename + "."; }, function (e) {
       var code = e && e.code;
       if (note) note.textContent = code === "declined" ? "" : code === "rate_limited" ? "A save is already open; try again in a moment." : "Could not save the file (" + (code || "error") + ").";
@@ -3164,6 +3246,16 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     }, { root: $("sheet"), threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1] });
     s.list.forEach(function (n) { seenObs.observe(n); });
   }
+  /* CL27: the pill sits 10 px above the comment box when that box is on screen, never over it */
+  function placeNewJump(j) {
+    var c = $("composer"), sh = $("sheet");
+    j.style.removeProperty("bottom");
+    if (!c || c.hidden || !sh || sh.hidden) return;
+    var cr = c.getBoundingClientRect(), vh = window.visualViewport ? window.visualViewport.height + window.visualViewport.offsetTop : window.innerHeight;
+    if (cr.height <= 0 || cr.top >= vh) return;
+    var base = getComputedStyle(j).position === "absolute" ? sh.getBoundingClientRect().bottom : vh;
+    j.style.setProperty("bottom", Math.max(18, Math.round(base - cr.top + 10)) + "px", "important");
+  }
   /* "New below" / "New above": the first unseen thing that is not on screen now. */
   function newJump() {
     var p = current(), j = $("p-newjump"); if (!p) { j.hidden = true; return; }
@@ -3173,6 +3265,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     j.textContent = "";
     j.appendChild(el("span", "newdot")); j.appendChild(document.createTextNode(below ? "New below \u2193" : "New above \u2191"));
     j.hidden = false;
+    placeNewJump(j);
     j.onclick = function () { goTo(off.dataset.cid ? { cid: off.dataset.cid } : { body: true }); };
   }
   document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible" && state.openId) watchSeen(); });
@@ -3487,7 +3580,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       baseline();
       if (!snap.metadata.fromCache) {
         var firstLoad = !state.loaded;
-        state.loaded = true; clearTimeout(timer); var s = $("status"); s.className = "status"; s.textContent = "Live";
+        state.loaded = true; clearTimeout(timer); var s = $("status"); s.className = "status live"; s.textContent = "Live";
         if (firstLoad && !state.openId) { var back = ""; try { back = sessionStorage.getItem("board-open") || ""; } catch (e) {} if (back && postById(back)) setTimeout(function () { openPost(back); }, 0); }
       }
       later("board"); later("post");
@@ -3511,6 +3604,13 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       askBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
       renderAsk();
     }
+    /* CL27: Import is an icon like its neighbours (icon first), so the header's actions fit one row on a phone */
+    var impBtn = document.getElementById("imp-btn");
+    if (impBtn && !impBtn.querySelector("svg")) {
+      var impLbl = impBtn.title || impBtn.textContent || "Import";
+      impBtn.setAttribute("aria-label", impLbl); impBtn.title = impLbl; impBtn.classList.add("kit-icon-btn");
+      impBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+    }
     var attachBtn = document.getElementById("c-attach");
     if (attachBtn) {
       var attLbl = attachBtn.textContent || "";
@@ -3525,6 +3625,48 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       sendBtn.setAttribute("aria-label", sndLbl); sendBtn.title = sndLbl;
       sendBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
     }
+    /* CL27: the keyboard. The visual viewport is what the keyboard leaves visible; while a field has focus and the
+       keyboard takes more than 120 px, html.kit-kbd pins the open sheet to it (the CSS above). */
+    (function () {
+      var vv = window.visualViewport; if (!vv) return;
+      var root = document.documentElement;
+      function sync() {
+        var ae = document.activeElement, typing = !!(ae && (ae.tagName === "TEXTAREA" || ae.tagName === "INPUT" || ae.isContentEditable));
+        var kb = Math.round(window.innerHeight - vv.height);
+        var on = typing && kb > 120;
+        root.classList.toggle("kit-kbd", on);
+        if (on) { root.style.setProperty("--kit-vv-top", Math.round(vv.offsetTop) + "px"); root.style.setProperty("--kit-vv-h", Math.round(vv.height) + "px"); }
+        if (on) root.style.setProperty("--kit-box-max", Math.max(42, Math.round(vv.height * 0.35)) + "px");
+        if (ae && ae.closest && ae.closest(".composer, .focus-cmt-bar")) requestAnimationFrame(function () { showBox(ae.closest(".composer, .focus-cmt-bar")); });
+      }
+      /* the whole box in view above the keyboard: its scroller moves by what the box runs past the visible part */
+      function showBox(box) {
+        var r = box.getBoundingClientRect(), bottom = vv.offsetTop + vv.height, top = vv.offsetTop;
+        var sc = box.parentElement; while (sc && sc !== document.body && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement;
+        if (!sc || sc === document.body) sc = document.scrollingElement;
+        if (r.bottom > bottom - 2) sc.scrollTop += Math.ceil(r.bottom - bottom + 8);
+        else if (r.top < top) sc.scrollTop -= Math.ceil(top - r.top + 8);
+      }
+      window.addEventListener("resize", function () { var ae = document.activeElement; if (ae && ae.closest && ae.closest(".composer, .focus-cmt-bar")) requestAnimationFrame(function () { showBox(ae.closest(".composer, .focus-cmt-bar")); }); });
+      vv.addEventListener("resize", sync); vv.addEventListener("scroll", sync);
+      document.addEventListener("focusin", function () { setTimeout(sync, 60); }, true);
+      document.addEventListener("focusout", function () { setTimeout(sync, 60); }, true);
+      window._kitSyncKeyboard = sync;
+    })();
+    /* CL27: a comment box grows with its text where the browser cannot (no field-sizing: Safari), up to its CSS cap */
+    if (!(window.CSS && CSS.supports && CSS.supports("field-sizing", "content"))) {
+      var growBox = function (t) { if (!t || !t.closest || !t.closest(".composer, .focus-cmt-bar")) return; t.style.height = "auto"; t.style.height = Math.max(42, t.scrollHeight + 2) + "px"; };
+      document.addEventListener("input", function (e) { growBox(e.target); }, true);
+      document.addEventListener("focusin", function (e) { if (e.target && e.target.tagName === "TEXTAREA") growBox(e.target); }, true);
+    }
+    /* CL27 "tapping an underlined incorrect word automatically hides the keyboard until you pick a correction": that
+       popup is the browser's own spelling menu (Chrome on Android hides the keyboard while it shows). On a touch screen
+       the boxes leave spelling to the keyboard (its suggestion strip still corrects), so no tap opens that menu. */
+    var coarse = window.matchMedia && matchMedia("(pointer: coarse)").matches;
+    function spellFor(t) { if (t && t.tagName === "TEXTAREA" && coarse && t.closest && t.closest(".composer, .focus-cmt-bar")) { t.spellcheck = false; t.setAttribute("autocorrect", "on"); t.setAttribute("autocapitalize", "sentences"); } }
+    if (cText) spellFor(cText);
+    document.addEventListener("focusin", function (e) { spellFor(e.target); }, true);
+    document.addEventListener("pointerdown", function (e) { spellFor(e.target); }, true);
     if (cText && cForm) {
       function syncHasText() { cForm.classList.toggle("has-text", !!(cText.value || "").trim()); }
       cText.addEventListener("input", syncHasText);
@@ -3791,6 +3933,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
 
       /* Single shared horizontal scroll matrix edge-to-edge: rightmost (most recent) posts align vertically */
       var matrix = el("div", "tnet-matrix");
+      var listBox = el("div", "kit-tl-list");
       var rowsBox = el("div", "tnet-rows");
 
       trainKeys.forEach(function (trKey) {
@@ -3838,18 +3981,20 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
         var ttl = el("button", "btn small kit-icon-btn train-dl-btn train-tl-btn"); ttl.type = "button";
         ttl.title = "View train as tasklist"; ttl.setAttribute("aria-label", "View train as tasklist");
         ttl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/><polyline points="3 18 4 19 6 17"/></svg>';
-        ttl.addEventListener("click", function (ev) {
-          ev.stopPropagation();
+        ttl.addEventListener("click", function (ev) { ev.stopPropagation(); buildTl(null); });
+        /* CL27: the same task list either as a window (the button above) or drawn in the Trains view itself (mount) */
+        function buildTl(mount) {
           var ids = trainIds[trKey] || {};
           var allInTrain = trainPosts(ids, tPosts);
-          var ov = document.getElementById("kit-tl-modal");
+          var ov = mount ? null : document.getElementById("kit-tl-modal");
           if (ov) ov.remove();
           var SVG_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
           var SVG_CMT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>';
           var SVG_CHK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
           var SVG_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
           var doneCnt = allInTrain.filter(function (p) { return colOf(p) === "done"; }).length;
-          ov = document.createElement("section"); ov.id = "kit-tl-modal"; ov.className = "kit-tl-win";
+          ov = mount || document.createElement("section");
+          if (!mount) { ov.id = "kit-tl-modal"; ov.className = "kit-tl-win"; }
           ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", hName + " tasklist");
           var hdr = document.createElement("div"); hdr.className = "kit-tl-hdr";
           var bEl = document.createElement("b"); bEl.textContent = hName;
@@ -3880,7 +4025,8 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
           }).sort(function (a, b) { return str(b.created_at).localeCompare(str(a.created_at)); })[0];
           hdr.appendChild(bEl); hdr.appendChild(subEl);
           if (trReview) hdr.appendChild(reviewChip(trReview.verdict, "Review of the whole train: " + (str(trReview.verdict) || "?") + (str(trReview.suggestion) ? ". " + str(trReview.suggestion) : ""), trReview.post_id));
-          hdr.appendChild(cmtAll); hdr.appendChild(clsB);
+          hdr.appendChild(cmtAll);
+          if (mount) { tdl.classList.add("kit-tl-dl"); hdr.appendChild(tdl); } else hdr.appendChild(clsB);
           ov.appendChild(hdr);
           var list = document.createElement("div"); list.className = "kit-tl-body";
           var stateColors = { you: "var(--todo)", running: "var(--info)", default: "var(--question)", done: "var(--done)", idle: "var(--muted)" };
@@ -4027,10 +4173,15 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
             list.appendChild(item);
           });
           ov.appendChild(list);
+          if (mount) return ov;
           document.body.appendChild(ov);
           if (typeof window._kitMakeWindow === "function") window._kitMakeWindow(ov, hdr, { minW: 340, minH: 260, winKey: "tasklist" });
           if (typeof window._kitPlaceWindow === "function") window._kitPlaceWindow(ov, 640, 680, "tasklist", "tasklist", 340, 260);
-        });
+        }
+        if (trainsAsLists()) {
+          var tlSec = document.createElement("section"); tlSec.className = "kit-tl-inline"; tlSec.dataset.train = hName;
+          listBox.appendChild(buildTl(tlSec));
+        }
         tpz.appendChild(tsq); tpz.appendChild(ttl); tpz.appendChild(tdl); lbl.appendChild(tpz);
         lbl.addEventListener("click", function (lev) {
           if (lev.target && lev.target.closest && lev.target.closest("button")) return;
@@ -4084,10 +4235,15 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
         row.appendChild(chain);
         rowsBox.appendChild(row);
       });
+      if (trainsAsLists()) { trainNetEl.appendChild(listBox); return; }
       matrix.appendChild(rowsBox);
       trainNetEl.appendChild(matrix);
       setTimeout(function () { matrix.scrollLeft = matrix.scrollWidth; }, 0);
     }
+    /* CL27 (his 07:08: "the train view that kind of looks half baked, with the task list becoming essentially a more
+       informative, less scroll heavy view"): the Trains view is each train's task list. The old flow map stays one
+       setting away (localStorage kit-trains-view = "map") until he picks (the question on post CL27). */
+    function trainsAsLists() { try { return localStorage.getItem("kit-trains-view") !== "map"; } catch (e) { return true; } }
 
     function enhanceRenderedBody(container) {
       /* Auto-highlight 'For you:' / 'My suggestion:' callouts and auto-fold 'Not checked:' / 'Turn 1:' agent audit blocks */
@@ -4444,16 +4600,9 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     function renderOpenFeed() {
       openFeedEl.textContent = "";
       var posts = (state.posts || []).filter(function (p) { return colOf(p) !== "done" && matches(p); });
-      var bar = el("div", "ffeed-bar");
-      bar.appendChild(el("span", "note", String(posts.length)));
-      var sortToggle = el("button", "btn small", feedSortMode === "urgent" ? "By priority" : "Newest first");
-      sortToggle.type = "button";
-      sortToggle.addEventListener("click", function () {
-        feedSortMode = feedSortMode === "urgent" ? "new" : "urgent";
-        renderOpenFeed();
-      });
-      bar.appendChild(sortToggle);
-      openFeedEl.appendChild(bar);
+      /* CL27 (his 07:08): no bar with a post count and a second sort button here; the header's sort button orders the
+         feed too */
+      feedSortMode = state.sort === "prio" ? "urgent" : "new";
       if (!posts.length) {
         openFeedEl.appendChild(el("div", "empty", state.loaded ? "Nothing here." : "Loading..."));
         return;

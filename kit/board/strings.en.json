@@ -780,6 +780,26 @@
   "kind": "js"
  },
  {
+  "en": "Import",
+  "kind": "js"
+ },
+ {
+  "en": "--kit-vv-top",
+  "kind": "js"
+ },
+ {
+  "en": "--kit-vv-h",
+  "kind": "js"
+ },
+ {
+  "en": "--kit-box-max",
+  "kind": "js"
+ },
+ {
+  "en": "(pointer: coarse)",
+  "kind": "js"
+ },
+ {
   "en": "All trains",
   "kind": "js"
  },
@@ -936,14 +956,6 @@
   "kind": "js"
  },
  {
-  "en": "By priority",
-  "kind": "js"
- },
- {
-  "en": "Newest first",
-  "kind": "js"
- },
- {
   "en": "board-title:",
   "kind": "js"
  },
@@ -965,6 +977,14 @@
  },
  {
   "en": "Focus",
+  "kind": "js"
+ },
+ {
+  "en": "By priority",
+  "kind": "js"
+ },
+ {
+  "en": "Newest first",
   "kind": "js"
  },
  {

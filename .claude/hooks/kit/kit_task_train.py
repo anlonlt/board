@@ -12,7 +12,7 @@ A thin adapter over `kit.py step` (the same commands an agy orchestrator runs by
                                              review, and every kit.review.train_every steps a cross review of the train
   TaskUpdate deleted                      -> `kit.py step drop` (only while no part started it)
 
-Metadata keys: train, part (required for a step), parent, sources (the owner's or a review's comment ids the step
+Metadata keys: train, part (required for a step), board (an attached board's id: the step goes on its train, CL25), parent, sources (the owner's or a review's comment ids the step
 answers), model, review (false: no review). A task without train and part stays the orchestrator's own. Other sessions
 (parts, the clerk, reviews) are ignored: KIT_ROLE, else the transcript's first prompt. Never blocks the tool.
 """
@@ -64,6 +64,8 @@ def on_create(root, st, ti, tr):
         args += ["--model", str(meta["model"])]
     if meta.get("review") is False:
         args.append("--no-review")
+    if meta.get("board"):                      # CL25: an attached board's train (repos/<id>/ in the Artifact)
+        args += ["--board", str(meta["board"])]
     res = kit(root, args)
     if res.get("error"):
         hint = ""
@@ -84,10 +86,11 @@ def on_create(root, st, ti, tr):
     if not res.get("prompt"):
         return "Task %s is train %s step %s: post %s created (planned); no prompt template (.kit/claude-cli/part.md)." % (
             tid, train, part, res["post"])
-    return ("Task %s is train %s step %s: post %s created (planned), prompt %s written from your description%s. "
+    sent = (" It is on the attached board %s: first %s." % (res["board"], res["next"])) if res.get("artifact_write") else ""
+    return ("Task %s is train %s step %s: post %s created (planned), prompt %s written from your description%s.%s "
             "To launch: commit and push it, TaskUpdate %s in_progress, then: %s") % (
-        tid, train, part, res["post"], res["prompt"], "" if res.get("prompt_written") else " (it existed: kept)", tid,
-        res["launch"])
+        tid, train, part, res["post"], res["prompt"], "" if res.get("prompt_written") else " (it existed: kept)", sent,
+        tid, res["launch"])
 
 
 def on_update(root, st, ti):

@@ -1730,7 +1730,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         inline_shim = load_shim_js().replace("</script>", "<\\/script>")
         flag_js = "window.__KIT_EMBED__=true;\n" if inject_embed_flag else ""
         embed_tags = '<meta name="theme-color" content="#0b111e">\n<script>\n' + flag_js + inline_shim + "\n</script>"
-        head_inject = '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<style>html,body{margin:0;padding:0;-webkit-font-smoothing:antialiased;}</style>\n' + embed_tags
+        head_inject = '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">\n<style>html,body{margin:0;padding:0;-webkit-font-smoothing:antialiased;}</style>\n' + embed_tags
         if "</head>" in html:
             if 'name="viewport"' in html.lower():
                 head_inject = embed_tags
@@ -2551,7 +2551,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     '<script src="/_shim.js"></script>\n'
                     '<script>if("serviceWorker"in navigator){navigator.serviceWorker.register("/_sw.js").catch(function(){});}</script>'
                 )
-                head_inject = '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<style>html,body{margin:0;padding:0;-webkit-font-smoothing:antialiased;}</style>\n' + pwa_tags
+                head_inject = '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">\n<style>html,body{margin:0;padding:0;-webkit-font-smoothing:antialiased;}</style>\n' + pwa_tags
                 if "</head>" in html:
                     if 'name="viewport"' in html.lower():
                         head_inject = pwa_tags

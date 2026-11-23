@@ -13,12 +13,14 @@ the orchestrator only, the three gestures that bypass the kit, and says the kit'
   - `create_session` with an inline prompt: a part's prompt starts with `Your prompt is docs/prompts/<id>.md` and
     stays short (<= 400 characters; a long prompt that merely names a path is still an inline prompt); only a tag
     lets another launch through (`orchestrator` a successor, `board-clerk` the clerk, `review` a review): the title
-    is never read for this (CL24).
+    is never read for this (CL24); and its `source_url` is the step's repo (CL26: its post on an attached board in
+    the local copy names it; else a known clone holding the prompt file), so the part can push its work.
 A targeted lookup pages no further: a `where` query with limit <= 5 that carries a `cursor` is a broad read.
 Everyone else (parts, the clerk, the owner's own sessions) is never touched. The orchestrator's subagents are exempt
 by design: they exist to keep a dump (a full list, a card rebuild) out of the orchestrator's context, so the hook
 lets them read and write the board raw. Exit 2 with the reason on stderr.
 """
+import glob
 import json
 import os
 import re
@@ -109,6 +111,84 @@ LAUNCH_WAY = ("launch a part from its prompt file: TaskCreate {train, part} firs
               "tag `board-clerk`; a review: tag `review`; the title is not read)" % PROMPT_MAX)
 
 
+def gh_repo(u):
+    """owner/name of a GitHub URL or slug (lower case), '' if none."""
+    u = str(u or "").strip()
+    m = re.search(r"(?:github\.com[/:])?([\w.-]+/[\w.-]+?)(?:\.git)?/?$", u)
+    return m.group(1).lower() if u and m else ""
+
+
+def _read(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def known_repos(root):
+    """{owner/name: local clone or None}: this repo, the config's portfolio and the Artifact's kit_repos/_index (as
+    `kit.py artifact pull` saved it), with a clone next to this repo when there is one."""
+    cfg = _read(os.path.join(root, ".kit", "config.json")) or {}
+    k = cfg.get("kit") or {}
+    own = gh_repo(k.get("github") or cfg.get("github"))
+    if not own:
+        try:
+            own = gh_repo(subprocess.run(["git", "-C", root, "remote", "get-url", "origin"], capture_output=True,
+                                         text=True, timeout=5).stdout)
+        except (OSError, subprocess.SubprocessError):
+            own = ""
+    repos, ids = {}, {}
+    if own:
+        repos[own] = root
+    rows = [r for r in (cfg.get("portfolio") or []) if isinstance(r, dict)]
+    idx = _read(os.path.join(art_in(root), "kit_repos", "_index.json")) or {}
+    idx = idx.get("data") if isinstance(idx.get("data"), dict) else idx
+    rows += [r for r in (idx.get("repos") or []) if isinstance(r, dict)]
+    up = os.path.dirname(os.path.abspath(root))
+    for r in rows:
+        gh = gh_repo(str(r.get("github") or "").replace("github:", ""))
+        if not gh:
+            continue
+        cands = [r.get("path"), os.path.join(up, gh.split("/")[1])]
+        clone = next((c for c in cands if c and os.path.isdir(os.path.join(c, ".git"))), None)
+        repos[gh] = repos.get(gh) or clone
+        for key in (r.get("id"), r.get("name")):
+            if key:
+                ids[re.sub(r"[^a-z0-9_-]+", "-", str(key).lower()).strip("-")] = gh
+    return own, repos, ids
+
+
+def art_in(root):
+    return os.path.join(os.environ.get("KIT_ARTIFACT_DIR") or os.path.join(root, ".kit", "run", "artifact"), "in")
+
+
+def launch_repo(prompt, src, root):
+    """CL26: a part's session clones the repo of its step. None, or why this source_url is the wrong one."""
+    m = PART_PROMPT.match(prompt)
+    if not m:
+        return None
+    rel = prompt[len("Your prompt is "):m.end()]
+    pid = os.path.basename(rel)[:-3]
+    own, repos, ids = known_repos(root)
+    target = gh_repo(src) or own
+    if not target:
+        return None
+    # the step's board: its post in the local copy of an attached board (repos/<id>/posts/<pid>.json)
+    for f in glob.glob(os.path.join(art_in(root), "repos", "*", "posts", pid + ".json")):
+        step = ids.get(os.path.basename(os.path.dirname(os.path.dirname(f))))
+        if step and step != target:
+            return ("step %s is on the board of %s, so its session clones that repo: source_url "
+                    "\"https://github.com/%s\" (its prompt %s must be committed there: write it with `kit.py step "
+                    "new` run in that repo's clone)" % (pid, step, step, rel))
+        if step:
+            return None
+    holders = [r for r, c in repos.items() if c and os.path.isfile(os.path.join(c, rel))]
+    if holders and target not in holders and repos.get(target):
+        return ("its prompt %s is in %s, not in %s: launch from %s" % (rel, ", ".join(holders), target, holders[0]))
+    return None
+
+
 def verdict(data, root):
     name = str(data.get("tool_name") or "")
     ti = data.get("tool_input") or {}
@@ -142,7 +222,8 @@ def verdict(data, root):
         if any(t in PASS_TAGS for t in tags):
             return None
         if PART_PROMPT.match(prompt) and len(prompt) <= PROMPT_MAX:
-            return None
+            why = launch_repo(prompt, ti.get("source_url"), root)
+            return ("a part launched from the wrong repo: %s." % why) if why else None
         return "a part launched with an inline prompt: %s." % LAUNCH_WAY
     return None
 
