@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T22:04:26Z",
+ "created_at": "2026-11-23T22:10:51Z",
  "rows": [
   {
    "also": [],
@@ -570,7 +570,7 @@
    "post": "cl29-kit-compact-keeps-a-project-s-story-chec",
    "prompt": "",
    "session": "147d5df5-9a16-54c3-9da2-61460d0358e7",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -591,11 +591,11 @@
    "part": "CL31",
    "post": "cl31-kit-artifact-push-never-overwrites-a-new",
    "prompt": "",
-   "session": "ef07beec-c03a-56c1-b693-8326f0f02f65",
+   "session": "pending: create_session (board-cl31)",
    "state": "running",
    "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T22:04:26Z"
+ "updated_at": "2026-11-23T22:10:51Z"
 }
