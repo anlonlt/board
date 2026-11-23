@@ -59,7 +59,8 @@ function overflows() {
   const shown = (e) => { for (let a = e; a && a !== document.body; a = a.parentElement) { const cs = getComputedStyle(a); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0) return false; } return true; };
   // the boxes made to scroll sideways (their content may be wider); any other box clips or scrolls only by accident
   const SIDEWAYS = '.tabs, .tbl, .strip, .pic-scroll, .zimg, .grp-row, .tnet-matrix, .tnet-rows, .ffeed-imgs';
-  const scrolls = (e) => !!(e.parentElement && e.parentElement.closest(SIDEWAYS));
+  // ...but what names such a box (a train's name, sticky at its left) must be seen whole
+  const scrolls = (e) => !e.closest('.tnet-label') && !!(e.parentElement && e.parentElement.closest(SIDEWAYS));
   const SKIP = '[hidden], pre, textarea, input, select, .kit-sr-only, [aria-hidden="true"]';
   const seen = new Set();
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -120,6 +121,12 @@ function overflows() {
     await shot(label + '-discussion');
     o = await ev(overflows); check(label + ': nothing overflows in a discussion with long headers', !o.length, o);
     await ev(() => { const b = document.getElementById('back'); if (b) b.click(); }); await settle();
+    // the Trains view: a train's long name starts on screen (the matrix sits scrolled to its right end)
+    await ev(() => { const b = document.querySelector('.kit-close, #back'); if (b && !document.getElementById('sheet').hidden) b.click(); });
+    await ev(() => { const t = [...document.querySelectorAll('button, [role=tab]')].find((b) => /^\s*Trains\s*$/i.test(b.textContent || '')); if (t) t.click(); }); await settle();
+    await shot(label + '-trains');
+    o = await ev(overflows); check(label + ': nothing overflows in the Trains view (a train\'s long name)', !o.length, o);
+    await ev(() => { const t = [...document.querySelectorAll('button, [role=tab]')].find((b) => /^\s*Lanes\s*$/i.test(b.textContent || '')); if (t) t.click(); }); await settle();
   }
 
   // the badge (his 22:04): a reply to the thread of his Like is drawn in its discussion, and once on screen it clears
@@ -156,7 +163,8 @@ function overflows() {
     const tab = [...document.querySelectorAll('button, [role=tab]')].find((b) => /^\s*Trains\s*$/i.test(b.textContent || '') || b.dataset.tab === 'trains');
     if (tab) tab.click();
     await new Promise((r) => setTimeout(r, 400));
-    const btn = document.querySelector('.train-tl-btn'); if (!btn) return 'no tasklist button';
+    const row = [...document.querySelectorAll('.tnet-row')].find((r) => /Claude Code CLI runtime/.test(r.textContent || ''));
+    const btn = row && row.querySelector('.train-tl-btn'); if (!btn) return 'no tasklist button on the cli train';
     btn.click(); await new Promise((r) => setTimeout(r, 300));
     const m = document.getElementById('kit-tl-modal'); return m ? m.textContent : 'no tasklist';
   });

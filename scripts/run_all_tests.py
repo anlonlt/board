@@ -5,6 +5,7 @@ Runs every regression suite in one command, prints a clear pass/fail summary,
 and exits non-zero if any suite fails.
 """
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -18,6 +19,9 @@ SUITES = [
     ("kit/board/test_kit_cards.py", [sys.executable, "kit/board/test_kit_cards.py"]),
     ("test_install.py", [sys.executable, "test_install.py"]),
     ("test_install_bd11.py", [sys.executable, "test_install_bd11.py"]),
+    # CL12: the page in a real browser at a phone and a desktop width: no text off screen or cut by its box, the badge
+    # clears once seen, a train lists its done steps (prints SKIP without a browser; KIT_REQUIRE_BROWSER=1 makes it fail)
+    ("kit/board/test_page_layout.js", [shutil.which("node") or "node", "kit/board/test_page_layout.js"]),
 ]
 
 
@@ -28,6 +32,9 @@ def main():
     env["KIT_NO_FUNNEL"] = "1"
     for name, cmd in SUITES:
         print("=== %s ===" % name, flush=True)
+        if not shutil.which(cmd[0]) and not os.path.exists(cmd[0]):
+            print("SKIP %s: %s is not installed (say so; not a pass)\n" % (name, cmd[0]), flush=True)
+            continue
         st = time.monotonic()
         r = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
         dt = time.monotonic() - st

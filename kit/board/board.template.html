@@ -498,11 +498,14 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 .tnet-map-chip.st-done { border-color: var(--done); color: var(--done); opacity: .7; }
 .tnet-map-chip:hover { background: var(--ember); color: var(--ember-ink); border-color: var(--ember); }
 
-.tnet-matrix { overflow-x: auto; overflow-y: visible; padding: 6px 0 18px; -webkit-overflow-scrolling: touch; border: 0; border-radius: 0; background: transparent; }
+.tnet-matrix { container-type: inline-size; overflow-x: auto; overflow-y: visible; padding: 6px 0 18px; -webkit-overflow-scrolling: touch; border: 0; border-radius: 0; background: transparent; }
 .tnet-rows { display: flex; flex-direction: column; gap: 18px; width: max-content; min-width: 100%; }
 .tnet-row { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 100%; }
-.tnet-label { position: sticky; left: 0; z-index: 2; width: fit-content; max-width: calc(100vw - 36px); display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; background: transparent; border: 0; box-shadow: none; }
+/* CL12: at most the width of the box that scrolls (100cqw), not of the screen: the matrix sits scrolled to its right
+   end, and a name wider than its box ran off to the left (his 22:03, "titles continue to the left") */
+.tnet-label { position: sticky; left: 0; z-index: 2; width: fit-content; max-width: 100cqw; display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; background: transparent; border: 0; box-shadow: none; }
 .tnet-label b { font-size: .9rem; line-height: 1.2; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tnet-label > span { flex: none; }
 .tnet-label span { font-size: .74rem; color: var(--muted); white-space: nowrap; }
 .tnet-chain { display: flex; align-items: stretch; justify-content: flex-end; gap: 6px; flex: none; }
 .tnet-node { width: 256px !important; min-width: 256px !important; max-width: 256px !important; min-height: 92px; height: auto !important; flex: 0 0 256px !important; justify-content: space-between; overflow: visible; margin: 0 !important; gap: 8px; transition: box-shadow .25s ease, transform .25s ease; }
