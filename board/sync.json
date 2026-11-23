@@ -1,5 +1,5 @@
 {
- "cursor": "2026-11-23T08:55:18Z",
+ "cursor": "2026-11-23T08:55:24Z",
  "db_seq": 169,
  "log": [
   {
@@ -2175,6 +2175,18 @@
    "changed": 0,
    "comments_read": 35,
    "full": true,
+   "new": 0,
+   "posts": 43,
+   "posts_removed": 0,
+   "posts_written": 0,
+   "removed": 0
+  },
+  {
+   "at": "2026-11-23T08:55:24Z",
+   "changed": 0,
+   "comments_read": 0,
+   "db_seq": 169,
+   "full": false,
    "new": 0,
    "posts": 43,
    "posts_removed": 0,
