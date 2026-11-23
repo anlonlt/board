@@ -3344,13 +3344,28 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
     def g(*a, **kw):
         return subprocess.run(["git", "-C", clone] + list(a), capture_output=True, text=True, timeout=kw.get("timeout", 120))
     branch = "part-%s" % _slug(pid, 60)
+    restore = []      # the branch the clone was on: it goes back there whatever happens
+    try:
+        return _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset)
+    finally:
+        if restore:
+            g("checkout", "-q", restore[0])
+
+
+def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset):
     if not session_id and not os.path.isfile(os.path.join(clone, rel)):
         if not os.path.isfile(mine):
             return dict(out, error="no prompt %s here or in %s: plan the step first (`kit.py step new --board %s`)" % (rel, clone, b["id"]))
+        dirty = g("status", "--porcelain", "--untracked-files=no").stdout.strip()
+        if dirty:     # O53: never switch a checkout that holds someone's work
+            return dict(out, error="the clone %s has uncommitted changes (%s): commit or stash them there, then launch "
+                        "again; the launch puts the prompt on its own branch and comes back" % (clone, dirty.splitlines()[0][:80]))
+        orig = g("symbolic-ref", "-q", "--short", "HEAD").stdout.strip() or g("rev-parse", "HEAD").stdout.strip()
         g("fetch", "-q", "origin")
         trunk = next((r for r in ("origin/main", "origin/master") if g("rev-parse", "--verify", "--quiet", r).returncode == 0), "HEAD")
         has = g("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + branch).returncode == 0
         r = g("checkout", "-B", branch, ("origin/" + branch) if has else trunk)
+        restore.append(orig)
         if r.returncode != 0:
             return dict(out, error="could not check out %s in %s: %s" % (branch, clone, (r.stderr or r.stdout).strip()[:300]))
         if not os.path.isfile(os.path.join(clone, rel)):

@@ -92,6 +92,11 @@ def owns_board():
         return False, "a %s never pushes a board" % role
     if os.environ.get("KIT_ATTACHED_CLONE"):
         return False, "this clone serves a launch from another project (%s)" % (os.environ.get("KIT_HOST_ROOT") or "?")
+    art = (cfg().get("kit") or {}).get("artifact")
+    if isinstance(art, dict) and str(art.get("prefix") or "").strip("/"):
+        # O53: this board lives in another project's Artifact board (kit.artifact.prefix, e.g. the kit's repos/board/):
+        # the Artifact is its record; a part's web session must not seed it from git nor push its board-mirror
+        return False, "this board is attached to the Artifact board %s (%s)" % (art.get("url") or "?", art["prefix"])
     proj = os.environ.get("CLAUDE_PROJECT_DIR")
     if proj and os.path.realpath(proj) != os.path.realpath(ROOT):
         return False, "this clone (%s) is not this session's project (%s)" % (ROOT, proj)
@@ -116,7 +121,8 @@ def start_board():
     log = open(os.path.join(RUN, "web-board.log"), "a")
     seed = [] if os.path.exists(os.path.join(KIT, "board_data", "board.db")) else ["--seed-from-mirror"]
     own, why = owns_board()
-    if os.environ.get("KIT_ATTACHED_CLONE"):
+    art = (cfg().get("kit") or {}).get("artifact")
+    if os.environ.get("KIT_ATTACHED_CLONE") or (isinstance(art, dict) and str(art.get("prefix") or "").strip("/")):
         seed = []          # the posts it needs come from the Artifact (the launch hands it the post), never a git seed
     sync = ["--auto-sync-interval", "15", "--auto-sync-push"] if own else ["--auto-sync-interval", "0"]
     env = dict(os.environ)

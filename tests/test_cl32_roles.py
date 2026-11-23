@@ -189,6 +189,41 @@ class O53Gaps(unittest.TestCase):
             self.assertTrue(kit._launch_line("CL33", "docs/prompts/cl33-x.md").startswith("python3 -I .kit/kit.py launch"))
 
 
+class CloneCheckout(unittest.TestCase):
+    def git(self, d, *a):
+        return subprocess.run(["git", "-C", str(d)] + list(a), capture_output=True, text=True, check=True).stdout
+
+    def test_dirty_clone_refused_and_branch_restored(self):
+        with tempfile.TemporaryDirectory() as t:
+            t = Path(t)
+            self.git(t, "init", "-q", "--bare", "remote.git")
+            clone = t / "board"
+            subprocess.run(["git", "init", "-q", "-b", "main", str(clone)], check=True)
+            for k, v in (("user.email", "t@t"), ("user.name", "t")):
+                self.git(clone, "config", k, v)
+            (clone / ".kit").mkdir()
+            (clone / ".kit" / "kit.py").write_text("print('{\"ok\": true, \"session_id\": \"s\", \"branch\": \"b\"}')\n")
+            (clone / "work.txt").write_text("a")
+            self.git(clone, "add", ".")
+            self.git(clone, "commit", "-qm", "base")
+            self.git(clone, "remote", "add", "origin", str(t / "remote.git"))
+            self.git(clone, "push", "-q", "origin", "main")
+            self.git(clone, "checkout", "-q", "-b", "someone-elses-work")
+            host = t / "harmonize"
+            (host / "docs" / "prompts").mkdir(parents=True)
+            (host / "docs" / "prompts" / "cl33-x.md").write_text("the prompt")
+            b = {"id": "board", "github": "anlonlt/board", "clone": str(clone)}
+            (clone / "work.txt").write_text("uncommitted")
+            with mock.patch.object(kit, "ROOT", str(host)), mock.patch.object(kit, "_github_url", return_value=""), \
+                    mock.patch.object(kit, "local_board_url", return_value="http://127.0.0.1:9"):
+                r = kit._launch_attached("cl33-x", b, {"part": "CL33"}, web=True)
+                self.assertIn("uncommitted changes", r["error"])
+                self.git(clone, "checkout", "--", "work.txt")
+                r = kit._launch_attached("cl33-x", b, {"part": "CL33"}, web=True)
+            self.assertEqual(self.git(clone, "branch", "--show-current").strip(), "someone-elses-work")
+            self.assertIn("part-cl33-x", self.git(t / "remote.git", "branch"))
+
+
 class Principles(unittest.TestCase):
     def test_scope_filter_hook(self):
         with tempfile.TemporaryDirectory() as t:
@@ -297,8 +332,17 @@ class Ownership(unittest.TestCase):
         clean = {k: v for k, v in os.environ.items() if k not in (
             "KIT_ROLE", "KIT_NO_BOARD_PUSH", "KIT_ATTACHED_CLONE", "CLAUDE_PROJECT_DIR")}
         clean.update(env)
-        with mock.patch.dict(os.environ, clean, clear=True):
+        conf = env.pop("_cfg", {}) if "_cfg" in env else {}
+        clean.pop("_cfg", None)
+        with mock.patch.dict(os.environ, clean, clear=True), mock.patch.object(web_takeover, "cfg", return_value=conf):
             return web_takeover.owns_board()[0]
+
+    def test_a_board_attached_to_another_artifact_is_never_pushed(self):
+        """O53: a part's web session on anlonlt/board ran web_takeover and pushed board-mirror (KIT_ATTACHED_CLONE does
+        not reach a new session); the kit's board lives in Harmonize's Artifact under repos/board/."""
+        att = {"kit": {"artifact": {"url": "https://claude.ai/artifact/X", "prefix": "repos/board/"}}}
+        self.assertFalse(self.owns(_cfg=att))
+        self.assertTrue(self.owns(_cfg={"kit": {"artifact": {"url": "https://claude.ai/artifact/X", "prefix": ""}}}))
 
     def test_who_may_push_the_board_mirror(self):
         self.assertTrue(self.owns())
