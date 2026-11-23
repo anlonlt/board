@@ -28,6 +28,8 @@ class ArtifactMode(unittest.TestCase):
         self.art = self.tmp / "art"
         os.environ["KIT_ARTIFACT_DIR"] = str(self.art)
         self.addCleanup(os.environ.pop, "KIT_ARTIFACT_DIR", None)
+        os.environ["KIT_ARTIFACT_PREFIX"] = ""        # a board of its own (the kit repo's config attaches it under repos/board/)
+        self.addCleanup(os.environ.pop, "KIT_ARTIFACT_PREFIX", None)
 
     def remote(self, coll, did, data):
         d = self.art / "in" / coll

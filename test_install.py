@@ -166,7 +166,7 @@ with tempfile.TemporaryDirectory() as d:
     check("the Claude Code CLI orchestrator starts a haiku clerk session and parts as named background sessions",
           "claude --bg -n harmonize-clerk --model haiku --autocompact 120000 --permission-mode auto" in orch_cli
           and '"train": "<project id>", "part": "<PART>"' in orch_cli and "380k" in orch_cli and "kit.py resume" in orch_cli
-          and "claude --bg -n harmonize-<part> -w <part>" in orch_cli
+          and "kit.py launch <post id>" in orch_cli and "claude --bg -n harmonize-<part>" in orch_cli  # CL13
           and "session_id\":\"harmonize-orchestrator\"" in orch_cli and "welcome --runtime claude-cli" in orch_cli
           and not any(x in orch_cli + clerk_cli for x in ("invoke_subagent", "run_command", "send_message", "WaitMsBeforeAsync", "{{"))
           and "model: haiku" in cards_cli and "tools: Bash, Read" in cards_cli)

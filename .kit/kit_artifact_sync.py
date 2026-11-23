@@ -83,9 +83,27 @@ def repo_id(name):
     return re.sub(r"[^a-z0-9_-]+", "-", str(name).lower()).strip("-")
 
 
+def attached_prefix(repo):
+    """The prefix of the Artifact board a repo is attached to (`kit.artifact.prefix` or `.repo` in its
+    .kit/config.json, e.g. "repos/board/" for the kit's own repo, CL13), or "" for a board of its own."""
+    try:
+        c = json.load(open(os.path.join(repo, ".kit", "config.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    a = (c.get("kit") or {}).get("artifact")
+    if not isinstance(a, dict):
+        return ""
+    if a.get("prefix") is not None:
+        p = str(a["prefix"])
+        return p if not p or p.endswith("/") else p + "/"
+    return ("repos/%s/" % repo_id(a["repo"])) if a.get("repo") else ""
+
+
 def prefix(a):
     into = getattr(a, "into", "") or ""
-    return ("repos/%s/" % repo_id(into)) if into else ""
+    if into:
+        return "repos/%s/" % repo_id(into)
+    return attached_prefix(getattr(a, "repo", "") or ".") if getattr(a, "repo", None) else ""
 
 
 def read_mirror(clone, branch=None):

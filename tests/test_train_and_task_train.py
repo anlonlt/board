@@ -264,7 +264,7 @@ class TaskTrainHook(unittest.TestCase):
                                             "metadata": {"train": "planner", "part": "PL4", "parent": "PL2"}},
                         {"task": {"id": "1"}})
         self.assertIn("post pl4-fit-the-model created", msg)
-        self.assertIn('KIT_ROLE=part claude --bg -n demo-pl4 -w pl4 --permission-mode auto "Your prompt is docs/prompts/pl4-fit-the-model.md', msg)
+        self.assertIn('python3 -I .kit/kit.py launch pl4-fit-the-model', msg)  # CL13: one launch command
         prompt = rd(os.path.join(self.proj, "docs", "prompts", "pl4-fit-the-model.md"))
         self.assertIn("Demo, part PL4: fit the model. Train `planner`, after `PL2`.", prompt)
         self.assertIn("## The task\nfit it", prompt)

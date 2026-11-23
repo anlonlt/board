@@ -47,6 +47,11 @@
   "runtime": "local",
   "cli": "claude",
   "mode": "local",
+  "artifact": {
+   "url": "https://claude.ai/artifact/Ek79P6H3WTPJjJVYPe9rsf",
+   "prefix": "repos/board/",
+   "note": "this repo's board is attached to Harmonize's Artifact board (kit_repos/_index there): posts and comments live under repos/board/"
+  },
   "talk_language": "English",
   "limits": {
    "message_chars": 600,

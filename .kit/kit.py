@@ -823,9 +823,46 @@ def _art_save(st):
     write_doc(os.path.join(_art_dir(), "state.json"), st)
 
 
+def attached_board():
+    """The Artifact this repo's board lives in, from config alone (CL13): {"url", "prefix"} or None.
+    `kit.artifact: {"url": <claude.ai/artifact/...>, "prefix": "repos/<id>/"}` (or `"repo": "<id>"`) says the board is
+    an attached board inside another project's Artifact (the kit repo's board lives in Harmonize's, under
+    repos/board/); a claude.ai `board_url` is a board of its own (prefix ""). $KIT_ARTIFACT_URL / $KIT_ARTIFACT_PREFIX
+    override both."""
+    c = _kit_config()
+    k = c.get("kit") or {}
+    a = k.get("artifact") if isinstance(k.get("artifact"), dict) else {}
+    url = os.environ.get("KIT_ARTIFACT_URL") or str(a.get("url") or "")
+    prefix = a.get("prefix")
+    if prefix is None and a.get("repo"):
+        prefix = "repos/%s/" % re.sub(r"[^a-z0-9_-]+", "-", str(a["repo"]).lower()).strip("-")
+    if not url:
+        for u in (CONFIG.get("board_url"), c.get("board_url"), (CONFIG.get("kit") or {}).get("artifact_url"), k.get("artifact_url")):
+            if u and "claude.ai/" in str(u):
+                url, prefix = str(u), prefix or ""
+                break
+    if not url:
+        return None
+    prefix = os.environ.get("KIT_ARTIFACT_PREFIX", prefix or "")
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
+    return {"url": url.rstrip("/"), "prefix": prefix}
+
+
+def _art_prefix():
+    a = attached_board()
+    return a["prefix"] if a else ""
+
+
+def _art_key(coll_or_key):
+    """`repos/board/posts/x` (the Artifact's path) -> `posts/x` (this copy's key); a key without the prefix is kept."""
+    pre = _art_prefix()
+    return coll_or_key[len(pre):] if pre and coll_or_key.startswith(pre) else coll_or_key
+
+
 def artifact_url():
-    u = str(CONFIG.get("board_url") or _kit_config().get("board_url") or "")
-    return u if "claude.ai/" in u else str((CONFIG.get("kit") or {}).get("artifact_url") or "")
+    a = attached_board()
+    return a["url"] if a else ""
 
 
 def local_board_url():
@@ -860,9 +897,11 @@ def artifact_pull(full=False):
         for f in glob.glob(os.path.join(d, "*", "*.json")):
             os.remove(f)                                   # only the changes are loaded this time
     lines = ["# The board from the Artifact to this copy (%s)%s" % (board, " — changes since %s" % since if since else ""), ""]
+    pre = _art_prefix()
     for c in ART_COLLS:
+        c = pre + c
         if since:
-            field = "updated_at" if c == "posts" else "created_at"
+            field = "updated_at" if c.endswith("posts") else "created_at"
             lines.append("- `ArtifactData` `query`, `url` %s, `collection: \"%s\"`, `query: {where: [[\"%s\", \">\", \"%s\"]], "
                          "limit: 1000}`, `out_dir: \"%s\"`." % (board, c, field, since, d))
         else:
@@ -911,8 +950,10 @@ def artifact_load(url=None, token=None, in_dir=None):
     in_dir = in_dir or os.path.join(_art_dir(), "in")
     st = _art_state()
     taken = kept = merged = 0
+    pre = _art_prefix()
     for coll in ART_COLLS:
-        for f in sorted(glob.glob(os.path.join(in_dir, coll, "*.json"))):
+        # ArtifactData's out_dir writes <out_dir>/<collection path>/<doc_id>.json: under the prefix for an attached board
+        for f in sorted(glob.glob(os.path.join(in_dir, *(pre + coll).split("/"), "*.json"))):
             did = os.path.basename(f)[:-5]
             remote = _read_json(f)
             if not isinstance(remote, dict):
@@ -964,7 +1005,7 @@ def artifact_push(url=None, token=None, out_dir=None):
             if base == data:
                 continue
             key = "%s/%s" % (coll, did)
-            e = {"op": "set", "collection": coll, "doc_id": did}
+            e = {"op": "set", "collection": _art_prefix() + coll, "doc_id": did}
             if key in (st.get("not_there") or []) and key not in st["versions"]:
                 base = None                              # never in the Artifact: a create
             if base is not None or key in st["versions"]:
@@ -1000,6 +1041,9 @@ def artifact_push_text(r):
                    "that collection and doc_id, `out_dir: \"/tmp/kit-pin\"`; then one command: `python3 -I .kit/kit.py "
                    "artifact pin %s` with each <version> the get named; then push again." % (
                        board, " ".join("%s=<version>" % k for k in r["need_pin"])))
+        pre = _art_prefix()
+        if pre:
+            out[-1] = out[-1].replace("that collection and doc_id", "collection `%s<collection>` and the doc_id" % pre)
     for p in r["batches"]:
         out.append("`ArtifactData` `batch`, `url` %s, `writes` = the array in %s; when it is committed: "
                    "`python3 -I .kit/kit.py artifact sent %s`." % (board, p, p))
@@ -1014,15 +1058,16 @@ def artifact_sent(batch_path):
     st = _art_state()
     batch = _read_json(batch_path) or []
     for e in batch:
-        key = "%s/%s" % (e["collection"], e["doc_id"])
+        coll = _art_key(e["collection"])
+        key = "%s/%s" % (coll, e["doc_id"])
         if e.get("op") == "delete":
             st["versions"].pop(key, None)
             continue
         st["versions"][key] = int(e.get("if_version") or 0) + 1
         data = _read_json(e.get("file_path") or "")
         if isinstance(data, dict):
-            os.makedirs(os.path.dirname(_base_path(e["collection"], e["doc_id"])), exist_ok=True)
-            write_doc(_base_path(e["collection"], e["doc_id"]), data)
+            os.makedirs(os.path.dirname(_base_path(coll, e["doc_id"])), exist_ok=True)
+            write_doc(_base_path(coll, e["doc_id"]), data)
     _art_save(st)
     try:
         os.remove(batch_path)
@@ -1036,6 +1081,7 @@ def artifact_pin(pairs):
     n = 0
     for p in pairs:
         k, _, v = p.partition("=")
+        k = _art_key(k)
         if k.count("/") == 1 and v.strip().isdigit():
             st["versions"][k] = int(v)
             n += 1
@@ -1938,7 +1984,7 @@ def device_line(survey=None):
         return "Device: could not measure (%s)." % e
 
 
-def _launch_line(part, rel, model=None, cli=None):
+def _launch_line(part, rel, model=None, cli=None, post=None):
     c = _kit_config()
     k = c.get("kit") or {}
     active = _active_cli(cli)
@@ -1949,9 +1995,9 @@ def _launch_line(part, rel, model=None, cli=None):
         return ('invoke_subagent(TypeName="self", Role="Part: %s", Model="%s", Workspace="share", '
                 'Prompt="Your prompt is %s: read it and do it.")') % (part, agy_model, rel)
     model = str(model or ((k.get("claude_cli_roles") or {}).get("part") or {}).get("model") or "inherit")
-    if str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() == "true":
-        return ("(web) run it as a subagent here (Agent tool, isolation worktree) with the prompt \"Your prompt is %s: "
-                "read it and do it.\", or open a new Claude Code web session on this repo with that prompt" % rel)
+    post = post or (os.path.basename(rel)[:-3] if rel and rel.endswith(".md") else None)
+    if post:   # CL13: one launch command writes the post and the Trains row, then starts the part (CLI or web)
+        return "python3 -I .kit/kit.py launch %s%s" % (post, (" --model %s" % model) if model != "inherit" else "")
     gate = "python3 -I .kit/device.py --gate && " if _device() is not None else ""
     return "%sKIT_ROLE=part claude --bg -n %s -w %s --permission-mode %s%s \"Your prompt is %s: read it and do it.\"" % (
         gate, name, _slug(part, 24), mode, (" --model %s" % model) if model != "inherit" else "", rel)
@@ -2044,6 +2090,216 @@ def step_drop(pid, db_path=None):
     return {"post": pid, "ok": _board_write("update", "posts", pid, {"removed": True})}
 
 
+# ---------------------------------------------------------------- launch (CL13): a launched part is always on the board
+def _is_web():
+    return str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes")
+
+
+def _git_run(*args, cwd=None, timeout=60):
+    return subprocess.run(["git", "-C", cwd or ROOT] + list(args), capture_output=True, text=True, timeout=timeout)
+
+
+def _trains_mark(trains, pid, post, session, prompt_rel):
+    """The Trains card's rows with this part running (its row made under its train's root when missing)."""
+    rows = [dict(r) for r in (trains.get("rows") or []) if isinstance(r, dict)]
+    by = {str(r.get("part")): r for r in rows}
+    part = str(post.get("part") or pid)
+    root = "P-" + _norm_train(post.get("train") or "") if str(post.get("train") or "").strip() else ""
+    if root and root not in by:
+        by[root] = {"part": root, "parent": "", "also": [], "children": [], "post": "", "prompt": "", "session": "",
+                    "state": "idle", "store": []}
+        rows.append(by[root])
+    row = by.get(part)
+    if row is None:
+        row = {"part": part, "parent": root, "also": [], "children": [], "post": pid, "prompt": "", "session": "",
+               "state": "idle", "store": []}
+        rows.append(row)
+        by[part] = row
+    row.update({"post": pid, "session": session, "state": "running", "prompt": prompt_rel or row.get("prompt") or ""})
+    par = by.get(str(row.get("parent") or ""))
+    if par is not None:
+        par["children"] = list(par.get("children") or [])
+        if part not in par["children"]:
+            par["children"].append(part)
+        if par.get("state") not in ("you", "done"):
+            par["state"] = "running"                     # a root runs while one of its parts does (kit_cards rule)
+    out = dict(trains)
+    out["rows"] = rows
+    out["updated_at"] = _now_z()
+    return out
+
+
+def _local_update(url, token, coll, did, fields):
+    """Merge fields into a document of the local board (pinned to the version read): the copy the scripts use."""
+    d = _board_request(url, "doc/%s/%s" % (coll, urllib.parse.quote(did, safe="")), token=token)
+    if not d.get("exists", True) or not isinstance(d.get("data"), dict):
+        return None
+    data = dict(d["data"])
+    data.update(fields(data) if callable(fields) else fields)
+    _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": data,
+                                                 "if_version": d.get("version", 0)}]}, token=token)
+    return data
+
+
+def _prompt_problem(rel):
+    if not os.path.isfile(os.path.join(ROOT, rel)):
+        return "no prompt %s: write it (kit.py step new writes it) and commit it" % rel
+    if _git_run("ls-files", "--error-unmatch", rel).returncode != 0:
+        return "the prompt %s is not committed: commit it first (a part starts from git, not from this folder)" % rel
+    if _git_run("diff", "--quiet", "HEAD", "--", rel).returncode != 0:
+        return "the prompt %s has changes not committed: commit them first" % rel
+    return None
+
+
+def _worktree_for(branch):
+    """The worktree path of a branch, from `git worktree list`, or None."""
+    r = _git_run("worktree", "list", "--porcelain")
+    cur = None
+    for line in (r.stdout or "").splitlines():
+        if line.startswith("worktree "):
+            cur = line[9:]
+        elif line.strip() == "branch refs/heads/%s" % branch and cur:
+            return cur
+    return None
+
+
+def _make_worktree(branch, base, reset=False):
+    """A worktree for the part on `branch`, made from the current branch (which carries .kit, the hooks and the
+    prompt; `claude -w` would start from main). An existing one is reset to the current branch only when it is clean
+    and holds no commit of its own (or --reset). Returns (path, error)."""
+    path = _worktree_for(branch)
+    if path:
+        if _git_run("status", "--porcelain", cwd=path).stdout.strip():
+            return None, "worktree %s (branch %s) has uncommitted work: commit or keep it, then launch again" % (path, branch)
+        own = _git_run("rev-list", "--count", "%s..%s" % (base, branch)).stdout.strip()
+        if own not in ("", "0") and not reset:
+            return None, ("branch %s has %s commits of its own: continue that part from its branch, or launch with "
+                          "--reset to start it again from %s" % (branch, own, base))
+        r = _git_run("reset", "-q", "--hard", base, cwd=path)
+        return (path, None) if r.returncode == 0 else (None, r.stderr.strip())
+    path = os.path.join(ROOT, ".claude", "worktrees", branch)
+    exists = _git_run("rev-parse", "--verify", "--quiet", "refs/heads/" + branch).returncode == 0
+    if exists:
+        own = _git_run("rev-list", "--count", "%s..%s" % (base, branch)).stdout.strip()
+        if own not in ("", "0") and not reset:
+            return None, ("branch %s has %s commits of its own: continue that part from its branch, or launch with "
+                          "--reset to start it again from %s" % (branch, own, base))
+    r = _git_run("worktree", "add", "-q", "-B", branch, path, base)
+    return (path, None) if r.returncode == 0 else (None, r.stderr.strip() or "git worktree add failed")
+
+
+def _github_url():
+    c = _kit_config()
+    gh = str((c.get("kit") or {}).get("github") or c.get("github") or "")
+    if gh:
+        return gh if gh.startswith("http") else "https://github.com/%s" % gh
+    u = _git_run("remote", "get-url", "origin").stdout.strip()
+    m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", u) or re.search(r"/git/([^/]+/[^/]+?)(?:\.git)?$", u)
+    return "https://github.com/%s" % m.group(1) if m else u
+
+
+def launch(pid, url=None, token=None, web=None, session_id=None, model=None, reset=False, gate=True, cli=None):
+    """`kit.py launch <post>`: the one way a part starts (CL13). Writes status in progress, session_id, launched_at
+    and branch on its post and marks its Trains row running (the local copy; with an attached Artifact board, the
+    batch that carries both there), then starts it: CLI, `claude --bg` inside a worktree made from the current branch;
+    web, the create_session call to make (a script cannot call it), and `launch <post> --session-id <id>` once it
+    answered. Refuses a prompt that is not committed."""
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    web = _is_web() if web is None else web
+    try:
+        d = _board_request(url, "doc/posts/" + urllib.parse.quote(pid, safe=""), token=token)
+    except Exception as e:
+        return {"ok": False, "post": pid, "error": "no board at %s (%s): run `python3 -I .kit/web_takeover.py` first" % (url, e)}
+    post = d.get("data") if d.get("exists", True) else None
+    if not isinstance(post, dict):
+        return {"ok": False, "post": pid, "error": "no post %s on the board" % pid}
+    part = str(post.get("part") or pid)
+    rel = "docs/prompts/%s.md" % pid
+    branch = str(post.get("branch") or "") if session_id else ""
+    branch = branch or _slug(part, 24)
+    c = _kit_config()
+    name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
+    out = {"ok": True, "post": pid, "part": part, "branch": branch, "web": web, "prompt": rel}
+    base = _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "HEAD"
+    text = "Your prompt is %s: read it and do it." % rel
+    if session_id:                                   # the second half of a web launch: create_session answered
+        sess = session_id
+    else:
+        why = _prompt_problem(rel)
+        if why:
+            return dict(out, ok=False, error=why)
+        if web:
+            if _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + base).returncode != 0 and base != "HEAD":
+                out["warning"] = "branch %s is not pushed: push it first, the new session clones it from GitHub" % base
+            out["create_session"] = {"title": ("%s %s" % (part, str(post.get("title") or "")[:60])).strip(),
+                                     "source_url": _github_url(), "source_revision": base, "outcome_branch": branch,
+                                     "prompt": text}
+            sess = "pending: create_session (%s)" % name
+        else:
+            if gate and _device() is not None:
+                try:
+                    ok, why = _device().gate(_device().survey())
+                except Exception:
+                    ok, why = True, ""
+                if not ok:
+                    return dict(out, ok=False, error="device cap: " + why)
+            wt, why = _make_worktree(branch, base, reset=reset)
+            if why:
+                return dict(out, ok=False, error=why)
+            out["worktree"] = wt
+            k = c.get("kit") or {}
+            m = str(model or ((k.get("claude_cli_roles") or {}).get("part") or {}).get("model") or "inherit")
+            cmd = ["claude", "--bg", "-n", name, "--permission-mode", str(k.get("claude_permission_mode") or "auto")]
+            if m != "inherit":
+                cmd += ["--model", m]
+            cmd.append(text)
+            try:
+                r = subprocess.run(cmd, cwd=wt, capture_output=True, text=True, timeout=120,
+                                   env=dict(os.environ, KIT_ROLE="part"))
+            except (OSError, subprocess.SubprocessError) as e:
+                return dict(out, ok=False, error="could not start claude: %s" % e)
+            if r.returncode != 0:
+                return dict(out, ok=False, error="claude --bg failed: %s" % (r.stderr or r.stdout).strip()[:300])
+            sess = name
+    now = _now_z()
+    fields = {"status": "in progress", "session_id": sess, "branch": branch, "updated_at": now}
+    if not session_id or not post.get("launched_at"):
+        fields["launched_at"] = now
+    _local_update(url, token, "posts", pid, fields)
+    tr = _local_update(url, token, "posts", "_trains", lambda t: _trains_mark(t, pid, dict(post, **fields), sess, rel))
+    out["session_id"] = sess
+    out["trains"] = tr is not None
+    if attached_board():
+        out.update({"batches": [], "need_pin": []})
+        try:
+            r = artifact_push(url=url, token=token)
+            out.update({"batches": r["batches"], "need_pin": r["need_pin"], "board": r["board"]})
+        except Exception as e:  # the local copy has it; the next `artifact push` carries it
+            out["push_error"] = str(e)
+    return out
+
+
+def launch_text(r):
+    if not r.get("ok"):
+        return "Not launched: %s\n" % r.get("error")
+    lines = ["%s launched: post %s in progress, session %s, branch %s%s." % (
+        r["part"], r["post"], r["session_id"], r["branch"], "" if r.get("trains") else " (no Trains card here to mark)")]
+    if r.get("worktree"):
+        lines.append("claude --bg runs in %s (made from the current branch)." % r["worktree"])
+    if r.get("warning"):
+        lines.append("Warning: " + r["warning"])
+    if r.get("create_session"):
+        lines.append("Now start it: the claude-code-remote `create_session` tool with %s; then "
+                     "`python3 -I .kit/kit.py launch %s --session-id <the session_id it returned>`."
+                     % (json.dumps(r["create_session"], ensure_ascii=False), r["post"]))
+    if "batches" in r:
+        lines.append(artifact_push_text(r).rstrip())
+    if r.get("push_error"):
+        lines.append("The Artifact batch was not built (%s): `python3 -I .kit/kit.py artifact push` later." % r["push_error"])
+    return "\n".join(lines) + "\n"
+
+
 def step_complete(pid, db_path=None, cli=None):
     """Status complete (the owner moves it to Done), then its review and, every kit.review.train_every completed
     steps of its train, a cross review. Reviews are idempotent (one per step, one per count)."""
@@ -2080,6 +2336,33 @@ def _alive_sessions():
             if r.get(k):
                 alive.add(str(r[k]))
     return alive
+
+
+def _launch_traces(pid, p):
+    """What a launched part leaves behind (CL13): its branch, its worktree (and what is uncommitted there), its
+    transcript. None when it left nothing (never launched)."""
+    branch = str(p.get("branch") or "") or _slug(p.get("part") or pid, 24)
+    found, out = [], {}
+    try:
+        if _git_run("rev-parse", "--verify", "--quiet", "refs/heads/" + branch, timeout=10).returncode == 0:
+            found.append("branch %s" % branch)
+        wt = _worktree_for(branch)
+        if wt:
+            found.append("worktree %s" % os.path.relpath(wt, ROOT))
+            out["worktree"] = os.path.relpath(wt, ROOT)
+            st = _git_run("status", "--porcelain", "--untracked-files=all", cwd=wt, timeout=20).stdout
+            out["dirty"] = [line[3:] for line in st.splitlines() if line.strip()]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    sess = str(p.get("session_id") or "")
+    if sess and not sess.startswith("pending"):
+        hits = glob.glob(os.path.join(os.path.expanduser("~"), ".claude", "projects", "*", sess + ".jsonl"))
+        if hits:
+            found.append("transcript")
+    if not found:
+        return None
+    out["found"] = found
+    return out
 
 
 def resume(m, db_path=None, alive=None, cli=None):
@@ -2119,9 +2402,17 @@ def resume(m, db_path=None, alive=None, cli=None):
             sess = str(p.get("session_id") or "")
             if sess:
                 life = "unknown" if alive is None else ("running" if sess in alive else "not running")
+                if life == "unknown" and sess.startswith(("session_", "pending")):
+                    life = "web session: check it with get_session"
                 who = " · session %s (%s)" % (sess, life)
             else:
                 who = " · planned, not launched" if st == "planned" else ""
+            if st in ("planned", "in progress") and not (sess and alive is not None and sess in alive):
+                traces = _launch_traces(pid, p)
+                if traces and not (sess.startswith(("session_", "pending")) and alive is None):
+                    who = " · launched, died (%s; no live session)%s" % (", ".join(traces["found"]), (
+                        ": uncommitted in %s: %s" % (traces["worktree"], ", ".join(traces["dirty"][:8]))
+                        if traces.get("dirty") else ""))
             quiet = ""
             if "progress" in st:
                 last = _utc(str(p.get("updated_at") or p.get("created_at") or ""))
@@ -2426,6 +2717,12 @@ def main(argv=None):
     s.add_argument("--db", default=None); s.add_argument("--no-push", action="store_true")
     s = sp.add_parser("capacity", help="the device's session cap (.kit/device.py): --gate exits 1 when no slot is free")
     s.add_argument("--gate", action="store_true"); s.add_argument("--json", action="store_true")
+    s = sp.add_parser("launch", help="start a part: its post in progress + Trains row running, then claude --bg (CLI) "
+                      "or the create_session call (web)")
+    s.add_argument("post"); s.add_argument("--session-id", default=None, help="web: the id create_session returned")
+    s.add_argument("--web", action="store_true", default=None); s.add_argument("--cli-run", dest="web", action="store_false")
+    s.add_argument("--model", default=None); s.add_argument("--reset", action="store_true")
+    s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s = sp.add_parser("done"); s.add_argument("post"); s.add_argument("--db", default=None)
     s = sp.add_parser("sections"); s.add_argument("--db", default=None)
     s = sp.add_parser("step", help="the train is the task list: new | start | complete | drop")
@@ -2560,6 +2857,10 @@ def main(argv=None):
     if a.cmd == "resume":
         print(resume(m, db_path=a.db, cli=a.cli), end="")
         return 0
+    if a.cmd == "launch":
+        r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset)
+        print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
+        return 0 if r.get("ok") else 1
     if a.cmd == "capacity":
         d = _device()
         if d is None:
