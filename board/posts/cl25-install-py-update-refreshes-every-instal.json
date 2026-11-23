@@ -1,0 +1,38 @@
+{
+ "artifacts": [
+  "docs/CL25-kit.patch"
+ ],
+ "bars": [
+  "probe 1 tests/test_install_present_runtimes.py: 1 of 2 fail on kit main 0cf62ca (stale kit_pre_compact.py stays stale), 2 of 2 pass after 7818581",
+  "probe 2 tests/test_step_attached_board.py: 3 of 4 fail on 7818581 (no --board; CL24 duplicated on the host instead of adopted), 4 of 4 pass after 6cbd316",
+  "kit scripts/run_all_tests.py: 9 of 9 suites pass after each commit, 0 new failures (page layout/speed tests included)",
+  "Harmonize .claude/hooks/kit/: 5 of 5 files equal the kit's (was 4 of 5); the second --update refreshed kit_task_train.py there itself",
+  "Harmonize board page docs/board/harmonize-board.html: unchanged, no republish",
+  "Harmonize scripts/test_board_*.py: 4 of 4 pass"
+ ],
+ "body": "**You need to know:** both fixes are done and Harmonize runs them, but the kit commits could not be pushed to anlonlt/board (not writable from this session). They are in `docs/CL25-kit.patch`; a session with board access applies them with `git am`.\n\n## 1. --update refreshes every installed runtime (kit 7818581)\n- Bug: `.claude/hooks/kit/` was written only when `kit.runtime` is local/claude/both; Harmonize says `agy`, so its live Claude Code hooks went stale (`kit_pre_compact.py` from 2e74fce) or were copied by hand.\n- Fix: a runtime is installed when its hooks dir is there (`.agents/hooks/kit/`, `.claude/hooks/kit/`), whatever runtime/cli say. Its kit files present there are refreshed; nothing is added (no new hook, no settings.json); an absent runtime is never installed (CL22). A file equal to a past committed kit version counts as a stale kit copy; a project's own change stays KEPT.\n- Red on 0cf62ca: `FAIL test_stale_claude_hooks_refreshed_under_cli_agy` ('nothing to change'). Green after: 2 of 2.\n\n## 2. step new on an attached board's train (kit 6cbd316, the orchestrator's added scope)\n- `kit.py step new --board <id>` (TaskCreate metadata `board`), or with no flag the one attached board holding the train when the host has none of it.\n- The post goes to `.kit/run/artifact/out/repos/<id>/posts/<pid>.json`; step new prints the one ArtifactData `set` that sends it. The orchestrator guard passes that file and still refuses the same post written by hand (tested). An existing step there is adopted (before: CL24 would have been duplicated on the host).\n- Red on 7818581: 3 of 4 fail. Green after: 4 of 4.\n\n## Harmonize\n`install.py --update` from the fixed kit: dee69211 (`kit_pre_compact.py`, CL9b's `.kit/kit.py`, `.kit/BOARD.md`, `.kit/claude-cli/part.md`), bf913675 (`kit_task_train.py` in both runtimes, `.kit/kit.py`). No KEPT file. The board page did not change: no republish.\n\n## Board\nThis post first went to Harmonize's own `posts` by mistake; it is now here in `repos/board/posts`, and the misplaced copy is deleted.",
+ "breaks": "revert dee69211~1",
+ "check": "for f in .claude/hooks/kit/*.py; do cmp -s $f .agents/hooks/kit/$(basename $f) || exit 1; done",
+ "column": "done",
+ "column_before": "info",
+ "created_at": "2026-11-23T06:03:28Z",
+ "done_at": "2026-11-23T07:09:48.781Z",
+ "handoff": "Apply docs/CL25-kit.patch (2 commits: 7818581, 6cbd316) to anlonlt/board main with git am, rerun run_all_tests. Harmonize already runs them (dee69211, bf913675). Plan a cli step from Harmonize with TaskCreate metadata {train: cli, part, board: board}, then send the ArtifactData set the hook prints. Next gap: step start/complete for attached posts.",
+ "issues": [
+  "a session with push access to anlonlt/board must apply docs/CL25-kit.patch (git am) and push it to main"
+ ],
+ "not_checked": [
+  "the two kit commits are not on anlonlt/board main: the git proxy refused the push and add_repo was denied; both are in docs/CL25-kit.patch (git am)",
+  "step start / complete / drop on an attached board's post still write the host's posts: only step new (and adoption) know --board",
+  "a runtime detected only by presence gets no NEW hook files and no settings.json merge (by design, CL22)",
+  "kit.py done for this post: it reads the local board copy, not started in this session"
+ ],
+ "part": "CL25",
+ "priority": 2,
+ "session_id": "session_01AE1HGgtoxTY55Tfr5csfFt",
+ "status": "done",
+ "title": "CL25: install.py --update refreshes every installed runtime",
+ "train": "cli",
+ "updated_at": "2026-11-23T06:25:00Z",
+ "verdict": "Both fixed and tested red-then-green: --update refreshes every installed runtime (Harmonize's .claude/hooks/kit/ now equals the kit's), and step new --board puts a step on an attached board's train. Kit commits NOT pushed: anlonlt/board is not writable here."
+}

@@ -1,10 +1,26 @@
 {
  "column": "info",
- "created_at": "2026-11-23T08:33:24Z",
+ "created_at": "2026-11-23T09:58:30Z",
  "rows": [
   {
-   "at": 17,
+   "at": 2,
    "key": "A",
+   "name": "Release",
+   "note": "Next: Review release checklist for v0.1",
+   "post": "demo-todo-2",
+   "state": "you",
+   "steps": [
+    "Gzip & security headers enabled",
+    "Safety hooks verified (kit_guard)",
+    "Default Done lane window",
+    "Review release checklist for v0.1",
+    "Benchmark: mirror reads 12× smaller"
+   ],
+   "train": "P-release"
+  },
+  {
+   "at": 26,
+   "key": "B",
    "name": "Cli",
    "note": "Next: The Trains view: task lists (A) or the old flow map (B)?",
    "post": "cl27-q-trains-view",
@@ -18,39 +34,30 @@
     "Collapsible sections that learn",
     "Say it once: the leaks closed",
     "Design principles, complete, and no emoji Like",
+    "Board UI: text never runs off screen, badge clears when seen, Done steps stay in the tr...",
+    "Chat ends with a single · in every session the owner did not type in",
     "Step 0 measures each device; never more sessions than it can hold",
     "Web takeover: Claude Code web continues where the board says",
     "The device's load set automatically per task, learned from what tasks took here",
-    "resume reads the attached boards too",
-    "CL21: posts he has read stop showing as new",
     "Checks that must be able to fail (breaks)",
+    "resume reads the attached boards too",
+    "Posts you have read stop showing as new",
     "See the new UI work, then stop tests touching ~/.local/bin",
-    "Board UI: text never runs off screen, badge clears when seen, Done steps stay in the tr...",
-    "Opening the first thread or post no longer freezes the board",
     "One board token per machine, kept across projects and CLIs",
     "A launched part is always visible on the board, on the right base",
-    "Chat ends with a single · in every session the owner did not type in",
+    "The install keeps permissions you already gave",
+    "Opening the first thread or post no longer freezes the board",
+    "The orchestrator guard closes its gaps",
+    "CL25: install.py --update refreshes every installed runtime",
+    "the review launcher works on every platform",
+    "a full UI and UX audit of the board, then every fix",
+    "the orchestrator answers only from a fresh brief",
     "The board travels in git, always current (mirror synced on every step)",
     "A crashed part is continued from its last checkpoint",
-    "The Trains view: task lists (A) or the old flow map (B)?"
+    "The Trains view: task lists (A) or the old flow map (B)?",
+    "kit compact keeps a project's story checker green"
    ],
    "train": "P-cli"
-  },
-  {
-   "at": 2,
-   "key": "B",
-   "name": "Release",
-   "note": "Next: Review release checklist for v0.1",
-   "post": "demo-todo-2",
-   "state": "you",
-   "steps": [
-    "Gzip & security headers enabled",
-    "Safety hooks verified (kit_guard)",
-    "Default Done lane window",
-    "Review release checklist for v0.1",
-    "Benchmark: mirror reads 12× smaller"
-   ],
-   "train": "P-release"
   },
   {
    "at": 2,
@@ -72,5 +79,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-23T08:33:24Z"
+ "updated_at": "2026-11-23T09:58:30Z"
 }

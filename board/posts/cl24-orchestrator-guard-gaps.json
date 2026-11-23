@@ -1,0 +1,38 @@
+{
+ "artifacts": [
+  "kit/hooks/kit_orchestrator_guard.py",
+  "tests/test_orchestrator_guard.py",
+  "scripts/kit.py",
+  "tests/test_launch.py",
+  "kit/claude/orchestrator.template.md"
+ ],
+ "bars": [
+  {
+   "label": "Gap tests that failed on main and pass now",
+   "max": 5,
+   "value": 4
+  },
+  {
+   "label": "Suites passing after merging main",
+   "max": 9,
+   "value": 9
+  }
+ ],
+ "body": "All 5 gaps are closed and on main (4641170, a fast-forward, nothing forced). Gap 4 was already refused on main; it now has its own test.\n\n## What changed\n\n1. **Inline prompt that names a path:** a part's `create_session` passes only when its prompt **starts with** `Your prompt is docs/prompts/<id>.md` and is **400 characters or less**. A long prompt that mentions `docs/prompts/` somewhere is refused, and the refusal states the 400-character limit.\n2. **Title bypass:** the title is no longer read. Only the tags `orchestrator`, `board-clerk` and `review` let another launch through. The web orchestrator guide (`kit/claude/orchestrator.template.md`) now launches a review with `tags: [\"review\"]`. `kit.py launch` already writes the short prompt line, so part launches are unchanged.\n3. **Attached boards:** a `list` or broad `query` of `repos/<id>/posts` or `repos/<id>/comments` was already refused. I closed two holes:\n   - a \"targeted\" query (a `where`, limit 5 or less) that carries a `cursor` could page through the whole board 5 at a time. It is now treated as a broad read;\n   - a malformed `limit` crashed the hook, and a crash let the call through. It is now treated as a broad read.\n   \n   Still allowed: a `get`, a real targeted lookup, and the kit pull's `out_dir` under `.kit/run/artifact/`. **`kit.py artifact pull` on a host board** (prefix \"\", as in Harmonize) now also prints a `get` of `kit_repos/_index` and the list calls (the query calls in a delta pull) for each attached board's `repos/<id>/posts` and `comments`. That way the kit covers attached boards.\n4. **Step post on an attached board:** a `set` of `repos/<id>/posts/<step>` was already refused on main. A new test now holds it: refused for a step, allowed for `_orchestrator`, `_trains`, `_dashboard` and comments.\n5. **Subagents:** the hook's docstring now says they are exempt by design, because they keep dumps out of the orchestrator's context. A test checks that the docstring says so.\n\n## Tests\n`tests/test_orchestrator_guard.py`: 5 new tests. Against main's hook, 4 fail: inline-path, title, attached reads (cursor and limit), docstring. The step-post test passes on main as well. `tests/test_launch.py`: `test_host_pull_covers_the_attached_boards` fails on main and passes now. `python3 scripts/run_all_tests.py`: **9/9 suites, 0 failed**. The installed copies were refreshed with `install.py . --update` (`.claude/hooks/kit/`, `.agents/hooks/kit/`, `.kit/kit.py`). Nothing on WHAT-NOT-TO-BREAK was removed, and nothing the guard refused before now passes.",
+ "branch": "cl24-orchestrator-guard-gaps",
+ "column": "doing",
+ "created_at": "2026-11-23T05:40:00Z",
+ "from": "part",
+ "handoff": "Harmonize: the orchestrator runs `python3 install.py <harmonize> --update` so its installed guard and kit.py take this.",
+ "not_checked": [
+  "Harmonize's install --update was not run by me (left to the orchestrator, as the prompt says); this session reaches only anlonlt/board.",
+  "Not exercised in a live orchestrator session: the hook is tested by its stdin contract only."
+ ],
+ "part": "CL24",
+ "session_id": "session_01AE1HGhcHaCoE4QWkqyWqfM",
+ "status": "complete",
+ "title": "The orchestrator guard closes its gaps",
+ "train": "cli",
+ "updated_at": "2026-11-23T06:10:00Z",
+ "verdict": "The guard's gaps are closed and on main (4641170, a fast-forward): an inline prompt that only names a path is refused, a title no longer lets a launch through (only tags do), and `kit.py artifact pull` now reads the attached boards too."
+}

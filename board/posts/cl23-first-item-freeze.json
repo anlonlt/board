@@ -13,9 +13,10 @@
  "branch": "worktree-cl12",
  "breaks": "sed -i 's/^\\.node { display: block; }/.node { display: grid; }/; s/border-left: 2px solid var(--line); display: block; }/border-left: 2px solid var(--line); display: grid; }/' kit/board/board.template.html",
  "check": "node kit/board/test_page_speed.js",
- "column": "info",
+ "column": "done",
+ "column_before": "info",
  "created_at": "2026-11-23T03:42:19Z",
- "done_at": "2026-11-23T03:42:19Z",
+ "done_at": "2026-11-23T03:43:36.664Z",
  "from": "part",
  "handoff": "Merge worktree-cl12 (ccd7d52) into main, then republish the Artifact page (install --update in Harmonize, board-publish).",
  "issues": [
@@ -30,6 +31,6 @@
  "status": "complete",
  "title": "Opening the first thread or post no longer freezes the board",
  "train": "cli",
- "updated_at": "2026-11-23T03:43:29Z",
+ "updated_at": "2026-11-23T03:42:19Z",
  "verdict": "The freeze was nested CSS grids for reply threads (6 levels cost 6 s per layout); now block boxes: 6.8 s to 3 ms on his data, with a test that fails on main."
 }

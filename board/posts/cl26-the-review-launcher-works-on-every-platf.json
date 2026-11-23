@@ -1,0 +1,34 @@
+{
+ "artifacts": [
+  "docs/CL26-kit.patch",
+  ".kit/kit.py",
+  ".kit/handover.py",
+  ".claude/hooks/say_it_once.py"
+ ],
+ "bars": [
+  "Launcher probe tests/test_launch_runtime.py: 7/9 red on kit 055103d (CL25's [Errno 2] 'agy'), 9/9 green on 0968405",
+  "Kit hook checks kit/hooks/test_hooks.py: 6 of 120 red before, 0 of 120 failed after",
+  "Kit run_all_tests: 9/9 suites, 186/186 unittest",
+  "Harmonize .claude/hooks/test_say_it_once.py: 1 new case, red before, all pass after (0 failed)",
+  "Harmonize after install.py --update: .kit/kit.py byte-equal to kit 0968405 (1 of 1); handover.py --role clerk on the web plans create_session, 0 kills",
+  "Item 3 guard tests/test_orchestrator_guard.py LaunchRepo: 2 of 3 red on 0968405, 3/3 green on 0d18383; run_all_tests 9/9 suites, 199/199"
+ ],
+ "body": "Owner: nothing to do. The orchestrator lands docs/CL26-kit.patch on anlonlt/board main. On the web, it makes the create_session call that a completed step now hands it for the step's review.\n\n## Launchers\n`_launcher()` in kit.py picks the runtime: web gets the create_session call; agy where agy runs; `claude --bg` where claude is; kit.cli only if its binary is on PATH. With none it says NOT STARTED and gives the prompt's path, never an OSError. Used by review (step complete), `kit.py launch` (part) and handover.py (orchestrator, clerk). On the web, handover no longer kills CLAUDE_PID, which would have ended the session with no successor.\n\n## The single-dot Stop hook\nNeither platform lets a hook see the text before it is shown: Claude Code's Stop and agy's PostInvocation/Stop both run after. So the rule now comes before the turn (UserPromptSubmit/PreInvocation) when the owner did not type it: a background role, a session's message, a timer, or the kit's launch line. Harmonize's own hook took that short launch line for his question; fixed.\n\n## Item 3: launch repo guard\nThe orchestrator guard on create_session refuses a part whose source_url is not its step's repo: the repo of the attached board holding its post (local copy), else a known clone holding its prompt file. CL25 and CL26 were launched on harmonize for a board step and could not push. With nothing to check against, it lets the launch through. agy has no create_session, so this guard is Claude Code only.\n\n## Also\nrun_all_tests clears the runtime markers: run from the web, two old tests launched as web. A free-memory flake in test_resume_attached_boards is pinned. Both say-it-once rules in WHAT-NOT-TO-BREAK are kept.",
+ "breaks": "sed -i 's/    if cli == \"web\":/    if False:/' .kit/handover.py",
+ "check": "CLAUDE_CODE_REMOTE=true python3 -I .kit/handover.py --role clerk --dry-run | grep -c '\"how\": \"web\"'",
+ "column": "done",
+ "column_before": "info",
+ "created_at": "2026-11-23T06:22:22Z",
+ "done_at": "2026-11-23T07:09:43.844Z",
+ "from": "orchestrator",
+ "handoff": "Land docs/CL26-kit.patch (2 commits: 0968405 launchers + hook, 0d18383 create_session repo guard) on kit main. On the web a completed step now returns 'review ... NOT STARTED ... create_session {...}': the orchestrator makes that call. A kit step is launched with source_url anlonlt/board: run `kit.py step new` in the kit's clone.",
+ "not_checked": "No real review was started end to end (web: the orchestrator's create_session; CLI: claude --bg tested with a fake binary). An agy device not tried. The kit commit is not on anlonlt/board main: this session cannot push there (patch kept). The guard was not tried on the orchestrator's real local copy.",
+ "part": "CL26",
+ "planned_by": "orchestrator",
+ "session_id": "session_01AE1HGjg2rCDzkvYiLdofp5",
+ "status": "complete",
+ "title": "the review launcher works on every platform",
+ "train": "cli",
+ "updated_at": "2026-11-23T07:30:00Z",
+ "verdict": "Every launcher (review, part, clerk, orchestrator) now uses the runtime it runs in and says NOT STARTED instead of crashing; no platform lets a hook stop text before it shows, so the single-dot rule now comes before the turn."
+}

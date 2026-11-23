@@ -1,33 +1,7 @@
 {
  "column": "info",
- "created_at": "2026-11-23T08:33:24Z",
+ "created_at": "2026-11-23T09:58:30Z",
  "rows": [
-  {
-   "also": [],
-   "children": [
-    "CL1",
-    "CL11",
-    "CL13",
-    "CL14",
-    "CL15",
-    "CL16",
-    "CL17",
-    "CL18",
-    "CL19",
-    "CL20",
-    "CL21",
-    "CL12",
-    "CL23",
-    "cl27-q-trains-view"
-   ],
-   "parent": "",
-   "part": "P-cli",
-   "post": "cl27-q-trains-view",
-   "prompt": "",
-   "session": "",
-   "state": "you",
-   "store": []
-  },
   {
    "also": [],
    "children": [
@@ -37,6 +11,39 @@
    "parent": "",
    "part": "P-release",
    "post": "demo-todo-2",
+   "prompt": "",
+   "session": "",
+   "state": "you",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL1",
+    "CL12",
+    "CL14",
+    "CL15",
+    "CL16",
+    "CL17",
+    "CL18",
+    "CL19",
+    "CL20",
+    "CL21",
+    "CL11",
+    "CL13",
+    "CL22",
+    "CL23",
+    "CL24",
+    "CL25",
+    "CL26",
+    "CL27",
+    "CL28",
+    "cl27-q-trains-view",
+    "CL29"
+   ],
+   "parent": "",
+   "part": "P-cli",
+   "post": "cl27-q-trains-view",
    "prompt": "",
    "session": "",
    "state": "you",
@@ -300,22 +307,11 @@
    "also": [],
    "children": [],
    "parent": "P-cli",
-   "part": "CL11",
-   "post": "cl11-one-board-token-per-machine-kept-across",
+   "part": "CL12",
+   "post": "cl12-board-ui-text-never-runs-off-screen-badg",
    "prompt": "",
-   "session": "",
-   "state": "idle",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [],
-   "parent": "P-cli",
-   "part": "CL13",
-   "post": "cl13-a-launched-part-is-always-visible-on-the",
-   "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGhgv7nxdCEvuM9YNsN",
+   "state": "done",
    "store": []
   },
   {
@@ -325,8 +321,8 @@
    "part": "CL14",
    "post": "cl14-chat-ends-with-a-single-in-every-session",
    "prompt": "",
-   "session": "board-cl14",
-   "state": "running",
+   "session": "03f1451f-f75f-592a-b2d4-47aad7d7d3fd",
+   "state": "done",
    "store": []
   },
   {
@@ -386,6 +382,19 @@
   },
   {
    "also": [],
+   "children": [
+    "CL10"
+   ],
+   "parent": "CL8",
+   "part": "CL9",
+   "post": "cl9-checks-that-must-be-able-to-fail-breaks",
+   "prompt": "",
+   "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
    "children": [],
    "parent": "P-cli",
    "part": "CL20",
@@ -402,20 +411,7 @@
    "part": "CL21",
    "post": "cl21-seen-state-saves",
    "prompt": "",
-   "session": "3d6af1ec-6576-5483-a7f2-a89248f8e580",
-   "state": "done",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [
-    "CL10"
-   ],
-   "parent": "CL8",
-   "part": "CL9",
-   "post": "cl9-checks-that-must-be-able-to-fail-breaks",
-   "prompt": "",
-   "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
+   "session": "session_01AE1HGj486uzKBi5mJSfenN",
    "state": "done",
    "store": []
   },
@@ -434,10 +430,32 @@
    "also": [],
    "children": [],
    "parent": "P-cli",
-   "part": "CL12",
-   "post": "cl12-board-ui-text-never-runs-off-screen-badg",
+   "part": "CL11",
+   "post": "cl11-one-board-token-per-machine-kept-across",
    "prompt": "",
-   "session": "session_01AE1HGhgv7nxdCEvuM9YNsN",
+   "session": "c3fc13df-4bfd-55aa-bcc5-1def3291f77e",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL13",
+   "post": "cl13-a-launched-part-is-always-visible-on-the",
+   "prompt": "",
+   "session": "session_01AE1HGhwWDPd64SEkcvptk5",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL22",
+   "post": "cl22-install-keeps-permissions",
+   "prompt": "",
+   "session": "session_01AE1HGjA5YA3MXEDyzadJah",
    "state": "done",
    "store": []
   },
@@ -456,14 +474,80 @@
    "also": [],
    "children": [],
    "parent": "P-cli",
+   "part": "CL24",
+   "post": "cl24-orchestrator-guard-gaps",
+   "prompt": "",
+   "session": "session_01AE1HGhcHaCoE4QWkqyWqfM",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL25",
+   "post": "cl25-install-py-update-refreshes-every-instal",
+   "prompt": "",
+   "session": "session_01AE1HGgtoxTY55Tfr5csfFt",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL26",
+   "post": "cl26-the-review-launcher-works-on-every-platf",
+   "prompt": "",
+   "session": "session_01AE1HGjg2rCDzkvYiLdofp5",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL27",
+   "post": "cl27-a-full-ui-and-ux-audit-of-the-board-then",
+   "prompt": "",
+   "session": "0faff95e-f88f-5a1c-a860-7d8c1604b331",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL28",
+   "post": "cl28-the-orchestrator-answers-only-from-a-fre",
+   "prompt": "",
+   "session": "82a1406c-69a0-5fb0-aacc-9c6cbe2ed5a5",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
    "part": "cl27-q-trains-view",
    "post": "cl27-q-trains-view",
    "prompt": "",
-   "session": "0faff95e-f88f-5a1c-a860-7d8c1604b331",
+   "session": "session_01AE1HGi6fNGNJHpoLWAamdM",
    "state": "you",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL29",
+   "post": "cl29-kit-compact-keeps-a-project-s-story-chec",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
    "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T08:33:24Z"
+ "updated_at": "2026-11-23T09:58:30Z"
 }

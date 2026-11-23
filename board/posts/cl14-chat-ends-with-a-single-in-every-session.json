@@ -1,13 +1,34 @@
 {
- "body": "Reading kit_say_it_once.py to close the three gaps (background roles, setup, text + ·).",
- "column": "info",
+ "artifacts": [
+  "kit/hooks/kit_say_it_once.py",
+  "kit/hooks/test_hooks.py",
+  ".claude/hooks/kit/kit_say_it_once.py",
+  ".claude/hooks/kit/test_hooks.py",
+  "docs/CL14.md"
+ ],
+ "bars": [
+  "hook tests 114 of 114 pass in kit/hooks and in .claude/hooks/kit (98 before CL14, 16 new checks)",
+  "run_all_tests after the second merge of main: 7 of 7 suites pass, 0 failed"
+ ],
+ "body": "Nothing to do: the three gaps of kit_say_it_once.py are closed and tested; work on worktree-cl14 (0a7ef33, 9427faa, merge ec63382), not merged into main (no trunk permission).\n\n## What changed\n- (1) `background()`: KIT_ROLE set and not `orchestrator` (clerk, part, consultant, cards, review) makes every turn non-human: Stop requires \"·\", PostToolUse/PostInvocation give the \"·\" reminder, UserPromptSubmit no longer says \"answer in 600 characters\".\n- (2) While `kit.setup` is true, Stop still runs for a background session (Claude Code and agy); everything else stays quiet in setup as before.\n- (3) `stop_verdict` passes only an empty closing or \"·\" alone (whitespace trimmed); \"text\\n\\n·\" and short words like \"ok.\" now fail.\n- Tests pin KIT_ROLE per call (`role_env`), so the suite gives the same result when run from inside a part. The installed copy `.claude/hooks/kit/` is synced.\n\n## Merges\n- First `git merge origin/main` (30 commits): no conflicts.\n- Second (CL10 327aee3, agy 473dea4): conflict in `.claude/hooks/kit/test_hooks.py` only. On main the installed copy was identical to `kit/hooks/test_hooks.py`, which merged cleanly with both sides (main's agy checks and CL14's), so the installed copy was set to that merged file. Both hook suites: 114 ok, 0 failed; run_all_tests 7 of 7.",
+ "check": "python3 -I kit/hooks/test_hooks.py | tail -1",
+ "column": "done",
  "created_at": "2026-11-22T22:52:03Z",
  "from": "orchestrator",
+ "handoff": "Background roles are detected by KIT_ROLE not in ('', 'orchestrator'); any new launch path must set KIT_ROLE. SendMessage limits untouched.",
+ "issues": [
+  "not merged into main: no permission to push main from this session (kit.trunk_push off); the branch is on top of main as of CL10 327aee3 / agy 473dea4"
+ ],
+ "not_checked": [
+  "a real background clerk session on his machine (needs his device): only planted transcripts were run",
+  "the board post itself: this cloud session could not reach his board (127.0.0.1:8765 refused, no kit board artifact named in docs), so the post lives in docs/CL14.md until he or the orchestrator copies it"
+ ],
  "part": "CL14",
  "planned_by": "orchestrator",
- "session_id": "board-cl14",
- "status": "in progress",
+ "session_id": "03f1451f-f75f-592a-b2d4-47aad7d7d3fd",
+ "status": "done",
  "title": "Chat ends with a single · in every session the owner did not type in",
  "train": "cli",
- "updated_at": "2026-11-22T22:55:07Z"
+ "updated_at": "2026-11-23T02:26:08Z",
+ "verdict": "Closing \"·\" is now required in every background session (KIT_ROLE other than orchestrator), also during setup, and only \"·\" alone passes; the owner's own chat turns keep their words."
 }

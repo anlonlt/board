@@ -27,6 +27,8 @@
  "breaks": "revert 911718f",
  "check": "python3 -m unittest tests.test_cl28_brief tests.test_clerk_starts_orchestrator tests.test_install_present_runtimes",
  "column": "info",
+ "created_at": "2026-11-23T07:38:20Z",
+ "from": "orchestrator",
  "handoff": "In Harmonize: install.py --update from kit main, then `kit.py adopt` (local board + artifact push), post open .story/issues, `kit.py compact`.",
  "not_checked": [
   "Harmonize: install.py --update, `kit.py adopt` and the republish not done: this session was refused access to anlonlt/harmonize (add_repo denied)",
@@ -36,8 +38,15 @@
   "Harmonize test_page.js failures (Remove on a post, on a discussion, page error): kit/board/test_page.js passes 0 failed on the kit's template before and after CL28, so they are not from CL28's page change (2 states, 2 CSS lines); not run on Harmonize's built page",
   "test_train_and_task_train PostFormat.test_review_prompt_is_filled_and_started_once fails on main before CL28 too (911718f)"
  ],
+ "part": "CL28",
+ "planned_by": "orchestrator",
  "session_id": "82a1406c-69a0-5fb0-aacc-9c6cbe2ed5a5",
+ "sources": [
+  "92qwl45c30j2fyzbr3uc"
+ ],
  "status": "complete",
- "updated_at": "2026-11-23T09:29:47Z",
+ "title": "the orchestrator answers only from a fresh brief",
+ "train": "cli",
+ "updated_at": "2026-11-23T09:40:00Z",
  "verdict": "Before answering you, the orchestrator must have run kit.py resume in the last 15 min or its reply is refused; the brief that repeated resume is removed."
 }
