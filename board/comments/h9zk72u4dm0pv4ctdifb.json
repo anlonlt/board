@@ -1,0 +1,11 @@
+{
+ "created_at": "2026-11-23T02:24:38.116Z",
+ "delivered": true,
+ "delivered_at": "2026-11-23T02:24:39.156Z",
+ "delivery_error": "",
+ "from": "owner",
+ "post_id": "cl9-checks-that-must-be-able-to-fail-breaks",
+ "read": false,
+ "text": "So is this completely workflow agnostic ? What about visual work for example ? How does this apply ? Have you seen the visual rules in my app and French repos ? And what about my friend that works completely on Claude for Chrome to build power bi apps ? What constitutes a stress test, a break there ? How to make this break thing truly workflow agnostic ?",
+ "thread_id": "73ebead9-b764-4784-b8e0-c852ae5ad454"
+}

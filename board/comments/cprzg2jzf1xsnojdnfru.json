@@ -1,0 +1,19 @@
+{
+ "created_at": "2026-11-23T02:34:35.858Z",
+ "delivered": true,
+ "delivered_at": "2026-11-23T02:34:37.018Z",
+ "delivery_error": "",
+ "discussion": "cprzg2jzf1xsnojdnfru",
+ "files": [
+  {
+   "id": "feb57c8bec22c21e83f8dfbda3ff4caa",
+   "name": "Screenshot_20261122-213221.png",
+   "type": "image/png"
+  }
+ ],
+ "from": "owner",
+ "post_id": "_orchestrator",
+ "read": false,
+ "text": "Re `docs/cl10/b2-review-chip-step-phone.png`:\nSo the phone bars still don't work properly ? Look at the off entered header bar, that's doesn't stretch to the width ? And why are there margins all around the header bar, instead of it fully filling the the top ? And why do the words continue to the left in your picture (is that your job or another sessions job ?",
+ "thread_id": "7860f30a-9745-4a35-ab11-72008eb2e3c1"
+}

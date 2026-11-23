@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-23T02:07:48Z",
+ "discussion": "4hrxp33h6wg7sng04f5k",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "One thing for you: the kit's setting trunk_push is off, so the relaunched parts push their branches but none reaches the kit's main. CL9, CL11 and CL14 say they are done on their branches; each is being checked now (tests run, and red on the old code). May I merge each checked part into the kit's main? A 👍 here means yes, from now on; with no answer they stay on their branches."
+}

@@ -1,0 +1,12 @@
+{
+ "created_at": "2026-11-23T02:56:04.005Z",
+ "delivered": true,
+ "delivered_at": "2026-11-23T02:56:04.967Z",
+ "delivery_error": "",
+ "from": "owner",
+ "post_id": "cl9-checks-that-must-be-able-to-fail-breaks",
+ "read": false,
+ "reply_to": "cl9-reply-breaks-source",
+ "text": "That sounds awfully token expensive though. Anyway to do stuff like this without all the token wasting on basically creating stuff you'd throw away ?",
+ "thread_id": "ac9f6535-5510-4c42-9717-95b81def91b9"
+}

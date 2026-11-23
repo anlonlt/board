@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-23T03:40:15Z",
+ "discussion": "changes",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "The orchestrator guard (kit_orchestrator_guard.py), its gaps and a fix for each:\n1. Sessions started before it (orchestrator 50) do not load it: the next orchestrator does. Fix: none needed; I follow it by hand.\n2. create_session passes when 'docs/prompts/' appears anywhere in the prompt, so a long inline prompt that names a path passes. Fix: the prompt must start with 'Your prompt is docs/prompts/<id>.md' and be under ~300 characters.\n3. A title containing 'review' or 'clerk' passes. Fix: pass by tag only (board-clerk, orchestrator, review), not title.\n4. Subagents are exempt by design (they keep dumps out of the orchestrator), so a raw dump by a subagent is allowed; that is the intended route, not a gap.\n5. Raw reads through Bash or the Artifact read of the page are not covered. Fix: the guard also refuses ArtifactData list/query of repos/<id>/posts|comments (attached boards), which it may not match today.\nWaiting for your word before a part changes the guard."
+}

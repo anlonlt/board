@@ -1,7 +1,9 @@
 {
  "body": "CI is green across all 6 suites. Confirm tag name and changelog notes before publishing.",
- "column": "todo",
+ "column": "done",
+ "column_before": "todo",
  "created_at": "2026-11-22T00:24:25Z",
+ "done_at": "2026-11-23T02:13:36.767Z",
  "minutes": 5,
  "parent": "R1",
  "part": "R2",

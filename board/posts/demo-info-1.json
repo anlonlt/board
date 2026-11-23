@@ -1,7 +1,9 @@
 {
  "body": "Measured `kit.py post` vs full JSON dump:\n\n| Operation | Full dump | `kit.py` mirror |\n|---|---|---|\n| Single post | 35.9k chars | 2.9k chars |\n| Open comments | ~120k tokens | 290 chars |",
- "column": "info",
+ "column": "done",
+ "column_before": "info",
  "created_at": "2026-11-22T00:39:25Z",
+ "done_at": "2026-11-23T07:10:03.610Z",
  "part": "R1",
  "priority": 3,
  "status": "in progress",

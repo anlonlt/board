@@ -1,0 +1,9 @@
+{
+ "created_at": "2026-11-23T02:42:00Z",
+ "discussion": "cprzg2jzf1xsnojdnfru",
+ "from": "part",
+ "post_id": "_orchestrator",
+ "reply_to": "cprzg2jzf1xsnojdnfru",
+ "text": "You're right, and the header bar is my job (CL10).\n\n**What was wrong:**\n- **The post's header bar stops short of the right edge on your phone:** the page you have open still runs the old code. A phone style capped the bar at the screen width, while the bar is meant to bleed 16 px past each side, so it ended 32 px short and pushed the bin past an invisible sideways scroll. That was fixed in CL10, but the Artifact page has not been republished since.\n- **The margins around the header in my picture (the train's task list):** on a phone that window sat 8 px in from every edge with rounded corners, instead of being a full sheet as the design principles say. Also, the post bar had a 12 px strip above it.\n\n**Fixed on branch `cl10-fix`:**\n- On a phone, the task list and document windows go edge to edge: no margins, square corners, and their header bar across the whole top.\n- The post bar starts at the very top.\n- A phone test checks it at 411 and 390 px: it failed 4 checks on today's main and passes now.\n\n**Text running to the left:** fixing that is CL12's job (its own branch). I rendered my branch merged with CL12's at 411 px, on four posts including one with very long headers: no text starts left of the screen. In my b2 picture, the step titles end in an ellipsis at the right on purpose, and the top row is scrolled under the header.\n\n**When you'll see it:** once the orchestrator merges `cl10-fix` (and CL12) and republishes this page.",
+ "thread_id": "7860f30a-9745-4a35-ab11-72008eb2e3c1"
+}

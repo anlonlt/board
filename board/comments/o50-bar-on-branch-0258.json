@@ -1,0 +1,9 @@
+{
+ "created_at": "2026-11-23T02:57:22Z",
+ "discussion": "cprzg2jzf1xsnojdnfru",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "jsnrjcxx3yll039ack5c",
+ "text": "It is done, but only on CL10's branch (cl10-fix, d157b81), not on the page you see. The page you see is built from the kit's main, and nothing merges into the kit's main until you say yes to the trunk question (o49-trunk-question-0209, a thumbs up is yes). On your yes I merge the checked parts in order, rebuild and republish, and the full-width bar is live within the hour.",
+ "thread_id": "21101c0a-b2a6-4299-94d4-da4a819c0774"
+}

@@ -1,0 +1,12 @@
+{
+ "answer": "Yes: merge each checked part, then republish",
+ "created_at": "2026-11-23T03:00:10.018Z",
+ "delivered": true,
+ "delivered_at": "2026-11-23T03:00:10.917Z",
+ "delivery_error": "",
+ "from": "owner",
+ "post_id": "o50-trunk-decision",
+ "read": false,
+ "text": "Answer: Yes: merge each checked part, then republish",
+ "thread_id": "bb5ccf03-6e65-4b6e-a0fb-d86de0f1dbd4"
+}

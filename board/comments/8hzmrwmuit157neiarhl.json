@@ -1,0 +1,12 @@
+{
+ "created_at": "2026-11-23T03:08:33.218Z",
+ "delivered": true,
+ "delivered_at": "2026-11-23T03:08:34.245Z",
+ "delivery_error": "",
+ "from": "owner",
+ "post_id": "o50-trunk-decision",
+ "read": false,
+ "reply_to": "o50-trunk-on-0308",
+ "text": "So the install shouldn't turn off things I had already enable.. wasn't the trunk thing already on before the install ?",
+ "thread_id": "999fab2f-9284-48af-9a1d-3929e5c45569"
+}

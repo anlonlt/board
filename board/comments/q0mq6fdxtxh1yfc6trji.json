@@ -1,0 +1,11 @@
+{
+ "created_at": "2026-11-23T02:41:51.682Z",
+ "delivered": true,
+ "delivered_at": "2026-11-23T02:41:52.664Z",
+ "delivery_error": "",
+ "from": "owner",
+ "post_id": "cl21-seen-state-saves",
+ "read": true,
+ "text": "So why does Welcome to the Board board (Claude Code CLI local) thread in ask the orchestrator and the post See the new UI work, then stop tests touching ~/.local/bin constantly show up as new, even if they have been read ? It's like it doesn't know I've read them",
+ "thread_id": "c22c5f92-7b00-4541-92e5-b0c300297dda"
+}

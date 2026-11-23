@@ -1,0 +1,28 @@
+{
+ "created_at": "2026-11-23T08:20:25.229Z",
+ "delivered": true,
+ "delivered_at": "2026-11-23T08:20:26.394Z",
+ "delivery_error": "",
+ "files": [
+  {
+   "id": "36d10758cd0698ade70c44e243d1599c",
+   "name": "Screenshot_20261123-031610.png",
+   "type": "image/png"
+  },
+  {
+   "id": "6edd16070e7a69a56ce265a89fe53da3",
+   "name": "Screenshot_20261123-031627.png",
+   "type": "image/png"
+  },
+  {
+   "id": "a831cdee41b80b9943f9dccc81302d46",
+   "name": "Screenshot_20261123-031640.png",
+   "type": "image/png"
+  }
+ ],
+ "from": "owner",
+ "post_id": "cl27-a-full-ui-and-ux-audit-of-the-board-then",
+ "read": false,
+ "text": "How come some of the text in markdown lists are cut out of the paragraph ? Also, how come a section with a comma isn't automatically linked to its markdown inline ? And also, how come some sections specified for the inline viewer end up out of the viewer window, sometimes on top. Shouldn't the section linked always be the first visible thing in the viewer ?",
+ "thread_id": "6a23896b-eff7-4661-a4c0-51bb62ba9f65"
+}

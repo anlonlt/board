@@ -1,7 +1,9 @@
 {
  "body": "Open the board on a narrow viewport and verify the lane tabs and one-tap options.",
- "column": "todo",
+ "column": "done",
+ "column_before": "todo",
  "created_at": "2026-11-21T23:29:25Z",
+ "done_at": "2026-11-23T02:13:39.282Z",
  "minutes": 3,
  "parent": "D1",
  "part": "D2",

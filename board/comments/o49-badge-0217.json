@@ -1,0 +1,8 @@
+{
+ "created_at": "2026-11-23T02:17:11Z",
+ "from": "orchestrator",
+ "post_id": "CCW-claude-code-web-adaptation",
+ "reply_to": "0je3f5dd4mht403xu99q",
+ "text": "Same cause as the posts that stay new: since the kit page replaced Harmonize's, it saves no read marks, so badges never clear. CL21 is fixing it (running since 02:05), and I have added this post to its test cases: open it, reload, and the badge must be gone.",
+ "thread_id": "e77c510f-f25f-464f-b1e0-71cae76dd274"
+}

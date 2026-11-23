@@ -1,0 +1,9 @@
+{
+ "created_at": "2026-11-23T02:39:09Z",
+ "discussion": "cprzg2jzf1xsnojdnfru",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "tyg12aqhpydzt2ueervv",
+ "text": "It should be the session that made the post. Your comment on CL10's picture landed here because a picture comment is filed under _orchestrator instead of the picture's post. I gave CL10 both: your header-bar points (full width, no margins, centred) and this routing fix, each with a test. The words running off to the left are CL12's bar; CL12 checks it with CL10's header.",
+ "thread_id": "dc21e92b-8383-40d3-a180-8c53887143ea"
+}

@@ -5,20 +5,6 @@
   {
    "also": [],
    "children": [
-    "R1",
-    "R0"
-   ],
-   "parent": "",
-   "part": "P-release",
-   "post": "demo-todo-2",
-   "prompt": "",
-   "session": "",
-   "state": "you",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [
     "CL1",
     "CL12",
     "CL14",
@@ -29,8 +15,10 @@
     "CL19",
     "CL20",
     "CL21",
+    "CL10",
     "CL11",
     "CL13",
+    "O50",
     "CL22",
     "CL23",
     "CL24",
@@ -52,6 +40,20 @@
   {
    "also": [],
    "children": [
+    "R1",
+    "R0"
+   ],
+   "parent": "",
+   "part": "P-release",
+   "post": "demo-info-1",
+   "prompt": "",
+   "session": "",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
     "D0",
     "D3",
     "D2",
@@ -62,7 +64,7 @@
    "post": "demo-todo",
    "prompt": "",
    "session": "",
-   "state": "you",
+   "state": "done",
    "store": []
   },
   {
@@ -117,7 +119,7 @@
    "post": "demo-q-3",
    "prompt": "",
    "session": "",
-   "state": "you",
+   "state": "done",
    "store": []
   },
   {
@@ -128,7 +130,7 @@
    "post": "demo-todo-3",
    "prompt": "",
    "session": "",
-   "state": "you",
+   "state": "done",
    "store": []
   },
   {
@@ -139,7 +141,7 @@
    "post": "demo-info-2",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "done",
    "store": []
   },
   {
@@ -150,7 +152,7 @@
    "post": "demo-q-2",
    "prompt": "",
    "session": "",
-   "state": "you",
+   "state": "done",
    "store": []
   },
   {
@@ -161,7 +163,7 @@
    "post": "demo-todo-2",
    "prompt": "",
    "session": "",
-   "state": "you",
+   "state": "done",
    "store": []
   },
   {
@@ -174,7 +176,7 @@
    "post": "demo-info-1",
    "prompt": "",
    "session": "",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -185,7 +187,7 @@
    "post": "demo-question",
    "prompt": "",
    "session": "",
-   "state": "you",
+   "state": "done",
    "store": []
   },
   {
@@ -196,7 +198,7 @@
    "post": "demo-todo",
    "prompt": "",
    "session": "",
-   "state": "you",
+   "state": "done",
    "store": []
   },
   {
@@ -300,7 +302,7 @@
    "post": "cl8-design-principles-complete-and-no-emoji",
    "prompt": "",
    "session": "board-cl8",
-   "state": "done",
+   "state": "running",
    "store": []
   },
   {
@@ -382,19 +384,6 @@
   },
   {
    "also": [],
-   "children": [
-    "CL10"
-   ],
-   "parent": "CL8",
-   "part": "CL9",
-   "post": "cl9-checks-that-must-be-able-to-fail-breaks",
-   "prompt": "",
-   "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
-   "state": "done",
-   "store": []
-  },
-  {
-   "also": [],
    "children": [],
    "parent": "P-cli",
    "part": "CL20",
@@ -418,11 +407,24 @@
   {
    "also": [],
    "children": [],
-   "parent": "CL9",
+   "parent": "P-cli",
    "part": "CL10",
    "post": "cl10-see-the-new-ui-work-then-stop-tests-touc",
    "prompt": "",
    "session": "session_01AE1HGjnw5W8z3Gs4aJi6fe",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL9b"
+   ],
+   "parent": "CL8",
+   "part": "CL9",
+   "post": "cl9-checks-that-must-be-able-to-fail-breaks",
+   "prompt": "",
+   "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
    "state": "done",
    "store": []
   },
@@ -445,6 +447,17 @@
    "post": "cl13-a-launched-part-is-always-visible-on-the",
    "prompt": "",
    "session": "session_01AE1HGhwWDPd64SEkcvptk5",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "O50",
+   "post": "o50-trunk-decision",
+   "prompt": "",
+   "session": "",
    "state": "done",
    "store": []
   },
@@ -478,6 +491,17 @@
    "post": "cl24-orchestrator-guard-gaps",
    "prompt": "",
    "session": "session_01AE1HGhcHaCoE4QWkqyWqfM",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "CL9",
+   "part": "CL9b",
+   "post": "cl9b-cheap-breaks-revert-asked-pair-sample",
+   "prompt": "",
+   "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
    "state": "done",
    "store": []
   },

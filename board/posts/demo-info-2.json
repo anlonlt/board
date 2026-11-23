@@ -1,7 +1,9 @@
 {
  "body": "`kit.py doctor` verified SQLite integrity (`ok`), zero missing blobs, and clean mirror branch.",
- "column": "info",
+ "column": "done",
+ "column_before": "info",
  "created_at": "2026-11-21T23:44:25Z",
+ "done_at": "2026-11-23T07:09:57.311Z",
  "parent": "D1",
  "part": "D2",
  "priority": 3,

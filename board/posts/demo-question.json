@@ -1,8 +1,10 @@
 {
  "body": "One-tap answers let you decide from your phone without typing.",
- "column": "question",
+ "column": "done",
+ "column_before": "question",
  "created_at": "2026-11-22T00:47:25Z",
  "default_option": "Live 30-min listener",
+ "done_at": "2026-11-23T02:13:49.970Z",
  "options": [
   "Live 30-min listener",
   "Manual '.' check"

@@ -1,8 +1,10 @@
 {
  "body": "Optional push summary when questions wait longer than 30 minutes.",
- "column": "question",
+ "column": "done",
+ "column_before": "question",
  "created_at": "2026-11-21T22:39:25Z",
  "default_option": "No, board only",
+ "done_at": "2026-11-23T02:14:06.197Z",
  "options": [
   "Yes, via ntfy",
   "No, board only"
