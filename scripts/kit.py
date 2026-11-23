@@ -1801,6 +1801,46 @@ def _get_post(pid, db_path=None):
     return posts.get(pid)
 
 
+def _get_comment(cid, db_path=None):
+    """A comment's data, from the board server or the local database; None when it is not on this board."""
+    try:
+        r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "doc/comments/" + urllib.parse.quote(cid, safe=""),
+                           token=_resolve_board_token(None))
+        if r.get("exists") is not False and isinstance(r.get("data"), dict):
+            return r["data"]
+    except Exception:
+        pass
+    _, comments = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=db_path)
+    return comments.get(cid)
+
+
+def check_asked(p, db_path=None):
+    """(errors, notes) of a post's `asked`: his words that started the step, [{"id": <comment id>, "quote": ...}].
+    Each must be answered by a bar or a not_checked item that names `asked <id>`, and each quote must be in that
+    comment's text when the comment is on this board (a few hundred tokens, written once at turn 1)."""
+    err, notes = [], []
+    asked = _as_list(p.get("asked"))
+    if not asked:
+        return err, notes
+    said = " \n ".join(str(x) for x in _as_list(p.get("bars")) + _as_list(p.get("not_checked")))
+    norm = lambda t: re.sub(r"\s+", " ", str(t or "")).strip().lower()
+    for a in asked:
+        a = a if isinstance(a, dict) else {"quote": str(a)}
+        cid, quote = str(a.get("id") or "").strip(), str(a.get("quote") or "").strip()
+        if not cid or not quote:
+            err.append("asked: each entry needs his comment's id and his words: {\"id\": ..., \"quote\": ...}")
+            continue
+        if not re.search(r"asked\s+%s\b" % re.escape(cid), said):
+            err.append("asked %s: answered by no bar and no not_checked (name it: \"... (asked %s)\"): %r"
+                       % (cid, cid, quote[:80]))
+        c = _get_comment(cid, db_path=db_path)
+        if c is None:
+            notes.append("asked %s: comment not on this board, the quote is not verified" % cid)
+        elif norm(quote) not in norm(c.get("text")):
+            err.append("asked %s: the quote is not in that comment (copy his words as he wrote them): %r" % (cid, quote[:80]))
+    return err, notes
+
+
 def _as_list(v):
     if v is None or v == "":
         return []
@@ -2039,6 +2079,9 @@ def done(pid, db_path=None, root=None):
     k = _kit_config().get("kit") or {}
     root = root or ROOT
     err, warn = check_done(p, root=root, body_max=int(k.get("post_body_max", 1500)))
+    e_a, n_a = check_asked(p, db_path=db_path)
+    err += e_a
+    warn += n_a
     if not err:
         e2, notes = prove_check(p, root=root, timeout=int(k.get("check_timeout_s", 900)))
         err += e2
