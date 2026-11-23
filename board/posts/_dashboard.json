@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T02:16:19Z",
+ "created_at": "2026-11-23T02:23:33Z",
  "rows": [
   {
    "at": 7,
@@ -26,11 +26,11 @@
     "A crashed part is continued from its last checkpoint",
     "Web takeover: Claude Code web continues where the board says",
     "The device's load set automatically per task, learned from what tasks took here",
-    "Board UI: text never runs off screen, badge clears when seen, Done steps stay in the tr...",
     "resume reads the attached boards too",
     "CL21: posts he has read stop showing as new",
     "Checks that must be able to fail (breaks)",
     "See the new UI work, then stop tests touching ~/.local/bin",
+    "Board UI: text never runs off screen, badge clears when seen, Done steps stay in the tr...",
     "CL8 design principles complete + no emoji Like, then CL9 breaks, then CL10 see the new UI work"
    ],
    "train": "P-cli"
@@ -71,5 +71,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-23T02:16:19Z"
+ "updated_at": "2026-11-23T02:23:33Z"
 }

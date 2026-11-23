@@ -1,11 +1,34 @@
 {
- "body": "In progress: measuring why no read mark is saved since the kit page replaced Harmonize's.",
+ "artifacts": [
+  "kit/claude/test_seen_marks.js",
+  "tests/test_seen_marks.py",
+  "kit/board/board.template.html"
+ ],
+ "bars": [
+  "seen checks 9 of 9 on this branch and the republished page (6 of 9 on main and on the old live page)",
+  "suites 5 of 6 pass; tests/ 91 of 91; test_strings 2 failed, the same 2 as on main",
+  "his doc after the republish: 5 repos/board/* marks written by his own use (200 to 204 marks, v2323)"
+ ],
+ "body": "For you: posts you read now stay read, on each board, wherever you read them. The page is republished (version 37). Your own use since then saved 5 kit-board marks.\n\n## What was wrong (measured)\n- **Marks were being saved.** Your read doc (`data/users/<you>/board-seen`) went from version 2242 to 2244 while I watched (02:09-02:13). So the user id, the db and the writes all worked. The orchestrator's \"nothing is saved\" was not right.\n- **Read in the Feed, Focus or a window = never marked.** Only a post opened in its full sheet was watched. I drove the live page in Chromium as a signed-in viewer (Artifact runtime stub). The sheet wrote a mark on desktop and phone. The Feed view, the Focus view and a shift-click post window wrote none. You commented on and liked `cl12` without it ever getting a mark.\n- **Two boards shared one mark per id.** Marks were keyed by the bare post id. So the kit board's `_orchestrator` comments landed in Harmonize's `_orchestrator` mark. The same goes for any id both boards have, such as the demo posts every install adds.\n- Not the cause: Harmonize's own 67 open posts all had marks with matching signatures.\n\n## The fix (`kit/board/board.template.html`, `kit/board/shim.js`, `kit/board/board_server.py`)\n- **A mark per board.** An attached board's post is kept as `repos/<board>/<id>`; the primary board keeps the bare id. Old bare marks still count for the primary board. For an attached post, an old bare mark counts only if it was made on that very text, or names one of its comments. So the 15 kit posts you opened on the old page (02:13-02:22) stay read.\n- **Read anywhere counts.** The body and comments in the Feed, Focus and post windows are marked by BD3's rule: half on screen for a second. Opening alone marks nothing, and nothing counts while hidden under an open post.\n- **Local server:** one read doc for every board (the primary store's). An attached store's older marks show under `repos/<board>/`.\n\n## Test first (red, then green)\n`tests/test_seen_marks.py` runs `kit/claude/test_seen_marks.js` on a freshly built page:\n\n| page | seen checks |\n|---|---|\n| main (built) | 6 of 9 (fails: per-board mark, Feed, window) |\n| the live page before republish | 6 of 9 (the same 3) |\n| this branch / the republished page | 9 of 9 |\n\nThe checks cover: primary board read, then reload: not new; an unread post stays new (control); the same on the attached board; reading the kit board's `P-a` leaves Harmonize's identical `P-a` new; Feed; window; old marks. The local-server check fails on main (the attached board's mark landed in its own store) and passes here.\n\n## Suites (`python3 scripts/run_all_tests.py`)\n5 of 6 suites pass. tests/ ran 91 tests, all OK, mine included. test_board_local, test_kit_cards, test_install and test_install_bd11 had 0 failures. test_strings had 2 failures; main fails the same 2 (a `[repo ` string missing from the table; Remove in the translated page), so they were there before.\n\n## In your doc after the republish (02:26-02:30, your own use)\n`repos/board/cl11-...`, `repos/board/cl9-...`, `repos/board/cl13-...`, `repos/board/CCW-...` and `repos/board/_orchestrator`. The last is now separate from Harmonize's `_orchestrator`. The doc went from 200 to 204 marks, version 2323.\n\n## Not done {fold}\n- **Harmonize repo:** this session was refused access to `anlonlt/harmonize` (add_repo denied). So no `install.py --update` and no Harmonize push. The page was republished from the live page plus exactly this diff (the live page had no other change). Harmonize's next `install.py --update` from the kit brings the same code.\n- **Kit main:** I pushed branch `cl21-seen-state` only. The session hook says pushing main is not allowed here, so the merge is for the orchestrator (`git pull --no-rebase`; it touches only the seen code and its tests).\n\n## Commits {fold}\n`2a6a474` per-board marks, read anywhere, local single doc, tests. `3dff29d` old kit marks on the same text honoured.",
+ "check": "python3 -m unittest tests.test_seen_marks -v",
  "column": "info",
  "created_at": "2026-11-23T02:05:29Z",
+ "handoff": "Merge cl21-seen-state into kit main (git pull --no-rebase); then in Harmonize run install.py --update from that commit and push (the page is already republished with this code).",
+ "issues": [
+  "a post whose updated_at moves (status, session) shows as new again even when its text is the same: changed() compares updated_at; left as is (BD5 rule)",
+  "test_strings: 2 failures from before this part"
+ ],
+ "not_checked": [
+  "Harmonize repo not updated or pushed (access refused)",
+  "kit main not merged (pushing main is not allowed in this session)",
+  "Focus view checked by code path only, not by its own test"
+ ],
  "part": "CL21",
  "priority": 1,
  "session_id": "3d6af1ec-6576-5483-a7f2-a89248f8e580",
- "status": "in progress",
+ "status": "done",
  "title": "CL21: posts he has read stop showing as new",
- "train": "cli"
+ "train": "cli",
+ "updated_at": "2026-11-23T02:32:04Z",
+ "verdict": "Marks did save, but only from the post sheet and under bare ids shared by both boards; now one per board, from Feed, Focus and windows too; republished, and his use wrote 5 kit-board marks."
 }
