@@ -115,5 +115,32 @@ class Permissions(unittest.TestCase):
         self.assertIs(self.kit()["trunk_push"], False)
 
 
+    # the --tui wizard: its default is what the repo already grants, shown with where (red before CL22's second pass)
+    def wizard(self, *args):
+        home = Path(self.tmp.name) / "home"
+        home.mkdir(exist_ok=True)
+        return subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "twrp_wizard.py"), str(self.t),
+                               "--home", str(home), *args], capture_output=True, text=True, env=ENV, timeout=600,
+                              stdin=subprocess.DEVNULL)
+
+    def test_wizard_defaults_to_the_repo_grant(self):
+        (self.t / "CLAUDE.md").write_text("# Harmonize\n\n" + HARMONIZE_LINE)
+        for extra in ((), ("--autonomy", "balanced"), ("--autonomy", "gated")):
+            r = self.wizard("--print-choices", *extra)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            d = json.loads(r.stdout)
+            self.assertEqual(d["selections"]["trunk_push"], "yes", extra)
+            self.assertEqual(d["profile"]["trunk_push_grant"], "CLAUDE.md:3")
+        r = self.wizard("--headless", "--dry-run", "--autonomy", "balanced")
+        self.assertIn("yes (granted in CLAUDE.md:3)", r.stdout)
+
+    def test_wizard_repo_with_none_stays_no(self):
+        (self.t / "CLAUDE.md").write_text("Never push main.\n")
+        r = self.wizard("--headless", "--dry-run")
+        self.assertRegex(r.stdout, r"Push main: no\s")
+        d = json.loads(self.wizard("--print-choices", "--autonomy", "balanced").stdout)
+        self.assertEqual(d["selections"]["trunk_push"], "no")
+
+
 if __name__ == "__main__":
     unittest.main()

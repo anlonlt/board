@@ -301,39 +301,8 @@ def trunk(t, k, named, log):
 
 
 # CL22: the owner's permissions the repo already gives, and the ones an earlier install recorded, are never turned off.
-GRANT_FILES = ("CLAUDE.md", "AGENTS.md", os.path.join(".claude", "CLAUDE.md"), "GEMINI.md")
-PERMISSIVE_MODES = ("auto", "acceptEdits", "bypassPermissions", "dontAsk")
-_NEG = re.compile(r"\b(never|not|don'?t|doesn'?t|isn'?t|cannot|can'?t|forbidden|refuse[sd]?|no permission)\b", re.I)
-_PUSH = re.compile(r"\bpush(es|ing|ed)?\b", re.I)
-_PERM = re.compile(r"\b(permission|permitted|allowed|allow|may|ok|okay|authori[sz]ed|fine|free to)\b", re.I)
-
-
-def detect_trunk_push(t, trunk_name=None):
-    """(file, line no, line) of the first line in the repo's own instructions granting pushes to the trunk, else None."""
-    names = {"main", "master", "trunk"} | ({trunk_name} if trunk_name else set())
-    trunk_re = re.compile(r"(?<![\w/-])`?(%s)`?(?![\w/-])" % "|".join(re.escape(n) for n in sorted(names)), re.I)
-    for rel in GRANT_FILES:
-        fp = os.path.join(t, rel)
-        if not os.path.isfile(fp):
-            continue
-        for i, line in enumerate(open(fp, encoding="utf-8", errors="replace").read().splitlines(), 1):
-            for sent in re.split(r"(?<=[.!?])\s+", line):
-                if _PUSH.search(sent) and trunk_re.search(sent) and _PERM.search(sent) and not _NEG.search(sent):
-                    return rel, i, line.strip()
-    return None
-
-
-def detect_permission_mode(t):
-    """(file, mode) when the repo's .claude settings already set a permissive defaultMode, else None."""
-    for rel in (os.path.join(".claude", "settings.local.json"), os.path.join(".claude", "settings.json")):
-        fp = os.path.join(t, rel)
-        try:
-            mode = (json.load(open(fp, encoding="utf-8")).get("permissions") or {}).get("defaultMode")
-        except (OSError, ValueError, AttributeError):
-            continue
-        if mode in PERMISSIVE_MODES:
-            return rel, mode
-    return None
+sys.path.insert(0, os.path.join(KIT, "scripts"))
+from step0_scan import GRANT_FILES, detect_trunk_push, detect_permission_mode  # noqa: E402  (shared with the wizard)
 
 
 def ask_yes_no(question):
