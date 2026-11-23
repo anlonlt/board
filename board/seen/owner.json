@@ -992,10 +992,30 @@
    "bt": "2026-11-23T06:02:09Z",
    "sig": "46pq1j.5hy"
   },
+  "cl22-install-keeps-permissions": {
+   "at": "2026-11-23T10:00:25Z",
+   "bt": "2026-11-23T10:00:25Z",
+   "sig": "1qhsetf.27d"
+  },
   "cl23-first-item-freeze": {
    "at": "2026-11-23T06:02:09Z",
    "bt": "2026-11-23T06:02:09Z",
    "sig": "43zmyb.130"
+  },
+  "cl24-orchestrator-guard-gaps": {
+   "at": "2026-11-23T10:00:25Z",
+   "bt": "2026-11-23T10:00:25Z",
+   "sig": "1tv99rm.203"
+  },
+  "cl25-install-py-update-refreshes-every-instal": {
+   "at": "2026-11-23T10:00:25Z",
+   "bt": "2026-11-23T10:00:25Z",
+   "sig": "3d6dim.1mq"
+  },
+  "cl26-the-review-launcher-works-on-every-platf": {
+   "at": "2026-11-23T10:00:25Z",
+   "bt": "2026-11-23T10:00:25Z",
+   "sig": "598bwu.1co"
   },
   "cl27-a-full-ui-and-ux-audit-of-the-board-then": {
    "at": "2026-11-23T07:35:37Z",
@@ -1006,6 +1026,16 @@
    "at": "2026-11-23T07:35:37Z",
    "bt": "2026-11-23T07:35:37Z",
    "sig": "1aeor3.cg"
+  },
+  "cl28-the-orchestrator-answers-only-from-a-fre": {
+   "at": "2026-11-23T10:00:25Z",
+   "bt": "2026-11-23T10:00:25Z",
+   "sig": "tlt9ic.1lu"
+  },
+  "cl29-kit-compact-keeps-a-project-s-story-chec": {
+   "at": "2026-11-23T10:00:25Z",
+   "bt": "2026-11-23T10:00:25Z",
+   "sig": "8rthy7.112"
   },
   "cl3-the-train-is-the-task-list": {
    "at": "2026-11-22T23:49:07Z",
@@ -1041,6 +1071,11 @@
    "at": "2026-11-22T22:57:32.848Z",
    "sig": "1gcxacv.40",
    "v": []
+  },
+  "cl9b-cheap-breaks-revert-asked-pair-sample": {
+   "at": "2026-11-23T10:00:25Z",
+   "bt": "2026-11-23T10:00:25Z",
+   "sig": "of94ym.1j6"
   },
   "demo-done": {
    "at": "2026-11-22T01:03:07.622Z",
@@ -1129,6 +1164,11 @@
   "demo-viewer-later": {
    "at": "2026-11-22T12:00:40.661Z",
    "sig": "1nr3vj3.3v"
+  },
+  "o50-trunk-decision": {
+   "at": "2026-11-23T10:00:25Z",
+   "bt": "2026-11-23T10:00:25Z",
+   "sig": "ycusx8.kc"
   },
   "test-image": {
    "at": "2026-11-20T03:08:38Z",
