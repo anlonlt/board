@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T02:06:22Z",
+ "created_at": "2026-11-23T02:06:38Z",
  "rows": [
   {
    "also": [],
@@ -397,6 +397,39 @@
   {
    "also": [],
    "children": [],
+   "parent": "P-cli",
+   "part": "CL12",
+   "post": "cl12-board-ui-text-never-runs-off-screen-badg",
+   "prompt": "",
+   "session": "session_01AE1HGhgv7nxdCEvuM9YNsN",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL20",
+   "post": "cl20-resume-reads-attached-boards",
+   "prompt": "",
+   "session": "28b46b80-c031-5e0d-a4b4-23ace846ca3d",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL21",
+   "post": "cl21-seen-state-saves",
+   "prompt": "",
+   "session": "3d6af1ec-6576-5483-a7f2-a89248f8e580",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
    "parent": "CL8",
    "part": "CL9",
    "post": "cl9-checks-that-must-be-able-to-fail-breaks",
@@ -407,5 +440,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T02:06:22Z"
+ "updated_at": "2026-11-23T02:06:38Z"
 }
