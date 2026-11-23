@@ -86,7 +86,7 @@ DEFAULT_KIT = {
     "review": {"auto": "all", "train_every": 4},
     # Above this a post body gets a nudge from `kit.py done` (never an error: the post is where the detail goes).
     "post_body_max": 1500,
-    "clerk": {"wait_minutes": 5, "context_limit_k": 80},
+    "clerk": {"wait_minutes": 5, "context_limit_k": 80, "orchestrator_idle_minutes": 30},
     # agy subagent model tiers: clerk only forwards (flash_lite), cards runs scripts (flash),
     # orchestrator/parts inherit the session model, consultant uses pro.
     "roles": {"orchestrator": {"model": "inherit", "effort": "medium"},
@@ -379,6 +379,9 @@ def render(text, c):
             "MEMORY_DIR": k.get("memory_dir") or ".board/memory",
             "TALK": c["language"]["talk"], "MAIN_BRANCH": k["main_branch"],
             "WAIT": str(k["clerk"]["wait_minutes"]),
+            "ORCH_IDLE": str(k["clerk"].get("orchestrator_idle_minutes", 30)),
+            "REPO_LINE": (", `source_url: \"https://github.com/%s\"`" % k["github"]) if k.get("github")
+                         else " (no `source_url`: it gets this session's environment and repositories)",
             "CONTEXT_K": clerk_limit_k,
             "CLERK_LIMIT_K": clerk_limit_k,
             # Claude Code's own compaction only as a safety net just past the reset point, if a hand-over ever fails.
@@ -674,6 +677,10 @@ def main(argv=None):
         c["kit"]["funnel"] = False
     elif "funnel" not in c["kit"]:
         c["kit"]["funnel"] = True
+    if not c["kit"].get("github"):
+        gh_t = github_of(t)                            # the clerk starts orchestrators on this repository
+        if gh_t:
+            c["kit"]["github"] = gh_t
     if "pinned_docs" not in c["kit"]:
         _pin_candidates = (
             "PLAN.md", "ROADMAP.md", "TODO.md", "CLAUDE.md", "AGENTS.md", "README.md",
