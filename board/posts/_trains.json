@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T22:15:21Z",
+ "created_at": "2026-11-23T22:46:50Z",
  "rows": [
   {
    "also": [],
@@ -29,7 +29,8 @@
     "cl27-q-trains-view",
     "CL29",
     "CL30",
-    "CL31"
+    "CL31",
+    "CL32"
    ],
    "parent": "",
    "part": "P-cli",
@@ -594,8 +595,19 @@
    "session": "ef07beec-c03a-56c1-b693-8326f0f02f65",
    "state": "done",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL32",
+   "post": "cl32-resume-per-role-what-each-role-needs-the",
+   "prompt": "",
+   "session": "session_01AE1HGj64wNW2VqtikzfGg4",
+   "state": "running",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T22:15:21Z"
+ "updated_at": "2026-11-23T22:46:50Z"
 }
