@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,11 +26,43 @@ SUITES = [
 ]
 
 
+# Variables a kit session exports (its role, a board token or url). Inherited, they make the
+# suites depend on who runs them (KIT_ROLE=clerk fails the hook tests), so every suite runs without them.
+SESSION_VARS = ("KIT_ROLE", "KIT_BOARD_TOKEN", "KIT_BOARD_URL", "KIT_BOARD_REPO")
+
+
+def bin_snapshot(path):
+    """{name: (size, mtime_ns, link target)} of the files in path; {} when it does not exist."""
+    out = {}
+    try:
+        names = os.listdir(path)
+    except OSError:
+        return out
+    for n in names:
+        f = os.path.join(path, n)
+        try:
+            st = os.lstat(f)
+        except OSError:
+            continue
+        out[n] = (st.st_size, st.st_mtime_ns, os.readlink(f) if os.path.islink(f) else "")
+    return out
+
+
+def bin_changes(before, after):
+    """Names added, removed or rewritten between two bin_snapshot results."""
+    return sorted(n for n in set(before) | set(after) if before.get(n) != after.get(n))
+
+
 def main():
     results = []
     t0 = time.monotonic()
-    env = dict(os.environ)
+    env = {k: v for k, v in os.environ.items() if k not in SESSION_VARS}
     env["KIT_NO_FUNNEL"] = "1"
+    # Every launcher a test install writes goes to a temp dir; the real ~/.local/bin is watched.
+    tmp_bin = tempfile.mkdtemp(prefix="kit-test-bin-")
+    env["KIT_BIN_DIR"] = tmp_bin
+    real_bin = os.path.expanduser("~/.local/bin")
+    before = bin_snapshot(real_bin)
     for name, cmd in SUITES:
         print("=== %s ===" % name, flush=True)
         if not shutil.which(cmd[0]) and not os.path.exists(cmd[0]):
@@ -41,6 +74,13 @@ def main():
         ok = r.returncode == 0
         results.append((name, ok, r.returncode, dt))
         print("[%s] %s (%.2fs)\n" % ("PASS" if ok else "FAIL", name, dt), flush=True)
+
+    changed = bin_changes(before, bin_snapshot(real_bin))
+    results.append(("~/.local/bin untouched", not changed, 1 if changed else 0, 0.0))
+    print("[%s] %d files written to %s by the suites%s (their launchers went to %s)\n" % (
+        "PASS" if not changed else "FAIL", len(changed), real_bin,
+        (": " + ", ".join(changed)) if changed else "", tmp_bin), flush=True)
+    shutil.rmtree(tmp_bin, ignore_errors=True)
 
     total_dt = time.monotonic() - t0
     passed = sum(1 for _, ok, _, _ in results if ok)

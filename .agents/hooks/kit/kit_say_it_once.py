@@ -10,9 +10,10 @@ One script, five agy events (dispatched by `hookEventName`):
   PostToolUse (matcher: send_message|run_command; Claude Code: SendMessage|Bash|ArtifactData): records a marker when `send_message` or a `board_cli.py`
       write (set/update/str-replace/batch) runs; outputs `{}` per agy's PostToolUse contract.
   PostInvocation: if PostToolUse recorded a board write or send_message, injects the reminder to end
-      the turn with a single "·".
+      the turn with a single "·" (only on a turn the owner did not type: his own chat always gets words).
   Stop: parses agy's transcript.jsonl (`USER_INPUT` / `PLANNER_RESPONSE`) to enforce `chat_answer_chars`
-      (human turn) or a single "·" (non-human turn), blocking ONCE per turn via `{"decision": "continue"}`.
+      only on a non-human turn (a single "·"), blocking ONCE per turn via `{"decision": "continue"}`. An answer to
+      the owner is never retried: it is already on his screen; the limit is said before his turn starts.
 """
 import hashlib
 import json
@@ -113,6 +114,11 @@ def turn_opener(path):
     return opener, human
 
 
+def owner_typed(path):
+    """True only when the transcript shows the owner typed this turn (no transcript: unknown, so False)."""
+    return bool(path) and os.path.isfile(path) and turn_opener(path)[1]
+
+
 def chat_verbose(data):
     if os.environ.get("KIT_CHAT_VERBOSE", "").strip().lower() in ("1", "true", "yes"):
         return True
@@ -124,13 +130,9 @@ def stop_verdict(text, human, data):
     if len(t) <= 3:
         return None
     if human:
-        if chat_verbose(data):
-            return None
-        cap = limit("chat_answer_chars", 600, data)
-        if cap <= 0 or len(t) <= cap:
-            return None
-        return ("SAY IT ONCE: your answer to the owner is %d characters (limit %d), in %s. Answer what was asked in a "
-                "few lines; the detail goes in your board post." % (len(t), cap, talk(data)))
+        # The owner has already read it: a Stop hook runs after the answer is on his screen, so a retry only sends
+        # it a second time (his 2026-11-23 report). The limit is said BEFORE the turn (UserPromptSubmit) instead.
+        return None
     return ("SAY IT ONCE: the owner did not write this turn (a session's message, a timer, a hook), and your closing "
             "message is %d characters. The result is in your board post: end the turn with a single \"·\"." % len(t))
 
@@ -216,6 +218,8 @@ def main():
             # Claude Code CLI (--runtime local): Bash fires on every command; only a board_cli.py write counts.
             if data.get("tool_name") == "Bash" and not BOARD_WRITE_RE.search(str((data.get("tool_input") or {}).get("command") or "")):
                 return 0
+            if owner_typed(str(data.get("transcript_path") or "")):
+                return 0                         # the owner typed this turn: he gets a short answer, not "·"
             claude_context(ev, "SAY IT ONCE: it is on the board or sent: if you end your turn now, end it with a single \"·\" "
                                "and nothing else.")
             return 0
@@ -239,6 +243,9 @@ def main():
                 os.remove(mark)
             except OSError:
                 pass
+            if owner_typed(str(data.get("transcriptPath") or data.get("transcript_path") or "")):
+                print("{}")                      # the owner typed this turn: he gets a short answer, not "·"
+                return 0
             inject("SAY IT ONCE: it is on the board or sent: if you end your turn now, end it with a single \"·\" "
                    "and nothing else.")
             return 0
@@ -271,7 +278,11 @@ def main():
             open(mark, "w", encoding="utf-8").write(opener)
         except OSError:
             pass
-        full = reason + "\nYOUR RETRY: a single \"·\" (the detail is already read; put anything missing in the post)."
+        if human:
+            full = reason + ("\nYOUR RETRY: the same answer to the owner, shorter (at most %d characters), in words; never "
+                             "a lone \"·\" to him." % limit("chat_answer_chars", 600, data))
+        else:
+            full = reason + "\nYOUR RETRY: a single \"·\" (the detail is already read; put anything missing in the post)."
         if claude:
             print(full, file=sys.stderr)
             return 2
