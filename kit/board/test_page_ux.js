@@ -117,7 +117,15 @@ const VV = `(() => {
       await p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); s.querySelector('.kit-tl-hdr b').click(); }); await p.waitForTimeout(500);
       const after = await vis();
       const cl1 = after && after.find((x) => x.t === 'CL1'), cl2 = after && after.find((x) => x.t === 'CL2');
-      check('411 px: a tap on the train\'s name pulls its done step out above the open one', !!(cl1 && cl2 && cl1.h > 10 && cl1.y < cl2.y), after);
+      const hid = before && before.find((x) => x.t === 'CL1');
+      check('411 px: a tap on the train\'s name pulls its hidden done step out above the open one', !!(hid && hid.h <= 2 && cl1 && cl2 && cl1.h > 10 && cl1.y < cl2.y), { before, after });
+      // remembered per train on this device: after a reload the card is still unfolded
+      await p.reload(); await p.waitForTimeout(1600); await view(p, 'Trains');
+      const again = await vis(), cl1b = again && again.find((x) => x.t === 'CL1');
+      await p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); if (s) s.querySelector('.kit-tl-hdr b').click(); }); await p.waitForTimeout(500);
+      await p.reload(); await p.waitForTimeout(1600); await view(p, 'Trains');
+      const third = await vis(), cl1c = third && third.find((x) => x.t === 'CL1');
+      check('411 px: the fold is remembered per train across a reload (unfolded stays unfolded, folded stays folded)', !!(cl1b && cl1b.h > 10 && cl1c && cl1c.h <= 2), { again, third });
     }
     check(W + ' px: the Trains view is each train\'s task list, done steps included (CL1, CL2; D1)', tr.lists.length === 2 && !tr.matrix && tr.lists.some((t) => /CL1/.test(t) && /CL2/.test(t)), tr);
     await p.close();
