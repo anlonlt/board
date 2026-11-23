@@ -23,6 +23,17 @@
   --scrim: rgba(0, 0, 0, .6); color-scheme: dark; }
 
 * { box-sizing: border-box; }
+/* CL12, the base layer (his 22:03: "headers, buttons, titles run off the screen... make sure it never happens again,
+   no matter what is changed or added"). The cause each time: a flex or grid child keeps min-width:auto, so it can never
+   be narrower than its longest word, and a long word or name then pushes it past its box (to the left in a right-aligned
+   or centred row); each fix so far was one component's own overflow-wrap. Here, once, for every element present and
+   future: a long word breaks where it must, any box may shrink to its container, and media keep their size. Zero
+   specificity (:where), so a component that means otherwise (a table cell, an ellipsis, a fixed-size chip) still says so.
+   kit/board/test_page_layout.js fails when any line of text runs off screen or is cut by its box. */
+:where(body) { overflow-wrap: anywhere; }
+:where(body *) { min-width: 0; }
+:where(button, .btn, summary, h1, h2, h3, h4, h5, h6) { max-width: 100%; }
+:where(svg, img, video, canvas, input[type=checkbox], input[type=radio]) { flex-shrink: 0; }
 [hidden] { display: none !important; }
 body { background: var(--bg); color: var(--ink); font-family: var(--text); font-size: 16px; line-height: 1.45; }
 .wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 40px; max-width: 1400px; margin: 0 auto; }
@@ -234,7 +245,7 @@ button.wait-row:hover .wtext { text-decoration: underline; }
 .disc .nodot { width: 10px; margin-right: 6px; flex: none; }
 .disc .dt { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .disc.unread .dt { font-weight: 800; }
-.disc .dw { margin-left: auto; padding-left: 10px; font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.disc .dw { flex: none; margin-left: auto; padding-left: 10px; font-size: .8rem; color: var(--muted); white-space: nowrap; }
 .disc.unread .dw { color: var(--ember); font-weight: 700; }
 .disc .d2 { margin-left: 16px; color: var(--muted); font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* BD8 (R76): the changes discussion's 2-line clamp (opened by a tap) is gone: every message there shows whole. */
@@ -736,7 +747,8 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
 .sheet.orch-popup .sheet-in { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 24px !important; gap: 10px; max-width: none; width: 100%; }
 .sheet.orch-popup .bar { margin-inline: -16px; padding: 10px 16px; background: var(--sunk); flex: none; }
 .sheet.orch-popup #p-meta, .sheet.orch-popup #p-body { display: none; }
-.sheet.orch-popup h2 { font-size: 1.25rem; flex: none; }
+/* CL12: its title only; "h2" alone also froze every ## header inside its comments at full width (his 22:03) */
+.sheet.orch-popup #p-title { font-size: 1.25rem; flex: none; }
 .sheet.orch-popup .thread { flex: 1 0 auto; display: flex; flex-direction: column; }
 .sheet.orch-popup .composer { position: sticky; bottom: 0; margin-top: auto; background: var(--surface); padding-top: 8px; border-top: 1px solid var(--line); }
 @media (max-width: 640px) {
@@ -909,6 +921,9 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   .replies { margin-left: 6px !important; padding-left: 10px !important; }
 }
 .newjump { bottom: 112px !important; z-index: 7; }
+/* CL12: in the orchestrator's window (a panel at the right on a desktop), the pill sits in that window, not at the
+   middle of the screen over the board */
+.sheet.orch-popup .newjump { position: absolute; }
 </style>
 
 <div class="wrap">
@@ -2743,7 +2758,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       /* CL12 (his 22:18): "passed on" and "seen" could not be told apart; main's icons are kept (icon-first chrome)
          and each state adds its own short word: sent (passed on), seen (the agent marked it read), answered. */
       else if (answeredBy(c)) { info.classList.add("ans-ok"); info.innerHTML = ICON.checks + '<span class="deliv-w">answered</span>'; info.title = "An agent answered" + (c.read_at ? "; seen " + when(c.read_at) : ""); }
-      else if (c.read === true) { info.classList.add("seen-ok"); info.innerHTML = ICON.checks + '<span class="deliv-w">seen</span>'; info.title = "Seen by the agent" + (c.read_at ? " " + when(c.read_at) : "") + "; no answer yet"; }
+      else if (c.read === true) { info.classList.add("seen-ok"); info.innerHTML = ICON.checks + '<span class="deliv-w">seen</span>'; info.title = "Seen" + (c.read_at ? " " + when(c.read_at) : "") + "; no answer yet"; }
       else if (c.delivered === true) { info.classList.add("ok"); info.innerHTML = ICON.check + '<span class="deliv-w">sent</span>'; info.title = "Passed on to the agent; not seen yet"; }
       else { info.classList.add("err"); info.innerHTML = ICON.check; info.title = "Saved on the board; not sent" + (c.delivery_error ? " (" + str(c.delivery_error) + ")" : "") + "."; }
       d.appendChild(info);

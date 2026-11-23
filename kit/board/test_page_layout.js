@@ -50,22 +50,43 @@ const STUB = `(function () {
   window.claude = { use: async (n) => n === "db" ? db : n === "user" ? { isOwner: async () => true, id: async () => "u1" } : null };
 })();`;
 
-// Every visible element that runs past the screen's edges, or whose own text spills out of its box, outside a box
-// made to scroll sideways (a code block, the trains matrix). Returns short descriptions, at most 12.
+// Every line of visible text that runs past the screen's edges or is cut by a box that clips it (overflow hidden/clip),
+// and every visible box that runs off screen; a box made to scroll sideways (overflow auto/scroll: a code block, a
+// table, the trains matrix) and an intended ellipsis are exempt. Returns short descriptions, at most 12.
 function overflows() {
   const W = document.documentElement.clientWidth, out = [];
-  const scrollsX = (e) => { for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) { const o = getComputedStyle(a).overflowX; if (o === 'auto' || o === 'scroll' || o === 'hidden' || o === 'clip') return true; } return false; };
-  const name = (e) => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\s+/).join('.') : '');
+  const name = (e) => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\s+/).slice(0, 3).join('.') : '');
+  const shown = (e) => { for (let a = e; a && a !== document.body; a = a.parentElement) { const cs = getComputedStyle(a); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0) return false; } return true; };
+  // the boxes made to scroll sideways (their content may be wider); any other box clips or scrolls only by accident
+  const SIDEWAYS = '.tabs, .tbl, .strip, .pic-scroll, .zimg, .grp-row, .tnet-matrix, .tnet-rows, .ffeed-imgs';
+  const scrolls = (e) => !!(e.parentElement && e.parentElement.closest(SIDEWAYS));
+  const SKIP = '[hidden], pre, textarea, input, select, .kit-sr-only, [aria-hidden="true"]';
+  const seen = new Set();
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let t; (t = walk.nextNode()) && out.length < 12;) {
+    const e = t.parentElement; if (!e || !t.textContent.trim() || seen.has(e)) continue;
+    if (/^(SCRIPT|STYLE|TEMPLATE|OPTION)$/.test(e.tagName) || e.closest(SKIP) || !shown(e) || scrolls(e)) continue;
+    const rg = document.createRange(); rg.selectNodeContents(t);
+    const rects = [...rg.getClientRects()].filter((r) => r.width > 0 && r.height > 0); if (!rects.length) continue;
+    const L = Math.min(...rects.map((r) => r.left)), R = Math.max(...rects.map((r) => r.right));
+    let bad = '', clipped = false;
+    for (let a = e; a && a !== document.documentElement; a = a.parentElement) {
+      const cs = getComputedStyle(a); if (cs.overflowX === 'visible') continue;
+      if (cs.textOverflow === 'ellipsis') { clipped = true; break; }  // an intended ellipsis: the line ends in "..."
+      const b = a.getBoundingClientRect(); if (!b.width || !b.height) break;
+      if (L < b.left - 1 || R > b.right + 1) bad = 'cut by ' + name(a) + ' (' + Math.round(L) + '..' + Math.round(R) + ' in ' + Math.round(b.left) + '..' + Math.round(b.right) + ')';
+      break;
+    }
+    if (!bad && !clipped && (L < -1 || R > W + 1)) bad = 'off screen ' + Math.round(L) + '..' + Math.round(R) + ' of ' + W;
+    if (bad) { seen.add(e); out.push(name(e) + ' ' + bad + ': ' + t.textContent.trim().slice(0, 40)); }
+  }
   for (const e of document.querySelectorAll('body *')) {
     if (out.length >= 12) break;
-    if (/^(SCRIPT|STYLE|svg|path|line|polyline|circle|rect|polygon|OPTION|TEMPLATE|BR)$/i.test(e.tagName)) continue;
+    if (/^(SCRIPT|STYLE|OPTION|TEMPLATE|BR)$/i.test(e.tagName) || e.closest(SKIP) || e.closest('svg') && e.tagName.toLowerCase() !== 'svg') continue;
     const r = e.getBoundingClientRect(); if (!r.width || !r.height) continue;
-    const cs = getComputedStyle(e); if (cs.visibility === 'hidden' || cs.display === 'none' || cs.position === 'fixed' && cs.opacity === '0') continue;
-    if (e.closest('[hidden], pre, textarea, .tnet-matrix, .tnet-rows, .kit-sr-only')) continue;
-    if (scrollsX(e)) continue;
-    if (r.left < -1 || r.right > W + 1) { out.push(name(e) + ' off screen ' + Math.round(r.left) + '..' + Math.round(r.right) + ' of ' + W + ': ' + (e.textContent || '').trim().slice(0, 40)); continue; }
-    const ox = cs.overflowX;
-    if ((ox === 'visible') && e.scrollWidth > e.clientWidth + 1 && e.clientWidth > 0 && cs.display !== 'inline') out.push(name(e) + ' text spills ' + e.scrollWidth + '>' + e.clientWidth + ': ' + (e.textContent || '').trim().slice(0, 40));
+    const cs = getComputedStyle(e); if (cs.position === 'fixed' || cs.position === 'absolute') continue;
+    if (!shown(e) || scrolls(e)) continue;
+    if (r.left < -1 || r.right > W + 1) out.push(name(e) + ' box off screen ' + Math.round(r.left) + '..' + Math.round(r.right) + ' of ' + W + ': ' + (e.textContent || '').trim().slice(0, 40));
   }
   return out;
 }
@@ -80,6 +101,8 @@ function overflows() {
   let fails = 0; const check = (n, ok, more) => { console.log((ok ? 'ok   ' : 'FAIL ') + n + (ok || !more ? '' : '\n       ' + [].concat(more).join('\n       '))); fails += !ok; };
   const ev = (fn, a) => p.evaluate(fn, a);
   const settle = () => p.wait(450);
+  const SHOTS = process.env.KIT_SHOTS; let shotN = 0;
+  const shot = async (n) => { if (SHOTS && p.shot) await p.shot(path.join(SHOTS, String(++shotN).padStart(2, '0') + '-' + n + '.png')); };
   for (const [label, w, h] of [['phone', 390, 844], ['desktop', 1300, 900]]) {
     await p.viewport(w, h); await p.open(html); await p.wait(900);
     check(label + ': the lanes, Where we are and All trains stay on screen with long text', true);
@@ -87,12 +110,14 @@ function overflows() {
     // a post with long headers, words and an unbroken word, opened
     await ev(() => { const c = [...document.querySelectorAll('#lanes .card')].find((x) => /CL3|section header/.test(x.textContent)) || document.querySelector('#lanes .card'); if (c) (c.querySelector('.card-open') || c).click(); });
     await settle();
+    await shot(label + '-post');
     o = await ev(overflows); check(label + ': nothing overflows in an open post (title, ## sections, comment headers)', !o.length, o);
     await ev(() => { const b = document.getElementById('back'); if (b) b.click(); document.querySelectorAll('.kit-win-close, [data-win-close]').forEach((x) => x.click()); }); await settle();
     // the orchestrator: its list of discussions, then the thread
     await ev(() => { const a = document.getElementById('ask'); if (a) a.click(); }); await settle();
     o = await ev(overflows); check(label + ': nothing overflows in the orchestrator\'s list of discussions', !o.length, o);
     await ev(() => { const d = document.querySelector('.disc[data-disc="w1"]'); if (d) d.click(); }); await p.wait(700);
+    await shot(label + '-discussion');
     o = await ev(overflows); check(label + ': nothing overflows in a discussion with long headers', !o.length, o);
     await ev(() => { const b = document.getElementById('back'); if (b) b.click(); }); await settle();
   }

@@ -664,11 +664,11 @@
   "kind": "js"
  },
  {
-  "en": "Seen",
+  "en": "An agent answered",
   "kind": "js"
  },
  {
-  "en": "Sent to the agent",
+  "en": "Seen",
   "kind": "js"
  },
  {
@@ -777,6 +777,10 @@
  },
  {
   "en": "sending to Claude is off in this view",
+  "kind": "js"
+ },
+ {
+  "en": "[repo ",
   "kind": "js"
  },
  {

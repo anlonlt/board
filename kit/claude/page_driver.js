@@ -55,6 +55,7 @@ async function viaPlaywright() {
   d.evaluate = (fn, arg) => p.evaluate(asExpression(fn, arg));
   d.press = (key) => p.keyboard.press(key);
   d.viewport = (width, height) => p.setViewportSize({ width, height });
+  d.shot = (file) => p.screenshot({ path: file });
   d.wait = (ms) => p.waitForTimeout(ms);
   d.close = () => b.close();
   return d;
