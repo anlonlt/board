@@ -1,14 +1,106 @@
 {
- "body": "Resuming: finishing the ~/.local/bin guard for test installs, then screenshotting the new UI on computer and phone.",
+ "artifacts": [
+  "docs/cl10/a1-sections-default-computer.png",
+  "docs/cl10/a1-sections-default-phone.png",
+  "docs/cl10/a2-sections-tapped-computer.png",
+  "docs/cl10/a2-sections-tapped-phone.png",
+  "docs/cl10/a3-sections-learned-computer.png",
+  "docs/cl10/a3-sections-learned-phone.png",
+  "docs/cl10/b1-review-chips-computer.png",
+  "docs/cl10/b1-review-chips-phone.png",
+  "docs/cl10/b2-review-chip-step-computer.png",
+  "docs/cl10/b2-review-chip-step-phone.png",
+  "docs/cl10/c1-waiting-clock-computer.png",
+  "docs/cl10/c1-waiting-clock-phone.png",
+  "install.py",
+  "scripts/run_all_tests.py",
+  "kit/board/shim.js",
+  "kit/board/strings.py",
+  "kit/board/test_page.js"
+ ],
+ "bars": [
+  "0 of the 14 files in ~/.local/bin changed by run_all_tests.py, 0 added (checked by the suite itself)",
+  "7 of 7 suites pass, 0 failed (test_strings.py fixed: it failed on main)",
+  "12 of 12 screenshots: 6 scenes x 2 sizes, 0 page errors",
+  "3 of 3 features seen working on both sizes; 3 defects found and fixed"
+ ],
+ "body": "For you: the new UI works on both sizes; three things looked wrong and are fixed; tests no longer write to ~/.local/bin. What still needs your device: a look on your real phone.\n\n## What I saw\nSeen in a browser (Chromium via Playwright) at computer size (1280x800) and phone size (iPhone 13, 390x844, touch), on a scratch install of the current kit with a copy of this board's data and a few demo rows. The 12 pictures are paired computer vs phone.\n- **Collapsible sections:** chevrons fold and unfold on click and on tap; audit names (Not checked) open folded with their first line as a peek; after two folds of Handoff on two posts, a third post opens with Handoff folded. The phone run picked up the computer's folds too, because what is learned goes to `posts/_prefs`, shared across devices.\n- **Review chips:** a `continue` chip on the cli train's header; on a step the chip sits in its Status line (CL9 `redirect`), seen once the step is unfolded (hover on a computer, tap on a phone).\n- **Waiting clock:** the clock shows on his comment until an agent answers.\n\n## Fixed\n| what looked wrong | cause | fix |\n|---|---|---|\n| Phone: the post bar's bin cut off at the right edge, reachable only by an invisible sideways scroll | the local shim capped `.sheet .bar` at `max-width:100%`, cancelling the bar's 16 px bleed on each side (32 px short) | `max-width: calc(100% + 32px)` in `kit/board/shim.js`; the bar is 390 px wide on a 390 px phone, nothing hidden |\n| Fold chevron below the middle of its heading | aligned on the text baseline | `align-items: center` |\n| Waiting clock in orange, the colour of \"waits on you\" (principle 12) | it waits on an agent, not on him | gray (`--muted`), as the code's own comment said |\n\n## Tests and ~/.local/bin\n- `install.py` skips the launcher of an install inside a temp folder unless `KIT_BIN_DIR` is set (`SKIPPED command ...` in its log); the two unit tests that installed without it pass `--no-cmd`.\n- `scripts/run_all_tests.py` points `KIT_BIN_DIR` at a temp dir, runs without the session's `KIT_*` variables, and checks the real `~/.local/bin` before and after: a 7th line, `~/.local/bin untouched`, fails if anything there changed.\n- `test_install.py` checks both: a temp install without `KIT_BIN_DIR` writes nothing to a fake HOME's `~/.local/bin`, and with it the launcher goes there.\n- `kit/board/test_strings.py` was failing on main (2 checks), which I fixed: `\"[repo \"` is a routing prefix, now kept as code; rows in `EXCLUDED` are never translated (the fake translation changed `\"posts/\"` in `removeDocs`, so Remove wrote to the wrong doc); `test_page.js` follows the new select-mode removal of a discussion. It had been crashing without printing FAIL.\n\n## Merge\n`origin/main` (33 commits) merged into `cl10` with no conflicts.\n\n## Needs his device\nA look on your own phone and computer: the pictures come from an emulated iPhone 13 in a cloud browser, not from a real device.\n\nNot checked: a real phone or tablet in hand; iOS Safari itself (Chromium emulates its size and touch, not its engine); the claude.ai Artifact runtime (only the local server's page).\n\nCommits: 2deff35 (test_strings), f1f0bed (UI fixes), b972dd6 (pictures), on top of the WIP e2694bf (the ~/.local/bin guard).",
+ "captions": [
+  "Sections, as opened: audit names folded (computer 1280x800)",
+  "Sections, as opened: audit names folded (phone, iPhone 13 390x844)",
+  "Sections after a tap on Handoff (computer 1280x800)",
+  "Sections after a tap on Handoff (phone, iPhone 13 390x844)",
+  "A third post: Handoff folded, learned (computer 1280x800)",
+  "A third post: Handoff folded, learned (phone, iPhone 13 390x844)",
+  "Review chip on the train header (computer 1280x800)",
+  "Review chip on the train header (phone, iPhone 13 390x844)",
+  "Review chip on a step (CL9, unfolded) (computer 1280x800)",
+  "Review chip on a step (CL9, unfolded) (phone, iPhone 13 390x844)",
+  "The clerk's waiting clock, now gray (computer 1280x800)",
+  "The clerk's waiting clock, now gray (phone, iPhone 13 390x844)"
+ ],
+ "check": "python3 scripts/run_all_tests.py",
  "column": "info",
- "created_at": "2026-11-22T21:50:07Z",
+ "created_at": "2026-11-23T02:16:09Z",
  "from": "orchestrator",
+ "handoff": "The suite now fails if anything touches ~/.local/bin. A look on his real phone is still open. The phone post bar fix is in kit/board/shim.js (CL12 works on text running off screen: no overlap with its WIP).",
+ "image_groups": [
+  {
+   "count": 2,
+   "title": "Sections, as opened: audit names folded: computer vs phone"
+  },
+  {
+   "count": 2,
+   "title": "Sections after a tap on Handoff: computer vs phone"
+  },
+  {
+   "count": 2,
+   "title": "A third post: Handoff folded, learned: computer vs phone"
+  },
+  {
+   "count": 2,
+   "title": "Review chip on the train header: computer vs phone"
+  },
+  {
+   "count": 2,
+   "title": "Review chip on a step (CL9, unfolded): computer vs phone"
+  },
+  {
+   "count": 2,
+   "title": "The clerk's waiting clock, now gray: computer vs phone"
+  }
+ ],
+ "images": [
+  "docs/cl10/a1-sections-default-computer.png",
+  "docs/cl10/a1-sections-default-phone.png",
+  "docs/cl10/a2-sections-tapped-computer.png",
+  "docs/cl10/a2-sections-tapped-phone.png",
+  "docs/cl10/a3-sections-learned-computer.png",
+  "docs/cl10/a3-sections-learned-phone.png",
+  "docs/cl10/b1-review-chips-computer.png",
+  "docs/cl10/b1-review-chips-phone.png",
+  "docs/cl10/b2-review-chip-step-computer.png",
+  "docs/cl10/b2-review-chip-step-phone.png",
+  "docs/cl10/c1-waiting-clock-computer.png",
+  "docs/cl10/c1-waiting-clock-phone.png"
+ ],
+ "issues": [
+  "none open"
+ ],
+ "layout_computer": "rows",
+ "layout_phone": "rows",
+ "not_checked": [
+  "a real phone in his hand (needs his device)",
+  "iOS Safari's engine (Chromium emulation only)",
+  "the claude.ai Artifact runtime"
+ ],
  "parent": "CL9",
  "part": "CL10",
  "planned_by": "orchestrator",
- "session_id": "board-cl10",
- "status": "in progress",
+ "session_id": "session_01AE1HGjnw5W8z3Gs4aJi6fe",
+ "status": "complete",
  "title": "See the new UI work, then stop tests touching ~/.local/bin",
  "train": "cli",
- "updated_at": "2026-11-22T22:43:38Z"
+ "updated_at": "2026-11-23T02:16:13Z",
+ "verdict": "The new UI (folding sections, review chips, waiting clock) works at computer and phone sizes, with 3 fixes; run_all_tests.py writes 0 files to ~/.local/bin, and 7/7 suites pass."
 }

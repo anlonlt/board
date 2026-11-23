@@ -1,12 +1,11 @@
 {
  "column": "info",
- "created_at": "2026-11-23T02:06:38Z",
+ "created_at": "2026-11-23T02:19:37Z",
  "rows": [
   {
    "also": [],
    "children": [
     "CL1",
-    "CL10",
     "CL11",
     "CL13",
     "CL14",
@@ -15,9 +14,9 @@
     "CL17",
     "CL18",
     "CL19",
-    "CL12",
     "CL20",
-    "CL21"
+    "CL21",
+    "CL12"
    ],
    "parent": "",
    "part": "P-cli",
@@ -299,17 +298,6 @@
    "also": [],
    "children": [],
    "parent": "P-cli",
-   "part": "CL10",
-   "post": "cl10-see-the-new-ui-work-then-stop-tests-touc",
-   "prompt": "",
-   "session": "board-cl10",
-   "state": "running",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [],
-   "parent": "P-cli",
    "part": "CL11",
    "post": "cl11-one-board-token-per-machine-kept-across",
    "prompt": "",
@@ -398,22 +386,11 @@
    "also": [],
    "children": [],
    "parent": "P-cli",
-   "part": "CL12",
-   "post": "cl12-board-ui-text-never-runs-off-screen-badg",
-   "prompt": "",
-   "session": "session_01AE1HGhgv7nxdCEvuM9YNsN",
-   "state": "running",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [],
-   "parent": "P-cli",
    "part": "CL20",
    "post": "cl20-resume-reads-attached-boards",
    "prompt": "",
-   "session": "28b46b80-c031-5e0d-a4b4-23ace846ca3d",
-   "state": "running",
+   "session": "session_01AE1HGipTLNXUp5F9rr6qHP",
+   "state": "idle",
    "store": []
   },
   {
@@ -429,7 +406,9 @@
   },
   {
    "also": [],
-   "children": [],
+   "children": [
+    "CL10"
+   ],
    "parent": "CL8",
    "part": "CL9",
    "post": "cl9-checks-that-must-be-able-to-fail-breaks",
@@ -437,8 +416,30 @@
    "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "CL9",
+   "part": "CL10",
+   "post": "cl10-see-the-new-ui-work-then-stop-tests-touc",
+   "prompt": "",
+   "session": "session_01AE1HGjnw5W8z3Gs4aJi6fe",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL12",
+   "post": "cl12-board-ui-text-never-runs-off-screen-badg",
+   "prompt": "",
+   "session": "session_01AE1HGhgv7nxdCEvuM9YNsN",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T02:06:38Z"
+ "updated_at": "2026-11-23T02:19:37Z"
 }
