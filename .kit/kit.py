@@ -404,8 +404,13 @@ def answer_delay():
 
 
 def open_(m, since="2000-01-01"):
+    return _open_of(board_docs(m, "comments"), since)
+
+
+def _open_of(comments, since="2000-01-01", empty=True):
+    """The owner's comments with no answer after them, from a {doc_id: comment} map (the host's or an attached board's)."""
     ad = answer_delay()
-    cs = [dict(v, doc_id=i) for i, v in board_docs(m, "comments").items() if v.get("created_at") and v.get("post_id")]
+    cs = [dict(v, doc_id=i) for i, v in comments.items() if v.get("created_at") and v.get("post_id")]
     answers = [c for c in cs if ad.is_answer(c)]
     lines = []
     for h in sorted(cs, key=lambda c: c["created_at"]):
@@ -419,6 +424,8 @@ def open_(m, since="2000-01-01"):
             continue
         lines.append("%s on %s, his %s: %s" % (h["doc_id"], h["post_id"], h["created_at"][:16].replace("T", " "),
                                                (h.get("text") or "").replace("\n", " ")[:100]))
+    if not empty:
+        return lines
     return "\n".join(lines) if lines else "nothing of his open since %s" % since
 
 
@@ -2365,13 +2372,9 @@ def _launch_traces(pid, p):
     return out
 
 
-def resume(m, db_path=None, alive=None, cli=None):
-    """Everything a fresh orchestrator needs after a context reset, from the board alone: each active train's steps
-    (the task list to rebuild), which part sessions still run, and what of the owner's waits for an answer."""
-    active = _active_cli(cli)
-    posts, _ = _load_board_docs(m, db_path=db_path)
-    if alive is None:
-        alive = None if active == "agy" else _alive_sessions()
+def _train_lines(posts, alive, h="##", board=None):
+    """(lines, number of active trains) for the trains of one board's posts. `board`: an attached board
+    {id, clone, branches}, whose open steps also carry their branch, last checkpoint and relaunch line."""
     trains = {}
     for pid, p in posts.items():
         if pid.startswith("_") or p.get("removed") or not str(p.get("train") or "").strip():
@@ -2379,7 +2382,7 @@ def resume(m, db_path=None, alive=None, cli=None):
         t = str(p["train"]).strip()
         t = t[2:] if t.lower().startswith("p-") else t
         trains.setdefault(t, []).append((pid, p))
-    out = ["# Resume (from the board; nothing else carries over)"]
+    out = []
     n_active = 0
     for t in sorted(trains):
         nat = lambda v: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", str(v).lower())]
@@ -2389,7 +2392,7 @@ def resume(m, db_path=None, alive=None, cli=None):
             continue
         n_active += 1
         out.append("")
-        out.append("## Train %s (%d/%d done)" % (t, len(steps) - len(open_steps), len(steps)))
+        out.append("%s Train %s (%d/%d done)" % (h, t, len(steps) - len(open_steps), len(steps)))
         for pid, p in steps:
             col = str(p.get("column") or "info").lower()
             st = str(p.get("status") or "").lower()
@@ -2407,7 +2410,7 @@ def resume(m, db_path=None, alive=None, cli=None):
                 who = " · session %s (%s)" % (sess, life)
             else:
                 who = " · planned, not launched" if st == "planned" else ""
-            if st in ("planned", "in progress") and not (sess and alive is not None and sess in alive):
+            if board is None and st in ("planned", "in progress") and not (sess and alive is not None and sess in alive):
                 traces = _launch_traces(pid, p)
                 if traces and not (sess.startswith(("session_", "pending")) and alive is None):
                     who = " · launched, died (%s; no live session)%s" % (", ".join(traces["found"]), (
@@ -2425,6 +2428,179 @@ def resume(m, db_path=None, alive=None, cli=None):
                         quiet = " · quiet %d min: send it a save point (commit and push now)" % mins
             out.append("- %s %s `%s` %s%s%s%s" % (box, p.get("part") or pid, pid, str(p.get("title") or "")[:80],
                                                   (" · " + st) if st and st != "planned" else "", who, quiet))
+            if board is not None:
+                out.extend(_attached_step_detail(board, pid, p, "running" not in who or "not running" in who))
+    return out, n_active
+
+
+# ---------------------------------------------------------------- attached boards (cross-repo, kit_repos/_index)
+def _repo_id(name):
+    """Same id as board_server.py and kit_artifact_sync.py give an attached repo."""
+    return re.sub(r"[^a-z0-9_-]+", "-", str(name).lower()).strip("-")
+
+
+def _read_mirror_board(clone):
+    """{posts, comments} of a clone's board: its local board database, else its board-mirror branch (git objects,
+    nothing checked out), as kit_artifact_sync.py boards reads it."""
+    out = {"posts": {}, "comments": {}}
+    db = os.path.join(clone, ".kit", "board_data", "board.db")
+    if os.path.isfile(db):
+        try:
+            p, c = _load_board_docs(clone, db_path=db)
+            if p or c:
+                return {"posts": p, "comments": c}
+        except sqlite3.Error:
+            pass
+    try:
+        branch = json.load(open(os.path.join(clone, ".kit", "config.json"), encoding="utf-8")).get("mirror", {}).get("branch")
+    except (OSError, ValueError, AttributeError):
+        branch = None
+    branch = branch or "board-mirror"
+
+    def git(*args):
+        return subprocess.run(["git", "-C", clone] + list(args), capture_output=True, timeout=60)
+    try:
+        git("fetch", "-q", "origin", "%s:refs/remotes/origin/%s" % (branch, branch))
+        ref = next((r for r in ("origin/" + branch, branch) if git("rev-parse", "--verify", "--quiet", r).returncode == 0), None)
+        if not ref:
+            return out
+        arc = git("archive", "--format=tar", ref, "board")
+    except (OSError, subprocess.SubprocessError):
+        return out
+    if arc.returncode != 0 or not arc.stdout:
+        return out
+    import io
+    import tarfile
+    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
+        for mem in tf.getmembers():
+            parts = mem.name.lstrip("./").split("/")
+            if not mem.isfile() or len(parts) != 3 or parts[0] != "board" or parts[1] not in out or not parts[2].endswith(".json"):
+                continue
+            try:
+                data = json.loads(tf.extractfile(mem).read().decode("utf-8"))
+            except (ValueError, UnicodeDecodeError, AttributeError):
+                continue
+            if isinstance(data, dict) and isinstance(data.get("data"), dict) and set(data) <= {"id", "data", "version", "updated_at"}:
+                data = data["data"]
+            if isinstance(data, dict):
+                out[parts[1]][parts[2][:-5]] = data
+    return out
+
+
+def _attached_boards():
+    """The boards attached to this one: [{id, name, github, clone, posts, comments, source}]. Which boards: the
+    config's portfolio and the Artifact's kit_repos/_index (when `artifact pull` or an ArtifactData list saved it in
+    the local copy's in/ folder). Their posts and comments: the board's clone (its local board, else its board-mirror
+    branch), with what the Artifact holds under repos/<id>/ laid over it (comments written on the page land there)."""
+    cfg = _kit_config()
+    me = {_repo_id(cfg.get("project") or os.path.basename(ROOT))}
+    rows = []
+    for item in cfg.get("portfolio") or []:
+        if isinstance(item, dict):
+            gh = str(item.get("github") or "")
+            gh = gh[len("github:"):] if gh.startswith("github:") else gh
+            rows.append({"name": str(item.get("name") or gh.split("/")[-1] or os.path.basename(str(item.get("path") or ""))),
+                         "github": gh.strip("/"), "path": item.get("path")})
+    in_dir = os.path.join(_art_dir(), "in")
+    idx = _read_json(os.path.join(in_dir, "kit_repos", "_index.json")) or {}
+    if isinstance(idx.get("data"), dict):
+        idx = idx["data"]
+    for r in idx.get("repos") or []:
+        if isinstance(r, dict):
+            rows.append({"name": str(r.get("name") or r.get("id") or ""), "id": r.get("id"), "github": str(r.get("github") or "")})
+    for d in sorted(glob.glob(os.path.join(in_dir, "repos", "*"))):
+        if os.path.isdir(d):
+            rows.append({"name": os.path.basename(d), "id": os.path.basename(d), "github": ""})
+    boards, seen = [], {}
+    for r in rows:
+        rid = _repo_id(r.get("id") or r.get("name") or "")
+        if not rid or rid == "all" or rid in me:
+            continue
+        if rid in seen:
+            b = seen[rid]
+            b["github"] = b["github"] or r.get("github") or ""
+            b["path"] = b.get("path") or r.get("path")
+            continue
+        seen[rid] = dict(r, id=rid)
+        boards.append(seen[rid])
+    up = os.path.dirname(ROOT)
+    for b in boards:
+        gh_name = b["github"].split("/")[-1] if b["github"] else ""
+        cands = [b.get("path"), os.path.join(up, gh_name) if gh_name else None, os.path.join(up, b["name"]), os.path.join(up, b["id"])]
+        b["clone"] = next((os.path.abspath(c) for c in cands if c and os.path.isdir(os.path.join(c, ".git"))
+                           and os.path.abspath(c) != ROOT), None)
+        docs = _read_mirror_board(b["clone"]) if b["clone"] else {"posts": {}, "comments": {}}
+        sources = ["its clone %s" % b["clone"]] if b["clone"] and (docs["posts"] or docs["comments"]) else []
+        n_art = 0
+        for coll in ("posts", "comments"):
+            for f in sorted(glob.glob(os.path.join(in_dir, "repos", b["id"], coll, "*.json"))):
+                d = _read_json(f)
+                if isinstance(d, dict) and isinstance(d.get("data"), dict) and "id" in d:
+                    d = d["data"]
+                if isinstance(d, dict):
+                    docs[coll][os.path.basename(f)[:-5]] = d
+                    n_art += 1
+        if n_art:
+            sources.append("the Artifact's repos/%s (local copy)" % b["id"])
+        b.update(docs)
+        b["source"] = " + ".join(sources) or "nothing here"
+        b["branches"] = []
+        if b["clone"]:
+            try:
+                rb = subprocess.run(["git", "-C", b["clone"], "branch", "-r", "--format=%(refname:short)"],
+                                    capture_output=True, text=True, timeout=30).stdout
+                b["branches"] = [x.split("/", 1)[1] for x in rb.splitlines() if x.startswith("origin/") and "HEAD" not in x]
+            except (OSError, subprocess.SubprocessError):
+                pass
+    shown = [b for b in boards if b["clone"] or b["posts"] or b["comments"]]
+    skipped = [b["id"] for b in boards if b not in shown]
+    return shown, skipped
+
+
+def _attached_step_detail(board, pid, p, stopped):
+    """Indented lines under an attached board's open step: branch, last checkpoint, relaunch line."""
+    part = str(p.get("part") or "")
+    s = re.escape(part.lower())
+    brs = [x for x in board.get("branches") or [] if part and re.search(r"(^|[-/_])%s$" % s, x.lower())]
+    if p.get("branch") and p["branch"] not in brs:
+        brs.insert(0, str(p["branch"]))
+    out = []
+    if brs:
+        ck = ""
+        if board.get("clone"):
+            try:
+                ck = subprocess.run(["git", "-C", board["clone"], "log", "-1", "--format=%h %cI %s", "origin/" + brs[0]],
+                                    capture_output=True, text=True, timeout=30).stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                ck = ""
+        out.append("  branch %s%s" % (", ".join("`%s`" % x for x in brs), (" · last checkpoint %s" % ck[:100]) if ck else ""))
+    elif p.get("updated_at"):
+        out.append("  no branch found · last update %s" % str(p["updated_at"])[:16].replace("T", " "))
+    st = str(p.get("status") or "").lower()
+    if stopped and ("progress" in st or st == "planned") and str(p.get("column") or "info").lower() == "info":
+        prompt = "docs/prompts/%s.md" % pid
+        has = bool(board.get("clone")) and os.path.exists(os.path.join(board["clone"], prompt))
+        where = "in %s's clone (%s)" % (board["id"], board["clone"]) if board.get("clone") else "in a clone of %s" % (board.get("github") or board["id"])
+        if has or brs:
+            out.append("  relaunch %s: %s" % (where, _launch_line(part or pid, prompt) if has else
+                       "continue from branch `%s` (no prompt file %s there)" % (brs[0], prompt)))
+        elif p.get("session_id"):
+            out.append("  relaunch %s: no prompt file and no branch for it; ask its orchestrator or the owner" % where)
+    return out
+
+
+def resume(m, db_path=None, alive=None, cli=None):
+    """Everything a fresh orchestrator needs after a context reset, from the board alone: each active train's steps
+    (the task list to rebuild, one TaskCreate each with metadata {train, part}), which part sessions still run, and
+    what of the owner's waits for an answer; then the same for each attached board (kit_repos/_index), under its
+    own heading, with its id so a reply goes to repos/<id>/comments."""
+    active = _active_cli(cli)
+    posts, _ = _load_board_docs(m, db_path=db_path)
+    if alive is None:
+        alive = None if active == "agy" else _alive_sessions()
+    out = ["# Resume (from the board; nothing else carries over)"]
+    lines, n_active = _train_lines(posts, alive)
+    out.extend(lines)
     if not n_active:
         out.append("")
         out.append("No train has an open step.")
@@ -2440,12 +2616,54 @@ def resume(m, db_path=None, alive=None, cli=None):
         out.append(open_(m))
     except Exception as e:  # the copy may be mid-sync; the orchestrator can rerun `kit.py open`
         out.append("(could not read: %s)" % e)
+    try:
+        boards, skipped = _attached_boards()
+    except Exception as e:  # never lose the host's resume over an attached board
+        boards, skipped = [], []
+        out.append("")
+        out.append("(attached boards: could not read: %s)" % e)
+    for b in boards:
+        out.append("")
+        out.append("## Attached board %s%s" % (b["id"], (" (%s)" % b["github"]) if b.get("github") else ""))
+        out.append("Read from %s." % b["source"] + ("" if b.get("clone") else
+                   " No clone here: add_repo %s, git clone it next to this repo, run resume again." % (b.get("github") or b["id"])))
+        lines, n = _train_lines(b["posts"], alive, h="###", board=b)
+        out.extend(lines)
+        if not n:
+            out.append("No train of %s has an open step." % b["id"])
+        out.append("")
+        out.append("### The owner's unanswered comments on %s (answer in repos/%s/comments)" % (b["id"], b["id"]))
+        try:
+            ol = _open_of(b["comments"], empty=False)
+        except Exception as e:
+            ol = ["(could not read: %s)" % e]
+        out.extend(["[repo %s] %s" % (b["id"], x) for x in ol] or ["nothing of his open on %s" % b["id"]])
+    if skipped:
+        out.append("")
+        out.append("(Not read: %s: listed as attached, but no clone here and nothing of it in the local copy.)"
+                   % ", ".join(skipped))
+    if boards and artifact_url() and not glob.glob(os.path.join(_art_dir(), "in", "repos", "*")):
+        out.append("")
+        out.append("(Comments written on the Artifact page on an attached board live only there: `ArtifactData` `list`, `url` "
+                   "%s, `collection: \"repos/<id>/comments\"` (and `repos/<id>/posts`), `out_dir: \"%s\"`, then resume again.)"
+                   % (artifact_url(), os.path.join(_art_dir(), "in", "repos", "<id>", "comments")))
     out.append("")
     if active == "agy":
         out.append("Resume in agy: cross-check each session UUID above with `manage_subagents(Action=\"list\")`. "
                    "Plan and update steps with `python3 -I .kit/kit.py step new|start|complete|drop` (the train IS your "
                    "task list). A step whose session is not running and not done: check its branch (`git branch -a`) "
-                   "and continue it with `invoke_subagent(..., Workspace=\"share\")` or ask the owner.")
+                   "and continue it with `invoke_subagent(..., Workspace=\"share\")` or ask the owner."
+                   + (" Each step belongs to a board: this one (\"%s\") or the attached board named in its heading; "
+                      "an attached board's step is planned, updated and continued in that board's clone (its relaunch "
+                      "line), and a reply to his comment there goes to repos/<id>/comments."
+                      % _repo_id(_kit_config().get("project") or os.path.basename(ROOT)) if boards else ""))
+    elif boards:
+        out.append("Rebuild your task list: one TaskCreate per open step above, subject \"<PART> <title>\", metadata "
+                   "{\"board\": \"<id>\", \"train\": \"<train>\", \"part\": \"<PART>\"} (board: this board's id \"%s\", or the "
+                   "attached board's id from its heading; the existing post is adopted, not duplicated); TaskUpdate "
+                   "in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it (an attached "
+                   "board's step from its own clone, with its relaunch line) or ask the owner."
+                   % (_repo_id(_kit_config().get("project") or os.path.basename(ROOT))))
     else:
         out.append("Rebuild your task list: one TaskCreate per open step above, subject \"<PART> <title>\", metadata "
                    "{\"train\": \"<train>\", \"part\": \"<PART>\"} (the existing post is adopted, not duplicated); "
