@@ -31,8 +31,8 @@ class ArtifactMode(unittest.TestCase):
         os.environ["KIT_ARTIFACT_PREFIX"] = ""        # a board of its own (the kit repo's config attaches it under repos/board/)
         self.addCleanup(os.environ.pop, "KIT_ARTIFACT_PREFIX", None)
 
-    def remote(self, coll, did, data):
-        d = self.art / "in" / coll
+    def remote(self, coll, did, data, where="in"):
+        d = self.art / where / coll
         d.mkdir(parents=True, exist_ok=True)
         (d / (did + ".json")).write_text(json.dumps(data))
 
@@ -63,6 +63,7 @@ class ArtifactMode(unittest.TestCase):
         self.assertEqual([(e["doc_id"], "if_version" in e) for e in self.entries(r)], [("P2", False)])
         self.assertIn("artifact pin posts/P1=<version>", kit.artifact_push_text(r))
 
+        self.remote("posts", "P1", {"title": "Step one", "column": "info", "status": "planned"}, where="pin")  # CL31: the get
         kit.artifact_pin(["posts/P1=3"])
         r = self.push()
         got = {e["doc_id"]: e for e in self.entries(r)}

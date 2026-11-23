@@ -984,6 +984,86 @@ def _merge_fields(remote, local, base):
     return out
 
 
+_MISSING = object()
+_ROW_KEYS = ("key", "id", "part", "post", "label", "name")
+_STAMPS = ("updated_at", "created_at", "at_utc")
+
+
+def _row_key(row):
+    if not isinstance(row, dict):
+        return None
+    k = tuple((f, json.dumps(row[f], sort_keys=True)) for f in _ROW_KEYS if f in row)
+    return k or None
+
+
+def _keyed(rows):
+    """{key: row} for a list of dicts each with its own key (None when a row has none or two share one)."""
+    if not isinstance(rows, list) or not rows:
+        return None
+    out = {}
+    for r in rows:
+        k = _row_key(r)
+        if k is None or k in out:
+            return None
+        out[k] = r
+    return out
+
+
+def _merge_deep(live, here, base, name=""):
+    """CL31: a card (posts/_dashboard, posts/_trains) three-way: what this copy changed since the base, laid into the
+    live card, field by field and row by row (rows matched by their key: key/part+post/...). What the live card gained
+    since the base (a row's store list, a hand-written note) is kept; a value both sides changed keeps the live one,
+    except a timestamp, which keeps the later."""
+    if here == base:
+        return live
+    if live == base or live is _MISSING:
+        return here
+    if here == live:
+        return here
+    if isinstance(live, dict) and isinstance(here, dict):
+        b = base if isinstance(base, dict) else {}
+        out = {}
+        for k in list(live) + [k for k in here if k not in live]:
+            v = _merge_deep(live.get(k, _MISSING), here.get(k, _MISSING), b.get(k, _MISSING), k)
+            if v is not _MISSING:
+                out[k] = v
+        return out
+    if isinstance(live, list) and isinstance(here, list):
+        kl, kh = _keyed(live), _keyed(here)
+        kb = _keyed(base) if isinstance(base, list) and base else {}
+        if kl is not None and kh is not None and kb is not None:
+            out = []
+            for k, row in kl.items():                      # the live order, then the rows added here
+                v = _merge_deep(row, kh.get(k, _MISSING), kb.get(k, _MISSING))
+                if v is not _MISSING:
+                    out.append(v)
+            out += [row for k, row in kh.items() if k not in kl and k not in kb]
+            return out
+    if name in _STAMPS and isinstance(live, str) and isinstance(here, str):
+        return max(live, here)
+    return live
+
+
+def _is_card(did):
+    return str(did).startswith("_")
+
+
+def _card_older(here, other):
+    """CL31 (O53: Harmonize's local board seeded its cards at start, older than the live ones): a card here whose
+    updated_at is before the other copy's is never sent over it."""
+    a, b = (here or {}).get("updated_at"), (other or {}).get("updated_at")
+    return isinstance(a, str) and isinstance(b, str) and a < b
+
+
+def _merge_doc(did, remote, local, base):
+    """The local document laid over the remote one: cards deep (CL31), posts and comments by field."""
+    if _is_card(did):
+        if _card_older(local, remote):
+            return remote                      # an older (or seeded) card here: the live one stands
+        return _merge_deep(remote, local, base)
+    return _merge_fields(remote, local, base)
+
+
 def artifact_load(url=None, token=None, in_dir=None):
     url = url or local_board_url()
     if not _ensure_local_board(url):
@@ -1004,7 +1084,7 @@ def artifact_load(url=None, token=None, in_dir=None):
             d = _board_request(url, "doc/%s/%s" % (coll, urllib.parse.quote(did, safe="")), token=token)
             local = d["data"] if d.get("exists") else None
             if local is not None and base is not None and local != base:       # changed here since the last sync
-                new = _merge_fields(remote, local, base) if remote != base else local
+                new = _merge_doc(did, remote, local, base) if remote != base else local
                 merged += new != local
                 kept += new == local
             else:
@@ -1150,8 +1230,10 @@ def artifact_unsent(url=None, token=None):
     n = 0
     for coll in ART_COLLS:
         for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
-            if _read_json(_base_path(coll, row["id"])) != (row.get("data") or {}):
-                n += 1
+            base = _read_json(_base_path(coll, row["id"]))
+            data = row.get("data") or {}
+            if base != data and not (_is_card(row["id"]) and base is not None and _card_older(data, base)):
+                n += 1                         # CL31: an older card here is dropped at push, not unsent
     return {"changed": n, "batches": sorted(glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")))}
 
 
@@ -1182,7 +1264,7 @@ def artifact_push(url=None, token=None, out_dir=None):
     for f in glob.glob(os.path.join(out_dir, "batch-*.json")) + glob.glob(os.path.join(out_dir, "docs", "*.json")):
         os.remove(f)
     st = _art_state()
-    entries, need_pin, every = [], [], []
+    entries, need_pin, every, dropped = [], [], [], []
     for coll in ART_COLLS:
         res = _board_request(url, "db/%s" % coll, token=token)
         for row in res.get("docs") or []:
@@ -1192,6 +1274,13 @@ def artifact_push(url=None, token=None, out_dir=None):
             if base == data:
                 continue
             key = "%s/%s" % (coll, did)
+            if _is_card(did) and base is not None and _card_older(data, base):
+                # CL31: an older card here (a seed, a stale rebuild): put the copy the Artifact had back, never send it
+                _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did,
+                                                             "data": base, "if_version": row.get("version", 0)}]}, token=token)
+                dropped.append(key)
+                every[-1] = base
+                continue
             e = {"op": "set", "collection": _art_prefix() + coll, "doc_id": did}
             if key in (st.get("not_there") or []) and key not in st["versions"]:
                 base = None                              # never in the Artifact: a create
@@ -1231,7 +1320,8 @@ def artifact_push(url=None, token=None, out_dir=None):
         p = os.path.join(out_dir, "batch-%02d.json" % (i + 1))
         write_doc(p, b)
         paths.append(p)
-    return {"batches": paths, "need_pin": need_pin, "writes": len(entries), "board": artifact_url(), "files": files_text}
+    return {"batches": paths, "need_pin": need_pin, "writes": len(entries), "board": artifact_url(), "files": files_text,
+            "dropped": dropped}
 
 
 def _kas():
@@ -1291,11 +1381,14 @@ def artifact_push_text(r):
     out = []
     if r.get("files"):
         out.append(r["files"].rstrip("\n") + "\n(The posts' own batches below can go before or after; the page shows a file once it is mapped.)")
+    if r.get("dropped"):
+        out.append("Not sent, older than the Artifact's copy (put back here): %s." % ", ".join(r["dropped"]))
     if r["need_pin"]:
         out.append("First, their versions (changed here, never sent from this copy): for each, `ArtifactData` `get`, `url` %s, "
-                   "that collection and doc_id, `out_dir: \"/tmp/kit-pin\"`; then one command: `python3 -I .kit/kit.py "
+                   "that collection and doc_id, `out_dir: \"%s\"` (the pin merges this copy into the live document "
+                   "it saves: a newer live card is never written over); then one command: `python3 -I .kit/kit.py "
                    "artifact pin %s` with each <version> the get named; then push again." % (
-                       board, " ".join("%s=<version>" % k for k in r["need_pin"])))
+                       board, _pin_dir(), " ".join("%s=<version>" % k for k in r["need_pin"])))
         pre = _art_prefix()
         if pre:
             out[-1] = out[-1].replace("that collection and doc_id", "collection `%s<collection>` and the doc_id" % pre)
@@ -1304,8 +1397,8 @@ def artifact_push_text(r):
                    "`python3 -I .kit/kit.py artifact sent %s`." % (board, p, p))
     if not out:
         out.append("Nothing to send: the Artifact has every change made here.")
-    out.append("A refused batch names a document's real version: `python3 -I .kit/kit.py artifact pin <collection>/<id>=<version>`, "
-               "then push again.")
+    out.append("A refused batch names a document's real version: `ArtifactData` `get` it with `out_dir: \"%s\"`, then "
+               "`python3 -I .kit/kit.py artifact pin <collection>/<id>=<version>`, then push again." % _pin_dir())
     return "\n".join(out) + "\n"
 
 
@@ -1351,12 +1444,61 @@ def artifact_sent(batch_path):
     return len(batch)
 
 
-def artifact_pin(pairs):
+def _pin_dir():
+    return os.path.join(_art_dir(), "pin")
+
+
+def _pinned_live(coll, did):
+    """CL31: the live document the `get` before a pin saved ({data} or the bare data), and its file; (None, None)."""
+    pre = _art_prefix()
+    for d in (_pin_dir(), "/tmp/kit-pin"):
+        for c in dict.fromkeys((pre + coll, coll)):
+            f = os.path.join(d, *c.split("/"), did + ".json")
+            doc = _read_json(f)
+            if isinstance(doc, dict):
+                if isinstance(doc.get("data"), dict) and ("version" in doc or "doc_id" in doc or len(doc) <= 3):
+                    doc = doc["data"]
+                return doc, f
+    return None, None
+
+
+def artifact_pin(pairs, url=None, token=None, report=None):
+    """A document's version, for the next push. CL31: the version a fresh `get` names belongs to the live copy that get
+    saved (in _pin_dir()): when that copy is not this copy's base (the live document changed since), this copy's
+    changes are merged into it first, so the push never writes over what the live copy gained (a card's store lists,
+    hand-written notes). A pin of a document this copy changed, without that live copy, is refused."""
     st = _art_state()
     n = 0
+    report = report if report is not None else []
     for p in pairs:
         k, _, v = p.partition("=")
         k = _art_key(k)
+        if k.count("/") == 1 and not k.startswith("kit_docs/") and v.strip().isdigit():
+            coll, did = k.split("/")
+            base = _read_json(_base_path(coll, did))
+            live, f = _pinned_live(coll, did)
+            if live is None:
+                if base is not None:
+                    report.append("%s: not pinned: no live copy in %s (`ArtifactData` `get` it with that `out_dir` first, "
+                                  "then pin again): a pin without it would write this copy over the live one" % (k, _pin_dir()))
+                    continue
+            elif live != base:
+                u = url or local_board_url()
+                tok = _resolve_board_token(token)
+                d = _board_request(u, "doc/%s/%s" % (coll, urllib.parse.quote(did, safe="")), token=tok)
+                here = d["data"] if d.get("exists") else None
+                new = live if here is None else _merge_doc(did, live, here, base)
+                if new != here:
+                    _board_request(u, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": new,
+                                                               "if_version": d.get("version", 0)}]}, token=tok)
+                os.makedirs(os.path.dirname(_base_path(coll, did)), exist_ok=True)
+                write_doc(_base_path(coll, did), live)
+                report.append("%s: the live copy was newer: this copy's changes merged into it" % k)
+            if f:
+                try:
+                    os.remove(f)                   # used once: a later pin needs a fresh get
+                except OSError:
+                    pass
         if k.startswith("kit_docs/") and v.strip().isdigit():
             # CL30: a mirrored document's version lives with the files state (a refused push names it)
             kas = _kas()
@@ -4170,7 +4312,10 @@ def main(argv=None):
             elif a.action == "sent":
                 print("recorded: %d writes" % sum(artifact_sent(p) for p in a.args))
             elif a.action == "pin":
-                print("pinned: %d" % artifact_pin(a.args))
+                rep = []
+                print("pinned: %d" % artifact_pin(a.args, report=rep))
+                for line in rep:
+                    print(line)
             elif a.action == "status":
                 r = artifact_unsent(url=a.board_url, token=a.token)
                 if not (r["changed"] or r["batches"]):
