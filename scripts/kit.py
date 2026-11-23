@@ -1047,9 +1047,18 @@ def _is_card(did):
     return str(did).startswith("_")
 
 
+def _card_older(here, other):
+    """CL31 (O53: Harmonize's local board seeded its cards at start, older than the live ones): a card here whose
+    updated_at is before the other copy's is never sent over it."""
+    a, b = (here or {}).get("updated_at"), (other or {}).get("updated_at")
+    return isinstance(a, str) and isinstance(b, str) and a < b
+
+
 def _merge_doc(did, remote, local, base):
     """The local document laid over the remote one: cards deep (CL31), posts and comments by field."""
     if _is_card(did):
+        if _card_older(local, remote):
+            return remote                      # an older (or seeded) card here: the live one stands
         return _merge_deep(remote, local, base)
     return _merge_fields(remote, local, base)
 
@@ -1220,8 +1229,10 @@ def artifact_unsent(url=None, token=None):
     n = 0
     for coll in ART_COLLS:
         for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
-            if _read_json(_base_path(coll, row["id"])) != (row.get("data") or {}):
-                n += 1
+            base = _read_json(_base_path(coll, row["id"]))
+            data = row.get("data") or {}
+            if base != data and not (_is_card(row["id"]) and base is not None and _card_older(data, base)):
+                n += 1                         # CL31: an older card here is dropped at push, not unsent
     return {"changed": n, "batches": sorted(glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")))}
 
 
@@ -1252,7 +1263,7 @@ def artifact_push(url=None, token=None, out_dir=None):
     for f in glob.glob(os.path.join(out_dir, "batch-*.json")) + glob.glob(os.path.join(out_dir, "docs", "*.json")):
         os.remove(f)
     st = _art_state()
-    entries, need_pin, every = [], [], []
+    entries, need_pin, every, dropped = [], [], [], []
     for coll in ART_COLLS:
         res = _board_request(url, "db/%s" % coll, token=token)
         for row in res.get("docs") or []:
@@ -1262,6 +1273,13 @@ def artifact_push(url=None, token=None, out_dir=None):
             if base == data:
                 continue
             key = "%s/%s" % (coll, did)
+            if _is_card(did) and base is not None and _card_older(data, base):
+                # CL31: an older card here (a seed, a stale rebuild): put the copy the Artifact had back, never send it
+                _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did,
+                                                             "data": base, "if_version": row.get("version", 0)}]}, token=token)
+                dropped.append(key)
+                every[-1] = base
+                continue
             e = {"op": "set", "collection": _art_prefix() + coll, "doc_id": did}
             if key in (st.get("not_there") or []) and key not in st["versions"]:
                 base = None                              # never in the Artifact: a create
@@ -1301,7 +1319,8 @@ def artifact_push(url=None, token=None, out_dir=None):
         p = os.path.join(out_dir, "batch-%02d.json" % (i + 1))
         write_doc(p, b)
         paths.append(p)
-    return {"batches": paths, "need_pin": need_pin, "writes": len(entries), "board": artifact_url(), "files": files_text}
+    return {"batches": paths, "need_pin": need_pin, "writes": len(entries), "board": artifact_url(), "files": files_text,
+            "dropped": dropped}
 
 
 def _kas():
@@ -1361,6 +1380,8 @@ def artifact_push_text(r):
     out = []
     if r.get("files"):
         out.append(r["files"].rstrip("\n") + "\n(The posts' own batches below can go before or after; the page shows a file once it is mapped.)")
+    if r.get("dropped"):
+        out.append("Not sent, older than the Artifact's copy (put back here): %s." % ", ".join(r["dropped"]))
     if r["need_pin"]:
         out.append("First, their versions (changed here, never sent from this copy): for each, `ArtifactData` `get`, `url` %s, "
                    "that collection and doc_id, `out_dir: \"%s\"` (the pin merges this copy into the live document "

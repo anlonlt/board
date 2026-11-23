@@ -140,6 +140,25 @@ class CardPush(unittest.TestCase):
         got = self.sent(self.push())
         self.assertEqual(got["_trains"]["rows"][1]["session"], "s31")
 
+    def test_an_older_seeded_card_is_dropped_not_sent(self):
+        """O53, Harmonize 22:00: the local board seeded its cards at start, older than the live ones."""
+        self.remote("posts", "_trains", TRAINS)
+        kit.artifact_load(url=self.url, token=TOKEN)
+        seed = {"title": "Trains (seed)", "column": "notes", "updated_at": "2026-11-20T09:00:00Z", "rows": []}
+        self.local("posts/_trains", seed)
+        self.assertEqual(kit.artifact_unsent(url=self.url, token=TOKEN)["changed"], 0)   # the Stop hook does not block
+        r = self.push()
+        self.assertEqual(r["dropped"], ["posts/_trains"])
+        self.assertNotIn("posts/_trains", r["need_pin"])
+        self.assertNotIn("_trains", self.sent(r))
+        self.assertEqual(self.local("posts/_trains"), TRAINS)                              # the Artifact's copy back
+        # and a pin from a get of a newer live card takes the live card whole
+        self.local("posts/_trains", seed)
+        live = dict(TRAINS, updated_at="2026-11-23T22:08:00Z", title="Trains")
+        self.remote("posts", "_trains", live, where="pin")
+        self.pin("posts/_trains=57")
+        self.assertEqual(self.local("posts/_trains"), live)
+
 
 if __name__ == "__main__":
     unittest.main()
