@@ -258,5 +258,23 @@ with tempfile.TemporaryDirectory() as d:
                                 capture_output=True, text=True)
     check("--runtime claude installed hooks pass self-test", r_cl_hooks.returncode == 0)
 
+    # CL10: a trial install in a temp folder without KIT_BIN_DIR writes no launcher into ~/.local/bin
+    # (one such run left `board` pointing at a deleted /tmp install, and a stray `tmpuik7mjzc`)
+    fake_home = os.path.join(d, "home")
+    os.makedirs(fake_home)
+    t_tmp = os.path.join(d, "trial")
+    os.makedirs(t_tmp)
+    env_nb = {k: v for k, v in os.environ.items() if k != "KIT_BIN_DIR"}
+    env_nb["HOME"] = fake_home
+    r_nb = subprocess.run([sys.executable, "-I", os.path.join(HERE, "install.py"), t_tmp, "--project", "Trial",
+                           "--no-survey", "test", "--runtime", "agy"], capture_output=True, text=True, env=env_nb)
+    check("a temp-folder install without KIT_BIN_DIR skips its launchers and writes nothing to ~/.local/bin",
+          r_nb.returncode == 0 and "SKIPPED command `trial`" in r_nb.stdout
+          and not os.path.exists(os.path.join(fake_home, ".local", "bin")))
+    env_nb["KIT_BIN_DIR"] = os.path.join(d, "bin_trial")
+    r_nb2 = subprocess.run([sys.executable, "-I", os.path.join(HERE, "install.py"), t_tmp], capture_output=True, text=True, env=env_nb)
+    check("with KIT_BIN_DIR the same install writes its launcher there",
+          r_nb2.returncode == 0 and os.path.isfile(os.path.join(d, "bin_trial", "trial")))
+
 print("%d failed" % fails)
 sys.exit(1 if fails else 0)

@@ -34,7 +34,10 @@ const fs = require('fs'), path = require('path');
   const w = await p.evaluate(() => window.__writes);
   check('Remove on a post writes removed: true', w.length === 1 && w[0][0] === 'posts/P-a' && w[0][1].removed === true);
   await p.evaluate(() => { const a = document.getElementById('ask'); if (a) a.click(); }); await p.wait(400);
-  await p.evaluate(() => document.querySelector('.discrow .rm').click()); await p.wait(300);
+  // A discussion is removed in select mode (the pencil, last in #orch-hdr-tools): tick its square, then the bin (2nd tool).
+  await p.evaluate(() => document.querySelector('#orch-hdr-tools button:last-child').click()); await p.wait(200);
+  await p.evaluate(() => document.querySelector('.discrow .kit-pick-sq').click()); await p.wait(200);
+  await p.evaluate(() => document.querySelector('#orch-hdr-tools button:nth-child(2)').click()); await p.wait(300);
   check('Remove on a discussion hides all its messages', (await p.evaluate(() => window.__writes.map(x => x[0]))).includes('comments/c3')
         && !(await text('#sheet')).includes('a discussion'));
   check('no page error', errs.length === 0);

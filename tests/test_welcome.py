@@ -215,7 +215,7 @@ class TestInstallArenaAndGeneric(unittest.TestCase):
                             sys.executable, "-I", INSTALL_PY, target,
                             "--project", "Box-" + rt,
                             "--no-survey", "unit test",
-                            "--runtime", rt,
+                            "--runtime", rt, "--no-cmd",
                         ],
                         capture_output=True, text=True,
                     )
