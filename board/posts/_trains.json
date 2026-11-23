@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T01:57:49Z",
+ "created_at": "2026-11-23T01:57:54Z",
  "rows": [
   {
    "also": [],
@@ -307,6 +307,17 @@
   {
    "also": [],
    "children": [],
+   "parent": "CL8",
+   "part": "CL9",
+   "post": "cl9-checks-that-must-be-able-to-fail-breaks",
+   "prompt": "",
+   "session": "board-cl9",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
    "parent": "P-cli",
    "part": "CL11",
    "post": "cl11-one-board-token-per-machine-kept-across",
@@ -402,19 +413,8 @@
    "session": "anon-b8",
    "state": "idle",
    "store": []
-  },
-  {
-   "also": [],
-   "children": [],
-   "parent": "CL8",
-   "part": "CL9",
-   "post": "cl9-checks-that-must-be-able-to-fail-breaks",
-   "prompt": "",
-   "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
-   "state": "running",
-   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T01:57:49Z"
+ "updated_at": "2026-11-23T01:57:54Z"
 }
