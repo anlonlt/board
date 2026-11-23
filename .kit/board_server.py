@@ -73,6 +73,38 @@ def _merge_board_seen_posts(dst_posts, src_posts):
         dst_posts[pid] = out
 
 
+def _is_seen_doc(coll, doc_id):
+    return doc_id == "board-seen" and str(coll or "").startswith("data/users/")
+
+
+def _seen_doc_all_boards(primary, stores_map, primary_id, coll, doc_id):
+    """CL21: his read marks for every board live in the primary store's doc, an attached board's post under
+    "repos/<board>/<post>" (the page's seenKey). Marks an attached board kept in its own store before CL21 are
+    shown under that prefix until the page writes its own (the primary doc is never rewritten here)."""
+    res = primary.get_doc(coll, doc_id)
+    data = dict(res.get("data") or {}) if res.get("exists") else {}
+    posts = dict(data.get("posts") or {}) if isinstance(data.get("posts"), dict) else {}
+    added = False
+    for rid, st in stores_map.items():
+        if rid == primary_id or st is primary:
+            continue
+        old = st.get_doc(coll, doc_id)
+        old_posts = (old.get("data") or {}).get("posts") if old.get("exists") else None
+        if not isinstance(old_posts, dict):
+            continue
+        for pid, mark in old_posts.items():
+            key = "repos/" + rid + "/" + pid
+            if key not in posts:
+                posts[key] = mark
+                added = True
+    if not added:
+        return res
+    data["posts"] = posts
+    out = dict(res)
+    out["data"] = data
+    return out
+
+
 def _deep_merge_doc(dst, src, doc_id=None):
     for k, v in src.items():
         if doc_id == "board-seen" and k == "posts" and isinstance(v, dict) and isinstance(dst.get(k), dict):
@@ -1876,6 +1908,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             return rid == "all" and len(stores_map) > 1
 
         def _store_for_doc(self, parsed, coll, doc_id):
+            if _is_seen_doc(coll, doc_id) and not self._scoped_user_repo():
+                return store, primary_repo_id   # CL21: one read doc for every board (keys say the board)
             if self._is_all_repos(parsed):
                 for rid, st in stores_map.items():
                     if st.get_doc(coll, doc_id).get("exists"):
@@ -2828,6 +2862,9 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     coll, doc_id = split_path(doc_path)
                 except ValueError as e:
                     self._send_json(400, {"error": str(e)})
+                    return
+                if _is_seen_doc(coll, doc_id) and not self._scoped_user_repo():
+                    self._send_json(200, _seen_doc_all_boards(store, stores_map, primary_repo_id, coll, doc_id))
                     return
                 self._send_json(200, self._store(parsed).get_doc(coll, doc_id))
                 return
