@@ -886,6 +886,11 @@
    "sig": "cpkg0y.52",
    "v": []
   },
+  "_prefs": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "yi7mf9.4"
+  },
   "_waiting": {
    "at": "2026-11-20T03:08:38Z",
    "bt": "2026-11-20T03:08:38Z",
@@ -916,6 +921,11 @@
    "at": "2026-11-20T20:39:00.000Z",
    "sig": "1akefze.2lt"
   },
+  "cl1-cli-agnostic-install": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "1g4szoq.66"
+  },
   "cl10-see-the-new-ui-work-then-stop-tests-touc": {
    "at": "2026-11-22T22:57:41.075Z",
    "sig": "iiyv0w.51",
@@ -941,6 +951,61 @@
    "sig": "g9tbwq.4j",
    "v": []
   },
+  "cl15-step-0-measures-each-device-never-more-s": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "a74mbw.1ea"
+  },
+  "cl16-the-board-travels-in-git-always-current": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "xhwday.187"
+  },
+  "cl17-a-crashed-part-is-continued-from-its-las": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "v9uf35.194"
+  },
+  "cl18-web-takeover-claude-code-web-continues-w": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "va8zo5.1k9"
+  },
+  "cl19-the-device-s-load-set-automatically-per": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "15fa2wx.23q"
+  },
+  "cl2-context-reset-instead-of-compaction": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "jslgtd.78"
+  },
+  "cl3-the-train-is-the-task-list": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "ww9of2.7c"
+  },
+  "cl4-generated-prompts-one-post-format-the-fe": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "zi2gpv.86"
+  },
+  "cl5-automatic-reviews-said-once-on-the-board": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "ixw1j8.7d"
+  },
+  "cl6-collapsible-sections-that-learn": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "15chri6.6k"
+  },
+  "cl7-say-it-once-the-leaks-closed": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "hwvg67.7j"
+  },
   "cl8-design-principles-complete-and-no-emoji": {
    "at": "2026-11-22T22:57:29.805Z",
    "sig": "1adbebp.46",
@@ -956,10 +1021,20 @@
    "sig": "1s5c2fb.2i",
    "v": []
   },
+  "demo-done-2": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "12irfg1.3q"
+  },
   "demo-done-3": {
    "at": "2026-11-22T02:59:40.123Z",
    "sig": "143ybyr.36",
    "v": []
+  },
+  "demo-done-4": {
+   "at": "2026-11-22T23:49:07Z",
+   "bt": "2026-11-22T23:49:07Z",
+   "sig": "12y3lay.3g"
   },
   "demo-html-embed": {
    "at": "2026-11-22T05:04:07.420Z",
