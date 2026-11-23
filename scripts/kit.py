@@ -1006,6 +1006,12 @@ def artifact_load(url=None, token=None, in_dir=None):
                                                              "if_version": d.get("version", 0)}]}, token=token)
             os.makedirs(os.path.dirname(_base_path(coll, did)), exist_ok=True)
             write_doc(_base_path(coll, did), remote)
+            # CL30: a pulled file is loaded once; left there, a later load without a pull took that OLD copy over
+            # this copy's newer post (and its base), as on 11-23 after a container restart
+            try:
+                os.remove(f)
+            except OSError:
+                pass
     # what this copy held that the Artifact does not (a seed from git, an old copy): never sent unless changed here
     stale = set(st.get("not_there") or [])
     for coll in ART_COLLS:

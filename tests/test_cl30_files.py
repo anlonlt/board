@@ -158,6 +158,16 @@ class LocalCopyGetsThePictures(Base):
         self.assertIn('`collection: "kit_docs"`, `doc_id: "_index"`', txt)
 
 
+class LoadConsumesThePull(Base):
+    def test_a_pulled_file_is_loaded_once(self):
+        """CL30, seen live: a load with no new pull re-read an old pull's file and put that old post back."""
+        self.loaded_post()
+        self.assertEqual(list((self.art / "in" / "posts").glob("*.json")), [])
+        api_req(self.url, "doc/posts/P1", {"data": {"title": "Newer here", "column": "info"}}, TOKEN, "PUT")
+        self.k.artifact_load(url=self.url, token=TOKEN)
+        self.assertEqual(api_req(self.url, "doc/posts/P1", token=TOKEN)["data"]["title"], "Newer here")
+
+
 class EmbedSaysWhatIsMissing(unittest.TestCase):
     def test_a_missing_embed_is_named_not_removed(self):
         js = (ROOT / "kit" / "board" / "shim.js").read_text(encoding="utf-8")
