@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T01:58:29Z",
+ "created_at": "2026-11-23T01:58:36Z",
  "rows": [
   {
    "also": [],
@@ -8,14 +8,14 @@
     "CL1",
     "CL10",
     "CL11",
-    "CL12",
     "CL13",
     "CL14",
     "CL15",
     "CL16",
     "CL17",
     "CL18",
-    "CL19"
+    "CL19",
+    "CL12"
    ],
    "parent": "",
    "part": "P-cli",
@@ -319,17 +319,6 @@
    "also": [],
    "children": [],
    "parent": "P-cli",
-   "part": "CL12",
-   "post": "cl12-board-ui-text-never-runs-off-screen-badg",
-   "prompt": "",
-   "session": "board-cl12",
-   "state": "running",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [],
-   "parent": "P-cli",
    "part": "CL13",
    "post": "cl13-a-launched-part-is-always-visible-on-the",
    "prompt": "",
@@ -413,8 +402,19 @@
    "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
    "state": "running",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL12",
+   "post": "cl12-board-ui-text-never-runs-off-screen-badg",
+   "prompt": "",
+   "session": "session_01AE1HGhgv7nxdCEvuM9YNsN",
+   "state": "running",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T01:58:29Z"
+ "updated_at": "2026-11-23T01:58:36Z"
 }
