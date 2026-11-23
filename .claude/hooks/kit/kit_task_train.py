@@ -109,6 +109,15 @@ def on_update(root, st, ti):
 def is_orchestrator(data, st):
     if "role" not in st:
         st["role"] = os.environ.get("KIT_ROLE") or inspect_claude_transcript(str(data.get("transcript_path") or ""))[1] or ""
+        prefix = str((config(data).get("kit") or {}).get("orchestrator_branch_prefix") or "")
+        if not st["role"] and prefix:
+            # a project that names its orchestrators' branches (Harmonize: orchestrator-<n>)
+            try:
+                br = subprocess.run(["git", "-C", project_dir(data), "rev-parse", "--abbrev-ref", "HEAD"],
+                                    capture_output=True, text=True, timeout=5).stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                br = ""
+            st["role"] = "orchestrator" if br.startswith(prefix) else ""
     return st["role"] == "orchestrator"
 
 

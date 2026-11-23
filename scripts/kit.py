@@ -92,6 +92,14 @@ def mirror_dir(a):
     return a.mirror or os.environ.get("KIT_MIRROR") or (os.path.join(ROOT, mp) if mp else os.path.join(os.path.dirname(ROOT), "board-mirror"))
 
 
+def board_docs(m, coll):
+    """A collection of the board's git copy, or, with no git copy (an Artifact board's local copy), of the local board."""
+    if os.path.isdir(os.path.join(m, "board", coll)):
+        return load_dir(m + "/board", coll)
+    posts, comments = _load_board_docs(m)
+    return posts if coll == "posts" else comments
+
+
 def load_dir(d, coll):
     out = {}
     for f in glob.glob(os.path.join(d, coll, "*.json")):
@@ -339,7 +347,7 @@ def diff(m, dump, window=None):
 
 # ---------------------------------------------------------------- queries
 def comments_of(m, post_id):
-    cs = [dict(v, doc_id=i) for i, v in load_dir(m + "/board", "comments").items() if v.get("post_id") == post_id]
+    cs = [dict(v, doc_id=i) for i, v in board_docs(m, "comments").items() if v.get("post_id") == post_id]
     return sorted(cs, key=lambda c: c.get("arrived_at") or c.get("created_at") or "")
 
 
@@ -349,11 +357,9 @@ def cut(s, n):
 
 
 def post(m, pid, head=None):
-    p = os.path.join(m, "board", "posts", pid + ".json")
-    if not os.path.exists(p):
+    d = board_docs(m, "posts").get(pid)
+    if d is None:
         return "no post %s in the copy" % pid
-    with open(p, encoding="utf-8") as fh:
-        d = json.load(fh)
     lines = ["%s · %s · %s%s · part %s · %s · created %s%s" % (
         pid, d.get("title", ""), d.get("column", "?"), (" (%s)" % d["status"]) if d.get("status") else "",
         d.get("part", "?"), d.get("session_id", "?"), (d.get("created_at") or "?")[:16],
@@ -399,7 +405,7 @@ def answer_delay():
 
 def open_(m, since="2000-01-01"):
     ad = answer_delay()
-    cs = [dict(v, doc_id=i) for i, v in load_dir(m + "/board", "comments").items() if v.get("created_at") and v.get("post_id")]
+    cs = [dict(v, doc_id=i) for i, v in board_docs(m, "comments").items() if v.get("created_at") and v.get("post_id")]
     answers = [c for c in cs if ad.is_answer(c)]
     lines = []
     for h in sorted(cs, key=lambda c: c["created_at"]):
@@ -418,12 +424,12 @@ def open_(m, since="2000-01-01"):
 
 def since(m, t):
     rows = []
-    for i, d in load_dir(m + "/board", "posts").items():
+    for i, d in board_docs(m, "posts").items():
         for s in ("created_at", "updated_at", "done_at"):
             if (d.get(s) or "") >= t:
                 rows.append((d[s], "post %s %s (%s) %s" % (i, s.replace("_at", ""), d.get("column"), d.get("title", "")[:70])))
                 break
-    for i, c in load_dir(m + "/board", "comments").items():
+    for i, c in board_docs(m, "comments").items():
         s = max((c.get(k) or "") for k in STAMPS)
         if s >= t:
             what = "👍" if c.get("like") else ("[answer] " + c["answer"]) if c.get("answer") else (c.get("text") or "").replace("\n", " ")[:90]
@@ -433,11 +439,10 @@ def since(m, t):
 
 
 def session(m, pid):
-    p = os.path.join(m, "board", "posts", pid + ".json")
-    if not os.path.exists(p):
+    d = board_docs(m, "posts").get(pid)
+    if d is None:
         return "no post %s in the copy" % pid
-    with open(p, encoding="utf-8") as fh:
-        return json.load(fh).get("session_id") or "no session_id on %s" % pid
+    return d.get("session_id") or "no session_id on %s" % pid
 
 
 # ---------------------------------------------------------------- warm handoff (receive / publish)
@@ -843,13 +848,29 @@ def _read_json(p):
         return None
 
 
-def artifact_pull():
+def artifact_pull(full=False):
+    """The calls that bring the board here. After a first full pull, only what changed since the last load (a full
+    list of a big board costs ~20 tokens a document in the tool's reply: 1,500 documents, ~30k)."""
     board = artifact_url() or "<the board's claude.ai/artifact url>"
     d = os.path.join(_art_dir(), "in")
-    lines = ["# The board from the Artifact to this copy (%s)" % board, ""]
+    since = "" if full else str(_art_state().get("loaded_at") or "")
+    if since:
+        t = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) - timedelta(minutes=10)
+        since = t.strftime("%Y-%m-%dT%H:%M:%SZ")
+        for f in glob.glob(os.path.join(d, "*", "*.json")):
+            os.remove(f)                                   # only the changes are loaded this time
+    lines = ["# The board from the Artifact to this copy (%s)%s" % (board, " — changes since %s" % since if since else ""), ""]
     for c in ART_COLLS:
-        lines.append("- `ArtifactData` `list`, `url` %s, `collection: \"%s\"`, `query: {limit: 1000}`, `out_dir: \"%s\"`; "
-                     "while it returns a `next_cursor`, again with `query.cursor` set to it." % (board, c, d))
+        if since:
+            field = "updated_at" if c == "posts" else "created_at"
+            lines.append("- `ArtifactData` `query`, `url` %s, `collection: \"%s\"`, `query: {where: [[\"%s\", \">\", \"%s\"]], "
+                         "limit: 1000}`, `out_dir: \"%s\"`." % (board, c, field, since, d))
+        else:
+            lines.append("- `ArtifactData` `list`, `url` %s, `collection: \"%s\"`, `query: {limit: 1000}`, `out_dir: \"%s\"`; "
+                         "while it returns a `next_cursor`, again with `query.cursor` set to it." % (board, c, d))
+    if since:
+        lines.append("(A post changed on the page without a new `updated_at`, or a comment edited later, comes with "
+                     "`kit.py artifact pull --full`: do it once a day or when something looks stale.)")
     lines += ["", "Then: `python3 -I .kit/kit.py artifact load` (starts the local board if needed; your own unsent changes stay)."]
     return "\n".join(lines) + "\n"
 
@@ -884,9 +905,9 @@ def _merge_fields(remote, local, base):
 
 def artifact_load(url=None, token=None, in_dir=None):
     url = url or local_board_url()
-    token = _resolve_board_token(token)
     if not _ensure_local_board(url):
         raise Conflict("no local board at %s (run `python3 -I .kit/web_takeover.py` first)" % url)
+    token = _resolve_board_token(token)            # after the start: a first start writes the token
     in_dir = in_dir or os.path.join(_art_dir(), "in")
     st = _art_state()
     taken = kept = merged = 0
@@ -911,9 +932,19 @@ def artifact_load(url=None, token=None, in_dir=None):
                                                              "if_version": d.get("version", 0)}]}, token=token)
             os.makedirs(os.path.dirname(_base_path(coll, did)), exist_ok=True)
             write_doc(_base_path(coll, did), remote)
+    # what this copy held that the Artifact does not (a seed from git, an old copy): never sent unless changed here
+    stale = set(st.get("not_there") or [])
+    for coll in ART_COLLS:
+        for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
+            key = "%s/%s" % (coll, row["id"])
+            if not os.path.exists(_base_path(coll, row["id"])) and key not in st["versions"]:
+                stale.add(key)
+                os.makedirs(os.path.dirname(_base_path(coll, row["id"])), exist_ok=True)
+                write_doc(_base_path(coll, row["id"]), row.get("data") or {})
+    st["not_there"] = sorted(stale)
     st["loaded_at"] = zstamp(datetime.now(timezone.utc))
     _art_save(st)
-    return {"taken": taken, "kept_here": kept, "merged": merged}
+    return {"taken": taken, "kept_here": kept, "merged": merged, "not_there": len(stale)}
 
 
 def artifact_push(url=None, token=None, out_dir=None):
@@ -934,6 +965,8 @@ def artifact_push(url=None, token=None, out_dir=None):
                 continue
             key = "%s/%s" % (coll, did)
             e = {"op": "set", "collection": coll, "doc_id": did}
+            if key in (st.get("not_there") or []) and key not in st["versions"]:
+                base = None                              # never in the Artifact: a create
             if base is not None or key in st["versions"]:
                 if key not in st["versions"]:
                     need_pin.append(key)
@@ -2065,7 +2098,7 @@ def resume(m, db_path=None, alive=None):
     out.append("")
     out.append("## The owner's unanswered comments")
     try:
-        out.append(open_(m) if os.path.isdir(os.path.join(m, "board")) else "(no git copy yet: run `kit.py sync-db` first)")
+        out.append(open_(m))
     except Exception as e:  # the copy may be mid-sync; the orchestrator can rerun `kit.py open`
         out.append("(could not read: %s)" % e)
     out.append("")
@@ -2332,6 +2365,7 @@ def main(argv=None):
     s = sp.add_parser("resume"); s.add_argument("--db", default=None)
     s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
     s.add_argument("action", choices=["pull", "load", "push", "sent", "pin"]); s.add_argument("args", nargs="*")
+    s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("reconcile", help="the board here vs its git copy: the newer copy of each post and comment wins")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--branch", default=None)
@@ -2441,7 +2475,7 @@ def main(argv=None):
     if a.cmd == "artifact":
         try:
             if a.action == "pull":
-                print(artifact_pull(), end="")
+                print(artifact_pull(full=a.full), end="")
             elif a.action == "load":
                 r = artifact_load(url=a.board_url, token=a.token)
                 print("Loaded from the Artifact: %d taken, %d kept from here (unsent), %d merged field by field. "
