@@ -41,10 +41,11 @@ const STUB = `(function () {
     onSnapshot: (f) => { subs.push([coll, f]); setTimeout(() => f(snap(coll)), 0); return () => {}; } });
   let n = 0;
   const write = (path, o) => { window.__writes.push([path, o]); const [c, id] = path.split("/"); if (store[c] && store[c][id]) { store[c][id] = Object.assign({}, store[c][id], o); fire(); } };
-  const docRef = (path) => ({ id: path.split("/").pop(), update: async (o) => write(path, o), set: async (o) => write(path, o) });
+  const getDoc = async (path) => { const [c, id] = path.split("/"); const d = store[c] && store[c][id]; return { id, exists: !!d, data: () => d }; };
+  const docRef = (path) => ({ id: path.split("/").pop(), get: () => getDoc(path), update: async (o) => write(path, o), set: async (o) => write(path, o) });
   const coll = (c) => Object.assign(q(c), { doc: (id) => docRef(c + "/" + (id || "new" + (++n))),
     add: async (o) => { window.__writes.push([c + "/new" + (++n), o]); return { id: "new" + n }; } });
-  const db = { collection: coll, doc: (path) => ({ update: async (o) => write(path, o), set: async (o) => write(path, o),
+  const db = { collection: coll, doc: (path) => ({ get: () => getDoc(path), update: async (o) => write(path, o), set: async (o) => write(path, o),
     onSnapshot: (f) => { setTimeout(() => f({ exists: false, metadata: { fromCache: false } }), 0); return () => {}; } }) };
   window.confirm = () => true;
   window.claude = { use: async (n) => n === "db" ? db : n === "user" ? { isOwner: async () => true, id: async () => "u1" } : null };
@@ -104,7 +105,7 @@ function overflows() {
   const settle = () => p.wait(450);
   const SHOTS = process.env.KIT_SHOTS; let shotN = 0;
   const shot = async (n) => { if (SHOTS && p.shot) await p.shot(path.join(SHOTS, String(++shotN).padStart(2, '0') + '-' + n + '.png')); };
-  for (const [label, w, h] of [['phone', 390, 844], ['desktop', 1300, 900]]) {
+  for (const [label, w, h] of [['phone', 390, 844], ['phone 411', 411, 914], ['desktop', 1300, 900]]) {
     await p.viewport(w, h); await p.open(html); await p.wait(900);
     check(label + ': the lanes, Where we are and All trains stay on screen with long text', true);
     let o = await ev(overflows); check(label + ': nothing overflows on the board itself', !o.length, o);
