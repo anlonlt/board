@@ -21,7 +21,7 @@ OPERATORS = {";", "&&", "||", "|", "&", "(", ")", "|&", ";;", "\n"}
 WRAPPERS = {"sudo", "command", "env", "nohup", "time", "exec", "builtin"}
 DESTRUCTIVE_EXEC = {"rm", "unlink", "shred", "sh", "bash", "zsh", "dash"}
 INLINE_TREE_DELETE_RE = re.compile(
-    r"\b(?:shutil\.rmtree|fs\.rmSync|fs\.rmdirSync|fs\.promises\.rm|FileUtils\.rm_rf)\s*\(\s*(?:(['\"])([^'\"]*)\1)?"
+    r"(?:\bshutil\.rmtree|\.rmSync|\.rmdirSync|\bfs\.promises\.rm|\bFileUtils\.rm_rf)\s*\(\s*(?:(['\"])([^'\"]*)\1)?"
 )
 
 
@@ -125,15 +125,16 @@ def verdict(words: list[str], never_add=(), allow_add=(), cwd: str | None = None
         return verdict(args, never_add, allow_add, cwd=cwd)
 
     if cmd.startswith(("python", "pypy")) or cmd in ("node", "nodejs", "bun", "deno", "ruby", "perl"):
-        for flag in ("-c", "-e", "--eval"):
-            if flag in args:
-                i = args.index(flag)
-                if i + 1 < len(args):
-                    code = args[i + 1]
-                    for m in INLINE_TREE_DELETE_RE.finditer(code):
-                        target = m.group(2) or ""
-                        if not _is_under_tmp(target, cwd):
-                            return f"inline {cmd} {flag} recursive delete outside /tmp ({target or 'dynamic target'})"
+        # only the code right after -c/-e is code: a "-c" after a script name (or "-", stdin) is the script's own
+        # argument (2026-11-23: `python3 - <<EOF` whose text named "-c" was refused)
+        for k, flag in enumerate(args):
+            if flag in ("-c", "-e", "--eval"):
+                for m in INLINE_TREE_DELETE_RE.finditer(args[k + 1] if k + 1 < len(args) else ""):
+                    target = m.group(2) or ""
+                    if not _is_under_tmp(target, cwd):
+                        return f"inline {cmd} {flag} recursive delete outside /tmp ({target or 'dynamic target'})"
+                break
+            if not flag.startswith("-") or flag == "-":
                 break
 
     if cmd == "rm":
