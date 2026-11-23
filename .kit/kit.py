@@ -2965,11 +2965,12 @@ def _short(s, n):
     return s if len(s) <= n else s[:n - 1].rstrip() + "…"
 
 
-def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
+def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None, out_dir=None):
     """CL28, once per board: a post made before the kit's trains has a `part` but no `train`, so neither `resume`, the
-    brief nor the orchestrator's task list sees it (Harmonize: HL6, VR5, HL5, the A3 posts). Give each its train from
-    its part's letters (HL6 -> HL, A3-data -> A), written through the local board, then `artifact push` when the board
-    is an attached Artifact. Returns {train: [post ids]}."""
+    brief nor the orchestrator's task list sees it (Harmonize: HL6, VR5, HL5, the A3 posts). Each gets its train from
+    its part's letters (HL6 -> HL, A3-data -> A). An Artifact board (kit.artifact or a claude.ai board_url): the
+    ArtifactData `batch` files to send (`update` {train}, pinned to the version `artifact pull` saw), no server needed;
+    else written through the local board. Returns {trains: {train: [post ids]}, written, batches, need_pin}."""
     posts, _ = _load_board_docs(m or ROOT, db_path=db_path)
     plan = {}
     for pid, p in sorted(posts.items()):
@@ -2980,6 +2981,27 @@ def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
             plan.setdefault(t, []).append(pid)
     if dry_run or not plan:
         return {"trains": plan, "written": 0}
+    if attached_board():
+        st = _art_state()
+        out_dir = out_dir or os.path.join(_art_dir(), "out")
+        os.makedirs(out_dir, exist_ok=True)
+        for f in glob.glob(os.path.join(out_dir, "adopt-*.json")):
+            os.remove(f)
+        entries, need_pin = [], []
+        for t, ids in sorted(plan.items()):
+            for pid in ids:
+                key = "posts/%s" % pid
+                if key not in st["versions"]:
+                    need_pin.append(key)
+                    continue
+                entries.append({"op": "update", "collection": _art_prefix() + "posts", "doc_id": pid,
+                                "data": {"train": t}, "if_version": int(st["versions"][key])})
+        paths = []
+        for i in range(0, len(entries), 50):
+            pth = os.path.join(out_dir, "adopt-%02d.json" % (i // 50 + 1))
+            write_doc(pth, entries[i:i + 50])
+            paths.append(pth)
+        return {"trains": plan, "written": 0, "batches": paths, "need_pin": need_pin, "board": artifact_url()}
     url = url or local_board_url()
     token = _resolve_board_token(token)
     n = 0
@@ -2987,14 +3009,24 @@ def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
         for pid in ids:
             if _local_update(url, token, "posts", pid, {"train": t}) is not None:
                 n += 1
-    out = {"trains": plan, "written": n}
-    if attached_board():
-        try:
-            r = artifact_push(url=url, token=token)
-            out.update({"batches": r["batches"], "need_pin": r["need_pin"]})
-        except Exception as e:  # the local copy has it; the next `artifact push` carries it
-            out["push_error"] = str(e)
-    return out
+    return {"trains": plan, "written": n}
+
+
+def adopt_text(r):
+    n = sum(len(v) for v in r["trains"].values())
+    lines = ["%d post(s) without a train, in %d train(s): %s" % (n, len(r["trains"]), ", ".join(
+        "%s (%d)" % (t, len(v)) for t, v in sorted(r["trains"].items())))]
+    if r.get("batches") is not None:
+        for pth in r["batches"]:
+            lines.append("- `ArtifactData` `batch`, `url` %s, `writes`: the list in %s" % (r.get("board"), pth))
+        if r.get("need_pin"):
+            lines.append("%d post(s) not pinned (no version seen): run `kit.py artifact pull` and `load`, then adopt "
+                         "again: %s" % (len(r["need_pin"]), ", ".join(r["need_pin"][:10])))
+        lines.append("Then `python3 -I .kit/kit.py artifact pull` and `load`, and `kit.py resume` lists them.")
+    elif r.get("written"):
+        lines.append("%d written on the local board." % r["written"])
+    return "\n".join(lines) + "\n"
+
 
 def brief_stamp_dir():
     return os.path.join(ROOT, ".kit", "run", "brief")
@@ -3787,7 +3819,7 @@ def main(argv=None):
         return 0
     if a.cmd == "adopt":
         r = adopt_trains(url=a.board_url if hasattr(a, "board_url") else None, dry_run=a.dry_run, db_path=a.db, m=m)
-        print(json.dumps(r, ensure_ascii=False, indent=1))
+        print(adopt_text(r), end="")
         return 0
     if a.cmd == "brief":
         sess = a.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
