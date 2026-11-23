@@ -117,12 +117,19 @@ const seedOf = (seen) => (seen ? { "data/users/u1": { "board-seen": seen } } : {
   const sigOf = (q) => { const t = q.title + "\u0001" + q.body + "\u0001" + q.column + "\u0001" + "" + "\u0001" + ""; let h = 5381; for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; return h.toString(36) + "." + t.length.toString(36); };
   const f = await visit(html, { repo: "board", seed: seedOf({ posts: { "cl2-y": { at: "2026-11-23T02:00:00.000Z", sig: sigOf({ title: "Kit Y", body: "Kit Y body", column: "info" }), v: [] } } }) });
   check("attached: an old bare-id mark made on the same text is honoured", f.isNew["cl2-y"] === false && f.isNew["cl1-x"] === true, f.isNew);
+  // 3d. the old full mark and a later partial per-board mark (CCW, 02:26): the full read still holds
+  const g = await visit(html, { repo: "board", seed: Object.assign(seedOf({ posts: {
+      "cl2-y": { at: "2026-11-23T02:17:11.000Z", sig: sigOf({ title: "Kit Y", body: "Kit Y body", column: "info" }), v: [] },
+      "repos/board/cl2-y": { at: "", bt: "2026-11-23T02:26:43.000Z", sig: sigOf({ title: "Kit Y", body: "Kit Y body", column: "info" }), v: ["k1"] } } }),
+      { "repos/board/comments": { k1: { post_id: "cl2-y", from: "victor", text: "one", created_at: "2026-11-22T08:00:00.000Z" },
+                                   k2: { post_id: "cl2-y", from: "victor", text: "two", created_at: "2026-11-22T09:00:00.000Z" } } }) });
+  check("attached: a partial per-board mark does not hide the older full read", g.isNew["cl2-y"] === false, g.isNew);
 
   // 4. a mark from before CL21 (bare id) still holds on the primary board
   const e = await visit(html, { repo: "", seed: seedOf({ posts: { "P-old": { at: "2026-11-23T02:00:00.000Z", sig: "", v: [] } } }) });
   check("primary: an old bare-id mark is honoured", e.isNew["P-old"] === false, e.isNew);
 
-  [a1, a2, b1, b2, c1, c2, d1, d2, w1, w2, f, e].forEach((x) => { res.errors = res.errors.concat(x.errors); });
+  [a1, a2, b1, b2, c1, c2, d1, d2, w1, w2, f, g, e].forEach((x) => { res.errors = res.errors.concat(x.errors); });
   const failed = res.checks.filter((c) => !c.ok);
   console.log(JSON.stringify(res, null, 1));
   console.log((res.checks.length - failed.length) + " of " + res.checks.length + " seen checks pass");

@@ -1070,7 +1070,18 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
      this very post (comment ids are unique); the next mark goes under the board's key. */
   function markOf(id) {
     var k = seenKey(id), m = seen[k];
-    if (m || k === id) return m;
+    if (k === id) return m;
+    var b = oldMarkOf(id);
+    if (!b) return m;
+    if (!m) return b;
+    /* both: the board's own mark began after the old one (a page that did not read it yet); the later read wins */
+    var r = Object.assign({}, b.at > m.at ? b : m), o = r.at === b.at && b.at > m.at ? m : b;
+    var u = (r.v || []).concat((o.v || []).filter(function (x) { return (r.v || []).indexOf(x) < 0; }));
+    if (u.length) r.v = u;
+    if (o.bt && (!r.bt || o.bt > r.bt)) { r.bt = o.bt; r.sig = o.sig; }
+    return r;
+  }
+  function oldMarkOf(id) {
     var b = seen[id], p = postById(id); if (!b) return undefined;
     if (p && b.sig && b.sig === sigOf(p)) return b;
     if (!b.v || !b.v.length) return undefined;
