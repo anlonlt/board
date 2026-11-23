@@ -161,6 +161,34 @@ class Lessons(unittest.TestCase):
         self.assertEqual(self.ids(kit.lessons_for("orchestrator")), ["K1", "51a"])
 
 
+class O53Gaps(unittest.TestCase):
+    def test_lesson_ids_in_list_items_and_mid_line(self):
+        text = ("intro\n2. **Lesson 51a:** launch the kit way\nsee **Lesson 32a** and the rule\n### Lesson 35a\n"
+                "a lesson 9 of the course\n")
+        self.assertEqual(sorted(kit.DOC_LESSON.findall(text)), ["32a", "35a", "51a"])
+
+    def test_attached_post_found_in_the_pull_without_a_server(self):
+        with tempfile.TemporaryDirectory() as t:
+            art = Path(t) / "art"
+            d = art / "in" / "repos" / "board" / "posts"
+            d.mkdir(parents=True)
+            (d / "cl33-x.json").write_text(json.dumps({"id": "cl33-x", "version": 3, "data": {"part": "CL33"}}))
+            with mock.patch.dict(os.environ, {"KIT_ARTIFACT_DIR": str(art)}), \
+                    mock.patch.object(kit, "_attached_boards", side_effect=RuntimeError("no server")), \
+                    mock.patch.object(kit, "_kit_config", return_value={"project": "Harmonize"}):
+                b, p = kit._find_attached_post("cl33-x")
+                r = kit.launch("cl33-x", url="http://127.0.0.1:9", web=True)
+            self.assertEqual((b["id"], p["part"]), ("board", "CL33"))
+            self.assertIn("git clone", r["error"])            # the right fix, not "run web_takeover.py"
+            self.assertNotIn("web_takeover", r["error"])
+
+    def test_web_is_claude_code_whatever_the_project_cli(self):
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_REMOTE": "true"}), \
+                mock.patch.object(kit, "_kit_config", return_value={"kit": {"cli": "agy"}}):
+            self.assertEqual(kit._active_cli(), "claude")
+            self.assertTrue(kit._launch_line("CL33", "docs/prompts/cl33-x.md").startswith("python3 -I .kit/kit.py launch"))
+
+
 class Principles(unittest.TestCase):
     def test_scope_filter_hook(self):
         with tempfile.TemporaryDirectory() as t:

@@ -2811,6 +2811,8 @@ def done(pid, db_path=None, root=None):
 def _active_cli(explicit=None):
     if explicit in ("agy", "claude"):
         return explicit
+    if _is_web():          # CL32: a web session is Claude Code whatever the project's cli (Harmonize's is agy)
+        return "claude"
     env_cli = str(os.environ.get("KIT_CLI") or "").strip().lower()
     if env_cli in ("agy", "claude"):
         return env_cli
@@ -3302,7 +3304,22 @@ def _find_attached_post(pid):
     try:
         shown, _ = _attached_boards()
     except Exception:
-        return None, None
+        shown = []
+    for rid in sorted(os.path.basename(d) for d in glob.glob(os.path.join(_art_dir(), "in", "repos", "*"))):
+        f = os.path.join(_art_dir(), "in", "repos", rid, "posts", pid + ".json")   # the pulled Artifact copy itself
+        doc = _read_json(f)
+        if isinstance(doc, dict) and isinstance(doc.get("data"), dict) and "id" in doc:
+            doc = doc["data"]
+        if isinstance(doc, dict) and _repo_id(rid) not in {_repo_id(_kit_config().get("project") or "")}:
+            b = next((x for x in shown if x["id"] == _repo_id(rid)), None)
+            if b is None:
+                row = next((r for r in _attached_rows() if r["id"] == _repo_id(rid)), {"id": _repo_id(rid), "name": rid, "github": ""})
+                up = os.path.dirname(ROOT)
+                gh = (row.get("github") or "").split("/")[-1]
+                clone = next((os.path.abspath(c) for c in (row.get("path"), os.path.join(up, gh) if gh else None,
+                              os.path.join(up, rid)) if c and os.path.isdir(os.path.join(c, ".git")) and os.path.abspath(c) != ROOT), None)
+                b = dict(row, clone=clone, posts={pid: doc})
+            return b, doc
     for b in shown:
         p = (b.get("posts") or {}).get(pid)
         if isinstance(p, dict):
@@ -3417,29 +3434,23 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     web = (run == "web") if web is None else web
     given = _read_json(post_file) if post_file else None    # CL32: the host's copy of this board's post (from the Artifact)
     if isinstance(given, dict):
-        if not _ensure_local_board(url):
-            return {"ok": False, "post": pid, "error": "no local board at %s could start here" % url}
-        token = _resolve_board_token(None)            # a first start writes the token
-    try:
-        d = _board_request(url, "doc/posts/" + urllib.parse.quote(pid, safe=""), token=token)
-    except Exception as e:
-        d = {"exists": False, "_error": str(e)}
-    post = d.get("data") if d.get("exists", True) else None
-    if not isinstance(post, dict) and isinstance(given, dict):
-        _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": "posts", "doc_id": pid, "data": given,
-                                                     "if_version": 0}]}, token=token)
-        post = given
-    elif isinstance(post, dict) and isinstance(given, dict) and given.get("consumers"):
-        post = dict(post, consumers=given["consumers"])
+        # launched for another project: no board server here (none seeded, none to auto-push); the host writes the
+        # post on the Artifact with the one ArtifactData update it prints
+        d, post = {"exists": True}, given
+    else:
+        try:
+            d = _board_request(url, "doc/posts/" + urllib.parse.quote(pid, safe=""), token=token)
+        except Exception as e:
+            d = {"exists": False, "_error": str(e)}
+        post = d.get("data") if d.get("exists", True) else None
     if not isinstance(post, dict):
         b, ap = _find_attached_post(pid)                  # a step of another repo's train (the kit's cli from Harmonize)
         if b:
             return _launch_attached(pid, b, ap, session_id=session_id, model=model, web=web, reset=reset, cli=cli)
-        if d.get("_error"):
-            return {"ok": False, "post": pid, "error": "no board at %s (%s): run `python3 -I .kit/web_takeover.py` first"
-                    % (url, d["_error"])}
-        return {"ok": False, "post": pid, "error": "no post %s on the board, nor on an attached board (%s)" % (
-            pid, ", ".join(_attached_ids()) or "none attached")}
+        return {"ok": False, "post": pid, "error": "no post %s on this board%s, nor on an attached board (%s), nor in the "
+                "Artifact pull (.kit/run/artifact/in/repos/<id>/posts): run `python3 -I .kit/kit.py artifact pull`, make its "
+                "calls, then launch again" % (pid, (" (no local board at %s)" % url) if d.get("_error") else "",
+                                              ", ".join(_attached_ids()) or "none attached")}
     part = str(post.get("part") or pid)
     rel = "docs/prompts/%s.md" % pid
     branch = str(post.get("branch") or "") if session_id else ""
@@ -3502,6 +3513,9 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     fields = {"status": "in progress", "session_id": sess, "branch": branch, "updated_at": now}
     if not session_id or not post.get("launched_at"):
         fields["launched_at"] = now
+    out["session_id"] = sess
+    if isinstance(given, dict):
+        return dict(out, trains=False)
     _local_update(url, token, "posts", pid, fields)
     tr = _local_update(url, token, "posts", "_trains", lambda t: _trains_mark(t, pid, dict(post, **fields), sess, rel))
     out["session_id"] = sess
@@ -4145,7 +4159,7 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
 # ---------------------------------------------------------------- CL32: resume per role, the lessons, real-project tests
 ROLES = ("orchestrator", "part", "clerk", "review")
 LESSON_HEAD = re.compile(r"^##\s+([A-Za-z0-9][\w.-]*)\s*:\s*(.+?)\s*$")
-DOC_LESSON = re.compile(r"(?im)^\s*(?:[#>*_-]+\s*)*(?:\*\*)?lesson\s+([0-9]+[a-z]?)\b")
+DOC_LESSON = re.compile(r"(?im)(?:^\s*(?:[#>*_-]+\s*|\d+[.)]\s*)*(?:\*\*|__)?|\*\*|__)lesson\s+([0-9]+[a-z]?)\b")
 # a change that touches one of these needs a dry run on a real project before `done` (CL32: CL29's compact passed the
 # kit's suite and failed on Harmonize; a kit part's session had only anlonlt/board)
 REAL_PROJECT_AREAS = ("compact", "install", "resume", "hook", "artifact")
