@@ -49,7 +49,7 @@ POSTS = {
     "A3-recipe": {"part": "A3", "column": "done", "title": "A3 recipe", "created_at": ago(days=9)},
     "K3i-switch": {"part": "K3i", "column": "info", "status": "closed: superseded by K3j", "title": "K3i",
                    "created_at": ago(days=4)},
-    "_orchestrator": {"title": "orchestrator", "column": "info"},
+    "_orchestrator": {"title": "orchestrator", "column": "info", "session_id": "session_old"},
 }
 COMMENTS = {
     "c-old": {"from": "owner", "post_id": "_orchestrator", "text": "an old one", "created_at": ago(days=9)},
@@ -124,6 +124,9 @@ class Brief(unittest.TestCase):
         # the owner, 07:41: "everything is on the board": a memory file is never read nor compared
         self.assertNotIn("Memory", self.out)
         self.assertNotIn("speaker.md", self.out)
+
+    def test_a_stale_orchestrator_id_is_flagged(self):
+        self.assertIn("MISMATCH: `_orchestrator` names session session_old, you are test-cl28", self.out)
 
     def test_short(self):
         self.assertLess(len(self.out), 2500)

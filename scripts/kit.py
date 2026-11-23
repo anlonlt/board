@@ -2943,7 +2943,7 @@ def brief_stamp_dir():
     return os.path.join(ROOT, ".kit", "run", "brief")
 
 
-def brief(m, days=3, db_path=None, board_dir=None, now=None, limit=12):
+def brief(m, days=3, db_path=None, board_dir=None, now=None, limit=12, session=None):
     """One short page for the orchestrator, before it answers the owner: open decisions (age, default, what each
     blocks), the owner's decisions of the last `days` days (comments, Likes, answers; a chat decision is a comment the
     orchestrator wrote for it), each
@@ -2953,10 +2953,17 @@ def brief(m, days=3, db_path=None, board_dir=None, now=None, limit=12):
         posts, comments = load_dir(board_dir, "posts"), load_dir(board_dir, "comments")
     else:
         posts, comments = _load_board_docs(m, db_path=db_path)
+    orch = posts.get("_orchestrator") if isinstance(posts.get("_orchestrator"), dict) else {}
     posts = {k: v for k, v in posts.items() if isinstance(v, dict) and not k.startswith("_") and not v.get("removed")}
     st = {k: step_state(v) for k, v in posts.items()}
     part = {k: str(v.get("part") or k) for k, v in posts.items()}
     out = ["# Brief, %s UTC (from the posts; answer from this, not from memory)" % now.strftime("%Y-%m-%d %H:%M")]
+    named = str(orch.get("session_id") or "")
+    if session and named != session:
+        # the clerk sends the owner's words to the session `_orchestrator` names: a stale id there made it start a
+        # fresh orchestrator at each of his comments (Harmonize, 2026-11-23)
+        out.append("MISMATCH: `_orchestrator` names session %s, you are %s: write your id on it (and on each attached "
+                   "board's repos/<id>/posts/_orchestrator) before you answer." % (named or "none", session))
 
     # 1. open decisions
     qs = sorted((k for k in posts if st[k] == "you"), key=lambda k: str(posts[k].get("created_at") or ""))
@@ -3720,8 +3727,9 @@ def main(argv=None):
         print(resume(m, db_path=a.db, cli=a.cli), end="")
         return 0
     if a.cmd == "brief":
-        print(brief(m, days=a.days, db_path=a.db, board_dir=a.board_dir), end="")
-        brief_mark(a.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID"))
+        sess = a.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
+        print(brief(m, days=a.days, db_path=a.db, board_dir=a.board_dir, session=sess), end="")
+        brief_mark(sess)
         return 0
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset)

@@ -1,4 +1,5 @@
-"""The web clerk starts a fresh orchestrator when the last one is gone or idle (tokens, dying containers).
+"""The web clerk starts a fresh orchestrator only when the last one is gone (failed, completed, archived,
+unreachable), never because it is idle (CL28: the owner, 2026-11-23, a fresh orchestrator at every comment).
 
 Run via: python3 -m unittest discover -s tests -v
 """
@@ -31,7 +32,9 @@ class ClerkStartsOrchestrator(unittest.TestCase):
 
     def test_rule_with_repository(self):
         out = self.render(config(github="anlonlt/harmonize"))
-        self.assertIn("more than 30 minutes ago", out)
+        self.assertIn("more than 30 minutes ago included), is never replaced", out)
+        self.assertNotIn("is more than 30 minutes ago, do not wake", out)
+        self.assertIn("archived", out)
         self.assertIn("`create_session`", out)
         self.assertIn('`source_url: "https://github.com/anlonlt/harmonize"`', out)
         self.assertIn('doc_id: "_orchestrator"', out)
@@ -41,8 +44,12 @@ class ClerkStartsOrchestrator(unittest.TestCase):
         c = config()
         c["kit"]["clerk"]["orchestrator_idle_minutes"] = 45
         out = self.render(c)
-        self.assertIn("more than 45 minutes ago", out)
+        self.assertIn("more than 45 minutes ago included), is never replaced", out)
         self.assertIn("no `source_url`", out)
+
+    def test_orchestrator_writes_its_id_on_every_board_it_serves(self):
+        out = install.render((ROOT / "kit" / "claude" / "orchestrator.template.md").read_text(), config())
+        self.assertIn("repos/<id>/posts/_orchestrator", out)
 
 
 if __name__ == "__main__":

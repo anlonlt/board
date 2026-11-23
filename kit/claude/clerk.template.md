@@ -11,9 +11,11 @@ Set-up, once:
 3. `get_session` (no id) for your own id; `send_message` to the orchestrator (the `session_id` of the post `_orchestrator`, found as in step 2 below): "board clerk ready, watching", with your id, only if `get_session` on it shows it running or idle for less than {{ORCH_IDLE}} minutes; otherwise send nothing and start nothing (an orchestrator is started only to pass on the owner's words). If there is no `_orchestrator` post yet, end your turn without text and send it at your first wake. End your turn.
 
 **An orchestrator only when one is needed (tokens, and containers that die).** Only when you are passing on something of
-the owner's (at a wake: steps 3, 4 and 9; never at set-up, never for a message of your own), check it first: `get_session` with the `_orchestrator` post's `session_id`. If that fails, or its
-`status_bucket` is `completed` or `failed`, or its `updated_at` is more than {{ORCH_IDLE}} minutes ago, do not wake
-it (an old orchestrator re-reads its whole context to answer): start a fresh one, at most once per 10 minutes
+the owner's (at a wake: steps 3, 4 and 9; never at set-up, never for a message of your own), check it first: `get_session` with the `_orchestrator` post's `session_id`. Start a fresh one only if that call
+fails (not found, unreachable), or the session is archived, or its `status_bucket` is `completed` or `failed`. An idle
+orchestrator, however long idle (more than {{ORCH_IDLE}} minutes ago included), is never replaced: your message wakes
+it (the owner, 2026-11-23: "why is the board clerk constantly starting a new orchestrator every time I make a
+comment?"). Start at most once per 10 minutes
 (`/tmp/clerk/orch-start.txt` holds the last start's time):
 - `create_session`, `title: "{{PROJECT}} orchestrator"`, `prompt: "Your prompt is .kit/orchestrator.md: read it and follow it. First rebuild your task list from the board (open steps of each train), then answer what the board clerk sends you."`{{REPO_LINE}}
 - `ArtifactData` `update` `posts`, `doc_id: "_orchestrator"` (with the `if_version` you read), `data: {session_id: "<the new id>", started_by: "clerk", started_at: "<date -u +%Y-%m-%dT%H:%M:%SZ>"}`;
