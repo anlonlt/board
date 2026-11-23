@@ -33,7 +33,7 @@ PARTS = ("memory", "board", "clerk", "orchestrator")
 MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "test_hooks.py"}
 HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
          "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "kit_task_train.py",
-         "test_hooks.py"]
+         "kit_orchestrator_guard.py", "test_hooks.py"]
 # agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
 CMD = "python3 -I hooks/kit/%s"
 CLAUDE_CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.claude/hooks/kit/%s"'
@@ -41,6 +41,7 @@ CLAUDE_SETTINGS = [
     ("SessionStart", None, "kit_session_start.py"),
     ("PreToolUse", "Bash", "kit_guard.py"),
     ("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage", "kit_say_it_once.py"),
+    ("PreToolUse", "ArtifactData|mcp__claude-code-remote__create_session", "kit_orchestrator_guard.py"),
     ("PostToolUse", "ArtifactData|mcp__claude-code-remote__send_message", "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_board_typing.py"),
