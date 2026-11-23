@@ -2084,8 +2084,18 @@ def resume(m, db_path=None, alive=None):
                 who = " · session %s (%s)" % (sess, life)
             else:
                 who = " · planned, not launched" if st == "planned" else ""
-            out.append("- %s %s `%s` %s%s%s" % (box, p.get("part") or pid, pid, str(p.get("title") or "")[:80],
-                                                (" · " + st) if st and st != "planned" else "", who))
+            quiet = ""
+            if "progress" in st:
+                last = _utc(str(p.get("updated_at") or p.get("created_at") or ""))
+                if last:
+                    mins = int((datetime.now(timezone.utc) - datetime.strptime(last, "%Y-%m-%dT%H:%M:%SZ")
+                                .replace(tzinfo=timezone.utc)).total_seconds() // 60)
+                    if mins >= 30 and "(not running)" in who:
+                        quiet = " · quiet %d min, not running: stalled (continue it from its branch)" % mins
+                    elif mins >= 30:
+                        quiet = " · quiet %d min: send it a save point (commit and push now)" % mins
+            out.append("- %s %s `%s` %s%s%s%s" % (box, p.get("part") or pid, pid, str(p.get("title") or "")[:80],
+                                                  (" · " + st) if st and st != "planned" else "", who, quiet))
     if not n_active:
         out.append("")
         out.append("No train has an open step.")

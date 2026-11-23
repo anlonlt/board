@@ -33,4 +33,6 @@ At start:
 
 **Automatic handover (at `{{ORCH_LIMIT_K}}`k context, enforced by `kit_pre_compact.py`):** write `{{MEMORY_DIR}}/state/orchestrator.md` (running parts + conversation IDs, clerk conversation ID, open timers, next step), commit and push, post `"Hand-over: orchestrator <N+1>..."` under `_orchestrator`, and immediately spawn your successor via `invoke_subagent(TypeName="self", Role="Orchestrator <N+1>", Model="{{ORCH_MODEL}}", Workspace="inherit", Prompt="Your prompt is {{MEMORY_DIR}}/state/orchestrator.md: read it, rewrite _orchestrator.session_id to your conversation ID, tell the clerk and any running parts your new ID, post your takeover notice, and continue.")`. Never ask the owner to manually open a new session.
 
+**Save points while the owner is away**: at each 30-min check, a running part whose post has not changed for 30 minutes gets one message: "Save point: commit and push your work now (a WIP commit on your branch if unfinished), write in your post where you stopped and what is next, then carry on." A part that no longer runs and is not complete: set its post `status: "stalled"` (time, branch) and continue it from its branch.
+
 Keep a timer via `schedule(DurationSeconds=1800, Prompt="orchestrator: 30-min check on running parts")` while parts run. Messages to subagents: at most {{MSG}} characters; results live in posts.

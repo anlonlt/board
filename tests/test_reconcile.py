@@ -86,6 +86,20 @@ class TestReconcile(unittest.TestCase):
         self.assertEqual(r["from_git"], 1, r)
         self.assertEqual(b.get("posts/P1")["data"]["title"], "Saved by the computer before it crashed")
 
+    def test_resume_flags_a_quiet_step(self):
+        a = self.a
+        a.write("posts/Q1", {"title": "Quiet step", "column": "info", "train": "t", "part": "Q1", "status": "in progress",
+                             "session_id": "s-quiet", "updated_at": "2026-01-01T00:00:00Z"})
+        a.write("posts/Q2", {"title": "Busy step", "column": "info", "train": "t", "part": "Q2", "status": "in progress",
+                             "session_id": "s-busy", "updated_at": kit.zstamp(kit.datetime.now(kit.timezone.utc))})
+        out = kit.resume(str(a.mirror), db_path=str(a.db), alive={"s-quiet", "s-busy"})
+        q1 = [l for l in out.splitlines() if "`Q1`" in l][0]
+        q2 = [l for l in out.splitlines() if "`Q2`" in l][0]
+        self.assertIn("save point", q1)
+        self.assertNotIn("quiet", q2)
+        out = kit.resume(str(a.mirror), db_path=str(a.db), alive=set())
+        self.assertIn("stalled", [l for l in out.splitlines() if "`Q1`" in l][0])
+
     def test_cli_wiring(self):
         res = self.a.kit_cli("reconcile", "--board-url", self.a.url, "--token", TOKEN, "--branch", "board-mirror",
                              "--db", str(self.a.db))
