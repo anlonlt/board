@@ -93,8 +93,22 @@ class TrainAndResume(unittest.TestCase):
         names = {t["name"] for t in mcp.TOOLS}
         self.assertTrue({"board_step_new", "board_step_update", "board_resume", "board_train"} <= names)
         srv = mcp.MCPServer(ROOT)
-        resp = srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                           "params": {"name": "board_resume", "arguments": {"cli": "agy"}}})
+        # CL30: this repo's board is an Artifact board; resume reads its copy only once loaded (fresh): a copy never
+        # loaded is refused (the gate), a loaded one answers
+        art = tempfile.mkdtemp()
+        old = os.environ.get("KIT_ARTIFACT_DIR")
+        os.environ["KIT_ARTIFACT_DIR"] = art
+        self.addCleanup(lambda: os.environ.pop("KIT_ARTIFACT_DIR", None) if old is None
+                        else os.environ.__setitem__("KIT_ARTIFACT_DIR", old))
+        call = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "board_resume", "arguments": {"cli": "agy"}}}
+        if self.kit.attached_board():
+            stale = srv.handle(call)
+            self.assertTrue(stale["result"]["isError"])
+            self.assertIn("never loaded", stale["result"]["content"][0]["text"])
+        from datetime import datetime, timezone
+        with open(os.path.join(art, "state.json"), "w") as fh:
+            json.dump({"loaded_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "versions": {}}, fh)
+        resp = srv.handle(call)
         self.assertFalse(resp["result"]["isError"])
         self.assertIn("Resume in agy", resp["result"]["content"][0]["text"])
 
