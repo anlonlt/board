@@ -293,9 +293,14 @@ button.wcard { cursor: pointer; }
 #ask .newdot { position: absolute; top: -3px; right: -3px; }
 .cmt .txt { white-space: pre-wrap; overflow-wrap: anywhere; }
 .cmt .txt.md { white-space: normal; }
-.replies { margin: 6px 0 0 10px; padding-left: 10px; border-left: 2px solid var(--line); display: grid; gap: 8px; }
+/* CL23 (his 03:1x, "opening the first thread freezes the whole artifact"): a thread and its replies are plain block
+   boxes. They were grids, one inside the other for each reply level; a grid sizes each item more than once, so one
+   layout cost multiplied by every level: 6 levels of replies took 6 s per layout, twice on opening. Never a grid or a
+   flex box here: the space between replies is a margin. */
+.replies { margin: 6px 0 0 10px; padding-left: 10px; border-left: 2px solid var(--line); display: block; }
+.replies > * + * { margin-top: 8px; }
 .replies.flat { margin-left: 0; padding-left: 0; border-left: 0; }
-.node { display: grid; gap: 0; }
+.node { display: block; }
 .replyto { font-size: .85rem; background: var(--sunk); border-radius: 8px; padding: 4px 8px; overflow-wrap: anywhere; }
 .replyto button { margin-left: 6px; border: 0; background: none; color: var(--warn); font-weight: 700; cursor: pointer; }
 .files { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }

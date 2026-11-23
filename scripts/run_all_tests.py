@@ -23,6 +23,8 @@ SUITES = [
     # CL12: the page in a real browser at a phone and a desktop width: no text off screen or cut by its box, the badge
     # clears once seen, a train lists its done steps (prints SKIP without a browser; KIT_REQUIRE_BROWSER=1 makes it fail)
     ("kit/board/test_page_layout.js", [shutil.which("node") or "node", "kit/board/test_page_layout.js"]),
+    # CL23: a thread nested deep opens without freezing the page (it was nested grids: seconds per layout)
+    ("kit/board/test_page_speed.js", [shutil.which("node") or "node", "kit/board/test_page_speed.js"]),
 ]
 
 
