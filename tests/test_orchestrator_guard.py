@@ -65,8 +65,67 @@ class OrchestratorGuard(unittest.TestCase):
         self.assertIn("docs/prompts/<id>.md", err)
         for ti in ({"prompt": "Your prompt is docs/prompts/cl22.md: read it and do it."},
                    {"prompt": "...", "tags": ["orchestrator"]}, {"prompt": "...", "tags": ["board-clerk"]},
-                   {"prompt": "...", "title": "CR-CL22 review"}):
+                   {"prompt": "...", "title": "CR-CL22 review", "tags": ["review"]}):
             self.assertEqual(self.run_hook("mcp__claude-code-remote__create_session", ti)[0], 0, ti)
+
+    def test_inline_prompt_naming_a_path_is_refused(self):
+        """CL24 gap 1: a long prompt that merely names docs/prompts/ is still an inline prompt."""
+        cs = "mcp__claude-code-remote__create_session"
+        long_one = "Do CL24: fix the guard. " + "Keep every hold, test it first. " * 20 + "See docs/prompts/cl24.md."
+        rc, err = self.run_hook(cs, {"prompt": long_one, "title": "CL24"})
+        self.assertEqual(rc, 2)
+        self.assertIn("400", err)
+        rc, _ = self.run_hook(cs, {"prompt": "Read docs/prompts/cl24.md, then also rewrite the hook inline as follows."})
+        self.assertEqual(rc, 2)
+        too_long = "Your prompt is docs/prompts/cl24.md: read it and do it. " + "Also: " + "x" * 400
+        self.assertEqual(self.run_hook(cs, {"prompt": too_long})[0], 2)
+        ok = "Your prompt is docs/prompts/cl24-orchestrator-guard-gaps.md: read it and do it."
+        self.assertEqual(self.run_hook(cs, {"prompt": ok, "title": "CL24"})[0], 0)
+
+    def test_title_does_not_bypass(self):
+        """CL24 gap 2: only tags pass; a title saying review/clerk/orchestrator does not."""
+        cs = "mcp__claude-code-remote__create_session"
+        for title in ("CR-CL22 review", "Harmonize board clerk", "Harmonize orchestrator"):
+            self.assertEqual(self.run_hook(cs, {"prompt": "Do CL22 inline...", "title": title})[0], 2, title)
+        for tag in ("review", "board-clerk", "orchestrator"):
+            self.assertEqual(self.run_hook(cs, {"prompt": "Do CL22 inline...", "tags": [tag]})[0], 0, tag)
+
+    def test_attached_boards_reads(self):
+        """CL24 gap 3: an attached board's repos/<id>/posts|comments is read through the kit like the host's."""
+        ad = "ArtifactData"
+        for coll in ("repos/board/posts", "repos/board/comments"):
+            self.assertEqual(self.run_hook(ad, {"action": "list", "collection": coll})[0], 2, coll)
+            self.assertEqual(self.run_hook(ad, {"action": "query", "collection": coll,
+                                                "query": {"where": [["train", "==", "cli"]], "limit": 50}})[0], 2, coll)
+            # a targeted lookup does not page through the board five at a time
+            self.assertEqual(self.run_hook(ad, {"action": "query", "collection": coll, "query": {
+                "where": [["created_at", ">", ""]], "limit": 5, "cursor": "c2"}})[0], 2, coll)
+            self.assertEqual(self.run_hook(ad, {"action": "query", "collection": coll,
+                                                "query": {"where": [["post_id", "==", "x"]], "limit": 5}})[0], 0, coll)
+            self.assertEqual(self.run_hook(ad, {"action": "get", "collection": coll, "doc_id": "x"})[0], 0, coll)
+            pull = os.path.join(self.proj, ".kit", "run", "artifact", "in")
+            self.assertEqual(self.run_hook(ad, {"action": "list", "collection": coll, "out_dir": pull})[0], 0, coll)
+        # a malformed limit is a broad read, not a crash that lets it through
+        self.assertEqual(self.run_hook(ad, {"action": "query", "collection": "posts",
+                                            "query": {"where": [["a", "==", 1]], "limit": "five"}})[0], 2)
+
+    def test_attached_board_step_post(self):
+        """CL24 gap 4: a hand-written step post on an attached board is refused like the host's."""
+        ad = "ArtifactData"
+        rc, err = self.run_hook(ad, {"action": "set", "collection": "repos/board/posts", "doc_id": "cl24-x", "data": {}})
+        self.assertEqual(rc, 2)
+        self.assertIn("TaskCreate", err)
+        for did in ("_orchestrator", "_trains", "_dashboard"):
+            self.assertEqual(self.run_hook(ad, {"action": "set", "collection": "repos/board/posts", "doc_id": did,
+                                                "data": {}})[0], 0, did)
+        self.assertEqual(self.run_hook(ad, {"action": "set", "collection": "repos/board/comments", "doc_id": "c",
+                                            "data": {}})[0], 0)
+
+    def test_docstring_says_subagents_are_exempt(self):
+        """CL24 gap 5: the exemption of the orchestrator's subagents is by design and written down."""
+        doc = HOOK.read_text(encoding="utf-8").split('"""')[1]
+        self.assertIn("subagents are exempt", doc)
+        self.assertIn("by design", doc)
 
     def test_its_subagents_pass(self):
         env = dict(os.environ, CLAUDE_PROJECT_DIR=self.proj, KIT_ROLE="orchestrator")

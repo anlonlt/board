@@ -113,6 +113,26 @@ class AttachedBoardFromConfig(Base):
         self.assertIn('collection: "repos/board/posts"', txt)
         self.assertIn('collection: "repos/board/comments"', txt)
 
+    def test_host_pull_covers_the_attached_boards(self):
+        """CL24: the host board's pull (Harmonize, prefix "") prints the repos/<id>/ list calls of every attached board,
+        so the orchestrator reads them the kit way (its guard refuses a raw list of repos/<id>/posts)."""
+        repo = make_repo(self.tmp / "h", {"project": "Harmonize", "board_url": "http://127.0.0.1:8765",
+                                          "kit": {"artifact": {"url": ART_URL, "prefix": ""}}})
+        k = self.kit_in(repo)
+        idx = self.tmp / "art" / "in" / "kit_repos"
+        idx.mkdir(parents=True)
+        (idx / "_index.json").write_text(json.dumps({"id": "_index", "data": {"repos": [
+            {"id": "board", "name": "Board", "github": "anlonlt/board"}, {"id": "harmonize", "name": "Harmonize"}]}}))
+        txt = k.artifact_pull(full=True)
+        self.assertIn('collection: "posts"', txt)
+        self.assertIn('collection: "kit_repos"', txt)
+        self.assertIn('collection: "repos/board/posts"', txt)
+        self.assertIn('collection: "repos/board/comments"', txt)
+        self.assertNotIn("repos/harmonize/", txt)                 # not itself
+        k._art_save({"versions": {}, "loaded_at": "2026-11-23T05:00:00Z"})
+        txt = k.artifact_pull()                                    # a delta pull clears in/kit_repos: still listed
+        self.assertIn('`query`, `url` %s, `collection: "repos/board/comments"`' % ART_URL, txt)
+
     def test_board_cli_names_the_attached_board(self):
         spec = importlib.util.spec_from_file_location("bcli", str(ROOT / "kit" / "board" / "board_cli.py"))
         bcli = importlib.util.module_from_spec(spec)

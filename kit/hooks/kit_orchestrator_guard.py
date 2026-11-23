@@ -10,9 +10,14 @@ the orchestrator only, the three gestures that bypass the kit, and says the kit'
     `kit.py artifact pull` / `load`, then `kit.py resume`, `post <id>`, `open`, `since <time>`;
   - a `set` of a step post (not a `_` card, not `_orchestrator`): plan it with TaskCreate {train, part}: the
     task-train hook writes the post and its prompt; a batch from `kit.py artifact push` (.kit/run/artifact/out) passes;
-  - `create_session` with an inline prompt: a part starts from its prompt file (`Your prompt is docs/prompts/<id>.md`);
-    a successor orchestrator, a clerk or a review (tagged or titled so) passes.
-Everyone else (parts, the clerk, the owner's own sessions) is never touched. Exit 2 with the reason on stderr.
+  - `create_session` with an inline prompt: a part's prompt starts with `Your prompt is docs/prompts/<id>.md` and
+    stays short (<= 400 characters; a long prompt that merely names a path is still an inline prompt); only a tag
+    lets another launch through (`orchestrator` a successor, `board-clerk` the clerk, `review` a review): the title
+    is never read for this (CL24).
+A targeted lookup pages no further: a `where` query with limit <= 5 that carries a `cursor` is a broad read.
+Everyone else (parts, the clerk, the owner's own sessions) is never touched. The orchestrator's subagents are exempt
+by design: they exist to keep a dump (a full list, a card rebuild) out of the orchestrator's context, so the hook
+lets them read and write the board raw. Exit 2 with the reason on stderr.
 """
 import json
 import os
@@ -25,6 +30,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_config import config, project_dir  # noqa: E402
 
 BOARD_COLL = re.compile(r"^(repos/[^/]+/)?(posts|comments)$")
+PART_PROMPT = re.compile(r"^Your prompt is docs/prompts/[\w.-]+\.md\b")
+PROMPT_MAX = 400
+PASS_TAGS = ("orchestrator", "board-clerk", "review")
 ORCH_TEXT = re.compile(r"start as the orchestrator|claude-cli/orchestrator\.md|\.kit/orchestrator\.md|"
                        r"you are the [\w-]+ orchestrator|you are the orchestrator", re.I)
 
@@ -88,6 +96,7 @@ def under(path, root, *parts):
 
 
 READ_WAY = ("read the board through the kit: `python3 -I .kit/kit.py artifact pull` (it prints the ArtifactData calls, "
+            "the attached boards' repos/<id>/posts and comments too, "
             "saved under .kit/run/artifact/in), `python3 -I .kit/kit.py artifact load`, then `kit.py resume`, "
             "`kit.py post <id>`, `kit.py open`, `kit.py since <time>`; one document: ArtifactData `get`; a targeted "
             "lookup: `query` with a `where` and limit <= 5")
@@ -96,8 +105,8 @@ STEP_WAY = ("plan the step with TaskCreate, metadata {\"train\": ..., \"part\": 
             "with `python3 -I .kit/kit.py artifact push`")
 LAUNCH_WAY = ("launch a part from its prompt file: TaskCreate {train, part} first (the hook writes "
               "docs/prompts/<id>.md), then create_session with the prompt \"Your prompt is docs/prompts/<id>.md: read "
-              "it and do it.\" (a successor orchestrator: tag `orchestrator`; a clerk: tag `board-clerk`; a review: a "
-              "title with \"review\" or \"CR-\")")
+              "it and do it.\" (at most %d characters, starting so; a successor orchestrator: tag `orchestrator`; a clerk: "
+              "tag `board-clerk`; a review: tag `review`; the title is not read)" % PROMPT_MAX)
 
 
 def verdict(data, root):
@@ -110,7 +119,11 @@ def verdict(data, root):
             if under(str(ti.get("out_dir") or ""), root, ".kit", "run", "artifact"):
                 return None
             q = ti.get("query") or {}
-            if act == "query" and q.get("where") and int(q.get("limit") or 100) <= 5:
+            try:
+                lim = int(q.get("limit") or 100)
+            except (TypeError, ValueError):
+                lim = 100
+            if act == "query" and q.get("where") and lim <= 5 and not q.get("cursor"):
                 return None
             return "a raw %s of %s: %s." % (act, ti.get("collection"), READ_WAY)
         for w in writes or []:
@@ -124,10 +137,11 @@ def verdict(data, root):
             return "a step post written by hand (%s/%s): %s." % (w.get("collection"), w.get("doc_id"), STEP_WAY)
         return None
     if name.endswith("create_session"):
-        prompt, title = str(ti.get("prompt") or ""), str(ti.get("title") or "")
+        prompt = str(ti.get("prompt") or "").strip()
         tags = [str(t) for t in (ti.get("tags") or [])]
-        if "docs/prompts/" in prompt or "orchestrator" in tags or "board-clerk" in tags or \
-                re.search(r"review|\bCR-|clerk|orchestrator", title, re.I):
+        if any(t in PASS_TAGS for t in tags):
+            return None
+        if PART_PROMPT.match(prompt) and len(prompt) <= PROMPT_MAX:
             return None
         return "a part launched with an inline prompt: %s." % LAUNCH_WAY
     return None

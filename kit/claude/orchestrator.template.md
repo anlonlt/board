@@ -34,7 +34,7 @@ At start:
    `reply_to: "<that thread id>"`, and NO `discussion` field (the page files the reply in his conversation by itself; a
    copied `discussion` put an answer in the wrong conversation); never a new thread.
 5. **The consultant:** at a Done that sets a route (it ends a train, changes a direction, or proposes the next part),
-   launch one review: `create_session`, `model` {{CONS_MODEL}}, `effort` {{CONS_EFFORT}} (`kit.roles.consultant`),
+   launch one review: `create_session`, `tags: ["review"]` (the guard lets a review's inline prompt through by this tag only), `model` {{CONS_MODEL}}, `effort` {{CONS_EFFORT}} (`kit.roles.consultant`),
    `prompt` the text of `.kit/consultant.md` with `<ORCH_ID>`, `<POST_ID>`, `<PART>`, `<PROJECT_ID>` filled in. It
    writes one review under the post and tells you "Check post …". Act on its verdict yourself (continue or redirect);
    a "stop" goes to the owner as a question post.

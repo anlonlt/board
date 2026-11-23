@@ -898,13 +898,14 @@ def artifact_pull(full=False):
     board = artifact_url() or "<the board's claude.ai/artifact url>"
     d = os.path.join(_art_dir(), "in")
     since = "" if full else str(_art_state().get("loaded_at") or "")
+    pre = _art_prefix()
+    attached = [] if pre else _attached_ids()          # before the delta pull clears in/kit_repos/_index.json
     if since:
         t = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) - timedelta(minutes=10)
         since = t.strftime("%Y-%m-%dT%H:%M:%SZ")
         for f in glob.glob(os.path.join(d, "*", "*.json")):
             os.remove(f)                                   # only the changes are loaded this time
     lines = ["# The board from the Artifact to this copy (%s)%s" % (board, " — changes since %s" % since if since else ""), ""]
-    pre = _art_prefix()
     for c in ART_COLLS:
         c = pre + c
         if since:
@@ -914,6 +915,22 @@ def artifact_pull(full=False):
         else:
             lines.append("- `ArtifactData` `list`, `url` %s, `collection: \"%s\"`, `query: {limit: 1000}`, `out_dir: \"%s\"`; "
                          "while it returns a `next_cursor`, again with `query.cursor` set to it." % (board, c, d))
+    if not pre:
+        # CL24: the boards attached to this one (repos/<id>/... in the same Artifact) come with the same pull, so the
+        # kit way covers them too (the orchestrator guard refuses a raw list of repos/<id>/posts|comments)
+        lines.append("- `ArtifactData` `get`, `url` %s, `collection: \"kit_repos\"`, `doc_id: \"_index\"`, `out_dir: \"%s\"` "
+                     "(the attached boards)." % (board, d))
+        for rid in attached:
+            for c in ART_COLLS:
+                c = "repos/%s/%s" % (rid, c)
+                if since:
+                    field = "updated_at" if c.endswith("posts") else "created_at"
+                    lines.append("- `ArtifactData` `query`, `url` %s, `collection: \"%s\"`, `query: {where: [[\"%s\", \">\", "
+                                 "\"%s\"]], limit: 1000}`, `out_dir: \"%s\"`." % (board, c, field, since, d))
+                else:
+                    lines.append("- `ArtifactData` `list`, `url` %s, `collection: \"%s\"`, `query: {limit: 1000}`, "
+                                 "`out_dir: \"%s\"`; while it returns a `next_cursor`, again with `query.cursor` set to it."
+                                 % (board, c, d))
     if since:
         lines.append("(A post changed on the page without a new `updated_at`, or a comment edited later, comes with "
                      "`kit.py artifact pull --full`: do it once a day or when something looks stale.)")
@@ -2624,11 +2641,9 @@ def _read_mirror_board(clone):
     return out
 
 
-def _attached_boards():
-    """The boards attached to this one: [{id, name, github, clone, posts, comments, source}]. Which boards: the
-    config's portfolio and the Artifact's kit_repos/_index (when `artifact pull` or an ArtifactData list saved it in
-    the local copy's in/ folder). Their posts and comments: the board's clone (its local board, else its board-mirror
-    branch), with what the Artifact holds under repos/<id>/ laid over it (comments written on the page land there)."""
+def _attached_rows():
+    """Which boards are attached to this one, without reading them: [{id, name, github, path}], from the config's
+    portfolio, the Artifact's kit_repos/_index and the repos/<id>/ folders a pull saved in the local copy's in/."""
     cfg = _kit_config()
     me = {_repo_id(cfg.get("project") or os.path.basename(ROOT))}
     rows = []
@@ -2660,6 +2675,20 @@ def _attached_boards():
             continue
         seen[rid] = dict(r, id=rid)
         boards.append(seen[rid])
+    return boards
+
+
+def _attached_ids():
+    return [b["id"] for b in _attached_rows()]
+
+
+def _attached_boards():
+    """The boards attached to this one: [{id, name, github, clone, posts, comments, source}]. Which boards: the
+    config's portfolio and the Artifact's kit_repos/_index (when `artifact pull` or an ArtifactData list saved it in
+    the local copy's in/ folder). Their posts and comments: the board's clone (its local board, else its board-mirror
+    branch), with what the Artifact holds under repos/<id>/ laid over it (comments written on the page land there)."""
+    boards = _attached_rows()
+    in_dir = os.path.join(_art_dir(), "in")
     up = os.path.dirname(ROOT)
     for b in boards:
         gh_name = b["github"].split("/")[-1] if b["github"] else ""
