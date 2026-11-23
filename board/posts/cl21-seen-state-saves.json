@@ -1,0 +1,12 @@
+{
+ "body": "Cause found by measurement; fix and red/green test done; full suite running.\n\n## Cause (measured)\n- The page **does** save marks: his live doc `data/users/<him>/board-seen` went from version 2242 to 2244 while I watched (02:09-02:13), adding kit-board comment ids `o49-trunk-question-0209` and `o49-trains-0213`. So `user.id()`, `fromCache` and the write path all work.\n- But they land under the bare key `_orchestrator`, which Harmonize's `_orchestrator` uses too: **the two boards share one mark per id**.\n- No `cl*` post has a mark, though he commented on and liked `cl12-...` (22:20, 22:27). Driving the live page in Chromium (Artifact runtime stub): a post read in its **sheet** writes a mark (desktop and phone). A post read in the **Feed** view, the **Focus** view or a **post window** writes **none**. Only the sheet watched what was on screen.\n- Harmonize's own 67 open posts: all have marks, with matching signatures. That board was not losing marks.",
+ "column": "info",
+ "created_at": "2026-11-23T02:05:29Z",
+ "part": "CL21",
+ "priority": 1,
+ "session_id": "3d6af1ec-6576-5483-a7f2-a89248f8e580",
+ "status": "in progress",
+ "title": "CL21: posts he has read stop showing as new",
+ "train": "cli",
+ "updated_at": "2026-11-23T02:23:17Z"
+}
