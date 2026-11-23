@@ -33,7 +33,7 @@ PARTS = ("memory", "board", "clerk", "orchestrator")
 MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "test_hooks.py"}
 HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
          "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "kit_task_train.py",
-         "kit_orchestrator_guard.py", "test_hooks.py"]
+         "kit_orchestrator_guard.py", "kit_brief_guard.py", "test_hooks.py"]
 # agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
 CMD = "python3 -I hooks/kit/%s"
 CLAUDE_CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.claude/hooks/kit/%s"'
@@ -42,6 +42,9 @@ CLAUDE_SETTINGS = [
     ("PreToolUse", "Bash", "kit_guard.py"),
     ("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage", "kit_say_it_once.py"),
     ("PreToolUse", "ArtifactData|mcp__claude-code-remote__create_session", "kit_orchestrator_guard.py"),
+    ("PreToolUse", "ArtifactData|Bash", "kit_brief_guard.py"),
+    ("PostToolUse", "Bash", "kit_brief_guard.py"),
+    ("UserPromptSubmit", None, "kit_brief_guard.py"),
     ("PostToolUse", "ArtifactData|mcp__claude-code-remote__send_message", "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_board_typing.py"),
@@ -60,8 +63,11 @@ CLAUDE_CLI_SETTINGS = [
     ("PreToolUse", "SendMessage", "kit_say_it_once.py"),
     ("PostToolUse", "SendMessage|Bash", "kit_say_it_once.py"),
     ("PostToolUse", "TaskCreate|TaskUpdate", "kit_task_train.py"),
+    ("PreToolUse", "ArtifactData|Bash", "kit_brief_guard.py"),
+    ("PostToolUse", "Bash", "kit_brief_guard.py"),
     ("UserPromptSubmit", None, "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_board_typing.py"),
+    ("UserPromptSubmit", None, "kit_brief_guard.py"),
     ("Stop", None, "kit_stop.py"),
     ("Stop", None, "kit_say_it_once.py"),
     ("Stop", None, "kit_pre_compact.py"),
@@ -521,12 +527,17 @@ def build_agy_hooks(board=True):
         spec["PreToolUse"].append(
             {"matcher": "send_message", "hooks": [{"type": "command", "command": CMD % "kit_say_it_once.py"}]}
         )
+        spec["PreToolUse"].append(
+            {"matcher": "run_command", "hooks": [{"type": "command", "command": CMD % "kit_brief_guard.py"}]}
+        )
         spec["PostToolUse"] = [
-            {"matcher": "send_message|run_command", "hooks": [{"type": "command", "command": CMD % "kit_say_it_once.py"}]}
+            {"matcher": "send_message|run_command", "hooks": [{"type": "command", "command": CMD % "kit_say_it_once.py"}]},
+            {"matcher": "run_command", "hooks": [{"type": "command", "command": CMD % "kit_brief_guard.py"}]},
         ]
         spec["PreInvocation"] = [
             {"type": "command", "command": CMD % "kit_say_it_once.py"},
             {"type": "command", "command": CMD % "kit_board_typing.py"},
+            {"type": "command", "command": CMD % "kit_brief_guard.py"},
         ]
         spec["PostInvocation"] = [
             {"type": "command", "command": CMD % "kit_say_it_once.py"},

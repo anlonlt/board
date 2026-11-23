@@ -228,6 +228,8 @@ button.wait-row:hover .wtext { text-decoration: underline; }
 .tnode.running > .tline .tst { color: var(--info); animation: kit-blink 1.5s ease-in-out infinite; }
 .tnode.default > .tline .tst, .tnode.ready > .tline .tst { color: var(--question); animation: kit-fade 2.4s ease-in-out infinite; }
 .tnode.done > .tline .tst { color: var(--done); }
+.tnode.closed > .tline .tst { color: var(--done); }
+.tnode.held > .tline .tst { color: var(--question); }
 .tnode.blocked > .tline .tst, .tnode.idle > .tline .tst { color: var(--muted); }
 .tkids { margin-left: 14px; border-left: 2px solid var(--line); padding-left: 8px; }
 .tkids.flat { margin-left: 0; border-left: 0; padding-left: 0; }
@@ -1960,7 +1962,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
      from scripts/board-trains.py. Each part under its parent; "Only the trains still moving" keeps a tree with a part
      running or waiting on him. A tap on a line shows its prompt, session and store, and opens its post.
      BD7: folded at the foot of the dashboard ("All trains"); a row of the dashboard shows its own train. */
-  var TST = { running: "runs", you: "you", default: "default", ready: "default", blocked: "later", done: "done", idle: "later", written: "written", unknown: "?" };
+  var TST = { running: "runs", you: "you", default: "default", ready: "default", blocked: "later", done: "done", closed: "closed", held: "held", idle: "later", written: "written", unknown: "?" };
   function trainTitle(r) {
     var p = r.post && state.posts.filter(function (q) { return q.id === str(r.post); })[0];
     return p ? str(p.title) : (r.prompt ? str(r.prompt).split("/").pop().replace(/\.md$/, "") : "");
