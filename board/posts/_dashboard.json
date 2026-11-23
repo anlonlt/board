@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T22:03:19Z",
+ "created_at": "2026-11-23T22:03:41Z",
  "rows": [
   {
    "at": 28,
@@ -42,7 +42,8 @@
     "The board travels in git, always current (mirror synced on every step)",
     "A crashed part is continued from its last checkpoint",
     "The Trains view: task lists (A) or the old flow map (B)?",
-    "kit compact keeps a project's story checker green"
+    "kit compact keeps a project's story checker green",
+    "kit artifact push never overwrites a newer live card (_dashboard, _trains)"
    ],
    "train": "P-cli"
   },
@@ -82,5 +83,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-23T22:03:19Z"
+ "updated_at": "2026-11-23T22:03:41Z"
 }

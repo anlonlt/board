@@ -1,0 +1,11 @@
+{
+ "body": "CL30 found that the push guard does not protect the live _dashboard and _trains cards: a pin taken from a fresh get lets the push overwrite the live copy, losing its store lists and hand-written notes (details in CL30s post issues). Fix: a test first that fails on a76279a, then the push must refuse to replace a live card that is newer than the local one, or merge into it. Kit suite passes on a fresh clone; fast-forward kit main; report Done with the sha.",
+ "column": "info",
+ "created_at": "2026-11-23T21:56:38Z",
+ "from": "orchestrator",
+ "part": "CL31",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "title": "kit artifact push never overwrites a newer live card (_dashboard, _trains)",
+ "train": "cli"
+}
