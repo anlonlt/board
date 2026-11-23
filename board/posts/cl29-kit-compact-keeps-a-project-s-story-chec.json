@@ -24,6 +24,6 @@
  "status": "done",
  "title": "kit compact keeps a project's story checker green",
  "train": "cli",
- "updated_at": "2026-11-23T22:40:48Z",
- "verdict": "compact moves only settled work: open awaits points and their states stay, a state moves only once its next step is done, and the plan is checked by the project's memory checker on a shadow copy, so a dry run never touches the tree and a red check moves nothing."
+ "updated_at": "2026-11-23T22:41:00Z",
+ "verdict": "compact moves only settled work (open awaits points, their states and any file a staying file cites stay) and checks its plan on a shadow copy with the project's memory checker: red moves nothing."
 }
