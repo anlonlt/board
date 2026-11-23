@@ -1,4 +1,17 @@
 {
+ "artifacts": [
+  "docs/KIT-SCRIPTS.md",
+  "tests/test_cl30_kit_scripts.py",
+  "kit/hooks/kit_board_guard.py",
+  "kit/hooks/kit_orchestrator_guard.py",
+  "kit/hooks/kit_brief_guard.py",
+  "kit/board/mcp_stdio.py",
+  "scripts/kit.py",
+  "install.py",
+  "tests/test_cl30_files.py",
+  "kit/claude/kit_artifact_sync.py",
+  "kit/board/shim.js"
+ ],
  "bars": [
   "tests/test_cl30_kit_scripts.py: 18 of 22 red on a7ce380, 22 of 22 green (every gap has a red test)",
   "tests/test_cl30_files.py (your 10:3x item, Harmonize's parity check): 7 of 7 red on 0a45d26, 7 of 7 green on 12bac4d",
@@ -7,14 +20,29 @@
   "kit's local copy: 17 of 17 pictures the posts name load (14 from repo files, 3 read from the Artifact)",
   "gaps closed: 8 of 8, plus the file item"
  ],
- "body": "The owner's yes (10:2x, O52's chat, on o52-q-close-gaps-1022). Close the gaps listed in Harmonize docs/KIT-SCRIPTS.md (anlonlt/harmonize main 3138c3f8, § Gaps): (1) kit guards apply to parts and the clerk too, not only the orchestrator: no raw ArtifactData/board write where a kit command exists; (2) a reply or board write to the owner requires a fresh `kit.py resume` on every runtime (the brief guard watches Bash only; ArtifactData replies pass); (3) pull+load required before resume/reads, and artifact push + sent required after local writes (the kit_task_train push reminder only fires when board_url is claude.ai); (4) orchestrator guard holes: hand update/str_replace of a step post; launches tagged orchestrator/board-clerk/review pass; `kit.py launch` never required; (5) on agy, the board-kit MCP tools bypass every hook; (6) kit_cards_reminder.py registered nowhere; (7) CLAUDE_CODE_ENABLE_TODO_TOOLS not set so TaskCreate may be off; (8) CL28's open item: artifact push refuses on a never-loaded copy. Each fix test first (red on kit main a7ce380, green after); `scripts/run_all_tests.py` green; no deletions; update KIT-SCRIPTS-style table in the kit's docs. Done: kit main fast-forwarded (trunk push), post on the live board with the before/after table of gaps.",
+ "body": "**What you must know:** all 8 gaps are closed in the kit (commit 0a45d26); each has a test that fails on the old kit and passes now. Harmonize gets them with `install.py --update` from kit main: its brief guard then also checks Artifact replies, the cards reminder gets wired, and Claude Code's task tools get turned on (its own hooks are kept). From now on a part, the clerk or a review that writes a post or comment by hand with `ArtifactData` is refused and told the kit command to use instead.\n\n## Your file item (10:3x) and the parity check\nBefore, `artifact push` handled only the files of the posts it was sending, so an older post never got its files (Harmonize: 130 of 196 posts name files, none opened). Documents also needed a second command. Now:\n- **Artifact side:** a push covers the files of every post and comment. Markdown and HTML go in its own batches. Pictures, PDFs and video come back as `Artifact publish` calls, followed by `files-sent`. Anything the Artifact's map already has is never uploaded again. On an attached board the steps name `repos/<id>/kit_docs`.\n- **Local side:** `artifact pull` also fetches the map, and `artifact load` puts every picture the posts name into the local copy under its own id: from the repo file, or from an `Artifact read` call it prints. On this board 17 of 17 now load.\n- The record of what the Artifact holds is in git (`.kit/artifact-files/`), so a new container no longer starts from scratch.\n- An embed whose document is missing now says \"Not on this board yet: <path>\" instead of disappearing.\n\n## Before / after, gap by gap\n`docs/KIT-SCRIPTS.md § The gaps CL30 closed`\n\n## What changes for each role\n- **Parts, reviews, runners:** a post or comment is written on the local copy (`board_cli.py set/update/reply`), then `kit.py artifact push`, its batch, then `artifact sent`. After a local write the hook prints the push line, and a Stop is held once while something is unsent. The kit's templates (BOARD, board skill, runner, consultant) now say this.\n- **The clerk:** what it writes by hand still passes, because the kit has no command for it: read marks and `waiting_note` on a comment, a new `session_id` on `_orchestrator`, typing dots. Its targeted `where` / limit 1 queries pass too.\n- **The orchestrator:** a launch tag only passes with that tag's kit prompt. A part starts only after `kit.py launch <post>` (it leaves `.kit/run/launch/<post>.json`). After `create_session`, the hook names `kit.py launch <post> --session-id <id>`, and a Stop is held until that has run. `kit.py review` and `handover.py` now tag their own calls.\n- **Every read on an Artifact board** (`resume`, `train`, `post`, `open`, `since`, `session`, `search`, `queue`, `sections`, `report`) exits 3 on a copy that was never loaded or is more than 15 min old (`kit.artifact.fresh_min`), so a stale `resume` no longer stamps the brief. `KIT_STALE_OK=1` overrides this; `--db` (a named database) is not gated.\n- **agy:** the board-kit MCP server enforces the brief guard itself (`board_resume` stamps, and the orchestrator's `board_reply` is refused without a fresh stamp).\n\n## Tests changed, none removed\nNo file, test or guard was deleted. Older tests that asserted the old rule now assert the new one: `tests/test_orchestrator_guard.py` (a tagged inline prompt, the orchestrator's raw `_trains` / comment `set`, a part's raw dump, now refused; launches carry the launch mark), `tests/test_install_present_runtimes.py` (the new hook, and the guards wired), `tests/test_launch.py` (the copy is marked loaded before push). The templates' \"write with `ArtifactData set`\" lines were rewritten to the kit's way.\n\n## Commands checked before building\n`kit.py commands artifact`, `launch`, `resume`: built on `artifact pull/load/push/sent`, `launch`, `resume`, `board_cli.py`; new only `kit.py artifact status` (what is unsent), `stale_copy`, `launch_mark` and the hook `kit_board_guard.py`.\n",
+ "breaks": "revert e05a6d1",
+ "check": "python3 -m unittest tests.test_cl30_kit_scripts tests.test_cl30_files",
  "column": "info",
  "created_at": "2026-11-23T10:29:22Z",
  "from": "orchestrator",
+ "handoff": "Kit main has CL30. In Harmonize: install.py --update from kit main, then `kit.py artifact pull` (it now gets kit_docs/_index too), `load`, `push`: its batches mirror every document its posts name, its text lists the pictures to upload, then files-sent; commit .kit/artifact-files/. Then rebuild the cards (kit-cards).",
+ "issues": [
+  "_dashboard is stale: rebuilding it is the kit-cards agent's job (the orchestrator's); this copy's _dashboard and _trains differ from the Artifact and were NOT sent",
+  "Harmonize's own gaps 8, 9, 13 and gap 7's start/stop hooks are not in this step"
+ ],
+ "not_checked": [
+  "Harmonize itself: install.py --update and its first push not run (it will mirror the ~158 files its posts name and upload the pictures not in its map)",
+  "the page with a missing embed seen in a browser (the source is checked; the JS suites pass)",
+  "a real agy session calling board_reply over MCP (tested in-process)",
+  "this repo's .claude/ and .agents/ hooks not refreshed (install --update would also write a machine path into .agents/mcp_config.json); .kit/ byte copies are current"
+ ],
  "part": "CL30",
  "planned_by": "orchestrator",
- "status": "planned",
+ "session_id": "7364b320-e0c0-53e2-8c3b-6070f9da937a",
+ "status": "complete",
  "title": "every agent uses the kit's scripts, enforced by hooks",
  "train": "cli",
- "updated_at": "2026-11-23T11:18:59Z"
+ "updated_at": "2026-11-23T11:19:26Z",
+ "verdict": "All 8 gaps closed and your file item done: every session writes the board through the kit, replies need a fresh resume, and every file a post names now opens on both the Artifact board and a local copy."
 }
