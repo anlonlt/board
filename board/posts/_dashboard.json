@@ -20,7 +20,6 @@
     "Design principles, complete, and no emoji Like",
     "See the new UI work, then stop tests touching ~/.local/bin",
     "One board token per machine, kept across projects and CLIs",
-    "Board UI: text never runs off screen, badge clears when seen, Done steps stay in the tr...",
     "A launched part is always visible on the board, on the right base",
     "Chat ends with a single · in every session the owner did not type in",
     "Step 0 measures each device; never more sessions than it can hold",

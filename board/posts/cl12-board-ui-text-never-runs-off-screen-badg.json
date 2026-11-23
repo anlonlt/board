@@ -1,11 +1,11 @@
 {
- "body": "Reading the owner's two comments, then root-causing the text overflow, the sticky comment badge and the missing Done steps.",
+ "body": "Continued in a cloud session from the WIP on worktree-cl12 (main merged in): first finishing the text-overflow base rule and its layout check, then the badge and the missing Done steps.",
  "column": "info",
- "created_at": "2026-11-22T22:17:08Z",
+ "created_at": "2026-11-23T01:58:36Z",
  "from": "orchestrator",
  "part": "CL12",
  "planned_by": "orchestrator",
- "session_id": "board-cl12",
+ "session_id": "session_01AE1HGhgv7nxdCEvuM9YNsN",
  "sources": [
   "004abd3c5e334e6aac34",
   "e2a98c49d8f14e068c54"
@@ -13,5 +13,5 @@
  "status": "in progress",
  "title": "Board UI: text never runs off screen, badge clears when seen, Done steps stay in the train view",
  "train": "cli",
- "updated_at": "2026-11-22T22:43:47Z"
+ "updated_at": "2026-11-23T01:58:36Z"
 }

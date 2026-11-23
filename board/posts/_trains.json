@@ -8,14 +8,16 @@
     "CL1",
     "CL10",
     "CL11",
-    "CL12",
     "CL13",
     "CL14",
     "CL15",
     "CL16",
     "CL17",
     "CL18",
-    "CL19"
+    "CL19",
+    "CL12",
+    "CL20",
+    "CL21"
    ],
    "parent": "",
    "part": "P-cli",
@@ -313,17 +315,6 @@
    "prompt": "",
    "session": "",
    "state": "idle",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [],
-   "parent": "P-cli",
-   "part": "CL12",
-   "post": "cl12-board-ui-text-never-runs-off-screen-badg",
-   "prompt": "",
-   "session": "board-cl12",
-   "state": "running",
    "store": []
   },
   {
