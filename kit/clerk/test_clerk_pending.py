@@ -73,5 +73,9 @@ case("a session comment 35 s BEFORE his real time is no answer (line typed 04:57
 d = setup([HIS])
 case("NEXT is the minutes left, rounded up (2 min 10 s -> 3)", cp.run(d, at("03:03")), ["NEXT 3"])
 
+# board_cli `comments ... --pending-dir` passed an ISO string as now: TypeError str - datetime, the listener crashed
+d = setup([HIS])
+case("now as an ISO string works like a datetime", cp.run(d, "2026-11-16T03:06:00Z"), ["TELL h1 P th1 03:00 B12", "NEXT 5"])
+
 print(f"{'FAIL' if fails else 'ok'}: {fails} failure(s)")
 sys.exit(1 if fails else 0)

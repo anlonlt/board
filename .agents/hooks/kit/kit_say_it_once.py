@@ -12,7 +12,9 @@ One script, five agy events (dispatched by `hookEventName`):
   PostInvocation: if PostToolUse recorded a board write or send_message, injects the reminder to end
       the turn with a single "·" (only on a turn the owner did not type: his own chat always gets words).
   Stop: parses agy's transcript.jsonl (`USER_INPUT` / `PLANNER_RESPONSE`) to enforce `chat_answer_chars`
-      only on a non-human turn (a single "·"), blocking ONCE per turn via `{"decision": "continue"}`. An answer to
+      only on a non-human turn (a single "·" alone; text then "·" fails), blocking ONCE per turn via
+      `{"decision": "continue"}`. Every turn of a background session (KIT_ROLE other than orchestrator: the clerk, a
+      part, a consultant, the cards agent, a review) is non-human, and its "·" rule holds even while kit.setup is true. An answer to
       the owner is never retried: it is already on his screen; the limit is said before his turn starts.
 """
 import hashlib
@@ -26,6 +28,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_config import config, in_setup, is_claude_payload, limit  # noqa: E402
 
 FORWARD = "Board comment from the owner"
+# Sessions the kit launches in the background (the clerk, parts, consultants, the cards agent, reviews): the owner never
+# types in their chat, even though Claude Code marks their launch prompt with origin "human". Only the orchestrator
+# (and a session started by hand, no KIT_ROLE) has the owner typing.
+FOREGROUND_ROLES = ("", "orchestrator")
 BOARD_WRITE_RE = re.compile(r"board_cli\.py\b.*\b(set|update|str-replace|batch)\b")
 
 
@@ -114,8 +120,15 @@ def turn_opener(path):
     return opener, human
 
 
+def background():
+    """True in a session the kit launched in the background (KIT_ROLE clerk, part, consultant, cards, review...)."""
+    return os.environ.get("KIT_ROLE", "").strip().lower() not in FOREGROUND_ROLES
+
+
 def owner_typed(path):
     """True only when the transcript shows the owner typed this turn (no transcript: unknown, so False)."""
+    if background():
+        return False
     return bool(path) and os.path.isfile(path) and turn_opener(path)[1]
 
 
@@ -127,8 +140,8 @@ def chat_verbose(data):
 
 def stop_verdict(text, human, data):
     t = text.strip()
-    if len(t) <= 3:
-        return None
+    if t in ("", "\u00b7"):
+        return None                              # nothing, or the single "·" alone: the only closing that passes
     if human:
         # The owner has already read it: a Stop hook runs after the answer is on his screen, so a retry only sends
         # it a second time (his 2026-11-23 report). The limit is said BEFORE the turn (UserPromptSubmit) instead.
@@ -155,7 +168,8 @@ def main():
     ev = data.get("hookEventName") or data.get("hook_event_name") or ""
     cid = str(data.get("conversationId") or data.get("session_id") or "x")
 
-    if in_setup(data) and ev in ("PreInvocation", "UserPromptSubmit", "PostToolUse", "PostInvocation", "Stop"):
+    # Setup turns the checks off, except the "·" rule of a background session (the clerk talked unchecked in setup).
+    if in_setup(data) and not (background() and ev == "Stop") and ev in ("PreInvocation", "UserPromptSubmit", "PostToolUse", "PostInvocation", "Stop"):
         if claude:
             return 0
         if ev == "Stop":
@@ -189,7 +203,7 @@ def main():
     if ev in ("PreInvocation", "UserPromptSubmit"):
         p = str(data.get("lastUserInput") or data.get("prompt") or "")
         cap = limit("chat_answer_chars", 600, data)
-        if not p or chat_verbose(data) or cap <= 0 or p.startswith(FORWARD) or "<cross-session" in p[:200] or "SYSTEM NOTIFICATION" in p[:200]:
+        if not p or background() or chat_verbose(data) or cap <= 0 or p.startswith(FORWARD) or "<cross-session" in p[:200] or "SYSTEM NOTIFICATION" in p[:200]:
             if not claude:
                 print("{}")
             return 0
@@ -260,6 +274,7 @@ def main():
             return 0
         tp = str(data.get("transcriptPath") or data.get("transcript_path") or "")
         opener, human = turn_opener(tp)
+        human = human and not background()
         reason = stop_verdict(closing_text(tp), human, data)
         if reason is None:
             if not claude:

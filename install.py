@@ -881,6 +881,7 @@ def main(argv=None):
         ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))   # also the Artifact mode's local copy
         ins.put(".kit/shim.js", rd("kit", "board", "shim.js"))
         ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
+        ins.put(".kit/board_token.py", rd("kit", "board", "board_token.py"))
         if not claude_only:
             for _vf in ("pdf.min.js", "pdf.worker.min.js"):
                 _vp = os.path.join(KIT, "kit", "board", "vendor", _vf)
@@ -1054,6 +1055,12 @@ def main(argv=None):
                 "<text x='48' y='348' font-family='monospace' font-size='14' fill='#6cc492'>Status: Crisp editorial canvas + pinch zoom</text>"
                 "</svg>\n"
             ))
+    if parts["board"] and not claude_only and not a.dry_run:
+        # One board token per machine (CL11): a project with no token gets the machine's; its own token is kept.
+        import board_token as _bt  # kit/board is on sys.path
+        _tp, _src = _bt.ensure(t)
+        if _src == "machine":   # a project's own token is kept silently (a rerun changes nothing)
+            ins.log.append("board token: the machine's (%s) in .kit/board_data/token, never printed" % _bt.machine_token_path())
     should_bootstrap = (a.bootstrap or a.demo or rt in ("arena", "generic")) and not a.no_bootstrap
     if should_bootstrap and parts["board"] and not claude_only and not a.dry_run:
         from datetime import datetime, timezone

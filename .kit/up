@@ -76,7 +76,11 @@ cleanup_server() {
 if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
   mkdir -p .kit/board_data
   TOK_FILE=".kit/board_data/token"
-  if [ ! -f "$TOK_FILE" ]; then
+  # One token per machine (CL11): a project with no token of its own gets the machine's (~/.config/board-kit/board_token),
+  # so a device that saved it keeps working across projects and CLIs; a project's own token is kept.
+  if [ -f ".kit/board_token.py" ]; then
+    python3 -I .kit/board_token.py ensure --root "$ROOT" --quiet
+  elif [ ! -s "$TOK_FILE" ]; then
     python3 -I -c 'import secrets; print(secrets.token_hex(16))' > "$TOK_FILE"
     chmod 600 "$TOK_FILE"
   fi

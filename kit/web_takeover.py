@@ -87,6 +87,9 @@ def start_board():
     os.makedirs(os.path.join(KIT, "board_data"), exist_ok=True)
     os.makedirs(RUN, exist_ok=True)
     tok_path = os.path.join(KIT, "board_data", "token")
+    bt = os.path.join(KIT, "board_token.py")
+    if os.path.exists(bt):   # one token per machine (CL11): the project's own, else the machine's
+        sh([sys.executable, "-I", bt, "ensure", "--root", ROOT, "--quiet"])
     if not os.path.exists(tok_path):
         with open(tok_path, "w") as fh:
             fh.write(secrets.token_hex(16))
