@@ -125,11 +125,23 @@ const seedOf = (seen) => (seen ? { "data/users/u1": { "board-seen": seen } } : {
                                    k2: { post_id: "cl2-y", from: "victor", text: "two", created_at: "2026-11-22T09:00:00.000Z" } } }) });
   check("attached: a partial per-board mark does not hide the older full read", g.isNew["cl2-y"] === false, g.isNew);
 
+  // 3e. kit board, Ask the orchestrator: an agent's answer to his Like (reply_to = the Like's thread id) is drawn,
+  //     so once read the Ask button's dot clears after a reload (the Welcome thread that stayed new, 02:41)
+  const orchSeed = { "repos/board/posts": { "_orchestrator": { title: "Ask the orchestrator", column: "info", created_at: "2026-11-20T00:00:00.000Z" } },
+    "repos/board/comments": {
+      L1: { post_id: "_orchestrator", from: "owner", like: true, text: "+1", thread_id: "thr_l1", created_at: "2026-11-22T22:00:20.000Z" },
+      R1: { post_id: "_orchestrator", from: "orchestrator", text: "Launched CL8, CL9 and CL10.", reply_to: "thr_l1", created_at: "2026-11-22T22:01:41.000Z" } } };
+  const h1 = await visit(html, { repo: "board", seed: orchSeed, act: async (p) => {
+    await p.evaluate(() => document.getElementById("ask").click()); await p.wait(600);
+    await p.evaluate(() => { const d = [...document.querySelectorAll(".disc")].find((x) => /Launched/.test(x.textContent)); if (d) d.click(); }); } });
+  const h2 = await visit(html, { repo: "board", seed: Object.assign({}, orchSeed, seedOf(h1.seen)) });
+  check("kit board: an answer to his Like is drawn and marked read", !!(h1.seen && h1.seen.posts && (h1.seen.posts["repos/board/_orchestrator"] || {}).v && h1.seen.posts["repos/board/_orchestrator"].v.indexOf("R1") >= 0) || !!(h1.seen && (h1.seen.posts["repos/board/_orchestrator"] || {}).at > "2026-11-22T22:01:41"), { seen: h1.seen });
+
   // 4. a mark from before CL21 (bare id) still holds on the primary board
   const e = await visit(html, { repo: "", seed: seedOf({ posts: { "P-old": { at: "2026-11-23T02:00:00.000Z", sig: "", v: [] } } }) });
   check("primary: an old bare-id mark is honoured", e.isNew["P-old"] === false, e.isNew);
 
-  [a1, a2, b1, b2, c1, c2, d1, d2, w1, w2, f, g, e].forEach((x) => { res.errors = res.errors.concat(x.errors); });
+  [a1, a2, b1, b2, c1, c2, d1, d2, w1, w2, f, g, h1, h2, e].forEach((x) => { res.errors = res.errors.concat(x.errors); });
   const failed = res.checks.filter((c) => !c.ok);
   console.log(JSON.stringify(res, null, 1));
   console.log((res.checks.length - failed.length) + " of " + res.checks.length + " seen checks pass");

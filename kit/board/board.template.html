@@ -2717,7 +2717,9 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   function parentOf(c, byId) {
     var par = str(c.reply_to); if (!par || par === c.id) return "";
     if (byId[par]) return par;
-    var hit = (ix().byThread[par] || NONE).filter(function (x) { return x.id !== c.id; })[0];
+    /* CL21: only a comment that is drawn (in byId): a reply to his Like (never drawn) hung under it, off screen, and its
+       "new" never cleared (the kit board's Welcome thread, 2026-11-23 02:41); it now stands at the top of its thread */
+    var hit = (ix().byThread[par] || NONE).filter(function (x) { return x.id !== c.id && byId[x.id]; })[0];
     return hit ? hit.id : "";
   }
   function commentNode(c) {
