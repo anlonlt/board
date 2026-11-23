@@ -122,8 +122,12 @@ def apply(page, table, strings):
     for k_raw, v_raw in (strings or {}).items():
         if v_raw:
             norm_strings[decode_js(k_raw)] = decode_js(v_raw)
+    never = {decode_js(e) for e in EXCLUDED}  # code tokens and text for Claude: kept as is even if a translation names them
     for row in table:
         en, kind = decode_js(row["en"]), row["kind"]
+        if kind == "js" and en in never:
+            used += 1  # found and deliberately kept (e.g. "posts/" in removeDocs(["posts/" + id]) is a db path)
+            continue
         tr = norm_strings.get(en)
         if not tr or tr == en:
             missing.append(en)
@@ -155,7 +159,7 @@ def apply(page, table, strings):
 
 # Found by `extract` but never translated: code tokens, and text that goes to Claude (agents read it in English).
 EXCLUDED = ["_orchestrator", "2-digit", "/_blob/", "https://", "comments/", "posts/", "groups:", "gallery:3", "board-draft:",
-            " [post ", "] image ", "[post ", "[image ", "[discussion ", "_blank", "data/users/", "/board-seen",
+            " [post ", "] image ", "[post ", "[repo ", "[image ", "[discussion ", "_blank", "data/users/", "/board-seen",
             "(hover: hover) and (pointer: fine)", "-posts-", " at /_blob/", ") at /_blob/", "  [attached: ",
             "\n[attached: ", "(in reply to the comment ", "👍", "Answer: ", "Answer: X",
             "👍 Like: he approves this", ", no words.", "👍 Like on the comment of ", " («",
@@ -193,7 +197,11 @@ def load_table():
 
 def main(argv):
     if len(argv) >= 2 and argv[0] == "extract":
-        print(json.dumps(extract(open(argv[1], encoding="utf-8").read()), indent=1, ensure_ascii=False))
+        # CL12: without the exclusions a regenerated table held "posts/" and "comments/", and a translated board wrote a
+        # removal to "<translated>posts/P-a" (test_page.js on the translated page)
+        out = set(extract_exclusions())
+        rows = [r for r in extract(open(argv[1], encoding="utf-8").read()) if not (r["kind"] == "js" and r["en"] in out)]
+        print(json.dumps(rows, indent=1, ensure_ascii=False))
         return 0
     if len(argv) >= 2 and argv[0] == "template":
         t = {"language": "<the owner's language>", "strings": {r["en"]: "" for r in load_table()}}

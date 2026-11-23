@@ -197,7 +197,11 @@ def load_table():
 
 def main(argv):
     if len(argv) >= 2 and argv[0] == "extract":
-        print(json.dumps(extract(open(argv[1], encoding="utf-8").read()), indent=1, ensure_ascii=False))
+        # CL12: without the exclusions a regenerated table held "posts/" and "comments/", and a translated board wrote a
+        # removal to "<translated>posts/P-a" (test_page.js on the translated page)
+        out = set(extract_exclusions())
+        rows = [r for r in extract(open(argv[1], encoding="utf-8").read()) if not (r["kind"] == "js" and r["en"] in out)]
+        print(json.dumps(rows, indent=1, ensure_ascii=False))
         return 0
     if len(argv) >= 2 and argv[0] == "template":
         t = {"language": "<the owner's language>", "strings": {r["en"]: "" for r in load_table()}}
