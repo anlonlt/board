@@ -37,6 +37,7 @@
     "the review launcher works on every platform",
     "a full UI and UX audit of the board, then every fix",
     "the orchestrator answers only from a fresh brief",
+    "kit compact keeps a project's story checker green",
     "every agent uses the kit's scripts, enforced by hooks",
     "kit artifact push never overwrites a newer live card (_dashboard, _trains)",
     "Design principles, complete, and no emoji Like",
