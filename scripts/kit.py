@@ -1008,7 +1008,7 @@ def _keyed(rows):
     return out
 
 
-def _merge_deep(live, here, base, name=""):
+def _merge_deep(live, here, base, name="", lost=None, path=""):
     """CL31: a card (posts/_dashboard, posts/_trains) three-way: what this copy changed since the base, laid into the
     live card, field by field and row by row (rows matched by their key: key/part+post/...). What the live card gained
     since the base (a row's store list, a hand-written note) is kept; a value both sides changed keeps the live one,
@@ -1023,7 +1023,8 @@ def _merge_deep(live, here, base, name=""):
         b = base if isinstance(base, dict) else {}
         out = {}
         for k in list(live) + [k for k in here if k not in live]:
-            v = _merge_deep(live.get(k, _MISSING), here.get(k, _MISSING), b.get(k, _MISSING), k)
+            v = _merge_deep(live.get(k, _MISSING), here.get(k, _MISSING), b.get(k, _MISSING), k, lost,
+                            "%s.%s" % (path, k) if path else str(k))
             if v is not _MISSING:
                 out[k] = v
         return out
@@ -1033,13 +1034,18 @@ def _merge_deep(live, here, base, name=""):
         if kl is not None and kh is not None and kb is not None:
             out = []
             for k, row in kl.items():                      # the live order, then the rows added here
-                v = _merge_deep(row, kh.get(k, _MISSING), kb.get(k, _MISSING))
+                v = _merge_deep(row, kh.get(k, _MISSING), kb.get(k, _MISSING), "", lost,
+                                "%s[%s]" % (path, ",".join(x[1] for x in k)))
                 if v is not _MISSING:
                     out.append(v)
             out += [row for k, row in kh.items() if k not in kl and k not in kb]
             return out
     if name in _STAMPS and isinstance(live, str) and isinstance(here, str):
         return max(live, here)
+    if isinstance(live, list) and isinstance(here, list) and lost is not None:
+        # O53: rows without their own key (or two with one) cannot be merged row by row: this copy's change to
+        # them would be dropped without a word; said, so the pin refuses and load keeps this copy
+        lost.append(path or name or "(the document)")
     return live
 
 
@@ -1054,12 +1060,13 @@ def _card_older(here, other):
     return isinstance(a, str) and isinstance(b, str) and a < b
 
 
-def _merge_doc(did, remote, local, base):
-    """The local document laid over the remote one: cards deep (CL31), posts and comments by field."""
+def _merge_doc(did, remote, local, base, lost=None):
+    """The local document laid over the remote one: cards deep (CL31), posts and comments by field. `lost` gets the
+    paths of the lists whose changes here could not be merged (rows without a key)."""
     if _is_card(did):
         if _card_older(local, remote):
             return remote                      # an older (or seeded) card here: the live one stands
-        return _merge_deep(remote, local, base)
+        return _merge_deep(remote, local, base, lost=lost)
     return _merge_fields(remote, local, base)
 
 
@@ -1071,6 +1078,7 @@ def artifact_load(url=None, token=None, in_dir=None):
     in_dir = in_dir or os.path.join(_art_dir(), "in")
     st = _art_state()
     taken = kept = merged = 0
+    unmerged = []
     pre = _art_prefix()
     for coll in ART_COLLS:
         # ArtifactData's out_dir writes <out_dir>/<collection path>/<doc_id>.json: under the prefix for an attached board
@@ -1083,7 +1091,15 @@ def artifact_load(url=None, token=None, in_dir=None):
             d = _board_request(url, "doc/%s/%s" % (coll, urllib.parse.quote(did, safe="")), token=token)
             local = d["data"] if d.get("exists") else None
             if local is not None and base is not None and local != base:       # changed here since the last sync
-                new = _merge_doc(did, remote, local, base) if remote != base else local
+                lost = []
+                new = _merge_doc(did, remote, local, base, lost) if remote != base else local
+                if lost:                       # O53: not mergeable: this copy and its base stay, the pin will refuse
+                    unmerged.append("%s/%s: %s" % (coll, did, ", ".join(lost)))
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass
+                    continue
                 merged += new != local
                 kept += new == local
             else:
@@ -1114,7 +1130,7 @@ def artifact_load(url=None, token=None, in_dir=None):
     _art_save(st)
     restored, missing = _load_blobs(url, token, in_dir)
     return {"taken": taken, "kept_here": kept, "merged": merged, "not_there": len(stale), "blobs_restored": restored,
-            "blobs_missing": missing}
+            "blobs_missing": missing, "unmerged": unmerged}
 
 
 BLOB_RE = re.compile(r"/_blob/([0-9a-f]{32})\b")
@@ -1448,17 +1464,23 @@ def _pin_dir():
 
 
 def _pinned_live(coll, did):
-    """CL31: the live document the `get` before a pin saved ({data} or the bare data), and its file; (None, None)."""
+    """CL31: the live document the `get` before a pin saved in this project's pin directory (never a shared one, O53),
+    its file and the version the file names (None when it is the bare data, as `ArtifactData` `out_dir` saves it);
+    (None, None, None)."""
     pre = _art_prefix()
-    for d in (_pin_dir(), "/tmp/kit-pin"):
-        for c in dict.fromkeys((pre + coll, coll)):
-            f = os.path.join(d, *c.split("/"), did + ".json")
-            doc = _read_json(f)
-            if isinstance(doc, dict):
-                if isinstance(doc.get("data"), dict) and ("version" in doc or "doc_id" in doc or len(doc) <= 3):
-                    doc = doc["data"]
-                return doc, f
-    return None, None
+    for c in dict.fromkeys((pre + coll, coll)):
+        f = os.path.join(_pin_dir(), *c.split("/"), did + ".json")
+        doc = _read_json(f)
+        if isinstance(doc, dict):
+            ver = None
+            if isinstance(doc.get("data"), dict) and ("version" in doc or "doc_id" in doc or len(doc) <= 3):
+                ver = doc.get("version")
+                doc = doc["data"]
+            return doc, f, ver
+    return None, None, None
+
+
+PIN_FRESH_S = 30 * 60
 
 
 def artifact_pin(pairs, url=None, token=None, report=None):
@@ -1475,7 +1497,15 @@ def artifact_pin(pairs, url=None, token=None, report=None):
         if k.count("/") == 1 and not k.startswith("kit_docs/") and v.strip().isdigit():
             coll, did = k.split("/")
             base = _read_json(_base_path(coll, did))
-            live, f = _pinned_live(coll, did)
+            live, f, fver = _pinned_live(coll, did)
+            if live is not None and fver is not None and str(fver) != v.strip():
+                report.append("%s: not pinned: the saved live copy is version %s, the pin names %s: `get` it again"
+                              % (k, fver, v.strip()))
+                continue
+            if live is not None and time.time() - os.path.getmtime(f) > PIN_FRESH_S:
+                report.append("%s: not pinned: the saved live copy is older than %d min (%s): `get` it again"
+                              % (k, PIN_FRESH_S // 60, f))
+                continue
             if live is None:
                 if base is not None:
                     report.append("%s: not pinned: no live copy in %s (`ArtifactData` `get` it with that `out_dir` first, "
@@ -1486,7 +1516,13 @@ def artifact_pin(pairs, url=None, token=None, report=None):
                 tok = _resolve_board_token(token)
                 d = _board_request(u, "doc/%s/%s" % (coll, urllib.parse.quote(did, safe="")), token=tok)
                 here = d["data"] if d.get("exists") else None
-                new = live if here is None else _merge_doc(did, live, here, base)
+                lost = []
+                new = live if here is None else _merge_doc(did, live, here, base, lost)
+                if lost:
+                    report.append("%s: not pinned: this copy changed rows the live copy changed too, and they have no "
+                                  "key to merge them by (%s): rebuild it from the live copy (kit-cards) or merge by hand"
+                                  % (k, ", ".join(lost)))
+                    continue
                 if new != here:
                     _board_request(u, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": new,
                                                                "if_version": d.get("version", 0)}]}, token=tok)
@@ -4309,6 +4345,8 @@ def main(argv=None):
                           r["taken"], r["kept_here"], r["merged"]))
                 if r.get("blobs_restored"):
                     print("Pictures put in the local copy: %d." % r["blobs_restored"])
+                for u in r.get("unmerged") or []:
+                    print("NOT MERGED (rows without a key changed on both sides; this copy kept, its pin will refuse): " + u)
                 print(artifact_blobs_text(r), end="")
             elif a.action == "push":
                 print(artifact_push_text(artifact_push(url=a.board_url, token=a.token)), end="")

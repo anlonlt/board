@@ -1008,7 +1008,7 @@ def _keyed(rows):
     return out
 
 
-def _merge_deep(live, here, base, name=""):
+def _merge_deep(live, here, base, name="", lost=None, path=""):
     """CL31: a card (posts/_dashboard, posts/_trains) three-way: what this copy changed since the base, laid into the
     live card, field by field and row by row (rows matched by their key: key/part+post/...). What the live card gained
     since the base (a row's store list, a hand-written note) is kept; a value both sides changed keeps the live one,
@@ -1023,7 +1023,8 @@ def _merge_deep(live, here, base, name=""):
         b = base if isinstance(base, dict) else {}
         out = {}
         for k in list(live) + [k for k in here if k not in live]:
-            v = _merge_deep(live.get(k, _MISSING), here.get(k, _MISSING), b.get(k, _MISSING), k)
+            v = _merge_deep(live.get(k, _MISSING), here.get(k, _MISSING), b.get(k, _MISSING), k, lost,
+                            "%s.%s" % (path, k) if path else str(k))
             if v is not _MISSING:
                 out[k] = v
         return out
@@ -1033,13 +1034,18 @@ def _merge_deep(live, here, base, name=""):
         if kl is not None and kh is not None and kb is not None:
             out = []
             for k, row in kl.items():                      # the live order, then the rows added here
-                v = _merge_deep(row, kh.get(k, _MISSING), kb.get(k, _MISSING))
+                v = _merge_deep(row, kh.get(k, _MISSING), kb.get(k, _MISSING), "", lost,
+                                "%s[%s]" % (path, ",".join(x[1] for x in k)))
                 if v is not _MISSING:
                     out.append(v)
             out += [row for k, row in kh.items() if k not in kl and k not in kb]
             return out
     if name in _STAMPS and isinstance(live, str) and isinstance(here, str):
         return max(live, here)
+    if isinstance(live, list) and isinstance(here, list) and lost is not None:
+        # O53: rows without their own key (or two with one) cannot be merged row by row: this copy's change to
+        # them would be dropped without a word; said, so the pin refuses and load keeps this copy
+        lost.append(path or name or "(the document)")
     return live
 
 
@@ -1054,12 +1060,13 @@ def _card_older(here, other):
     return isinstance(a, str) and isinstance(b, str) and a < b
 
 
-def _merge_doc(did, remote, local, base):
-    """The local document laid over the remote one: cards deep (CL31), posts and comments by field."""
+def _merge_doc(did, remote, local, base, lost=None):
+    """The local document laid over the remote one: cards deep (CL31), posts and comments by field. `lost` gets the
+    paths of the lists whose changes here could not be merged (rows without a key)."""
     if _is_card(did):
         if _card_older(local, remote):
             return remote                      # an older (or seeded) card here: the live one stands
-        return _merge_deep(remote, local, base)
+        return _merge_deep(remote, local, base, lost=lost)
     return _merge_fields(remote, local, base)
 
 
@@ -1071,6 +1078,7 @@ def artifact_load(url=None, token=None, in_dir=None):
     in_dir = in_dir or os.path.join(_art_dir(), "in")
     st = _art_state()
     taken = kept = merged = 0
+    unmerged = []
     pre = _art_prefix()
     for coll in ART_COLLS:
         # ArtifactData's out_dir writes <out_dir>/<collection path>/<doc_id>.json: under the prefix for an attached board
@@ -1083,7 +1091,15 @@ def artifact_load(url=None, token=None, in_dir=None):
             d = _board_request(url, "doc/%s/%s" % (coll, urllib.parse.quote(did, safe="")), token=token)
             local = d["data"] if d.get("exists") else None
             if local is not None and base is not None and local != base:       # changed here since the last sync
-                new = _merge_doc(did, remote, local, base) if remote != base else local
+                lost = []
+                new = _merge_doc(did, remote, local, base, lost) if remote != base else local
+                if lost:                       # O53: not mergeable: this copy and its base stay, the pin will refuse
+                    unmerged.append("%s/%s: %s" % (coll, did, ", ".join(lost)))
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass
+                    continue
                 merged += new != local
                 kept += new == local
             else:
@@ -1114,7 +1130,7 @@ def artifact_load(url=None, token=None, in_dir=None):
     _art_save(st)
     restored, missing = _load_blobs(url, token, in_dir)
     return {"taken": taken, "kept_here": kept, "merged": merged, "not_there": len(stale), "blobs_restored": restored,
-            "blobs_missing": missing}
+            "blobs_missing": missing, "unmerged": unmerged}
 
 
 BLOB_RE = re.compile(r"/_blob/([0-9a-f]{32})\b")
@@ -1448,17 +1464,23 @@ def _pin_dir():
 
 
 def _pinned_live(coll, did):
-    """CL31: the live document the `get` before a pin saved ({data} or the bare data), and its file; (None, None)."""
+    """CL31: the live document the `get` before a pin saved in this project's pin directory (never a shared one, O53),
+    its file and the version the file names (None when it is the bare data, as `ArtifactData` `out_dir` saves it);
+    (None, None, None)."""
     pre = _art_prefix()
-    for d in (_pin_dir(), "/tmp/kit-pin"):
-        for c in dict.fromkeys((pre + coll, coll)):
-            f = os.path.join(d, *c.split("/"), did + ".json")
-            doc = _read_json(f)
-            if isinstance(doc, dict):
-                if isinstance(doc.get("data"), dict) and ("version" in doc or "doc_id" in doc or len(doc) <= 3):
-                    doc = doc["data"]
-                return doc, f
-    return None, None
+    for c in dict.fromkeys((pre + coll, coll)):
+        f = os.path.join(_pin_dir(), *c.split("/"), did + ".json")
+        doc = _read_json(f)
+        if isinstance(doc, dict):
+            ver = None
+            if isinstance(doc.get("data"), dict) and ("version" in doc or "doc_id" in doc or len(doc) <= 3):
+                ver = doc.get("version")
+                doc = doc["data"]
+            return doc, f, ver
+    return None, None, None
+
+
+PIN_FRESH_S = 30 * 60
 
 
 def artifact_pin(pairs, url=None, token=None, report=None):
@@ -1475,7 +1497,15 @@ def artifact_pin(pairs, url=None, token=None, report=None):
         if k.count("/") == 1 and not k.startswith("kit_docs/") and v.strip().isdigit():
             coll, did = k.split("/")
             base = _read_json(_base_path(coll, did))
-            live, f = _pinned_live(coll, did)
+            live, f, fver = _pinned_live(coll, did)
+            if live is not None and fver is not None and str(fver) != v.strip():
+                report.append("%s: not pinned: the saved live copy is version %s, the pin names %s: `get` it again"
+                              % (k, fver, v.strip()))
+                continue
+            if live is not None and time.time() - os.path.getmtime(f) > PIN_FRESH_S:
+                report.append("%s: not pinned: the saved live copy is older than %d min (%s): `get` it again"
+                              % (k, PIN_FRESH_S // 60, f))
+                continue
             if live is None:
                 if base is not None:
                     report.append("%s: not pinned: no live copy in %s (`ArtifactData` `get` it with that `out_dir` first, "
@@ -1486,7 +1516,13 @@ def artifact_pin(pairs, url=None, token=None, report=None):
                 tok = _resolve_board_token(token)
                 d = _board_request(u, "doc/%s/%s" % (coll, urllib.parse.quote(did, safe="")), token=tok)
                 here = d["data"] if d.get("exists") else None
-                new = live if here is None else _merge_doc(did, live, here, base)
+                lost = []
+                new = live if here is None else _merge_doc(did, live, here, base, lost)
+                if lost:
+                    report.append("%s: not pinned: this copy changed rows the live copy changed too, and they have no "
+                                  "key to merge them by (%s): rebuild it from the live copy (kit-cards) or merge by hand"
+                                  % (k, ", ".join(lost)))
+                    continue
                 if new != here:
                     _board_request(u, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": new,
                                                                "if_version": d.get("version", 0)}]}, token=tok)
@@ -1893,17 +1929,64 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
     return "\n".join(out) + "\n(%d card%s)" % (len(rows), "" if len(rows) == 1 else "s")
 
 
+_AWAIT_POINT = re.compile(r"^- \[([^\]]+)\]")
+
+
+def _awaits_points(text):
+    """Split an awaits file into (head lines, [(workstream or None, [lines])]): a point is its `- ` line and the indented
+    lines under it (Harmonize's story checker reads it the same way); any other line stays in the head/between."""
+    blocks, cur = [], None
+    for ln in text.split("\n"):
+        if ln.startswith("- "):
+            m = _AWAIT_POINT.match(ln)
+            cur = [m.group(1) if m else None, [ln]]
+            blocks.append(cur)
+        elif ln.startswith("  ") and cur is not None:
+            cur[1].append(ln)
+        else:
+            cur = None
+            blocks.append([False, [ln]])
+    return blocks
+
+
+def _memory_checker(base, cfg_kit):
+    """The project's memory checker: `kit.memory_check` in config (a command; {root} becomes the repo root), else a
+    story/memory skill's scripts/check.py (Harmonize: .claude/skills/story/scripts/check.py). None if there is none."""
+    import shlex
+    cmd = cfg_kit.get("memory_check")
+    if cmd:
+        return [a.replace("{root}", base) for a in (shlex.split(cmd) if isinstance(cmd, str) else list(cmd))]
+    for rt in (".claude", ".agents", ".agent"):
+        for sk in ("story", "memory"):
+            p = os.path.join(base, rt, "skills", sk, "scripts", "check.py")
+            if os.path.isfile(p):
+                return [sys.executable, "-I", p, base]
+    return None
+
+
+def _run_checker(cmd, base):
+    try:
+        r = subprocess.run(cmd, cwd=base, capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.SubprocessError) as e:
+        return False, "the checker did not run: %s" % e
+    return r.returncode == 0, ((r.stdout or "") + (r.stderr or "")).strip()
+
+
 def compact_memory(days=30, dry_run=False, root_dir=None):
     """Archive into <memory_dir>/archive/ (+ digest.md) what the board now holds (CL28): every workstream state file
-    but state/orchestrator.md, awaits.md, closed issues; and lessons past the 15 newest older than `days`. An open
-    issue stays, listed, until it is posted on the board."""
+    but state/orchestrator.md, closed issues (but one a staying file cites), and lessons past the 15 newest older than
+    `days`. CL29: every awaits file (`awaits*.md`, plus config `kit.awaits_files`): a point tagging an archived
+    workstream moves with it into archive/<file>, a file with no point left is archived whole. Then the project's
+    memory checker runs on the result: red undoes everything (a dry run applies, checks, undoes, and shows it).
+    An open issue stays, listed, until it is posted on the board."""
     import time
     base = os.path.abspath(root_dir or ROOT)
-    rel_m = None
+    cfg_kit = {}
     try:
-        rel_m = (json.load(open(os.path.join(base, ".kit", "config.json"), encoding="utf-8")).get("kit") or {}).get("memory_dir")
+        cfg_kit = json.load(open(os.path.join(base, ".kit", "config.json"), encoding="utf-8")).get("kit") or {}
     except (OSError, ValueError):
         pass
+    rel_m = cfg_kit.get("memory_dir")
     if not rel_m:
         rel_m = ".story" if os.path.isdir(os.path.join(base, ".story")) else ".board/memory"
     mdir = os.path.join(base, rel_m)
@@ -1916,7 +1999,9 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
     digest_path = os.path.join(arch_dir, "digest.md")
     existing_digest = open(digest_path, encoding="utf-8").read() if os.path.isfile(digest_path) else ""
     to_move = []
-    # 1. Completed state files (Next: done/closed/archived)
+    archived_ws = set()
+    staying_ws = set()
+    # 1. State files: where a workstream stands is its train on the board (CL28); all but the orchestrator's timers
     if os.path.isdir(state_dir):
         for fn in sorted(os.listdir(state_dir)):
             if not fn.endswith(".md"):
@@ -1926,15 +2011,36 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
                 first = open(fp, encoding="utf-8", errors="ignore").readline().strip()
             except OSError:
                 continue
-            # CL28: where a workstream stands is its train on the board; every state file but the orchestrator's
-            # timers is archived (it was archived only once its Next: said done)
             if fn != "orchestrator.md":
                 to_move.append(("state", fn, fp, first))
-    # 1b. CL28: awaits.md (what waits on the owner is a question post) and closed issues (a defect is an issue post)
-    aw = os.path.join(mdir, "awaits.md")
-    if os.path.isfile(aw):
-        to_move.append((".", "awaits.md", aw, "what waited on the owner (now: question posts)"))
+                archived_ws.add(fn[:-3])
+            else:
+                staying_ws.add(fn[:-3])
+    # 1b. CL29: every awaits file; its points go with their workstream
+    names = sorted(fn for fn in os.listdir(mdir) if fn.startswith("awaits") and fn.endswith(".md"))
+    for n in cfg_kit.get("awaits_files") or []:
+        n = os.path.basename(str(n))
+        if n not in names and os.path.isfile(os.path.join(mdir, n)):
+            names.append(n)
+    awaits_plan = []  # (name, path, old text, kept text or None to archive the file whole, moved text, moved count)
+    for n in names:
+        fp = os.path.join(mdir, n)
+        text = open(fp, encoding="utf-8").read()
+        blocks = _awaits_points(text)
+        moved = [b for b in blocks if b[0] not in (False, None) and b[0] not in staying_ws
+                 and (b[0] in archived_ws or not os.path.isfile(os.path.join(state_dir, b[0] + ".md")))]
+        kept_points = [b for b in blocks if b[0] is not False and b not in moved]
+        if not moved and kept_points:
+            continue
+        if not kept_points:
+            awaits_plan.append((n, fp, text, None, text, len(moved)))
+        else:
+            kept = "\n".join(ln for b in blocks if b not in moved for ln in b[1])
+            mv = "\n".join(ln for b in moved for ln in b[1]) + "\n"
+            awaits_plan.append((n, fp, text, kept, mv, len(moved)))
+    # 1c. Issues: closed ones go (a defect is an issue post), unless a file that stays cites it
     open_issues = []
+    closed = []
     issues_dir = os.path.join(mdir, "issues")
     if os.path.isdir(issues_dir):
         for fn in sorted(os.listdir(issues_dir)):
@@ -1944,7 +2050,7 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
             text = open(fp, encoding="utf-8", errors="ignore").read()
             title = (text.splitlines() or [fn])[0].lstrip("# ").strip()[:120]
             if re.search(r"^status:\s*closed", text, re.I | re.M):
-                to_move.append(("issues", fn, fp, title))
+                closed.append((fn, fp, title))
             else:
                 open_issues.append("  - issues/%s: %s" % (fn, title))
     # 2. Aged lessons (keep 15 newest; archive older than `days`)
@@ -1963,31 +2069,102 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
                 except OSError:
                     pass
                 to_move.append(("lessons", fn, fp, first or fn))
+    moving = {fp for _, _, fp, _ in to_move}
+    awaits_paths = {fp: kept for _, fp, _, kept, _, _ in awaits_plan}
+    staying_text = ""
+    for r, ds, fs in os.walk(mdir):
+        ds[:] = [x for x in ds if os.path.join(r, x) != arch_dir]
+        for f in fs:
+            p = os.path.join(r, f)
+            if f.endswith(".md") and p not in moving and not any(p == c[1] for c in closed):
+                staying_text += (awaits_paths.get(p) or "") if p in awaits_paths else (
+                    open(p, encoding="utf-8", errors="ignore").read() + "\n")
+    kept_cited = []
+    for fn, fp, title in closed:
+        if fn[:-3] in staying_text:
+            kept_cited.append("  - issues/%s: cited by a file that stays" % fn)
+        else:
+            to_move.append(("issues", fn, fp, title))
     tail = ("\n%d open issue(s) stay: post each on the board (`kind: \"issue\"`, `status: \"open\"`), then mark the file "
             "`Status: closed (posted as <post id>)` and compact again:\n" % len(open_issues) + "\n".join(open_issues)
             ) if open_issues else ""
-    if not to_move:
+    if kept_cited:
+        tail += "\n%d closed issue(s) stay, cited by a file that stays:\n" % len(kept_cited) + "\n".join(kept_cited)
+    if not to_move and not awaits_plan:
         return "compact: nothing to archive (0 state files, 0 aged lessons >%dd)" % int(days) + tail
-    if dry_run:
-        return "compact (dry-run): would archive %d file(s):\n" % len(to_move) + "\n".join(
-            "  - %s/%s: %s" % (k, fn, summ) for k, fn, _, summ in to_move
-        ) + tail
-    os.makedirs(os.path.join(arch_dir, "state"), exist_ok=True)
-    os.makedirs(os.path.join(arch_dir, "lessons"), exist_ok=True)
-    os.makedirs(os.path.join(arch_dir, "issues"), exist_ok=True)
-    added_lines = []
+    plan = ["  - %s/%s: %s" % (k, fn, summ) for k, fn, _, summ in to_move]
+    plan += ["  - %s: %d point(s) of archived workstreams -> archive/%s%s" % (n, c, n, " (the whole file: no point left)"
+                                                                              if kept is None else "")
+             for n, _, _, kept, _, c in awaits_plan]
+    # Apply, then check; undo on a dry run or a red checker
+    undo = []  # callables, run in reverse
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    for kind, fn, fp, summ in to_move:
-        dst = os.path.join(arch_dir, kind, fn)
-        os.replace(fp, dst)
-        key = "%s/%s" % (kind, fn)
-        if key not in existing_digest:
-            added_lines.append("- `%s` (%s): %s" % (key, stamp, summ))
-    if added_lines:
-        hdr = "" if existing_digest else "# Archived Memory Digest\n\n"
-        with open(digest_path, "a", encoding="utf-8") as fh:
-            fh.write(hdr + "\n".join(added_lines) + "\n")
-    return "compact: archived %d file(s) into %s (updated archive/digest.md)" % (len(to_move), os.path.relpath(arch_dir, base)) + tail
+
+    def write(p, text):
+        old = open(p, encoding="utf-8").read() if os.path.isfile(p) else None
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        undo.append(lambda p=p, old=old: (os.remove(p) if old is None else open(p, "w", encoding="utf-8").write(old)))
+
+    made_dirs = []
+    for sub in ("", "state", "lessons", "issues"):
+        p = os.path.join(arch_dir, sub)
+        if not os.path.isdir(p):
+            os.makedirs(p)
+            made_dirs.append(p)
+    try:
+        added_lines = []
+        for kind, fn, fp, summ in to_move:
+            dst = os.path.join(arch_dir, kind, fn)
+            had = open(dst, "rb").read() if os.path.isfile(dst) else None
+            os.replace(fp, dst)
+            undo.append(lambda fp=fp, dst=dst, had=had: (os.replace(dst, fp), had is not None and open(dst, "wb").write(had)))
+            key = "%s/%s" % (kind, fn)
+            if key not in existing_digest:
+                added_lines.append("- `%s` (%s): %s" % (key, stamp, summ))
+        for n, fp, old, kept, mv, c in awaits_plan:
+            dst = os.path.join(arch_dir, n)
+            prev = open(dst, encoding="utf-8").read() if os.path.isfile(dst) else ""
+            write(dst, (prev.rstrip("\n") + "\n" if prev else "") + mv)
+            if kept is None:
+                os.remove(fp)
+                undo.append(lambda fp=fp, old=old: open(fp, "w", encoding="utf-8").write(old))
+            else:
+                write(fp, kept)
+            added_lines.append("- `%s` (%s): %d point(s) of archived workstreams (now: question posts)" % (n, stamp, c))
+        if added_lines:
+            hdr = "" if existing_digest else "# Archived Memory Digest\n\n"
+            write(digest_path, existing_digest + hdr + "\n".join(added_lines) + "\n")
+        cmd = _memory_checker(base, cfg_kit)
+        if cmd:
+            ok, res = _run_checker(cmd, base)
+            check = "memory checker (%s): %s" % (" ".join(os.path.relpath(a, base) if os.path.isabs(a) and a.startswith(base)
+                                                          else a for a in cmd[-2:]), res or ("green" if ok else "red"))
+        else:
+            ok, check = True, "no memory checker (kit.memory_check in .kit/config.json names one)"
+    except Exception:
+        ok, check = False, None
+        for f in reversed(undo):
+            f()
+        raise
+    if dry_run or not ok:
+        for f in reversed(undo):
+            f()
+        for p in reversed(made_dirs):
+            try:
+                os.rmdir(p)
+            except OSError:
+                pass
+    lines = "\n".join(plan)
+    if not ok:
+        return ("%s, the project's memory checker is red on the compacted tree (every move undone); fix what it names "
+                "(or keep what it needs) and compact again:\n%s\n%s" % (
+                    "compact (dry-run): would be REFUSED" if dry_run else "compact: REFUSED", check, lines)) + tail
+    if dry_run:
+        return "compact (dry-run): would archive %d file(s) and %d awaits file(s):\n%s\n%s" % (
+            len(to_move), len(awaits_plan), lines, check) + tail
+    return "compact: archived %d file(s) and %d awaits file(s) into %s (updated archive/digest.md)\n%s" % (
+        len(to_move), len(awaits_plan), os.path.relpath(arch_dir, base), check) + tail
 
 
 def report_metrics(m, db_path=None):
@@ -3493,7 +3670,7 @@ COMMANDS = [
     ("Artifact and web", "kit_artifact_sync.py", "the repo's documents and files into the Artifact for its viewers"),
     ("Artifact and web", "update_board.py", "the Artifact's page to the kit's current page"),
     ("git copy", "kit.py init|sync|sync-db|reads|receive|publish|diff|push", "the board's git copy (board-mirror): make it, fill it, compare it, send it"),
-    ("memory", "kit.py compact", "archive memory the board now holds (state files, awaits.md, closed issues) and old lessons"),
+    ("memory", "kit.py compact", "archive memory the board now holds (state files, awaits points with their workstream, closed issues) and old lessons; refused if the project's memory checker goes red (--dry-run shows it)"),
     ("setup", "kit.py welcome [--post]", "the welcome post: what the board does and what can run now"),
     ("setup", "install.py <project> [--update]", "install or update the kit in a project (every present runtime)"),
     ("setup", "kit_import.py / step0_scan.py", "a person's state from their chats / a project's step 0 profile"),
@@ -4168,6 +4345,8 @@ def main(argv=None):
                           r["taken"], r["kept_here"], r["merged"]))
                 if r.get("blobs_restored"):
                     print("Pictures put in the local copy: %d." % r["blobs_restored"])
+                for u in r.get("unmerged") or []:
+                    print("NOT MERGED (rows without a key changed on both sides; this copy kept, its pin will refuse): " + u)
                 print(artifact_blobs_text(r), end="")
             elif a.action == "push":
                 print(artifact_push_text(artifact_push(url=a.board_url, token=a.token)), end="")
