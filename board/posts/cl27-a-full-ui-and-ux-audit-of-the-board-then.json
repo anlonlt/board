@@ -1,6 +1,43 @@
 {
- "body": "Auditing first: rendering every view with Playwright at 411 px (keyboard open and closed) and desktop, light and dark, and reading each view's code.",
+ "artifacts": [
+  "docs/CL27.md",
+  "kit/board/test_page_ux.js",
+  "kit/board/board.template.html",
+  "kit/board/shim.js",
+  "docs/assets/cl27/01-header.png",
+  "docs/assets/cl27/03-composer-covers-text.png",
+  "docs/assets/cl27/04-keyboard-orchestrator.png",
+  "docs/assets/cl27/07-trains-phone.png",
+  "docs/assets/cl27/08-trains-desktop.png"
+ ],
+ "asked": [
+  {
+   "id": "qswsgntf01y58bpp6n74",
+   "quote": "How do we feel about the design of our board ? Do we have any design gripes ? Does it look as polished and as smooth as it could look. I'd want a audit of every questionable design choice, every current user experience bug, on computer but especially on mobile.."
+  }
+ ],
+ "bars": [
+  "test_page_ux.js: 33 of 33 checks pass on cl27, 23 of 33 fail on main's page (asked qswsgntf01y58bpp6n74)",
+  "problems found: 13 (7 named by him, 6 more), fixed: 13 of 13 [visual]",
+  "run_all_tests.py: 10 of 10 suites pass, 0 failed",
+  "audit pictures: 54 before + 54 after (11 views x phone/desktop x light/dark, keyboard open on the phone)"
+ ],
+ "body": "For you: 13 problems found and fixed (your 7, plus 6 more), each with a check that fails on the old page; one taste choice is yours: the Trains view, A or B, on the question post `cl27-q-trains-view` (A stays if you tap nothing). Still needed: a look on your real phone, because the keyboard was emulated here. The page reaches the Artifact when the orchestrator republishes it.\n\n## Your problems, their causes and the fixes\n`docs/CL27.md § His named problems`\n\n## Six more the audit found\n`docs/CL27.md § Other problems the audit found`\n\n## Looked at, not a problem\n`docs/CL27.md § Looked at, not a problem`\n\n## What is left\n`docs/CL27.md § What is left`\n\n## What I checked, and how\nEvery view rendered with Playwright on this repo's board at 411 px with touch, 1300 px, light and dark, plus with the keyboard open (the visible part shrunk to 470 px, and panned 300 px): 54 pictures before and 54 after. `kit/board/test_page_ux.js` starts a board server on a throwaway root, seeds posts and comments, and measures each fix at 360 and 411 px and on the computer: 33 checks, 23 of them fail on main's page (80adfaa), 0 fail on cl27. `python3 scripts/run_all_tests.py`: 10 of 10 suites pass (test_page_layout.js updated for the new Trains view; strings.en.json re-extracted).\n\nCommits: f56a37c on branch cl27 (pushed), main merged in (it had not moved).\n",
+ "breaks": "revert 80adfaa",
+ "check": "node kit/board/test_page_ux.js",
+ "column": "info",
+ "handoff": "Merge cl27 into main (fast-forward, main has not moved). Then in Harmonize: install.py --update, check the page offline, republish (board-publish), push. If he picks B on cl27-q-trains-view: localStorage kit-trains-view=map is the old view; make it the default in trainsAsLists().",
+ "issues": [
+  "taste: the Trains view A (task lists, now) or B (flow map): question post cl27-q-trains-view",
+  "Harmonize install.py --update and the republish: the orchestrator's, after the merge"
+ ],
+ "not_checked": [
+  "his real phone: the keyboard was emulated (visual viewport shrunk and panned), and Chrome's spelling menu cannot open in a headless browser",
+  "iOS Safari (no WebKit run); the page falls back to a script where field-sizing is missing",
+  "the Artifact page on claude.ai: same template and shim, but it needs the orchestrator's republish to be seen"
+ ],
  "session_id": "0faff95e-f88f-5a1c-a860-7d8c1604b331",
- "status": "in progress",
- "updated_at": "2026-11-23T07:10:26Z"
+ "status": "complete",
+ "updated_at": "2026-11-23T07:35:21Z",
+ "verdict": "The board had 13 UI/UX problems (your 7 and 6 more); all fixed with a check each that fails on the old page; the Trains view's look is your choice (A or B)."
 }
