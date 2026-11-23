@@ -152,7 +152,8 @@ class TestChecklistFeatures(unittest.TestCase):
         self.assertEqual(r_init["result"]["serverInfo"]["name"], "board-kit-mcp")
         r_list = srv.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         names = {t["name"] for t in r_list["result"]["tools"]}
-        self.assertEqual(names, {"board_inbox", "board_queue", "board_post", "board_reply", "board_search"})
+        self.assertEqual(names, {"board_inbox", "board_queue", "board_post", "board_reply", "board_search",
+                                 "board_step_new", "board_step_update", "board_resume", "board_train"})
 
     def test_post_unlock_and_kit_report(self):
         with tempfile.TemporaryDirectory() as td:

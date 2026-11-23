@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASE = "e110235"   # scripts/kit.py before CL20: the control compares against it byte for byte
+BASE = "473dea4"   # scripts/kit.py before CL20 (main it was merged with): the control compares against it byte for byte
 
 
 def load(name, path):

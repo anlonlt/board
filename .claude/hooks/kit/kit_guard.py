@@ -250,13 +250,29 @@ def check(command: str, never_add=(), allow_add=(), cwd: str | None = None) -> s
 
 
 def session_launches(command: str) -> int:
-    """How many new agent sessions a command starts: `claude ... --bg` (a part), counted per segment."""
+    """How many new agent sessions a command starts: `claude ... --bg` or `agy ... -p/--print`, counted per segment."""
     n = 0
     for seg in segments(command):
         w = strip_prefix(seg)
-        if w and w[0].rsplit("/", 1)[-1] == "claude" and "--bg" in w[1:]:
+        if not w:
+            continue
+        exe = w[0].rsplit("/", 1)[-1]
+        if exe == "claude" and "--bg" in w[1:]:
+            n += 1
+        elif exe == "agy" and ({"-p", "--print", "--prompt"} & set(w[1:])):
             n += 1
     return n
+
+
+def subagent_launch_count(tool_name: str, args: dict) -> int:
+    """1 for an agy `invoke_subagent` that spawns a part/review session; 0 for lightweight kit-cards/clerk."""
+    if tool_name != "invoke_subagent":
+        return 0
+    tname = str(args.get("TypeName") or "").strip().lower()
+    role = str(args.get("Role") or "").strip().lower()
+    if tname == "kit-cards" or "board cards" in role or "board clerk" in role:
+        return 0
+    return 1
 
 
 def _device_module(root: str):
@@ -274,9 +290,9 @@ def _device_module(root: str):
     return None
 
 
-def capacity_refusal(command: str, root: str, survey=None) -> str | None:
+def capacity_refusal(command: str, root: str, survey=None, extra: int | None = None) -> str | None:
     """CL15: refuse a launch that would run more sessions than this device holds (never blocks without the module)."""
-    n = session_launches(command)
+    n = session_launches(command) if extra is None else extra
     if not n:
         return None
     d = _device_module(root)
@@ -301,7 +317,19 @@ def main() -> int:
     never_add = g.get("never_add", [])
     allow_add = g.get("allow_add", [])
     tc = data.get("toolCall") or {}
+    tname = str(tc.get("name") or data.get("tool_name") or "")
     args = tc.get("args") or {}
+    sub_n = subagent_launch_count(tname, args)
+    if sub_n:
+        full = capacity_refusal("", project_dir(data), extra=sub_n)
+        if full:
+            msg = ("NOT LAUNCHED: %s.\n\nThe kit's guard keeps this device under its session cap (`python3 -I .kit/device.py`): "
+                   "past it the computer runs out of memory and every session crashes. Leave the step planned (do not mark it "
+                   "in progress) and launch it when a part ends." % full)
+            print(json.dumps({"decision": "deny", "reason": msg}, ensure_ascii=False))
+            return 0
+        print(json.dumps({"decision": "allow"}))
+        return 0
     command = args.get("CommandLine") or args.get("command") or (data.get("tool_input") or {}).get("command") or ""
     reason = check(command, never_add, allow_add, cwd=project_dir(data))
     full = capacity_refusal(command, project_dir(data)) if not reason else None
