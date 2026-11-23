@@ -108,6 +108,17 @@ const VV = `(() => {
     // 4. the train view "half baked", the task list "more informative, less scroll heavy"
     await view(p, 'Trains');
     const tr = await p.evaluate(() => ({ lists: [...document.querySelectorAll('.kit-tl-inline')].map((s) => s.textContent), matrix: !!document.querySelector('.tnet-matrix') }));
+    // his 08:30: folded, a train card shows its name and its open steps; a tap on the name pulls the done ones out above
+    if (W === 411) {
+      const vis = () => p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); if (!s) return null;
+        return [...s.querySelectorAll('.kit-tl-item')].map((i) => ({ t: (i.querySelector('.kit-tl-part') || {}).textContent, done: i.classList.contains('is-done'), h: Math.round(i.getBoundingClientRect().height), y: Math.round(i.getBoundingClientRect().top) })); });
+      const before = await vis();
+      check('411 px: a folded train card shows only its open steps (CL2), not its done one (CL1)', before && before.filter((x) => x.h > 2).map((x) => x.t).join() === 'CL2', before);
+      await p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); s.querySelector('.kit-tl-hdr b').click(); }); await p.waitForTimeout(500);
+      const after = await vis();
+      const cl1 = after && after.find((x) => x.t === 'CL1'), cl2 = after && after.find((x) => x.t === 'CL2');
+      check('411 px: a tap on the train\'s name pulls its done step out above the open one', !!(cl1 && cl2 && cl1.h > 10 && cl1.y < cl2.y), after);
+    }
     check(W + ' px: the Trains view is each train\'s task list, done steps included (CL1, CL2; D1)', tr.lists.length === 2 && !tr.matrix && tr.lists.some((t) => /CL1/.test(t) && /CL2/.test(t)), tr);
     await p.close();
   }
