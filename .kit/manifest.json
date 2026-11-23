@@ -38,6 +38,7 @@
  ".kit/board.html": "899c7efc5906eb1e2bb2923d132c1cecc5ea003ca14e5dc087ac6b99a6e6340a",
  ".kit/board_cli.py": "3e19e8e7e9c733fbb3f1b20ba25ea9c42fede24af88d0aa0d803d3a14a43b848",
  ".kit/board_server.py": "8c1dccb67f086a1f71efd08cae7da9ffe614e961b28af3171ba21adda3853b5c",
+ ".kit/board_token.py": "4b8607937b41d4f265308cc80dc964eda78dd374e17fb8808e0ba06b8c5150a8",
  ".kit/claude-cli/ORCHESTRATOR.md": "4879816d7a100ba59a2c67325ce292dcf28a3f9741e25f66cf5d7f23a1f38a5a",
  ".kit/claude-cli/clerk.md": "d1464cced04909c046226185ee45307582d81e52f4262973410f6c3da9b3b88e",
  ".kit/claude-cli/consultant.md": "a0a1533480e522c2f74548feb815a57ffa191902f22a1b86f9762607b7fc9a75",
@@ -62,9 +63,9 @@
  ".kit/strings.en.json": "10f9994071ada3f45240f1170e9bbcd1d7e01f38f9f3bcb86943f178086cd4c6",
  ".kit/strings.py": "f16c484b97ea03ee93b359e3a35529db6a4fbef71642dd64feb9b84be4d146c8",
  ".kit/twrp_wizard.py": "0fa36a234f62c5c1d258750010ee06733ac72e94828e21bbd66f77bdd18cc874",
- ".kit/up": "80856782305588bb4b30ee32914e93bfdce4d9efe2d4d148f622a75fffb563ad",
+ ".kit/up": "be4f51a73fe517d8aaf1c6f68ef37bd08bdeff58633ab7ab59643f63a529489c",
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
- ".kit/web_takeover.py": "ee24866bffdf6e49a3e1ab3318a4b2d3054cd8177da86382cdcf76c57e8d767a",
+ ".kit/web_takeover.py": "c8e4af6f3e74f5c4aae7fcad5437f09de12fefe81f9304d38734eb804dca4361",
  "_kit_commit": "52b72ee 2026-11-22T16:49:13-05:00"
 }
