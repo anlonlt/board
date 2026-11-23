@@ -388,6 +388,8 @@ body {
   background-attachment: fixed;
 }
 header.top { position: sticky; top: 0; z-index: 12; background: var(--bg); padding-top: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+/* CL10 (his 02:34, O50 at 411 px): on a phone the header fills the top edge to edge, no inset from the page's padding */
+@media (max-width: 700px) { header.top { margin: -16px -16px 14px; padding-left: 16px; padding-right: 16px; padding-top: max(8px, env(safe-area-inset-top, 0px)); } }
 h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 
 /* View switcher pill (Lanes | Trains | Feed | Focus) */
@@ -2947,10 +2949,23 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     if (state.openId !== ORCH) openPost(ORCH);
     if (discKey) openDisc(discKey);
   };
+  /* CL10 (his 02:35): a comment made from a viewer opened on a post's picture or document goes to THAT post (and its
+     session), not to the orchestrator. The post is the one the last pointer press came from (its sheet, its window,
+     its feed card); a press inside a viewer keeps it, a press anywhere else (header, Repo Docs, a train) clears it. */
+  var ctxPost = "";
+  document.addEventListener("pointerdown", function (e) {
+    var t = e.target; if (!t || !t.closest) return;
+    if (t.closest(".kit-docs-modal")) return;
+    var w = t.closest(".kit-post-win[data-pid]"); if (w) { ctxPost = w.dataset.pid; return; }
+    var f = t.closest(".ffeed-card[data-id]"); if (f) { ctxPost = f.dataset.id; return; }
+    ctxPost = t.closest("#sheet") && state.openId ? state.openId : "";
+  }, true);
+  window._kitCommentTarget = function () { return ctxPost && ctxPost !== ORCH && postById(ctxPost) ? ctxPost : ""; };
   window._kitOpenOrchNew = function (prefill, attachFiles) {
-    if (!state.special._orchestrator) return;
-    openPost(ORCH);
-    openDisc("new");
+    var onPost = window._kitCommentTarget();
+    if (!onPost && !state.special._orchestrator) return;
+    openPost(onPost || ORCH);
+    if (!onPost) openDisc("new");
     var sh = $("sheet");
     if (sh) {
       window._kitTopZ = Math.max(window._kitTopZ || 60, 60) + 2;
@@ -2967,7 +2982,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       var ct = $("c-text");
       if (ct) {
         ct.value = prefill;
-        saveDraft(ORCH, 0, prefill, "");
+        saveDraft(onPost || ORCH, 0, prefill, "");
         if ($("composer")) $("composer").classList.add("has-text");
         setTimeout(function () { ct.focus(); ct.selectionStart = ct.selectionEnd = ct.value.length; }, 50);
       }

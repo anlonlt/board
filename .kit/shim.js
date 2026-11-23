@@ -1966,6 +1966,11 @@
         "#p-imgs .grp-row{display:grid !important;grid-template-columns:repeat(var(--n,2),minmax(0,1fr)) !important;gap:12px !important;align-items:start;}" +
         "#p-imgs .grp-row .pic{min-width:0;width:100%;}" +
         "#p-imgs .grp-row .pic img{max-width:100% !important;width:100%;height:auto;object-fit:contain;}" +
+        ".kit-rs-grip{position:relative;height:14px;margin:-6px 0 6px;cursor:ns-resize;touch-action:none;}" +
+        ".kit-rs-grip::after{content:\"\";position:absolute;left:50%;top:5px;width:36px;height:4px;margin-left:-18px;border-radius:999px;background:var(--line);opacity:0;transition:opacity .15s;}" +
+        ".kit-rs-grip:hover::after,.kit-rs-grip.on::after{opacity:1;background:var(--muted);}" +
+        "@media (pointer:coarse){.kit-rs-grip{height:24px;margin:-8px 0 4px;}.kit-rs-grip::after{top:10px;opacity:.9;}}" +
+        "#p-imgs img{touch-action:pan-x pan-y;}" +
         ".kit-inline-embed{margin:10px 0 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.08);}" +
         ".kit-inline-embed-hdr{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--sunk);border-bottom:1px solid var(--line);min-width:0;}" +
         ".kit-inline-embed-hdr .iettl{font-family:var(--mono);font-size:.76rem;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 0;min-width:0;}" +
@@ -2057,12 +2062,16 @@
         "}" +
         /* CL10: the bar bleeds 16px each side (margin-inline:-16px); a 100% cap cut 32px off it and hid the bin past an invisible scroll at 390px */
         "@media (max-width:700px){" +
-          ".kit-tl-win{inset:8px !important;left:8px !important;top:8px !important;width:calc(100vw - 16px) !important;height:calc(100dvh - 16px) !important;border-radius:14px;}" +
+          /* CL10 (his 02:34, "why are there margins all around the header bar, instead of it fully filling the top"):
+             on a phone a window is a full sheet (principle 7): edge to edge, no inset, no rounded corners, no side borders */
+          ".kit-tl-win{inset:0 !important;left:0 !important;top:0 !important;width:100vw !important;height:100dvh !important;border-radius:0 !important;border:0 !important;box-shadow:none !important;}" +
+          ".sheet > .sheet-in{padding-top:0 !important;}" +   /* CL10 (his 02:34): the bar fills the top, no strip above it */
+          ".sheet .bar{padding-top:max(8px,env(safe-area-inset-top,0px)) !important;}" +
           ".sheet .bar{gap:4px !important;flex-wrap:nowrap !important;max-width:calc(100% + 32px);box-sizing:border-box;overflow-x:auto;scrollbar-width:none;}" +
           ".sheet .bar .row{gap:4px !important;flex-wrap:nowrap !important;min-width:0;align-items:center;}" +
           ".sheet .bar .kit-icon-btn{width:30px;height:30px;flex:none;}" +
           ".sheet .bar .btn{padding:4px 7px;font-size:.8rem;white-space:nowrap;flex:none;}" +
-          ".kit-docs-modal{inset:6px !important;left:6px !important;top:6px !important;width:calc(100vw - 12px) !important;height:calc(100dvh - 12px) !important;border-radius:14px;}" +
+          ".kit-docs-modal{inset:0 !important;left:0 !important;top:0 !important;width:100vw !important;height:100dvh !important;border-radius:0 !important;border:0 !important;box-shadow:none !important;}" +
           ".kit-docs-hdr{padding:6px 8px;gap:4px;max-width:100%;box-sizing:border-box;}" +
           ".kit-docs-hdr b{font-size:.92rem;flex:1 1 0;min-width:0;}" +
           ".kit-docs-hdr .hsub{display:none !important;}" +
@@ -4759,8 +4768,14 @@
           targetImg.dataset.kitZoom = String(z);
           var cmpRow = targetImg.closest ? targetImg.closest("#p-imgs .grp-row, .kit-inline-cmp, .kit-docs-cmp-grid") : null;
           if (cmpRow) {
-            var baseW = Math.min(1080, window.innerWidth - 72);
-            var scaledRowW = Math.max(280, Math.min(window.innerWidth - 20, Math.round(baseW * (z / 100))));
+            var phoneW = window.innerWidth < 720;
+            var box = cmpRow.parentElement;
+            /* CL10 (his 02:22 "why can't I resize ... downwards"): on a phone the row was capped at the screen width, so
+               two pictures side by side could never grow; it now grows up to 2.6x and its box scrolls sideways (§ 1) */
+            var baseW = phoneW ? ((box && box.clientWidth) || (window.innerWidth - 32)) : Math.min(1080, window.innerWidth - 72);
+            var maxRowW = phoneW ? Math.round(baseW * 2.6) : window.innerWidth - 20;
+            var scaledRowW = Math.max(phoneW ? Math.round(baseW * 0.5) : 280, Math.min(maxRowW, Math.round(baseW * (z / 100))));
+            if (phoneW && box) { box.style.overflowX = "auto"; box.style.overscrollBehaviorX = "contain"; }
             cmpRow.style.width = scaledRowW + "px";
             if (window.innerWidth >= 720) {
               cmpRow.style.marginLeft = "50%";
@@ -4774,7 +4789,9 @@
           } else {
             var embedCard = targetImg.closest ? targetImg.closest(".kit-inline-embed.is-img") : null;
             var natW = targetImg.naturalWidth || targetImg.clientWidth || 480;
-            var scaledW = Math.max(180, Math.min(window.innerWidth - 28, Math.round(natW * (z / 100))));
+            var phoneW1 = window.innerWidth < 720, picBox = targetImg.parentElement;
+            var scaledW = Math.max(180, Math.min(phoneW1 ? Math.round((window.innerWidth - 28) * 2.6) : window.innerWidth - 28, Math.round((phoneW1 ? Math.min(natW, window.innerWidth - 28) : natW) * (z / 100))));
+            if (phoneW1 && picBox) { picBox.style.overflowX = "auto"; picBox.style.overscrollBehaviorX = "contain"; }
             targetImg.style.transform = "";
             targetImg.style.maxHeight = "none";
             targetImg.style.width = z === 100 ? "" : (scaledW + "px");
@@ -4799,6 +4816,7 @@
             } catch (e) {}
           }
         }
+        imgEl._kitZoomTo = function (z, save) { applyZoomToTarget(imgEl, z, save); };
         if (imgEl.complete) initDim(); else imgEl.addEventListener("load", initDim);
         imgEl.addEventListener("wheel", function (ev) {
           if (ev.ctrlKey || ev.metaKey) {
@@ -4819,13 +4837,50 @@
           if (pTouch && ev.touches && ev.touches.length === 2) {
             ev.preventDefault(); ev.stopPropagation();
             var d1 = Math.hypot(ev.touches[1].clientX - ev.touches[0].clientX, ev.touches[1].clientY - ev.touches[0].clientY) || pTouch.d0;
-            applyZoomToTarget(imgEl, pTouch.z0 * (d1 / pTouch.d0), true);
+            /* one layout per frame: every touchmove re-laid the row under his fingers (the "glitchy" pinch) */
+            pTouch.next = pTouch.z0 * (d1 / pTouch.d0);
+            if (!pTouch.raf) pTouch.raf = requestAnimationFrame(function () { if (pTouch) { pTouch.raf = 0; applyZoomToTarget(imgEl, pTouch.next, true); } });
           }
         }, { passive: false });
         imgEl.addEventListener("touchend", function (ev) {
           if (!ev.touches || ev.touches.length < 2) pTouch = null;
         }, { passive: true });
       })(im);
+    }
+    /* CL10: the bottom edge of each picture row (or lone picture) in a post resizes it, like a window's bottom edge
+       (§ 7): drag down to enlarge, up to shrink, with a mouse, a pen or a finger. On a touch screen a short grabber
+       line marks the edge (§ 1, every hover has a touch equivalent); with a mouse the edge shows the ns-resize cursor. */
+    var gripRows = root.querySelectorAll("#p-imgs .grp-row, #p-imgs > .pic, #p-imgs .pic-scroll > .pic");
+    for (var gr = 0; gr < gripRows.length; gr++) {
+      (function (row) {
+        if (row.dataset.kitGrip || (row.classList.contains("pic") && row.closest(".grp-row"))) return;
+        var img0 = row.querySelector("img"); if (!img0) return;
+        row.dataset.kitGrip = "1";
+        var grip = document.createElement("div"); grip.className = "kit-rs-grip";
+        grip.setAttribute("role", "separator"); grip.setAttribute("aria-orientation", "horizontal");
+        grip.setAttribute("aria-label", "Drag to resize the pictures"); grip.title = "Drag to resize";
+        row.insertAdjacentElement("afterend", grip);
+        var st = null;
+        grip.addEventListener("pointerdown", function (ev) {
+          if (ev.button > 0 || !img0._kitZoomTo) return;
+          ev.preventDefault();
+          try { grip.setPointerCapture(ev.pointerId); } catch (e) {}
+          st = { y: ev.clientY, h: row.getBoundingClientRect().height || 1, z: Number(img0.dataset.kitZoom || "100"), raf: 0, z1: 0 };
+          grip.classList.add("on");
+        });
+        grip.addEventListener("pointermove", function (ev) {
+          if (!st) return;
+          st.z1 = st.z * Math.max(0.2, (st.h + ev.clientY - st.y) / st.h);
+          if (!st.raf) st.raf = requestAnimationFrame(function () { if (st) { st.raf = 0; img0._kitZoomTo(st.z1, false); } });
+        });
+        function end() {
+          if (!st) return;
+          if (st.z1) img0._kitZoomTo(st.z1, true);
+          st = null; grip.classList.remove("on");
+        }
+        grip.addEventListener("pointerup", end);
+        grip.addEventListener("pointercancel", end);
+      })(gripRows[gr]);
     }
     /* Fading semi-transparent Image Viewer header (Like + Gallery + Draw + Comment + Open in Viewer) on every inline post picture */
     var SVG_LIKE_O = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
