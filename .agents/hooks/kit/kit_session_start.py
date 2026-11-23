@@ -2,9 +2,9 @@
 """agy SessionStart: serves the memory instead of hoping it is read.
 
 Injects a systemMessage with: the board rule (one place per result), the project's own lines
-(`kit.session_start_lines` in .kit/config.json), whether this clone is behind its remote, each
-workstream's `Next:` line from .story/state/*.md, how many points await the owner (.story/awaits.md),
-open issues' titles, and the lessons' count.
+(`kit.session_start_lines` in .kit/config.json), whether this clone is behind its remote, where things stand (the
+board: `kit.py brief`; CL28: never a memory file's `Next:` line), a pointer when old state files remain, and the
+lessons' count.
 """
 import glob
 import json
@@ -14,39 +14,6 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_config import config, is_claude_payload, memory_dir, project_dir  # noqa: E402
-
-
-def first(path, prefix):
-    try:
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                if line.strip().lower().startswith(prefix.lower()):
-                    return line.strip()[len(prefix):].strip()
-    except OSError:
-        pass
-    return None
-
-
-def state_next(path):
-    """Read `Next: ...` or fall back to the first non-empty line under a legacy `## Next step` heading."""
-    v = first(path, "Next:")
-    if v:
-        return v
-    try:
-        in_sec = False
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                s = line.strip()
-                if in_sec:
-                    if s.startswith("#"):
-                        break
-                    if s:
-                        return s.lstrip("-* ").strip()
-                elif s.lower() in ("## next step", "## next", "### next step", "### next"):
-                    in_sec = True
-    except OSError:
-        pass
-    return None
 
 
 def main():
@@ -109,40 +76,30 @@ def main():
     mrel = os.path.relpath(mdir, root)
     if os.path.exists(os.path.join(mdir, "workflow.md")):
         out.append("WORKFLOW: how the work gets done (tools, accounts and browser profiles, cycle, limits): %s/workflow.md; "
-                   "each project's state file says where it runs (Runs in:)." % mrel)
+                   "which runner runs which project: § Runners." % mrel)
     pref = os.path.join(mdir, "preferences.md")
     if os.path.exists(pref):
         with open(pref, encoding="utf-8") as fh:
             out += ["PREFERENCES (%s/preferences.md):" % mrel] + ["  " + l.strip() for l in fh if l.startswith("- ")][:15]
-    states = sorted(glob.glob(os.path.join(mdir, "state", "*.md")))
     role = os.environ.get("KIT_ROLE", "")
+    # CL28 (the owner, 2026-11-23: "everything is on the board"): where things stand is never served from memory files.
+    # A stale `Next:` line here once told the owner a decision waited on him that was long settled.
     if role in ("part", "clerk", "review"):
-        # Say it once: a part's plan is its prompt and its train (kit.py train --zoom), a review reads the train, the
-        # clerk only forwards. None needs every workstream's Next line in its context.
-        states = []
         out.append("PLAN: the trains on the board are the plan (`python3 -I .kit/kit.py train <train>`); your prompt says "
                    "which step is yours.")
     elif role == "orchestrator":
-        out.append("PLAN: the trains on the board are your task list; after a context reset, `python3 -I .kit/kit.py "
-                   "resume` rebuilds it.")
-    if states:
-        out.append("MEMORY (%s/, skill memory): each workstream's next step:" % mrel)
-        for s in states:
-            out.append("  %s: %s" % (os.path.basename(s)[:-3], (state_next(s) or "(no Next: line)")[:160]))
-    aw = os.path.join(mdir, "awaits.md")
-    if os.path.exists(aw):
-        with open(aw, encoding="utf-8") as fh:
-            n = sum(1 for l in fh if l.startswith("- "))
-        out.append("AWAITS THE OWNER: %d points (%s/awaits.md)." % (n, mrel))
-    issues = []
-    for f in sorted(glob.glob(os.path.join(mdir, "issues", "*.md"))):
-        with open(f, encoding="utf-8") as fh:
-            t = fh.read()
-        if "status: closed" not in t.lower():
-            issues.append("  " + (t.splitlines()[0].lstrip("# ") if t else os.path.basename(f))[:110])
-    if issues:
-        out.append("OPEN ISSUES (%d): a logged defect is not diagnosed again:" % len(issues))
-        out += issues[:20]
+        out.append("PLAN: the trains on the board are your task list (`python3 -I .kit/kit.py resume` rebuilds it); "
+                   "before you answer the owner: `python3 -I .kit/kit.py brief`.")
+    else:
+        out.append("WHERE THINGS STAND: on the board, the one record: `python3 -I .kit/kit.py brief` (open decisions, "
+                   "the owner's recent decisions, each train from its posts).")
+    legacy = [n for n in ("awaits.md",) if os.path.exists(os.path.join(mdir, n))]
+    legacy += ["state/%s" % os.path.basename(f) for f in sorted(glob.glob(os.path.join(mdir, "state", "*.md")))
+               if os.path.basename(f) != "orchestrator.md"]
+    legacy += ["issues/"] if glob.glob(os.path.join(mdir, "issues", "*.md")) else []
+    if legacy and role not in ("part", "clerk", "review"):
+        out.append("OLD MEMORY (%d files, not read: the board holds where things stand): `python3 -I .kit/kit.py compact` "
+                   "archives %s/state, awaits.md and issues/ once; post any open issue on the board first." % (len(legacy), mrel))
     ls = glob.glob(os.path.join(mdir, "lessons", "*.md"))
     if ls:
         out.append("LESSONS (%d): grep -ril '<word>' %s/lessons/" % (len(ls), mrel))

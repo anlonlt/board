@@ -188,9 +188,11 @@ with tempfile.TemporaryDirectory() as d:
             [sys.executable, "-I", os.path.join(t_loc, ".claude", "hooks", "kit", "kit_session_start.py")],
             input=json.dumps({"hook_event_name": "SessionStart", "session_id": "r", "cwd": t_loc}), capture_output=True,
             text=True, env=dict(os.environ, CLAUDE_PROJECT_DIR=t_loc, KIT_ROLE=role)).stdout
-    check("session start depends on the role: a part gets the plan's pointer, not every workstream's Next line",
-          "import the set" in role_out[""] and "import the set" not in role_out["part"] and "PLAN:" in role_out["part"]
-          and "import the set" in role_out["orchestrator"] and "kit.py resume" in role_out["orchestrator"])
+    # CL28: no role is served a memory file's Next line any more: where things stand is the board (kit.py brief)
+    check("session start depends on the role: a part gets the plan's pointer; nobody gets a memory Next line",
+          all("import the set" not in v for v in role_out.values()) and "PLAN:" in role_out["part"]
+          and "kit.py brief" in role_out[""] and "kit.py resume" in role_out["orchestrator"]
+          and "kit.py brief" in role_out["orchestrator"])
     check("a Claude Code CLI session is briefed on the local board, its guide and its session id",
           r_ss.returncode == 0 and "board_cli.py" in r_ss.stdout and ".kit/claude-cli/orchestrator.md" in r_ss.stdout
           and "abc-123" in r_ss.stdout)
@@ -222,8 +224,9 @@ with tempfile.TemporaryDirectory() as d:
           and not os.path.exists(os.path.join(t_boot, ".story")))
     r_ss_b = subprocess.run([sys.executable, "-I", os.path.join(t_boot, ".agents", "hooks", "kit", "kit_session_start.py")],
                             input=json.dumps({"hookEventName": "SessionStart", "cwd": t_boot}), capture_output=True, text=True)
-    check("fresh install SessionStart reads .board/memory/state/alpha.md",
-          r_ss_b.returncode == 0 and "alpha: ship beta" in r_ss_b.stdout)
+    check("fresh install SessionStart points to the board, not .board/memory/state/alpha.md (CL28)",
+          r_ss_b.returncode == 0 and "alpha: ship beta" not in r_ss_b.stdout and "kit.py brief" in r_ss_b.stdout
+          and "OLD MEMORY" in r_ss_b.stdout)
     dash_b = os.path.join(d, "dash_b.json")
     r_kc = subprocess.run([sys.executable, "-I", os.path.join(t_boot, ".kit", "kit_cards.py"), "--write", dash_b,
                            "--trains", os.path.join(d, "trains_b.json")], capture_output=True, text=True)
@@ -253,7 +256,7 @@ with tempfile.TemporaryDirectory() as d:
     check("--runtime claude renders native ArtifactData/ArtifactComments/create_session templates with .board/memory",
           "ArtifactData" in cl_board and "ArtifactComments" in cl_clerk
           and "create_session" in cl_orch and "archive_session" in cl_orch
-          and "ArtifactData" in cl_cards and ".board/memory/state/" in cl_orch
+          and "ArtifactData" in cl_cards and ".board/memory/" in cl_orch and "kit.py brief" in cl_orch
           and "{{" not in cl_orch and "{{" not in cl_clerk and "{{" not in cl_board)
     r_cl_hooks = subprocess.run([sys.executable, "-I", os.path.join(t_cl, ".claude", "hooks", "kit", "test_hooks.py")],
                                 capture_output=True, text=True)

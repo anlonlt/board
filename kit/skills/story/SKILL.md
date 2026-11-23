@@ -1,35 +1,36 @@
 ---
 name: story
-description: Keeps this project's memory between sessions in the committed .story/ directory: one state file per workstream (.story/state/<ws>.md, first line "Next: ..."), what awaits the owner (.story/awaits.md), issues with a status line (.story/issues/), lessons (.story/lessons/). Use at the start of a session to know where to resume (the SessionStart hook has already printed each workstream's next step), and at every save point. Use when the user says "/story", "where were we", "catch me up", "save", "hand off", "log an issue", "log a lesson".
+description: What this project keeps between sessions and where: where things stand is on the board (each step's post, question posts, issue posts; `kit.py brief`), what sessions run is in git, and .story/ holds only what no post holds: lessons, the workflow, preferences, the orchestrator's open timers. Use at the start of a session, at save points, and when the user says "/story", "where were we", "catch me up", "save", "hand off", "log an issue", "log a lesson".
 ---
 
-# story: memory between sessions (from the kit, anlonlt/board — agy local)
+# story: what is kept between sessions, and where (from the kit, anlonlt/board — agy local)
 
 **Commit and push at the end of every turn that changed something.** The `Stop` hook blocks a stop once while work is uncommitted or unpushed.
 
-## Layout
+## What lives where (the owner, 2026-11-23: "everything is on the board")
+| what | where | never |
+|---|---|---|
+| where a step stands, its result, what is next | its **board post** (status: planned, in progress, held, closed, done); the train is the task list | a memory file |
+| what waits on the owner | a `question` post (with its default) | an awaits list |
+| a defect found and not fixed now | a **board post**, `kind: "issue"`, `status: "open"`, then `"closed (<commit>)"` | an issues folder |
+| a decision the owner gives in chat | a comment from you on the post it concerns (or `_orchestrator`), the owner's words and the date | only the chat |
+| what sessions run or build from | **git**: code, the kit, prompts (`docs/prompts/`), reports (`docs/`) | the board |
+| what no post holds | **memory** (`.story/`): lessons, the workflow, preferences, the orchestrator's open timers | |
+
+`python3 -I .kit/kit.py brief` reads where things stand from the board; `kit.py resume` rebuilds the task list.
+
+## Layout (inside `.story/`)
 ```
-.story/state/<workstream>.md   line 1 "Next: <the one next step>"; then "## Where it stands" (facts, with commits) and "## Done" (newest first)
-.story/awaits.md               "- [<workstream>] <what the owner must do or choose> (default: <what happens if he says nothing>, by <date>)"
-.story/issues/<date>-<slug>.md line 1 the defect in one sentence; "Status: open|closed (<why, commit>)"; how to reproduce
-.story/lessons/<date>-<slug>.md  a symptom, its cause, the remedy (often: rewrite the tool so it cannot happen again)
-.story/before-compaction.md    written by kit_pre_compact.py on Stop; gitignored
+lessons/<date>-<slug>.md  a symptom, its cause, the remedy (change the tool/hook/prompt so it cannot recur)
+workflow.md               runners, tools, accounts, limits (which runner runs which project: § Runners)
+preferences.md            "- <how the owner wants things>" lines, printed at session start
+state/orchestrator.md     the orchestrator's open timers only
+before-compaction.md      written by kit_pre_compact.py on Stop; gitignored
 ```
-One fact, one file. A workstream's next step lives ONLY in its state file; other places point to it.
+An older project's `state/<workstream>.md`, `awaits.md` and `issues/` are read by nobody: `python3 -I .kit/kit.py compact` archives them once into `archive/` (post any open issue on the board first).
 
-## Load (/story)
-The `SessionStart` hook injected every workstream's `Next:` line, the awaits count, open issues and the lessons' count. Open in full the state file of the workstream you work on; `grep -ril '<symptom>' .story/lessons/` before diagnosing anything twice.
+## Lesson
+A mistake that cost time: `lessons/<date>-<slug>.md`: the symptom (words someone would grep), the cause, the remedy. A lesson whose remedy is "be careful" is not done: change the tool, the hook or the prompt so the mistake cannot recur, and name that change. `grep -ril '<symptom>' .story/lessons/` before diagnosing anything twice.
 
-## Save (/story save)
-1. Rewrite `.story/state/<ws>.md`: line 1 `Next: …` (one step, concrete, who does it); `## Where it stands` as facts with their evidence (a commit, a file, a measure), not intentions.
-2. Update `.story/awaits.md`: add what now waits on the owner (with a default), remove what he answered.
-3. `git add .story && git commit -m "story: <ws> — <what changed>"`, then `python3 -I .kit/end_session.py`.
-
-## Issue (/story issue)
-A defect found and not fixed now: `.story/issues/<date>-<slug>.md`, its first line the defect, `Status: open`. Closing it: `Status: closed (<commit>)`, never delete the file.
-
-## Lesson (/story lesson)
-A mistake that cost time: `.story/lessons/<date>-<slug>.md`: the symptom (words someone would grep), the cause, the remedy. A lesson whose remedy is "be careful" is not done: change the tool, the hook or the prompt so the mistake cannot recur, and name that change.
-
-## Hand-over
-A session about to stop or hand over writes its state as if the next session knows nothing: what runs (conversation IDs), what is half done, the next step, then pushes.
+## Save and hand-over
+Your post carries where your step stands (`.kit/BOARD.md`). Memory changes only for a lesson, the workflow, a preference or an open timer; commit it, then `python3 -I .kit/end_session.py`.

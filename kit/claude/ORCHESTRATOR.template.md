@@ -19,7 +19,7 @@ The board's database is the live inbox; `.kit/kit.py` keeps a git copy of it on 
 4. A gate before anything relies on the copy: `kit.py diff D` against a full dump taken the same minute must print `0 differences`. Delegate a full dump to a subagent (its output never enters your context).
 
 ## 4. Memory and hand-over
-- `{{MEMORY_DIR}}/state/<workstream>.md`: one file per workstream, its first line `Next: …`; the SessionStart hook prints every `Next:` line, so a new session knows where things stand. `{{MEMORY_DIR}}/awaits.md`: what waits on the owner, each with its default. `{{MEMORY_DIR}}/lessons/`: one file per lesson. Skill `story` says how.
+- **Where things stand is on the board, never in memory** (the owner, 2026-11-23: "everything is on the board"): each step's state is its post (its train is the task list), what waits on the owner is a `question` post, a defect is a post (`kind: "issue"`, status open/closed). `python3 -I .kit/kit.py brief` reads it all. `{{MEMORY_DIR}}/` holds only what no post holds: `lessons/` (one file per lesson: symptom, cause, the change that stops it recurring), `workflow.md` (runners, tools, accounts), `preferences.md`, and `state/orchestrator.md` (open timers only). `kit.py compact` archives an older project's state files, awaits.md and issues/. Skill `story` says how.
 - Hand over at about 75 % of your context: write `{{MEMORY_DIR}}/state/orchestrator.md` (what runs, each part's session id, scheduled tasks, the next step), push, launch the successor with "Your prompt is `{{MEMORY_DIR}}/state/orchestrator.md`", and it rewrites `_orchestrator.session_id` and tells each running session and the clerk its id.
 
 ## 5. Limits (from `.kit/config.json`, enforced by the hooks)
