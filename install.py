@@ -583,6 +583,9 @@ def main(argv=None):
     ap.add_argument("--no-clerk", action="store_true")
     ap.add_argument("--no-orchestrator", action="store_true")
     ap.add_argument("--setup-done", action="store_true", help="README step 8: the install is reported; hooks speak again")
+    ap.add_argument("--update", action="store_true", help="Update an existing install to this kit: every kit file "
+                    "unchanged since it was installed is refreshed, a file changed in the project is kept (and listed), "
+                    "the project's own settings in .kit/config.json are reused; nothing else is asked")
     ap.add_argument("--verify", action="store_true", help="Verify installed kit files against SHA-256 hashes in .kit/manifest.json")
     ap.add_argument("--uninstall", action="store_true", help="Remove unmodified kit files recorded in .kit/manifest.json")
     ap.add_argument("--dry-run", action="store_true")
@@ -666,6 +669,8 @@ def main(argv=None):
             wiz_args.append("--dry-run")
         return _tw.main(wiz_args)
     first = not os.path.exists(os.path.join(t, ".kit", "config.json"))
+    if a.update and first:
+        raise SystemExit("install --update: no .kit/config.json in %s: nothing installed here to update (install first)" % t)
     if first and not (a.survey or a.no_survey):
         raise SystemExit("install: step 0 first. Run the survey (step0/survey-code.md or step0/survey-chat.md) and pass "
                          "its report with --survey survey/<date>/report.md; its recommendation says which parts to install "
@@ -742,11 +747,17 @@ def main(argv=None):
     claude_only = rt == "claude"
     want_agy = rt in ("agy", "both", "local")
     want_claude = rt in ("claude", "both", "local")
-    claude_cli = rt == "local"  # the Claude Code CLI next to agy, on the local board server
+    # The Claude Code CLI next to agy, on the local board server: `.kit/up` opens either (--agy / --claude), so its guides
+    # come with any runtime that has the local board (CLI-agnostic); only its .claude hooks stay with runtime local.
+    claude_cli = rt in ("local", "agy", "both")
+    claude_cli_hooks = rt == "local"
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
+    # the Artifact board's tools, whatever runs the sessions: its docs mirror and (Artifact mode) the local copy's server
+    ins.put(".kit/kit_artifact_sync.py", rd("kit", "claude", "kit_artifact_sync.py"))
     if claude_only:
-        ins.put(".kit/kit_artifact_sync.py", rd("kit", "claude", "kit_artifact_sync.py"))
+        ins.put(".kit/web_takeover.py", rd("kit", "web_takeover.py"))
+        ins.put(".kit/device.py", rd("scripts", "device.py"))
     if not claude_only:
         ins.put(".kit/git_watch.py", rd("kit", "git_watch.py"))
         ins.put(".kit/up", rd("kit", "up"))
@@ -767,14 +778,14 @@ def main(argv=None):
         ins.put(".claude/skills/memory/SKILL.md", rd("kit", "skills", "memory", "SKILL.md"))
     if parts["board"]:
         ins.put(".kit/kit.py", rd("scripts", "kit.py"))
+        ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))   # also the Artifact mode's local copy
+        ins.put(".kit/shim.js", rd("kit", "board", "shim.js"))
+        ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
         if not claude_only:
-            ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))
-            ins.put(".kit/shim.js", rd("kit", "board", "shim.js"))
             for _vf in ("pdf.min.js", "pdf.worker.min.js"):
                 _vp = os.path.join(KIT, "kit", "board", "vendor", _vf)
                 if os.path.isfile(_vp):
                     ins.put(".kit/vendor/" + _vf, open(_vp, "rb").read())
-            ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
             ins.put(".kit/mcp_stdio.py", rd("kit", "board", "mcp_stdio.py"))
         page = rd("kit", "board", "board.template.html")
         if c["kit"].get("palette"):
@@ -806,7 +817,7 @@ def main(argv=None):
             ins.put(".kit/agents/kit-cards.md", cards_tpl)
             ins.put(".agents/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
         if want_claude:
-            ins.put(".claude/agents/kit-cards.md", render(rd("kit", "claude-cli", "kit-cards.template.md"), c) if claude_cli else cards_tpl)
+            ins.put(".claude/agents/kit-cards.md", render(rd("kit", "claude-cli", "kit-cards.template.md"), c) if claude_cli_hooks else cards_tpl)
             ins.put(".claude/skills/board/SKILL.md", rd("kit", "claude", "SKILL.board.md") if claude_only else rd("kit", "skills", "board", "SKILL.md"))
     if parts["clerk"]:
         ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
@@ -1103,14 +1114,31 @@ def main(argv=None):
         finally:
             store.close()
     if want_claude:
-        merge_claude_settings(t, a.dry_run, ins.log, parts["board"], CLAUDE_CLI_SETTINGS if claude_cli else CLAUDE_SETTINGS)
+        merge_claude_settings(t, a.dry_run, ins.log, parts["board"], CLAUDE_CLI_SETTINGS if claude_cli_hooks else CLAUDE_SETTINGS)
     import subprocess
     r = subprocess.run(["git", "-C", KIT, "log", "-1", "--format=%h %cI"], capture_output=True, text=True)
     kit_at = r.stdout.strip() or "unknown (not a git clone)"
     ins.manifest["_kit_commit"] = kit_at
     ins.log.append("kit version: " + kit_at) if ins.log else None
+    # The Artifact board's page, where the project keeps its source (kit.page_out), for a project whose sessions are not
+    # the kit's runtime claude (its .kit/board.html is then the local board's page): built as update_board.py does.
+    art = c["board_url"] if "claude.ai/" in str(c.get("board_url") or "") else str(c["kit"].get("artifact_url") or "")
+    if c["kit"].get("page_out") and art and parts["board"] and not claude_only:
+        sys.path.insert(0, os.path.join(KIT, "kit", "claude"))
+        import build_artifact_page  # noqa: E402
+        apage = build_artifact_page.build(render(rd("kit", "board", "board.template.html"), c), KIT, art, c.get("project") or "board",
+                                          mcp_readers=c["kit"].get("mcp_readers"), talk=(c.get("language") or {}).get("talk") or "")
+        guide = c["kit"].get("board_guide")
+        if guide:
+            apage = apage.replace("<code>.kit/BOARD.md</code>", "<code>%s</code>" % guide)
+        ins.put(c["kit"]["page_out"], apage)
+        notes.append("artifact page: %s; publish it to %s (Artifact publish, same url, no capabilities)" % (c["kit"]["page_out"], art))
     ins.finish()
     print("\n".join(ins.log + ins.kept) if ins.log + ins.kept else "", end="\n" if ins.log + ins.kept else "")
+    if a.update and ins.kept:
+        print("update: %d file(s) changed in the project were KEPT as they are (listed above). To see what the kit would put "
+              "there: `python3 -I %s %s --update --dry-run` lists them; compare by hand with the kit's source, or delete the "
+              "file and rerun to take the kit's." % (len(ins.kept), os.path.join(KIT, "install.py"), t))
     if not ins.log:
         print("nothing to change")
     print("\n".join(notes)) if notes else None

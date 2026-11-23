@@ -294,6 +294,16 @@ For **LMArena (Agent Mode)**, **E2B / Codespaces preview iframes**, **Codex**, *
 
 </details>
 
+### Update an install
+
+**`python3 -I /tmp/board-kit/install.py <project> --update`** brings an existing install to this kit, whatever its runtime, asking nothing: it reuses the project's `.kit/config.json`, refreshes every kit file unchanged since it was installed (`.kit/manifest.json` records each one's hash), and **keeps every file the project changed**, listing them (`KEPT ...`) so nothing local is lost; delete one and rerun to take the kit's. `--dry-run` shows what it would do. Since the kit is CLI-agnostic, an agy or local install also gets the Claude Code CLI guides (`.kit/claude-cli/`, opened with `<cmd> --claude`), and every runtime gets the Artifact mode's scripts. For a project whose Artifact page lives in its own repo, set `kit.artifact_url`, `kit.page_out` (the page's source, e.g. `docs/board/<name>-board.html`) and `kit.board_guide` (e.g. `docs/BOARD.md`): `--update` rebuilds that page too; publish it to the same url. A project with its own hooks keeps them: the kit's `.claude` hooks are only merged for `--runtime local`/`claude`, and `install.py` never overwrites a hook file it did not write.
+
+A board with no kit install at all (its own page, hooks and guides): `kit/claude/update_board.py --board-url <url> --project <name> --guide <its guide> --out <its page source>` rebuilds only the page; `--scripts-into <repo>` also copies the kit's scripts (no hooks) for the Artifact mode.
+
+### Harmonize's hooks, for comparison
+
+The kit was generalized from Harmonize's setup; some of Harmonize's hooks are still stronger (say-it-once's link and request rules, session start's branch scan, stop's main-contains-branch check, pre-push checks, relaunching runs after a restart, the story skill's checker). `compare/harmonize/` holds them with their tests and a README saying, hook by hook, which is better and why, so the kit can take them in.
+
 ---
 
 ## Deeper Reference
@@ -332,6 +342,12 @@ Why these limits: a takeover costs about 150k tokens, so at 300k half of every o
 
 ### Continuity between the computer and the web
 The board travels in git (`board-mirror`), and both sides pick it up where the other stopped. A web session (a usage limit on the computer, or any time) runs `python3 -I .kit/web_takeover.py`, works on the board, and saves it back to git (its Stop hook too). When the terminal keyword starts the board again, `kit.py reconcile` compares this board with git document by document: a post or comment git changed after this board did is taken from git, one only in git is added, one only here stays, read marks are merged, nothing is deleted; the result goes back to git. The orchestrator then rebuilds its task list from `kit.py resume`, so steps planned or finished on the web are in it. The inverse (the computer crashed): the web takeover reconciles the same way and resumes from what the computer last saved (its board pushes to git about 15 s after each change). While a board runs, a refused auto-push (git moved meanwhile) triggers the same reconcile, at most every 5 minutes.
+
+### An orchestrator only when one is needed (Claude Code Web)
+The board clerk is always listening; the orchestrator need not be. Before it passes anything to the orchestrator, the clerk checks it (`get_session`): if it is gone, failed, or idle for more than `kit.clerk.orchestrator_idle_minutes` (default 30), the clerk starts a fresh orchestrator on the repository (`create_session`, at most once per 10 minutes), records its id in `posts/_orchestrator`, and sends the message there. A waking orchestrator would re-read its whole context to answer one line; a fresh one rebuilds its task list from the board instead, and a dead container costs nothing.
+
+### Say it once: what the hooks enforce
+A session's result lives in its board post. A turn the board or another session opened (a clerk's forward, a part's Done, a timer) ends with a single `·` in chat; a long closing message on such a turn is sent back once for that. **When the owner types in a session's chat, the answer is in words**, short (`kit.limits.chat_answer_chars`, given to the session before it starts answering): a Stop hook runs after the answer is already on the owner's screen, so it never makes a session repeat an answer to him.
 
 ### Runners (Code, Cloud, Browser & Human Work)
 Each workstream's state file declares `Runs in:` so the orchestrator routes each step to the right place:
