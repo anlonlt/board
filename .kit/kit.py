@@ -1950,6 +1950,41 @@ def _run_in(cmd, cwd, timeout):
     return rc, tail[-300:]
 
 
+REVERT = re.compile(r"^revert(?:\s+(\S+))?\s*$", re.I)
+
+
+def _revert_base(root, arg=None):
+    """The commit a step's work started from: `arg` when given, else where HEAD left the trunk (kit.main_branch)."""
+    if arg:
+        return arg
+    trunk = (_kit_config().get("kit") or {}).get("main_branch") or "main"
+    for ref in ("origin/" + trunk, trunk):
+        r = _git(root, "merge-base", "HEAD", ref, text=True)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    return trunk
+
+
+def _revert_in(work, root, arg=None):
+    """Undo the step's own change in the throwaway copy `work` (committed, uncommitted and new files alike), so the
+    old version is the made-to-fail one: no new art, about 0 tokens. (ok, message)."""
+    if not os.path.isdir(os.path.join(work, ".git")) and not os.path.isfile(os.path.join(work, ".git")):
+        return False, "breaks: revert needs a git checkout (this work is not one)"
+    base = _revert_base(root, arg)
+    if _git(work, "rev-parse", "--verify", "-q", base + "^{commit}").returncode != 0:
+        return False, "breaks: revert base %r is not a commit here (write `revert <base>`)" % base
+    _git(work, "add", "-A")
+    diff = _git(work, "diff", "--cached", "--binary", base).stdout
+    if not diff.strip():
+        return False, ("breaks: revert has nothing to revert (no change since %s): commit the step on its branch, or "
+                       "write `revert <base>`" % base[:12])
+    r = subprocess.run(["git", "-C", work, "apply", "-R", "--index", "--whitespace=nowarn", "-"], input=diff,
+                       capture_output=True)
+    if r.returncode != 0:
+        return False, "breaks: could not revert the step's change: " + r.stderr.decode("utf-8", "replace").strip()[-300:]
+    return True, "reverted to %s" % base[:12]
+
+
 def prove_check(p, root=ROOT, timeout=900):
     """(errors, notes) of running a post's `check` and `breaks` in a throwaway copy of the work: `check` must pass,
     then, after `breaks` is applied, it must fail. A `manual: ...` check or breaks is left to the review."""
@@ -1973,7 +2008,15 @@ def prove_check(p, root=ROOT, timeout=900):
             if breaks is None:
                 notes.append("check passes (exit 0); breaks is manual: the review performs it and sees check fail")
                 return err, notes
-            rc_b, tail_b = _run_in(breaks, work, timeout)
+            m_rev = REVERT.match(breaks)
+            if m_rev:
+                ok, msg = _revert_in(work, root, m_rev.group(1))
+                rc_b, tail_b = (0, msg) if ok else (1, msg)
+                if not ok:
+                    err.append(msg)
+                    return err, notes
+            else:
+                rc_b, tail_b = _run_in(breaks, work, timeout)
             if rc_b != 0:
                 err.append("breaks: did not apply (exit %d): %s. Write it as a command that plants the fault, "
                            "or as `manual: <what the review does>`" % (rc_b, tail_b or "no output"))
