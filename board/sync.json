@@ -2574,33 +2574,22 @@
    "removed": 0
   },
   {
-   "at": "2026-11-23T22:04:13Z",
+   "at": "2026-11-23T22:04:23Z",
    "changed": 0,
-   "comments_read": 108,
-   "full": true,
-   "new": 0,
-   "posts": 52,
-   "posts_removed": 0,
-   "posts_written": 2,
-   "removed": 0
-  },
-  {
-   "at": "2026-11-23T22:04:17Z",
-   "changed": 0,
-   "comments_read": 108,
-   "full": true,
-   "new": 0,
-   "posts": 52,
-   "posts_removed": 0,
-   "posts_written": 1,
-   "removed": 0
-  },
-  {
-   "at": "2026-11-23T22:04:19Z",
-   "changed": 0,
-   "comments_read": 2,
-   "db_seq": 210,
+   "comments_read": 3,
+   "db_seq": 225,
    "full": false,
+   "new": 0,
+   "posts": 52,
+   "posts_removed": 0,
+   "posts_written": 3,
+   "removed": 0
+  },
+  {
+   "at": "2026-11-23T22:04:24Z",
+   "changed": 0,
+   "comments_read": 108,
+   "full": true,
    "new": 0,
    "posts": 52,
    "posts_removed": 0,
