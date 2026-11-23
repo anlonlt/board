@@ -240,6 +240,43 @@ class TrainsCard(unittest.TestCase):
         self.assertIn('closed: "closed"', page)
 
 
+def load_kit():
+    spec = importlib.util.spec_from_file_location("kit_cl28", KIT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class Adopt(unittest.TestCase):
+    """Harmonize's pre-kit posts carry a part but no train: resume and the task list could not see HL6, VR5, HL5."""
+
+    def test_every_pre_kit_post_gets_its_train_and_resume_lists_it(self):
+        kit = load_kit()
+        posts = json.loads(json.dumps({k: v for k, v in POSTS.items()}))
+        kit._load_board_docs = lambda m, db_path=None: (posts, {})
+        kit.attached_board = lambda: None
+        kit._resolve_board_token = lambda t=None: "t"
+        written = []
+
+        def upd(url, token, coll, did, fields):
+            posts[did].update(fields)
+            written.append(did)
+            return posts[did]
+        kit._local_update = upd
+        r = kit.adopt_trains(url="http://x")
+        self.assertEqual(r["trains"]["HL"], ["HL1-scoreboard-and-audit", "HL3-harmony-model", "HL5-harmony-ai-question",
+                                             "HL6-retrain-all"])
+        self.assertEqual(posts["VR5-second-run-question"]["train"], "VR")
+        self.assertEqual(posts["A3-data"]["train"], "A")
+        self.assertNotIn("_orchestrator", written)
+        self.assertEqual(kit.adopt_trains(url="http://x")["written"], 0)  # once: nothing left to adopt
+        out = kit.resume("/nonexistent", alive=set(), cli="claude")
+        self.assertIn("Train HL (1/4 done)", out)
+        self.assertIn("[h] HL6", out)
+        self.assertIn("[?] VR5", out)
+        self.assertNotIn("Train A (", out)  # A3's posts are done: no open step
+
+
 POSTS_WITH_TRAIN = {k: dict(v, train="harmony") for k, v in POSTS.items() if not k.startswith("_")}
 
 if __name__ == "__main__":

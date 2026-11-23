@@ -2847,7 +2847,7 @@ def _train_lines(posts, alive, h="##", board=None):
     for t in sorted(trains):
         nat = lambda v: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", str(v).lower())]
         steps = sorted(trains[t], key=lambda x: (str(x[1].get("created_at") or ""), nat(x[1].get("part") or x[0])))
-        open_steps = [x for x in steps if str(x[1].get("column") or "info").lower() != "done"]
+        open_steps = [x for x in steps if step_state(x[1]) not in ("done", "closed")]
         if not open_steps:
             continue
         n_active += 1
@@ -2856,12 +2856,13 @@ def _train_lines(posts, alive, h="##", board=None):
         for pid, p in steps:
             col = str(p.get("column") or "info").lower()
             st = str(p.get("status") or "").lower()
-            if col == "done":
+            if step_state(p) in ("done", "closed"):
                 if (pid, p) not in steps[-2:]:
                     continue
                 out.append("- [x] %s `%s` %s" % (p.get("part") or pid, pid, str(p.get("title") or "")[:80]))
                 continue
-            box = "[?]" if col == "question" else ("[!]" if col == "todo" else ("[~]" if "progress" in st else "[ ]"))
+            box = ("[h]" if step_state(p) == "held" else "[?]" if col == "question" else
+                   ("[!]" if col == "todo" else ("[~]" if "progress" in st else "[ ]")))
             sess = str(p.get("session_id") or "")
             if sess:
                 life = "unknown" if alive is None else ("running" if sess in alive else "not running")
@@ -2938,6 +2939,37 @@ def _short(s, n):
     s = re.sub(r"\s+", " ", str(s or "")).strip()
     return s if len(s) <= n else s[:n - 1].rstrip() + "…"
 
+
+def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
+    """CL28, once per board: a post made before the kit's trains has a `part` but no `train`, so neither `resume`, the
+    brief nor the orchestrator's task list sees it (Harmonize: HL6, VR5, HL5, the A3 posts). Give each its train from
+    its part's letters (HL6 -> HL, A3-data -> A), written through the local board, then `artifact push` when the board
+    is an attached Artifact. Returns {train: [post ids]}."""
+    posts, _ = _load_board_docs(m or ROOT, db_path=db_path)
+    plan = {}
+    for pid, p in sorted(posts.items()):
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("removed") or str(p.get("train") or "").strip():
+            continue
+        t = _train_key(pid, p)
+        if t:
+            plan.setdefault(t, []).append(pid)
+    if dry_run or not plan:
+        return {"trains": plan, "written": 0}
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    n = 0
+    for t, ids in plan.items():
+        for pid in ids:
+            if _local_update(url, token, "posts", pid, {"train": t}) is not None:
+                n += 1
+    out = {"trains": plan, "written": n}
+    if attached_board():
+        try:
+            r = artifact_push(url=url, token=token)
+            out.update({"batches": r["batches"], "need_pin": r["need_pin"]})
+        except Exception as e:  # the local copy has it; the next `artifact push` carries it
+            out["push_error"] = str(e)
+    return out
 
 def brief_stamp_dir():
     return os.path.join(ROOT, ".kit", "run", "brief")
@@ -3570,6 +3602,8 @@ def main(argv=None):
     s.add_argument("--days", type=int, default=3); s.add_argument("--db", default=None)
     s.add_argument("--board", dest="board_dir", default=None, help="a folder of posts/ and comments/ JSON instead of the local board")
     s.add_argument("--session", default=None)
+    s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
+    s.add_argument("--dry-run", action="store_true"); s.add_argument("--db", default=None)
     s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
     s.add_argument("action", choices=["pull", "load", "push", "sent", "pin"]); s.add_argument("args", nargs="*")
     s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
@@ -3725,6 +3759,10 @@ def main(argv=None):
         return 0
     if a.cmd == "resume":
         print(resume(m, db_path=a.db, cli=a.cli), end="")
+        return 0
+    if a.cmd == "adopt":
+        r = adopt_trains(url=a.board_url if hasattr(a, "board_url") else None, dry_run=a.dry_run, db_path=a.db, m=m)
+        print(json.dumps(r, ensure_ascii=False, indent=1))
         return 0
     if a.cmd == "brief":
         sess = a.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
