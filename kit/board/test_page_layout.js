@@ -82,6 +82,31 @@ function overflows() {
     if (!bad && !clipped && (L < -1 || R > W + 1)) bad = 'off screen ' + Math.round(L) + '..' + Math.round(R) + ' of ' + W;
     if (bad) { seen.add(e); out.push(name(e) + ' ' + bad + ': ' + t.textContent.trim().slice(0, 40)); }
   }
+  // text that runs into other text (a lane's label into its count): two lines of visible text in the same row overlap.
+  // Each line is first cut to the boxes that clip it (an ellipsis shows only its box); only near relatives are compared
+  // (common ancestor at most 3 levels up) in the same layer (fixed, sticky or absolute box), so a popup over the board or
+  // a text scrolling under a sticky bar is not counted.
+  const items = [];
+  const walk2 = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let t; (t = walk2.nextNode());) {
+    const e = t.parentElement; if (!e || !t.textContent.trim()) continue;
+    if (/^(SCRIPT|STYLE|TEMPLATE|OPTION)$/.test(e.tagName) || e.closest(SKIP) || !shown(e)) continue;
+    const rg = document.createRange(); rg.selectNodeContents(t);
+    let rs = [...rg.getClientRects()].filter((r) => r.width > 0 && r.height > 0).map((r) => ({ l: r.left, r: r.right, t: r.top, b: r.bottom }));
+    for (let a = e; a && a !== document.documentElement && rs.length; a = a.parentElement) {
+      if (getComputedStyle(a).overflowX === 'visible') continue;
+      const b = a.getBoundingClientRect();
+      rs = rs.map((r) => ({ l: Math.max(r.l, b.left), r: Math.min(r.r, b.right), t: Math.max(r.t, b.top), b: Math.min(r.b, b.bottom) })).filter((r) => r.r - r.l > 1 && r.b - r.t > 1);
+    }
+    let layer = null; for (let a = e; a && a !== document.body; a = a.parentElement) { if (/^(fixed|sticky|absolute)$/.test(getComputedStyle(a).position)) { layer = a; break; } }
+    if (rs.length) items.push({ e, t, rs, layer });
+  }
+  const near = (x, y) => { let n = 0; for (let a = x; a && n <= 3; a = a.parentElement, n++) { if (a.contains(y)) { let m = 0; for (let b = y; b && b !== a; b = b.parentElement) m++; return m <= 3; } } return false; };
+  for (let i = 0; i < items.length && out.length < 12; i++) for (let j = i + 1; j < items.length && out.length < 12; j++) {
+    const A = items[i], B = items[j]; if (A.layer !== B.layer || !near(A.e, B.e)) continue;
+    const hit = A.rs.some((p) => B.rs.some((q) => Math.min(p.r, q.r) - Math.max(p.l, q.l) > 2 && Math.min(p.b, q.b) - Math.max(p.t, q.t) > 2));
+    if (hit) out.push(name(A.e) + ' text overlaps ' + name(B.e) + ': ' + A.t.textContent.trim().slice(0, 20) + ' / ' + B.t.textContent.trim().slice(0, 20));
+  }
   for (const e of document.querySelectorAll('body *')) {
     if (out.length >= 12) break;
     if (/^(SCRIPT|STYLE|OPTION|TEMPLATE|BR)$/i.test(e.tagName) || e.closest(SKIP) || e.closest('svg') && e.tagName.toLowerCase() !== 'svg') continue;

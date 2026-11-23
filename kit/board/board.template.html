@@ -410,7 +410,9 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 .badge.for-owner { background: color-mix(in srgb, var(--question) 14%, var(--surface)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--question) 36%, var(--line)); }
 .badge.aging { background: rgba(245, 158, 11, .2); color: var(--warn); border: 1px solid rgba(245, 158, 11, .5); font-weight: 700; }
 .tabs { display: flex; width: 100%; gap: 8px; margin-block: 14px 12px; }
-.tab { flex: 1 1 0; justify-content: center; border-radius: 14px; padding: 9px 10px; font-weight: 700; box-shadow: var(--shadow); transition: all .15s ease; background: color-mix(in srgb, var(--c) 9%, var(--surface)); border-color: color-mix(in srgb, var(--c) 28%, var(--line)); }
+/* CL12: never narrower than its label and counts (the base rule's min-width:0 let "Decisions 1 new" run into itself at
+   411 px); when the four do not fit, the row scrolls sideways as before */
+.tab { flex: 1 1 0; min-width: max-content; justify-content: center; border-radius: 14px; padding: 9px 10px; font-weight: 700; box-shadow: var(--shadow); transition: all .15s ease; background: color-mix(in srgb, var(--c) 9%, var(--surface)); border-color: color-mix(in srgb, var(--c) 28%, var(--line)); }
 .tab[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .lane-sub { display: block; font-family: var(--text); font-size: .75rem; font-weight: 500; color: var(--muted); margin-top: -6px; margin-bottom: 10px; }
 
