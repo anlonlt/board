@@ -87,7 +87,7 @@ class TestWelcomeRender(unittest.TestCase):
                 self.assertIn("`done`", text)
                 self.assertIn("Where we are", text)
                 self.assertIn("_orchestrator", text)
-                self.assertIn("A 👍 on this message launches them all; or tell me which.", text)
+                self.assertIn("A Like on this message launches them all; or tell me which.", text)
                 # Memory items pulled in priority order (P1 Alpha before P2 Beta before P3 Gamma)
                 self.assertIn("Alpha Stability", text)
                 self.assertIn("Fix critical crash", text)

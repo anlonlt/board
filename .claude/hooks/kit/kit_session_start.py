@@ -70,7 +70,7 @@ def main():
     elif url:
         if claude and k.get("runtime") == "local":
             out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s, CLI `.kit/board_cli.py`), "
-                       "made at turn 1 and updated in full. Every chat turn then ends with a single \"·\"; to the orchestrator: "
+                       "made at turn 1 and updated in full. A turn the board or a session opened ends with a single \"·\" (the owner typing in your chat gets a short answer in words); to the orchestrator: "
                        "\"Done. Check post <id>.\" Skills: `memory`, `board`. Claude Code CLI: the orchestrator's guide is "
                        "`.kit/claude-cli/orchestrator.md`." % url)
             sid = str(data.get("session_id") or "") if isinstance(data, dict) else ""
@@ -79,11 +79,17 @@ def main():
                            "orchestrator gave you an agent name to use)." % sid)
         elif claude:
             out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s), made at turn 1 and "
-                       "updated in full. Every chat turn then ends with a single \"·\"; to the orchestrator: \"Done. Check post <id>.\"" % url)
+                       "updated in full. A turn the board or a session opened ends with a single \"·\" (the owner typing in your chat gets a short answer in words); to the orchestrator: \"Done. Check post <id>.\"" % url)
         else:
             out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s, CLI `.kit/board_cli.py`), "
-                       "made at turn 1 and updated in full. Every chat turn then ends with a single \"·\"; to the orchestrator: "
+                       "made at turn 1 and updated in full. A turn the board or a session opened ends with a single \"·\" (the owner typing in your chat gets a short answer in words); to the orchestrator: "
                        "\"Done. Check post <id>.\" Skills: `story`, `board`." % url)
+    if str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() == "true" and os.path.exists(
+            os.path.join(root, ".kit", "web_takeover.py")):
+        out.append("WEB: this is a Claude Code web session: no board server, no `claude --bg` here until you run "
+                   "`python3 -I .kit/web_takeover.py` (the board from git + the steps to continue). To take over the "
+                   "orchestrator: `.kit/claude-cli/takeover.md`. A part continues on its branch; the board goes back to "
+                   "git with `python3 -I .kit/web_takeover.py save` (the Stop hook runs it too).")
     talk = c.get("language", {}).get("talk")
     if talk:
         out.append("LANGUAGE: talk to the owner in %s." % talk)

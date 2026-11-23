@@ -6,7 +6,8 @@ A thin adapter over `kit.py step` (the same commands an agy orchestrator runs by
   TaskCreate with metadata {train, part}  -> `kit.py step new`: the step's post (an existing one for that train + part
                                              is adopted, never duplicated) and its generated prompt
                                              docs/prompts/<post id>.md; the hook answers with the launch command
-  TaskUpdate in_progress                  -> `kit.py step start`
+  TaskUpdate in_progress                  -> `kit.py step start` when the device has a free session slot
+                                             (`kit.py capacity --gate`, CL15); else the step stays planned
   TaskUpdate completed                    -> `kit.py step complete`: status complete (the owner moves it to Done), its
                                              review, and every kit.review.train_every steps a cross review of the train
   TaskUpdate deleted                      -> `kit.py step drop` (only while no part started it)
@@ -28,10 +29,17 @@ from kit_config import project_dir  # noqa: E402
 from kit_pre_compact import inspect_claude_transcript  # noqa: E402
 
 
-def kit(root, args):
+def kit(root, args, raw=False):
+    """`kit.py step <args>` as JSON; raw=True runs `kit.py <args>` and returns (exit code, output), or None."""
     path = os.path.join(root, ".kit", "kit.py")
     if not os.path.isfile(path):
-        return {"error": "no .kit/kit.py"}
+        return None if raw else {"error": "no .kit/kit.py"}
+    if raw:
+        try:
+            r = subprocess.run([sys.executable, "-I", path] + args, capture_output=True, text=True, timeout=60, cwd=root)
+            return r.returncode, (r.stdout + r.stderr).strip()
+        except (OSError, subprocess.SubprocessError):
+            return None
     try:
         r = subprocess.run([sys.executable, "-I", path, "step"] + args, capture_output=True, text=True, timeout=60, cwd=root)
         return json.loads(r.stdout.strip().splitlines()[-1]) if r.stdout.strip() else {"error": r.stderr.strip()[-200:]}
@@ -79,6 +87,10 @@ def on_update(root, st, ti):
         return None
     status = str(ti.get("status") or "")
     if status == "in_progress":
+        cap = kit(root, ["capacity", "--gate"], raw=True)
+        if cap is not None and cap[0] == 1:
+            return ("Post %s stays planned: %s. Do not launch it now (the guard refuses it); TaskUpdate it in_progress "
+                    "again when a part ends." % (pid, cap[1].replace("NO FREE SLOT: ", "no free session slot on this device: ")))
         res = kit(root, ["start", pid])
         return "Post %s: status in progress." % pid if res.get("ok") else None
     if status == "completed":

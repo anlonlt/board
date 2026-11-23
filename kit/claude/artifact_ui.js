@@ -22,6 +22,7 @@
     if (!pid || !c || !c.use) return Promise.resolve(head);
     return c.use("db").then(function (db) {
       if (!db) return head;
+      if (window.__KIT_WRAP_DB__) db = window.__KIT_WRAP_DB__(db);
       return Promise.all([
         db.doc("posts/" + pid).get(),
         db.collection("comments").where("post_id", "==", pid).get()
@@ -123,11 +124,13 @@
   /* Pictures named by repository path (imgUrl -> /_api/repo-asset?path=...): an <img> request never reaches api(),
      so the src is rewritten to the asset the sync uploaded (kit_docs/_index.assets: {path: "/_blob/<id>"}). */
   var assetMap = null;
+  if (window.__KIT_REPOS__) window.__KIT_REPOS__.onChange(function () { assetMap = null; });   /* each board has its pictures */
   function loadAssets() {
     if (assetMap) return Promise.resolve(assetMap);
     var c = window.claude;
     return (c && c.use ? c.use("db") : Promise.resolve(null)).then(function (db) {
       if (!db) return {};
+      if (window.__KIT_WRAP_DB__) db = window.__KIT_WRAP_DB__(db);
       return db.doc("kit_docs/_index").get().then(function (s) { assetMap = (s.exists && s.data().assets) || {}; return assetMap; });
     }).catch(function () { return {}; });
   }

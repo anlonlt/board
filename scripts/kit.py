@@ -92,6 +92,14 @@ def mirror_dir(a):
     return a.mirror or os.environ.get("KIT_MIRROR") or (os.path.join(ROOT, mp) if mp else os.path.join(os.path.dirname(ROOT), "board-mirror"))
 
 
+def board_docs(m, coll):
+    """A collection of the board's git copy, or, with no git copy (an Artifact board's local copy), of the local board."""
+    if os.path.isdir(os.path.join(m, "board", coll)):
+        return load_dir(m + "/board", coll)
+    posts, comments = _load_board_docs(m)
+    return posts if coll == "posts" else comments
+
+
 def load_dir(d, coll):
     out = {}
     for f in glob.glob(os.path.join(d, coll, "*.json")):
@@ -339,7 +347,7 @@ def diff(m, dump, window=None):
 
 # ---------------------------------------------------------------- queries
 def comments_of(m, post_id):
-    cs = [dict(v, doc_id=i) for i, v in load_dir(m + "/board", "comments").items() if v.get("post_id") == post_id]
+    cs = [dict(v, doc_id=i) for i, v in board_docs(m, "comments").items() if v.get("post_id") == post_id]
     return sorted(cs, key=lambda c: c.get("arrived_at") or c.get("created_at") or "")
 
 
@@ -349,11 +357,9 @@ def cut(s, n):
 
 
 def post(m, pid, head=None):
-    p = os.path.join(m, "board", "posts", pid + ".json")
-    if not os.path.exists(p):
+    d = board_docs(m, "posts").get(pid)
+    if d is None:
         return "no post %s in the copy" % pid
-    with open(p, encoding="utf-8") as fh:
-        d = json.load(fh)
     lines = ["%s · %s · %s%s · part %s · %s · created %s%s" % (
         pid, d.get("title", ""), d.get("column", "?"), (" (%s)" % d["status"]) if d.get("status") else "",
         d.get("part", "?"), d.get("session_id", "?"), (d.get("created_at") or "?")[:16],
@@ -399,7 +405,7 @@ def answer_delay():
 
 def open_(m, since="2000-01-01"):
     ad = answer_delay()
-    cs = [dict(v, doc_id=i) for i, v in load_dir(m + "/board", "comments").items() if v.get("created_at") and v.get("post_id")]
+    cs = [dict(v, doc_id=i) for i, v in board_docs(m, "comments").items() if v.get("created_at") and v.get("post_id")]
     answers = [c for c in cs if ad.is_answer(c)]
     lines = []
     for h in sorted(cs, key=lambda c: c["created_at"]):
@@ -418,12 +424,12 @@ def open_(m, since="2000-01-01"):
 
 def since(m, t):
     rows = []
-    for i, d in load_dir(m + "/board", "posts").items():
+    for i, d in board_docs(m, "posts").items():
         for s in ("created_at", "updated_at", "done_at"):
             if (d.get(s) or "") >= t:
                 rows.append((d[s], "post %s %s (%s) %s" % (i, s.replace("_at", ""), d.get("column"), d.get("title", "")[:70])))
                 break
-    for i, c in load_dir(m + "/board", "comments").items():
+    for i, c in board_docs(m, "comments").items():
         s = max((c.get(k) or "") for k in STAMPS)
         if s >= t:
             what = "👍" if c.get("like") else ("[answer] " + c["answer"]) if c.get("answer") else (c.get("text") or "").replace("\n", " ")[:90]
@@ -433,11 +439,10 @@ def since(m, t):
 
 
 def session(m, pid):
-    p = os.path.join(m, "board", "posts", pid + ".json")
-    if not os.path.exists(p):
+    d = board_docs(m, "posts").get(pid)
+    if d is None:
         return "no post %s in the copy" % pid
-    with open(p, encoding="utf-8") as fh:
-        return json.load(fh).get("session_id") or "no session_id on %s" % pid
+    return d.get("session_id") or "no session_id on %s" % pid
 
 
 # ---------------------------------------------------------------- warm handoff (receive / publish)
@@ -446,7 +451,8 @@ class Conflict(Exception):
 
 
 def _resolve_board_url(explicit=None):
-    return (explicit or os.environ.get("KIT_BOARD_URL") or CONFIG.get("board_url") or "http://127.0.0.1:8765").rstrip("/")
+    u = (explicit or os.environ.get("KIT_BOARD_URL") or CONFIG.get("board_url") or "http://127.0.0.1:8765").rstrip("/")
+    return local_board_url() if "claude.ai/" in u else u   # an Artifact board: the scripts use its local copy
 
 
 def _resolve_board_token(explicit=None):
@@ -645,6 +651,397 @@ def publish(m, url=None, db_path=None, branch=None, token=None, at=None):
     return {"sha": sha, "received": rec, "status": "published"}
 
 
+
+def _git_board_docs(repo, ref):
+    """{(coll, id): (data, commit time)} of posts, comments and seen at ref, read from git objects only."""
+    import io
+    import tarfile
+    arc = subprocess.run(["git", "-C", repo, "archive", "--format=tar", ref, "board"], capture_output=True, timeout=180)
+    docs = {}
+    if arc.returncode != 0 or not arc.stdout:
+        return docs
+    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
+        for mem in tf.getmembers():
+            parts = mem.name.lstrip("./").split("/")
+            if not mem.isfile() or len(parts) != 3 or parts[1] not in ("posts", "comments", "seen") or not parts[2].endswith(".json"):
+                continue
+            try:
+                data = json.loads(tf.extractfile(mem).read().decode("utf-8"))
+            except (ValueError, UnicodeDecodeError, AttributeError):
+                continue
+            if isinstance(data, dict):
+                docs[(parts[1], parts[2][:-5])] = [data, ""]
+    # when each file last changed in git: the first time `git log` (newest first) names it
+    log = subprocess.run(["git", "-C", repo, "log", "--format=@%cI", "--name-only", ref, "--", "board/posts",
+                          "board/comments", "board/seen"], capture_output=True, text=True, timeout=180).stdout
+    when = ""
+    for line in log.splitlines():
+        if line.startswith("@"):
+            when = _utc(line[1:])
+            continue
+        parts = line.strip().split("/")
+        if len(parts) == 3 and parts[2].endswith(".json"):
+            k = (parts[1], parts[2][:-5])
+            if k in docs and not docs[k][1]:
+                docs[k][1] = when
+    return {k: (v[0], v[1]) for k, v in docs.items()}
+
+
+def _utc(ts):
+    """An ISO time as UTC 'YYYY-MM-DDTHH:MM:SSZ' (comparable as text); '' if unreadable."""
+    try:
+        t = datetime.fromisoformat(str(ts).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
+    """The board here against its git copy (origin/<branch>), document by document; the more recent copy wins.
+
+    Run by the terminal keyword (`up`) before the orchestrator opens, and by web_takeover.py: work saved to git
+    elsewhere (a web session during a usage limit, another computer) comes back here, and what only this board has
+    stays and goes to git. A post or comment in git only is added here; one in both, different, is taken from git
+    when git changed it after this board did (git: the commit that last touched the file; here: the board's own
+    write time); read marks are merged. Nothing is deleted. Then the git copy is brought up to date and pushed."""
+    import sqlite3
+    url = _resolve_board_url(url)
+    token = _resolve_board_token(token)
+    branch = branch or BRANCH
+    repo = m if os.path.isdir(os.path.join(m, ".git")) or os.path.isfile(os.path.join(m, ".git")) else ROOT
+    ref = "refs/remotes/origin/" + branch
+    git(repo, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:%s" % (branch, ref))
+    if git(repo, "rev-parse", "--verify", "--quiet", ref).returncode != 0:
+        return {"status": "no git copy (origin/%s)" % branch, "from_git": 0, "added": 0, "kept_here": 0}
+    head = _git_checked(repo, "rev-parse", ref).strip()
+    remote = _git_board_docs(repo, ref)
+    db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    local_t = {}
+    if os.path.isfile(db):
+        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+        try:
+            for coll, did, ut in conn.execute("SELECT collection, doc_id, updated_at FROM docs WHERE collection IN "
+                                              "('posts', 'comments') OR (collection LIKE 'data/users/%' AND doc_id='board-seen')"):
+                if coll.startswith("data/users/"):
+                    local_t[("seen", coll[len("data/users/"):])] = _utc(ut)
+                else:
+                    local_t[(coll, did)] = _utc(ut)
+        finally:
+            conn.close()
+    writes, n_git, n_add, n_here = [], 0, 0, 0
+    for (kind, key), (data, gt) in sorted(remote.items()):
+        if kind == "seen":
+            coll, doc_id = "data/users/" + key, "board-seen"
+        else:
+            coll, doc_id = kind, key
+        api = "doc/" + "/".join(urllib.parse.quote(x, safe="") for x in coll.split("/") + [doc_id])
+        d = _board_request(url, api, token=token)
+        local = d["data"] if d.get("exists") else None
+        if kind == "seen":
+            new = merge_board_seen(local, data)
+            if new != local:
+                writes.append({"op": "set", "collection": coll, "doc_id": doc_id, "data": new, "if_version": d["version"]})
+            continue
+        if local == data:
+            continue
+        if local is None:
+            n_add += 1
+        elif gt and gt > local_t.get((kind, key), ""):
+            n_git += 1
+        else:
+            n_here += 1
+            continue
+        writes.append({"op": "set", "collection": coll, "doc_id": doc_id, "data": data, "if_version": d["version"]})
+    # one document at a time: a write can touch another (a step post updates the trains card), so each is pinned to
+    # the version read just before it; one that moved meanwhile is read again once
+    for w in writes:
+        for attempt in (1, 2):
+            try:
+                _board_request(url, "db/batch", {"writes": [w]}, token=token)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code != 409 or attempt == 2:
+                    raise Conflict("The board kept changing under %s/%s; run it again." % (w["collection"], w["doc_id"])) from e
+                api = "doc/" + "/".join(urllib.parse.quote(x, safe="") for x in w["collection"].split("/") + [w["doc_id"]])
+                cur = _board_request(url, api, token=token)
+                if w["collection"].startswith("data/users/"):
+                    w["data"] = merge_board_seen(cur.get("data") if cur.get("exists") else None, w["data"])
+                w["if_version"] = cur["version"]
+    receipt_key = "mirror-" + branch.encode("utf-8").hex()
+    rc = _board_request(url, "doc/kit-receipts/" + receipt_key, token=token)
+    _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": "kit-receipts", "doc_id": receipt_key,
+                                                 "data": {"sha": head}, "if_version": rc.get("version", 0)}]}, token=token)
+    pushed = ""
+    if repo == m and push:
+        # the git copy: origin's history first, then this board in full on top (it now holds both sides)
+        if git(m, "status", "--porcelain", "board").stdout.strip():
+            commit(m, "kit reconcile: this board before taking origin", branch=branch)
+        if git(m, "merge", "--ff-only", "origin/" + branch).returncode != 0:
+            r = git(m, "merge", "--no-edit", "-X", "ours", "origin/" + branch)
+            if r.returncode != 0:
+                git(m, "merge", "--abort")
+        if os.path.isfile(db):
+            sync_db(m, db_path=db, at=zstamp(datetime.now(timezone.utc)), full=True)
+            if git(m, "status", "--porcelain", "board").stdout.strip():
+                commit(m, "kit reconcile: local and git, the newer copy of each post", branch=branch)
+        r = git(m, "push", "-q", "origin", "HEAD:" + branch)
+        pushed = "pushed" if r.returncode == 0 else "push refused: " + (r.stdout + r.stderr).strip()[-200:]
+    return {"status": "reconciled with origin/%s" % branch, "from_git": n_git, "added": n_add, "kept_here": n_here,
+            "git": pushed or "git copy not updated here"}
+
+
+# ---------------------------------------------------------------- Artifact mode (a claude.ai Artifact board)
+# The board lives in the Artifact's database, which only the ArtifactData tool reaches. The kit's scripts (board_cli,
+# `kit.py step`, the task-train hook, kit_cards, resume and every lookup) keep working against a LOCAL copy of the
+# board (the local board server), and two commands carry it across in as few tool calls as possible:
+#   artifact pull  -> the ArtifactData list calls that save the board to files, then `artifact load`
+#   artifact push  -> what changed here, as batch files: one ArtifactData batch call each, then `artifact sent`
+# A write to a document that already exists needs its version: versions are tracked from what this copy sent, and a
+# refused pin names the document's real version (`artifact pin <collection>/<id>=<version>`, then push again).
+ART_COLLS = ("posts", "comments")
+
+
+def _art_dir():
+    return os.environ.get("KIT_ARTIFACT_DIR") or os.path.join(ROOT, ".kit", "run", "artifact")
+
+
+def _art_state():
+    p = os.path.join(_art_dir(), "state.json")
+    try:
+        with open(p, encoding="utf-8") as fh:
+            st = json.load(fh)
+    except (OSError, ValueError):
+        st = {}
+    st.setdefault("versions", {})
+    return st
+
+
+def _art_save(st):
+    os.makedirs(_art_dir(), exist_ok=True)
+    write_doc(os.path.join(_art_dir(), "state.json"), st)
+
+
+def artifact_url():
+    u = str(CONFIG.get("board_url") or _kit_config().get("board_url") or "")
+    return u if "claude.ai/" in u else str((CONFIG.get("kit") or {}).get("artifact_url") or "")
+
+
+def local_board_url():
+    """The local board server (the copy the scripts use), even when the config's board_url is the Artifact."""
+    u = os.environ.get("KIT_BOARD_URL") or str(CONFIG.get("board_url") or "")
+    if u and "claude.ai/" not in u:
+        return u.rstrip("/")
+    return "http://127.0.0.1:%d" % int(os.environ.get("KIT_BOARD_PORT") or (CONFIG.get("kit") or {}).get("board_port") or 8765)
+
+
+def _base_path(coll, did):
+    return os.path.join(_art_dir(), "base", coll, did + ".json")
+
+
+def _read_json(p):
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def artifact_pull(full=False):
+    """The calls that bring the board here. After a first full pull, only what changed since the last load (a full
+    list of a big board costs ~20 tokens a document in the tool's reply: 1,500 documents, ~30k)."""
+    board = artifact_url() or "<the board's claude.ai/artifact url>"
+    d = os.path.join(_art_dir(), "in")
+    since = "" if full else str(_art_state().get("loaded_at") or "")
+    if since:
+        t = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) - timedelta(minutes=10)
+        since = t.strftime("%Y-%m-%dT%H:%M:%SZ")
+        for f in glob.glob(os.path.join(d, "*", "*.json")):
+            os.remove(f)                                   # only the changes are loaded this time
+    lines = ["# The board from the Artifact to this copy (%s)%s" % (board, " — changes since %s" % since if since else ""), ""]
+    for c in ART_COLLS:
+        if since:
+            field = "updated_at" if c == "posts" else "created_at"
+            lines.append("- `ArtifactData` `query`, `url` %s, `collection: \"%s\"`, `query: {where: [[\"%s\", \">\", \"%s\"]], "
+                         "limit: 1000}`, `out_dir: \"%s\"`." % (board, c, field, since, d))
+        else:
+            lines.append("- `ArtifactData` `list`, `url` %s, `collection: \"%s\"`, `query: {limit: 1000}`, `out_dir: \"%s\"`; "
+                         "while it returns a `next_cursor`, again with `query.cursor` set to it." % (board, c, d))
+    if since:
+        lines.append("(A post changed on the page without a new `updated_at`, or a comment edited later, comes with "
+                     "`kit.py artifact pull --full`: do it once a day or when something looks stale.)")
+    lines += ["", "Then: `python3 -I .kit/kit.py artifact load` (starts the local board if needed; your own unsent changes stay)."]
+    return "\n".join(lines) + "\n"
+
+
+def _ensure_local_board(url):
+    try:
+        _board_request(url, "health")
+        return True
+    except Exception:
+        pass
+    wt = os.path.join(ROOT, ".kit", "web_takeover.py")
+    if os.path.isfile(wt):
+        spec = importlib.util.spec_from_file_location("kit_web_takeover", wt)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.start_board()
+    try:
+        _board_request(url, "health")
+        return True
+    except Exception:
+        return False
+
+
+def _merge_fields(remote, local, base):
+    """Remote, with every field this copy changed since the base laid over it (a field-level three-way merge)."""
+    out = dict(remote or {})
+    for k, v in (local or {}).items():
+        if (base or {}).get(k) != v:
+            out[k] = v
+    return out
+
+
+def artifact_load(url=None, token=None, in_dir=None):
+    url = url or local_board_url()
+    if not _ensure_local_board(url):
+        raise Conflict("no local board at %s (run `python3 -I .kit/web_takeover.py` first)" % url)
+    token = _resolve_board_token(token)            # after the start: a first start writes the token
+    in_dir = in_dir or os.path.join(_art_dir(), "in")
+    st = _art_state()
+    taken = kept = merged = 0
+    for coll in ART_COLLS:
+        for f in sorted(glob.glob(os.path.join(in_dir, coll, "*.json"))):
+            did = os.path.basename(f)[:-5]
+            remote = _read_json(f)
+            if not isinstance(remote, dict):
+                continue
+            base = _read_json(_base_path(coll, did))
+            d = _board_request(url, "doc/%s/%s" % (coll, urllib.parse.quote(did, safe="")), token=token)
+            local = d["data"] if d.get("exists") else None
+            if local is not None and base is not None and local != base:       # changed here since the last sync
+                new = _merge_fields(remote, local, base) if remote != base else local
+                merged += new != local
+                kept += new == local
+            else:
+                new = remote
+                taken += local != remote
+            if new != local:
+                _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": new,
+                                                             "if_version": d.get("version", 0)}]}, token=token)
+            os.makedirs(os.path.dirname(_base_path(coll, did)), exist_ok=True)
+            write_doc(_base_path(coll, did), remote)
+    # what this copy held that the Artifact does not (a seed from git, an old copy): never sent unless changed here
+    stale = set(st.get("not_there") or [])
+    for coll in ART_COLLS:
+        for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
+            key = "%s/%s" % (coll, row["id"])
+            if not os.path.exists(_base_path(coll, row["id"])) and key not in st["versions"]:
+                stale.add(key)
+                os.makedirs(os.path.dirname(_base_path(coll, row["id"])), exist_ok=True)
+                write_doc(_base_path(coll, row["id"]), row.get("data") or {})
+    st["not_there"] = sorted(stale)
+    st["loaded_at"] = zstamp(datetime.now(timezone.utc))
+    _art_save(st)
+    return {"taken": taken, "kept_here": kept, "merged": merged, "not_there": len(stale)}
+
+
+def artifact_push(url=None, token=None, out_dir=None):
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    out_dir = out_dir or os.path.join(_art_dir(), "out")
+    os.makedirs(os.path.join(out_dir, "docs"), exist_ok=True)
+    for f in glob.glob(os.path.join(out_dir, "batch-*.json")) + glob.glob(os.path.join(out_dir, "docs", "*.json")):
+        os.remove(f)
+    st = _art_state()
+    entries, need_pin = [], []
+    for coll in ART_COLLS:
+        res = _board_request(url, "db/%s" % coll, token=token)
+        for row in res.get("docs") or []:
+            did, data = row["id"], row.get("data") or {}
+            base = _read_json(_base_path(coll, did))
+            if base == data:
+                continue
+            key = "%s/%s" % (coll, did)
+            e = {"op": "set", "collection": coll, "doc_id": did}
+            if key in (st.get("not_there") or []) and key not in st["versions"]:
+                base = None                              # never in the Artifact: a create
+            if base is not None or key in st["versions"]:
+                if key not in st["versions"]:
+                    need_pin.append(key)
+                    continue
+                e["if_version"] = int(st["versions"][key])
+            fp = os.path.join(os.path.abspath(out_dir), "docs", "%04d.json" % len(entries))
+            write_doc(fp, data)
+            e["file_path"] = fp
+            entries.append(e)
+    batches, cur, size = [], [], 0
+    for e in entries:
+        n = os.path.getsize(e["file_path"]) + 200
+        if cur and (len(cur) == 50 or size + n > 900 * 1024):
+            batches.append(cur); cur, size = [], 0
+        cur.append(e); size += n
+    if cur:
+        batches.append(cur)
+    paths = []
+    for i, b in enumerate(batches):
+        p = os.path.join(out_dir, "batch-%02d.json" % (i + 1))
+        write_doc(p, b)
+        paths.append(p)
+    return {"batches": paths, "need_pin": need_pin, "writes": len(entries), "board": artifact_url()}
+
+
+def artifact_push_text(r):
+    board = r["board"] or "<the board's url>"
+    out = []
+    if r["need_pin"]:
+        out.append("First, their versions (changed here, never sent from this copy): for each, `ArtifactData` `get`, `url` %s, "
+                   "that collection and doc_id, `out_dir: \"/tmp/kit-pin\"`; then one command: `python3 -I .kit/kit.py "
+                   "artifact pin %s` with each <version> the get named; then push again." % (
+                       board, " ".join("%s=<version>" % k for k in r["need_pin"])))
+    for p in r["batches"]:
+        out.append("`ArtifactData` `batch`, `url` %s, `writes` = the array in %s; when it is committed: "
+                   "`python3 -I .kit/kit.py artifact sent %s`." % (board, p, p))
+    if not out:
+        out.append("Nothing to send: the Artifact has every change made here.")
+    out.append("A refused batch names a document's real version: `python3 -I .kit/kit.py artifact pin <collection>/<id>=<version>`, "
+               "then push again.")
+    return "\n".join(out) + "\n"
+
+
+def artifact_sent(batch_path):
+    st = _art_state()
+    batch = _read_json(batch_path) or []
+    for e in batch:
+        key = "%s/%s" % (e["collection"], e["doc_id"])
+        if e.get("op") == "delete":
+            st["versions"].pop(key, None)
+            continue
+        st["versions"][key] = int(e.get("if_version") or 0) + 1
+        data = _read_json(e.get("file_path") or "")
+        if isinstance(data, dict):
+            os.makedirs(os.path.dirname(_base_path(e["collection"], e["doc_id"])), exist_ok=True)
+            write_doc(_base_path(e["collection"], e["doc_id"]), data)
+    _art_save(st)
+    try:
+        os.remove(batch_path)
+    except OSError:
+        pass
+    return len(batch)
+
+
+def artifact_pin(pairs):
+    st = _art_state()
+    n = 0
+    for p in pairs:
+        k, _, v = p.partition("=")
+        if k.count("/") == 1 and v.strip().isdigit():
+            st["versions"][k] = int(v)
+            n += 1
+    _art_save(st)
+    return n
+
 # ---------------------------------------------------------------- runtime welcomes
 WELCOME_RUNTIMES = ("agy", "claude-cli", "claude", "arena", "generic")
 
@@ -731,7 +1128,7 @@ def _runtime_capability_lines(runtime, board_url, cmd, mem_rel):
         return [
             "- **Local board + phone access:** served by `board_server.py` at `%s` with Tailscale/PWA access (Android Private DNS / NextDNS users: use the direct Tailscale IP link if `*.ts.net` does not resolve)." % board_url,
             "- **One-word launcher:** type `%s` in any terminal to start the board, print your link, and launch `agy --mode auto` with `kit_guard.py` (unattended mode — destructive commands stay blocked)." % cmd,
-            "- **Live forwarding & parallel workers:** a `flash_lite` clerk auto-forwards your comments, 👍 Likes, and tapped answers; parallel git-worktree subagents (`Workspace=\"share\"`) isolate each part's edits.",
+            "- **Live forwarding & parallel workers:** a `flash_lite` clerk auto-forwards your comments, Likes, and tapped answers; parallel git-worktree subagents (`Workspace=\"share\"`) isolate each part's edits.",
             "- **Warm Git sync:** `kit.py receive` / `kit.py publish` sync board state cleanly with other runtimes.",
         ]
     if runtime == "claude-cli":
@@ -744,13 +1141,13 @@ def _runtime_capability_lines(runtime, board_url, cmd, mem_rel):
     if runtime == "claude":
         return [
             "- **Cloud Artifact board:** hosted on `claude.ai` (`%s`) with `window.storage` persistence." % board_url,
-            "- **Auto-wakeup on comment:** comments and 👍 Likes wake the clerk/orchestrator automatically.",
+            "- **Auto-wakeup on comment:** comments and Likes wake the clerk/orchestrator automatically.",
             "- **Cloud subagents & hybrid bridge:** remote subagents run parts in parallel, and the `board-mirror` Git bridge (`kit.py sync` / `git_watch.py`) connects local computer runners.",
         ]
     if runtime == "arena":
         return [
             "- **Embedded preview mode:** runs `board_server.py --preview --embed-mode` (`KIT_EMBED_PREVIEW=1`) at `%s` with zero-config sandbox proxy binding, auto-seeded `_orchestrator`, cookie-independent `X-Kit-Token` unlock, 5s change polling, and iframe-safe Copy Markdown / `/_api/export` Share fallback." % board_url,
-            "- **30-min live listener + Pull-on-turn (no background clerk / no auto-wake across turns):** during an active turn, `board_cli.py comments wait --timeout 1750` catches your comments and 👍 Likes live for ~29 minutes without needing `.` in chat. Once a turn ends, there is no 0-token background wake — ping the Arena chat (e.g. `.`) whenever you want the agent to read `board_cli.py inbox` and reply.",
+            "- **30-min live listener + Pull-on-turn (no background clerk / no auto-wake across turns):** during an active turn, `board_cli.py comments wait --timeout 1750` catches your comments and Likes live for ~29 minutes without needing `.` in chat. Once a turn ends, there is no 0-token background wake — ping the Arena chat (e.g. `.`) whenever you want the agent to read `board_cli.py inbox` and reply.",
             "- **Handoff:** warm Git sync (`kit.py receive` / `kit.py publish`) when a remote is configured, or a downloadable patch/zip when the sandbox has no push credentials.",
         ]
     return [
@@ -824,7 +1221,10 @@ def render_welcome(runtime=None, project=None, board_url=None, memory_dir=None, 
             lines.append("- **%s** (`P%d`): %s" % (p["title"], p["priority"], p["next"]))
     else:
         lines.append("- Ready for your next instruction — tell me which task to start.")
-    lines.extend(["", "A 👍 on this message launches them all; or tell me which."])
+    dl = device_line()
+    if dl:
+        lines.append("- " + dl + " Past that, steps wait their turn instead of crashing the computer.")
+    lines.extend(["", "A Like on this message launches them all; or tell me which."])
     return "\n".join(lines) + "\n"
 
 
@@ -1490,6 +1890,30 @@ def _all_posts(db_path=None):
     return posts
 
 
+def _device():
+    """.kit/device.py (scripts/device.py in the kit's own repo): the device's session cap (CL15); None if missing."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "device.py")
+    if not os.path.isfile(path):
+        return None
+    spec = importlib.util.spec_from_file_location("kit_device", path)
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:  # a broken probe never blocks the kit
+        return None
+    return mod
+
+
+def device_line(survey=None):
+    d = _device()
+    if d is None:
+        return None
+    try:
+        return d.summary(survey or d.survey())
+    except Exception as e:
+        return "Device: could not measure (%s)." % e
+
+
 def _launch_line(part, rel, model=None):
     c = _kit_config()
     k = c.get("kit") or {}
@@ -1498,8 +1922,12 @@ def _launch_line(part, rel, model=None):
     name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
     if str(k.get("cli") or "claude") == "agy":
         return "(agy) launch a part session with the prompt %s, in its own worktree, named %s" % (rel, name)
-    return "KIT_ROLE=part claude --bg -n %s -w %s --permission-mode %s%s \"Your prompt is %s: read it and do it.\"" % (
-        name, _slug(part, 24), mode, (" --model %s" % model) if model != "inherit" else "", rel)
+    if str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() == "true":
+        return ("(web) run it as a subagent here (Agent tool, isolation worktree) with the prompt \"Your prompt is %s: "
+                "read it and do it.\", or open a new Claude Code web session on this repo with that prompt" % rel)
+    gate = "python3 -I .kit/device.py --gate && " if _device() is not None else ""
+    return "%sKIT_ROLE=part claude --bg -n %s -w %s --permission-mode %s%s \"Your prompt is %s: read it and do it.\"" % (
+        gate, name, _slug(part, 24), mode, (" --model %s" % model) if model != "inherit" else "", rel)
 
 
 def _write_step_prompt(pid, doc, sources):
@@ -1656,15 +2084,31 @@ def resume(m, db_path=None, alive=None):
                 who = " · session %s (%s)" % (sess, life)
             else:
                 who = " · planned, not launched" if st == "planned" else ""
-            out.append("- %s %s `%s` %s%s%s" % (box, p.get("part") or pid, pid, str(p.get("title") or "")[:80],
-                                                (" · " + st) if st and st != "planned" else "", who))
+            quiet = ""
+            if "progress" in st:
+                last = _utc(str(p.get("updated_at") or p.get("created_at") or ""))
+                if last:
+                    mins = int((datetime.now(timezone.utc) - datetime.strptime(last, "%Y-%m-%dT%H:%M:%SZ")
+                                .replace(tzinfo=timezone.utc)).total_seconds() // 60)
+                    if mins >= 30 and "(not running)" in who:
+                        quiet = " · quiet %d min, not running: stalled (continue it from its branch)" % mins
+                    elif mins >= 30:
+                        quiet = " · quiet %d min: send it a save point (commit and push now)" % mins
+            out.append("- %s %s `%s` %s%s%s%s" % (box, p.get("part") or pid, pid, str(p.get("title") or "")[:80],
+                                                  (" · " + st) if st and st != "planned" else "", who, quiet))
     if not n_active:
         out.append("")
         out.append("No train has an open step.")
+    dl = device_line()
+    if dl:
+        out.append("")
+        out.append("## This device")
+        out.append(dl + ("" if dl.startswith("Device: cloud") else " A launch past the cap is refused "
+                   "(`.kit/device.py --gate`, the guard): the step waits, planned, until a session ends; launch it then."))
     out.append("")
     out.append("## The owner's unanswered comments")
     try:
-        out.append(open_(m) if os.path.isdir(os.path.join(m, "board")) else "(no git copy yet: run `kit.py sync-db` first)")
+        out.append(open_(m))
     except Exception as e:  # the copy may be mid-sync; the orchestrator can rerun `kit.py open`
         out.append("(could not read: %s)" % e)
     out.append("")
@@ -1929,6 +2373,15 @@ def main(argv=None):
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None)
+    s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
+    s.add_argument("action", choices=["pull", "load", "push", "sent", "pin"]); s.add_argument("args", nargs="*")
+    s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
+    s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
+    s = sp.add_parser("reconcile", help="the board here vs its git copy: the newer copy of each post and comment wins")
+    s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--branch", default=None)
+    s.add_argument("--db", default=None); s.add_argument("--no-push", action="store_true")
+    s = sp.add_parser("capacity", help="the device's session cap (.kit/device.py): --gate exits 1 when no slot is free")
+    s.add_argument("--gate", action="store_true"); s.add_argument("--json", action="store_true")
     s = sp.add_parser("done"); s.add_argument("post"); s.add_argument("--db", default=None)
     s = sp.add_parser("sections"); s.add_argument("--db", default=None)
     s = sp.add_parser("step", help="the train is the task list: new | start | complete | drop")
@@ -2029,9 +2482,44 @@ def main(argv=None):
         rc, msg = review(a.post, train=a.train, dry_run=a.dry_run, force=a.force, db_path=a.db)
         print(msg)
         return rc
+    if a.cmd == "artifact":
+        try:
+            if a.action == "pull":
+                print(artifact_pull(full=a.full), end="")
+            elif a.action == "load":
+                r = artifact_load(url=a.board_url, token=a.token)
+                print("Loaded from the Artifact: %d taken, %d kept from here (unsent), %d merged field by field. "
+                      "The scripts now read and write the local copy; send its changes with `kit.py artifact push`." % (
+                          r["taken"], r["kept_here"], r["merged"]))
+            elif a.action == "push":
+                print(artifact_push_text(artifact_push(url=a.board_url, token=a.token)), end="")
+            elif a.action == "sent":
+                print("recorded: %d writes" % sum(artifact_sent(p) for p in a.args))
+            elif a.action == "pin":
+                print("pinned: %d" % artifact_pin(a.args))
+        except (Conflict, urllib.error.URLError, OSError) as e:
+            print("artifact %s: NOT DONE (%s)" % (a.action, e))
+            return 1
+        return 0
+    if a.cmd == "reconcile":
+        try:
+            with _sync_lock(m) if os.path.isdir(m) else contextlib.nullcontext():
+                r = reconcile(m, url=a.board_url, token=a.token, branch=a.branch, db_path=a.db, push=not a.no_push)
+        except (Conflict, urllib.error.URLError, OSError) as e:
+            print("reconcile: NOT DONE (%s); the board here is unchanged." % e)
+            return 1
+        print("Board vs git: %s; %d from git (newer there), %d new from git, %d kept from here (newer here); %s."
+              % (r["status"], r["from_git"], r["added"], r["kept_here"], r.get("git", "")))
+        return 0
     if a.cmd == "resume":
         print(resume(m, db_path=a.db), end="")
         return 0
+    if a.cmd == "capacity":
+        d = _device()
+        if d is None:
+            print("no .kit/device.py: reinstall the kit", file=sys.stderr)
+            return 2
+        return d.main((["--gate"] if a.gate else []) + (["--json"] if a.json else []))
     if a.cmd == "train":
         print(train_context(m, a.target, zoom=a.zoom, db_path=a.db, as_json=a.as_json), end="")
         return 0
