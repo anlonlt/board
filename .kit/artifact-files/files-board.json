@@ -10,6 +10,22 @@
   }
  },
  "docs": {
+  ".kit+2F~BOARD.md": {
+   "sha": "9a46b51004f0160debc2626664fcae9ff6acb71259b7a0058a1f986078664cf7",
+   "version": 1
+  },
+  ".kit+2F~board.html": {
+   "sha": "14a132b2a803fc47d074d04f88de7757f3332fdc86a43aa159f443a344acb3c8",
+   "version": 1
+  },
+  ".kit+2F~claude-cli+2F~part.md": {
+   "sha": "6144076f7967d822e40f15a6b24cf0938162c572303016f68f1852feecf5b2d7",
+   "version": 1
+  },
+  ".kit+2F~claude-cli+2F~takeover.md": {
+   "sha": "055039a85bd3543705975ffd413caeb8c4736167686cba732d86f66433f269bd",
+   "version": 1
+  },
   "AGENTS.md": {
    "sha": "1757e14f76d3910d05a9e9e4b6d0e40db91467125fcf70416d257e6c0a0adc66",
    "version": 1
