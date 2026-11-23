@@ -1,9 +1,9 @@
 {
  "column": "info",
- "created_at": "2026-11-23T22:11:12Z",
+ "created_at": "2026-11-23T22:11:44Z",
  "rows": [
   {
-   "at": 28,
+   "at": 29,
    "key": "A",
    "name": "Cli",
    "note": "Next: The Trains view: task lists (A) or the old flow map (B)?",
@@ -37,12 +37,12 @@
     "the review launcher works on every platform",
     "a full UI and UX audit of the board, then every fix",
     "the orchestrator answers only from a fresh brief",
+    "kit compact keeps a project's story checker green",
     "every agent uses the kit's scripts, enforced by hooks",
     "Design principles, complete, and no emoji Like",
     "The board travels in git, always current (mirror synced on every step)",
     "A crashed part is continued from its last checkpoint",
     "The Trains view: task lists (A) or the old flow map (B)?",
-    "kit compact keeps a project's story checker green",
     "kit artifact push never overwrites a newer live card (_dashboard, _trains)"
    ],
    "train": "P-cli"
@@ -83,5 +83,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-23T22:11:12Z"
+ "updated_at": "2026-11-23T22:11:44Z"
 }

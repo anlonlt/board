@@ -1,11 +1,27 @@
 {
- "body": "The owner's yes (08:23, CL28's chat: \"take state files and issues out of memory\"). On Harmonize, `kit.py compact` (compact_memory) moved 23 state files, awaits.md and 38 closed issues to .story/archive/ but left `.story/awaits-anlon.md` tagging the moved workstreams: Harmonize's story checker (.claude/skills/story/scripts/check.py) gave 31 faults (\"awaits-anlon.md: [app] has no state in .story/state/\"), the push gate refused, it was reverted (1c6a49c2); the compacted tree is on Harmonize branch `o51-story-compact`. Also the SessionStart hook's STATES section would print nothing. Fix in the kit: compact must handle every awaits file the project has (config memory names, not only awaits.md): either post each open awaits point as a question post and archive the file, or move the awaits points of archived workstreams with them; and it must run the project's memory checker (dry run shows its result) and refuse to leave it red. Test first: a fixture with an awaits-anlon.md tagging a workstream, red on the current kit, green after. Done: kit tests green, kit main fast-forwarded per the trunk push; then a dry run on a fresh Harmonize clone printed in the post (compaction on Harmonize itself is applied by the orchestrator after the check, own commit of git renames).",
- "column": "info",
+ "artifacts": [
+  "scripts/kit.py",
+  "tests/test_cl29_compact_checker.py"
+ ],
+ "bars": [
+  "tests/test_cl29_compact_checker.py: 8 of 9 red on kit main (Harmonize's '[app] has no state' fault reproduced), 9 of 9 green after",
+  "scripts/run_all_tests.py: 10 of 10 suites pass, 0 failed",
+  "Harmonize fresh-clone dry run: 0 of 1 done (attaching the repo was refused here)"
+ ],
+ "body": "Fixed in the kit: compact now moves each awaits point with its workstream and refuses to leave the project's memory checker red. The Harmonize dry run is NOT done: attaching anlonlt/harmonize to this session was refused by the permission check, so the orchestrator runs it (one command, under Handoff).\n\n## What changed\n`kit.py compact` (scripts/kit.py, compact_memory):\n- **Every awaits file:** `awaits*.md` in the memory dir, plus any name in `kit.awaits_files` (.kit/config.json). A point (its `- [workstream]` line and the indented lines under it) whose workstream is archived, or has no state file, moves to `archive/<file>`. A point of a workstream that stays (orchestrator) stays. A file with no point left is archived whole. I picked \"move the points with their workstream\" over \"post each as a question\" because posting needs a live board and cannot run in a dry run.\n- **Closed issues a staying file cites stay** (otherwise the checker reports an unknown issue).\n- **The project's memory checker runs on the result:** `kit.memory_check` in config (a command; `{root}` is the repo root), else `.claude|.agents|.agent/skills/story|memory/scripts/check.py`. The moves are applied, the checker runs, and if it is red **every move is undone** and compact says REFUSED with the checker's faults. A dry run does the same steps, prints the checker's result, and then undoes everything.\n\n## The test (red before, green after)\n`tests/test_cl29_compact_checker.py`: a .story fixture with Harmonize's own checker (copied from compare/harmonize/) and an awaits-anlon.md tagging [app], [sync] and [orchestrator]. On kit main, 8 of 9 tests fail and the checker shows Harmonize's fault exactly: `awaits-anlon.md: [app] has no state in .story/state/`. After the fix: 9 of 9 pass. CL28's compact test still passes. Full suite: 10 of 10 suites, 0 failed.\n\n## Dry run on the fixture\n```\ncompact (dry-run): would archive 4 file(s) and 1 awaits file(s):\n  - state/app.md, state/sync.md, issues/…crash.md, issues/…slow.md\n  - awaits-anlon.md: 2 point(s) of archived workstreams -> archive/awaits-anlon.md\nmemory checker (.claude/skills/story/scripts/check.py .): STORY: OK — 1 states, 1 issues, awaits-anlon.md\n```\nIf orchestrator.md cites `.story/state/app.md`, compact prints `would be REFUSED … dead pointer` and nothing moves.\n\n## Handoff\n1. Merge cl29 into kit main (this session runs end_session.py, which does that).\n2. On a fresh Harmonize clone: `python3 install.py --update` from kit main, then `python3 -I .kit/kit.py compact --dry-run`. Paste the output here. If it says REFUSED, its lines name what to fix (most likely dead pointers in state/orchestrator.md to archived states).\n3. Harmonize's own session-start.sh STATES section is Harmonize's hook, not the kit's, so this step does not touch it. After compaction it lists only orchestrator.md.",
+ "breaks": "revert 9c11822",
+ "check": "python3 -m unittest tests.test_cl29_compact_checker",
+ "column": "done",
  "created_at": "2026-11-23T09:00:42Z",
  "from": "orchestrator",
+ "handoff": "Kit main gets cl29 via end_session. On Harmonize: install.py --update, then `python3 -I .kit/kit.py compact --dry-run`; post its output under this post; apply only if it ends STORY: OK. Commands checked: kit.py compact (extended, not rebuilt), kit.py commands memory.",
+ "not_checked": "The dry run on a real Harmonize clone: anlonlt/harmonize could not be attached to this session. Harmonize's own session-start.sh STATES section is not changed (Harmonize's hook, not the kit's).",
  "part": "CL29",
  "planned_by": "orchestrator",
- "status": "planned",
+ "session_id": "147d5df5-9a16-54c3-9da2-61460d0358e7",
+ "status": "done",
  "title": "kit compact keeps a project's story checker green",
- "train": "cli"
+ "train": "cli",
+ "updated_at": "2026-11-23T22:11:44Z",
+ "verdict": "compact now moves each awaits point with its workstream (into archive/<file>) and refuses, undoing every move, if the project's memory checker is red; the fixture with Harmonize's checker is green after, red before."
 }
