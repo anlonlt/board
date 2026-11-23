@@ -972,6 +972,7 @@ button:active, summary:active, .card:active, .ffeed-card:active, a:active { -web
 .composer {
   display: grid !important; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: end;
   grid-template-areas: "reply reply reply" "files files files" "att text send" "note note note"; padding: 4px 0;
+  gap: 0; /* the flex box's 8 px gap would open 8 px per empty row (reply, files) above the text, and beside it */
 }
 .composer > #c-reply { grid-area: reply; }
 .composer > #c-files, .composer > .files { grid-area: files; }
@@ -3253,9 +3254,11 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     if (!c || c.hidden || !sh || sh.hidden) return;
     var cr = c.getBoundingClientRect(), vh = window.visualViewport ? window.visualViewport.height + window.visualViewport.offsetTop : window.innerHeight;
     if (cr.height <= 0 || cr.top >= vh) return;
-    var base = getComputedStyle(j).position === "absolute" ? sh.getBoundingClientRect().bottom : vh;
+    /* a fixed pill's bottom counts from the layout viewport's bottom (innerHeight), not from the keyboard's top */
+    var base = getComputedStyle(j).position === "absolute" ? sh.getBoundingClientRect().bottom : window.innerHeight;
     j.style.setProperty("bottom", Math.max(18, Math.round(base - cr.top + 10)) + "px", "important");
   }
+  window._kitPlaceNewJump = placeNewJump;
   /* "New below" / "New above": the first unseen thing that is not on screen now. */
   function newJump() {
     var p = current(), j = $("p-newjump"); if (!p) { j.hidden = true; return; }
@@ -3652,6 +3655,10 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       document.addEventListener("focusin", function () { setTimeout(sync, 60); }, true);
       document.addEventListener("focusout", function () { setTimeout(sync, 60); }, true);
       window._kitSyncKeyboard = sync;
+      /* the pill follows the box when the keyboard opens, the page pans or the box grows */
+      function rePill() { var j = document.getElementById("p-newjump"); if (j && !j.hidden && typeof window._kitPlaceNewJump === "function") window._kitPlaceNewJump(j); }
+      vv.addEventListener("resize", function () { requestAnimationFrame(rePill); }); vv.addEventListener("scroll", function () { requestAnimationFrame(rePill); });
+      document.addEventListener("input", function () { requestAnimationFrame(rePill); }, true);
     })();
     /* CL27: a comment box grows with its text where the browser cannot (no field-sizing: Safari), up to its CSS cap */
     if (!(window.CSS && CSS.supports && CSS.supports("field-sizing", "content"))) {

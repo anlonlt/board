@@ -120,6 +120,15 @@ const VV = `(() => {
       check('phone, keyboard open (visible ' + top + '..' + (top + h) + '): the comment box sits in the visible part, on the keyboard', c && c.t >= top - 1 && c.b <= top + h + 1 && c.b >= top + h - 40, c);
       check('phone, keyboard open (visible ' + top + '..' + (top + h) + '): the post bar is at the top of it, no margin', br && Math.abs(br.t - top) <= 2, br);
     }
+    // the grown box: its text starts right at the box's top and next to the paperclip (no empty grid rows or gaps)
+    const tg = await rect(p, '#c-text'), cg = await rect(p, '#composer');
+    check('phone: no blank above the text in a grown box (text box top ' + Math.round(tg.t - cg.t) + ' px under the box top, at most 6)', tg.t - cg.t <= 6 && tg.l - cg.l <= 46, { tg, cg });
+    // "New below" with the keyboard open and the page panned: the pill is above the box, not on its text
+    await p.evaluate(() => { const t = document.getElementById('c-text'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); try { localStorage.clear(); } catch (e) {} });
+    await p.evaluate(() => { const sh = document.getElementById('sheet'); const c = document.querySelector('.cmt'); if (c) sh.scrollTop += c.getBoundingClientRect().top - 120; });
+    await p.waitForTimeout(2500);
+    const pj = await rect(p, '#p-newjump'), pc = await rect(p, '#composer');
+    check('phone, keyboard open and panned: the "New below" pill shows and is not over the box', !!pj && !hit(pj, pc), { pj, pc });
     await p.evaluate(() => window.__setVV(0)); await p.waitForTimeout(200);
     // 7. a word tapped in the box keeps the keyboard: nothing on the page blurs it, and the browser's spelling menu
     //    (Chrome's, which hides the keyboard) is not asked for on a touch screen
