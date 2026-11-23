@@ -446,7 +446,8 @@ class Conflict(Exception):
 
 
 def _resolve_board_url(explicit=None):
-    return (explicit or os.environ.get("KIT_BOARD_URL") or CONFIG.get("board_url") or "http://127.0.0.1:8765").rstrip("/")
+    u = (explicit or os.environ.get("KIT_BOARD_URL") or CONFIG.get("board_url") or "http://127.0.0.1:8765").rstrip("/")
+    return local_board_url() if "claude.ai/" in u else u   # an Artifact board: the scripts use its local copy
 
 
 def _resolve_board_token(explicit=None):
@@ -784,6 +785,229 @@ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
         pushed = "pushed" if r.returncode == 0 else "push refused: " + (r.stdout + r.stderr).strip()[-200:]
     return {"status": "reconciled with origin/%s" % branch, "from_git": n_git, "added": n_add, "kept_here": n_here,
             "git": pushed or "git copy not updated here"}
+
+
+# ---------------------------------------------------------------- Artifact mode (a claude.ai Artifact board)
+# The board lives in the Artifact's database, which only the ArtifactData tool reaches. The kit's scripts (board_cli,
+# `kit.py step`, the task-train hook, kit_cards, resume and every lookup) keep working against a LOCAL copy of the
+# board (the local board server), and two commands carry it across in as few tool calls as possible:
+#   artifact pull  -> the ArtifactData list calls that save the board to files, then `artifact load`
+#   artifact push  -> what changed here, as batch files: one ArtifactData batch call each, then `artifact sent`
+# A write to a document that already exists needs its version: versions are tracked from what this copy sent, and a
+# refused pin names the document's real version (`artifact pin <collection>/<id>=<version>`, then push again).
+ART_COLLS = ("posts", "comments")
+
+
+def _art_dir():
+    return os.environ.get("KIT_ARTIFACT_DIR") or os.path.join(ROOT, ".kit", "run", "artifact")
+
+
+def _art_state():
+    p = os.path.join(_art_dir(), "state.json")
+    try:
+        with open(p, encoding="utf-8") as fh:
+            st = json.load(fh)
+    except (OSError, ValueError):
+        st = {}
+    st.setdefault("versions", {})
+    return st
+
+
+def _art_save(st):
+    os.makedirs(_art_dir(), exist_ok=True)
+    write_doc(os.path.join(_art_dir(), "state.json"), st)
+
+
+def artifact_url():
+    u = str(CONFIG.get("board_url") or _kit_config().get("board_url") or "")
+    return u if "claude.ai/" in u else str((CONFIG.get("kit") or {}).get("artifact_url") or "")
+
+
+def local_board_url():
+    """The local board server (the copy the scripts use), even when the config's board_url is the Artifact."""
+    u = os.environ.get("KIT_BOARD_URL") or str(CONFIG.get("board_url") or "")
+    if u and "claude.ai/" not in u:
+        return u.rstrip("/")
+    return "http://127.0.0.1:%d" % int(os.environ.get("KIT_BOARD_PORT") or (CONFIG.get("kit") or {}).get("board_port") or 8765)
+
+
+def _base_path(coll, did):
+    return os.path.join(_art_dir(), "base", coll, did + ".json")
+
+
+def _read_json(p):
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def artifact_pull():
+    board = artifact_url() or "<the board's claude.ai/artifact url>"
+    d = os.path.join(_art_dir(), "in")
+    lines = ["# The board from the Artifact to this copy (%s)" % board, ""]
+    for c in ART_COLLS:
+        lines.append("- `ArtifactData` `list`, `url` %s, `collection: \"%s\"`, `query: {limit: 1000}`, `out_dir: \"%s\"`; "
+                     "while it returns a `next_cursor`, again with `query.cursor` set to it." % (board, c, d))
+    lines += ["", "Then: `python3 -I .kit/kit.py artifact load` (starts the local board if needed; your own unsent changes stay)."]
+    return "\n".join(lines) + "\n"
+
+
+def _ensure_local_board(url):
+    try:
+        _board_request(url, "health")
+        return True
+    except Exception:
+        pass
+    wt = os.path.join(ROOT, ".kit", "web_takeover.py")
+    if os.path.isfile(wt):
+        spec = importlib.util.spec_from_file_location("kit_web_takeover", wt)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.start_board()
+    try:
+        _board_request(url, "health")
+        return True
+    except Exception:
+        return False
+
+
+def _merge_fields(remote, local, base):
+    """Remote, with every field this copy changed since the base laid over it (a field-level three-way merge)."""
+    out = dict(remote or {})
+    for k, v in (local or {}).items():
+        if (base or {}).get(k) != v:
+            out[k] = v
+    return out
+
+
+def artifact_load(url=None, token=None, in_dir=None):
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    if not _ensure_local_board(url):
+        raise Conflict("no local board at %s (run `python3 -I .kit/web_takeover.py` first)" % url)
+    in_dir = in_dir or os.path.join(_art_dir(), "in")
+    st = _art_state()
+    taken = kept = merged = 0
+    for coll in ART_COLLS:
+        for f in sorted(glob.glob(os.path.join(in_dir, coll, "*.json"))):
+            did = os.path.basename(f)[:-5]
+            remote = _read_json(f)
+            if not isinstance(remote, dict):
+                continue
+            base = _read_json(_base_path(coll, did))
+            d = _board_request(url, "doc/%s/%s" % (coll, urllib.parse.quote(did, safe="")), token=token)
+            local = d["data"] if d.get("exists") else None
+            if local is not None and base is not None and local != base:       # changed here since the last sync
+                new = _merge_fields(remote, local, base) if remote != base else local
+                merged += new != local
+                kept += new == local
+            else:
+                new = remote
+                taken += local != remote
+            if new != local:
+                _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": new,
+                                                             "if_version": d.get("version", 0)}]}, token=token)
+            os.makedirs(os.path.dirname(_base_path(coll, did)), exist_ok=True)
+            write_doc(_base_path(coll, did), remote)
+    st["loaded_at"] = zstamp(datetime.now(timezone.utc))
+    _art_save(st)
+    return {"taken": taken, "kept_here": kept, "merged": merged}
+
+
+def artifact_push(url=None, token=None, out_dir=None):
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    out_dir = out_dir or os.path.join(_art_dir(), "out")
+    os.makedirs(os.path.join(out_dir, "docs"), exist_ok=True)
+    for f in glob.glob(os.path.join(out_dir, "batch-*.json")) + glob.glob(os.path.join(out_dir, "docs", "*.json")):
+        os.remove(f)
+    st = _art_state()
+    entries, need_pin = [], []
+    for coll in ART_COLLS:
+        res = _board_request(url, "db/%s" % coll, token=token)
+        for row in res.get("docs") or []:
+            did, data = row["id"], row.get("data") or {}
+            base = _read_json(_base_path(coll, did))
+            if base == data:
+                continue
+            key = "%s/%s" % (coll, did)
+            e = {"op": "set", "collection": coll, "doc_id": did}
+            if base is not None or key in st["versions"]:
+                if key not in st["versions"]:
+                    need_pin.append(key)
+                    continue
+                e["if_version"] = int(st["versions"][key])
+            fp = os.path.join(os.path.abspath(out_dir), "docs", "%04d.json" % len(entries))
+            write_doc(fp, data)
+            e["file_path"] = fp
+            entries.append(e)
+    batches, cur, size = [], [], 0
+    for e in entries:
+        n = os.path.getsize(e["file_path"]) + 200
+        if cur and (len(cur) == 50 or size + n > 900 * 1024):
+            batches.append(cur); cur, size = [], 0
+        cur.append(e); size += n
+    if cur:
+        batches.append(cur)
+    paths = []
+    for i, b in enumerate(batches):
+        p = os.path.join(out_dir, "batch-%02d.json" % (i + 1))
+        write_doc(p, b)
+        paths.append(p)
+    return {"batches": paths, "need_pin": need_pin, "writes": len(entries), "board": artifact_url()}
+
+
+def artifact_push_text(r):
+    board = r["board"] or "<the board's url>"
+    out = []
+    if r["need_pin"]:
+        out.append("First, their versions (changed here, never sent from this copy): for each, `ArtifactData` `get`, `url` %s, "
+                   "that collection and doc_id, `out_dir: \"/tmp/kit-pin\"`; then one command: `python3 -I .kit/kit.py "
+                   "artifact pin %s` with each <version> the get named; then push again." % (
+                       board, " ".join("%s=<version>" % k for k in r["need_pin"])))
+    for p in r["batches"]:
+        out.append("`ArtifactData` `batch`, `url` %s, `writes` = the array in %s; when it is committed: "
+                   "`python3 -I .kit/kit.py artifact sent %s`." % (board, p, p))
+    if not out:
+        out.append("Nothing to send: the Artifact has every change made here.")
+    out.append("A refused batch names a document's real version: `python3 -I .kit/kit.py artifact pin <collection>/<id>=<version>`, "
+               "then push again.")
+    return "\n".join(out) + "\n"
+
+
+def artifact_sent(batch_path):
+    st = _art_state()
+    batch = _read_json(batch_path) or []
+    for e in batch:
+        key = "%s/%s" % (e["collection"], e["doc_id"])
+        if e.get("op") == "delete":
+            st["versions"].pop(key, None)
+            continue
+        st["versions"][key] = int(e.get("if_version") or 0) + 1
+        data = _read_json(e.get("file_path") or "")
+        if isinstance(data, dict):
+            os.makedirs(os.path.dirname(_base_path(e["collection"], e["doc_id"])), exist_ok=True)
+            write_doc(_base_path(e["collection"], e["doc_id"]), data)
+    _art_save(st)
+    try:
+        os.remove(batch_path)
+    except OSError:
+        pass
+    return len(batch)
+
+
+def artifact_pin(pairs):
+    st = _art_state()
+    n = 0
+    for p in pairs:
+        k, _, v = p.partition("=")
+        if k.count("/") == 1 and v.strip().isdigit():
+            st["versions"][k] = int(v)
+            n += 1
+    _art_save(st)
+    return n
 
 # ---------------------------------------------------------------- runtime welcomes
 WELCOME_RUNTIMES = ("agy", "claude-cli", "claude", "arena", "generic")
@@ -2106,6 +2330,9 @@ def main(argv=None):
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None)
+    s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
+    s.add_argument("action", choices=["pull", "load", "push", "sent", "pin"]); s.add_argument("args", nargs="*")
+    s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("reconcile", help="the board here vs its git copy: the newer copy of each post and comment wins")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--branch", default=None)
     s.add_argument("--db", default=None); s.add_argument("--no-push", action="store_true")
@@ -2211,6 +2438,25 @@ def main(argv=None):
         rc, msg = review(a.post, train=a.train, dry_run=a.dry_run, force=a.force, db_path=a.db)
         print(msg)
         return rc
+    if a.cmd == "artifact":
+        try:
+            if a.action == "pull":
+                print(artifact_pull(), end="")
+            elif a.action == "load":
+                r = artifact_load(url=a.board_url, token=a.token)
+                print("Loaded from the Artifact: %d taken, %d kept from here (unsent), %d merged field by field. "
+                      "The scripts now read and write the local copy; send its changes with `kit.py artifact push`." % (
+                          r["taken"], r["kept_here"], r["merged"]))
+            elif a.action == "push":
+                print(artifact_push_text(artifact_push(url=a.board_url, token=a.token)), end="")
+            elif a.action == "sent":
+                print("recorded: %d writes" % sum(artifact_sent(p) for p in a.args))
+            elif a.action == "pin":
+                print("pinned: %d" % artifact_pin(a.args))
+        except (Conflict, urllib.error.URLError, OSError) as e:
+            print("artifact %s: NOT DONE (%s)" % (a.action, e))
+            return 1
+        return 0
     if a.cmd == "reconcile":
         try:
             with _sync_lock(m) if os.path.isdir(m) else contextlib.nullcontext():

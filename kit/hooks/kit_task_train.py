@@ -25,7 +25,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kit_config import project_dir  # noqa: E402
+from kit_config import config, project_dir  # noqa: E402
 from kit_pre_compact import inspect_claude_transcript  # noqa: E402
 
 
@@ -141,6 +141,10 @@ def main():
         except OSError:
             pass
     if msg:
+        if "claude.ai/" in str(config(data).get("board_url") or ""):
+            # an Artifact board: the step is on the local copy; one batch carries it (and every other change) across
+            msg += (" The board is an Artifact: send this to it with `python3 -I .kit/kit.py artifact push` (it prints one "
+                    "ArtifactData batch per 50 changes); batch several steps before you push.")
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": msg}}))
     return 0
 
