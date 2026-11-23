@@ -1,11 +1,27 @@
 {
- "body": "CL30 found that the push guard does not protect the live _dashboard and _trains cards: a pin taken from a fresh get lets the push overwrite the live copy, losing its store lists and hand-written notes (details in CL30s post issues). Fix: a test first that fails on a76279a, then the push must refuse to replace a live card that is newer than the local one, or merge into it. Kit suite passes on a fresh clone; fast-forward kit main; report Done with the sha.",
+ "artifacts": [
+  "tests/test_cl31_card_push.py",
+  "scripts/kit.py",
+  "README.md"
+ ],
+ "bars": [
+  "tests/test_cl31_card_push.py: 5 of 5 red on a76279a (3 fail, 2 errors), 5 of 5 green on 512b429",
+  "run_all_tests.py on a fresh clone of 512b429: 10 of 10 suites pass, 0 failed (262 unittest tests)"
+ ],
+ "body": "A push can no longer write over a newer live card: `artifact pin` now needs the live copy its `get` saved and merges into it; a card older than the Artifact's copy (a seed) is put back and never sent. On kit main at bc5546c (main had moved, so end_session merged it; not a fast-forward).\n\n## What changed\n- `kit.py artifact pin <coll>/<id>=<v>` reads the live document the `ArtifactData get` saved in `.kit/run/artifact/pin` (the push text names this `out_dir`). If it differs from this copy's base, this copy's changes are merged into it before the push: cards (`_dashboard`, `_trains`) row by row (rows matched by key, part+post...), each field three-way; a value both sides changed keeps the live one, a timestamp the later. Posts keep the field merge. A pin without that live copy is refused, with the reason.\n- `artifact load` merges the `_` cards the same way (before, the whole `rows` field from here won, losing live store lists).\n- O53's live case (Harmonize, 22:00): a card here whose `updated_at` is older than its base is put back to the base at push, never sent, not counted by `artifact status` (so the Stop hook no longer blocks on it); a pin of a newer live card takes it whole.\n\n## Tests\n`tests/test_cl31_card_push.py`: 5 tests, 5 red on a76279a (3 fail, 2 errors), 5 green. The pins in `tests/test_artifact_mode.py` and `tests/test_launch.py` now do the get first (pin without the live copy is refused by design). Fresh clone of cl31 512b429: 10 of 10 suites pass, 0 failed, 262 unittest tests.\n\n## Commands checked\n`kit.py commands artifact`: built on `artifact pull|load|push|sent|pin`, `_merge_fields`, `artifact_unsent`; nothing new outside them.",
+ "breaks": "sed -i 's/        return _merge_deep(remote, local, base)/        return local/' scripts/kit.py",
+ "check": "python3 -m unittest tests.test_cl31_card_push",
  "column": "info",
  "created_at": "2026-11-23T21:56:38Z",
  "from": "orchestrator",
+ "handoff": "Kit main has CL31 (bc5546c). In Harmonize: install.py --update from kit main, then `kit.py artifact push`: the seeded _dashboard/_trains are put back, not sent. For a refused batch, run `ArtifactData get` with out_dir .kit/run/artifact/pin before `artifact pin`.",
+ "not_checked": "Not run against the live Artifact: Harmonize needs install.py --update from kit main, then a pull/load/push of its two cards. The deep merge's conflict rule (live wins) was only tested on store lists, notes and state fields.",
  "part": "CL31",
  "planned_by": "orchestrator",
- "status": "planned",
+ "session_id": "ef07beec-c03a-56c1-b693-8326f0f02f65",
+ "status": "done",
  "title": "kit artifact push never overwrites a newer live card (_dashboard, _trains)",
- "train": "cli"
+ "train": "cli",
+ "updated_at": "2026-11-23T22:16:30Z",
+ "verdict": "A push can no longer write over a newer live card: the pin merges this copy into the live copy its get saved (rows by key), refuses without it, and a seeded or older local card is put back and never sent."
 }
