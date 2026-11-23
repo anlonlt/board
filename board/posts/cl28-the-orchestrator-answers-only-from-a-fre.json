@@ -20,7 +20,7 @@
   "--update into a present runtime: 1 of 1 new test red before, green after (kit_brief_guard.py and its 2 settings lines reach .claude/hooks/kit under cli agy; permissions and own hooks kept); a hook the project removed is not put back; 10 of 10 suites pass",
   "memory holds only what no post holds: 1 of 1 compact test red before, green after; session-start hook tests 2 of 2 red before, green after; full suite 10 of 10 (test_install updated to the new rule)",
   "adopt with no board server on an Artifact board: 1 of 1 test red before, green after (pinned update batches, unpinned posts listed); web guard matches ArtifactData on a present runtime: 1 of 1 red before, green after; full suite 10 of 10",
-  "command index: 3 of 3 tests red before, green after; 32 of 32 kit.py commands indexed (a test fails on any missing); part prompt step 1b and session start name it"
+  "command index: 3 of 3 tests red before, green after; 34 of 34 kit.py commands indexed (a test fails on any missing); part prompt step 1b and session start name it"
  ],
  "body": "**What you must know:** the orchestrator now has to run `kit.py brief` before it answers you, or the kit refuses its reply. The clerk stops starting new orchestrators. Harmonize still needs the update (I was refused access to that repo).\n\n## The brief\n`python3 -I .kit/kit.py brief`: open decision posts (age, default, what each blocks), your comments, Likes and answers of the last 3 days, each train's state from its posts. Board only: a chat decision is written on the board as a comment by the orchestrator. Flags an `_orchestrator` post naming another session.\n\n## Command index\n`kit.py commands [word]` lists every kit command by need; every part prompt (step 1b) and session start say to read it before writing code.\n\n## The guard\n`kit_brief_guard.py` (Claude Code CLI, web, agy): an orchestrator reply to your comment (`board_cli.py reply`, or an ArtifactData comment with `reply_to`) is refused unless a brief ran in that session in the last 15 min.\n\n## Trains and task list\nA status 'done' is done (HL1 no longer runs); held and closed show as such on the card and in resume (`[h]`). `kit.py adopt` gives older posts (HL6, VR5, HL5, A3...) their train once, so resume and the task list see them.\n\n## The clerk\nStarts a fresh orchestrator only if the named one failed, completed, is archived or unreachable; an idle one is woken. The orchestrator writes its id on every `_orchestrator` it serves.\n\n## Memory (your yes)\nWhere things stand is the board only. Session start serves `kit.py brief`, not memory Next: lines. Memory keeps lessons, the workflow, preferences and open timers. `kit.py compact` archives old state files, awaits.md and closed issues once; open issues are listed until posted as `kind: issue` posts.",
  "breaks": "revert 911718f",
@@ -37,6 +37,6 @@
  ],
  "session_id": "82a1406c-69a0-5fb0-aacc-9c6cbe2ed5a5",
  "status": "complete",
- "updated_at": "2026-11-23T08:55:06Z",
+ "updated_at": "2026-11-23T08:55:16Z",
  "verdict": "Before answering you, the orchestrator must run kit.py brief (board only, ~470 tokens on Harmonize) or its reply is refused; the clerk no longer replaces an idle orchestrator."
 }
