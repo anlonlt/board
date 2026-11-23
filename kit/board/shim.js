@@ -2062,12 +2062,16 @@
         "}" +
         /* CL10: the bar bleeds 16px each side (margin-inline:-16px); a 100% cap cut 32px off it and hid the bin past an invisible scroll at 390px */
         "@media (max-width:700px){" +
-          ".kit-tl-win{inset:8px !important;left:8px !important;top:8px !important;width:calc(100vw - 16px) !important;height:calc(100dvh - 16px) !important;border-radius:14px;}" +
+          /* CL10 (his 02:34, "why are there margins all around the header bar, instead of it fully filling the top"):
+             on a phone a window is a full sheet (principle 7): edge to edge, no inset, no rounded corners, no side borders */
+          ".kit-tl-win{inset:0 !important;left:0 !important;top:0 !important;width:100vw !important;height:100dvh !important;border-radius:0 !important;border:0 !important;box-shadow:none !important;}" +
+          ".sheet > .sheet-in{padding-top:0 !important;}" +   /* CL10 (his 02:34): the bar fills the top, no strip above it */
+          ".sheet .bar{padding-top:max(8px,env(safe-area-inset-top,0px)) !important;}" +
           ".sheet .bar{gap:4px !important;flex-wrap:nowrap !important;max-width:calc(100% + 32px);box-sizing:border-box;overflow-x:auto;scrollbar-width:none;}" +
           ".sheet .bar .row{gap:4px !important;flex-wrap:nowrap !important;min-width:0;align-items:center;}" +
           ".sheet .bar .kit-icon-btn{width:30px;height:30px;flex:none;}" +
           ".sheet .bar .btn{padding:4px 7px;font-size:.8rem;white-space:nowrap;flex:none;}" +
-          ".kit-docs-modal{inset:6px !important;left:6px !important;top:6px !important;width:calc(100vw - 12px) !important;height:calc(100dvh - 12px) !important;border-radius:14px;}" +
+          ".kit-docs-modal{inset:0 !important;left:0 !important;top:0 !important;width:100vw !important;height:100dvh !important;border-radius:0 !important;border:0 !important;box-shadow:none !important;}" +
           ".kit-docs-hdr{padding:6px 8px;gap:4px;max-width:100%;box-sizing:border-box;}" +
           ".kit-docs-hdr b{font-size:.92rem;flex:1 1 0;min-width:0;}" +
           ".kit-docs-hdr .hsub{display:none !important;}" +

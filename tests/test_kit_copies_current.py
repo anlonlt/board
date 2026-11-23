@@ -1,40 +1,50 @@
-"""The kit's own install (.kit/) runs the code of kit/: after a change to kit/, `python3 -I install.py . --update`
-refreshes .kit/ in the same commit. CL10 check (orchestrator, 2026-11-23): .kit/shim.js, .kit/board.html and
-.kit/strings.py kept the old bar width, baseline chevron, orange clock and old strings after kit/ was fixed."""
+"""CL12 (orchestrator's check, 2026-11-23): the kit's own install (.kit/) must run the kit as it is in kit/.
+
+A fix merged into kit/board/ did not reach the owner's board because .kit/board.html, .kit/strings.py and
+.kit/strings.en.json were older copies. This fails when any copy differs; the fix is `python3 -I install.py . --update`.
+"""
 import os
+import sys
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-COPIES = {  # .kit/<file>: its source in kit/, copied byte for byte by install.py
-    "shim.js": "kit/board/shim.js",
+sys.path.insert(0, ROOT)
+
+COPIES = {  # .kit/<name> is a byte copy of kit/<path>
     "strings.py": "kit/board/strings.py",
-    "board_server.py": "kit/board/board_server.py",
+    "strings.en.json": "kit/board/strings.en.json",
+    "shim.js": "kit/board/shim.js",
     "board_cli.py": "kit/board/board_cli.py",
-    "kit_artifact_sync.py": "kit/claude/kit_artifact_sync.py",
+    "board_server.py": "kit/board/board_server.py",
 }
-HINT = " is older than kit/: run `python3 -I install.py . --update` and commit .kit/ with the change"
+FIX = "rerun `python3 -I install.py . --update` and commit .kit/"
 
 
-def read(rel):
-    with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+class _Args:
+    def __getattr__(self, k):  # install.load_config reads optional flags; none is given here
+        return None
+
+
+def read(rel, mode="r"):
+    with open(os.path.join(ROOT, rel), mode, **({} if "b" in mode else {"encoding": "utf-8"})) as fh:
         return fh.read()
 
 
-@unittest.skipUnless(os.path.isfile(os.path.join(ROOT, ".kit", "board.html")), "the kit is not installed on itself here")
-class TestKitCopiesCurrent(unittest.TestCase):
-    def test_copied_files_match(self):
-        for dst, src in COPIES.items():
-            if os.path.isfile(os.path.join(ROOT, ".kit", dst)):
-                self.assertTrue(read(".kit/" + dst) == read(src), ".kit/" + dst + HINT)
+@unittest.skipUnless(os.path.isfile(os.path.join(ROOT, ".kit", "config.json")), "the kit is not installed on its own repo")
+class KitCopiesCurrent(unittest.TestCase):
+    def test_byte_copies_match(self):
+        for name, src in COPIES.items():
+            if not os.path.isfile(os.path.join(ROOT, ".kit", name)):
+                continue
+            self.assertEqual(read(".kit/" + name, "rb"), read(src, "rb"), ".kit/%s differs from %s: %s" % (name, src, FIX))
 
-    def test_page_has_every_template_line(self):
-        # board.html is the template with {{...}} filled in (and, when a palette or translation is set, recoloured or
-        # translated): every template line without a placeholder must be in it, unless .kit/strings.json translates it
-        if os.path.isfile(os.path.join(ROOT, ".kit", "strings.json")):
-            self.skipTest("translated page")
-        page = set(read(".kit/board.html").splitlines())
-        missing = [l for l in read("kit/board/board.template.html").splitlines() if "{{" not in l and l not in page]
-        self.assertEqual(missing[:3], [], ".kit/board.html" + HINT + " (%d template lines missing)" % len(missing))
+    def test_board_page_is_the_rendered_template(self):
+        import install
+        c = install.load_config(ROOT, _Args())
+        if (c.get("kit") or {}).get("palette") or os.path.exists(os.path.join(ROOT, ".kit", "strings.json")):
+            self.skipTest("a palette or a translation changes the page; compare by install --update instead")
+        page = install.render(read("kit/board/board.template.html"), c)
+        self.assertTrue(page == read(".kit/board.html"), ".kit/board.html is not the current kit/board/board.template.html: " + FIX)
 
 
 if __name__ == "__main__":

@@ -37,6 +37,12 @@ class TestAssetsInto(unittest.TestCase):
         data = json.load(open(es[0]["file_path"], encoding="utf-8"))
         self.assertEqual(data["assets"]["docs/cl10/a1-sections-default-phone.png"], "/_blob/0123456789abcdef0123456789abcdef")
 
+    @unittest.skipUnless(os.path.isfile(os.path.join(ROOT, ".kit", "kit_artifact_sync.py")), "the kit is not installed on itself")
+    def test_kit_copy_is_current(self):
+        # the kit's own install runs this copy: `python3 -I install.py . --update` refreshes it
+        self.assertTrue(open(os.path.join(ROOT, ".kit", "kit_artifact_sync.py"), "rb").read() == open(SYNC, "rb").read(),
+                        ".kit/kit_artifact_sync.py is older than kit/claude/: run `python3 -I install.py . --update`")
+
 
 if __name__ == "__main__":
     unittest.main()
