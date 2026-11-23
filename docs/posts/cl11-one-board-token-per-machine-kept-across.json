@@ -1,0 +1,37 @@
+{
+ "body": "Nothing for you to do now; one thing needs your device: run `board` in a second project (or with `--agy` after `--claude`) and check the phone opens the board without the unlock page. A project that already has its own token keeps it, so an old project still asks once for its token until you copy the machine token into it (or delete its `.kit/board_data/token` and rerun `board`).\n\n## What changed\n- `kit/board/board_token.py` (installed as `.kit/board_token.py`): `ensure` gives the project its own token if it has one, else the machine token `~/.config/board-kit/board_token` (or `$XDG_CONFIG_HOME/board-kit/`), created once with mode 600 (exclusive create, so two projects started together agree). The project copy is mode 600 and git-ignored. Nothing prints a token.\n- `kit/up`: the token block calls `board_token.py ensure` (fallback to the old per-project mint only if the helper is missing). `KIT_BOARD_TOKEN` is exported from that file, and the orchestrator is started by `exec`, so `--agy` and `--claude` get the same value.\n- `install.py`: installs `.kit/board_token.py` and, for local boards (not the Artifact-only install), gives the project its token at install time. The log names the source only when it writes, so a rerun still says nothing to change.\n- `kit/web_takeover.py`: uses the same helper before its own fallback.\n- The server's auth is unchanged: it still checks the token it is given; only where a new project's token comes from changed.\n- Same directory as the device cap (`~/.config/board-kit/device.json`, CL15).\n\n## Tests\n- `tests/test_board_token.py`, 9 tests, all with a temp HOME / XDG: a new project reuses the machine token; the machine token is created once; an existing project token is kept; an empty one is replaced; XDG wins over HOME; the CLI prints no token; install.py gives a new project the machine token and keeps an existing one (and the token is git-ignored); `up --agy` and `up --claude` give both projects the machine token and the started CLI receives the same `KIT_BOARD_TOKEN`; `up` keeps a project's own token and then mints no machine token. Each test also checks that the real `~/.config/board-kit/board_token` was not touched.\n- The 8 existing test files that run install.py now set `XDG_CONFIG_HOME` to a temp dir at import, so the suite never writes the real `~/.config`.\n- `run_all_tests.py`: unittest 98 tests OK (main: 89), test_install 0 failed, test_install_bd11 0 failed, test_board_local and test_kit_cards PASS. `kit/board/test_strings.py` has 2 failures that are already on `origin/main` (the same 2 there, run in a clean worktree: the strings table lacks a visible string, and test_page.js \"Remove on a post writes removed: true\"). They are in the page/strings area, not CL11's files, so not fixed here.\n\n## Also in this branch\n- The earlier WIP (before the crash): `clerk_pending.run` accepts an ISO string as `now` (board_cli passed one and the listener crashed with str - datetime); `kit/clerk/test_clerk_pending.py` 0 failures.\n- Merge of origin/main (29 commits) into wip-cl11: no conflicts.\n\n## Cloud session notes\n- Run in a Claude Code web session: the board here was a local server seeded from `origin/board-mirror`, with no auto-push. This post is written on that copy; this session may only push `wip-cl11`, so the post reaches the board-mirror branch only if the orchestrator saves it.\n- `up` still prints the token once on the computer's terminal (`Board token: ...`) for the unlock prompt. That line was already there; CL11 did not add any new place that prints it.\n",
+ "column": "info",
+ "created_at": "2026-11-23T02:06:36Z",
+ "from": "orchestrator",
+ "part": "CL11",
+ "planned_by": "orchestrator",
+ "status": "done",
+ "title": "One board token per machine, kept across projects and CLIs",
+ "train": "cli",
+ "session_id": "c3fc13df-4bfd-55aa-bcc5-1def3291f77e",
+ "updated_at": "2026-11-23T02:06:36Z",
+ "verdict": "A new project now gets the machine's board token (~/.config/board-kit/board_token, made once, mode 600) from up, install.py and web takeover, and a project's own token is kept, so the phone stays unlocked across projects and CLIs.",
+ "bars": [
+  "CL11 tests: 9 of 9 pass (temp HOME, the real ~/.config untouched)",
+  "unittest tests/: 98 of 98 OK",
+  "run_all_tests: 5 of 6 suites pass; the 1 failing suite (test_strings, 2 checks) fails the same way on origin/main"
+ ],
+ "artifacts": [
+  "kit/board/board_token.py",
+  "kit/up",
+  "install.py",
+  "kit/web_takeover.py",
+  "tests/test_board_token.py"
+ ],
+ "not_checked": [
+  "a real phone across two projects on his computer (needs his device)",
+  "a real agy or claude binary started by up (tests use a stand-in CLI that records KIT_BOARD_TOKEN)",
+  "the clerk and parts started later by claude --bg: they read .kit/board_data/token, which now equals the machine token, but were not run"
+ ],
+ "issues": [
+  "kit/board/test_strings.py: 2 failures already on origin/main (strings table not current; test_page.js Remove writes removed: true): not CL11's files",
+  "a project installed before CL11 keeps its own token, so the device asks once for it there"
+ ],
+ "check": "python3 -m unittest tests.test_board_token -v",
+ "handoff": "The token's source is kit/board/board_token.py ensure(root); anything that starts a board should call it rather than mint a token. The machine token lives next to the device cap in ~/.config/board-kit/."
+}
