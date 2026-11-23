@@ -3,7 +3,7 @@
 
 Injects a systemMessage with: the board rule (one place per result), the project's own lines
 (`kit.session_start_lines` in .kit/config.json), whether this clone is behind its remote, where things stand (the
-board: `kit.py brief`; CL28: never a memory file's `Next:` line), a pointer when old state files remain, and the
+board: `kit.py resume`; CL28: never a memory file's `Next:` line), a pointer when old state files remain, and the
 lessons' count.
 """
 import glob
@@ -89,10 +89,10 @@ def main():
                    "which step is yours.")
     elif role == "orchestrator":
         out.append("PLAN: the trains on the board are your task list (`python3 -I .kit/kit.py resume` rebuilds it); "
-                   "before you answer the owner: `python3 -I .kit/kit.py brief`.")
+                   "run it again before you answer the owner.")
     else:
-        out.append("WHERE THINGS STAND: on the board, the one record: `python3 -I .kit/kit.py brief` (open decisions, "
-                   "the owner's recent decisions, each train from its posts).")
+        out.append("WHERE THINGS STAND: on the board, the one record: `python3 -I .kit/kit.py resume` (each train's "
+                   "open steps from their posts, questions included, and the owner's unanswered comments).")
     if os.path.exists(os.path.join(root, ".kit", "kit.py")):
         out.append("KIT COMMANDS: before writing any code, `python3 -I .kit/kit.py commands` (with a word: `commands artifact`): reuse the kit's "
                    "command that does it; never rebuild one.")

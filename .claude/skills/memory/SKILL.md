@@ -1,6 +1,6 @@
 ---
 name: memory
-description: What this project keeps between sessions and where: where things stand is on the board (each step's post, question posts, issue posts; `kit.py brief`), what sessions run is in git, and the committed memory directory (default .board/memory/ or .story/) holds only what no post holds: lessons, the workflow, preferences, the orchestrator's open timers. Use at the start of a session, at save points, and when the user says "where were we", "catch me up", "save", "hand off", "log an issue", "log a lesson".
+description: What this project keeps between sessions and where: where things stand is on the board (each step's post, question posts, issue posts; `kit.py resume`), what sessions run is in git, and the committed memory directory (default .board/memory/ or .story/) holds only what no post holds: lessons, the workflow, preferences, the orchestrator's open timers. Use at the start of a session, at save points, and when the user says "where were we", "catch me up", "save", "hand off", "log an issue", "log a lesson".
 ---
 
 # memory: what is kept between sessions, and where (from anlonlt/board)
@@ -17,7 +17,7 @@ description: What this project keeps between sessions and where: where things st
 | what sessions run or build from | **git**: code, the kit, prompts (`docs/prompts/`), reports (`docs/`) | the board |
 | what no post holds | **memory** (`<memory dir>/`): lessons, the workflow, preferences, the orchestrator's open timers | |
 
-`python3 -I .kit/kit.py brief` reads where things stand from the board; `kit.py resume` rebuilds the task list.
+`python3 -I .kit/kit.py resume` reads where things stand from the board: the task list, questions included.
 
 ## Layout (inside `<memory dir>/`)
 ```

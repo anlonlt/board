@@ -3,7 +3,7 @@
 
   1. `kit.py brief`: open decisions (age, default, what each blocks), the owner's decisions of the last days, each train from
      its posts, and the memory lines a post contradicts (Harmonize, 11-23: "A3 waits on your choice" while A3 was over).
-  2. kit_brief_guard.py: an orchestrator's reply to the owner is refused without a brief in the last 15 minutes.
+  2. kit_brief_guard.py: an orchestrator's reply to the owner is refused without a `resume` in the last 15 minutes.
   3. The Trains card (kit_cards.py): a done post is never running; held and closed show as such.
 python3 -m unittest tests.test_cl28_brief -v
 """
@@ -69,70 +69,6 @@ def write_board(d):
                 json.dump(v, fh)
 
 
-class Brief(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.board = os.path.join(self.tmp.name, "board")
-        write_board(self.board)
-        self.mem = os.path.join(self.tmp.name, "mem")
-        os.makedirs(os.path.join(self.mem, "state"))
-        with open(os.path.join(self.mem, "state", "speaker.md"), "w") as fh:
-            fh.write("# Speaker\nNext: A3 waits on your choice: Hold (default) or Run anyway.\n"
-                     "## Steps\n- [ ] A3 run anyway\n")
-        with open(os.path.join(self.mem, "state", "harmony.md"), "w") as fh:
-            fh.write("# Harmony\nNext: HL5 is done, nothing waits.\nHL3 runs (in progress).\n")
-        r = subprocess.run([sys.executable, "-I", KIT, "brief", "--board", self.board, "--session", "test-cl28"],
-                           capture_output=True, text=True, timeout=60, cwd=self.tmp.name)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.out = r.stdout
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def section(self, title):
-        part = self.out.split("## " + title, 1)[1]
-        return part.split("\n## ", 1)[0]
-
-    def test_open_decisions_with_age_default_and_what_they_block(self):
-        s = self.section("Open decisions")
-        self.assertIn("(2)", s.splitlines()[0])
-        self.assertIn("VR5-second-run-question", s)
-        self.assertIn("HL5-harmony-ai-question", s)
-        self.assertIn("3d 7h old", s)
-        self.assertIn("default: Buy nothing now; HL6 runs now", s)
-        vr5 = [l for l in s.splitlines() if "VR5" in l][0]
-        self.assertIn("blocks HL6 (held: waits for VR5)", vr5)
-
-    def test_his_decisions_of_the_last_days_only(self):
-        s = self.section("The owner's decisions")
-        self.assertIn("already decided to close that train", s)
-        self.assertIn("Like", s)
-        self.assertNotIn("an old one", s)
-        self.assertNotIn("an answer", s)
-
-    def test_trains_from_the_posts(self):
-        s = self.section("Trains")
-        hl = [l for l in s.splitlines() if l.startswith("- HL:")][0]
-        self.assertIn("1/4 done", hl)
-        self.assertIn("running: HL3", hl)
-        self.assertIn("you: HL5", hl)
-        self.assertIn("held: HL6", hl)
-        self.assertNotIn("HL1", hl)  # HL1's post says done: never running
-        self.assertIn("all done:", s)
-        self.assertIn("A", s.split("all done:")[1])
-
-    def test_reads_the_board_only(self):
-        # the owner, 07:41: "everything is on the board": a memory file is never read nor compared
-        self.assertNotIn("Memory", self.out)
-        self.assertNotIn("speaker.md", self.out)
-
-    def test_a_stale_orchestrator_id_is_flagged(self):
-        self.assertIn("MISMATCH: `_orchestrator` names session session_old, you are test-cl28", self.out)
-
-    def test_short(self):
-        self.assertLess(len(self.out), 2500)
-
-
 def hook(payload, proj, role="orchestrator"):
     env = dict(os.environ)
     env.pop("KIT_ROLE", None)
@@ -149,7 +85,7 @@ REPLY = {"hook_event_name": "PreToolUse", "session_id": "s-orch", "tool_name": "
                         "data": {"from": "orchestrator", "post_id": "_orchestrator", "reply_to": "92qwl45c30j2fyzbr3uc",
                                  "text": "A3 waits on your choice."}}}
 BRIEF_RAN = {"hook_event_name": "PostToolUse", "session_id": "s-orch", "tool_name": "Bash",
-             "tool_input": {"command": "python3 -I .kit/kit.py brief"}, "tool_response": {"stdout": "# Brief"}}
+             "tool_input": {"command": "python3 -I .kit/kit.py resume"}, "tool_response": {"stdout": "# Resume"}}
 
 
 class Guard(unittest.TestCase):
@@ -166,7 +102,7 @@ class Guard(unittest.TestCase):
     def test_reply_without_brief_is_refused_and_names_the_command(self):
         r = hook(REPLY, self.proj)
         self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
-        self.assertIn("kit.py brief", r.stderr)
+        self.assertIn("kit.py resume", r.stderr)
         self.assertIn("never", r.stderr)
 
     def test_reply_after_a_brief_passes(self):
@@ -257,6 +193,7 @@ class Adopt(unittest.TestCase):
         kit._load_board_docs = lambda m, db_path=None: (posts, {})
         kit.attached_board = lambda: None
         kit._resolve_board_token = lambda t=None: "t"
+        kit._ensure_local_board = lambda url: True
         written = []
 
         def upd(url, token, coll, did, fields):
@@ -279,28 +216,32 @@ class Adopt(unittest.TestCase):
 
 
 class AdoptOnAnArtifactBoard(unittest.TestCase):
-    """A web container has no board server: adopt prints the ArtifactData writes, pinned, and never calls the server."""
+    """A web container: adopt goes the kit's own way (the local board started as `artifact load` does, then
+    `artifact push`), never a write path of its own."""
 
-    def test_batches_without_a_server(self):
+    def test_reuses_the_local_board_and_artifact_push(self):
         kit = load_kit()
         posts = json.loads(json.dumps(POSTS))
         kit._load_board_docs = lambda m, db_path=None: (posts, {})
         kit.attached_board = lambda: {"url": "https://claude.ai/artifact/X", "prefix": "repos/board/"}
-        kit.artifact_url = lambda: "https://claude.ai/artifact/X"
-        versions = {"posts/%s" % k: 3 for k in posts if k != "K3i-switch"}
-        kit._art_state = lambda: {"versions": versions}
+        started, pushed = [], []
+        kit._ensure_local_board = lambda url: started.append(url) or True
+        kit._resolve_board_token = lambda t=None: "t"
+        kit._local_update = lambda url, token, coll, did, fields: posts[did].update(fields) or posts[did]
+        kit.artifact_push = lambda url=None, token=None: pushed.append(url) or {
+            "batches": ["b1.json"], "need_pin": [], "board": "https://claude.ai/artifact/X", "writes": 9, "files": ""}
+        r = kit.adopt_trains(url="http://127.0.0.1:8766")
+        self.assertEqual(started, ["http://127.0.0.1:8766"])
+        self.assertEqual(pushed, ["http://127.0.0.1:8766"])
+        self.assertEqual(posts["HL6-retrain-all"]["train"], "HL")
+        self.assertIn("b1.json", kit.adopt_text(r))
 
-        def no_server(*a, **k):
-            raise AssertionError("adopt called the board server")
-        kit._local_update = kit._board_request = no_server
-        with tempfile.TemporaryDirectory() as d:
-            r = kit.adopt_trains(out_dir=d)
-            writes = [w for pth in r["batches"] for w in json.load(open(pth))]
-        hl6 = [w for w in writes if w["doc_id"] == "HL6-retrain-all"][0]
-        self.assertEqual(hl6, {"op": "update", "collection": "repos/board/posts", "doc_id": "HL6-retrain-all",
-                               "data": {"train": "HL"}, "if_version": 3})
-        self.assertEqual(r["need_pin"], ["posts/K3i-switch"])
-        self.assertIn("ArtifactData` `batch`", kit.adopt_text(r))
+    def test_no_board_says_how_instead_of_crashing(self):
+        kit = load_kit()
+        kit._load_board_docs = lambda m, db_path=None: (json.loads(json.dumps(POSTS)), {})
+        kit._ensure_local_board = lambda url: False
+        with self.assertRaises(kit.Conflict):
+            kit.adopt_trains(url="http://127.0.0.1:8766")
 
 
 class CommandIndex(unittest.TestCase):
