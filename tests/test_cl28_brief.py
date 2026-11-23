@@ -8,6 +8,7 @@
 python3 -m unittest tests.test_cl28_brief -v
 """
 import json
+import re
 import os
 import subprocess
 import sys
@@ -300,6 +301,52 @@ class AdoptOnAnArtifactBoard(unittest.TestCase):
                                "data": {"train": "HL"}, "if_version": 3})
         self.assertEqual(r["need_pin"], ["posts/K3i-switch"])
         self.assertIn("ArtifactData` `batch`", kit.adopt_text(r))
+
+
+class CommandIndex(unittest.TestCase):
+    """The owner, 2026-11-23: "Why are all the sessions skipping the kit's scripts???": an index read before any code."""
+
+    def test_every_kit_command_is_in_the_index(self):
+        kit = load_kit()
+        import argparse
+        names = set()
+        orig = argparse.ArgumentParser.parse_args
+
+        def grab(self, args=None, namespace=None):
+            for act in self._actions:
+                if isinstance(act, argparse._SubParsersAction):
+                    names.update(act.choices)
+            raise SystemExit(0)
+        argparse.ArgumentParser.parse_args = grab
+        try:
+            kit.main(["resume"])
+        except SystemExit:
+            pass
+        finally:
+            argparse.ArgumentParser.parse_args = orig
+        self.assertGreater(len(names), 25)
+        indexed = " ".join(c for _, c, _ in kit.COMMANDS)
+        missing = sorted(n for n in names if not re.search(r"\b%s\b" % re.escape(n), indexed))
+        self.assertEqual(missing, [])
+
+    def test_a_word_finds_the_existing_command(self):
+        out = subprocess.run([sys.executable, "-I", KIT, "commands", "artifact"], capture_output=True, text=True).stdout
+        self.assertIn("kit.py artifact pull|load|push", out)
+        self.assertIn("starts the local board", out)
+
+    def test_read_before_any_code(self):
+        for p in ("kit/part.template.md", "kit/claude-cli/part.template.md"):
+            with open(os.path.join(ROOT, p), encoding="utf-8") as fh:
+                self.assertIn("kit.py commands artifact", fh.read())
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".kit"))
+            open(os.path.join(d, ".kit", "kit.py"), "w").close()
+            env = dict(os.environ, CLAUDE_PROJECT_DIR=d)
+            env.pop("KIT_ROLE", None)
+            r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "kit", "hooks", "kit_session_start.py")],
+                               input=json.dumps({"hook_event_name": "SessionStart", "cwd": d}), capture_output=True,
+                               text=True, env=env)
+            self.assertIn(".kit/kit.py commands", r.stdout)
 
 
 class MemoryHoldsWhatNoPostHolds(unittest.TestCase):
