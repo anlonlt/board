@@ -19,9 +19,10 @@
   "full suite: 10 of 10 suites pass, 0 failed",
   "--update into a present runtime: 1 of 1 new test red before, green after (kit_brief_guard.py and its 2 settings lines reach .claude/hooks/kit under cli agy; permissions and own hooks kept); a hook the project removed is not put back; 10 of 10 suites pass",
   "memory holds only what no post holds: 1 of 1 compact test red before, green after; session-start hook tests 2 of 2 red before, green after; full suite 10 of 10 (test_install updated to the new rule)",
-  "command index: 3 of 3 tests red before, green after; 34 of 34 kit.py commands indexed (a test fails on any missing); part prompt step 1b and session start name it"
+  "command index: 3 of 3 tests red before, green after; 34 of 34 kit.py commands indexed (a test fails on any missing); part prompt step 1b and session start name it",
+  "resume carries the brief's additions: 4 of 4 tests red before, green after; on Harmonize's board 6,036 characters (~1,500 tokens) after adoption"
  ],
- "body": "**What you must know:** `kit.py brief` and adopt's own write path are deleted (they rebuilt `resume` and `artifact load/push`). What remains changes existing scripts: `docs/CL28.md § Changes to existing scripts` lists each, the roles and runtimes.\n\n## The guard\nThe orchestrator's reply to your comment is refused unless `kit.py resume` ran in that session in the last 15 min.\n\n## Command index\n`kit.py commands [word]`, read before any code (part prompt step 1b, session start), in every runtime.\n\n## Memory\nWhere things stand is the board only; memory keeps lessons, the workflow, preferences, timers.",
+ "body": "**What you must know:** `kit.py brief` and adopt's own write path are deleted (they rebuilt `resume` and `artifact load/push`). What remains changes existing scripts: `docs/CL28.md § Changes to existing scripts` lists each, the roles and runtimes.\n\n## Resume\nNow also lists each open question (age, default, what it blocks), your decisions of the last 3 days, and a stale `_orchestrator` id.\n\n## The guard\nThe orchestrator's reply to your comment is refused unless `kit.py resume` ran in that session in the last 15 min.\n\n## Command index\n`kit.py commands [word]`, read before any code (part prompt step 1b, session start), in every runtime.\n\n## Memory\nWhere things stand is the board only; memory keeps lessons, the workflow, preferences, timers.\n\n## Idea: decisions distilled into principles (your question)\n`principles.md` in memory, one line each: the rule, your words quoted, the comment id and date, its scope (a train or all). Guardrails: only from your own words, never a session's guess; you confirm each with a Like; at most 30 lines; a new one that contradicts an old one replaces it, both ids kept; a train's principles archive when it is done. `resume` prints them, so old comments need not be reread.",
  "breaks": "revert 911718f",
  "check": "python3 -m unittest tests.test_cl28_brief tests.test_clerk_starts_orchestrator tests.test_install_present_runtimes",
  "column": "info",
@@ -36,6 +37,6 @@
  ],
  "session_id": "82a1406c-69a0-5fb0-aacc-9c6cbe2ed5a5",
  "status": "complete",
- "updated_at": "2026-11-23T09:01:31Z",
+ "updated_at": "2026-11-23T09:17:15Z",
  "verdict": "Before answering you, the orchestrator must have run kit.py resume in the last 15 min or its reply is refused; the brief that repeated resume is removed."
 }
