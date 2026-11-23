@@ -176,15 +176,7 @@
   "kind": "js"
  },
  {
-  "en": "var(--todo)",
-  "kind": "js"
- },
- {
   "en": "Decisions",
-  "kind": "js"
- },
- {
-  "en": "var(--question)",
   "kind": "js"
  },
  {
@@ -192,15 +184,7 @@
   "kind": "js"
  },
  {
-  "en": "var(--info)",
-  "kind": "js"
- },
- {
   "en": "Done",
-  "kind": "js"
- },
- {
-  "en": "var(--done)",
   "kind": "js"
  },
  {
@@ -224,18 +208,6 @@
   "kind": "js"
  },
  {
-  "en": "2-digit",
-  "kind": "js"
- },
- {
-  "en": "/_blob/",
-  "kind": "js"
- },
- {
-  "en": "https://",
-  "kind": "js"
- },
- {
   "en": "http://",
   "kind": "js"
  },
@@ -245,10 +217,6 @@
  },
  {
   "en": "/_api/repo-asset",
-  "kind": "js"
- },
- {
-  "en": "comments/",
   "kind": "js"
  },
  {
@@ -380,10 +348,6 @@
   "kind": "js"
  },
  {
-  "en": "posts/",
-  "kind": "js"
- },
- {
   "en": "Moved to Done.",
   "kind": "js"
  },
@@ -492,19 +456,7 @@
   "kind": "js"
  },
  {
-  "en": "  [attached: ",
-  "kind": "js"
- },
- {
-  "en": " at /_blob/",
-  "kind": "js"
- },
- {
   "en": " posts\n*Exported ",
-  "kind": "js"
- },
- {
-  "en": "-posts-",
   "kind": "js"
  },
  {
@@ -524,19 +476,7 @@
   "kind": "js"
  },
  {
-  "en": ", no words.",
-  "kind": "js"
- },
- {
-  "en": "board-draft:",
-  "kind": "js"
- },
- {
   "en": "Your unsent draft is back.",
-  "kind": "js"
- },
- {
-  "en": "] image ",
   "kind": "js"
  },
  {
@@ -616,14 +556,6 @@
   "kind": "js"
  },
  {
-  "en": "groups:",
-  "kind": "js"
- },
- {
-  "en": "gallery:3",
-  "kind": "js"
- },
- {
   "en": "Pictures ",
   "kind": "js"
  },
@@ -664,11 +596,11 @@
   "kind": "js"
  },
  {
-  "en": "Seen",
+  "en": "An agent answered",
   "kind": "js"
  },
  {
-  "en": "Sent to the agent",
+  "en": "Seen",
   "kind": "js"
  },
  {
@@ -697,14 +629,6 @@
  },
  {
   "en": "Agree without writing",
-  "kind": "js"
- },
- {
-  "en": "👍 Like on the comment of ",
-  "kind": "js"
- },
- {
-  "en": "»): he agrees, no words.",
   "kind": "js"
  },
  {
@@ -780,14 +704,6 @@
   "kind": "js"
  },
  {
-  "en": "[post ",
-  "kind": "js"
- },
- {
-  "en": "[image ",
-  "kind": "js"
- },
- {
   "en": "sending to Claude is not available in this view",
   "kind": "js"
  },
@@ -804,10 +720,6 @@
   "kind": "js"
  },
  {
-  "en": "_blank",
-  "kind": "js"
- },
- {
   "en": "Replying to ",
   "kind": "js"
  },
@@ -820,31 +732,11 @@
   "kind": "js"
  },
  {
-  "en": "(see the attached file)",
-  "kind": "js"
- },
- {
   "en": "The board's storage is not available in this view.",
   "kind": "js"
  },
  {
   "en": "Sending...",
-  "kind": "js"
- },
- {
-  "en": "(in reply to the comment ",
-  "kind": "js"
- },
- {
-  "en": "[discussion ",
-  "kind": "js"
- },
- {
-  "en": "\n[attached: ",
-  "kind": "js"
- },
- {
-  "en": ") at /_blob/",
   "kind": "js"
  },
  {
@@ -860,10 +752,6 @@
   "kind": "js"
  },
  {
-  "en": "(hover: hover) and (pointer: fine)",
-  "kind": "js"
- },
- {
   "en": "The board can't be reached yet.",
   "kind": "js"
  },
@@ -873,14 +761,6 @@
  },
  {
   "en": "Sign in on claude.ai to see the board.",
-  "kind": "js"
- },
- {
-  "en": "data/users/",
-  "kind": "js"
- },
- {
-  "en": "/board-seen",
   "kind": "js"
  },
  {
@@ -920,10 +800,6 @@
   "kind": "js"
  },
  {
-  "en": "var(--muted)",
-  "kind": "js"
- },
- {
   "en": "Waiting on you",
   "kind": "js"
  },
@@ -937,10 +813,6 @@
  },
  {
   "en": "Queued / Idle",
-  "kind": "js"
- },
- {
-  "en": "var(--",
   "kind": "js"
  },
  {
@@ -1048,23 +920,7 @@
   "kind": "js"
  },
  {
-  "en": "👍 Like: he approves this post, no words.",
-  "kind": "js"
- },
- {
-  "en": "button, a, textarea, input",
-  "kind": "js"
- },
- {
-  "en": "a, button, summary, details, input, textarea",
-  "kind": "js"
- },
- {
   "en": "Write a comment",
-  "kind": "js"
- },
- {
-  "en": "application/octet-stream",
   "kind": "js"
  },
  {
@@ -1076,38 +932,6 @@
   "kind": "js"
  },
  {
-  "en": "transform .42s cubic-bezier(.22, .85, .32, 1), opacity .42s ease",
-  "kind": "js"
- },
- {
-  "en": "translateX(",
-  "kind": "js"
- },
- {
-  "en": ") rotate(",
-  "kind": "js"
- },
- {
-  "en": "7deg",
-  "kind": "js"
- },
- {
-  "en": "-7deg",
-  "kind": "js"
- },
- {
-  "en": "button, textarea, input, summary, a",
-  "kind": "js"
- },
- {
-  "en": "deg)",
-  "kind": "js"
- },
- {
-  "en": "transform .22s ease, opacity .22s ease",
-  "kind": "js"
- },
- {
   "en": "By priority",
   "kind": "js"
  },
@@ -1116,15 +940,7 @@
   "kind": "js"
  },
  {
-  "en": "header.top h1",
-  "kind": "js"
- },
- {
   "en": "board-title:",
-  "kind": "js"
- },
- {
-  "en": "posts/_board_meta",
   "kind": "js"
  },
  {
@@ -1145,10 +961,6 @@
  },
  {
   "en": "Focus",
-  "kind": "js"
- },
- {
-  "en": "header.top",
   "kind": "js"
  },
  {

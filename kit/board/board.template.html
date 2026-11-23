@@ -23,6 +23,17 @@
   --scrim: rgba(0, 0, 0, .6); color-scheme: dark; }
 
 * { box-sizing: border-box; }
+/* CL12, the base layer (his 22:03: "headers, buttons, titles run off the screen... make sure it never happens again,
+   no matter what is changed or added"). The cause each time: a flex or grid child keeps min-width:auto, so it can never
+   be narrower than its longest word, and a long word or name then pushes it past its box (to the left in a right-aligned
+   or centred row); each fix so far was one component's own overflow-wrap. Here, once, for every element present and
+   future: a long word breaks where it must, any box may shrink to its container, and media keep their size. Zero
+   specificity (:where), so a component that means otherwise (a table cell, an ellipsis, a fixed-size chip) still says so.
+   kit/board/test_page_layout.js fails when any line of text runs off screen or is cut by its box. */
+:where(body) { overflow-wrap: anywhere; }
+:where(body *) { min-width: 0; }
+:where(button, .btn, summary, h1, h2, h3, h4, h5, h6) { max-width: 100%; }
+:where(svg, img, video, canvas, input[type=checkbox], input[type=radio]) { flex-shrink: 0; }
 [hidden] { display: none !important; }
 body { background: var(--bg); color: var(--ink); font-family: var(--text); font-size: 16px; line-height: 1.45; }
 .wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 40px; max-width: 1400px; margin: 0 auto; }
@@ -234,7 +245,7 @@ button.wait-row:hover .wtext { text-decoration: underline; }
 .disc .nodot { width: 10px; margin-right: 6px; flex: none; }
 .disc .dt { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .disc.unread .dt { font-weight: 800; }
-.disc .dw { margin-left: auto; padding-left: 10px; font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.disc .dw { flex: none; margin-left: auto; padding-left: 10px; font-size: .8rem; color: var(--muted); white-space: nowrap; }
 .disc.unread .dw { color: var(--ember); font-weight: 700; }
 .disc .d2 { margin-left: 16px; color: var(--muted); font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* BD8 (R76): the changes discussion's 2-line clamp (opened by a tap) is gone: every message there shows whole. */
@@ -487,11 +498,14 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 .tnet-map-chip.st-done { border-color: var(--done); color: var(--done); opacity: .7; }
 .tnet-map-chip:hover { background: var(--ember); color: var(--ember-ink); border-color: var(--ember); }
 
-.tnet-matrix { overflow-x: auto; overflow-y: visible; padding: 6px 0 18px; -webkit-overflow-scrolling: touch; border: 0; border-radius: 0; background: transparent; }
+.tnet-matrix { container-type: inline-size; overflow-x: auto; overflow-y: visible; padding: 6px 0 18px; -webkit-overflow-scrolling: touch; border: 0; border-radius: 0; background: transparent; }
 .tnet-rows { display: flex; flex-direction: column; gap: 18px; width: max-content; min-width: 100%; }
 .tnet-row { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 100%; }
-.tnet-label { position: sticky; left: 0; z-index: 2; width: fit-content; max-width: calc(100vw - 36px); display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; background: transparent; border: 0; box-shadow: none; }
+/* CL12: at most the width of the box that scrolls (100cqw), not of the screen: the matrix sits scrolled to its right
+   end, and a name wider than its box ran off to the left (his 22:03, "titles continue to the left") */
+.tnet-label { position: sticky; left: 0; z-index: 2; width: fit-content; max-width: 100cqw; display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; background: transparent; border: 0; box-shadow: none; }
 .tnet-label b { font-size: .9rem; line-height: 1.2; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tnet-label > span { flex: none; }
 .tnet-label span { font-size: .74rem; color: var(--muted); white-space: nowrap; }
 .tnet-chain { display: flex; align-items: stretch; justify-content: flex-end; gap: 6px; flex: none; }
 .tnet-node { width: 256px !important; min-width: 256px !important; max-width: 256px !important; min-height: 92px; height: auto !important; flex: 0 0 256px !important; justify-content: space-between; overflow: visible; margin: 0 !important; gap: 8px; transition: box-shadow .25s ease, transform .25s ease; }
@@ -736,7 +750,8 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
 .sheet.orch-popup .sheet-in { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 24px !important; gap: 10px; max-width: none; width: 100%; }
 .sheet.orch-popup .bar { margin-inline: -16px; padding: 10px 16px; background: var(--sunk); flex: none; }
 .sheet.orch-popup #p-meta, .sheet.orch-popup #p-body { display: none; }
-.sheet.orch-popup h2 { font-size: 1.25rem; flex: none; }
+/* CL12: its title only; "h2" alone also froze every ## header inside its comments at full width (his 22:03) */
+.sheet.orch-popup #p-title { font-size: 1.25rem; flex: none; }
 .sheet.orch-popup .thread { flex: 1 0 auto; display: flex; flex-direction: column; }
 .sheet.orch-popup .composer { position: sticky; bottom: 0; margin-top: auto; background: var(--surface); padding-top: 8px; border-top: 1px solid var(--line); }
 @media (max-width: 640px) {
@@ -815,6 +830,8 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
 .cmt .cmt-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 .cmt .deliv { display: inline-flex; align-items: center; gap: 4px; font-size: .74rem; opacity: .78; margin-top: 2px; }
 .cmt .deliv.seen-ok { color: var(--info); opacity: 1; }
+.cmt .deliv.ans-ok { color: var(--done); opacity: 1; }
+.cmt .deliv .deliv-w { margin-left: 4px; font-size: 11px; }
 .kit-av {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border-radius: 999px; font-size: .72rem; font-weight: 800;
@@ -907,6 +924,9 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   .replies { margin-left: 6px !important; padding-left: 10px !important; }
 }
 .newjump { bottom: 112px !important; z-index: 7; }
+/* CL12: in the orchestrator's window (a panel at the right on a desktop), the pill sits in that window, not at the
+   middle of the screen over the board */
+.sheet.orch-popup .newjump { position: absolute; }
 </style>
 
 <div class="wrap">
@@ -2716,13 +2736,32 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   window.addEventListener("resize", function () { if (state.openId) renderPost(); });
 
   /* A reply's parent: reply_to is a comment's doc_id, or (tolerated) the thread id the clerk named. */
+  /* CL12 (his 22:04, "the new notification badge never disappears"): a reply to the thread of his 👍 got the Like as
+     its parent; Likes are never drawn as comments, so the reply was never on screen, never seen, and lit the badge for
+     good. A reply to a Like goes under what was liked; a parent the caller's map does not hold makes it a root: a
+     comment is never hidden because its parent is not shown. */
   function parentOf(c, byId) {
     var par = str(c.reply_to); if (!par || par === c.id) return "";
-    if (byId[par]) return par;
-    /* CL21: only a comment that is drawn (in byId): a reply to his Like (never drawn) hung under it, off screen, and its
-       "new" never cleared (the kit board's Welcome thread, 2026-11-23 02:41); it now stands at the top of its thread */
-    var hit = (ix().byThread[par] || NONE).filter(function (x) { return x.id !== c.id && byId[x.id]; })[0];
-    return hit ? hit.id : "";
+    var all = ix().byId, hit = byId[par] || all[par];
+    if (!hit) {
+      var th = (ix().byThread[par] || NONE).filter(function (x) { return x.id !== c.id; });
+      hit = th.filter(function (x) { return !x.like; })[0] || th[0];
+    }
+    for (var n = 0; hit && hit.like && n < 20; n++) {
+      var t = str(hit.comment_id);
+      hit = t && t !== c.id ? (byId[t] || all[t]) : null;
+    }
+    return hit && hit.id !== c.id && byId[hit.id] ? hit.id : "";
+  }
+  /* an agent's comment (not a Like) that answers c: it replies to c's id or thread, or lands under c */
+  function answeredBy(c) {
+    var all = ix().byId, th = str(c.thread_id);
+    return (state.comments || []).some(function (x) {
+      if (x.like || x.removed || x.from === "owner" || x.from === "viewer" || x.id === c.id) return false;
+      var r = str(x.reply_to); if (!r) return false;
+      if (r === c.id || (th && r === th)) return true;
+      return parentOf(x, all) === c.id;
+    });
   }
   function commentNode(c) {
     var orch = c.from === "orchestrator";
@@ -2757,8 +2796,11 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     if (c.from === "owner" || c.from === "viewer") {
       var info = el("div", "deliv");
       if (sending[c.id]) { info.textContent = "\u2026"; info.title = "Sending to Claude..."; }
-      else if (c.read === true) { info.classList.add("seen-ok"); info.innerHTML = ICON.checks; info.title = "Seen" + (c.read_at ? " " + when(c.read_at) : ""); }
-      else if (c.delivered === true) { info.classList.add("ok"); info.innerHTML = ICON.checks; info.title = "Sent to the agent"; }
+      /* CL12 (his 22:18): "passed on" and "seen" could not be told apart; main's icons are kept (icon-first chrome)
+         and each state adds its own short word: sent (passed on), seen (the agent marked it read), answered. */
+      else if (answeredBy(c)) { info.classList.add("ans-ok"); info.innerHTML = ICON.checks + '<span class="deliv-w">answered</span>'; info.title = "An agent answered" + (c.read_at ? "; seen " + when(c.read_at) : ""); }
+      else if (c.read === true) { info.classList.add("seen-ok"); info.innerHTML = ICON.checks + '<span class="deliv-w">seen</span>'; info.title = "Seen" + (c.read_at ? " " + when(c.read_at) : "") + "; no answer yet"; }
+      else if (c.delivered === true) { info.classList.add("ok"); info.innerHTML = ICON.check + '<span class="deliv-w">sent</span>'; info.title = "Passed on to the agent; not seen yet"; }
       else { info.classList.add("err"); info.innerHTML = ICON.check; info.title = "Saved on the board; not sent" + (c.delivery_error ? " (" + str(c.delivery_error) + ")" : "") + "."; }
       d.appendChild(info);
       if (c.delivered !== true && !sending[c.id] && cmts) {
@@ -2927,8 +2969,9 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     if (dr && dr.r) state.replyTo = dr.r;
     $("sheet").scrollTop = 0; renderPost();
     var p = current(), dl = discs();
-    var first = k && p ? newComments(p, markOf(ORCH) ? markOf(ORCH).at : "", true).filter(function (c) { return dl.of[c.id] === k; })[0] : null;
-    if (first) { unfoldFor(first.id); renderComments(); requestAnimationFrame(function () { goTo({ cid: first.id }); }); }
+    /* every reply he has not seen is unfolded (only the first was: a folded second one kept the badge lit) */
+    var fresh = k && p ? newComments(p, markOf(ORCH) ? markOf(ORCH).at : "", true).filter(function (c) { return dl.of[c.id] === k; }) : [], first = fresh[0];
+    if (first) { fresh.forEach(function (c) { unfoldFor(c.id); }); renderComments(); requestAnimationFrame(function () { goTo({ cid: first.id }); }); }
     if (k === "new") {
       setTimeout(function () { var ct = $("c-text"); if (ct) ct.focus(); }, 40);
     } else {
@@ -3645,6 +3688,17 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       return trKey.replace(/-/g, " ").replace(/^\w/, function (c) { return c.toUpperCase(); });
     }
 
+    /* Every post of a train, done ones included: its `train` (or, without one, its family) is one of the group's ids. */
+    function trainPosts(ids, tPosts) {
+      var tMap = trainTitleMap();
+      return (state.posts || []).filter(function (p) {
+        if (p.removed || str(p.id).charAt(0) === "_") return false;
+        var tr = str(p.train).replace(/^P-/, "").toLowerCase();
+        if (tr) return !!ids[tr] || tPosts.some(function (q) { return q.id === p.id; });
+        return !!ids[str(familyOf(p, tMap)).toLowerCase()] || tPosts.some(function (q) { return q.id === p.id; });
+      }).sort(function (a, b) { return tOf(a) - tOf(b); });
+    }
+    window._kitTrainPosts = trainPosts;
     function renderHorizontalTrains() {
       trainNetEl.textContent = "";
       var activePosts = (state.posts || []).filter(function (p) { return colOf(p) !== "done" && matches(p); });
@@ -3654,10 +3708,16 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       }
       var tMap = trainTitleMap();
       var links = resolveClientLinks();
-      var byTrain = {}, linkedIds = {}, parentCounts = {};
+      /* CL12 (his 22:03, "all the done tasks from the previous session disappeared from my train task view"): a group
+         is keyed by its display name (the dashboard's "Claude Code CLI runtime (...)"), but the tasklist matched the
+         posts' `train` ("cli") against that name, so only the open steps shown here (never a done one) made it in.
+         trainIds keeps, per group, the train ids its posts carry. */
+      var byTrain = {}, linkedIds = {}, parentCounts = {}, trainIds = {};
+      function idOf(tr, id) { if (id) (trainIds[tr] = trainIds[tr] || {})[str(id).replace(/^P-/, "").toLowerCase()] = true; }
       links.forEach(function (lk) {
         if (colOf(lk.post) === "done" || !matches(lk.post)) return;
         var tr = tMap[lk.train] || tMap[lk.part] || tMap[lk.id] || lk.train || familyOf(lk.post, tMap);
+        idOf(tr, lk.train || familyOf(lk.post, tMap)); idOf(tr, tr);
         (byTrain[tr] = byTrain[tr] || []).push(lk.post);
         linkedIds[lk.id] = true;
         if (lk.parent) parentCounts[lk.parent] = (parentCounts[lk.parent] || 0) + 1;
@@ -3666,6 +3726,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
         if (!linkedIds[p.id]) {
           var fk = familyOf(p, tMap);
           var tr = tMap[p.id] || tMap[str(p.part)] || tMap[fk] || fk;
+          idOf(tr, fk); idOf(tr, tr);
           (byTrain[tr] = byTrain[tr] || []).push(p);
           if (p.parent) parentCounts[str(p.parent)] = (parentCounts[str(p.parent)] || 0) + 1;
         }
@@ -3757,11 +3818,8 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
         ttl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/><polyline points="3 18 4 19 6 17"/></svg>';
         ttl.addEventListener("click", function (ev) {
           ev.stopPropagation();
-          var allInTrain = (state.posts || []).filter(function (p) {
-            if (p.removed) return false;
-            var tr = str(p.train).replace(/^P-/, "").toLowerCase();
-            return tr === trKey.toLowerCase() || tPosts.some(function (q) { return q.id === p.id; });
-          }).sort(function (a, b) { return tOf(a) - tOf(b); });
+          var ids = trainIds[trKey] || {};
+          var allInTrain = trainPosts(ids, tPosts);
           var ov = document.getElementById("kit-tl-modal");
           if (ov) ov.remove();
           var SVG_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
@@ -3796,7 +3854,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
             return ch;
           }
           var trReview = (state.comments || []).filter(function (c) {
-            return c.kind === "review" && !c.removed && str(c.train).replace(/^P-/i, "").toLowerCase() === trKey.toLowerCase();
+            return c.kind === "review" && !c.removed && !!ids[str(c.train).replace(/^P-/i, "").toLowerCase()];
           }).sort(function (a, b) { return str(b.created_at).localeCompare(str(a.created_at)); })[0];
           hdr.appendChild(bEl); hdr.appendChild(subEl);
           if (trReview) hdr.appendChild(reviewChip(trReview.verdict, "Review of the whole train: " + (str(trReview.verdict) || "?") + (str(trReview.suggestion) ? ". " + str(trReview.suggestion) : ""), trReview.post_id));
