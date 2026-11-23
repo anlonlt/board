@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T09:58:30Z",
+ "created_at": "2026-11-23T10:39:30Z",
  "rows": [
   {
    "also": [],
@@ -27,7 +27,8 @@
     "CL27",
     "CL28",
     "cl27-q-trains-view",
-    "CL29"
+    "CL29",
+    "CL30"
    ],
    "parent": "",
    "part": "P-cli",
@@ -570,8 +571,19 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL30",
+   "post": "cl30-every-agent-uses-the-kit-s-scripts-enfor",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T09:58:30Z"
+ "updated_at": "2026-11-23T10:39:30Z"
 }

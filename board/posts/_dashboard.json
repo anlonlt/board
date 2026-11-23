@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T10:30:52Z",
+ "created_at": "2026-11-23T10:39:30Z",
  "rows": [
   {
    "at": 27,
@@ -41,7 +41,8 @@
     "The board travels in git, always current (mirror synced on every step)",
     "A crashed part is continued from its last checkpoint",
     "The Trains view: task lists (A) or the old flow map (B)?",
-    "kit compact keeps a project's story checker green"
+    "kit compact keeps a project's story checker green",
+    "every agent uses the kit's scripts, enforced by hooks"
    ],
    "train": "P-cli"
   },
@@ -81,5 +82,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-23T10:30:52Z"
+ "updated_at": "2026-11-23T10:39:30Z"
 }

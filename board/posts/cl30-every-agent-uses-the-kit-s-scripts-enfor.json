@@ -1,6 +1,11 @@
 {
- "body": "Reading the 8 gaps in Harmonize docs/KIT-SCRIPTS.md and the kit hooks, then writing a red test per gap.",
- "session_id": "7364b320-e0c0-53e2-8c3b-6070f9da937a",
- "status": "in progress",
- "updated_at": "2026-11-23T10:30:55Z"
+ "body": "The owner's yes (10:2x, O52's chat, on o52-q-close-gaps-1022). Close the gaps listed in Harmonize docs/KIT-SCRIPTS.md (anlonlt/harmonize main 3138c3f8, § Gaps): (1) kit guards apply to parts and the clerk too, not only the orchestrator: no raw ArtifactData/board write where a kit command exists; (2) a reply or board write to the owner requires a fresh `kit.py resume` on every runtime (the brief guard watches Bash only; ArtifactData replies pass); (3) pull+load required before resume/reads, and artifact push + sent required after local writes (the kit_task_train push reminder only fires when board_url is claude.ai); (4) orchestrator guard holes: hand update/str_replace of a step post; launches tagged orchestrator/board-clerk/review pass; `kit.py launch` never required; (5) on agy, the board-kit MCP tools bypass every hook; (6) kit_cards_reminder.py registered nowhere; (7) CLAUDE_CODE_ENABLE_TODO_TOOLS not set so TaskCreate may be off; (8) CL28's open item: artifact push refuses on a never-loaded copy. Each fix test first (red on kit main a7ce380, green after); `scripts/run_all_tests.py` green; no deletions; update KIT-SCRIPTS-style table in the kit's docs. Done: kit main fast-forwarded (trunk push), post on the live board with the before/after table of gaps.",
+ "column": "info",
+ "created_at": "2026-11-23T10:29:22Z",
+ "from": "orchestrator",
+ "part": "CL30",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "title": "every agent uses the kit's scripts, enforced by hooks",
+ "train": "cli"
 }
