@@ -63,8 +63,8 @@ class InstallUpdate(unittest.TestCase):
         self.assertIn('window.__KIT_BOARD_URL__="https://claude.ai/artifact/ABC"', page)
         self.assertIn("<code>docs/BOARD.md</code>", page)
         self.assertFalse((self.t / ".claude" / "settings.json").exists())        # agy runtime: no Claude hooks added
-        r2 = install(self.t, "--update")                                         # a second run: nothing new
-        self.assertIn("nothing to change", r2.stdout)
+        r2 = install(self.t, "--update")                                         # a second run: no file written
+        self.assertFalse([l for l in r2.stdout.splitlines() if l.startswith(("wrote ", "updated "))], r2.stdout)
 
 
 if __name__ == "__main__":
