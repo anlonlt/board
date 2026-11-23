@@ -20,7 +20,7 @@ call to make: `ArtifactData` `batch`, `url` the board, `writes` = the file's JSO
 It reads .kit/config.json's portfolio (and --attach name=owner/repo, for a board without the kit's config); each attached repo must be cloned here (add_repo, then git clone): --clone,
 else its recorded path, else ../<name>. Only what changed since the last run is written (boards-state.json in --out;
 --full rewrites all), and a post or comment gone from a mirror is deleted. A write to a document already in the
-Artifact needs its version: pass --versions (a {"<collection>/<doc_id>": version} map from ArtifactData list). `docs` and `diffs` take --into <id> to
+Artifact needs its version: pass --versions (a {"<collection>/<doc_id>": version} map from ArtifactData list). `docs`, `assets` and `diffs` take --into <id> to
 fill an attached board's Repo Docs reader and diffs (repos/<id>/kit_docs, repos/<id>/kit_git) from its clone.
 `boards-back` is the other way: comments written in the Artifact on an attached board's posts (dump them with
 `ArtifactData list collection repos/<id>/comments, out_dir <dump>`) go to that repo's board-mirror branch, where its
@@ -318,7 +318,10 @@ def cmd_docs(a):
 def cmd_assets(a):
     up = json.load(open(a.uploaded, encoding="utf-8"))
     up = {k: (v if v.startswith("/_blob/") or v.startswith("https://") else "/_blob/" + v) for k, v in up.items()}
-    write_batches(a.out, [{"op": "update", "collection": "kit_docs", "doc_id": "_index", "data": {"assets": up}}], "assets")
+    # CL10: an attached board's pictures go to its own index (repos/<id>/kit_docs/_index): the page reads that one when
+    # the board is shown, so a map written to the primary's index left every picture of the attached board broken
+    write_batches(a.out, [{"op": "update", "collection": prefix(a) + "kit_docs", "doc_id": "_index", "data": {"assets": up}}],
+                  "assets" + ("-" + repo_id(a.into) if a.into else ""))
     print("%d pictures mapped (pin it with the _index version you read: if_version)." % len(up))
 
 
@@ -345,7 +348,7 @@ def main(argv):
     s = sub.add_parser("assets"); s.add_argument("--uploaded", required=True); s.add_argument("--out", default="/tmp/kas")
     g = sub.add_parser("diffs"); g.add_argument("--kit", required=True); g.add_argument("--repo", default=".")
     g.add_argument("--posts", required=True); g.add_argument("--out", default="/tmp/kas")
-    for x in (d, g):
+    for x in (d, g, s):
         x.add_argument("--into", default="", help="an attached repo's name: write under repos/<id>/ (run from its clone)")
     b = sub.add_parser("boards"); b.add_argument("--repo", default="."); b.add_argument("--out", default="/tmp/kas")
     b.add_argument("--clone", action="append", default=[], help="name=path of an attached repo's clone")
