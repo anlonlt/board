@@ -57,6 +57,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import sqlite3
 import subprocess
 import sys
@@ -1400,10 +1401,12 @@ def artifact_push_text(r):
         out.append("Not sent, older than the Artifact's copy (put back here): %s." % ", ".join(r["dropped"]))
     if r["need_pin"]:
         out.append("First, their versions (changed here, never sent from this copy): for each, `ArtifactData` `get`, `url` %s, "
-                   "that collection and doc_id, `out_dir: \"%s\"` (the pin merges this copy into the live document "
-                   "it saves: a newer live card is never written over); then one command: `python3 -I .kit/kit.py "
-                   "artifact pin %s` with each <version> the get named; then push again." % (
-                       board, _pin_dir(), " ".join("%s=<version>" % k for k in r["need_pin"])))
+                   "that collection and doc_id, `out_dir: \"%s\"` (its reply names the version N; that file is not "
+                   "used), then the same `get` again with `out_dir: \"%s\"` (the pin merges this copy into the live "
+                   "document saved there: a newer live card is never written over); then one command: `python3 -I "
+                   ".kit/kit.py artifact pin %s` with each N; then push again." % (
+                       board, os.path.join(_pin_dir(), "probe"), os.path.join(_pin_dir(), "v<N>"),
+                       " ".join("%s=<N>" % k for k in r["need_pin"])))
         pre = _art_prefix()
         if pre:
             out[-1] = out[-1].replace("that collection and doc_id", "collection `%s<collection>` and the doc_id" % pre)
@@ -1412,8 +1415,8 @@ def artifact_push_text(r):
                    "`python3 -I .kit/kit.py artifact sent %s`." % (board, p, p))
     if not out:
         out.append("Nothing to send: the Artifact has every change made here.")
-    out.append("A refused batch names a document's real version: `ArtifactData` `get` it with `out_dir: \"%s\"`, then "
-               "`python3 -I .kit/kit.py artifact pin <collection>/<id>=<version>`, then push again." % _pin_dir())
+    out.append("A refused batch names a document's real version N: `ArtifactData` `get` it with `out_dir: \"%s\"`, then "
+               "`python3 -I .kit/kit.py artifact pin <collection>/<id>=<N>`, then push again." % os.path.join(_pin_dir(), "v<N>"))
     return "\n".join(out) + "\n"
 
 
@@ -1463,13 +1466,15 @@ def _pin_dir():
     return os.path.join(_art_dir(), "pin")
 
 
-def _pinned_live(coll, did):
-    """CL31: the live document the `get` before a pin saved in this project's pin directory (never a shared one, O53),
-    its file and the version the file names (None when it is the bare data, as `ArtifactData` `out_dir` saves it);
-    (None, None, None)."""
+def _pinned_live(coll, did, ver):
+    """CL31: the live document the `get` before a pin saved in this project's pin directory (never a shared one), in
+    the folder of the version the pin names (O53: `ArtifactData` `out_dir` saves the bare data, so the version is
+    tied to the file by its folder, v<version>/), its file and the version the file itself names (None when bare);
+    (None, None, None). A get made after a probe that named N can only be newer than N: its pin at N is refused by
+    the Artifact, never written over newer content."""
     pre = _art_prefix()
     for c in dict.fromkeys((pre + coll, coll)):
-        f = os.path.join(_pin_dir(), *c.split("/"), did + ".json")
+        f = os.path.join(_pin_dir(), "v%s" % ver, *c.split("/"), did + ".json")
         doc = _read_json(f)
         if isinstance(doc, dict):
             ver = None
@@ -1497,7 +1502,7 @@ def artifact_pin(pairs, url=None, token=None, report=None):
         if k.count("/") == 1 and not k.startswith("kit_docs/") and v.strip().isdigit():
             coll, did = k.split("/")
             base = _read_json(_base_path(coll, did))
-            live, f, fver = _pinned_live(coll, did)
+            live, f, fver = _pinned_live(coll, did, v.strip())
             if live is not None and fver is not None and str(fver) != v.strip():
                 report.append("%s: not pinned: the saved live copy is version %s, the pin names %s: `get` it again"
                               % (k, fver, v.strip()))
@@ -1508,8 +1513,9 @@ def artifact_pin(pairs, url=None, token=None, report=None):
                 continue
             if live is None:
                 if base is not None:
-                    report.append("%s: not pinned: no live copy in %s (`ArtifactData` `get` it with that `out_dir` first, "
-                                  "then pin again): a pin without it would write this copy over the live one" % (k, _pin_dir()))
+                    report.append("%s: not pinned: no live copy at version %s in %s (`ArtifactData` `get` it with that "
+                                  "`out_dir` first, then pin again): a pin without it would write this copy over the live "
+                                  "one" % (k, v.strip(), os.path.join(_pin_dir(), "v" + v.strip())))
                     continue
             elif live != base:
                 u = url or local_board_url()
@@ -1930,11 +1936,13 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
 
 
 _AWAIT_POINT = re.compile(r"^- \[([^\]]+)\]")
+_SETTLED = re.compile(r"^(done|closed|archived|finished|merged|completed?|shipped|nothing|none|obsolete|abandoned|"
+                      r"superseded|dropped)\b", re.I)
 
 
 def _awaits_points(text):
-    """Split an awaits file into (head lines, [(workstream or None, [lines])]): a point is its `- ` line and the indented
-    lines under it (Harmonize's story checker reads it the same way); any other line stays in the head/between."""
+    """Split an awaits file into blocks [workstream | None | False, [lines]]: a point is its `- ` line and the indented
+    lines under it (None: no [workstream] tag); False marks any other line. Harmonize's story checker reads it so."""
     blocks, cur = [], None
     for ln in text.split("\n"):
         if ln.startswith("- "):
@@ -1949,43 +1957,90 @@ def _awaits_points(text):
     return blocks
 
 
-def _memory_checker(base, cfg_kit):
-    """The project's memory checker: `kit.memory_check` in config (a command; {root} becomes the repo root), else a
-    story/memory skill's scripts/check.py (Harmonize: .claude/skills/story/scripts/check.py). None if there is none."""
+def _next_step(text):
+    """A state's next step: Harmonize's `## Next step` section (its first line), else the kit's `Next:` line."""
+    lines = text.split("\n")
+    for i, ln in enumerate(lines):
+        if ln.strip().lower().startswith("## next step"):
+            for x in lines[i + 1:]:
+                if x.startswith("## "):
+                    break
+                if x.strip():
+                    return x.strip()
+            return ""
+    for ln in lines:
+        if ln.strip().lower().startswith("next:"):
+            return ln.strip()[5:].strip()
+    return ""
+
+
+def _settled(step):
+    return bool(_SETTLED.match(re.sub(r"^[\s>*_`\-–—:]+", "", step or "")))
+
+
+def _memory_checker(base, cfg_kit, root):
+    """The project's memory checker run on `root`: `kit.memory_check` in config (a command; {root} becomes the tree
+    to check), else a story/memory skill's scripts/check.py (Harmonize: .claude/skills/story/scripts/check.py)."""
     import shlex
     cmd = cfg_kit.get("memory_check")
     if cmd:
-        return [a.replace("{root}", base) for a in (shlex.split(cmd) if isinstance(cmd, str) else list(cmd))]
+        return [a.replace("{root}", root) for a in (shlex.split(cmd) if isinstance(cmd, str) else list(cmd))]
     for rt in (".claude", ".agents", ".agent"):
         for sk in ("story", "memory"):
-            p = os.path.join(base, rt, "skills", sk, "scripts", "check.py")
-            if os.path.isfile(p):
-                return [sys.executable, "-I", p, base]
+            p = os.path.join(rt, "skills", sk, "scripts", "check.py")
+            if os.path.isfile(os.path.join(base, p)):
+                return [sys.executable, "-I", os.path.join(root, p), root]
     return None
 
 
-def _run_checker(cmd, base):
-    try:
-        r = subprocess.run(cmd, cwd=base, capture_output=True, text=True, timeout=300)
-    except (OSError, subprocess.SubprocessError) as e:
-        return False, "the checker did not run: %s" % e
-    return r.returncode == 0, ((r.stdout or "") + (r.stderr or "")).strip()
+def _shadow_tree(base, rel_m, tmp):
+    """A copy of the repo at `tmp` for the checker: the memory dir copied, every other entry a symlink to the real one,
+    so the plan is checked against the real files without touching them."""
+    parts = os.path.normpath(rel_m).split(os.sep)
+    src, dst = base, tmp
+    for i, part in enumerate(parts):
+        for e in os.listdir(src):
+            if e != part:
+                os.symlink(os.path.join(src, e), os.path.join(dst, e))
+        src, dst = os.path.join(src, part), os.path.join(dst, part)
+        if i == len(parts) - 1:
+            shutil.copytree(src, dst, symlinks=True)
+        else:
+            os.makedirs(dst)
+
+
+def _apply_compaction(mdir, ops):
+    for op in ops:
+        if op[0] == "move":
+            os.makedirs(os.path.dirname(os.path.join(mdir, op[2])), exist_ok=True)
+            os.replace(os.path.join(mdir, op[1]), os.path.join(mdir, op[2]))
+        elif op[0] == "write":
+            os.makedirs(os.path.dirname(os.path.join(mdir, op[1])), exist_ok=True)
+            with open(os.path.join(mdir, op[1]), "w", encoding="utf-8") as fh:
+                fh.write(op[2])
 
 
 def compact_memory(days=30, dry_run=False, root_dir=None):
-    """Archive into <memory_dir>/archive/ (+ digest.md) what the board now holds (CL28): every workstream state file
-    but state/orchestrator.md, closed issues (but one a staying file cites), and lessons past the 15 newest older than
-    `days`. CL29: every awaits file (`awaits*.md`, plus config `kit.awaits_files`): a point tagging an archived
-    workstream moves with it into archive/<file>, a file with no point left is archived whole. Then the project's
-    memory checker runs on the result: red undoes everything (a dry run applies, checks, undoes, and shows it).
-    An open issue stays, listed, until it is posted on the board."""
+    """Archive into <memory_dir>/archive/ (+ digest.md) only what is settled (CL28, CL29):
+    - a workstream state file, but state/orchestrator.md, a state whose next step is not settled (done, closed...), and a
+      state whose workstream still has an open point in an awaits file (`awaits*.md`, config `kit.awaits_files`);
+      an awaits point is open until it is removed, so it is never moved, and an awaits file is archived only empty;
+    - a closed issue, unless a file that stays cites it; lessons past the 15 newest older than `days`.
+    The plan is checked first on a shadow copy of the repo by the project's memory checker; red: nothing moves. A dry
+    run prints the plan and the checker's result and never touches the tree. An open issue stays, listed."""
     import time
     base = os.path.abspath(root_dir or ROOT)
     cfg_kit = {}
     try:
-        cfg_kit = json.load(open(os.path.join(base, ".kit", "config.json"), encoding="utf-8")).get("kit") or {}
+        with open(os.path.join(base, ".kit", "config.json"), encoding="utf-8") as fh:
+            cfg_kit = json.load(fh).get("kit") or {}
     except (OSError, ValueError):
         pass
+
+    def read(p):
+        with open(p, encoding="utf-8", errors="ignore") as fh:
+            return fh.read()
+
     rel_m = cfg_kit.get("memory_dir")
     if not rel_m:
         rel_m = ".story" if os.path.isdir(os.path.join(base, ".story")) else ".board/memory"
@@ -1995,176 +2050,132 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
     cutoff = time.time() - max(0, int(days)) * 86400
     state_dir = os.path.join(mdir, "state")
     lessons_dir = os.path.join(mdir, "lessons")
-    arch_dir = os.path.join(mdir, "archive")
-    digest_path = os.path.join(arch_dir, "digest.md")
-    existing_digest = open(digest_path, encoding="utf-8").read() if os.path.isfile(digest_path) else ""
-    to_move = []
-    archived_ws = set()
-    staying_ws = set()
-    # 1. State files: where a workstream stands is its train on the board (CL28); all but the orchestrator's timers
-    if os.path.isdir(state_dir):
-        for fn in sorted(os.listdir(state_dir)):
-            if not fn.endswith(".md"):
-                continue
-            fp = os.path.join(state_dir, fn)
-            try:
-                first = open(fp, encoding="utf-8", errors="ignore").readline().strip()
-            except OSError:
-                continue
-            if fn != "orchestrator.md":
-                to_move.append(("state", fn, fp, first))
-                archived_ws.add(fn[:-3])
-            else:
-                staying_ws.add(fn[:-3])
-    # 1b. CL29: every awaits file; its points go with their workstream
+    digest_path = os.path.join(mdir, "archive", "digest.md")
+    existing_digest = read(digest_path) if os.path.isfile(digest_path) else ""
+    # Awaits files: every open point protects its workstream's state
     names = sorted(fn for fn in os.listdir(mdir) if fn.startswith("awaits") and fn.endswith(".md"))
     for n in cfg_kit.get("awaits_files") or []:
         n = os.path.basename(str(n))
         if n not in names and os.path.isfile(os.path.join(mdir, n)):
             names.append(n)
-    awaits_plan = []  # (name, path, old text, kept text or None to archive the file whole, moved text, moved count)
+    open_points = {}  # workstream -> count
+    n_points = 0
+    to_move = []  # (kind, file name, summary)
     for n in names:
-        fp = os.path.join(mdir, n)
-        text = open(fp, encoding="utf-8").read()
-        blocks = _awaits_points(text)
-        moved = [b for b in blocks if b[0] not in (False, None) and b[0] not in staying_ws
-                 and (b[0] in archived_ws or not os.path.isfile(os.path.join(state_dir, b[0] + ".md")))]
-        kept_points = [b for b in blocks if b[0] is not False and b not in moved]
-        if not moved and kept_points:
-            continue
-        if not kept_points:
-            awaits_plan.append((n, fp, text, None, text, len(moved)))
-        else:
-            kept = "\n".join(ln for b in blocks if b not in moved for ln in b[1])
-            mv = "\n".join(ln for b in moved for ln in b[1]) + "\n"
-            awaits_plan.append((n, fp, text, kept, mv, len(moved)))
-    # 1c. Issues: closed ones go (a defect is an issue post), unless a file that stays cites it
-    open_issues = []
-    closed = []
-    issues_dir = os.path.join(mdir, "issues")
-    if os.path.isdir(issues_dir):
-        for fn in sorted(os.listdir(issues_dir)):
-            fp = os.path.join(issues_dir, fn)
-            if not fn.endswith(".md"):
+        blocks = _awaits_points(read(os.path.join(mdir, n)))
+        pts = [b for b in blocks if b[0] is not False]
+        n_points += len(pts)
+        for b in pts:
+            if b[0]:
+                open_points[b[0]] = open_points.get(b[0], 0) + 1
+        if not pts:
+            to_move.append((".", n, "an awaits file with no open point"))
+    # 1. State files
+    kept_states = []
+    if os.path.isdir(state_dir):
+        for fn in sorted(os.listdir(state_dir)):
+            if not fn.endswith(".md") or fn == "orchestrator.md":
                 continue
-            text = open(fp, encoding="utf-8", errors="ignore").read()
-            title = (text.splitlines() or [fn])[0].lstrip("# ").strip()[:120]
-            if re.search(r"^status:\s*closed", text, re.I | re.M):
-                closed.append((fn, fp, title))
+            ws, text = fn[:-3], read(os.path.join(state_dir, fn))
+            step = _next_step(text)
+            if open_points.get(ws):
+                kept_states.append("  - state/%s: %d open awaits point(s)" % (fn, open_points[ws]))
+            elif not _settled(step):
+                kept_states.append("  - state/%s: next step not settled (%s)" % (fn, (step or "none written")[:70]))
             else:
-                open_issues.append("  - issues/%s: %s" % (fn, title))
+                to_move.append(("state", fn, (text.splitlines() or [fn])[0].strip()))
     # 2. Aged lessons (keep 15 newest; archive older than `days`)
     if os.path.isdir(lessons_dir):
         lfiles = [os.path.join(lessons_dir, fn) for fn in os.listdir(lessons_dir) if fn.endswith(".md")]
         lfiles.sort(key=lambda p: os.path.getmtime(p), reverse=True)
         for fp in lfiles[15:]:
             if os.path.getmtime(fp) < cutoff:
-                fn = os.path.basename(fp)
-                first = ""
-                try:
-                    for ln in open(fp, encoding="utf-8", errors="ignore"):
-                        if ln.strip():
-                            first = ln.strip().lstrip("# ").strip()[:120]
-                            break
-                except OSError:
-                    pass
-                to_move.append(("lessons", fn, fp, first or fn))
-    moving = {fp for _, _, fp, _ in to_move}
-    awaits_paths = {fp: kept for _, fp, _, kept, _, _ in awaits_plan}
-    staying_text = ""
-    for r, ds, fs in os.walk(mdir):
-        ds[:] = [x for x in ds if os.path.join(r, x) != arch_dir]
-        for f in fs:
-            p = os.path.join(r, f)
-            if f.endswith(".md") and p not in moving and not any(p == c[1] for c in closed):
-                staying_text += (awaits_paths.get(p) or "") if p in awaits_paths else (
-                    open(p, encoding="utf-8", errors="ignore").read() + "\n")
+                first = next((ln.strip().lstrip("# ").strip()[:120] for ln in read(fp).splitlines() if ln.strip()), "")
+                to_move.append(("lessons", os.path.basename(fp), first or os.path.basename(fp)))
+    # 3. Issues: closed ones go, unless a file that stays cites it
+    open_issues, closed = [], []
+    issues_dir = os.path.join(mdir, "issues")
+    if os.path.isdir(issues_dir):
+        for fn in sorted(os.listdir(issues_dir)):
+            if not fn.endswith(".md"):
+                continue
+            text = read(os.path.join(issues_dir, fn))
+            title = (text.splitlines() or [fn])[0].lstrip("# ").strip()[:120]
+            if re.search(r"^status:\s*closed", text, re.I | re.M):
+                closed.append((fn, title))
+            else:
+                open_issues.append("  - issues/%s: %s" % (fn, title))
+    # A settled state or closed issue that a staying file cites stays (the checker reports a dead pointer otherwise);
+    # repeated until nothing changes, since a state kept so may cite another
+    closed_paths = {os.path.join(issues_dir, fn) for fn, _ in closed}
+    while True:
+        moving = {os.path.normpath(os.path.join(mdir, k, fn)) for k, fn, _ in to_move}
+        staying_text = ""
+        for r, ds, fs in os.walk(mdir):
+            ds[:] = [x for x in ds if os.path.join(r, x) != os.path.join(mdir, "archive")]
+            for f in fs:
+                p = os.path.normpath(os.path.join(r, f))
+                if f.endswith(".md") and p not in moving and p not in closed_paths:
+                    staying_text += read(p) + "\n"
+        cited = [t for t in to_move if t[0] == "state" and re.search(r"state/%s\b" % re.escape(t[1]), staying_text)]
+        if not cited:
+            break
+        for t in cited:
+            to_move.remove(t)
+            kept_states.append("  - state/%s: settled, but cited by a file that stays" % t[1])
     kept_cited = []
-    for fn, fp, title in closed:
+    for fn, title in closed:
         if fn[:-3] in staying_text:
             kept_cited.append("  - issues/%s: cited by a file that stays" % fn)
         else:
-            to_move.append(("issues", fn, fp, title))
-    tail = ("\n%d open issue(s) stay: post each on the board (`kind: \"issue\"`, `status: \"open\"`), then mark the file "
-            "`Status: closed (posted as <post id>)` and compact again:\n" % len(open_issues) + "\n".join(open_issues)
-            ) if open_issues else ""
+            to_move.append(("issues", fn, title))
+    tail = ""
+    if kept_states:
+        tail += "\n%d state(s) stay (open work):\n" % len(kept_states) + "\n".join(kept_states)
+    if n_points:
+        tail += "\n%d open awaits point(s) stay in %s" % (n_points, ", ".join(names))
+    if open_issues:
+        tail += ("\n%d open issue(s) stay: post each on the board (`kind: \"issue\"`, `status: \"open\"`), then mark the "
+                 "file `Status: closed (posted as <post id>)` and compact again:\n" % len(open_issues) + "\n".join(open_issues))
     if kept_cited:
         tail += "\n%d closed issue(s) stay, cited by a file that stays:\n" % len(kept_cited) + "\n".join(kept_cited)
-    if not to_move and not awaits_plan:
-        return "compact: nothing to archive (0 state files, 0 aged lessons >%dd)" % int(days) + tail
-    plan = ["  - %s/%s: %s" % (k, fn, summ) for k, fn, _, summ in to_move]
-    plan += ["  - %s: %d point(s) of archived workstreams -> archive/%s%s" % (n, c, n, " (the whole file: no point left)"
-                                                                              if kept is None else "")
-             for n, _, _, kept, _, c in awaits_plan]
-    # Apply, then check; undo on a dry run or a red checker
-    undo = []  # callables, run in reverse
+    if not to_move:
+        return "compact: nothing settled to archive" + tail
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    def write(p, text):
-        old = open(p, encoding="utf-8").read() if os.path.isfile(p) else None
-        with open(p, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        undo.append(lambda p=p, old=old: (os.remove(p) if old is None else open(p, "w", encoding="utf-8").write(old)))
-
-    made_dirs = []
-    for sub in ("", "state", "lessons", "issues"):
-        p = os.path.join(arch_dir, sub)
-        if not os.path.isdir(p):
-            os.makedirs(p)
-            made_dirs.append(p)
+    ops = [("move", os.path.join(k, fn), os.path.join("archive", k, fn)) for k, fn, _ in to_move]
+    added = ["- `%s` (%s): %s" % (os.path.normpath(os.path.join(k, fn)), stamp, s) for k, fn, s in to_move
+             if os.path.normpath(os.path.join(k, fn)) not in existing_digest]
+    if added:
+        ops.append(("write", os.path.join("archive", "digest.md"),
+                    (existing_digest or "# Archived Memory Digest\n\n") + "\n".join(added) + "\n"))
+    plan = "\n".join("  - %s: %s" % (os.path.normpath(os.path.join(k, fn)), s) for k, fn, s in to_move)
+    # Check the plan on a shadow copy: the real tree is touched only once the checker is green
+    tmp = tempfile.mkdtemp(prefix="kit-compact-")
     try:
-        added_lines = []
-        for kind, fn, fp, summ in to_move:
-            dst = os.path.join(arch_dir, kind, fn)
-            had = open(dst, "rb").read() if os.path.isfile(dst) else None
-            os.replace(fp, dst)
-            undo.append(lambda fp=fp, dst=dst, had=had: (os.replace(dst, fp), had is not None and open(dst, "wb").write(had)))
-            key = "%s/%s" % (kind, fn)
-            if key not in existing_digest:
-                added_lines.append("- `%s` (%s): %s" % (key, stamp, summ))
-        for n, fp, old, kept, mv, c in awaits_plan:
-            dst = os.path.join(arch_dir, n)
-            prev = open(dst, encoding="utf-8").read() if os.path.isfile(dst) else ""
-            write(dst, (prev.rstrip("\n") + "\n" if prev else "") + mv)
-            if kept is None:
-                os.remove(fp)
-                undo.append(lambda fp=fp, old=old: open(fp, "w", encoding="utf-8").write(old))
-            else:
-                write(fp, kept)
-            added_lines.append("- `%s` (%s): %d point(s) of archived workstreams (now: question posts)" % (n, stamp, c))
-        if added_lines:
-            hdr = "" if existing_digest else "# Archived Memory Digest\n\n"
-            write(digest_path, existing_digest + hdr + "\n".join(added_lines) + "\n")
-        cmd = _memory_checker(base, cfg_kit)
+        _shadow_tree(base, rel_m, tmp)
+        _apply_compaction(os.path.join(tmp, rel_m), ops)
+        cmd = _memory_checker(base, cfg_kit, tmp)
         if cmd:
-            ok, res = _run_checker(cmd, base)
-            check = "memory checker (%s): %s" % (" ".join(os.path.relpath(a, base) if os.path.isabs(a) and a.startswith(base)
-                                                          else a for a in cmd[-2:]), res or ("green" if ok else "red"))
+            try:
+                r = subprocess.run(cmd, cwd=tmp, capture_output=True, text=True, timeout=300)
+                ok, res = r.returncode == 0, ((r.stdout or "") + (r.stderr or "")).strip().replace(tmp, ".")
+            except (OSError, subprocess.SubprocessError) as e:
+                ok, res = False, "the checker did not run: %s" % e
+            check = "memory checker (%s): %s" % (os.path.relpath(cmd[-2], tmp) if cmd[-2].startswith(tmp) else
+                                                 " ".join(cmd), res or ("green" if ok else "red"))
         else:
             ok, check = True, "no memory checker (kit.memory_check in .kit/config.json names one)"
-    except Exception:
-        ok, check = False, None
-        for f in reversed(undo):
-            f()
-        raise
-    if dry_run or not ok:
-        for f in reversed(undo):
-            f()
-        for p in reversed(made_dirs):
-            try:
-                os.rmdir(p)
-            except OSError:
-                pass
-    lines = "\n".join(plan)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     if not ok:
-        return ("%s, the project's memory checker is red on the compacted tree (every move undone); fix what it names "
-                "(or keep what it needs) and compact again:\n%s\n%s" % (
-                    "compact (dry-run): would be REFUSED" if dry_run else "compact: REFUSED", check, lines)) + tail
+        return ("%s, the project's memory checker is red on the compacted tree (nothing moved); fix what it names and "
+                "compact again:\n%s\n%s" % ("compact (dry-run): would be REFUSED" if dry_run else "compact: REFUSED",
+                                            check, plan)) + tail
     if dry_run:
-        return "compact (dry-run): would archive %d file(s) and %d awaits file(s):\n%s\n%s" % (
-            len(to_move), len(awaits_plan), lines, check) + tail
-    return "compact: archived %d file(s) and %d awaits file(s) into %s (updated archive/digest.md)\n%s" % (
-        len(to_move), len(awaits_plan), os.path.relpath(arch_dir, base), check) + tail
+        return "compact (dry-run): would archive %d file(s):\n%s\n%s" % (len(to_move), plan, check) + tail
+    _apply_compaction(mdir, ops)
+    return "compact: archived %d file(s) into %s (updated archive/digest.md)\n%s" % (
+        len(to_move), os.path.relpath(os.path.join(mdir, "archive"), base), check) + tail
 
 
 def report_metrics(m, db_path=None):

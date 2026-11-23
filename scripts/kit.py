@@ -1401,10 +1401,12 @@ def artifact_push_text(r):
         out.append("Not sent, older than the Artifact's copy (put back here): %s." % ", ".join(r["dropped"]))
     if r["need_pin"]:
         out.append("First, their versions (changed here, never sent from this copy): for each, `ArtifactData` `get`, `url` %s, "
-                   "that collection and doc_id, `out_dir: \"%s\"` (the pin merges this copy into the live document "
-                   "it saves: a newer live card is never written over); then one command: `python3 -I .kit/kit.py "
-                   "artifact pin %s` with each <version> the get named; then push again." % (
-                       board, _pin_dir(), " ".join("%s=<version>" % k for k in r["need_pin"])))
+                   "that collection and doc_id, `out_dir: \"%s\"` (its reply names the version N; that file is not "
+                   "used), then the same `get` again with `out_dir: \"%s\"` (the pin merges this copy into the live "
+                   "document saved there: a newer live card is never written over); then one command: `python3 -I "
+                   ".kit/kit.py artifact pin %s` with each N; then push again." % (
+                       board, os.path.join(_pin_dir(), "probe"), os.path.join(_pin_dir(), "v<N>"),
+                       " ".join("%s=<N>" % k for k in r["need_pin"])))
         pre = _art_prefix()
         if pre:
             out[-1] = out[-1].replace("that collection and doc_id", "collection `%s<collection>` and the doc_id" % pre)
@@ -1413,8 +1415,8 @@ def artifact_push_text(r):
                    "`python3 -I .kit/kit.py artifact sent %s`." % (board, p, p))
     if not out:
         out.append("Nothing to send: the Artifact has every change made here.")
-    out.append("A refused batch names a document's real version: `ArtifactData` `get` it with `out_dir: \"%s\"`, then "
-               "`python3 -I .kit/kit.py artifact pin <collection>/<id>=<version>`, then push again." % _pin_dir())
+    out.append("A refused batch names a document's real version N: `ArtifactData` `get` it with `out_dir: \"%s\"`, then "
+               "`python3 -I .kit/kit.py artifact pin <collection>/<id>=<N>`, then push again." % os.path.join(_pin_dir(), "v<N>"))
     return "\n".join(out) + "\n"
 
 
@@ -1464,13 +1466,15 @@ def _pin_dir():
     return os.path.join(_art_dir(), "pin")
 
 
-def _pinned_live(coll, did):
-    """CL31: the live document the `get` before a pin saved in this project's pin directory (never a shared one, O53),
-    its file and the version the file names (None when it is the bare data, as `ArtifactData` `out_dir` saves it);
-    (None, None, None)."""
+def _pinned_live(coll, did, ver):
+    """CL31: the live document the `get` before a pin saved in this project's pin directory (never a shared one), in
+    the folder of the version the pin names (O53: `ArtifactData` `out_dir` saves the bare data, so the version is
+    tied to the file by its folder, v<version>/), its file and the version the file itself names (None when bare);
+    (None, None, None). A get made after a probe that named N can only be newer than N: its pin at N is refused by
+    the Artifact, never written over newer content."""
     pre = _art_prefix()
     for c in dict.fromkeys((pre + coll, coll)):
-        f = os.path.join(_pin_dir(), *c.split("/"), did + ".json")
+        f = os.path.join(_pin_dir(), "v%s" % ver, *c.split("/"), did + ".json")
         doc = _read_json(f)
         if isinstance(doc, dict):
             ver = None
@@ -1498,7 +1502,7 @@ def artifact_pin(pairs, url=None, token=None, report=None):
         if k.count("/") == 1 and not k.startswith("kit_docs/") and v.strip().isdigit():
             coll, did = k.split("/")
             base = _read_json(_base_path(coll, did))
-            live, f, fver = _pinned_live(coll, did)
+            live, f, fver = _pinned_live(coll, did, v.strip())
             if live is not None and fver is not None and str(fver) != v.strip():
                 report.append("%s: not pinned: the saved live copy is version %s, the pin names %s: `get` it again"
                               % (k, fver, v.strip()))
@@ -1509,8 +1513,9 @@ def artifact_pin(pairs, url=None, token=None, report=None):
                 continue
             if live is None:
                 if base is not None:
-                    report.append("%s: not pinned: no live copy in %s (`ArtifactData` `get` it with that `out_dir` first, "
-                                  "then pin again): a pin without it would write this copy over the live one" % (k, _pin_dir()))
+                    report.append("%s: not pinned: no live copy at version %s in %s (`ArtifactData` `get` it with that "
+                                  "`out_dir` first, then pin again): a pin without it would write this copy over the live "
+                                  "one" % (k, v.strip(), os.path.join(_pin_dir(), "v" + v.strip())))
                     continue
             elif live != base:
                 u = url or local_board_url()

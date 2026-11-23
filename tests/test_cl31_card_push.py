@@ -98,8 +98,8 @@ class CardPush(unittest.TestCase):
         # the session does the gets the push text names: each saves the live card in the pin directory
         text = kit.artifact_push_text(r)
         self.assertIn(str(self.art / "pin"), text)
-        self.remote("posts", "_trains", live_t, where="pin")
-        self.remote("posts", "_dashboard", live_d, where="pin")
+        self.remote("posts", "_trains", live_t, where="pin/v7")
+        self.remote("posts", "_dashboard", live_d, where="pin/v4")
         self.assertEqual(self.pin("posts/_trains=7", "posts/_dashboard=4"), 2)
         got = self.sent(self.push())
         t = {x["part"]: x for x in got["_trains"]["rows"]}
@@ -135,7 +135,7 @@ class CardPush(unittest.TestCase):
 
     def test_a_live_card_equal_to_the_base_is_pinned_as_before(self):
         self.loaded_then_changed_both_sides()
-        self.remote("posts", "_trains", TRAINS, where="pin")
+        self.remote("posts", "_trains", TRAINS, where="pin/v7")
         self.assertEqual(self.pin("posts/_trains=7"), 1)
         got = self.sent(self.push())
         self.assertEqual(got["_trains"]["rows"][1]["session"], "s31")
@@ -155,38 +155,40 @@ class CardPush(unittest.TestCase):
         # and a pin from a get of a newer live card takes the live card whole
         self.local("posts/_trains", seed)
         live = dict(TRAINS, updated_at="2026-11-23T22:08:00Z", title="Trains")
-        self.remote("posts", "_trains", live, where="pin")
+        self.remote("posts", "_trains", live, where="pin/v57")
         self.pin("posts/_trains=57")
         self.assertEqual(self.local("posts/_trains"), live)
 
     def test_pin_reads_only_this_projects_pin_dir_fresh_and_at_its_version(self):
-        """O53: no shared /tmp/kit-pin fallback; a stale saved copy or one at another version is refused."""
+        """O53: the saved copy is read only from this project's pin/v<version>/ (no shared /tmp fallback); a copy
+        saved for another version, a stale one, or one whose own version differs is refused."""
         live_t, _ = self.loaded_then_changed_both_sides()
-        shared = Path("/tmp/kit-pin/posts")
-        made = not (shared / "_trains.json").exists()
-        if made:
-            shared.mkdir(parents=True, exist_ok=True)
-            (shared / "_trains.json").write_text(json.dumps(live_t))
-            self.addCleanup(lambda: (shared / "_trains.json").unlink(missing_ok=True))
         rep = []
         self.assertEqual(kit.artifact_pin(["posts/_trains=7"], url=self.url, token=TOKEN, report=rep), 0)
-        self.assertIn(str(self.art / "pin"), rep[0])
-        if made:
-            self.assertTrue((shared / "_trains.json").exists())       # another session's file is left alone
-        # a saved copy older than 30 min
+        self.assertIn(str(self.art / "pin" / "v7"), rep[0])
+        # a fresh get saved for version 6 (or a bare pin dir): the pin at 7 has no copy of its own version
+        self.remote("posts", "_trains", live_t, where="pin/v6")
         self.remote("posts", "_trains", live_t, where="pin")
-        f = self.art / "pin" / "posts" / "_trains.json"
+        rep = []
+        self.assertEqual(kit.artifact_pin(["posts/_trains=7"], url=self.url, token=TOKEN, report=rep), 0)
+        self.assertIn("version 7", rep[0])
+        self.assertIn("posts/_trains", self.push()["need_pin"])
+        # a saved copy older than 30 min
+        self.remote("posts", "_trains", live_t, where="pin/v7")
+        f = self.art / "pin" / "v7" / "posts" / "_trains.json"
         old = f.stat().st_mtime - 31 * 60
         os.utime(f, (old, old))
         rep = []
         self.assertEqual(kit.artifact_pin(["posts/_trains=7"], url=self.url, token=TOKEN, report=rep), 0)
         self.assertIn("older than 30 min", rep[0])
-        # a saved copy that names its version: the pin must name the same
-        self.remote("posts", "_trains", {"id": "_trains", "version": 8, "data": live_t}, where="pin")
+        # a saved copy that names its own version: it must be the pin's
+        self.remote("posts", "_trains", {"id": "_trains", "version": 8, "data": live_t}, where="pin/v7")
         rep = []
         self.assertEqual(kit.artifact_pin(["posts/_trains=7"], url=self.url, token=TOKEN, report=rep), 0)
         self.assertIn("version 8", rep[0])
+        self.remote("posts", "_trains", live_t, where="pin/v8")
         self.assertEqual(kit.artifact_pin(["posts/_trains=8"], url=self.url, token=TOKEN), 1)
+        self.assertFalse((self.art / "pin" / "v8" / "posts" / "_trains.json").exists())     # used once
 
     def test_unkeyed_rows_changed_on_both_sides_are_reported_not_dropped(self):
         """O53: rows without a key cannot be merged by row: the pin refuses, load keeps this copy and says so."""
@@ -196,7 +198,7 @@ class CardPush(unittest.TestCase):
         here = dict(base, rows=[{"text": "a"}, {"text": "b"}, {"text": "c here"}], updated_at="2026-11-23T21:00:00Z")
         self.local("posts/_dashboard", here)
         live = dict(base, rows=[{"text": "a live"}, {"text": "b"}], updated_at="2026-11-23T20:30:00Z")
-        self.remote("posts", "_dashboard", live, where="pin")
+        self.remote("posts", "_dashboard", live, where="pin/v4")
         rep = []
         self.assertEqual(kit.artifact_pin(["posts/_dashboard=4"], url=self.url, token=TOKEN, report=rep), 0)
         self.assertIn("rows", rep[0])
