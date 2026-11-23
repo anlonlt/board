@@ -1,14 +1,35 @@
 {
- "body": "Continuing CL9 in a cloud session: merged main (33 commits), now checking the WIP's breaks code and tests against the prompt.",
+ "artifacts": [
+  "scripts/kit.py",
+  "tests/test_breaks.py",
+  "kit/board/BOARD.template.md",
+  "kit/claude-cli/part.template.md",
+  "kit/claude-cli/consultant.template.md",
+  "kit/board/strings.py",
+  "kit/board/test_page.js"
+ ],
+ "bars": [
+  "demo step: 2 of 2 outcomes right: a check that cannot fail is refused, one that can is accepted (10 of 10 tests in tests/test_breaks.py)",
+  "6 of 6 suites pass (99 unittest tests OK; the other 5 suites 0 failed)"
+ ],
+ "body": "For you: nothing to do. Every post with a `check` now needs `breaks`, and `kit.py done` refuses a check it cannot make fail.\n\n## What changed\n- **Post format** (`.kit/BOARD.md`, both BOARD templates): new field `breaks`, a command that plants a fault or feeds a bad input, or `manual: <what to do>` for a browser or Microsoft 365 step.\n- **`kit.py done`**: runs `check` (must pass). Then, if both fields are commands, it applies `breaks` in a throwaway copy (a detached git worktree carrying uncommitted edits and new files, or a temp directory outside git) and reruns `check` (must fail). It refuses: a missing breaks, a check that fails before breaks, a breaks that does not apply (with the `manual:` way out), and a check that still passes. Your own work is never touched; the copy is removed afterwards.\n- **Templates**: the part template names `breaks` and the new Done; the review template (consultant) performs a `manual:` breaks and must see the check fail.\n- **Train view**: a `*Breaks:*` line per step (and `breaks` in `--json`); the board page shows a Breaks section under Check.\n\n## Pre-existing failures on main, fixed here\nAfter the merge, test_strings failed 2 checks on `origin/main` itself (not from CL9). In this cloud session a browser exists, so the translated-page test ran for real:\n- `strings.apply` translated code tokens listed in `EXCLUDED` (`\"posts/\"`), which broke db writes on a translated page. It now skips them. `\"[repo \"` (from the cross-repo commit) is now excluded.\n- `test_page.js` still clicked the old per-row discussion Remove button. It now goes through select mode (pencil, pick square, Remove).\n\n## Merge\n`git merge origin/main` (33 commits). One conflict, in `kit/claude-cli/part.template.md`: I kept CL9's `breaks` field and done-runs-breaks text, and main's chat-turn rule and device step 6.\n\n## Cloud session\nI ran this from Claude Code web: the board came up from `board-mirror` (`web_takeover.py`), and its server auto-syncs this post back to `origin/board-mirror`. Nothing here needed his device.",
+ "breaks": "python3 -c \"p='scripts/kit.py'; s=open(p).read(); open(p,'w').write(s.replace('if rc2 == 0:', 'if False:'))\"",
+ "check": "python3 tests/test_breaks.py",
  "column": "info",
- "created_at": "2026-11-23T01:57:49Z",
+ "created_at": "2026-11-23T02:06:21Z",
  "from": "orchestrator",
+ "handoff": "From now on every part post with a check needs breaks (or manual: for a browser step). A review must perform a manual: breaks itself. CL10 can use manual: for its browser checks.",
+ "not_checked": [
+  "a real part's Done on his machine (kit.py done ran here on this post only)",
+  "macOS: breaks commands that use sed -i differ there (the demo uses python3 -c)"
+ ],
  "parent": "CL8",
  "part": "CL9",
  "planned_by": "orchestrator",
  "session_id": "session_01AE1HGh4JxgdeZK6pUvd46d",
- "status": "in progress",
+ "status": "done",
  "title": "Checks that must be able to fail (breaks)",
  "train": "cli",
- "updated_at": "2026-11-23T01:57:49Z"
+ "updated_at": "2026-11-23T02:06:21Z",
+ "verdict": "Posts now carry a `breaks` field, and `kit.py done` refuses any check that still passes once breaks is applied in a throwaway copy."
 }
