@@ -189,6 +189,9 @@ function overflows() {
     const tab = [...document.querySelectorAll('button, [role=tab]')].find((b) => /^\s*Trains\s*$/i.test(b.textContent || '') || b.dataset.tab === 'trains');
     if (tab) tab.click();
     await new Promise((r) => setTimeout(r, 400));
+    // CL27: the Trains view is each train's task list (the old map's tasklist button opened the same list as a window)
+    const inl = [...document.querySelectorAll('.kit-tl-inline')].find((r) => /CL3/.test(r.textContent || ''));
+    if (inl) return inl.textContent;
     const row = [...document.querySelectorAll('.tnet-row')].find((r) => /Claude Code CLI runtime/.test(r.textContent || ''));
     const btn = row && row.querySelector('.train-tl-btn'); if (!btn) return 'no tasklist button on the cli train';
     btn.click(); await new Promise((r) => setTimeout(r, 300));

@@ -25,6 +25,7 @@ SUITES = [
     ("kit/board/test_page_layout.js", [shutil.which("node") or "node", "kit/board/test_page_layout.js"]),
     # CL23: a thread nested deep opens without freezing the page (it was nested grids: seconds per layout)
     ("kit/board/test_page_speed.js", [shutil.which("node") or "node", "kit/board/test_page_speed.js"]),
+    ("kit/board/test_page_ux.js", [shutil.which("node") or "node", "kit/board/test_page_ux.js"]),
 ]
 
 

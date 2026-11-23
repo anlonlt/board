@@ -7,5 +7,5 @@ When making any change to `kit/`, `scripts/`, `install.py`, or `tests/` in this 
    ```bash
    python3 scripts/run_all_tests.py
    ```
-   Confirm `0 failed` across all suites (`tests/`, `kit/board/test_board_local.py`, `kit/board/test_strings.py`, `kit/board/test_kit_cards.py`, `test_install.py`, `test_install_bd11.py`, `kit/board/test_page_layout.js`: no text runs off screen or is cut, at a phone and a desktop width; `kit/board/test_page_speed.js`: a deep thread opens without freezing).
+   Confirm `0 failed` across all suites (`tests/`, `kit/board/test_board_local.py`, `kit/board/test_strings.py`, `kit/board/test_kit_cards.py`, `test_install.py`, `test_install_bd11.py`, `kit/board/test_page_layout.js`: no text runs off screen or is cut, at a phone and a desktop width; `kit/board/test_page_speed.js`: a deep thread opens without freezing; `kit/board/test_page_ux.js`: the CL27 phone checks: tap highlight, header rows, composer and keyboard, full sheets, Trains as task lists).
 2. Never overwrite a non-empty `_dashboard` with empty or placeholder rows (`kit/board/kit_cards.py` enforces this safety guard unless `--force` is passed).
