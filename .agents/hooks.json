@@ -17,6 +17,15 @@
         ]
       },
       {
+        "matcher": "invoke_subagent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I hooks/kit/kit_guard.py"
+          }
+        ]
+      },
+      {
         "matcher": "send_message",
         "hooks": [
           {
@@ -34,6 +43,10 @@
       {
         "type": "command",
         "command": "python3 -I hooks/kit/kit_pre_compact.py"
+      },
+      {
+        "type": "command",
+        "command": "python3 -I hooks/kit/kit_web_save.py"
       },
       {
         "type": "command",
