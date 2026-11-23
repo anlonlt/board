@@ -1122,10 +1122,12 @@ class BoardStore:
             self.notify_sse(coll, doc_id)
         return results, None
 
-    def save_blob(self, raw_bytes, content_type="application/octet-stream", filename="file"):
+    def save_blob(self, raw_bytes, content_type="application/octet-stream", filename="file", blob_id=None):
         if len(raw_bytes) > 20 * 1024 * 1024:
             raise ValueError("blob exceeds 20 MB")
-        blob_id = hashlib.md5(raw_bytes + os.urandom(8)).hexdigest()
+        # CL30: `kit.py artifact load` keeps an Artifact picture's own id, so the posts' /_blob/<id> links open here
+        if not (blob_id and re.fullmatch(r"[0-9a-f]{32}", blob_id)):
+            blob_id = hashlib.md5(raw_bytes + os.urandom(8)).hexdigest()
         with open(os.path.join(self.blob_dir, blob_id), "wb") as fh:
             fh.write(raw_bytes)
         meta = {"id": blob_id, "contentType": content_type, "name": filename, "size": len(raw_bytes)}
@@ -3178,8 +3180,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 raw = self.rfile.read(length)
                 ctype = self.headers.get("Content-Type") or "application/octet-stream"
                 fname = urllib.parse.unquote(self.headers.get("X-Filename") or "file")
+                want = (self.headers.get("X-Blob-Id") or "").strip().lower()
+                if want and (self._require_auth(parsed, min_role="admin") is None):
+                    return
                 try:
-                    meta = store.save_blob(raw, content_type=ctype, filename=fname)
+                    meta = store.save_blob(raw, content_type=ctype, filename=fname, blob_id=want or None)
                 except ValueError as e:
                     self._send_json(413, {"error": str(e), "code": "too_large"})
                     return

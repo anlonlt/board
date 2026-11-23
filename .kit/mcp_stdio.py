@@ -170,6 +170,41 @@ class MCPServer:
             return False, (r.stderr or r.stdout or ("exit %d" % r.returncode)).strip()
         return True, r.stdout.strip()
 
+    # CL30: an MCP call passes no agy hook, so the brief guard (kit_brief_guard.py, CL28) is held here: board_resume
+    # stamps .kit/run/brief/last, and the orchestrator's board_reply waits for a stamp younger than kit.brief.max_age_min
+    def _brief_dir(self):
+        return os.path.join(self.root, ".kit", "run", "brief")
+
+    def _stamp_brief(self):
+        from datetime import datetime, timezone
+        try:
+            os.makedirs(self._brief_dir(), exist_ok=True)
+            with open(os.path.join(self._brief_dir(), "last"), "w", encoding="utf-8") as fh:
+                fh.write(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "\n")
+        except OSError:
+            pass
+
+    def _brief_refusal(self, args):
+        role = os.environ.get("KIT_ROLE") or ""
+        if str(args.get("sender") or "") != "orchestrator" and role != "orchestrator":
+            return ""
+        try:
+            with open(os.path.join(self.root, ".kit", "config.json"), encoding="utf-8") as fh:
+                cap = float(((json.load(fh).get("kit") or {}).get("brief") or {}).get("max_age_min", 15))
+        except (OSError, ValueError, TypeError, AttributeError):
+            cap = 15.0
+        try:
+            import time
+            age = (time.time() - os.path.getmtime(os.path.join(self._brief_dir(), "last"))) / 60.0
+        except OSError:
+            age = None
+        if age is not None and age <= cap:
+            return ""
+        return ("NOT SENT: you answer the owner only from a fresh read of the board (the kit's guard, CL28/CL30). Last "
+                "read: %s. Call board_resume first (every train's open steps, questions, the owner's unanswered "
+                "comments), answer from it, then board_reply again." % (
+                    "never" if age is None else "%d min ago (more than %d)" % (age, cap)))
+
     def _cli_base_args(self):
         out = []
         if self.board_url:
@@ -232,7 +267,10 @@ class MCPServer:
             cmd = ["resume"]
             if args.get("cli"):
                 cmd.extend(["--cli", str(args["cli"])])
-            return self._run_py(self.kit_py, cmd)
+            ok, out = self._run_py(self.kit_py, cmd)
+            if ok:
+                self._stamp_brief()
+            return ok, out
         if name == "board_train":
             cmd = ["train", str(args["target"])]
             if args.get("zoom"):
@@ -241,6 +279,9 @@ class MCPServer:
                 cmd.append("--json")
             return self._run_py(self.kit_py, cmd)
         if name == "board_reply":
+            why = self._brief_refusal(args)
+            if why:
+                return False, why
             cmd = self._cli_base_args() + ["reply", str(args["post_id"]), "--text", str(args["text"]), "--from", str(args.get("sender") or "agent")]
             if args.get("comment_id"):
                 cmd.extend(["--comment-id", str(args["comment_id"])])

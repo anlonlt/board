@@ -920,6 +920,10 @@ def artifact_pull(full=False):
         else:
             lines.append("- `ArtifactData` `list`, `url` %s, `collection: \"%s\"`, `query: {limit: 1000}`, `out_dir: \"%s\"`; "
                          "while it returns a `next_cursor`, again with `query.cursor` set to it." % (board, c, d))
+    # CL30: the map of the files already in the Artifact ({path: /_blob/<id>}), so `load` puts the pictures the posts
+    # name in the local copy from this repo's own files, without downloading them
+    lines.append("- `ArtifactData` `get`, `url` %s, `collection: \"%skit_docs\"`, `doc_id: \"_index\"`, `out_dir: \"%s\"` "
+                 "(the files' map; \"No document\" is fine)." % (board, pre, d))
     if not pre:
         # CL24: the boards attached to this one (repos/<id>/... in the same Artifact) come with the same pull, so the
         # kit way covers them too (the orchestrator guard refuses a raw list of repos/<id>/posts|comments)
@@ -1014,7 +1018,88 @@ def artifact_load(url=None, token=None, in_dir=None):
     st["not_there"] = sorted(stale)
     st["loaded_at"] = zstamp(datetime.now(timezone.utc))
     _art_save(st)
-    return {"taken": taken, "kept_here": kept, "merged": merged, "not_there": len(stale)}
+    restored, missing = _load_blobs(url, token, in_dir)
+    return {"taken": taken, "kept_here": kept, "merged": merged, "not_there": len(stale), "blobs_restored": restored,
+            "blobs_missing": missing}
+
+
+BLOB_RE = re.compile(r"/_blob/([0-9a-f]{32})\b")
+BLOB_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+              ".svg": "image/svg+xml", ".pdf": "application/pdf", ".mp4": "video/mp4", ".webm": "video/webm"}
+
+
+def _local_blob(url, bid, token):
+    try:
+        req = urllib.request.Request(url.rstrip("/") + "/_blob/" + bid, headers={"X-Kit-Token": token or "", "Range": "bytes=0-0"})
+        with urllib.request.urlopen(req, timeout=10):
+            return True
+    except Exception:  # noqa: BLE001 - 404 or no server: not here
+        return False
+
+
+def _put_blob(url, bid, raw, name, token):
+    req = urllib.request.Request(url.rstrip("/") + "/_api/blobs", data=raw, method="POST", headers={
+        "X-Kit-Token": token or "", "X-Blob-Id": bid, "X-Filename": urllib.parse.quote(name),
+        "Content-Type": BLOB_TYPES.get(os.path.splitext(name)[1].lower(), "application/octet-stream")})
+    with urllib.request.urlopen(req, timeout=30) as res:
+        meta = json.load(res)
+    if meta.get("id") != bid:          # a board server older than CL30 saves it under a new id: not restored
+        raise Conflict("the local board server kept no blob id (restart it with the current kit)")
+    return meta
+
+
+def _load_blobs(url, token, in_dir):
+    """CL30 (Harmonize's parity check: a local board from git showed none of the Artifact's pictures, /_blob 404): every
+    /_blob/<id> the posts and comments here name is put in the local blob store, from the file `Artifact` `read`
+    saved (<in>/blobs/<id>.<ext>) or from this repo's file the Artifact's map names; the rest are returned, for the
+    read calls `artifact_blobs_text` prints."""
+    ids = []
+    for coll in ART_COLLS:
+        for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
+            for bid in BLOB_RE.findall(json.dumps(row.get("data") or {})):
+                if bid not in ids:
+                    ids.append(bid)
+    if not ids:
+        return 0, []
+    by_id = {}
+    idx = _read_json(os.path.join(in_dir, *(_art_prefix() + "kit_docs").split("/"), "_index.json")) or {}
+    idx = idx.get("data") if isinstance(idx.get("data"), dict) else idx
+    kas = _kas()
+    fst = kas.load_files_state(ROOT, _art_into()) if kas else {"assets": {}}
+    amap = dict((idx.get("assets") or {}) if isinstance(idx, dict) else {})
+    amap.update({k: v.get("url") for k, v in (fst.get("assets") or {}).items() if isinstance(v, dict) and v.get("url")})
+    for path, u in amap.items():
+        m = BLOB_RE.search(str(u or ""))
+        if m:
+            by_id[m.group(1)] = path
+    restored, missing = 0, []
+    for bid in ids:
+        if _local_blob(url, bid, token):
+            continue
+        got = sorted(glob.glob(os.path.join(in_dir, "blobs", bid + ".*")) + glob.glob(os.path.join(in_dir, "blobs", bid)))
+        src = got[0] if got else (os.path.join(ROOT, by_id[bid]) if bid in by_id else "")
+        if src and os.path.isfile(src):
+            try:
+                _put_blob(url, bid, open(src, "rb").read(), os.path.basename(by_id.get(bid) or src), token)
+                restored += 1
+                continue
+            except Exception:  # noqa: BLE001 - counted missing, named below
+                pass
+        missing.append(bid)
+    return restored, missing
+
+
+def artifact_blobs_text(r):
+    """The `Artifact` `read` calls that bring the pictures this copy still lacks, then load again."""
+    miss = r.get("blobs_missing") or []
+    if not miss:
+        return ""
+    d = os.path.join(_art_dir(), "in", "blobs")
+    lines = ["%d picture(s) the posts name are not in this copy yet: for each, one `Artifact` `read` (one asset a call, "
+             "its id as `path`; it saves <id>.<ext>); then `python3 -I .kit/kit.py artifact load` again:" % len(miss)]
+    for bid in miss:
+        lines.append("- `Artifact` `read` %s" % json.dumps({"url": artifact_url(), "path": bid, "out_dir": d}))
+    return "\n".join(lines) + "\n"
 
 
 def stale_copy():
@@ -1082,11 +1167,12 @@ def artifact_push(url=None, token=None, out_dir=None):
     for f in glob.glob(os.path.join(out_dir, "batch-*.json")) + glob.glob(os.path.join(out_dir, "docs", "*.json")):
         os.remove(f)
     st = _art_state()
-    entries, need_pin = [], []
+    entries, need_pin, every = [], [], []
     for coll in ART_COLLS:
         res = _board_request(url, "db/%s" % coll, token=token)
         for row in res.get("docs") or []:
             did, data = row["id"], row.get("data") or {}
+            every.append(data)
             base = _read_json(_base_path(coll, did))
             if base == data:
                 continue
@@ -1103,6 +1189,20 @@ def artifact_push(url=None, token=None, out_dir=None):
             write_doc(fp, data)
             e["file_path"] = fp
             entries.append(e)
+    # CL30 (the owner, 10:3x: "push must also send every file a post references"): the files of EVERY post and comment
+    # here, not only of those sent now; the documents are mirrored by this push itself (no second command)
+    files_text, mirror = _artifact_files(every, os.path.join(out_dir, "files"),
+                                         changed=[_read_json(e["file_path"]) for e in entries])
+    pending = {}
+    for did, ref, sha, data, ver in mirror:
+        fp = os.path.join(os.path.abspath(out_dir), "docs", "%04d.json" % len(entries))
+        write_doc(fp, data)
+        e = {"op": "set", "collection": _art_prefix() + "kit_docs", "doc_id": did, "file_path": fp}
+        if ver:
+            e["if_version"] = int(ver)
+        entries.append(e)
+        pending[did] = {"ref": ref, "sha": sha}
+    write_doc(os.path.join(out_dir, "kit_docs.json"), pending)
     batches, cur, size = [], [], 0
     for e in entries:
         n = os.path.getsize(e["file_path"]) + 200
@@ -1116,27 +1216,59 @@ def artifact_push(url=None, token=None, out_dir=None):
         p = os.path.join(out_dir, "batch-%02d.json" % (i + 1))
         write_doc(p, b)
         paths.append(p)
-    files_text = _artifact_files([_read_json(e["file_path"]) for e in entries], os.path.join(out_dir, "files"))
     return {"batches": paths, "need_pin": need_pin, "writes": len(entries), "board": artifact_url(), "files": files_text}
 
 
-def _artifact_files(docs, out):
-    """CL10 (the owner, 2026-11-23: "All the pictures don't show up here"): the files these posts and comments name that
-    the board's viewers open, put in the Artifact with the posts (kit_artifact_sync.py files: uploads, then files-sent)."""
-    for d in (os.path.join(ROOT, "kit", "claude"), os.path.join(ROOT, ".kit")):   # the kit itself, else an install
+def _kas():
+    """kit_artifact_sync.py: the kit's own (kit/claude), an install's (.kit), or the one beside this kit.py."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (os.path.join(ROOT, "kit", "claude"), os.path.join(ROOT, ".kit"), os.path.join(os.path.dirname(here), "kit", "claude"), here):
         if os.path.isfile(os.path.join(d, "kit_artifact_sync.py")):
             spec = importlib.util.spec_from_file_location("kit_artifact_sync_files", os.path.join(d, "kit_artifact_sync.py"))
             kas = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(kas)
-            break
-    else:
-        return ""
-    plan = kas.plan_files(ROOT, [x for x in docs if isinstance(x, dict)], kas.load_files_state(ROOT, ""))
-    if not (plan["upload"] or plan["mirror"] or plan["links"]):
-        return ""
+            return kas
+    return None
+
+
+def _art_into():
+    """The attached board's id (repos/<id>/ prefix) for kit_artifact_sync's --into, '' for a board of its own."""
+    m = re.match(r"^repos/([^/]+)/$", _art_prefix())
+    return m.group(1) if m else ""
+
+
+def _artifact_files(docs, out, changed=None):
+    """CL10 (the owner, 2026-11-23: "All the pictures don't show up here"): the files these posts and comments name that
+    the board's viewers open. (text, mirror): the steps for the pictures to upload (`Artifact` `publish` `asset: true`,
+    then `kit_artifact_sync.py files-sent`), and CL30, the documents to mirror in this push's own batches:
+    [(doc_id, path, sha, document, if_version)]."""
+    kas = _kas()
+    if kas is None:
+        return "", []
+    into = _art_into()
+    st = kas.load_files_state(ROOT, into)
+    # the Artifact's own map (pulled with the board): a file mapped there is not uploaded again from a new container
+    idx = _read_json(os.path.join(_art_dir(), "in", *(_art_prefix() + "kit_docs").split("/"), "_index.json")) or {}
+    idx = idx.get("data") if isinstance(idx.get("data"), dict) else idx
+    for path, u in ((idx.get("assets") or {}) if isinstance(idx, dict) else {}).items():
+        full = os.path.join(ROOT, path)
+        if path not in st["assets"] and u and os.path.isfile(full):
+            st["assets"][path] = {"url": u, "sha": kas.sha256_of(full)}
+    plan = kas.plan_files(ROOT, [x for x in docs if isinstance(x, dict)], st)
+    mirror = []
+    for ref in plan["mirror"]:
+        data = kas.mirror_doc(ROOT, ref)
+        if data:
+            did = kas.doc_id(ref)
+            mirror.append((did, ref, kas.sha256_of(os.path.join(ROOT, ref)), data, (st["docs"].get(did) or {}).get("version")))
+    plan["mirror"] = []                                 # in the push's batches, not a second step
+    if changed is not None:                             # "stays a repo link": said for the posts sent now only
+        plan["links"] = kas.plan_files(ROOT, [x for x in changed if isinstance(x, dict)], st)["links"]
+    if not (plan["upload"] or plan["links"]):
+        return "", mirror
     os.makedirs(out, exist_ok=True)
     write_doc(os.path.join(out, "plan.json"), plan)
-    return kas.plan_text(plan, artifact_url() or "<the board's url>", out, "")
+    return kas.plan_text(plan, artifact_url() or "<the board's url>", out, into), mirror
 
 
 def artifact_push_text(r):
@@ -1162,10 +1294,30 @@ def artifact_push_text(r):
     return "\n".join(out) + "\n"
 
 
+def _files_sent(batch, batch_path):
+    """CL30: the documents a push mirrored (kit_docs), recorded with their version once their batch is sent."""
+    docs = [e for e in batch if str(e.get("collection") or "").endswith("kit_docs") and e.get("doc_id") != "_index"]
+    kas = _kas() if docs else None
+    if not kas:
+        return
+    pending = _read_json(os.path.join(os.path.dirname(os.path.abspath(batch_path)), "kit_docs.json")) or {}
+    into = _art_into()
+    fst = kas.load_files_state(ROOT, into)
+    for e in docs:
+        fst["docs"][e["doc_id"]] = {"version": int(e.get("if_version") or 0) + 1,
+                                    "sha": (pending.get(e["doc_id"]) or {}).get("sha", "")}
+    p = kas.files_state_path(ROOT, into)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    write_doc(p, fst)
+
+
 def artifact_sent(batch_path):
     st = _art_state()
     batch = _read_json(batch_path) or []
+    _files_sent(batch, batch_path)
     for e in batch:
+        if str(e.get("collection") or "").endswith("kit_docs"):
+            continue
         coll = _art_key(e["collection"])
         key = "%s/%s" % (coll, e["doc_id"])
         if e.get("op") == "delete":
@@ -1190,6 +1342,18 @@ def artifact_pin(pairs):
     for p in pairs:
         k, _, v = p.partition("=")
         k = _art_key(k)
+        if k.startswith("kit_docs/") and v.strip().isdigit():
+            # CL30: a mirrored document's version lives with the files state (a refused push names it)
+            kas = _kas()
+            if kas:
+                fst = kas.load_files_state(ROOT, _art_into())
+                fst["docs"].setdefault(k[len("kit_docs/"):], {})["version"] = int(v)
+                fst["docs"][k[len("kit_docs/"):]]["sha"] = ""          # its content is unknown: sent again
+                fp = kas.files_state_path(ROOT, _art_into())
+                os.makedirs(os.path.dirname(fp), exist_ok=True)
+                write_doc(fp, fst)
+                n += 1
+            continue
         if k.count("/") == 1 and v.strip().isdigit():
             st["versions"][k] = int(v)
             n += 1
@@ -3846,6 +4010,9 @@ def main(argv=None):
                 print("Loaded from the Artifact: %d taken, %d kept from here (unsent), %d merged field by field. "
                       "The scripts now read and write the local copy; send its changes with `kit.py artifact push`." % (
                           r["taken"], r["kept_here"], r["merged"]))
+                if r.get("blobs_restored"):
+                    print("Pictures put in the local copy: %d." % r["blobs_restored"])
+                print(artifact_blobs_text(r), end="")
             elif a.action == "push":
                 print(artifact_push_text(artifact_push(url=a.board_url, token=a.token)), end="")
             elif a.action == "sent":

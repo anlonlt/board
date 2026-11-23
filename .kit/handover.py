@@ -155,7 +155,8 @@ def main():
 
     if cli == "web":
         # CL26: a script cannot start a cloud session, and killing CLAUDE_PID would end this one with no successor.
-        call = {"title": "%s %d" % (name, gen), "prompt": prompt}
+        call = {"title": "%s %d" % (name, gen), "prompt": prompt,
+                "tags": ["orchestrator" if a.role == "orchestrator" else "board-clerk"]}   # CL30: the guard reads them
         plan = {"how": "web", "cli": "web", "create_session": call}
         if a.dry_run:
             print(json.dumps(plan, indent=1))

@@ -101,7 +101,7 @@ class PostTool(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp())
         os.environ["KIT_ARTIFACT_DIR"] = str(tmp / "art")
         self.addCleanup(os.environ.pop, "KIT_ARTIFACT_DIR", None)
-        txt = kit._artifact_files([{"images": ["docs/cl10/a1-sections-default-phone.png"], "body": "x"}], str(tmp / "files"))
+        txt, _ = kit._artifact_files([{"images": ["docs/cl10/a1-sections-default-phone.png"], "body": "x"}], str(tmp / "files"))  # CL30: (text, mirror)
         self.assertIn("docs/cl10/a1-sections-default-phone.png", txt)
         self.assertIn("`asset: true`", txt)
         self.assertIn("Save what each call returns", kit.artifact_push_text({"board": "u", "need_pin": [], "batches": [], "files": txt}))

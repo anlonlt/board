@@ -394,15 +394,27 @@ def post_refs(doc):
 
 
 def files_state_path(repo, into):
-    base = os.environ.get("KIT_ARTIFACT_DIR") or os.path.join(repo, ".kit", "run", "artifact")   # kit.py's Artifact copy
-    return os.path.join(base, "files-%s.json" % (repo_id(into) if into else "primary"))
+    """What the Artifact holds of this repo's files: {assets: {path: {url, sha}}, docs: {doc_id: {version, sha}}}.
+    CL30: kept in git (.kit/artifact-files/), not in .kit/run/: a new web container used to start with none of it and
+    mirrored every document again without versions (refused) or never. $KIT_ARTIFACT_DIR (tests) keeps it there."""
+    name = "files-%s.json" % (repo_id(into) if into else "primary")
+    if os.environ.get("KIT_ARTIFACT_DIR"):
+        return os.path.join(os.environ["KIT_ARTIFACT_DIR"], name)
+    return os.path.join(repo, ".kit", "artifact-files", name)
 
 
 def load_files_state(repo, into):
-    try:
-        st = json.load(open(files_state_path(repo, into), encoding="utf-8"))
-    except (OSError, ValueError):
-        st = {}
+    st = {}
+    run = os.path.join(repo, ".kit", "run", "artifact")
+    cands = [files_state_path(repo, into), os.path.join(run, "files-%s.json" % (repo_id(into) if into else "primary"))]
+    if into and attached_prefix(repo) == "repos/%s/" % repo_id(into):
+        cands.append(os.path.join(run, "files-primary.json"))   # before CL30 an attached repo's own state was "primary"
+    for p in cands:                                         # the state of a kit before CL30, once
+        try:
+            st = json.load(open(p, encoding="utf-8"))
+            break
+        except (OSError, ValueError):
+            continue
     st.setdefault("assets", {}); st.setdefault("docs", {})
     return st
 
@@ -474,6 +486,22 @@ def plan_text(plan, board, out, into):
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+def mirror_doc(repo, ref, kit=""):
+    """The kit_docs document the page's reader shows for a repo document (as the local server answers it), cut to fit
+    a db document; None when the server cannot read it."""
+    here = os.path.dirname(os.path.abspath(__file__))       # kit/claude in the kit, .kit in an install
+    bs = server(kit or (os.path.dirname(os.path.dirname(here)) if os.path.basename(here) == "claude" else here))
+    res, err = bs.read_repo_doc(repo, ref)
+    if err or not res:
+        return None
+    if res.get("kind") == "html":
+        res["url"] = ""
+    while len(json.dumps(res, ensure_ascii=False).encode("utf-8")) > MAX_DOC:
+        res["content"] = res["content"][:int(len(res["content"]) * 0.8)]
+        res["cut"] = True
+    return res
+
+
 def read_docs(paths):
     docs = []
     for p in paths:
@@ -529,17 +557,10 @@ def cmd_files_sent(a):
                              "then pass --index <that file> --index-version <its version>; or --index-missing if the get "
                              "says there is none. Nothing was written." % prefix(a))
         writes.append(e)
-    here = os.path.dirname(os.path.abspath(__file__))       # kit/claude in the kit, .kit in an install
-    bs = server(a.kit or (os.path.dirname(os.path.dirname(here)) if os.path.basename(here) == "claude" else here))
     for ref in list(plan.get("mirror") or []) + list(up):
-        res, err = bs.read_repo_doc(a.repo, ref)
-        if err or not res:
+        res = mirror_doc(a.repo, ref, a.kit)
+        if not res:
             continue
-        if res.get("kind") == "html":
-            res["url"] = ""
-        while len(json.dumps(res, ensure_ascii=False).encode("utf-8")) > MAX_DOC:
-            res["content"] = res["content"][:int(len(res["content"]) * 0.8)]
-            res["cut"] = True
         did = doc_id(ref)
         e = {"op": "set", "collection": prefix(a) + "kit_docs", "doc_id": did, "data": res}
         v = (st["docs"].get(did) or {}).get("version")

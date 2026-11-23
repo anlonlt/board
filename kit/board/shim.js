@@ -4712,7 +4712,14 @@
             }
           }
         }
-      }, function () { card.remove(); });
+      }, function () {
+        /* CL30 (Harmonize's parity check: "failed § embeds vanish silently"): the card stays and says what is missing */
+        body.textContent = "";
+        var miss = document.createElement("div"); miss.className = "kit-embed-missing";
+        miss.style.cssText = "padding:8px 10px;font-size:13px;opacity:.75";
+        miss.textContent = "Not on this board yet: " + fp + (sec ? " \u00a7 " + sec : "") + " (the session that wrote this post sends it with kit.py artifact push).";
+        body.appendChild(miss);
+      });
     }
 
     if (!isAudio && !isVideo && !isPdf) {
