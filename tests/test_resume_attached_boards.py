@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASE = "473dea4"   # scripts/kit.py before CL20 (main it was merged with): the control compares against it byte for byte
+BASE = "327aee3"   # scripts/kit.py before CL20 (main it was merged with): the control compares against it byte for byte
 
 
 def load(name, path):
@@ -62,9 +62,13 @@ class ResumeReadsAttachedBoards(unittest.TestCase):
         make_db(self.db, HOST)
         self.art = os.path.join(self.tmp, "artifact")
         os.makedirs(os.path.join(self.art, "in"))
-        self.env = mock.patch.dict(os.environ, {"KIT_ARTIFACT_DIR": self.art})
+        self.env = mock.patch.dict(os.environ, {"KIT_ARTIFACT_DIR": self.art, "KIT_CLI": "claude"})
         self.env.start()
         self.addCleanup(self.env.stop)
+        # hermetic: attached clones are looked for next to ROOT; a real `board` clone beside the checkout must not count
+        self.host_root = os.path.join(self.tmp, "host")
+        os.makedirs(self.host_root)
+        self.root = mock.patch.object(self.kit, "ROOT", self.host_root)
 
     def cfg(self, portfolio=None):
         c = {"project": "Harmonize", "fields": {"owner": "owner", "clerk": "clerk"}}
@@ -90,7 +94,7 @@ class ResumeReadsAttachedBoards(unittest.TestCase):
             dump(ind, "repos/board/posts", did, d)
         for did, d in ATT_COMMENTS.items():
             dump(ind, "repos/board/comments", did, d)
-        with self.cfg():
+        with self.cfg(), self.root:
             out = self.kit.resume(self.tmp, db_path=self.db, alive={"someone-else"})
         print("\n--- resume, Artifact mode ---\n" + out)
         self.check(out)
@@ -100,11 +104,30 @@ class ResumeReadsAttachedBoards(unittest.TestCase):
         clone = os.path.join(self.tmp, "board")
         subprocess.run(["git", "init", "-q", clone], check=True)
         make_db(os.path.join(clone, ".kit", "board_data", "board.db"), {"posts": ATT_POSTS, "comments": ATT_COMMENTS})
-        with self.cfg([{"name": "board", "github": "anlonlt/board", "path": clone}]):
+        with self.cfg([{"name": "board", "github": "anlonlt/board", "path": clone}]), self.root:
             out = self.kit.resume(self.tmp, db_path=self.db, alive=set())
         print("\n--- resume, git mode ---\n" + out)
         self.check(out)
         self.assertIn("Read from its clone %s." % clone, out)
+
+    def test_stale_portfolio_entry_is_named_not_listed(self):
+        """A portfolio board with no clone and nothing in the local copy: one line, no empty heading."""
+        with self.cfg([{"name": "Board Demo", "path": "/nowhere/board-demo"}]), self.root:
+            out = self.kit.resume(self.tmp, db_path=self.db, alive=set())
+        self.assertNotIn("## Attached board board-demo", out)
+        self.assertIn("(Not read: board-demo:", out)
+
+    def test_agy_keeps_its_line_and_names_the_board(self):
+        ind = os.path.join(self.art, "in")
+        for did, d in ATT_POSTS.items():
+            dump(ind, "repos/board/posts", did, d)
+        with self.cfg(), self.root, mock.patch.dict(os.environ, {"KIT_CLI": "agy"}):
+            out = self.kit.resume(self.tmp, db_path=self.db)
+        self.assertIn("Resume in agy:", out)
+        self.assertIn("session dead-cl9 (unknown)", out)
+        self.assertIn("relaunch", out)
+        self.assertIn('Each step belongs to a board: this one ("harmonize")', out)
+        self.assertNotIn("TaskCreate", out)
 
     def test_control_no_attached_board_byte_for_byte(self):
         """No attached board: the output is the one the kit printed before CL20, byte for byte."""
@@ -126,10 +149,11 @@ class ResumeReadsAttachedBoards(unittest.TestCase):
         db2 = os.path.join(self.tmp, "host2.db")
         make_db(db2, {"posts": posts})
         for db in (self.db, db2):
-            with self.cfg(), mock.patch.object(old, "_kit_config", return_value={"project": "Harmonize"}):
-                a = old.resume(self.tmp, db_path=db, alive={"s1"})
-                b = self.kit.resume(self.tmp, db_path=db, alive={"s1"})
-            self.assertEqual(a, b)
+            for cli in ("claude", "agy"):
+                with self.cfg(), mock.patch.object(old, "_kit_config", return_value={"project": "Harmonize"}):
+                    a = old.resume(self.tmp, db_path=db, alive={"s1"}, cli=cli)
+                    b = self.kit.resume(self.tmp, db_path=db, alive={"s1"}, cli=cli)
+                self.assertEqual(a, b, cli)
 
 
 if __name__ == "__main__":

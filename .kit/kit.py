@@ -2261,7 +2261,9 @@ def _attached_boards():
                 b["branches"] = [x.split("/", 1)[1] for x in rb.splitlines() if x.startswith("origin/") and "HEAD" not in x]
             except (OSError, subprocess.SubprocessError):
                 pass
-    return boards
+    shown = [b for b in boards if b["clone"] or b["posts"] or b["comments"]]
+    skipped = [b["id"] for b in boards if b not in shown]
+    return shown, skipped
 
 
 def _attached_step_detail(board, pid, p, stopped):
@@ -2324,9 +2326,9 @@ def resume(m, db_path=None, alive=None, cli=None):
     except Exception as e:  # the copy may be mid-sync; the orchestrator can rerun `kit.py open`
         out.append("(could not read: %s)" % e)
     try:
-        boards = _attached_boards()
+        boards, skipped = _attached_boards()
     except Exception as e:  # never lose the host's resume over an attached board
-        boards = []
+        boards, skipped = [], []
         out.append("")
         out.append("(attached boards: could not read: %s)" % e)
     for b in boards:
@@ -2345,6 +2347,10 @@ def resume(m, db_path=None, alive=None, cli=None):
         except Exception as e:
             ol = ["(could not read: %s)" % e]
         out.extend(["[repo %s] %s" % (b["id"], x) for x in ol] or ["nothing of his open on %s" % b["id"]])
+    if skipped:
+        out.append("")
+        out.append("(Not read: %s: listed as attached, but no clone here and nothing of it in the local copy.)"
+                   % ", ".join(skipped))
     if boards and artifact_url() and not glob.glob(os.path.join(_art_dir(), "in", "repos", "*")):
         out.append("")
         out.append("(Comments written on the Artifact page on an attached board live only there: `ArtifactData` `list`, `url` "
@@ -2356,7 +2362,10 @@ def resume(m, db_path=None, alive=None, cli=None):
                    "Plan and update steps with `python3 -I .kit/kit.py step new|start|complete|drop` (the train IS your "
                    "task list). A step whose session is not running and not done: check its branch (`git branch -a`) "
                    "and continue it with `invoke_subagent(..., Workspace=\"share\")` or ask the owner."
-                   + (" An attached board's step: continue it from that board's clone, with its relaunch line." if boards else ""))
+                   + (" Each step belongs to a board: this one (\"%s\") or the attached board named in its heading; "
+                      "an attached board's step is planned, updated and continued in that board's clone (its relaunch "
+                      "line), and a reply to his comment there goes to repos/<id>/comments."
+                      % _repo_id(_kit_config().get("project") or os.path.basename(ROOT)) if boards else ""))
     elif boards:
         out.append("Rebuild your task list: one TaskCreate per open step above, subject \"<PART> <title>\", metadata "
                    "{\"board\": \"<id>\", \"train\": \"<train>\", \"part\": \"<PART>\"} (board: this board's id \"%s\", or the "
