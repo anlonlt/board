@@ -215,6 +215,43 @@ class Adopt(unittest.TestCase):
         self.assertNotIn("Train A (", out)  # A3's posts are done: no open step
 
 
+class ResumeCarriesWhatTheBriefAdded(unittest.TestCase):
+    """The owner, 2026-11-23: "fold them in to resume": question age, default and what each blocks; the owner's recent
+    decisions; a stale _orchestrator id."""
+
+    def setUp(self):
+        kit = load_kit()
+        posts = {k: dict(v, train="harmony") for k, v in POSTS.items()}
+        kit._load_board_docs = lambda m, db_path=None: (posts, COMMENTS)
+        kit._attached_boards = lambda: ([], [])
+        self.out = kit.resume("/nonexistent", alive=set(), cli="claude", session="test-cl28")
+
+    def section(self, title):
+        return self.out.split("## " + title, 1)[1].split("\n## ", 1)[0]
+
+    def test_open_questions_with_age_default_and_what_they_block(self):
+        s = self.section("Open questions")
+        self.assertIn("(2)", s.splitlines()[0])
+        self.assertIn("3d 7h old", s)
+        self.assertIn("default: Buy nothing now; HL6 runs now", s)
+        vr5 = [l for l in s.splitlines() if "VR5" in l][0]
+        self.assertIn("blocks HL6 (held: waits for VR5)", vr5)
+
+    def test_the_owners_recent_decisions_only(self):
+        s = self.section("The owner's decisions")
+        self.assertIn("already decided to close that train", s)
+        self.assertIn("Like", s)
+        self.assertNotIn("an old one", s)
+        self.assertNotIn("an answer", s)
+
+    def test_a_stale_orchestrator_id_is_flagged(self):
+        self.assertIn("MISMATCH: `_orchestrator` names session session_old, you are test-cl28", self.out)
+
+    def test_brief_is_gone(self):
+        r = subprocess.run([sys.executable, "-I", KIT, "brief"], capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0)
+
+
 class AdoptOnAnArtifactBoard(unittest.TestCase):
     """A web container: adopt goes the kit's own way (the local board started as `artifact load` does, then
     `artifact push`), never a write path of its own."""

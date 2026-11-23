@@ -2949,6 +2949,80 @@ def _train_key(pid, p):
     return mm.group(1).upper() if mm else ""
 
 
+def _age(stamp, now):
+    try:
+        d = now - iso(stamp)
+    except (ValueError, TypeError, AttributeError):
+        return "?"
+    h = int(d.total_seconds() // 3600)
+    return "%dd %dh" % (h // 24, h % 24) if h >= 24 else "%dh" % h if h else "%dmin" % max(0, int(d.total_seconds() // 60))
+
+
+def _short(s, n):
+    s = re.sub(r"\s+", " ", str(s or "")).strip()
+    return s if len(s) <= n else s[:n - 1].rstrip() + "\u2026"
+
+
+def _resume_extras(posts, comments, now=None, days=3, limit=12, session=None):
+    """CL28 (the owner: "fold them in to resume"): what the task list does not show. The `_orchestrator` post naming
+    another session (the clerk sends his words there: a stale id made it start fresh orchestrators), each open
+    question's age, default and the steps that name it, and the owner's decisions of the last `days` days (comments,
+    Likes, answers; a chat decision is the comment the orchestrator wrote for it)."""
+    now = now or datetime.now(timezone.utc)
+    out = []
+    orch = posts.get("_orchestrator") if isinstance(posts.get("_orchestrator"), dict) else {}
+    named = str(orch.get("session_id") or "")
+    if session and named != session:
+        out += ["", "MISMATCH: `_orchestrator` names session %s, you are %s: write your id on it (and on each attached "
+                "board's repos/<id>/posts/_orchestrator) before you answer." % (named or "none", session)]
+    posts = {k: v for k, v in posts.items() if isinstance(v, dict) and not k.startswith("_") and not v.get("removed")}
+    st = {k: step_state(v) for k, v in posts.items()}
+    part = {k: str(v.get("part") or k) for k, v in posts.items()}
+    qs = sorted((k for k in posts if st[k] == "you"), key=lambda k: str(posts[k].get("created_at") or ""))
+    out += ["", "## Open questions (%d)" % len(qs)]
+    for k in qs:
+        p, pt = posts[k], part[k]
+        wr = re.compile(r"(?<![\w-])(%s|%s)(?![\w])" % (re.escape(pt), re.escape(k)))
+        blocks = []
+        for j, q in posts.items():
+            if j == k or part[j] == pt or st[j] in ("done", "closed"):
+                continue
+            text = " ".join(str(q.get(f) or "") for f in ("parent", "status", "blocked_by", "title"))
+            if str(q.get("parent") or "") in (pt, k) or wr.search(text):
+                blocks.append("%s (%s)" % (part[j], _short(q.get("status"), 40) if q.get("status") else st[j]))
+        dflt = p.get("default_option") or ""
+        out.append("- %s `%s` %s old: %s%s%s" % (pt, k, _age(str(p.get("created_at") or ""), now), _short(p.get("title"), 90),
+                                               (" · default: " + _short(dflt, 60)) if dflt else "",
+                                               (" · blocks " + ", ".join(list(dict.fromkeys(blocks))[:4])) if blocks else ""))
+    if not qs:
+        out.append("none")
+    owner = CONFIG.get("fields", {}).get("owner", "owner")
+    since_t = now - timedelta(days=days)
+    his = []
+    for c in comments.values():
+        if not isinstance(c, dict) or c.get("from") not in (owner, "viewer") or not c.get("created_at"):
+            continue
+        try:
+            if iso(c["created_at"]) < since_t:
+                continue
+        except ValueError:
+            continue
+        if c.get("like"):
+            what = "Like" + ((" on comment " + str(c["comment_id"])) if c.get("comment_id") else "")
+        elif c.get("answer"):
+            what = "Answer: " + _short(c.get("answer"), 80)
+        else:
+            what = '"%s"' % _short(c.get("text"), 140)
+        his.append((c["created_at"], "%s on %s: %s" % (c["created_at"][5:16].replace("T", " "), c.get("post_id"), what)))
+    his.sort()
+    out += ["", "## The owner's decisions, last %d days (%d)" % (days, len(his))]
+    if len(his) > limit:
+        out.append("(the %d most recent; the rest: `kit.py since %s`)" % (limit, zstamp(since_t)))
+    out.extend("- " + line for _, line in his[-limit:])
+    if not his:
+        out.append("none")
+    return out
+
 def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
     """CL28, once per board: a post made before the kit's trains has a `part` but no `train`, so neither `resume` nor
     the orchestrator's task list sees it (Harmonize: HL6, VR5, HL5, the A3 posts). Each gets its train from its part's
@@ -2997,7 +3071,7 @@ def adopt_text(r):
 # keeps every kit.py command in it, so it cannot go stale.
 COMMANDS = [
     # (need, command, what it does)
-    ("read the board", "kit.py resume", "every train's open steps (the task list), live sessions, the owner's unanswered comments, attached boards; run it before answering the owner"),
+    ("read the board", "kit.py resume", "every train's open steps (the task list), live sessions, open questions (age, default, what each blocks), the owner's decisions of the last 3 days, the owner's unanswered comments, attached boards; run it before answering the owner"),
     ("read the board", "kit.py train <train> [--zoom <part>]", "a train's steps: verdict, bars, check, breaks, handoff of each"),
     ("read the board", "kit.py post <id> [--head N]", "one post and its comments"),
     ("read the board", "kit.py open [--since ISO]", "the owner's comments not answered yet"),
@@ -3218,13 +3292,13 @@ def _attached_step_detail(board, pid, p, stopped):
     return out
 
 
-def resume(m, db_path=None, alive=None, cli=None):
+def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
     """Everything a fresh orchestrator needs after a context reset, from the board alone: each active train's steps
     (the task list to rebuild, one TaskCreate each with metadata {train, part}), which part sessions still run, and
     what of the owner's waits for an answer; then the same for each attached board (kit_repos/_index), under its
     own heading, with its id so a reply goes to repos/<id>/comments."""
     active = _active_cli(cli)
-    posts, _ = _load_board_docs(m, db_path=db_path)
+    posts, comments = _load_board_docs(m, db_path=db_path)
     if alive is None:
         alive = None if active == "agy" else _alive_sessions()
     out = ["# Resume (from the board; nothing else carries over)"]
@@ -3233,6 +3307,7 @@ def resume(m, db_path=None, alive=None, cli=None):
     if not n_active:
         out.append("")
         out.append("No train has an open step.")
+    out.extend(_resume_extras(posts, comments, now=now, session=session))
     dl = device_line()
     if dl:
         out.append("")
@@ -3558,6 +3633,7 @@ def main(argv=None):
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
+    s.add_argument("--session", default=None, help="your session id: resume flags an _orchestrator post naming another")
     s = sp.add_parser("commands", help="the index of the kit's commands: read it before writing any code")
     s.add_argument("word", nargs="?", default=None)
     s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
@@ -3716,7 +3792,10 @@ def main(argv=None):
               % (r["status"], r["from_git"], r["added"], r["kept_here"], r.get("git", "")))
         return 0
     if a.cmd == "resume":
-        print(resume(m, db_path=a.db, cli=a.cli), end="")
+        # the _orchestrator check is the orchestrator's (a part's own session is never named there)
+        sess = a.session or (os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
+                             if os.environ.get("KIT_ROLE") == "orchestrator" else None)
+        print(resume(m, db_path=a.db, cli=a.cli, session=sess), end="")
         return 0
     if a.cmd == "commands":
         print(commands_text(a.word), end="")

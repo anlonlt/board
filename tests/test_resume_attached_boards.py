@@ -147,6 +147,10 @@ class ResumeReadsAttachedBoards(unittest.TestCase):
         old.device_line = fixed
         self.addCleanup(setattr, self.kit, "device_line", self.kit.device_line)
         self.kit.device_line = fixed
+        # CL28 adds sections of its own to resume (open questions, the owner's recent decisions): the control is about
+        # the attached boards leaving the host's output alone, so those sections are left out of the comparison
+        self.addCleanup(setattr, self.kit, "_resume_extras", self.kit._resume_extras)
+        self.kit._resume_extras = lambda *a, **k: []
         posts = {"P1-a": {"title": "one", "part": "P1", "train": "t", "column": "info", "status": "in progress",
                           "session_id": "s1", "created_at": "2099-01-01T00:00:00Z"},
                  "P2-b": {"title": "two", "part": "P2", "train": "t", "column": "info", "status": "planned",
