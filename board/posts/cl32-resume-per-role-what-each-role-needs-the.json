@@ -11,7 +11,7 @@
  ],
  "bars": [
   "tests/test_cl32_roles.py: 17 of 17 red on main 88fd0ca+d7aa882 (14 errors, 3 failures), 17 of 17 green after",
-  "scripts/run_all_tests.py: 10 of 10 suites pass, 0 failed (before the CL32 test file was added; rerun below)",
+  "scripts/run_all_tests.py on 27aefce: 10 of 10 suites pass, 0 failed (294 unittest tests, CL32's 17 included)",
   "Harmonize-shaped fixture dry run: 4 of 4 steps as expected (load attaches 1 of 1 doc, unknown repo 404, launch from the clone with consumers, 0 board-mirror pushes); 2 bugs found and fixed on the way",
   "real Harmonize dry run: 0 of 1 (add_repo anlonlt/harmonize refused in this session)"
  ],
@@ -34,6 +34,6 @@
  "status": "in progress",
  "title": "resume per role: what each role needs, the lessons and the workflow included",
  "train": "cli",
- "updated_at": "2026-11-23T23:08:21Z",
+ "updated_at": "2026-11-23T23:12:00Z",
  "verdict": "Each role now starts from `kit.py resume --role <role>`, lessons are in the memory by role, and O53's launch gaps are fixed. It is not yet run on the real Harmonize, which this session could not reach."
 }
