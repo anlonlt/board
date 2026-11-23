@@ -123,6 +123,8 @@ function overflows() {
   }
 
   // the badge (his 22:04): a reply to the thread of his Like is drawn in its discussion, and once on screen it clears
+  // a clean page: what the layout passes above saw or opened (local and session storage) must not count as seen
+  await ev(() => { try { localStorage.clear(); sessionStorage.clear(); } catch (e) { /* none */ } });
   await p.viewport(1300, 900); await p.open(html); await p.wait(900);
   await ev(() => document.getElementById('ask').click()); await settle();
   check('the discussion has the new-badge before he reads it', await ev(() => !!document.querySelector('.disc.unread[data-disc="w1"]')));
@@ -130,7 +132,7 @@ function overflows() {
   check('a reply to the thread of a Like is drawn (it was hidden under the Like)', await ev(() => !!document.querySelector('.cmt[data-cid="rlike"]')));
   check('the reply to his comment is drawn under it', await ev(() => !!document.querySelector('.cmt[data-cid="r1"]')));
   // scroll each unseen comment into view for longer than SEEN_MS
-  for (const cid of ['rlike', 'r1']) { await ev((c) => { const n = document.querySelector('.cmt[data-cid="' + c + '"]'); if (n) n.scrollIntoView({ block: 'center' }); }, cid); await p.wait(1500); }
+  for (const cid of ['w1', 'rlike', 'r1']) { await ev((c) => { const n = document.querySelector('.cmt[data-cid="' + c + '"]'); if (n) n.scrollIntoView({ block: 'center' }); }, cid); await p.wait(1500); }
   await ev(() => document.getElementById('back').click()); await settle();
   await ev(() => { const a = document.getElementById('ask'); if (a && document.getElementById('sheet').hidden) a.click(); }); await settle();
   const still = await ev(() => { const d = document.querySelector('.disc[data-disc="w1"]'); return d ? d.className : 'missing'; });
