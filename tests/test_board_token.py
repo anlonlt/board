@@ -13,8 +13,10 @@ import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "kit", "board"))
-import board_token  # noqa: E402
+import importlib.util  # noqa: E402  (by path: kit/board on sys.path would shadow tests/ modules of the same name)
+_spec = importlib.util.spec_from_file_location("board_token", os.path.join(ROOT, "kit", "board", "board_token.py"))
+board_token = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(board_token)
 
 REAL_CFG = os.path.join(os.path.expanduser("~"), ".config", "board-kit", "board_token")
 

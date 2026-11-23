@@ -956,8 +956,8 @@ def main(argv=None):
         # One board token per machine (CL11): a project with no token gets the machine's; its own token is kept.
         import board_token as _bt  # kit/board is on sys.path
         _tp, _src = _bt.ensure(t)
-        ins.log.append("board token: %s (.kit/board_data/token, never printed)" % (
-            "kept the project's own" if _src == "project" else "the machine's (%s)" % _bt.machine_token_path()))
+        if _src == "machine":   # a project's own token is kept silently (a rerun changes nothing)
+            ins.log.append("board token: the machine's (%s) in .kit/board_data/token, never printed" % _bt.machine_token_path())
     should_bootstrap = (a.bootstrap or a.demo or rt in ("arena", "generic")) and not a.no_bootstrap
     if should_bootstrap and parts["board"] and not claude_only and not a.dry_run:
         from datetime import datetime, timezone
