@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T02:16:12Z",
+ "created_at": "2026-11-23T02:16:19Z",
  "rows": [
   {
    "also": [],
@@ -15,7 +15,8 @@
     "CL18",
     "CL19",
     "CL12",
-    "CL20"
+    "CL20",
+    "CL21"
    ],
    "parent": "",
    "part": "P-cli",
@@ -384,17 +385,6 @@
   {
    "also": [],
    "children": [],
-   "parent": "CL8",
-   "part": "CL9",
-   "post": "cl9-checks-that-must-be-able-to-fail-breaks",
-   "prompt": "",
-   "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
-   "state": "running",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [],
    "parent": "P-cli",
    "part": "CL12",
    "post": "cl12-board-ui-text-never-runs-off-screen-badg",
@@ -417,6 +407,30 @@
   {
    "also": [],
    "children": [],
+   "parent": "P-cli",
+   "part": "CL21",
+   "post": "cl21-seen-state-saves",
+   "prompt": "",
+   "session": "3d6af1ec-6576-5483-a7f2-a89248f8e580",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL10"
+   ],
+   "parent": "CL8",
+   "part": "CL9",
+   "post": "cl9-checks-that-must-be-able-to-fail-breaks",
+   "prompt": "",
+   "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
    "parent": "CL9",
    "part": "CL10",
    "post": "cl10-see-the-new-ui-work-then-stop-tests-touc",
@@ -427,5 +441,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T02:16:12Z"
+ "updated_at": "2026-11-23T02:16:19Z"
 }
