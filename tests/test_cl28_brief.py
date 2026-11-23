@@ -293,6 +293,29 @@ class AdoptOnAnArtifactBoard(unittest.TestCase):
             kit.adopt_trains(url="http://127.0.0.1:8766")
 
 
+class DoneOnlyWhenOnTheBoard(unittest.TestCase):
+    """The owner, 2026-11-23: "How come you said you posted when you didn't?": a part's post changed only on the
+    local copy; `kit.py done` said OK and the live board (the Artifact) still showed it planned."""
+
+    def test_done_refuses_a_post_the_artifact_has_not_got(self):
+        kit = load_kit()
+        post = {"title": "x", "status": "complete", "verdict": "v"}
+        kit._get_post = lambda pid, db_path=None: post
+        kit.attached_board = lambda: {"url": "https://claude.ai/artifact/X", "prefix": "repos/board/"}
+        kit.artifact_url = lambda: "https://claude.ai/artifact/X"
+        kit.check_asked = lambda p, db_path=None: ([], [])
+        with tempfile.TemporaryDirectory() as d:
+            kit._art_dir = lambda: d
+            rc, out = kit.done("p1")
+            self.assertEqual(rc, 1)
+            self.assertIn("not on the board yet", out)
+            os.makedirs(os.path.join(d, "base", "posts"))
+            with open(os.path.join(d, "base", "posts", "p1.json"), "w") as fh:
+                json.dump(post, fh)       # what `artifact sent` records once the batch went
+            rc, out = kit.done("p1")
+            self.assertNotIn("not on the board yet", out)
+
+
 class CommandIndex(unittest.TestCase):
     """The owner, 2026-11-23: "Why are all the sessions skipping the kit's scripts???": an index read before any code."""
 

@@ -2187,6 +2187,12 @@ def done(pid, db_path=None, root=None):
     e_a, n_a = check_asked(p, db_path=db_path)
     err += e_a
     warn += n_a
+    if attached_board() and _read_json(_base_path("posts", pid)) != p:
+        # CL28: a part updated its post on the local copy only and said "Done": the live board (the Artifact) still
+        # showed it planned, with none of its results (the owner: "How come you said you posted when you didn't?")
+        err.append("the post is not on the board yet (%s): its local copy differs from what the Artifact last had. Run "
+                   "`python3 -I .kit/kit.py artifact push`, make the ArtifactData batch it prints, then `kit.py artifact "
+                   "sent <batch>`; then done again" % (artifact_url() or "the Artifact"))
     if not err:
         e2, notes = prove_check(p, root=root, timeout=int(k.get("check_timeout_s", 900)))
         err += e2
