@@ -232,8 +232,7 @@ with tempfile.TemporaryDirectory() as d:
     St = lambda f, sid: {"hookEventName": "Stop", "terminationReason": "NO_TOOL_CALL", "transcriptPath": f, "conversationId": sid + RUN}
     f1 = transcript(10, "x" * 200)
     rc1, out1, _ = run("kit_say_it_once.py", St(f1, "s1"), proj)
-    check("stop: a long answer to the owner is blocked, naming the language", out1.get("decision") == "continue" and "French" in out1.get("reason", ""))
-    check("stop: blocked once per turn, then it passes", run("kit_say_it_once.py", St(f1, "s1"), proj)[1].get("decision") == "allow")
+    check("stop: a long answer to the owner is never retried (he has read it already)", out1.get("decision") == "allow")
     check("stop: a short answer to the owner passes", run("kit_say_it_once.py", St(transcript(20, "oui"), "s2"), proj)[1].get("decision") == "allow")
     f3 = transcript(30, "I've taken over as orchestrator and nothing is running yet.", human=False)
     check("stop: a turn a session or timer opened must end with ·", run("kit_say_it_once.py", St(f3, "s3"), proj)[1].get("decision") == "continue")
@@ -312,11 +311,7 @@ with tempfile.TemporaryDirectory() as d:
         fh.write(json.dumps({"type": "user", "uuid": "cu1", "origin": {"kind": "human"}, "message": {"content": "go"}}) + "\n")
         fh.write(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "x" * 200}]}}) + "\n")
     rc_cst, _, err_cst = run_claude("kit_say_it_once.py", {"hook_event_name": "Stop", "transcript_path": cf_t, "session_id": "cs1-" + RUN})
-    check("claude hook: say_it_once Stop parses Claude transcript and blocks with exit 2", rc_cst == 2 and "French" in err_cst)
-    rc_cst2, _, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "Stop", "transcript_path": cf_t, "session_id": "cs1-" + RUN})
-    check("claude hook: say_it_once Stop passes on second try", rc_cst2 == 0)
-    check("claude hook: a long answer to the owner is retried shorter, never as a lone ·",
-          "shorter" in err_cst and "a single" not in err_cst)
+    check("claude hook: a long answer to the owner is not sent twice (no Stop retry)", rc_cst == 0 and err_cst == "")
     _, out_cph, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse", "transcript_path": cf_t})
     check("claude hook: no · reminder after a board write on a turn the owner typed", out_cph.strip() == "")
     cf_n = os.path.join(d, "claude-n.jsonl")

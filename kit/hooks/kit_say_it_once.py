@@ -12,8 +12,8 @@ One script, five agy events (dispatched by `hookEventName`):
   PostInvocation: if PostToolUse recorded a board write or send_message, injects the reminder to end
       the turn with a single "·" (only on a turn the owner did not type: his own chat always gets words).
   Stop: parses agy's transcript.jsonl (`USER_INPUT` / `PLANNER_RESPONSE`) to enforce `chat_answer_chars`
-      (human turn: the retry is the same answer, shorter, never "·") or a single "·" (non-human turn), blocking
-      ONCE per turn via `{"decision": "continue"}`.
+      only on a non-human turn (a single "·"), blocking ONCE per turn via `{"decision": "continue"}`. An answer to
+      the owner is never retried: it is already on his screen; the limit is said before his turn starts.
 """
 import hashlib
 import json
@@ -130,13 +130,9 @@ def stop_verdict(text, human, data):
     if len(t) <= 3:
         return None
     if human:
-        if chat_verbose(data):
-            return None
-        cap = limit("chat_answer_chars", 600, data)
-        if cap <= 0 or len(t) <= cap:
-            return None
-        return ("SAY IT ONCE: your answer to the owner is %d characters (limit %d), in %s. Answer what was asked in a "
-                "few lines; the detail goes in your board post." % (len(t), cap, talk(data)))
+        # The owner has already read it: a Stop hook runs after the answer is on his screen, so a retry only sends
+        # it a second time (his 2026-11-23 report). The limit is said BEFORE the turn (UserPromptSubmit) instead.
+        return None
     return ("SAY IT ONCE: the owner did not write this turn (a session's message, a timer, a hook), and your closing "
             "message is %d characters. The result is in your board post: end the turn with a single \"·\"." % len(t))
 
