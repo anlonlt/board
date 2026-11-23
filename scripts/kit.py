@@ -2402,10 +2402,37 @@ def _write_step_prompt(pid, doc, sources, cli=None):
     return rel, True
 
 
-def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None, cli=None):
+def _step_board(train, posts, board=None):
+    """CL25: the attached board a step goes on, as (id, its posts), or (None, None) for this repo's own board.
+    `board` names it (`step new --board <id>`); else a train this board has no post of, found on exactly one attached
+    board (Harmonize's orchestrator plans the kit's `cli` train, which lives under repos/board/ in the Artifact)."""
+    own = any(_norm_train(p.get("train")) == _norm_train(train) for k, p in posts.items()
+              if not k.startswith("_") and isinstance(p, dict))
+    if not board and own:
+        return None, None
+    try:
+        shown, _ = _attached_boards()
+    except Exception:  # an unreadable attached board never blocks a step on this one
+        shown = []
+    if board:
+        rid = _repo_id(board)
+        b = next((x for x in shown if x["id"] == rid), None)
+        return rid, dict((b or {}).get("posts") or {})
+    hits = [b for b in shown if any(_norm_train((p or {}).get("train")) == _norm_train(train)
+                                    for p in (b.get("posts") or {}).values() if isinstance(p, dict))]
+    return (hits[0]["id"], dict(hits[0]["posts"])) if len(hits) == 1 else (None, None)
+
+
+def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None, cli=None,
+             board=None):
     """A train step: its post (adopted when the train already has one for that part, never duplicated) and its
-    generated prompt. Returns {post, adopted, prompt, prompt_written, launch} or {error}."""
+    generated prompt. Returns {post, adopted, prompt, prompt_written, launch} or {error}. On an attached board (CL25)
+    also {board, artifact_write}: the post is a file under .kit/run/artifact/out/repos/<id>/posts/, sent by the one
+    ArtifactData call `artifact_write` names (the orchestrator guard lets that file through)."""
     posts = _all_posts(db_path)
+    att, att_posts = _step_board(train, posts, board)
+    if att:
+        posts = att_posts
     found = None
     for pid, p in posts.items():
         if pid.startswith("_") or p.get("removed"):
@@ -2416,8 +2443,11 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
     if found:
         rel = "docs/prompts/%s.md" % found
         has = os.path.exists(os.path.join(ROOT, rel))
-        return {"post": found, "adopted": True, "prompt": rel if has else None, "prompt_written": False,
-                "launch": _launch_line(part, rel, model, cli=cli) if has else None}
+        res = {"post": found, "adopted": True, "prompt": rel if has else None, "prompt_written": False,
+               "launch": _launch_line(part, rel, model, cli=cli) if has else None}
+        if att:
+            res["board"] = att
+        return res
     title = re.sub(r"^\s*%s\b[\s:.-]*" % re.escape(part), "", title or part, flags=re.I) or title or part
     base = "%s-%s" % (_slug(part, 12), _slug(title))
     pid, n = base, 2
@@ -2432,11 +2462,23 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         doc["sources"] = list(sources)
     if review is False:
         doc["review_auto"] = False
-    if not _board_write("set", "posts", pid, doc):
+    write = None
+    if att:
+        fp = os.path.join(os.path.abspath(_art_dir()), "out", "repos", att, "posts", pid + ".json")
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        write_doc(fp, doc)
+        write = {"action": "set", "url": artifact_url() or str(CONFIG.get("board_url") or ""),
+                 "collection": "repos/%s/posts" % att, "doc_id": pid, "file_path": fp}
+    elif not _board_write("set", "posts", pid, doc):
         return {"error": "the board did not take step %s (is the board server running?)" % part}
     rel, made = _write_step_prompt(pid, doc, list(sources), cli=cli)
-    return {"post": pid, "adopted": False, "prompt": rel, "prompt_written": made,
-            "launch": _launch_line(part, rel, model, cli=cli) if rel else None}
+    res = {"post": pid, "adopted": False, "prompt": rel, "prompt_written": made,
+           "launch": _launch_line(part, rel, model, cli=cli) if rel else None}
+    if att:
+        res.update({"board": att, "artifact_write": write,
+                    "next": "send the post: ArtifactData %s (no other way: a hand-written step post is refused)"
+                            % json.dumps(write, ensure_ascii=False)})
+    return res
 
 
 def step_start(pid):
@@ -3319,6 +3361,8 @@ def main(argv=None):
     s.add_argument("--source", action="append", default=[]); s.add_argument("--model")
     s.add_argument("--no-review", action="store_true"); s.add_argument("--db", default=None)
     s.add_argument("--cli", choices=["agy", "claude"], default=None)
+    s.add_argument("--board", default=None, help="an attached board's id (repos/<id>/ in the Artifact): the step goes "
+                   "on its train (default: this board, or the one attached board that holds the train)")
     s = sp.add_parser("review"); s.add_argument("post", nargs="?"); s.add_argument("--train", default=None)
     s.add_argument("--dry-run", action="store_true"); s.add_argument("--force", action="store_true"); s.add_argument("--db", default=None)
     s.add_argument("--cli", choices=["agy", "claude"], default=None)
@@ -3387,7 +3431,7 @@ def main(argv=None):
                 with open(a.task_file, encoding="utf-8") as fh:
                     task = fh.read()
             res = step_new(a.train, a.part, a.title or a.part, task=task, parent=a.parent, sources=a.source,
-                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli)
+                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board)
         elif not a.post:
             res = {"error": "step %s needs a post id" % a.action}
         elif a.action == "start":
