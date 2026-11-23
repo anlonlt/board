@@ -8,10 +8,10 @@ Set-up, once:
 0. `git checkout -q --detach origin/{{MAIN_BRANCH}}` (you commit nothing).
 1. ToolSearch `select:ArtifactComments,ArtifactData`.
 2. `ArtifactComments` `action: "watch"`, `url` the board; then a bare `watch` (no url) to confirm it is listed.
-3. `get_session` (no id) for your own id; `send_message` to the orchestrator (the `session_id` of the post `_orchestrator`, found as in step 2 below): "board clerk ready, watching", with your id. If there is no `_orchestrator` post yet, end your turn without text and send it at your first wake. End your turn.
+3. `get_session` (no id) for your own id; `send_message` to the orchestrator (the `session_id` of the post `_orchestrator`, found as in step 2 below): "board clerk ready, watching", with your id, only if `get_session` on it shows it running or idle for less than {{ORCH_IDLE}} minutes; otherwise send nothing and start nothing (an orchestrator is started only to pass on the owner's words). If there is no `_orchestrator` post yet, end your turn without text and send it at your first wake. End your turn.
 
-**An orchestrator only when one is needed (tokens, and containers that die).** Before ANY send to the orchestrator
-(steps 3, 4, 9), check it: `get_session` with the `_orchestrator` post's `session_id`. If that fails, or its
+**An orchestrator only when one is needed (tokens, and containers that die).** Only when you are passing on something of
+the owner's (at a wake: steps 3, 4 and 9; never at set-up, never for a message of your own), check it first: `get_session` with the `_orchestrator` post's `session_id`. If that fails, or its
 `status_bucket` is `completed` or `failed`, or its `updated_at` is more than {{ORCH_IDLE}} minutes ago, do not wake
 it (an old orchestrator re-reads its whole context to answer): start a fresh one, at most once per 10 minutes
 (`/tmp/clerk/orch-start.txt` holds the last start's time):
