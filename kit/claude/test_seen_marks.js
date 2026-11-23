@@ -137,11 +137,19 @@ const seedOf = (seen) => (seen ? { "data/users/u1": { "board-seen": seen } } : {
   const h2 = await visit(html, { repo: "board", seed: Object.assign({}, orchSeed, seedOf(h1.seen)) });
   check("kit board: an answer to his Like is drawn and marked read", !!(h1.seen && h1.seen.posts && (h1.seen.posts["repos/board/_orchestrator"] || {}).v && h1.seen.posts["repos/board/_orchestrator"].v.indexOf("R1") >= 0) || !!(h1.seen && (h1.seen.posts["repos/board/_orchestrator"] || {}).at > "2026-11-22T22:01:41"), { seen: h1.seen });
 
+  // 3f. a post read, then only its updated_at moves (a session's status, session id): still read; its text changes: new
+  const rd = (b) => ({ at: "2026-11-23T02:00:00.000Z", sig: sigOf({ title: "Kit " + b, body: "Kit " + b + " body", column: "info" }), v: [] });
+  const moved = { "repos/board/posts": { "cl1-x": Object.assign({ title: "Kit X", column: "info", created_at: "2026-11-23T01:00:00.000Z", body: "Kit X body" }, { status: "complete", updated_at: "2026-11-23T02:41:00Z" }),
+                                         "cl2-y": { title: "Kit Y", column: "info", created_at: "2026-11-23T01:00:00.000Z", body: "Kit Y body, rewritten", updated_at: "2026-11-23T02:41:00Z" } } };
+  const m = await visit(html, { repo: "board", seed: Object.assign({}, moved, seedOf({ posts: { "repos/board/cl1-x": rd("X"), "repos/board/cl2-y": rd("Y") } })) });
+  check("a read post whose updated_at alone moved stays read", m.isNew["cl1-x"] === false, m.isNew);
+  check("a read post whose text changed is new (control)", m.isNew["cl2-y"] === true, m.isNew);
+
   // 4. a mark from before CL21 (bare id) still holds on the primary board
   const e = await visit(html, { repo: "", seed: seedOf({ posts: { "P-old": { at: "2026-11-23T02:00:00.000Z", sig: "", v: [] } } }) });
   check("primary: an old bare-id mark is honoured", e.isNew["P-old"] === false, e.isNew);
 
-  [a1, a2, b1, b2, c1, c2, d1, d2, w1, w2, f, g, h1, h2, e].forEach((x) => { res.errors = res.errors.concat(x.errors); });
+  [a1, a2, b1, b2, c1, c2, d1, d2, w1, w2, f, g, h1, h2, m, e].forEach((x) => { res.errors = res.errors.concat(x.errors); });
   const failed = res.checks.filter((c) => !c.ok);
   console.log(JSON.stringify(res, null, 1));
   console.log((res.checks.length - failed.length) + " of " + res.checks.length + " seen checks pass");

@@ -1139,7 +1139,9 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   }
   function changed(p) {
     var v = markOf(p.id); if (!v) return false;
-    if (v.sig && v.sig !== sigOf(p)) return true;
+    /* CL21: new is text he has not seen (title, body, column, pictures: the sig), never a move of updated_at alone
+       (a session's status, session id or launch time): with a sig, only the sig decides */
+    if (v.sig) return v.sig !== sigOf(p);
     var u = str(p.updated_at); return !!u && u > (v.bt && v.bt > v.at ? v.bt : v.at);
   }
   function agentFrom(c) { return c.from && c.from !== "owner" && c.from !== "viewer"; }
