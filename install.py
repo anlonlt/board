@@ -151,6 +151,32 @@ def git_blob(b):
 RUNTIME_HOOK_DIRS = {"agy": ".agents/hooks/kit/", "claude": ".claude/hooks/kit/"}
 
 
+# The kit just before CL28's kit_brief_guard.py: a hook added after it is new to any runtime that lacks it, even when
+# the target was last updated from a later kit (Harmonize's --update at 1b13be0 put it in .agents/hooks/kit/ only).
+HOOKS_BASELINE = "911718f"
+
+
+def _in_kit_at(commit, hook):
+    """True / False: kit/hooks/<hook> exists at that kit commit; None: the commit is unknown here."""
+    try:
+        if subprocess.run(["git", "-C", KIT, "cat-file", "-e", commit + "^{commit}"], capture_output=True,
+                          timeout=10).returncode != 0:
+            return None
+        return subprocess.run(["git", "-C", KIT, "cat-file", "-e", "%s:kit/hooks/%s" % (commit, hook)],
+                              capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def new_since_install(hook, prev_kit):
+    """True when kit/hooks/<hook> is a hook the kit added since the target's runtime was set up (CL28): absent at the
+    kit commit the target was last installed from, or at HOOKS_BASELINE. Unknown (not a git clone, no recorded
+    commit): False, nothing is added (CL22)."""
+    if not prev_kit or prev_kit == "unknown":
+        return False
+    return any(_in_kit_at(c, hook) is False for c in (prev_kit, HOOKS_BASELINE))
+
+
 def present_runtimes(t):
     return {n for n, d in RUNTIME_HOOK_DIRS.items() if os.path.isdir(os.path.join(t, d))}
 
@@ -908,6 +934,8 @@ def main(argv=None):
     # its live Claude Code hooks in .claude/hooks/kit/) gets the kit files it has refreshed; nothing is added to it
     # (no new hook, no settings.json), and an absent runtime is never installed (CL22: keep what is installed).
     present = present_runtimes(t)
+    new_hooks = {}
+    prev_kit = str(ins.manifest.get("_kit_commit") or "").split(" ")[0]
     also_agy = "agy" in present and not want_agy
     also_claude = "claude" in present and not want_claude
     for h in HOOKS:
@@ -920,6 +948,13 @@ def main(argv=None):
         for on, d in ((also_agy, RUNTIME_HOOK_DIRS["agy"]), (also_claude, RUNTIME_HOOK_DIRS["claude"])):
             if on and os.path.isfile(os.path.join(t, d + h)):
                 ins.put(d + h, rd("kit", "hooks", h), past_kit_blobs("kit/hooks/" + h))
+            elif (on and (parts["board"] or h in MEMORY_HOOKS) and h != "test_hooks.py"
+                  and (d + h) not in ins.manifest and new_since_install(h, prev_kit)):
+                # CL28: a hook the kit added since this runtime was installed (kit_brief_guard.py on Harmonize, whose
+                # config names agy while its Claude Code hooks live in .claude/hooks/kit/) goes in too, with its own
+                # settings.json lines; a kit hook the project removed (it is in the manifest) is never put back.
+                ins.put(d + h, rd("kit", "hooks", h))
+                new_hooks.setdefault(d, []).append(h)
     if want_agy:
         ins.put(".agents/skills/memory/SKILL.md", rd("kit", "skills", "memory", "SKILL.md"))
     if want_claude:
@@ -1273,6 +1308,14 @@ def main(argv=None):
             store.close()
     if want_claude:
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], CLAUDE_CLI_SETTINGS if claude_cli_hooks else CLAUDE_SETTINGS)
+    elif new_hooks.get(RUNTIME_HOOK_DIRS["claude"]):
+        added_h = set(new_hooks[RUNTIME_HOOK_DIRS["claude"]])
+        web = "claude.ai/" in str(c.get("board_url") or "") or bool((c["kit"].get("artifact") or {}).get("url"))
+        spec = [x for x in (CLAUDE_SETTINGS if web else CLAUDE_CLI_SETTINGS) if x[2] in added_h]
+        merge_claude_settings(t, a.dry_run, ins.log, parts["board"], spec)
+    if new_hooks.get(RUNTIME_HOOK_DIRS["agy"]):
+        ins.log.append(".agents/hooks/kit/: new kit hook(s) %s copied; run --update with --runtime agy to wire them in "
+                       ".agents/hooks.json" % ", ".join(new_hooks[RUNTIME_HOOK_DIRS["agy"]]))
     import subprocess
     r = subprocess.run(["git", "-C", KIT, "log", "-1", "--format=%h %cI"], capture_output=True, text=True)
     kit_at = r.stdout.strip() or "unknown (not a git clone)"
