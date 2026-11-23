@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T01:58:36Z",
+ "created_at": "2026-11-23T02:16:19Z",
  "rows": [
   {
    "at": 7,
@@ -18,7 +18,6 @@
     "Collapsible sections that learn",
     "Say it once: the leaks closed",
     "Design principles, complete, and no emoji Like",
-    "See the new UI work, then stop tests touching ~/.local/bin",
     "One board token per machine, kept across projects and CLIs",
     "A launched part is always visible on the board, on the right base",
     "Chat ends with a single · in every session the owner did not type in",
@@ -27,8 +26,11 @@
     "A crashed part is continued from its last checkpoint",
     "Web takeover: Claude Code web continues where the board says",
     "The device's load set automatically per task, learned from what tasks took here",
-    "Checks that must be able to fail (breaks)",
     "Board UI: text never runs off screen, badge clears when seen, Done steps stay in the tr...",
+    "resume reads the attached boards too",
+    "CL21: posts he has read stop showing as new",
+    "Checks that must be able to fail (breaks)",
+    "See the new UI work, then stop tests touching ~/.local/bin",
     "CL8 design principles complete + no emoji Like, then CL9 breaks, then CL10 see the new UI work"
    ],
    "train": "P-cli"
@@ -69,5 +71,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-23T01:58:36Z"
+ "updated_at": "2026-11-23T02:16:19Z"
 }
