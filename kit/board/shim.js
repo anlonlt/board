@@ -1404,6 +1404,7 @@
         body.textContent = "";
         var md = document.createElement("div"); md.className = "body";
         md.innerHTML = typeof window._kitRenderBody === "function" ? window._kitRenderBody(doc.body || "") : (doc.body || "");
+        md.dataset.seenPost = postId; md.dataset.seenK = "body";   /* CL21: read in a window counts (the page marks it) */
         body.appendChild(md);
         var docImgs = Array.isArray(doc.images) ? doc.images.filter(Boolean) : [];
         if (docImgs.length) {
@@ -1444,6 +1445,7 @@
             wh.textContent = (c.from === "owner" ? "You" : (c.from || "?")) + " · " + String(c.created_at || "").slice(0, 16).replace("T", " ");
             var tx = document.createElement("div"); tx.className = "body"; tx.style.fontSize = ".88rem";
             tx.innerHTML = typeof window._kitRenderBody === "function" ? window._kitRenderBody(c.text || "") : (c.text || "");
+            item.dataset.seenPost = postId; item.dataset.seenK = c.id;
             item.appendChild(wh); item.appendChild(tx); ch.appendChild(item);
           });
           body.appendChild(ch);

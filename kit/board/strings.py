@@ -159,7 +159,8 @@ EXCLUDED = ["_orchestrator", "2-digit", "/_blob/", "https://", "comments/", "pos
             "(hover: hover) and (pointer: fine)", "-posts-", " at /_blob/", ") at /_blob/", "  [attached: ",
             "\n[attached: ", "(in reply to the comment ", "👍", "Answer: ", "Answer: X",
             "👍 Like: he approves this", ", no words.", "👍 Like on the comment of ", " («",
-            "»): he agrees, no words.", "(see the attached file)", ": «", "…»", " UTC", "») "]
+            "»): he agrees, no words.", "(see the attached file)", ": «", "…»", " UTC", "») ",
+            "repos/", "[data-seen-post]", "MutationObserver"]
 
 
 def extract_exclusions():
