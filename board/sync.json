@@ -2052,11 +2052,22 @@
    "removed": 0
   },
   {
-   "at": "2026-11-23T08:37:21Z",
+   "at": "2026-11-23T08:39:20Z",
    "changed": 0,
-   "comments_read": 0,
-   "db_seq": 176,
+   "comments_read": 1,
+   "db_seq": 164,
    "full": false,
+   "new": 1,
+   "posts": 43,
+   "posts_removed": 0,
+   "posts_written": 0,
+   "removed": 0
+  },
+  {
+   "at": "2026-11-23T08:39:22Z",
+   "changed": 0,
+   "comments_read": 35,
+   "full": true,
    "new": 0,
    "posts": 43,
    "posts_removed": 0,
