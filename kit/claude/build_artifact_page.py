@@ -8,7 +8,8 @@ The local server injects SHIM_JS (kit/board/board_server.py) into the page: a wi
 API, then the UI layer (Repo Docs reader, windows, viewer, deliverables, collaborators, git diff, column switcher...).
 In an Artifact the real window.claude exists, so this script injects only the UI layer, wrapped with
 artifact_adapter.js (its api() answers from the Artifact's db, assets, comments and user), then artifact_ui.js
-(Link for AI, repository pictures, pluggable MCP Link Reader). It rewrites the page in place and is idempotent.
+(Link for AI, repository pictures, pluggable MCP Link Reader). artifact_repos.js goes first: the attached repos'
+boards (install.py --attach, mirrored with `kit_artifact_sync.py boards`) behind a header switcher and "All boards". It rewrites the page in place and is idempotent.
 Run it after every install.py, before publishing; check the result with test_artifact_page.js.
 """
 import argparse
@@ -70,13 +71,14 @@ def build(page, kit, board_url, project, mcp_readers=None, talk=""):
         page = re.sub(re.escape(MARK) + r".*?" + re.escape(MARK + "end") + r"\n?", "", page, flags=re.S)
     adapter = open(os.path.join(HERE, "artifact_adapter.js"), encoding="utf-8").read()
     ui_fix = open(os.path.join(HERE, "artifact_ui.js"), encoding="utf-8").read()
+    repos_js = open(os.path.join(HERE, "artifact_repos.js"), encoding="utf-8").read()
     ui = shim_ui(kit)
     slug = re.sub(r"[^a-z0-9]+", "-", project.lower()).strip("-") or "board"
     mcp_js = ("window.__KIT_MCP_READERS__=%s;" % json.dumps(list(mcp_readers))) if mcp_readers is not None else ""
     talk_js = ("window.__KIT_TALK__=%s;" % json.dumps(str(talk))) if talk else ""
     head = ("<script>window.__KIT_BOARD_URL__=%s;window.__KIT_PROJECT__=%s;%s%s</script>\n"
             % (json.dumps(board_url), json.dumps(project), talk_js, mcp_js))
-    block = (MARK + "\n" + head + "<script>\n(function () {\n" + adapter + "\n" + ui + "\n})();\n</script>\n"
+    block = (MARK + "\n" + head + "<script>\n" + repos_js + "\n</script>\n<script>\n(function () {\n" + adapter + "\n" + ui + "\n})();\n</script>\n"
              + MARK + "end\n")
     pos = page.find("<script>")
     if pos < 0:

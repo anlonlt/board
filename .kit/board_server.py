@@ -332,13 +332,23 @@ class BoardStore:
             if r.returncode == 0:
                 self.auto_sync_count += 1
                 if getattr(self, "_auto_sync_push", False):
-                    subprocess.run(
+                    pr = subprocess.run(
                         [sys.executable, "-I", kit_py, "--mirror", m, "push"],
                         cwd=root,
                         capture_output=True,
                         text=True,
                         timeout=30,
                     )
+                    # refused: git moved (a web session saved there). Reconcile, at most every 5 minutes: the newer
+                    # copy of each post comes here, then the union goes to git (a plain push never overwrites git).
+                    url = getattr(self, "_auto_sync_url", "")
+                    if pr.returncode != 0 and url and time.time() - getattr(self, "_auto_reconcile_at", 0) > 300:
+                        self._auto_reconcile_at = time.time()
+                        env = dict(os.environ, KIT_BOARD_URL=url)
+                        if getattr(self, "_auto_sync_token", ""):
+                            env["KIT_BOARD_TOKEN"] = self._auto_sync_token
+                        subprocess.run([sys.executable, "-I", kit_py, "--mirror", m, "reconcile", "--db", self.db_path],
+                                       cwd=root, capture_output=True, text=True, timeout=180, env=env)
                 return True
         except Exception:
             pass
@@ -3570,6 +3580,9 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
     store = BoardStore(data_dir)
     if auto_sync_interval and float(auto_sync_interval) > 0:
         store.enable_auto_sync(root_dir, interval_sec=float(auto_sync_interval), push=auto_sync_push)
+        if port:
+            store._auto_sync_url = "http://127.0.0.1:%d" % int(port)
+            store._auto_sync_token = token or ""
     extra_stores = {}
     attach_specs = dict(attach or {})
     cfg_path = os.path.join(root_dir, ".kit", "config.json")

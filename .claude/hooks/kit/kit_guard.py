@@ -21,7 +21,7 @@ OPERATORS = {";", "&&", "||", "|", "&", "(", ")", "|&", ";;", "\n"}
 WRAPPERS = {"sudo", "command", "env", "nohup", "time", "exec", "builtin"}
 DESTRUCTIVE_EXEC = {"rm", "unlink", "shred", "sh", "bash", "zsh", "dash"}
 INLINE_TREE_DELETE_RE = re.compile(
-    r"\b(?:shutil\.rmtree|fs\.rmSync|fs\.rmdirSync|fs\.promises\.rm|FileUtils\.rm_rf)\s*\(\s*(?:(['\"])([^'\"]*)\1)?"
+    r"(?:\bshutil\.rmtree|\.rmSync|\.rmdirSync|\bfs\.promises\.rm|\bFileUtils\.rm_rf)\s*\(\s*(?:(['\"])([^'\"]*)\1)?"
 )
 
 
@@ -125,15 +125,16 @@ def verdict(words: list[str], never_add=(), allow_add=(), cwd: str | None = None
         return verdict(args, never_add, allow_add, cwd=cwd)
 
     if cmd.startswith(("python", "pypy")) or cmd in ("node", "nodejs", "bun", "deno", "ruby", "perl"):
-        for flag in ("-c", "-e", "--eval"):
-            if flag in args:
-                i = args.index(flag)
-                if i + 1 < len(args):
-                    code = args[i + 1]
-                    for m in INLINE_TREE_DELETE_RE.finditer(code):
-                        target = m.group(2) or ""
-                        if not _is_under_tmp(target, cwd):
-                            return f"inline {cmd} {flag} recursive delete outside /tmp ({target or 'dynamic target'})"
+        # only the code right after -c/-e is code: a "-c" after a script name (or "-", stdin) is the script's own
+        # argument (2026-11-23: `python3 - <<EOF` whose text named "-c" was refused)
+        for k, flag in enumerate(args):
+            if flag in ("-c", "-e", "--eval"):
+                for m in INLINE_TREE_DELETE_RE.finditer(args[k + 1] if k + 1 < len(args) else ""):
+                    target = m.group(2) or ""
+                    if not _is_under_tmp(target, cwd):
+                        return f"inline {cmd} {flag} recursive delete outside /tmp ({target or 'dynamic target'})"
+                break
+            if not flag.startswith("-") or flag == "-":
                 break
 
     if cmd == "rm":
@@ -248,6 +249,47 @@ def check(command: str, never_add=(), allow_add=(), cwd: str | None = None) -> s
     return None
 
 
+def session_launches(command: str) -> int:
+    """How many new agent sessions a command starts: `claude ... --bg` (a part), counted per segment."""
+    n = 0
+    for seg in segments(command):
+        w = strip_prefix(seg)
+        if w and w[0].rsplit("/", 1)[-1] == "claude" and "--bg" in w[1:]:
+            n += 1
+    return n
+
+
+def _device_module(root: str):
+    import importlib.util
+    for rel in (".kit/device.py", "scripts/device.py"):
+        path = os.path.join(root or ".", rel)
+        if os.path.isfile(path):
+            spec = importlib.util.spec_from_file_location("kit_device", path)
+            mod = importlib.util.module_from_spec(spec)
+            try:
+                spec.loader.exec_module(mod)
+                return mod
+            except Exception:
+                return None
+    return None
+
+
+def capacity_refusal(command: str, root: str, survey=None) -> str | None:
+    """CL15: refuse a launch that would run more sessions than this device holds (never blocks without the module)."""
+    n = session_launches(command)
+    if not n:
+        return None
+    d = _device_module(root)
+    if d is None:
+        return None
+    try:
+        s = survey if survey is not None else d.survey()
+        ok, why = d.gate(s, extra=n)
+    except Exception:
+        return None
+    return None if ok else why
+
+
 def main() -> int:
     try:
         data = json.load(sys.stdin)
@@ -262,6 +304,16 @@ def main() -> int:
     args = tc.get("args") or {}
     command = args.get("CommandLine") or args.get("command") or (data.get("tool_input") or {}).get("command") or ""
     reason = check(command, never_add, allow_add, cwd=project_dir(data))
+    full = capacity_refusal(command, project_dir(data)) if not reason else None
+    if full:
+        msg = ("NOT LAUNCHED: %s.\n\nThe kit's guard keeps this device under its session cap (`python3 -I .kit/device.py`): "
+               "past it the computer runs out of memory and every session crashes. Leave the step planned (do not mark it "
+               "in progress) and launch it when a part ends." % full)
+        if claude:
+            print(msg, file=sys.stderr)
+            return 2
+        print(json.dumps({"decision": "deny", "reason": msg}, ensure_ascii=False))
+        return 0
     if not reason:
         if not claude:
             print(json.dumps({"decision": "allow"}))

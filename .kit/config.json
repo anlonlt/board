@@ -125,7 +125,7 @@
    }
   },
   "claude_permission_mode": "auto",
-  "setup": true,
+  "setup": false,
   "parts": {
    "memory": true,
    "board": true,
