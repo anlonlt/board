@@ -2100,15 +2100,24 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
                 closed.append((fn, title))
             else:
                 open_issues.append("  - issues/%s: %s" % (fn, title))
-    moving = {os.path.normpath(os.path.join(mdir, k, fn)) for k, fn, _ in to_move}
+    # A settled state or closed issue that a staying file cites stays (the checker reports a dead pointer otherwise);
+    # repeated until nothing changes, since a state kept so may cite another
     closed_paths = {os.path.join(issues_dir, fn) for fn, _ in closed}
-    staying_text = ""
-    for r, ds, fs in os.walk(mdir):
-        ds[:] = [x for x in ds if os.path.join(r, x) != os.path.join(mdir, "archive")]
-        for f in fs:
-            p = os.path.normpath(os.path.join(r, f))
-            if f.endswith(".md") and p not in moving and p not in closed_paths:
-                staying_text += read(p) + "\n"
+    while True:
+        moving = {os.path.normpath(os.path.join(mdir, k, fn)) for k, fn, _ in to_move}
+        staying_text = ""
+        for r, ds, fs in os.walk(mdir):
+            ds[:] = [x for x in ds if os.path.join(r, x) != os.path.join(mdir, "archive")]
+            for f in fs:
+                p = os.path.normpath(os.path.join(r, f))
+                if f.endswith(".md") and p not in moving and p not in closed_paths:
+                    staying_text += read(p) + "\n"
+        cited = [t for t in to_move if t[0] == "state" and re.search(r"state/%s\b" % re.escape(t[1]), staying_text)]
+        if not cited:
+            break
+        for t in cited:
+            to_move.remove(t)
+            kept_states.append("  - state/%s: settled, but cited by a file that stays" % t[1])
     kept_cited = []
     for fn, title in closed:
         if fn[:-3] in staying_text:

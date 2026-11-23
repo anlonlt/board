@@ -182,17 +182,35 @@ class CompactKeepsCheckerGreen(unittest.TestCase):
         self.assertIn("STORY: OK", out)
 
     def test_red_checker_moves_nothing(self):
-        # orchestrator.md cites a settled state that compact would archive: a dead pointer the checker catches
-        tree(self.d, orchestrator_extra="- see `.story/state/old.md`")
+        # a project checker (kit.memory_check) that is red on any compacted tree
+        tree(self.d)
+        os.makedirs(os.path.join(self.d, ".kit"))
+        with open(os.path.join(self.d, ".kit", "config.json"), "w") as fh:
+            json.dump({"kit": {"memory_dir": ".story", "memory_check":
+                       "python3 -c \"import os,sys; print('archive found'); "
+                       "sys.exit(1 if os.path.isdir('{root}/.story/archive') else 0)\""}}, fh)
         before = snapshot(self.d)
         out = self.kit.compact_memory(root_dir=self.d)
         self.assertIn("compact: REFUSED", out)
-        self.assertIn("dead pointer `.story/state/old.md`", out)
+        self.assertIn("archive found", out)
         self.assertEqual(self.real_tree_touched(), [])
         self.assertEqual(snapshot(self.d), before)
         out = self.kit.compact_memory(root_dir=self.d, dry_run=True)
         self.assertIn("would be REFUSED", out)
         self.assertEqual(snapshot(self.d), before)
+
+    def test_settled_state_a_staying_file_cites_stays(self):
+        # Harmonize (O53): state/songs.md stays and cites .story/state/bars.md and key.md; here orchestrator.md cites
+        # old.md, which cites gone.md: both settled, both stay, and the checker stays green
+        mem = tree(self.d, orchestrator_extra="- see `.story/state/old.md`")
+        with open(os.path.join(mem, "state", "old.md"), "a", encoding="utf-8") as fh:
+            fh.write("- it replaced `.story/state/gone.md`\n")
+        out = self.kit.compact_memory(root_dir=self.d)
+        self.assertNotIn("REFUSED", out)
+        self.assertTrue(os.path.isfile(os.path.join(mem, "state", "old.md")), out)
+        self.assertTrue(os.path.isfile(os.path.join(mem, "state", "gone.md")), out)
+        self.assertIn("state/old.md: settled, but cited by a file that stays", out)
+        self.assertEqual(run_checker(self.d).returncode, 0, out)
 
     def test_closed_issue_a_staying_file_cites_stays(self):
         mem = tree(self.d, orchestrator_extra="- the crash: .story/issues/2026-11-01-crash")
