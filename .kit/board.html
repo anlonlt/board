@@ -428,9 +428,17 @@ h1 { font-weight: 800; letter-spacing: -0.025em; font-size: 1.65rem; }
 /* Icon-only Like button & Ask the Orchestrator icon button */
 .like { font-weight: 700; border-radius: 999px; padding: 2px 8px; transition: transform .12s ease, background .15s ease; }
 .like.icon-only { font-size: 0 !important; padding: 3px 8px; display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 24px; }
-.like.icon-only::before { content: "\1F44D"; font-size: .86rem; line-height: 1; }
 .like.icon-only.on { background: color-mix(in srgb, var(--ember) 22%, var(--surface)); border-color: var(--ember); }
 .like:active { transform: scale(.94); }
+/* Icons (principle 1: SVG, never emoji). Sizes in px where the parent sets font-size: 0. */
+.ico { width: 1.05em; height: 1.05em; flex: none; vertical-align: -0.16em; }
+.like { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; }
+.like .ico { width: 15px; height: 15px; display: block; }
+.like.on .ico path { fill: currentColor; fill-opacity: .25; }
+.taking, .badge.rev, .focus-swipe-hint { display: inline-flex; align-items: center; gap: 4px; }
+.taking .ico { width: 13px; height: 13px; }
+.badge.rev .ico { width: 11px; height: 11px; stroke-width: 3; }
+.deliv .ico { width: 14px; height: 14px; }
 #ask.icon-msg { width: 36px; height: 36px; padding: 0 !important; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; position: relative; }
 #ask.icon-msg svg { width: 18px; height: 18px; display: block; flex: none; }
 #ask.icon-msg .newdot { position: absolute; top: -2px; right: -2px; margin: 0; width: 10px; height: 10px; border: 2px solid var(--bg); }
@@ -1232,6 +1240,29 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     if (cls) n.className = cls;
     if (text != null) n.textContent = text;
     return n;
+  }
+  /* Design principle 1 (docs/DESIGN-PRINCIPLES.md): zero emoji. Every glyph the page draws is one of these monochrome
+     SVGs (stroke = currentColor), so it takes the theme's color and reads the same on every phone. */
+  var SVG_HEAD = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">';
+  var ICON = {
+    like: SVG_HEAD + '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>',
+    check: SVG_HEAD + '<polyline points="20 6 9 17 4 12"/></svg>',
+    checks: SVG_HEAD + '<polyline points="17 6 7 17 2 12"/><polyline points="22 6 11.5 17 10.5 16"/></svg>',
+    back: SVG_HEAD + '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>'
+  };
+  /* An element holding one icon and, after it, plain text (the text is what a translation replaces). */
+  function iconEl(tag, cls, icon, text) {
+    var n = el(tag, cls); n.innerHTML = ICON[icon];
+    if (text) n.appendChild(el("span", "ico-txt", text));
+    return n;
+  }
+  /* The Like button is the icon alone (the owner, 2026-11-21 04:24: "the like button that can only be the icon and not
+     the word"); Like / Liked is said to screen readers and in the tooltip, never drawn. */
+  function paintLike(b, on) {
+    b.innerHTML = ICON.like;
+    b.classList.toggle("on", !!on);
+    b.setAttribute("aria-pressed", String(!!on));
+    b.setAttribute("aria-label", on ? "Liked" : "Like");
   }
   function str(v) { return typeof v === "string" ? v : (v == null ? "" : String(v)); }
   /* A post he moved to Done comes back when a session or the orchestrator comments after that (he asked, 2026-11-12). */
@@ -2112,7 +2143,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     }
     var fromAgent = cs.filter(function (x) { return x.from && x.from !== "owner" && x.from !== "viewer"; }).length;
     if (cs.length) m.appendChild(el("span", "badge", cs.length + (cs.length === 1 ? " comment" : " comments")));
-    if (cs.some(function (x) { return x.kind === "review"; })) m.appendChild(el("span", "badge rev", "\u2713 reviewed"));
+    if (cs.some(function (x) { return x.kind === "review"; })) m.appendChild(iconEl("span", "badge rev", "check", "reviewed"));
     if (fromAgent) m.appendChild(el("span", "badge new", fromAgent + " from a session"));
     var imgs = Array.isArray(p.images) ? p.images.length : 0;
     if (imgs) m.appendChild(el("span", "badge", imgs + (imgs === 1 ? " image" : " images")));
@@ -2179,7 +2210,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
         var cm = el("div", "meta");
         var whoLabel = c.from === "owner" ? "You" : (c.from === "orchestrator" ? (c.kind === "review" ? "Orchestrator (review)" : "Orchestrator") : (str(c.from) || "A session"));
         cm.appendChild(el("span", "part", whoLabel));
-        if (c.kind === "review") cm.appendChild(el("span", "badge rev", "\u2713 reviewed"));
+        if (c.kind === "review") cm.appendChild(iconEl("span", "badge rev", "check", "reviewed"));
         cm.appendChild(el("span", null, when(c.created_at)));
         row.appendChild(cm);
         var cb = el("div", "body");
@@ -2223,7 +2254,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     var likes = all.filter(function (c) { return c.like === true; });
     var cs = all.filter(function (c) { return !c.like && !c.comment_id; }).sort(function (a, b) { return tOf(a) - tOf(b); });
     var postLikes = likes.filter(function (c) { return !c.comment_id && !c.image; });
-    if (postLikes.length) out.push("👍 " + postLikes.map(function (c) { return whoMd(c) + " liked the post (" + utc(tOf(c)) + ")"; }).join("; "), "");
+    if (postLikes.length) out.push("Liked: " + postLikes.map(function (c) { return whoMd(c) + " liked the post (" + utc(tOf(c)) + ")"; }).join("; "), "");
     if (cs.length) {
       out.push("## Comments", "");
       var byId = {}, kids = {}, parent = {};
@@ -2237,7 +2268,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
         if (k >= 0) head += " · on picture " + (k + 1) + (captionOf(p, k) ? " (" + captionOf(p, k) + ")" : "");
         if (c.read === true) head += " · seen";
         var lk = likes.filter(function (x) { return x.comment_id === c.id; }).map(whoMd);
-        if (lk.length) head += " · 👍 " + lk.join(", ");
+        if (lk.length) head += " · liked by " + lk.join(", ");
         out.push(pad + "- " + head);
         out.push(indent(str(c.text).trim(), pad + "  "));
         (Array.isArray(c.files) ? c.files : []).forEach(function (f) { out.push(pad + "  [attached: " + str(f && f.name) + " at /_blob/" + str(f && f.id) + "]"); });
@@ -2272,13 +2303,12 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   }
   function likeButton(p, u, n, anchorOf) {
     var on = likedBy(p, u);
-    var b = el("button", "like" + (on ? " on" : ""), on ? "\uD83D\uDC4D Liked" : "\uD83D\uDC4D Like"); b.type = "button";
-    b.setAttribute("aria-pressed", String(on));
+    var b = el("button", "like"); b.type = "button"; paintLike(b, on);
     b.title = on ? "You approved this" : "Approve without writing";
     b.addEventListener("click", function (e) {
       e.stopPropagation();
       if (b.classList.contains("on") || !db) return;
-      b.className = "like on"; b.textContent = "\uD83D\uDC4D Liked";
+      paintLike(b, true); b.title = "You approved this";
       var ref = db.collection("comments").doc();
       var row = { post_id: p.id, text: "\uD83D\uDC4D", like: true, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
       if (u) row.image = u;
@@ -2681,15 +2711,15 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
       actsRow.appendChild(commentLike(c));
       /* The owner, 2026-11-13 04:12: the orchestrator Likes a review whose suggestion it takes care of. */
       if (likesOn(c.id).some(function (x) { return x.comment_id === c.id && x.like === true && x.from === "orchestrator"; }))
-        actsRow.appendChild(el("span", "taking", "\uD83D\uDC4D orchestrator: taking care of it"));
+        actsRow.appendChild(iconEl("span", "taking", "like", "orchestrator: taking care of it"));
     }
     d.appendChild(actsRow);
     if (c.from === "owner" || c.from === "viewer") {
       var info = el("div", "deliv");
       if (sending[c.id]) { info.textContent = "\u2026"; info.title = "Sending to Claude..."; }
-      else if (c.read === true) { info.classList.add("seen-ok"); info.textContent = "\u2713\u2713"; info.title = "\u2713 Seen" + (c.read_at ? " " + when(c.read_at) : ""); }
-      else if (c.delivered === true) { info.classList.add("ok"); info.textContent = "\u2713\u2713"; info.title = "Sent to the agent"; }
-      else { info.classList.add("err"); info.textContent = "\u2713"; info.title = "Saved on the board; not sent" + (c.delivery_error ? " (" + str(c.delivery_error) + ")" : "") + "."; }
+      else if (c.read === true) { info.classList.add("seen-ok"); info.innerHTML = ICON.checks; info.title = "Seen" + (c.read_at ? " " + when(c.read_at) : ""); }
+      else if (c.delivered === true) { info.classList.add("ok"); info.innerHTML = ICON.checks; info.title = "Sent to the agent"; }
+      else { info.classList.add("err"); info.innerHTML = ICON.check; info.title = "Saved on the board; not sent" + (c.delivery_error ? " (" + str(c.delivery_error) + ")" : "") + "."; }
       d.appendChild(info);
       if (c.delivered !== true && !sending[c.id] && cmts) {
         var row = el("div", "row");
@@ -2752,11 +2782,11 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   /* Like on a session's comment: a row with comment_id, sent to Claude with the comment's first words. */
   function commentLike(c) {
     var on = likesOn(c.id).some(function (x) { return x.comment_id === c.id && x.like === true && (x.from === "owner" || x.from === "viewer"); });
-    var b = el("button", "like icon-only" + (on ? " on" : ""), on ? "\uD83D\uDC4D Liked" : "\uD83D\uDC4D Like"); b.type = "button";
-    b.setAttribute("aria-pressed", String(on));
+    var b = el("button", "like icon-only"); b.type = "button"; paintLike(b, on);
+    b.title = on ? "You agreed with this comment" : "Agree without writing";
     b.addEventListener("click", function () {
       var p = current(); if (b.classList.contains("on") || !db || !p) return;
-      b.className = "like icon-only on"; b.textContent = "\uD83D\uDC4D Liked";
+      paintLike(b, true); b.title = "You agreed with this comment";
       var ref = db.collection("comments").doc();
       var row = { post_id: p.id, comment_id: c.id, text: "\uD83D\uDC4D", like: true, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
       var sendP = sendToClaude(p, 0, $("p-title"), "\uD83D\uDC4D Like on the comment of " + str(c.from) + " (\u00ab" + str(c.text).slice(0, 80) + "\u00bb): he agrees, no words.");
@@ -3125,7 +3155,14 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     if (!cmts || typeof cmts.canSendToClaude !== "function") return;
     cmts.canSendToClaude().then(function (v) { canSend = str(v); }, function (e) { canSend = (e && e.code) || "off"; });
   }
-  function prefixFor(p, n) { return "[post " + p.id + "] " + (n ? "[image " + n + "] " : ""); }
+  /* A post of an attached board (the header switcher; kit/claude/artifact_repos.js) is named with its board, so the clerk
+     reads it in repos/<id>/ and sends it to that board's sessions: "[repo <id>] [post <id>] ...". */
+  function repoOf(p) {
+    var R = window.__KIT_REPOS__, pre = R && R.prefixOf ? R.prefixOf("posts", p.id) : "";
+    var m = /^repos\/([^/]+)\/$/.exec(pre || "");
+    return m ? m[1] : "";
+  }
+  function prefixFor(p, n) { var r = repoOf(p); return (r ? "[repo " + r + "] " : "") + "[post " + p.id + "] " + (n ? "[image " + n + "] " : ""); }
   /* Starts the send at once, inside the viewer's gesture; resolves to "" when sent, else the reason. */
   function sendToClaude(p, n, anchorEl, text) {
     if (!cmts || typeof cmts.sendToClaude !== "function") return Promise.resolve("sending to Claude is not available in this view");
@@ -3270,6 +3307,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     user = await w.use("user");
     if (user) { try { state.isOwner = await user.isOwner(); } catch (e) {} }
     db = await w.use("db");
+    if (db && window.__KIT_WRAP_DB__) db = window.__KIT_WRAP_DB__(db);   /* cross-repo boards in an Artifact (kit/claude/artifact_repos.js) */
     if (!db) { clearTimeout(timer); var s = $("status"); s.textContent = "Sign in on claude.ai to see the board."; s.className = "status bad"; return; }
     /* His read marks, under his own user: the same on his phone and his computer. */
     var uid = null;
@@ -3862,7 +3900,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
           var m = el("span", "meta");
           m.appendChild(el("span", "tnet-st st-" + stK, CHIP[stK] || stK));
           var pcs = commentsFor(p.id);
-          if (pcs.some(function (x) { return x.kind === "review"; })) m.appendChild(el("span", "badge rev", "\u2713 reviewed"));
+          if (pcs.some(function (x) { return x.kind === "review"; })) m.appendChild(iconEl("span", "badge rev", "check", "reviewed"));
           node.appendChild(m);
           node.addEventListener("click", function () { openPost(p.id); });
           var holdT = 0;
@@ -4164,7 +4202,7 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
           var cm = el("div", "meta");
           var who = c.from === "owner" ? "You" : (c.from === "orchestrator" ? (c.kind === "review" ? "Orchestrator (review)" : "Orchestrator") : (str(c.from) || "A session"));
           cm.appendChild(el("span", "part", who));
-          if (c.kind === "review") cm.appendChild(el("span", "badge rev", "\u2713 reviewed"));
+          if (c.kind === "review") cm.appendChild(iconEl("span", "badge rev", "check", "reviewed"));
           cm.appendChild(el("span", null, when(c.created_at)));
           item.appendChild(cm);
           var cb = el("div", "body");
@@ -4200,9 +4238,10 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
 
     function attachFocusSwipe(cardEl, p) {
       var def = defaultOptionFor(p);
-      var rLabel = def ? ("\u2713 " + def) : (colOf(p) === "question" ? "\uD83D\uDC4D" : "\u2713 Done");
-      var hR = el("span", "focus-swipe-hint right", rLabel);
-      var hL = el("span", "focus-swipe-hint left", "\u2190");
+      var hR = def ? iconEl("span", "focus-swipe-hint right", "check", def)
+        : (colOf(p) === "question" ? iconEl("span", "focus-swipe-hint right", "like") : iconEl("span", "focus-swipe-hint right", "check", "Done"));
+      if (!def && colOf(p) === "question") hR.setAttribute("aria-label", "Like");
+      var hL = iconEl("span", "focus-swipe-hint left", "back");
       cardEl.appendChild(hR); cardEl.appendChild(hL);
       var sx = 0, sy = 0, dx = 0, dragging = false;
       cardEl.addEventListener("pointerdown", function (e) {

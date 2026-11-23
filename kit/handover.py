@@ -41,7 +41,18 @@ def slug_of(c):
     return re.sub(r"[^a-z0-9]+", "-", str(c.get("project") or "project").lower()).strip("-") or "project"
 
 
-def successor_prompt(role, gen):
+def successor_prompt(role, gen, cli="claude"):
+    if cli == "agy":
+        if role == "orchestrator":
+            return ("Read .kit/orchestrator.md and start as the orchestrator for this repository: you are orchestrator %d, "
+                    "after a context reset; the welcome is already posted. Update _orchestrator.session_id to your "
+                    "conversationId, launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md, then resume "
+                    "from the board alone: run `python3 -I .kit/kit.py sync-db` and `python3 -I .kit/kit.py resume` "
+                    "(every active train, its steps, what of the owner's is unanswered); the memory's "
+                    "state/orchestrator.md holds only open timers. Post one line under _orchestrator: "
+                    "\"Orchestrator %d took over.\" and continue." % (gen, gen))
+        return ("Your prompt is .kit/clerk.md: read it and follow it. You are clerk %d, replacing the previous clerk "
+                "after its context hand-over." % gen)
     if role == "orchestrator":
         return ("Read .kit/claude-cli/orchestrator.md and start as the orchestrator for this repository: you are "
                 "orchestrator %d, after a context reset; the welcome is already posted. Resume from the board alone: "
@@ -51,6 +62,40 @@ def successor_prompt(role, gen):
                 "_orchestrator: \"Orchestrator %d took over.\" and continue." % (gen, gen))
     return ("Your prompt is .kit/claude-cli/clerk.md: read it and follow it. You are clerk %d, replacing the previous "
             "clerk after its context hand-over." % gen)
+
+
+def find_ancestor_pid(comm_name):
+    """Walk /proc/<pid>/stat up to PID 1 to find the enclosing process named `comm_name` (e.g. 'agy')."""
+    if not os.path.exists("/proc/self/stat"):
+        return 0
+    pid = os.getppid()
+    seen = set()
+    while pid > 1 and pid not in seen:
+        seen.add(pid)
+        try:
+            with open("/proc/%d/comm" % pid, encoding="utf-8") as fh:
+                if fh.read().strip() == comm_name:
+                    return pid
+            with open("/proc/%d/stat" % pid, encoding="utf-8") as fh:
+                st = fh.read()
+            pid = int(st[st.rindex(")") + 2:].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+    return 0
+
+
+def detect_cli(explicit, k):
+    if explicit and explicit != "auto":
+        return explicit
+    env_cli = os.environ.get("KIT_CLI", "").strip().lower()
+    if env_cli in ("agy", "claude"):
+        return env_cli
+    if os.environ.get("CLAUDE_PID") or os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        return "claude"
+    if find_ancestor_pid("agy"):
+        return "agy"
+    cfg_cli = str(k.get("cli") or "").strip().lower()
+    return cfg_cli if cfg_cli in ("agy", "claude") else "claude"
 
 
 def this_session():
@@ -84,6 +129,7 @@ def next_gen(role):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--role", choices=["orchestrator", "clerk"], required=True)
+    ap.add_argument("--cli", choices=["auto", "claude", "agy"], default="auto")
     ap.add_argument("--name", help="session name (default <slug>-<role>)")
     ap.add_argument("--slug")
     ap.add_argument("--dry-run", action="store_true", help="print what would happen, change nothing")
@@ -91,16 +137,37 @@ def main():
 
     c = config()
     k = c.get("kit") or {}
+    cli = detect_cli(a.cli, k)
     slug = a.slug or slug_of(c)
     name = a.name or "%s-%s" % (slug, a.role)
     mode = os.environ.get("KIT_CLAUDE_PERMISSION_MODE") or k.get("claude_permission_mode") or "auto"
     model = ((k.get("claude_cli_roles") or {}).get(a.role) or {}).get("model") or ("haiku" if a.role == "clerk" else "inherit")
-    kind, sid = this_session()
     gen = 2 if a.dry_run else next_gen(a.role)
-    prompt = successor_prompt(a.role, gen)
+    prompt = successor_prompt(a.role, gen, cli=cli)
 
+    if cli == "agy":
+        if a.role == "clerk":
+            print("handover: in agy, clerk rotation is handled by the orchestrator (spawn a fresh Board Clerk subagent, "
+                  "then kill the old one).")
+            return 0
+        pid = int(os.environ.get("AGY_PID") or 0) or find_ancestor_pid("agy")
+        plan = {"how": "foreground", "cli": "agy", "flag": FLAG, "kill": pid or None, "name": name, "prompt": prompt}
+        if a.dry_run:
+            print(json.dumps(plan, indent=1))
+            return 0
+        with open(FLAG, "w", encoding="utf-8") as fh:
+            json.dump({"role": a.role, "cli": "agy", "name": name, "gen": gen, "prompt": prompt}, fh)
+        if not pid:
+            print("handover: wrote %s; exit this agy session so `up` opens orchestrator %d." % (FLAG, gen))
+            return 0
+        print("handover: ending this agy session; `up` opens orchestrator %d in this terminal." % gen)
+        sys.stdout.flush()
+        os.kill(pid, signal.SIGTERM)
+        return 0
+
+    kind, sid = this_session()
     if kind != "background":
-        plan = {"how": "foreground", "flag": FLAG, "kill": os.environ.get("CLAUDE_PID"), "name": name, "prompt": prompt}
+        plan = {"how": "foreground", "cli": "claude", "flag": FLAG, "kill": os.environ.get("CLAUDE_PID"), "name": name, "prompt": prompt}
         if a.dry_run:
             print(json.dumps(plan, indent=1))
             return 0
@@ -109,7 +176,7 @@ def main():
             print("handover: no CLAUDE_PID; is this a Claude Code session?", file=sys.stderr)
             return 1
         with open(FLAG, "w", encoding="utf-8") as fh:
-            json.dump({"role": a.role, "name": name, "gen": gen, "prompt": prompt}, fh)
+            json.dump({"role": a.role, "cli": "claude", "name": name, "gen": gen, "prompt": prompt}, fh)
         print("handover: ending this session; `up` opens %s (generation %d) in this terminal." % (name, gen))
         sys.stdout.flush()
         os.kill(pid, signal.SIGTERM)

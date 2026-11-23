@@ -122,11 +122,11 @@ def apply(page, table, strings):
     for k_raw, v_raw in (strings or {}).items():
         if v_raw:
             norm_strings[decode_js(k_raw)] = decode_js(v_raw)
-    never = {decode_js(e) for e in EXCLUDED}  # code tokens and text for Claude: never translated, even if a table lists them
+    never = {decode_js(e) for e in EXCLUDED}  # code tokens and text for Claude: kept as is even if a translation names them
     for row in table:
         en, kind = decode_js(row["en"]), row["kind"]
         if kind == "js" and en in never:
-            used += 1  # in the table on purpose, kept as is
+            used += 1  # found and deliberately kept (e.g. "posts/" in removeDocs(["posts/" + id]) is a db path)
             continue
         tr = norm_strings.get(en)
         if not tr or tr == en:

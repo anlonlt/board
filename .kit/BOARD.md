@@ -2,7 +2,7 @@
 
 The board: http://127.0.0.1:8765 (served locally by `python3 -I .kit/board_server.py`, source `.kit/board.html`). A session's result lives in ONE place, its board post. The owner reads and answers there. Talk to the owner in **en**.
 
-**Your post exists from turn 1.** When your prompt names your post, it exists already (the orchestrator planned it): `update` it with your `session_id` and `status: "in progress"`. Otherwise create it with `board_cli.py set` in column `info`, `status: "in progress"`. Add each finding to it (newest first); at the end fill it in the post format below. The message to the orchestrator (agy `send_message`; Claude Code: your last line, or `SendMessage`) only points: `Done. Check post <id>.`. Each chat turn ends with a single `·` (the hooks remind you).
+**Your post exists from turn 1.** When your prompt names your post, it exists already (the orchestrator planned it): `update` it with your `session_id` and `status: "in progress"`. Otherwise create it with `board_cli.py set` in column `info`, `status: "in progress"`. Add each finding to it (newest first); at the end fill it in the post format below. The message to the orchestrator (agy `send_message`; Claude Code: your last line, or `SendMessage`) only points: `Done. Check post <id>.`. A turn the board or another session opened ends with a single `·` (the hooks remind you); when the owner types in your chat, answer him briefly in words, never a lone `·`.
 
 **Do it, don't ask:** what is in your reach and in the owner's direction, do and report. Ask only for a choice, money, a licence, a change of direction, deleting.
 

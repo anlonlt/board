@@ -85,6 +85,18 @@ class TrainAndResume(unittest.TestCase):
         self.assertIn("Rebuild your task list", out)
         out2 = self.kit.resume(self.tmp, db_path=self.db, alive={"demo-pl2"})
         self.assertIn("session demo-pl2 (running)", out2)
+        out_agy = self.kit.resume(self.tmp, db_path=self.db, alive={"demo-pl2"}, cli="agy")
+        self.assertIn("Resume in agy", out_agy)
+        self.assertIn("manage_subagents", out_agy)
+        self.assertIn("kit.py step", out_agy)
+        mcp = load("mcp_stdio_t", os.path.join(ROOT, "kit", "board", "mcp_stdio.py"))
+        names = {t["name"] for t in mcp.TOOLS}
+        self.assertTrue({"board_step_new", "board_step_update", "board_resume", "board_train"} <= names)
+        srv = mcp.MCPServer(ROOT)
+        resp = srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                           "params": {"name": "board_resume", "arguments": {"cli": "agy"}}})
+        self.assertFalse(resp["result"]["isError"])
+        self.assertIn("Resume in agy", resp["result"]["content"][0]["text"])
 
 
 class PostFormat(unittest.TestCase):
@@ -157,6 +169,28 @@ class PostFormat(unittest.TestCase):
             os.makedirs(os.path.join(root, ".kit", "run"))
             open(os.path.join(root, ".kit", "run", "CR-PL2-b.md"), "w").close()
             self.assertIn("already started", self.kit.review("PL2-b")[1])
+            # agy parity: review uses .kit/consultant.md and `agy --mode auto -p`
+            with open(os.path.join(ROOT, "kit", "consultant.template.md")) as src, \
+                    open(os.path.join(root, ".kit", "consultant.md"), "w") as dst:
+                dst.write(src.read())
+            rc_a, out_a = self.kit.review("PL2-b", dry_run=True, force=True, cli="agy")
+            self.assertEqual(rc_a, 0)
+            self.assertIn("agy --mode auto -p", out_a)
+            self.assertIn("send_message", out_a)
+            self.assertNotIn("<POST_ID>", out_a)
+            # agy parity: _launch_line and _write_step_prompt use .kit/part.md + invoke_subagent
+            with open(os.path.join(ROOT, "kit", "part.template.md")) as src, \
+                    open(os.path.join(root, ".kit", "part.md"), "w") as dst:
+                dst.write(src.read().replace("{{PROJECT}}", "Demo").replace("{{TALK}}", "English"))
+            rel, made = self.kit._write_step_prompt("pl9-agy", {"part": "PL9", "title": "agy step", "train": "planner", "body": "do it"}, [], cli="agy")
+            self.assertTrue(made)
+            ptxt = rd(os.path.join(root, rel))
+            self.assertIn("conversationId", ptxt)
+            self.assertIn("send_message", ptxt)
+            self.assertIn("device.py run", ptxt)
+            launch_a = self.kit._launch_line("PL9", rel, cli="agy")
+            self.assertIn("invoke_subagent", launch_a)
+            self.assertIn('Workspace="share"', launch_a)
         finally:
             self.kit.ROOT = old_root
             if old_env is None:

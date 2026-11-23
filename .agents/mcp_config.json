@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "board-kit": {
+      "command": "python3",
+      "args": [
+        "-I",
+        "/home/anon/board/.kit/mcp_stdio.py",
+        "--root",
+        "/home/anon/board"
+      ]
+    }
+  }
+}

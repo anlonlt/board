@@ -1915,11 +1915,23 @@ def done(pid, db_path=None, root=None):
     return (1 if err else 0), "\n".join(lines)
 
 
-def review(pid=None, train=None, dry_run=False, force=False, db_path=None):
-    """Write a review prompt from .kit/claude-cli/consultant.md and start it as a background session: a step review
+def _active_cli(explicit=None):
+    if explicit in ("agy", "claude"):
+        return explicit
+    env_cli = str(os.environ.get("KIT_CLI") or "").strip().lower()
+    if env_cli in ("agy", "claude"):
+        return env_cli
+    k = _kit_config().get("kit") or {}
+    cfg_cli = str(k.get("cli") or "").strip().lower()
+    return cfg_cli if cfg_cli in ("agy", "claude") else "claude"
+
+
+def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=None):
+    """Write a review prompt and start it as a background session (Claude Code CLI or agy): a step review
     (pid) or a whole-train review (train). Idempotent: a review already started is not started again."""
     c = _kit_config()
     k = c.get("kit") or {}
+    active = _active_cli(cli)
     slug = _slug(c.get("project") or "project")
     if train and not pid:
         posts, _ = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=db_path)
@@ -1944,25 +1956,37 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None):
             rid = "%s-%d" % (base, n)
             n += 1
     session = "%s-review-%s" % (slug, _slug(rid[3:], 30))
-    tpl_path = os.path.join(ROOT, ".kit", "claude-cli", "consultant.md")
-    try:
-        with open(tpl_path, encoding="utf-8") as fh:
-            tpl = fh.read()
-    except OSError:
-        return 1, "no %s (install the kit with the Claude Code CLI runtime)" % tpl_path
+    if active == "agy":
+        cands = (os.path.join(ROOT, ".kit", "consultant.md"), os.path.join(ROOT, ".kit", "claude-cli", "consultant.md"))
+    else:
+        cands = (os.path.join(ROOT, ".kit", "claude-cli", "consultant.md"), os.path.join(ROOT, ".kit", "consultant.md"))
+    tpl, tpl_path = None, cands[0]
+    for cand in cands:
+        if os.path.isfile(cand):
+            tpl_path = cand
+            with open(cand, encoding="utf-8") as fh:
+                tpl = fh.read()
+            break
+    if tpl is None:
+        return 1, "no %s (reinstall the kit)" % tpl_path
+    orch_doc = _get_post("_orchestrator", db_path=db_path) or {}
+    orch_id = str(orch_doc.get("session_id") or ("%s-orchestrator" % slug))
     for key, val in (("<SCOPE>", scope), ("<SESSION>", session), ("<REVIEW_ID>", rid), ("<POST_ID>", pid),
-                     ("<PART>", part), ("<PROJECT_ID>", project or "(none)")):
+                     ("<PART>", part), ("<PROJECT_ID>", project or "(none)"), ("<ORCH_ID>", orch_id)):
         tpl = tpl.replace(key, val)
     run_dir = os.path.join(ROOT, ".kit", "run")
     out = os.path.join(run_dir, rid + ".md")
     if os.path.exists(out) and not force and not dry_run:
         return 0, "review %s already started (prompt %s); --force to start it again" % (rid, os.path.relpath(out, ROOT))
-    mode = k.get("claude_permission_mode") or "auto"
-    model = ((k.get("claude_cli_roles") or {}).get("consultant") or {}).get("model") or "opus"
-    cmd = ["claude", "--bg", "-n", session, "--permission-mode", mode]
-    if model != "inherit":
-        cmd += ["--model", model]
-    cmd.append("Your prompt is %s: read it and do it." % os.path.relpath(out, ROOT))
+    if active == "agy":
+        cmd = ["agy", "--mode", "auto", "-p", "Your prompt is %s: read it and do it." % os.path.relpath(out, ROOT)]
+    else:
+        mode = k.get("claude_permission_mode") or "auto"
+        model = ((k.get("claude_cli_roles") or {}).get("consultant") or {}).get("model") or "opus"
+        cmd = ["claude", "--bg", "-n", session, "--permission-mode", mode]
+        if model != "inherit":
+            cmd += ["--model", model]
+        cmd.append("Your prompt is %s: read it and do it." % os.path.relpath(out, ROOT))
     if dry_run:
         return 0, "would write %s and run: %s\n\n%s" % (os.path.relpath(out, ROOT), " ".join(cmd), tpl)
     os.makedirs(run_dir, exist_ok=True)
@@ -1975,7 +1999,7 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None):
                          start_new_session=True, env=dict(os.environ, KIT_ROLE="review"))
     except OSError as e:
         return 1, "could not start the review session: %s" % e
-    return 0, "review %s started as session %s" % (rid, session)
+    return 0, "review %s started (%s)" % (rid, "agy -p" if active == "agy" else ("session " + session))
 
 
 # ---------------------------------------------------------------- steps: the train is the task list (any CLI)
@@ -2029,14 +2053,17 @@ def device_line(survey=None):
         return "Device: could not measure (%s)." % e
 
 
-def _launch_line(part, rel, model=None):
+def _launch_line(part, rel, model=None, cli=None):
     c = _kit_config()
     k = c.get("kit") or {}
+    active = _active_cli(cli)
     mode = k.get("claude_permission_mode") or "auto"
-    model = str(model or ((k.get("claude_cli_roles") or {}).get("part") or {}).get("model") or "inherit")
     name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
-    if str(k.get("cli") or "claude") == "agy":
-        return "(agy) launch a part session with the prompt %s, in its own worktree, named %s" % (rel, name)
+    if active == "agy":
+        agy_model = str(model or ((k.get("roles") or {}).get("part") or {}).get("model") or "inherit")
+        return ('invoke_subagent(TypeName="self", Role="Part: %s", Model="%s", Workspace="share", '
+                'Prompt="Your prompt is %s: read it and do it.")') % (part, agy_model, rel)
+    model = str(model or ((k.get("claude_cli_roles") or {}).get("part") or {}).get("model") or "inherit")
     if str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() == "true":
         return ("(web) run it as a subagent here (Agent tool, isolation worktree) with the prompt \"Your prompt is %s: "
                 "read it and do it.\", or open a new Claude Code web session on this repo with that prompt" % rel)
@@ -2045,25 +2072,36 @@ def _launch_line(part, rel, model=None):
         gate, name, _slug(part, 24), mode, (" --model %s" % model) if model != "inherit" else "", rel)
 
 
-def _write_step_prompt(pid, doc, sources):
-    """docs/prompts/<pid>.md from .kit/claude-cli/part.md; never overwrites one that exists."""
+def _write_step_prompt(pid, doc, sources, cli=None):
+    """docs/prompts/<pid>.md from .kit/part.md (agy) or .kit/claude-cli/part.md; never overwrites one that exists."""
     rel = "docs/prompts/%s.md" % pid
     path = os.path.join(ROOT, rel)
     if os.path.exists(path):
         return rel, False
-    try:
-        with open(os.path.join(ROOT, ".kit", "claude-cli", "part.md"), encoding="utf-8") as fh:
-            tpl = fh.read()
-    except OSError:
+    active = _active_cli(cli)
+    if active == "agy":
+        cands = (os.path.join(ROOT, ".kit", "part.md"), os.path.join(ROOT, ".kit", "claude-cli", "part.md"))
+    else:
+        cands = (os.path.join(ROOT, ".kit", "claude-cli", "part.md"), os.path.join(ROOT, ".kit", "part.md"))
+    tpl = None
+    for cand in cands:
+        if os.path.isfile(cand):
+            with open(cand, encoding="utf-8") as fh:
+                tpl = fh.read()
+            break
+    if tpl is None:
         return None, False
     c = _kit_config()
     src = ("\n".join("- comment `%s`: read it with `python3 -I .kit/board_cli.py get comments %s --out-dir /tmp/src`" % (x, x)
                       for x in sources) if sources else
            "(none named: the task is the orchestrator's; ask under your post if it is unclear)")
+    orch_doc = _get_post("_orchestrator") or {}
+    orch_id = str(orch_doc.get("session_id") or "<orchestrator conversationId>")
     # a source is the owner's comment or a review's (a redirect becomes a step that answers it)
     vals = {"<PART>": doc["part"], "<TITLE>": doc["title"], "<TRAIN>": doc["train"], "<POST_ID>": pid,
             "<AFTER>": (", after `%s`" % doc["parent"]) if doc.get("parent") else "",
             "<TASK>": (doc.get("body") or "").strip() or doc["title"], "<SOURCES>": src,
+            "<ORCH_ID>": orch_id,
             "<SESSION>": "%s-%s" % (_slug(c.get("project") or "project"), _slug(doc["part"], 24))}
     for kk, vv in vals.items():
         tpl = tpl.replace(kk, vv)
@@ -2073,7 +2111,7 @@ def _write_step_prompt(pid, doc, sources):
     return rel, True
 
 
-def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None):
+def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None, cli=None):
     """A train step: its post (adopted when the train already has one for that part, never duplicated) and its
     generated prompt. Returns {post, adopted, prompt, prompt_written, launch} or {error}."""
     posts = _all_posts(db_path)
@@ -2088,7 +2126,7 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         rel = "docs/prompts/%s.md" % found
         has = os.path.exists(os.path.join(ROOT, rel))
         return {"post": found, "adopted": True, "prompt": rel if has else None, "prompt_written": False,
-                "launch": _launch_line(part, rel, model) if has else None}
+                "launch": _launch_line(part, rel, model, cli=cli) if has else None}
     title = re.sub(r"^\s*%s\b[\s:.-]*" % re.escape(part), "", title or part, flags=re.I) or title or part
     base = "%s-%s" % (_slug(part, 12), _slug(title))
     pid, n = base, 2
@@ -2105,9 +2143,9 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         doc["review_auto"] = False
     if not _board_write("set", "posts", pid, doc):
         return {"error": "the board did not take step %s (is the board server running?)" % part}
-    rel, made = _write_step_prompt(pid, doc, list(sources))
+    rel, made = _write_step_prompt(pid, doc, list(sources), cli=cli)
     return {"post": pid, "adopted": False, "prompt": rel, "prompt_written": made,
-            "launch": _launch_line(part, rel, model) if rel else None}
+            "launch": _launch_line(part, rel, model, cli=cli) if rel else None}
 
 
 def step_start(pid):
@@ -2121,7 +2159,7 @@ def step_drop(pid, db_path=None):
     return {"post": pid, "ok": _board_write("update", "posts", pid, {"removed": True})}
 
 
-def step_complete(pid, db_path=None):
+def step_complete(pid, db_path=None, cli=None):
     """Status complete (the owner moves it to Done), then its review and, every kit.review.train_every completed
     steps of its train, a cross review. Reviews are idempotent (one per step, one per count)."""
     out = {"post": pid, "ok": _board_write("update", "posts", pid, {"status": "complete", "completed_at": _now_z()}),
@@ -2132,14 +2170,14 @@ def step_complete(pid, db_path=None):
     posts = _all_posts(db_path)
     p = posts.get(pid) or {}
     if p.get("review_auto") is not False:
-        rc, msg = review(pid, db_path=db_path)
+        rc, msg = review(pid, db_path=db_path, cli=cli)
         out["reviews"].append(msg)
     train, every = p.get("train"), int(rv.get("train_every", 4) or 0)
     if train and every > 0:
         n = sum(1 for q in posts.values() if not q.get("removed") and _norm_train(q.get("train")) == _norm_train(train)
                 and (str(q.get("status") or "") == "complete" or q.get("column") == "done"))
         if n and n % every == 0:
-            rc, msg = review(None, train=str(train), db_path=db_path)
+            rc, msg = review(None, train=str(train), db_path=db_path, cli=cli)
             out["reviews"].append(msg)
     return out
 
@@ -2159,13 +2197,13 @@ def _alive_sessions():
     return alive
 
 
-def resume(m, db_path=None, alive=None):
+def resume(m, db_path=None, alive=None, cli=None):
     """Everything a fresh orchestrator needs after a context reset, from the board alone: each active train's steps
-    (the task list to rebuild, one TaskCreate each with metadata {train, part}), which part sessions still run, and
-    what of the owner's waits for an answer."""
+    (the task list to rebuild), which part sessions still run, and what of the owner's waits for an answer."""
+    active = _active_cli(cli)
     posts, _ = _load_board_docs(m, db_path=db_path)
     if alive is None:
-        alive = _alive_sessions()
+        alive = None if active == "agy" else _alive_sessions()
     trains = {}
     for pid, p in posts.items():
         if pid.startswith("_") or p.get("removed") or not str(p.get("train") or "").strip():
@@ -2227,10 +2265,16 @@ def resume(m, db_path=None, alive=None):
     except Exception as e:  # the copy may be mid-sync; the orchestrator can rerun `kit.py open`
         out.append("(could not read: %s)" % e)
     out.append("")
-    out.append("Rebuild your task list: one TaskCreate per open step above, subject \"<PART> <title>\", metadata "
-               "{\"train\": \"<train>\", \"part\": \"<PART>\"} (the existing post is adopted, not duplicated); "
-               "TaskUpdate in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it or "
-               "ask the owner.")
+    if active == "agy":
+        out.append("Resume in agy: cross-check each session UUID above with `manage_subagents(Action=\"list\")`. "
+                   "Plan and update steps with `python3 -I .kit/kit.py step new|start|complete|drop` (the train IS your "
+                   "task list). A step whose session is not running and not done: check its branch (`git branch -a`) "
+                   "and continue it with `invoke_subagent(..., Workspace=\"share\")` or ask the owner.")
+    else:
+        out.append("Rebuild your task list: one TaskCreate per open step above, subject \"<PART> <title>\", metadata "
+                   "{\"train\": \"<train>\", \"part\": \"<PART>\"} (the existing post is adopted, not duplicated); "
+                   "TaskUpdate in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it or "
+                   "ask the owner.")
     return "\n".join(out) + "\n"
 
 
@@ -2490,7 +2534,7 @@ def main(argv=None):
     s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None); s.add_argument("--unblocked", action="store_true", help="Exclude cards with unresolved blocked_by dependencies")
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
-    s = sp.add_parser("resume"); s.add_argument("--db", default=None)
+    s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
     s.add_argument("action", choices=["pull", "load", "push", "sent", "pin"]); s.add_argument("args", nargs="*")
     s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
@@ -2508,8 +2552,10 @@ def main(argv=None):
     s.add_argument("--task", default=""); s.add_argument("--task-file"); s.add_argument("--parent")
     s.add_argument("--source", action="append", default=[]); s.add_argument("--model")
     s.add_argument("--no-review", action="store_true"); s.add_argument("--db", default=None)
+    s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s = sp.add_parser("review"); s.add_argument("post", nargs="?"); s.add_argument("--train", default=None)
     s.add_argument("--dry-run", action="store_true"); s.add_argument("--force", action="store_true"); s.add_argument("--db", default=None)
+    s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s = sp.add_parser("welcome")
     s.add_argument("--runtime", choices=WELCOME_RUNTIMES, default=None)
     s.add_argument("--post", action="store_true", help="Post welcome-<runtime>-1 under _orchestrator (idempotent)")
@@ -2575,7 +2621,7 @@ def main(argv=None):
                 with open(a.task_file, encoding="utf-8") as fh:
                     task = fh.read()
             res = step_new(a.train, a.part, a.title or a.part, task=task, parent=a.parent, sources=a.source,
-                           model=a.model, review=not a.no_review, db_path=a.db)
+                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli)
         elif not a.post:
             res = {"error": "step %s needs a post id" % a.action}
         elif a.action == "start":
@@ -2583,7 +2629,7 @@ def main(argv=None):
         elif a.action == "drop":
             res = step_drop(a.post, db_path=a.db)
         else:
-            res = step_complete(a.post, db_path=a.db)
+            res = step_complete(a.post, db_path=a.db, cli=a.cli)
         print(json.dumps(res, ensure_ascii=False))
         return 1 if res.get("error") or res.get("ok") is False else 0
     if a.cmd == "sections":
@@ -2597,7 +2643,7 @@ def main(argv=None):
         if not a.post and not a.train:
             print("kit.py review <post> | --train <train>")
             return 2
-        rc, msg = review(a.post, train=a.train, dry_run=a.dry_run, force=a.force, db_path=a.db)
+        rc, msg = review(a.post, train=a.train, dry_run=a.dry_run, force=a.force, db_path=a.db, cli=a.cli)
         print(msg)
         return rc
     if a.cmd == "artifact":
@@ -2630,7 +2676,7 @@ def main(argv=None):
               % (r["status"], r["from_git"], r["added"], r["kept_here"], r.get("git", "")))
         return 0
     if a.cmd == "resume":
-        print(resume(m, db_path=a.db), end="")
+        print(resume(m, db_path=a.db, cli=a.cli), end="")
         return 0
     if a.cmd == "capacity":
         d = _device()
