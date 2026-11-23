@@ -1,9 +1,9 @@
 {
  "column": "info",
- "created_at": "2026-11-23T22:11:44Z",
+ "created_at": "2026-11-23T22:15:21Z",
  "rows": [
   {
-   "at": 29,
+   "at": 30,
    "key": "A",
    "name": "Cli",
    "note": "Next: The Trains view: task lists (A) or the old flow map (B)?",
@@ -39,11 +39,11 @@
     "the orchestrator answers only from a fresh brief",
     "kit compact keeps a project's story checker green",
     "every agent uses the kit's scripts, enforced by hooks",
+    "kit artifact push never overwrites a newer live card (_dashboard, _trains)",
     "Design principles, complete, and no emoji Like",
     "The board travels in git, always current (mirror synced on every step)",
     "A crashed part is continued from its last checkpoint",
-    "The Trains view: task lists (A) or the old flow map (B)?",
-    "kit artifact push never overwrites a newer live card (_dashboard, _trains)"
+    "The Trains view: task lists (A) or the old flow map (B)?"
    ],
    "train": "P-cli"
   },
@@ -83,5 +83,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-23T22:11:44Z"
+ "updated_at": "2026-11-23T22:15:21Z"
 }
