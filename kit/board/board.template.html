@@ -1066,11 +1066,14 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
   }
   function seenKey(id) { var b = boardOf(id); return b ? "repos/" + b + "/" + id : id; }
   /* His mark for a post. An attached board's post read before CL21 was kept under its bare id, mixed with the
-     primary board's: that mark is taken only when it names a comment of this very post (comment ids are unique). */
+     primary board's: that mark is taken only when it was made on this very text (same sig) or names a comment of
+     this very post (comment ids are unique); the next mark goes under the board's key. */
   function markOf(id) {
     var k = seenKey(id), m = seen[k];
     if (m || k === id) return m;
-    var b = seen[id]; if (!b || !b.v || !b.v.length) return undefined;
+    var b = seen[id], p = postById(id); if (!b) return undefined;
+    if (p && b.sig && b.sig === sigOf(p)) return b;
+    if (!b.v || !b.v.length) return undefined;
     var own = {}; postCmts(id).forEach(function (c) { own[c.id] = true; });
     return b.v.some(function (x) { return own[x]; }) ? b : undefined;
   }

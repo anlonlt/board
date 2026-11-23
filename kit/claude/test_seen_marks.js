@@ -7,7 +7,8 @@
 //   2. attached board: the same, and its post "P-a" read there leaves the primary board's own "P-a" new (one mark
 //      per board, kept as repos/<board>/<id>; both "P-a" have the same text, as the demo posts every install adds);
 //   3. attached board, Feed view or a post window: a post read there is not new after a reload;
-//   4. a mark written before CL21 under the bare id still holds for the primary board.
+//   4. a mark written before CL21 under the bare id still holds for the primary board, and for an attached post
+//      when it was made on that very text.
 const { launch, syntaxCheck } = require('./page_driver');
 const fs = require('fs');
 
@@ -112,11 +113,16 @@ const seedOf = (seen) => (seen ? { "data/users/u1": { "board-seen": seen } } : {
   const w2 = await visit(html, { repo: "board", seed: seedOf(w1.seen) });
   check("attached: post read in a window is not new after reload", w2.isNew["cl2-y"] === false, { keys: Object.keys((w1.seen || {}).posts || {}), after: w2.isNew });
 
+  // 3c. a bare-id mark the old page wrote for an attached post (sig of that very text) still holds on that board
+  const sigOf = (q) => { const t = q.title + "\u0001" + q.body + "\u0001" + q.column + "\u0001" + "" + "\u0001" + ""; let h = 5381; for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; return h.toString(36) + "." + t.length.toString(36); };
+  const f = await visit(html, { repo: "board", seed: seedOf({ posts: { "cl2-y": { at: "2026-11-23T02:00:00.000Z", sig: sigOf({ title: "Kit Y", body: "Kit Y body", column: "info" }), v: [] } } }) });
+  check("attached: an old bare-id mark made on the same text is honoured", f.isNew["cl2-y"] === false && f.isNew["cl1-x"] === true, f.isNew);
+
   // 4. a mark from before CL21 (bare id) still holds on the primary board
   const e = await visit(html, { repo: "", seed: seedOf({ posts: { "P-old": { at: "2026-11-23T02:00:00.000Z", sig: "", v: [] } } }) });
   check("primary: an old bare-id mark is honoured", e.isNew["P-old"] === false, e.isNew);
 
-  [a1, a2, b1, b2, c1, c2, d1, d2, w1, w2, e].forEach((x) => { res.errors = res.errors.concat(x.errors); });
+  [a1, a2, b1, b2, c1, c2, d1, d2, w1, w2, f, e].forEach((x) => { res.errors = res.errors.concat(x.errors); });
   const failed = res.checks.filter((c) => !c.ok);
   console.log(JSON.stringify(res, null, 1));
   console.log((res.checks.length - failed.length) + " of " + res.checks.length + " seen checks pass");
