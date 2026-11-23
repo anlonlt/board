@@ -132,7 +132,7 @@ class TestChecklistFeatures(unittest.TestCase):
 
     def test_install_title_dedup_verify_and_uninstall(self):
         with tempfile.TemporaryDirectory() as td:
-            r = subprocess.run([sys.executable, os.path.join(ROOT, "install.py"), td, "--project", "Acme Board", "--runtime", "arena", "--no-survey", "test"], capture_output=True, text=True)
+            r = subprocess.run([sys.executable, os.path.join(ROOT, "install.py"), td, "--project", "Acme Board", "--runtime", "arena", "--no-survey", "test", "--no-cmd"], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
             html = open(os.path.join(td, ".kit", "board.html"), encoding="utf-8").read()
             self.assertIn("<title>Acme Board</title>", html)
