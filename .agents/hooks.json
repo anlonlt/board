@@ -33,6 +33,15 @@
             "command": "python3 -I hooks/kit/kit_say_it_once.py"
           }
         ]
+      },
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I hooks/kit/kit_brief_guard.py"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -60,6 +69,15 @@
           {
             "type": "command",
             "command": "python3 -I hooks/kit/kit_say_it_once.py"
+          }
+        ]
+      },
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I hooks/kit/kit_brief_guard.py"
           }
         ]
       }

@@ -392,7 +392,7 @@ class _Waits:
                 and (c.get("text") or "").strip() not in ("", "\U0001F44D"))
 
     def is_answer(self, c):
-        # a review is not an answer to him (it may be under the same post, later): only a reply to his comment is
+        # a review is not an answer to him (it may be under the same post, later): only a reply to the owner's comment is
         return (c.get("from") not in (self.owner, self.clerk) and not c.get("like")
                 and not self.CLERK_LINE.match(c.get("text") or "")
                 and (c.get("kind") != "review" or bool(c.get("reply_to"))))
@@ -2847,7 +2847,7 @@ def _train_lines(posts, alive, h="##", board=None):
     for t in sorted(trains):
         nat = lambda v: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", str(v).lower())]
         steps = sorted(trains[t], key=lambda x: (str(x[1].get("created_at") or ""), nat(x[1].get("part") or x[0])))
-        open_steps = [x for x in steps if str(x[1].get("column") or "info").lower() != "done"]
+        open_steps = [x for x in steps if step_state(x[1]) not in ("done", "closed")]
         if not open_steps:
             continue
         n_active += 1
@@ -2856,12 +2856,13 @@ def _train_lines(posts, alive, h="##", board=None):
         for pid, p in steps:
             col = str(p.get("column") or "info").lower()
             st = str(p.get("status") or "").lower()
-            if col == "done":
+            if step_state(p) in ("done", "closed"):
                 if (pid, p) not in steps[-2:]:
                     continue
                 out.append("- [x] %s `%s` %s" % (p.get("part") or pid, pid, str(p.get("title") or "")[:80]))
                 continue
-            box = "[?]" if col == "question" else ("[!]" if col == "todo" else ("[~]" if "progress" in st else "[ ]"))
+            box = ("[h]" if step_state(p) == "held" else "[?]" if col == "question" else
+                   ("[!]" if col == "todo" else ("[~]" if "progress" in st else "[ ]")))
             sess = str(p.get("session_id") or "")
             if sess:
                 life = "unknown" if alive is None else ("running" if sess in alive else "not running")
@@ -2892,6 +2893,201 @@ def _train_lines(posts, alive, h="##", board=None):
                 out.extend(_attached_step_detail(board, pid, p, "running" not in who or "not running" in who))
     return out, n_active
 
+
+# ---------------------------------------------------------------- brief (CL28)
+# The owner, 2026-11-23, after orchestrator 51 answered from a stale memory line ("A3 waits on your choice") and missed
+# two open decision posts: "What does the kit make you check before answering?" `kit.py brief` is that check: one short
+# page from the board documents only (the owner, 07:41: "everything is on the board"), never the cards or a memory. A hook
+# (kit_brief_guard.py) refuses an orchestrator's reply to the owner when no brief ran in the last 15 minutes.
+BRIEF_DONE = re.compile(r"^\s*(done|complete|completed|finished|merged)\s*($|[,:;.(\-])", re.I)
+BRIEF_CLOSED = re.compile(r"^\s*(closed|dropped|superseded|abandoned)\b", re.I)
+BRIEF_HELD = re.compile(r"^\s*(held|on[ -]?hold|hold|paused|parked)\b", re.I)
+
+
+def step_state(p):
+    """As kit_cards.post_state: done, closed, held, you, running, idle (a done post is never running)."""
+    col, st = str(p.get("column") or ""), str(p.get("status") or "")
+    if col == "done" or BRIEF_DONE.match(st):
+        return "done"
+    if BRIEF_CLOSED.match(st):
+        return "closed"
+    if BRIEF_HELD.match(st):
+        return "held"
+    if col in ("question", "todo"):
+        return "you"
+    return "running" if "progress" in st.lower() else "idle"
+
+
+def _train_key(pid, p):
+    t = str(p.get("train") or "").strip()
+    if t:
+        return t[2:] if t.lower().startswith("p-") else t
+    mm = re.match(r"^([A-Za-z]+)\d", str(p.get("part") or pid))
+    return mm.group(1).upper() if mm else ""
+
+
+def _age(stamp, now):
+    try:
+        d = now - iso(stamp)
+    except (ValueError, TypeError, AttributeError):
+        return "?"
+    h = int(d.total_seconds() // 3600)
+    return "%dd %dh" % (h // 24, h % 24) if h >= 24 else "%dh" % h if h else "%dmin" % max(0, int(d.total_seconds() // 60))
+
+
+def _short(s, n):
+    s = re.sub(r"\s+", " ", str(s or "")).strip()
+    return s if len(s) <= n else s[:n - 1].rstrip() + "…"
+
+
+def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
+    """CL28, once per board: a post made before the kit's trains has a `part` but no `train`, so neither `resume`, the
+    brief nor the orchestrator's task list sees it (Harmonize: HL6, VR5, HL5, the A3 posts). Give each its train from
+    its part's letters (HL6 -> HL, A3-data -> A), written through the local board, then `artifact push` when the board
+    is an attached Artifact. Returns {train: [post ids]}."""
+    posts, _ = _load_board_docs(m or ROOT, db_path=db_path)
+    plan = {}
+    for pid, p in sorted(posts.items()):
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("removed") or str(p.get("train") or "").strip():
+            continue
+        t = _train_key(pid, p)
+        if t:
+            plan.setdefault(t, []).append(pid)
+    if dry_run or not plan:
+        return {"trains": plan, "written": 0}
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    n = 0
+    for t, ids in plan.items():
+        for pid in ids:
+            if _local_update(url, token, "posts", pid, {"train": t}) is not None:
+                n += 1
+    out = {"trains": plan, "written": n}
+    if attached_board():
+        try:
+            r = artifact_push(url=url, token=token)
+            out.update({"batches": r["batches"], "need_pin": r["need_pin"]})
+        except Exception as e:  # the local copy has it; the next `artifact push` carries it
+            out["push_error"] = str(e)
+    return out
+
+def brief_stamp_dir():
+    return os.path.join(ROOT, ".kit", "run", "brief")
+
+
+def brief(m, days=3, db_path=None, board_dir=None, now=None, limit=12, session=None):
+    """One short page for the orchestrator, before it answers the owner: open decisions (age, default, what each
+    blocks), the owner's decisions of the last `days` days (comments, Likes, answers; a chat decision is a comment the
+    orchestrator wrote for it), each
+    train's real state from its posts. The board is the one record: no memory file is read (the owner, 11-23)."""
+    now = now or datetime.now(timezone.utc)
+    if board_dir:
+        posts, comments = load_dir(board_dir, "posts"), load_dir(board_dir, "comments")
+    else:
+        posts, comments = _load_board_docs(m, db_path=db_path)
+    orch = posts.get("_orchestrator") if isinstance(posts.get("_orchestrator"), dict) else {}
+    posts = {k: v for k, v in posts.items() if isinstance(v, dict) and not k.startswith("_") and not v.get("removed")}
+    st = {k: step_state(v) for k, v in posts.items()}
+    part = {k: str(v.get("part") or k) for k, v in posts.items()}
+    out = ["# Brief, %s UTC (from the posts; answer from this, not from memory)" % now.strftime("%Y-%m-%d %H:%M")]
+    named = str(orch.get("session_id") or "")
+    if session and named != session:
+        # the clerk sends the owner's words to the session `_orchestrator` names: a stale id there made it start a
+        # fresh orchestrator at each of his comments (Harmonize, 2026-11-23)
+        out.append("MISMATCH: `_orchestrator` names session %s, you are %s: write your id on it (and on each attached "
+                   "board's repos/<id>/posts/_orchestrator) before you answer." % (named or "none", session))
+
+    # 1. open decisions
+    qs = sorted((k for k in posts if st[k] == "you"), key=lambda k: str(posts[k].get("created_at") or ""))
+    out.append("")
+    out.append("## Open decisions (%d)" % len(qs))
+    for k in qs:
+        p, pt = posts[k], part[k]
+        wr = re.compile(r"(?<![\w-])%s(?![\w])" % re.escape(pt))
+        wk = re.compile(r"(?<![\w-])%s(?![\w])" % re.escape(k))
+        blocks = []
+        for j, q in posts.items():
+            if j == k or part[j] == pt or st[j] in ("done", "closed"):
+                continue
+            text = " ".join(str(q.get(f) or "") for f in ("parent", "status", "blocked_by", "title"))
+            if str(q.get("parent") or "") in (pt, k) or wr.search(text) or wk.search(text):
+                blocks.append("%s (%s)" % (part[j], _short(q.get("status"), 40) if q.get("status") else st[j]))
+        dflt = p.get("default_option") or ""
+        out.append("- %s `%s` %s old: %s%s%s" % (pt, k, _age(str(p.get("created_at") or ""), now), _short(p.get("title"), 90),
+                                               (" · default: " + _short(dflt, 60)) if dflt else "",
+                                               (" · blocks " + ", ".join(blocks[:4])) if blocks else ""))
+    if not qs:
+        out.append("none")
+
+    # 2. the owner's decisions, last N days
+    owner = CONFIG.get("fields", {}).get("owner", "owner")
+    since_t = now - timedelta(days=days)
+    his = []
+    for cid, c in comments.items():
+        if not isinstance(c, dict) or c.get("from") not in (owner, "viewer") or not c.get("created_at"):
+            continue
+        try:
+            if iso(c["created_at"]) < since_t:
+                continue
+        except ValueError:
+            continue
+        if c.get("like"):
+            what = "Like" + ((" on comment " + str(c["comment_id"])) if c.get("comment_id") else "")
+        elif c.get("answer"):
+            what = "Answer: " + _short(c.get("answer"), 80)
+        else:
+            what = '"%s"' % _short(c.get("text"), 140)
+        his.append((c["created_at"], "%s on %s: %s" % (c["created_at"][5:16].replace("T", " "), c.get("post_id"), what)))
+    his.sort()
+    out.append("")
+    out.append("## The owner's decisions, last %d days (%d)" % (days, len(his)))
+    if len(his) > limit:
+        out.append("(the %d most recent; the rest: `kit.py since %s`)" % (limit, zstamp(since_t)))
+    out.extend("- " + line for _, line in his[-limit:])
+    if not his:
+        out.append("none")
+
+    # 3. each train from its posts
+    trains = {}
+    for k in posts:
+        t = _train_key(k, posts[k])
+        if t:
+            trains.setdefault(t, []).append(k)
+    out.append("")
+    out.append("## Trains (from the posts, not the cards)")
+    finished = []
+    nat = lambda v: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", str(v).lower())]
+    for t in sorted(trains, key=nat):
+        ks = sorted(trains[t], key=lambda k: nat(part[k]))
+        by = {}
+        for k in ks:
+            by.setdefault(st[k], []).append(part[k])
+        n_over = len(by.get("done", [])) + len(by.get("closed", []))
+        if n_over == len(ks):
+            finished.append(t)
+            continue
+        bits = ["%d/%d done" % (n_over, len(ks))]
+        for s in ("running", "you", "held", "idle"):
+            if by.get(s):
+                names = list(dict.fromkeys(by[s]))
+                bits.append("%s: %s" % (s, ", ".join(names[:6]) + (" +%d" % (len(names) - 6) if len(names) > 6 else "")))
+        out.append("- %s: %s" % (t, " · ".join(bits)))
+    if finished:
+        out.append("- all done: %s" % ", ".join(finished))
+
+    return "\n".join(out) + "\n"
+
+
+def brief_mark(session=None):
+    """The stamp kit_brief_guard.py checks: one per session (its hook writes it too), and `last` for runtimes without
+    session ids (agy: board_cli reply checks it)."""
+    d = brief_stamp_dir()
+    os.makedirs(d, exist_ok=True)
+    now = zstamp(datetime.now(timezone.utc))
+    names = ["last"] + ([re.sub(r"[^A-Za-z0-9._-]", "_", session)] if session else [])
+    for name in names:
+        with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+            fh.write(now + "\n")
 
 # ---------------------------------------------------------------- attached boards (cross-repo, kit_repos/_index)
 def _repo_id(name):
@@ -3127,7 +3323,7 @@ def resume(m, db_path=None, alive=None, cli=None):
                    "and continue it with `invoke_subagent(..., Workspace=\"share\")` or ask the owner."
                    + (" Each step belongs to a board: this one (\"%s\") or the attached board named in its heading; "
                       "an attached board's step is planned, updated and continued in that board's clone (its relaunch "
-                      "line), and a reply to his comment there goes to repos/<id>/comments."
+                      "line), and a reply to the owner's comment there goes to repos/<id>/comments."
                       % _repo_id(_kit_config().get("project") or os.path.basename(ROOT)) if boards else ""))
     elif boards:
         out.append("Rebuild your task list: one TaskCreate per open step above, subject \"<PART> <title>\", metadata "
@@ -3401,6 +3597,13 @@ def main(argv=None):
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
+    s = sp.add_parser("brief", help="before answering the owner: open decisions, the owner's recent decisions, each train "
+                      "from its posts")
+    s.add_argument("--days", type=int, default=3); s.add_argument("--db", default=None)
+    s.add_argument("--board", dest="board_dir", default=None, help="a folder of posts/ and comments/ JSON instead of the local board")
+    s.add_argument("--session", default=None)
+    s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
+    s.add_argument("--dry-run", action="store_true"); s.add_argument("--db", default=None)
     s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
     s.add_argument("action", choices=["pull", "load", "push", "sent", "pin"]); s.add_argument("args", nargs="*")
     s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
@@ -3556,6 +3759,15 @@ def main(argv=None):
         return 0
     if a.cmd == "resume":
         print(resume(m, db_path=a.db, cli=a.cli), end="")
+        return 0
+    if a.cmd == "adopt":
+        r = adopt_trains(url=a.board_url if hasattr(a, "board_url") else None, dry_run=a.dry_run, db_path=a.db, m=m)
+        print(json.dumps(r, ensure_ascii=False, indent=1))
+        return 0
+    if a.cmd == "brief":
+        sess = a.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
+        print(brief(m, days=a.days, db_path=a.db, board_dir=a.board_dir, session=sess), end="")
+        brief_mark(sess)
         return 0
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset)
