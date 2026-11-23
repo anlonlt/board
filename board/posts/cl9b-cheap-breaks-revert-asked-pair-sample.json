@@ -1,0 +1,42 @@
+{
+ "artifacts": [
+  "scripts/kit.py",
+  "tests/test_breaks_cheap.py",
+  "docs/prompts/cl9b-cheap-breaks-revert-asked-pair-sample.md",
+  "kit/board/BOARD.template.md",
+  "kit/claude-cli/part.template.md"
+ ],
+ "asked": [
+  {
+   "id": "dl1h64cikwxfyjg8rt6n",
+   "quote": "That sounds awfully token expensive. Any way to do this without wasting tokens creating stuff you'd throw away?"
+  }
+ ],
+ "bars": [
+  "4 of 4 plan steps built, each with its tests red before and green after (15 of 15 tests in tests/test_breaks_cheap.py) (asked dl1h64cikwxfyjg8rt6n)",
+  "9 of 9 suites pass, 0 failed (171 unittest tests OK)"
+ ],
+ "body": "For you: nothing to do. The cheap plan you Liked is built: a visual or non-code step can now prove its check can fail without anyone making throwaway art.\n\n## What is new\n1. **`breaks: revert`** (about 0 tokens). `kit.py done` undoes the step's own change in a throwaway copy, back to where the branch left main, and reruns `check`, which must now fail. A check that also passes on the old version is refused, and so is a revert with nothing to undo. Committed and uncommitted work are both reverted. Your files are never touched.\n2. **`asked`: your words travel with the step** (about 200 tokens, once). The post holds your quote and its comment id. `kit.py done` refuses an ask that no bar or `not_checked` names (`(asked <id>)`), and a quote that is not word for word in your comment.\n3. **`kit.py pair <post>`: a blind before/after** (3 to 5k tokens for the reviewer). The post's `shot` renders the picture now and reverted. The two are saved as A and B in random order, with the key kept aside. The brief holds only your quoted words and the two pictures. `--answer A|B` says right or wrong. If the before and after pictures are identical, the pair is refused: the change does not show.\n4. **A sample, not every claim.** The step review's prompt now carries your words and asks for a rerun of one bar in five, picked at random (at least one), plus every `[visual]` bar.\n\n## Not covered\nWhether it is the aurora you meant stays your call: the pair only proves a reviewer could tell the new version from the old one against your words. There is no motion check (jitter and drift stay on the phone bench). Your app has no `shot` command yet: each project writes its own render command. The pair runs locally, so in a cloud session the reviewer opens the PNGs from the repo checkout.\n\n## Tests\n`tests/test_breaks_cheap.py`: 15 tests, written first and seen red 15 of 15 before the code, green 15 of 15 after.",
+ "branch": "main",
+ "breaks": "python3 -c \"p='scripts/kit.py'; s=open(p).read(); open(p,'w').write(s.replace('if nb == ob:', 'if False:'))\"",
+ "check": "python3 tests/test_breaks_cheap.py",
+ "column": "info",
+ "created_at": "2026-11-23T05:43:25Z",
+ "from": "part",
+ "handoff": "For a visual step: give the post `asked`, `shot` (it writes a PNG to $KIT_SHOT) and `breaks: revert`, mark visual bars [visual], then run `kit.py pair <post>` for the reviewer.",
+ "not_checked": [
+  "a real visual step in your app (it has no shot command yet)",
+  "the pair on a phone or in a browser: the PNGs are opened from the repo",
+  "token prices are estimates, not measured on a real review"
+ ],
+ "parent": "CL9",
+ "part": "CL9b",
+ "planned_by": "orchestrator",
+ "prompt": "docs/prompts/cl9b-cheap-breaks-revert-asked-pair-sample.md",
+ "session_id": "session_01AE1HGh4JxgdeZK6pUvd46d",
+ "status": "done",
+ "title": "Cheap breaks for any work (revert, his words, a blind pair, a sample)",
+ "train": "cli",
+ "updated_at": "2026-11-23T05:53:30Z",
+ "verdict": "A visual or non-code step can now prove its check can fail cheaply: revert to the old version, your words checked, a blind before/after pair, and a sampled review."
+}

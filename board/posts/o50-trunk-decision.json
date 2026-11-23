@@ -1,0 +1,18 @@
+{
+ "body": "The kit's trunk push is off, so finished parts wait on their branches and you do not see their fixes on this page (the full-width phone bar, pictures, read marks, tabs).\n\nChecked (tests rerun by a separate check, red on the old code): CL20, CL13, CL12, CL14, CL11, CL9, CL21; CL10's latest is being checked now.\n\nOn yes I merge them one at a time in this order: CL20, CL13, CL12, CL14, CL11, CL9, CL10, CL21. Before each: main merged in, all test suites pass, nothing on WHAT-NOT-TO-BREAK removed. Then I rebuild this page and republish it. A part that fails stays on its branch and I tell you.\n\nThis question was a comment under Ask the orchestrator (02:07); it belonged here.",
+ "column": "done",
+ "column_before": "question",
+ "created_at": "2026-11-23T02:59:15Z",
+ "default_option": "Not yet: keep them on their branches",
+ "done_at": "2026-11-23T03:38:32.361Z",
+ "from": "orchestrator",
+ "options": [
+  "Yes: merge each checked part, then republish",
+  "Not yet: keep them on their branches"
+ ],
+ "part": "O50",
+ "priority": 1,
+ "title": "Merge the checked cl parts into the kit's main?",
+ "train": "cli",
+ "updated_at": "2026-11-23T02:59:15Z"
+}

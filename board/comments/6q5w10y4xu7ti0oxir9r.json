@@ -1,0 +1,13 @@
+{
+ "created_at": "2026-11-23T02:11:18.434Z",
+ "delivered": true,
+ "delivered_at": "2026-11-23T02:11:19.421Z",
+ "delivery_error": "",
+ "discussion": "4hrxp33h6wg7sng04f5k",
+ "from": "owner",
+ "post_id": "_orchestrator",
+ "read": false,
+ "reply_to": "o49-trains-0213",
+ "text": "So why isn't everything writing by itself with scripts ? Didn't a session literally port everything to artifacts for full feature parity ?",
+ "thread_id": "b1886cdb-3cc9-4450-9367-587468a60494"
+}

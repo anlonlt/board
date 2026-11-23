@@ -5,7 +5,7 @@
   "B: the flow map (before CL27)"
  ],
  "column": "question",
- "created_at": "2026-11-23T07:35:05Z",
+ "created_at": "2026-11-23T08:07:21Z",
  "default_option": "A: task lists (now)",
  "image_groups": [
   {
@@ -14,15 +14,15 @@
   }
  ],
  "images": [
-  "/_blob/2271776e02e92e3f639a9c94d043e133",
-  "/_blob/d4f24f6e1e0faba67e1bf94e8de9792d"
+  "/_blob/5f6f05ec8181b91bcb7576fca0dfad9d",
+  "/_blob/d36747073ae313fb088a6efab2d181dc"
  ],
  "options": [
   "A: task lists (now)",
   "B: the old flow map"
  ],
  "priority": 2,
- "session_id": "0faff95e-f88f-5a1c-a860-7d8c1604b331",
+ "session_id": "session_01AE1HGi6fNGNJHpoLWAamdM",
  "title": "The Trains view: task lists (A) or the old flow map (B)?",
  "train": "cli"
 }

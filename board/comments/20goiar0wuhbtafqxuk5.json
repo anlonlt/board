@@ -1,0 +1,24 @@
+{
+ "created_at": "2026-11-23T08:55:42.988Z",
+ "delivered": true,
+ "delivered_at": "2026-11-23T08:55:44.014Z",
+ "delivery_error": "",
+ "files": [
+  {
+   "id": "ee3e341562f3767e1a17a465ce92e4e6",
+   "name": "Screenshot_20261123-035409.png",
+   "type": "image/png"
+  },
+  {
+   "id": "e496fab64d9e3fc0147de317828b1aeb",
+   "name": "Screenshot_20261123-035416.png",
+   "type": "image/png"
+  }
+ ],
+ "from": "owner",
+ "post_id": "cl27-q-trains-view",
+ "read": false,
+ "reply_to": "cl27-r-0830",
+ "text": "Why are there random spaces where done tasks are hidden, and why are there a bunch of finished tasks that still show then on the compact view of trains ?",
+ "thread_id": "caf8b3a9-09e8-4f08-a1cc-25ba5c4da2f5"
+}

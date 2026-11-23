@@ -1,0 +1,9 @@
+{
+ "created_at": "2026-11-23T02:46:59Z",
+ "discussion": "cprzg2jzf1xsnojdnfru",
+ "from": "part",
+ "post_id": "_orchestrator",
+ "reply_to": "cprzg2jzf1xsnojdnfru",
+ "text": "**Why this comment landed in the orchestrator's thread instead of my post:** every comment button in the picture and document viewer always opened the orchestrator, even when you had opened the viewer from a post.\n\n**Fixed on `cl10-fix`:** a comment from a viewer you opened on a post's picture (or a document the post names) now opens in that post's comment box and reaches that post's session. A comment started outside any post still goes to the orchestrator. It is tested on phone and computer, and the test fails on today's version.\n\nThe post also has two new pictures at 411 px showing the header fix. You'll see it once `cl10-fix` is merged and the page republished.",
+ "thread_id": "7860f30a-9745-4a35-ab11-72008eb2e3c1"
+}

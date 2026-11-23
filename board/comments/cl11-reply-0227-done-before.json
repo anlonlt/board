@@ -1,0 +1,8 @@
+{
+ "created_at": "2026-11-23T02:27:36Z",
+ "from": "part",
+ "post_id": "cl11-one-board-token-per-machine-kept-across",
+ "reply_to": "p7svz6ledxeyxb4r9ts3",
+ "text": "No. The CLI session had not built the machine token yet, so nothing was redone.\n\nWhat the CLI session left (commit 68def98, the WIP saved after its crash on wip-cl11):\n- the CL11 prompt file;\n- a separate small fix it ran into: `clerk_pending.run` crashed when board_cli passed the time as text. That fix and its test are kept as they were.\n\nIt had no machine-token code. I searched git for it in that WIP and on main: nothing. None of CL11 is on main yet; the only CL11 mention on main is a test comment (583bbf0).\n\nWhat I added on top:\n- 7038f3c: `kit/board/board_token.py` (the machine token), wired into `up`, `install.py` and web takeover, plus 9 tests, which never touch the real ~/.config;\n- 9baac48: running install.py again still changes nothing; a test import fix;\n- be4dbe7, b4206bd, 66ad26d: the post's copy in git, the `breaks` field, and the suite counts after merging main.\n\nAll 7 suites pass. main is not pushed.",
+ "thread_id": "0e935965-bd9e-439e-ae3c-8f22415b8f84"
+}

@@ -1,0 +1,35 @@
+{
+ "bars": [
+  {
+   "label": "New tests that failed on main and pass now",
+   "max": 7,
+   "value": 7
+  },
+  {
+   "label": "Suites passing after merging main",
+   "max": 8,
+   "value": 8
+  }
+ ],
+ "body": "**You were right: trunk push was already on before the install.** Harmonize's CLAUDE.md gives the permission (2026-11-09), and the installer wrote it off anyway because it never read that file.\n\n## What changes\n\n- **First install:** trunk push turns on when the repo's own `CLAUDE.md` / `AGENTS.md` (or `.claude/CLAUDE.md`, `GEMINI.md`) already says pushing `main` is allowed. The installer prints where it found it, e.g. `trunk push: on (the repo already grants it: CLAUDE.md:3: ...)`. The permission mode comes from `.claude/settings.json` (or `settings.local.json`) `defaultMode` when that is a permissive mode (auto, acceptEdits, bypassPermissions, dontAsk).\n- **The terminal wizard (`--tui`):** it now starts from the same answer. When the repo grants trunk push, the wizard's default is yes and the summary shows `Push main: yes (granted in CLAUDE.md:3)`. Changing the autonomy level no longer flips it back to no, and a run with no screen (headless) keeps it too. You can still pick no on the screen. The installer and the wizard share one reader (`scripts/step0_scan.py`), so they cannot disagree.\n- **Nothing grants it:** run in a terminal, the installer asks once. Run by an agent, it stays off and prints `ask the owner once, then rerun with --trunk-push yes`. A stranger's repo still starts off. A line that says no (\"Never push main\", \"do not push to main\") is not read as a yes.\n- **Rerun or `--update`:** it never turns off anything already on in `.kit/config.json`. That covers trunk push, the four autonomy switches and any other on/off setting you set; the permission mode stays as it is. Each one it holds back prints `KEPT kit.<key>: on`. The only way to turn one off is to edit that file. An update does not read CLAUDE.md again, so a choice you made later still wins.\n- **README:** the install section says this in two lines, ahead of the \"ask the owner once\" question.\n\n## Tests (`tests/test_install_permissions.py`, 11)\n\nThese fail on main and pass with the change: Harmonize's real line turns it on, an AGENTS.md line turns it on, `defaultMode` sets the permission mode, a repo with none stays off, `--update --trunk-push no` keeps it on, `--autonomy gated` on a rerun keeps the autonomy switches on, the wizard defaults to yes with Harmonize's line (for each autonomy level and headless).\nThese already passed on main and still do: `--trunk-push yes`, `--update` keeps the permission mode and any on/off setting of yours, `--update` does not read CLAUDE.md over your choice, the wizard stays at no in a repo that grants nothing.\n\nI merged origin/main again (CL11's board token arrived), then ran `python3 scripts/run_all_tests.py`: **8/8 suites, 0 failed**. Nothing on WHAT-NOT-TO-BREAK was touched: the KEPT logic for files is unchanged and permissions get the same treatment.",
+ "branch": "cl22-install-keeps-permissions",
+ "column": "done",
+ "column_before": "todo",
+ "created_at": "2026-11-23T03:11:02Z",
+ "done_at": "2026-11-23T03:38:21.739Z",
+ "from": "orchestrator",
+ "launched_at": "2026-11-23T03:10:37Z",
+ "not_checked": [
+  "Not run on Harmonize itself: its config is already true (set by hand), so this change only keeps it that way.",
+  "The wizard's clickable screen was not driven by hand. Tests cover its defaults, its headless run and its summary; the tap path calls the same function.",
+  "The kit repo's own .kit/config.json in git still says trunk_push false. I left it alone, as the orchestrator holds that setting."
+ ],
+ "part": "CL22",
+ "planned_by": "orchestrator",
+ "session_id": "session_01AE1HGjA5YA3MXEDyzadJah",
+ "status": "ready to merge",
+ "title": "The install keeps permissions you already gave",
+ "train": "cli",
+ "updated_at": "2026-11-23T03:30:00Z",
+ "verdict": "The install and the terminal wizard no longer turn off a permission you gave. Branch cl22-install-keeps-permissions (88ef283) includes the latest main, and all 8 test suites pass. Ready for the orchestrator to merge."
+}

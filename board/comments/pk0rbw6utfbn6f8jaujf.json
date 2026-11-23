@@ -1,0 +1,12 @@
+{
+ "created_at": "2026-11-23T02:02:50.030Z",
+ "delivered": true,
+ "delivered_at": "2026-11-23T02:02:50.976Z",
+ "delivery_error": "",
+ "discussion": "4hrxp33h6wg7sng04f5k",
+ "from": "owner",
+ "post_id": "_orchestrator",
+ "read": false,
+ "text": "And why are all the posts showing as new ? Isn't there a save state in the repo for new posts that have been viewed ?",
+ "thread_id": "e156dfd9-3532-415f-9473-caa13b45cfa2"
+}

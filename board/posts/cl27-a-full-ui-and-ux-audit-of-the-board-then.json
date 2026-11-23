@@ -8,7 +8,12 @@
   "docs/assets/cl27/03-composer-covers-text.png",
   "docs/assets/cl27/04-keyboard-orchestrator.png",
   "docs/assets/cl27/07-trains-phone.png",
-  "docs/assets/cl27/08-trains-desktop.png"
+  "docs/assets/cl27/08-trains-desktop.png",
+  "docs/assets/cl27/02-feed-bar.png",
+  "docs/assets/cl27/05-orchestrator-sheet.png",
+  "docs/assets/cl27/06-feed-comments-sheet.png",
+  "docs/assets/cl27/09-stale-git-diff.png",
+  "docs/assets/cl27/10-dark-phone.png"
  ],
  "asked": [
   {
@@ -17,18 +22,20 @@
   }
  ],
  "bars": [
-  "test_page_ux.js: 33 of 33 checks pass; on main's page 23 of the first 31 fail, the last 2 fail on the first CL27 page (asked qswsgntf01y58bpp6n74)",
-  "problems found: 15 (7 named by him, 8 more), fixed: 15 of 15 [visual]",
+  "test_page_ux.js: 38 of 38 checks pass; each fails on the page before its fix (23 on main, 2 on the first CL27 page, 4 on the second) (asked qswsgntf01y58bpp6n74)",
+  "problems found: 18 (7 named by him, 8 more, 3 in his 08:20 comment), fixed: 18 of 18 [visual]",
   "run_all_tests.py: 10 of 10 suites pass, 0 failed",
   "audit pictures: 54 before + 54 after (11 views x phone/desktop x light/dark, keyboard open on the phone)"
  ],
- "body": "For you: 15 problems found and fixed (your 7, plus 8 more: two, a blank margin inside a grown comment box and the New-below pill on the box with the keyboard open, came from the review), each with a check that fails on the old page; one taste choice is yours: the Trains view, A or B, on the question post `cl27-q-trains-view` (A stays if you tap nothing). Still needed: a look on your real phone, because the keyboard was emulated here. The page reaches the Artifact when the orchestrator republishes it.\n\n## Your problems, their causes and the fixes\n`docs/CL27.md § His named problems`\n\n## Eight more the audit and the review found\n`docs/CL27.md § Other problems the audit found`\n\n## Looked at, not a problem\n`docs/CL27.md § Looked at, not a problem`\n\n## What is left\n`docs/CL27.md § What is left`\n\n## What I checked, and how\nEvery view rendered with Playwright on this repo's board at 411 px with touch, 1300 px, light and dark, plus with the keyboard open (the visible part shrunk to 470 px, and panned 300 px): 54 pictures before and 54 after. `kit/board/test_page_ux.js` starts a board server on a throwaway root, seeds posts and comments, and measures each fix at 360 and 411 px and on the computer: 33 checks: 23 of the first 31 fail on main's page (80adfaa), the last 2 fail on the first CL27 page, 0 fail now. `python3 scripts/run_all_tests.py`: 10 of 10 suites pass (test_page_layout.js updated for the new Trains view; strings.en.json re-extracted).\n\nCommits: f56a37c, dfa5785 (review fixes) on branch cl27 (pushed), main merged in (it had not moved).\n",
+ "body": "For you: 15 problems found and fixed (your 7, plus 8 more: two, a blank margin inside a grown comment box and the New-below pill on the box with the keyboard open, came from the review), each with a check that fails on the old page; one taste choice is yours: the Trains view, A or B, on the question post `cl27-q-trains-view` (A stays if you tap nothing). Still needed: a look on your real phone, because the keyboard was emulated here. The page reaches the Artifact when the orchestrator republishes it.\n\n## Your problems, their causes and the fixes\n`docs/CL27.md § His named problems`\n\n## Eight more the audit and the review found\n`docs/CL27.md § Other problems the audit found`\n\n## Looked at, not a problem\n`docs/CL27.md § Looked at, not a problem`\n\n## What is left\n`docs/CL27.md § What is left`\n\n## What I checked, and how\nEvery view rendered with Playwright on this repo's board at 411 px with touch, 1300 px, light and dark, plus with the keyboard open (the visible part shrunk to 470 px, and panned 300 px): 54 pictures before and 54 after. `kit/board/test_page_ux.js` starts a board server on a throwaway root, seeds posts and comments, and measures each fix at 360 and 411 px and on the computer: 33 checks: 23 of the first 31 fail on main's page (80adfaa), the last 2 fail on the first CL27 page, 0 fail now. `python3 scripts/run_all_tests.py`: 10 of 10 suites pass (test_page_layout.js updated for the new Trains view; strings.en.json re-extracted).\n\nCommits: f56a37c, dfa5785 (review fixes), 7df03db (his 08:20: list items, a section with a comma, the section first in its viewer) on branch cl27; on main at 8f64004 (pushed), main merged in (it had not moved).\n",
  "breaks": "revert 80adfaa",
  "check": "node kit/board/test_page_ux.js",
  "column": "info",
+ "created_at": "2026-11-23T07:09:52Z",
+ "from": "orchestrator",
  "handoff": "Merge cl27 into main (fast-forward, main has not moved). Then in Harmonize: install.py --update, check the page offline, republish (board-publish), push. If he picks B on cl27-q-trains-view: localStorage kit-trains-view=map is the old view; make it the default in trainsAsLists().",
  "issues": [
-  "taste: the Trains view A (task lists, now) or B (flow map): question post cl27-q-trains-view",
+  "Trains view: he picked A, task lists (08:21); kept as built. His 08:30 ask is in too: a train card folds to its name and open steps, a tap on the name pulls out the done steps (025d047)",
   "Harmonize install.py --update and the republish: the orchestrator's, after the merge"
  ],
  "not_checked": [
@@ -36,8 +43,14 @@
   "iOS Safari (no WebKit run); the page falls back to a script where field-sizing is missing",
   "the Artifact page on claude.ai: same template and shim, but it needs the orchestrator's republish to be seen"
  ],
+ "part": "CL27",
+ "planned_by": "orchestrator",
  "session_id": "0faff95e-f88f-5a1c-a860-7d8c1604b331",
+ "sources": [
+  "qswsgntf01y58bpp6n74"
+ ],
  "status": "complete",
- "updated_at": "2026-11-23T07:57:11Z",
- "verdict": "The board had 15 UI/UX problems (your 7, plus 8 more, 2 of them caught in review); all fixed, each with a check that fails on the old page. The Trains view's look is your choice (A or B)."
+ "title": "a full UI and UX audit of the board, then every fix",
+ "train": "cli",
+ "verdict": "The board had 18 UI/UX problems (your 7, 8 more, and the 3 from your 08:20 comment); all fixed, each with a check that fails on the old page. The Trains view's look is your choice (A or B)."
 }

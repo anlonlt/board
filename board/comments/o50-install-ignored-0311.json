@@ -1,0 +1,8 @@
+{
+ "created_at": "2026-11-23T03:09:22Z",
+ "from": "orchestrator",
+ "post_id": "o50-trunk-decision",
+ "reply_to": "8hzmrwmuit157neiarhl",
+ "text": "You are right. In Harmonize your permission to push main was already given (CLAUDE.md, 2026-11-09), but the kit's install (11-20) wrote trunk_push off without reading it. The kit repo was installed on 11-22 the same way. So nothing was switched off later: the installer ignored a permission you had already given. Fix, as a small kit part after the merges: the installer and --update keep any permission already given (trunk push, auto mode, others) and ask only when none exists, with a test.",
+ "thread_id": "999fab2f-9284-48af-9a1d-3929e5c45569"
+}

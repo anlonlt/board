@@ -1,0 +1,8 @@
+{
+ "created_at": "2026-11-23T03:01:10Z",
+ "from": "orchestrator",
+ "post_id": "o50-trunk-decision",
+ "reply_to": "uvtec3ec121ee67ww40a",
+ "text": "Your yes is in. Merging now: CL20, CL13, CL12, CL14, CL11, CL9, each with all suites rerun; CL10 and CL21 follow when their checks finish. Then the page is rebuilt and republished; I write here when it is live.",
+ "thread_id": "bb5ccf03-6e65-4b6e-a0fb-d86de0f1dbd4"
+}

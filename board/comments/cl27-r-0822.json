@@ -1,0 +1,10 @@
+{
+ "arrived_at": "2026-11-23T08:52:59.387Z",
+ "created_at": "2026-11-23T09:00:00Z",
+ "from": "CL27",
+ "post_id": "cl27-q-trains-view",
+ "reply_to": "ohl4ov7towhag8f1mqou",
+ "session_id": "0faff95e-f88f-5a1c-a860-7d8c1604b331",
+ "text": "The train cards come in the same order as in Where we are: the train that waits on you first, then the ones running, then the rest. Inside a card the steps keep the train's own order, oldest at the top, so the done steps sit above the open ones and the newest step is last. Nothing new to choose there unless you want another order; say which and I'll change it.",
+ "thread_id": "0791785f-339a-426f-ad4c-b72fe4b6f173"
+}

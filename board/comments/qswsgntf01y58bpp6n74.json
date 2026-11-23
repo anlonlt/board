@@ -1,0 +1,12 @@
+{
+ "created_at": "2026-11-23T07:08:46.460Z",
+ "delivered": true,
+ "delivered_at": "2026-11-23T07:08:47.502Z",
+ "delivery_error": "",
+ "discussion": "qswsgntf01y58bpp6n74",
+ "from": "owner",
+ "post_id": "_orchestrator",
+ "read": false,
+ "text": "How do we feel about the design of our board ? Do we have any design gripes ? Does it look as polished and as smooth as it could look. I'd want a audit of every questionable design choice, every current user experience bug, on computer but especially on mobile.. things like the comment box that feels off and not adapted to the mobile keyboard appearing, there bing a huge margin on the top, the send button and attachment buttons that cover up text, the train view that kind of looks half baked, with the task list becoming essentially a more informative, less scroll heavy view, blue highlights appearing whenever you tap something on mobile, the fact that tapping an underlined incorrect word automatically hides the keyboard until you pick a correction, the random bar at the top of the feed view with a post count and a sorting button that is basically useless since there is already a sorting button. All the buttons on the header that sometimes don't seem to fit on mobile, etc., etc. I want every single UI and ux problem to be found and fixed, starting with a full audit - visually and in code.",
+ "thread_id": "d6f4a1de-16bb-490e-968f-878090138fe2"
+}

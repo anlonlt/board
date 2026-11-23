@@ -16,7 +16,11 @@
   "scripts/run_all_tests.py",
   "kit/board/shim.js",
   "kit/board/strings.py",
-  "kit/board/test_page.js"
+  "kit/board/test_page.js",
+  "kit/claude/kit_artifact_sync.py",
+  "kit/claude/artifact_ui.js",
+  "kit/board/test_page_pics_phone.js",
+  "tests/test_artifact_assets_into.py"
  ],
  "bars": [
   "0 of the 14 files in ~/.local/bin changed by run_all_tests.py, 0 added (checked by the suite itself)",
@@ -24,7 +28,8 @@
   "12 of 12 screenshots: 6 scenes x 2 sizes, 0 page errors",
   "3 of 3 features seen working on both sizes; 3 defects found and fixed"
  ],
- "body": "For you: the new UI works on both sizes; three things looked wrong and are fixed; tests no longer write to ~/.local/bin. What still needs your device: a look on your real phone.\n\n## What I saw\nSeen in a browser (Chromium via Playwright) at computer size (1280x800) and phone size (iPhone 13, 390x844, touch), on a scratch install of the current kit with a copy of this board's data and a few demo rows. The 12 pictures are paired computer vs phone.\n- **Collapsible sections:** chevrons fold and unfold on click and on tap; audit names (Not checked) open folded with their first line as a peek; after two folds of Handoff on two posts, a third post opens with Handoff folded. The phone run picked up the computer's folds too, because what is learned goes to `posts/_prefs`, shared across devices.\n- **Review chips:** a `continue` chip on the cli train's header; on a step the chip sits in its Status line (CL9 `redirect`), seen once the step is unfolded (hover on a computer, tap on a phone).\n- **Waiting clock:** the clock shows on his comment until an agent answers.\n\n## Fixed\n| what looked wrong | cause | fix |\n|---|---|---|\n| Phone: the post bar's bin cut off at the right edge, reachable only by an invisible sideways scroll | the local shim capped `.sheet .bar` at `max-width:100%`, cancelling the bar's 16 px bleed on each side (32 px short) | `max-width: calc(100% + 32px)` in `kit/board/shim.js`; the bar is 390 px wide on a 390 px phone, nothing hidden |\n| Fold chevron below the middle of its heading | aligned on the text baseline | `align-items: center` |\n| Waiting clock in orange, the colour of \"waits on you\" (principle 12) | it waits on an agent, not on him | gray (`--muted`), as the code's own comment said |\n\n## Tests and ~/.local/bin\n- `install.py` skips the launcher of an install inside a temp folder unless `KIT_BIN_DIR` is set (`SKIPPED command ...` in its log); the two unit tests that installed without it pass `--no-cmd`.\n- `scripts/run_all_tests.py` points `KIT_BIN_DIR` at a temp dir, runs without the session's `KIT_*` variables, and checks the real `~/.local/bin` before and after: a 7th line, `~/.local/bin untouched`, fails if anything there changed.\n- `test_install.py` checks both: a temp install without `KIT_BIN_DIR` writes nothing to a fake HOME's `~/.local/bin`, and with it the launcher goes there.\n- `kit/board/test_strings.py` was failing on main (2 checks), which I fixed: `\"[repo \"` is a routing prefix, now kept as code; rows in `EXCLUDED` are never translated (the fake translation changed `\"posts/\"` in `removeDocs`, so Remove wrote to the wrong doc); `test_page.js` follows the new select-mode removal of a discussion. It had been crashing without printing FAIL.\n\n## Merge\n`origin/main` (33 commits) merged into `cl10` with no conflicts.\n\n## Needs his device\nA look on your own phone and computer: the pictures come from an emulated iPhone 13 in a cloud browser, not from a real device.\n\nNot checked: a real phone or tablet in hand; iOS Safari itself (Chromium emulates its size and touch, not its engine); the claude.ai Artifact runtime (only the local server's page).\n\nCommits: 2deff35 (test_strings), f1f0bed (UI fixes), b972dd6 (pictures), on top of the WIP e2694bf (the ~/.local/bin guard).",
+ "body": "For you: the new UI works on both sizes; three things looked wrong and are fixed; tests no longer write to ~/.local/bin. What still needs your device: a look on your real phone.\n\n## What I saw\nSeen in a browser (Chromium via Playwright) at computer size (1280x800) and phone size (iPhone 13, 390x844, touch), on a scratch install of the current kit with a copy of this board's data and a few demo rows. The 12 pictures are paired computer vs phone.\n- **Collapsible sections:** chevrons fold and unfold on click and on tap; audit names (Not checked) open folded with their first line as a peek; after two folds of Handoff on two posts, a third post opens with Handoff folded. The phone run picked up the computer's folds too, because what is learned goes to `posts/_prefs`, shared across devices.\n- **Review chips:** a `continue` chip on the cli train's header; on a step the chip sits in its Status line (CL9 `redirect`), seen once the step is unfolded (hover on a computer, tap on a phone).\n- **Waiting clock:** the clock shows on his comment until an agent answers.\n\n## Fixed\n| what looked wrong | cause | fix |\n|---|---|---|\n| Phone: the post bar's bin cut off at the right edge, reachable only by an invisible sideways scroll | the local shim capped `.sheet .bar` at `max-width:100%`, cancelling the bar's 16 px bleed on each side (32 px short) | `max-width: calc(100% + 32px)` in `kit/board/shim.js`; the bar is 390 px wide on a 390 px phone, nothing hidden |\n| Fold chevron below the middle of its heading | aligned on the text baseline | `align-items: center` |\n| Waiting clock in orange, the colour of \"waits on you\" (principle 12) | it waits on an agent, not on him | gray (`--muted`), as the code's own comment said |\n\n## Tests and ~/.local/bin\n- `install.py` skips the launcher of an install inside a temp folder unless `KIT_BIN_DIR` is set (`SKIPPED command ...` in its log); the two unit tests that installed without it pass `--no-cmd`.\n- `scripts/run_all_tests.py` points `KIT_BIN_DIR` at a temp dir, runs without the session's `KIT_*` variables, and checks the real `~/.local/bin` before and after: a 7th line, `~/.local/bin untouched`, fails if anything there changed.\n- `test_install.py` checks both: a temp install without `KIT_BIN_DIR` writes nothing to a fake HOME's `~/.local/bin`, and with it the launcher goes there.\n- `kit/board/test_strings.py` was failing on main (2 checks), which I fixed: `\"[repo \"` is a routing prefix, now kept as code; rows in `EXCLUDED` are never translated (the fake translation changed `\"posts/\"` in `removeDocs`, so Remove wrote to the wrong doc); `test_page.js` follows the new select-mode removal of a discussion. It had been crashing without printing FAIL.\n\n## Merge and docs/WHAT-NOT-TO-BREAK.md\n`origin/main` (33 commits) merged into `cl10` with no conflicts. Then, per the continuation recipe, `cl10` was merged into `main` and pushed at about 02:14 (327aee3), after `git pull --no-rebase`, with `run_all_tests.py` at 7/7 and 0 failed on the merged result. The orchestrator's later messages (do not push main; follow WHAT-NOT-TO-BREAK) reached this session after that push, so main already has CL10; nothing was reverted. Checked against WHAT-NOT-TO-BREAK.md: `prefixFor()` and `__KIT_WRAP_DB__` untouched (the `[repo ` change keeps that prefix untranslated); the guard suites pass (test_artifact_cross_repo with its Chromium runs, test_artifact_mode, test_reconcile, test_install_update, test_clerk_starts_orchestrator, test_update_board: 19 tests OK; kit/hooks/test_hooks.py 0 failed). Step 5 (Harmonize `install.py --update` and republishing the page) is not done here: it belongs to whoever publishes the board.\n\n## Fix after his 02:22 comment (branch cl10-fix, not on main)\n- **Missing pictures.** The kit board had no picture list in the Artifact (`repos/board/kit_docs/_index` was missing), the page read only the first list it found (Harmonize's), and `kit_artifact_sync.py assets` could not write an attached board's list. Fixed: the 12 pictures are uploaded and listed (done in the Artifact now); `assets --into <id>`; the page merges every board's list, the shown board's first. Tests: `tests/test_artifact_assets_into.py`, and `kit/claude/test_artifact_repos.js` checks a picture of an attached board under All boards (fails without the fix).\n- **Resizing on the phone.** Before: a pinch only, which changed a picture row's width, capped at the screen width, so the row could not grow; the edge drag was mouse-only and 720 px or wider. Now: a grabber under each picture row drags it bigger or smaller with a finger, pen or mouse; on a phone a row grows up to 2.6 times its width and scrolls sideways inside its own box; the pinch lays out once per frame. Test: `kit/board/test_page_pics_phone.js` (iPhone 13, real touch events): 12 of 12 pictures loaded, a row went from 311 to 467 px and back to 308 px, and the page never scrolled sideways (390 of 390 px).\n- **The pictures of this post** now point to the 12 uploaded Artifact assets (`/_blob/...`), so they show in every view of the page as it is published today; the repo copies stay in `docs/cl10/`.\n- **.kit/ refreshed** (the orchestrator's check): `.kit/shim.js`, `.kit/board.html`, `.kit/strings.py` and `.kit/kit_artifact_sync.py` still ran the code from before the fixes; `install.py . --update` refreshed them (593419f). `tests/test_kit_copies_current.py` now fails when a copied file differs from its kit/ source or a template line is missing from `.kit/board.html` (red on the old copies, green now).\n- **Header bar on the phone** (his 02:34): the task list and document windows sat 8 px in from every edge with rounded corners, and the post bar had a 12 px strip above it. On a phone they are now full sheets, edge to edge from the top (DESIGN-PRINCIPLES § 7). `kit/board/test_page_phone_bars.js` checks this at 411 and 390 px: 4 checks failed on main 327aee3, 0 now. The bar he saw ending short on the right is the old published page; CL10 already fixed it.\n- **Text running left** (CL12's job): `cl10-fix` merged with `worktree-cl12` and rendered at 411 px shows 0 text elements left of the screen, on 4 posts including one with very long headers. When the two merge, only `.kit/manifest.json` conflicts; rerun `install.py . --update`. `tests/test_kit_copies_current.py` is CL12's version byte for byte.\n- **A comment on a post's picture went to the orchestrator** (his 02:35): every comment button in the viewers opened `_orchestrator`. Now the page remembers which post the last tap came from (its sheet, its window or its feed card; a tap inside the viewer keeps it, a tap anywhere else clears it), and the comment opens in that post's composer, so it reaches the post's session. Outside any post, comments still go to the orchestrator. `kit/board/test_page_pic_comment.js`, on phone and computer: 2 checks failed on main, 0 now. The last two pictures show the header fix at 411 px.\n- **Every file a post names, in the Artifact** (his 02:39 and 02:45): `kit.py artifact push` (the post tool) and `kit_artifact_sync.py files` list the repo files a post or comment names (in `images`, in `artifacts`, in code spans and in links). Pictures, PDF and video are uploaded; Markdown and HTML are mirrored as text. Each is mapped in the board's `kit_docs`. Then `files-sent` records them, writes the batch, and never uploads the same file twice. The page now maps every repo file it loads (pictures, video, audio, frames, links, and the PDF reader's fetch), not only pictures. Test: `tests/test_artifact_files.py`, red before (the command did not exist). Done for real: CL10's 12 pictures and CL12's 6 are mapped in `repos/board/kit_docs/_index` (v3).\n- **Measured limits of the Artifact's store** (also in both post guides): 20 MiB a file (19.9 MiB uploads, 20.1 MiB is refused), SVG 2 MiB, 25 files a call, 1 GiB and 5,000 files a store (about 110 MB used). It takes png, jpg, gif, webp, svg, mp4, webm, pdf, docx, xlsx, fonts, csv, md, json, txt and css/js; it does not take audio, .mov, .avif or .html. The probe files I uploaded to measure this (3 PDFs of 15 to 20 MiB, about 52 MB in all, plus a tiny .md and .svg) are still in the store: ids 4316f4b8…, 8fe88612…, 5e583ae1…, cfa316d7…, 57e9e3f1…. Say if they should be deleted.\n- `test_page_pics_phone.js` now drags back from where the grip is (49's check: 5 of 6 on a 664 px screen; 6 of 6 now).\n- **The picture map is never replaced** (O50's check): `files-sent` now merges into the board's current `kit_docs/_index` (read with `ArtifactData get`, then an update pinned to its version); without that copy it writes nothing, and it creates the index only when told it is missing. Nothing was lost: `repos/board/kit_docs/_index` did not exist before my first write at 02:30 (the `get` said so), so it never held a docs list. `tests/test_artifact_files.py`: 3 checks failed on c9923fd, 0 now.\n- **Files that stay repo links** (the tool names each with its reason). This post: install.py, scripts/run_all_tests.py, kit/board/shim.js, kit/board/strings.py, kit/board/test_page.js, kit/claude/kit_artifact_sync.py, kit/claude/artifact_ui.js, kit/board/test_page_pics_phone.js, tests/test_artifact_assets_into.py, test_install.py, kit/board/test_strings.py, kit/claude/test_artifact_repos.js, tests/test_kit_copies_current.py, kit/board/test_page_phone_bars.js and kit/board/test_page_pic_comment.js, all code files the viewers do not open. CL12's post: kit/board/test_page_layout.js, scripts/run_all_tests.py, kit/board/strings.py and tests/test_kit_copies_current.py, for the same reason. Its `kit/board/board.template.html` is mirrored as a document.\n- **Board header on a phone**: under 700 px it now spans edge to edge from the top (it sat 16 px in on every side). `test_page_phone_bars.js` checks it: 2 checks failed before at 411 and 390 px, 0 now. See the last picture.\n- Both post guides state all the limits; the store's total is read with `Artifact list scope assets`, since the tool does not enforce it.\n- Suites: 7 of 7 pass, 0 failed. Commits 6290117, 1289189, 593419f, 6a63ca4, d157b81, 39a7a8c, c9923fd and c3367d0 on `cl10-fix`, on top of main 327aee3. Visible to him once the Artifact page is republished (WHAT-NOT-TO-BREAK step 5).\n\n## Needs his device\nA look on your own phone and computer: the pictures come from an emulated iPhone 13 in a cloud browser, not from a real device.\n\nNot checked: a real phone or tablet in hand; iOS Safari itself (Chromium emulates its size and touch, not its engine); the claude.ai Artifact runtime (only the local server's page).\n\nCommits: 2deff35 (test_strings), f1f0bed (UI fixes), b972dd6 (pictures), on top of the WIP e2694bf (the ~/.local/bin guard).",
+ "branch": "cl10-fix",
  "captions": [
   "Sections, as opened: audit names folded (computer 1280x800)",
   "Sections, as opened: audit names folded (phone, iPhone 13 390x844)",
@@ -37,13 +42,16 @@
   "Review chip on a step (CL9, unfolded) (computer 1280x800)",
   "Review chip on a step (CL9, unfolded) (phone, iPhone 13 390x844)",
   "The clerk's waiting clock, now gray (computer 1280x800)",
-  "The clerk's waiting clock, now gray (phone, iPhone 13 390x844)"
+  "The clerk's waiting clock, now gray (phone, iPhone 13 390x844)",
+  "After his 02:34: the post bar from the very top, edge to edge (411 px)",
+  "After his 02:34: the task list as a full sheet, header across the top (411 px)",
+  "After O50's check: the board header as a full-width band at the top (411 px)"
  ],
  "check": "python3 scripts/run_all_tests.py",
  "column": "info",
- "created_at": "2026-11-23T02:16:09Z",
+ "created_at": "2026-11-23T02:19:05Z",
  "from": "orchestrator",
- "handoff": "The suite now fails if anything touches ~/.local/bin. A look on his real phone is still open. The phone post bar fix is in kit/board/shim.js (CL12 works on text running off screen: no overlap with its WIP).",
+ "handoff": "Stopped after Done (R94, context full). main holds CL10 (327aee3). Branch cl10-fix (c3367d0) holds every fix for his 02:22, 02:34, 02:35, 02:39 and 02:45 comments and O50's checks, all answered: merge it after `git pull --no-rebase`; with worktree-cl12 only .kit/manifest.json conflicts, so rerun `python3 -I install.py . --update`; then republish the Artifact page (WHAT-NOT-TO-BREAK step 5). In the Artifact, repos/board/kit_docs/_index (v3) maps CL10's 12 pictures and CL12's 6 pictures, and their kit_docs documents are written. A fresh session has no record of those uploads (files-board.json was in this session's scratchpad): a new `files` run would upload the same files again under new ids, which costs store space and breaks nothing. To avoid it, rebuild the record from the _index map, or ignore it. Not done: deleting my limit-probe uploads (about 52 MB, ids in the body) waits on his or the orchestrator's word; a look on his real phone after the republish.",
  "image_groups": [
   {
    "count": 2,
@@ -68,25 +76,33 @@
   {
    "count": 2,
    "title": "The clerk's waiting clock, now gray: computer vs phone"
+  },
+  {
+   "count": 3,
+   "title": "Phone at 411 px after his 02:34: post bar, task list and board header"
   }
  ],
  "images": [
-  "docs/cl10/a1-sections-default-computer.png",
-  "docs/cl10/a1-sections-default-phone.png",
-  "docs/cl10/a2-sections-tapped-computer.png",
-  "docs/cl10/a2-sections-tapped-phone.png",
-  "docs/cl10/a3-sections-learned-computer.png",
-  "docs/cl10/a3-sections-learned-phone.png",
-  "docs/cl10/b1-review-chips-computer.png",
-  "docs/cl10/b1-review-chips-phone.png",
-  "docs/cl10/b2-review-chip-step-computer.png",
-  "docs/cl10/b2-review-chip-step-phone.png",
-  "docs/cl10/c1-waiting-clock-computer.png",
-  "docs/cl10/c1-waiting-clock-phone.png"
+  "/_blob/ba13d777fb4e8d2267633aa11e3a36a7",
+  "/_blob/9b2cc8dba64e8b33f1be330536537e53",
+  "/_blob/1ee0c96930830dbe56f083958ff31262",
+  "/_blob/6bce02da3b86eadcc304080f691c761f",
+  "/_blob/d54e4ff9e951fc9fde7d01fec818fa6a",
+  "/_blob/30cf593e65969a08f14e12ff82273866",
+  "/_blob/ec49aaf8bd17924048cd8bf1ef25b7ea",
+  "/_blob/c986c0235c8dfb2f5e2f17e856e18bcd",
+  "/_blob/760808b91cd79ac883f8af38853387ff",
+  "/_blob/d9e2de9817b2693d64b5770311dc6d97",
+  "/_blob/d3af600a3c53e74382352342b779f54d",
+  "/_blob/b2e13e7020e96724f7bda016e08bf5b0",
+  "/_blob/5ee31a6a4f8281fdb2e2bbe4116433e2",
+  "/_blob/8ed929abe594e54c279e5afdbf05abc0",
+  "/_blob/c2f9cd9c7e75840d42d9c2a43d2490a8"
  ],
  "issues": [
   "none open"
  ],
+ "launched_at": "2026-11-23T01:57:20Z",
  "layout_computer": "rows",
  "layout_phone": "rows",
  "not_checked": [
@@ -101,6 +117,6 @@
  "status": "complete",
  "title": "See the new UI work, then stop tests touching ~/.local/bin",
  "train": "cli",
- "updated_at": "2026-11-23T02:16:13Z",
+ "updated_at": "2026-11-23T03:17:00Z",
  "verdict": "The new UI (folding sections, review chips, waiting clock) works at computer and phone sizes, with 3 fixes; run_all_tests.py writes 0 files to ~/.local/bin, and 7/7 suites pass."
 }

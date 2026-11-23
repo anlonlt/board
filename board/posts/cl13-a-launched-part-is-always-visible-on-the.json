@@ -1,11 +1,35 @@
 {
- "body": "Three gaps hid that CL10 and CL12 had been launched and then died. (1) A post said \"planned\" because the post's status was only updated by TaskUpdate or by the part's turn-1 post. Fix: one launch command (`kit.py launch <post>`) that writes status in progress, session_id and launched_at on the post, then runs `claude --bg`. (2) `claude --bg -w` makes the worktree from main, which has no .kit, .claude hooks or prompt (CL12 ran with no hooks). Fix: launch creates or resets the worktree from the current branch first, and refuses if the prompt file is not committed. (3) `kit.py resume` must flag a step as \"launched, died\" when its post is planned or in progress but a worktree, branch or transcript exists and no session is live, and say what is uncommitted in that worktree. Must have tests. Run `python3 scripts/run_all_tests.py`: 0 failed.",
- "column": "info",
- "created_at": "2026-11-22T22:43:08Z",
- "from": "orchestrator",
+ "artifacts": [
+  "scripts/kit.py",
+  "tests/test_launch.py",
+  ".kit/config.json",
+  "kit/board/board_cli.py",
+  "kit/claude/kit_artifact_sync.py",
+  "kit/claude-cli/orchestrator.template.md"
+ ],
+ "bars": [
+  "new tests: 9/9 green on cl13, 9/9 red on main 473dea4 (2 failures, 7 errors)",
+  "run_all_tests after merging main and cl20: 7/7 suites pass, 0 failed (tests/ unittest: 103 tests)",
+  "cl20 merged into cl13 (68a0637): resume() keeps cl20's _train_lines split and CL13's launched-died lines (only for this repo's own board)"
+ ],
+ "body": "Done on branch cl13 (commit 5254879, not merged): launches now write themselves onto the board; no more hand edits of posts or _trains.\n\n## What changed\n- **`kit.py launch <post>`** (the line `step new` / the TaskCreate hook now give): refuses a prompt that is not committed; writes `status: in progress`, `session_id`, `launched_at`, `branch` on the post and marks its Trains row (and its train root) running.\n  - CLI: `claude --bg -n board-<part>` inside a worktree made from the current branch (`.claude/worktrees/<part>`), never `claude -w` from main. An existing worktree with uncommitted work, or a branch with its own commits, is refused (`--reset` to restart).\n  - Web: prints the `create_session` call (repo, current branch, outcome branch, prompt); `launch <post> --session-id <id>` records the real id.\n- **Attached board from config**: `.kit/config.json` `kit.artifact = {url: your Artifact, prefix: repos/board/}`. `artifact pull/load/push/sent/pin` all use the prefix; `board_cli.py` names the Artifact when no local server answers; `kit_artifact_sync.py` docs/diffs default into repos/board/.\n- **`kit.py resume`** flags `launched, died` (branch, worktree or transcript left, no live session) and lists what is uncommitted in the worktree.\n\n## Tests\nRed on main first: 9/9 failing. Green on cl13: 9/9. Two existing tests changed only their expected launch line (test_train_and_task_train, test_install), and test_artifact_mode now pins prefix \"\" (the kit repo itself is attached now).",
+ "branch": "cl13",
+ "check": "python3 -m unittest tests.test_launch -v",
+ "column": "done",
+ "column_before": "info",
+ "completed_at": "2026-11-23T02:25:00Z",
+ "created_at": "2026-11-23T02:29:43Z",
+ "done_at": "2026-11-23T02:30:24.930Z",
+ "from": "part",
+ "handoff": "Orchestrator: launch with `python3 -I .kit/kit.py launch <post>`. On the web it prints the create_session call; after it, `kit.py launch <post> --session-id <id>`, then make the ArtifactData batch call it prints (repos/board/posts, pinned). cl13 at 68a0637 already contains main and cl20: merge it after cl20.",
+ "launched_at": "2026-11-23T02:13:00Z",
+ "not_checked": "A real create_session call and a real claude --bg (both faked in the tests); `install.py --update` keeping kit.artifact in a re-rendered config (the code reuses the existing config, not run); the Harmonize page not rebuilt (no page change).",
  "part": "CL13",
  "planned_by": "orchestrator",
- "status": "planned",
+ "session_id": "session_01AE1HGhwWDPd64SEkcvptk5",
+ "status": "complete",
  "title": "A launched part is always visible on the board, on the right base",
- "train": "cli"
+ "train": "cli",
+ "updated_at": "2026-11-23T02:29:43Z",
+ "verdict": "One command, `kit.py launch <post>`, now writes the part onto the board (post in progress + its Trains row running) on the CLI and on the web, and the kit repo finds its board in your Artifact (repos/board/) from its config alone."
 }

@@ -1,0 +1,10 @@
+{
+ "arrived_at": "2026-11-23T09:14:37.496Z",
+ "created_at": "2026-11-23T09:20:00Z",
+ "from": "CL27",
+ "post_id": "cl27-q-trains-view",
+ "reply_to": "20goiar0wuhbtafqxuk5",
+ "session_id": "0faff95e-f88f-5a1c-a860-7d8c1604b331",
+ "text": "Two mistakes of mine, both fixed on main (212e642). You'll see them after the next republish.\n\n- **The blank spaces:** a folded done step still kept the small gap the list puts between steps. Eight hidden steps made the empty band you saw in Bench triage. Folded steps now take no room at all, and they slide back in when you unfold.\n- **Finished steps still showing:** the fold only hid steps in the Done column. The green dot also marks steps the train has already moved past, so those stayed. Now everything with a green dot folds away, and the \"x / y done\" count agrees with the dots. Along the way: a step still running no longer turns green just because its next step is planned.\n\nBoth have a check that fails on the old page.",
+ "thread_id": "caf8b3a9-09e8-4f08-a1cc-25ba5c4da2f5"
+}
