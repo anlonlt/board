@@ -372,8 +372,9 @@ class MemoryHoldsWhatNoPostHolds(unittest.TestCase):
             mem = os.path.join(d, ".board", "memory")
             for sub in ("state", "issues", "lessons"):
                 os.makedirs(os.path.join(mem, sub))
-            files = {"state/app.md": "Next: ship the login screen\n", "state/orchestrator.md": "timer at 09:00\n",
-                     "awaits.md": "- [app] pick a colour\n", "issues/2026-11-01-a.md": "# crash\nStatus: closed (abc)\n",
+            # CL29 (O53): only settled work moves; an open awaits point and an unsettled state stay (test_cl29_compact_checker)
+            files = {"state/app.md": "Next: done, shipped the login screen\n", "state/orchestrator.md": "timer at 09:00\n",
+                     "awaits.md": "# What awaits the owner\n\n", "issues/2026-11-01-a.md": "# crash\nStatus: closed (abc)\n",
                      "issues/2026-11-02-b.md": "# slow page\nStatus: open\n", "lessons/l.md": "# a lesson\n"}
             for rel, text in files.items():
                 with open(os.path.join(mem, rel), "w") as fh:
