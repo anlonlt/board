@@ -4,6 +4,19 @@ This file is what an installing agent reads to say, for **its** project, which p
 § Why, step 0's recommendation). Every goal and problem below was stated by a person, quoted with its date and source;
 every number was measured, with its source. A part is worth installing only when its problem is present in the project.
 
+## 0. The owner's goals in one list (his founding comment, 2026-11-19 23:35, and the comments before it; quotes in § 1)
+
+1. **One UI for everything agents make**: no digging through GitHub folders to stay in the loop.
+2. **No recap to ask for**: every new session, and the owner, see where we are and what waits on him, at a glance.
+3. **Continuity across sessions and context limits**: automatic hand-overs and agent spawning, so it feels like one
+   unified team that manages itself; nothing lost to a crash or a reset.
+4. **A record of every discussion**: nothing said is lost, whatever session it was said in.
+5. **No sprawl, no double copies**: git is the one store; every post and comment a file; facts pulled by script, each
+   with an anchor to its source.
+6. **Phone-first and token-efficient**: answer from the phone in a tap; a Like costs no more than "yes" in chat; one
+   place per result.
+7. **Anyone can install it** (his friend first), adapted to how they already work (step 0).
+
 ## 1. The goals and problems, as they were said
 
 **The kit's owner** (Harmonize, a project run by many Claude Code sessions in parallel, answered from his phone):
@@ -19,6 +32,15 @@ every number was measured, with its source. A part is worth installing only when
 | 2026-11-12 20:00, chat | "Shouldn't the board clerk be limited to 0 character messages, since all it does is relay stuff ?" |
 | 2026-11-13 00:29, board | "likes should be the equivalent token cost of me saying yes in chat" |
 | 2026-11-15 23:30, board | "Why is everyone telling me to do it ? If it notifies such things, it should do it itself" |
+| 2026-11-12 21:35, board | "How much work has been lost because of these crashes, and are agents saving their work … so that they can continue exactly from where the crash happened ?" |
+| 2026-11-15 21:15, board | "Shouldn't what's waiting for me available at a glance ? I feel like with all these comment threads, and open news posts, and stuff, it's getting hard to navigate around" |
+| 2026-11-15 21:23, board | "allowing me to see everything without having to dig through GitHub" ; "in the beginning, things were kind of being done automatically by the orchestrator, the project was running itself" |
+| 2026-11-15 23:51, board | "Any way to keep a log of context drift ? … that tracks the source of everything that's being copy and pasted from prompt to prompt, message to message, with always an anchor to its source" |
+| 2026-11-16 00:58, board | "the original at a glance view should be primary, clicking on a train uncollapses the view into the train view of that train, and the waiting for you should be posts in the waiting for you page" |
+| 2026-11-19 23:35, board, **the kit's founding comment** | "using GitHub as the front UX is annoying because the owner has to go and dig through folders, files and stuff to find whatever has been created in a project to stay in the loop, or waste tokens asking an AI for a recap at every new discussion" |
+| 2026-11-19 23:35, same comment | "The story skill … with the added benefit of cross conversation continuity" ; "the possibility of having a record of every single discussion" ; "saving context by automatic discussion and agent spawning and review workflow" |
+| 2026-11-19 23:35, same comment | "keeping the impression that the owner talks to one unified team no matter the discussion, and a familiar, social media kind of UI and UX, with the impression that everything manages itself fluidly" |
+| 2026-11-19 23:35, same comment | the tradeoff to remove: "doubling everything that's already made and being updated in GitHub, context sprawl that creates the need of a rule ledger" ; the answer: "stores everything in the GitHub, but with a UI that shows it all … every post was a file … every comment was a seperate file … pulled through scripts in an instant" |
 | 2026-11-19 23:35, board | "merge the story skill, the board, the hooks and GitHub into one thing … git as the only store … a skill/hook/UI collection anyone could use" |
 | 2026-11-20 00:05, board | "there would first have to be a step to evaluate the current architecture of the project, see how it runs, how it uses its tokens, to properly adapt the skill/board/hooks to their own project" |
 | 2026-11-20 00:19, board | "a seamless experience - a Claude independently goes through all its previous chats … it should guide the user in everything it needs to do" |
@@ -57,6 +79,10 @@ Harmonize's numbers are from `anlonlt/harmonize` (`docs/WORKFLOW-KIT.md`, `docs/
 | **memory** (`.story/`: one state per workstream with its `Next:`, `awaits.md`, issues, lessons; skill `story`; the start hook prints it) | "Pas de mémoire entre conversations" (friend); 8 waiting items "scattered" (issue #3); a session starts by re-reading hand-overs | Harmonize: 22 workstreams and 31 waiting points served in 6.6k characters at each start, instead of re-reading 1.3 MB of docs (issue #3's repo) or 492k of log; the issue-#3 survey rebuilt 9 workstreams from the repo alone | a save point per step (a file rewrite, a commit); 6.6k characters per session start | never: install it first, always |
 | **guard** hook (refuses `rm -r`, `git clean`, `reset --hard`, force pushes, secrets) | "lost to an agent deleting it" (2026-11-08) | not measured (no count of refusals kept); its tests plant each command | none (a refusal costs a turn) | never |
 | **stop / pre-compact hooks, `end_session.py`** | a reclaimed container loses what is not pushed; "Shouldn't everything be merged to main ?" | Harmonize: 5 of 180 sessions ever archived, by hand; his question came from finding work on branches, not on main | one blocked stop when work is unpushed | never (quiet during the install itself, `kit.setup`) |
+| **"Where we are" + "Waiting for you"** (the cards, built from the memory and the posts; the start hook prints the same) | goal 2: "waste tokens asking an AI for a recap at every new discussion"; "Shouldn't what's waiting for me available at a glance ?" | Harmonize's start hook serves 22 workstreams' next steps and 31 waiting points in 6.6k characters; "waits on him" was in 5 places before (WORKFLOW-KIT § 1.6) | built by a script or a subagent, not by hand | never for the memory side; the cards need the board |
+| **the board as the UI to the repository** (posts, their files and pictures, the repo docs reader, deliverables) | goal 1: "dig through folders, files and stuff to find whatever has been created" | every Harmonize result has a post: 173 posts, 1,279 comments in 8 days (WORKFLOW-KIT § 1.2) | the page and its upkeep | the owner reads the repository himself and is happy to |
+| **hand-overs at context limits** (`kit_pre_compact.py` + `handover.py`: the orchestrator at its limit, the clerk at its limit; `.story` and the post carry the state) | goal 3: "automatic discussion and agent spawning"; "continue exactly from where the crash happened" | Harmonize: 47 orchestrators and 27 clerks handed over in 10 days, each takeover ~150k for the orchestrator; a container reclaimed loses only what was not pushed (the stop hook) | a successor's first read (~150k for an orchestrator) | one short session at a time (no limit is reached) |
+| **one store, built copies** (git holds every post and comment as a file: `kit.py` copy and lookups; cards built, never hand-written) | goal 5: "doubling everything … context sprawl that creates the need of a rule ledger" | Harmonize before: 8 kinds of fact in 2 to 5 places each, 52 extra copies of rules, 5 drifts measured on one day | one sync per launch | a board small enough to read whole |
 | **board page** (posts in columns, comments, one-tap answers, pictures) | "triple tokens, replying in chat, to you, and in the board"; answering from the phone; "an at a glance card" | his wait for an answer: median 0.8 min, 18 of 398 comments over 15 min since 2026-11-12; recent hand-over windows 0 over 15 min; 1,279 comments in 8 days, 449 his. **Tokens: about even, not fewer** (M1b: parts report half as much, the orchestrator's reviews grew as much) | publishing reads the 146 KB page once; each post write; the clerk below | **one session at a time, the owner in that chat** (issue #3: 57 s to a first reply; the chat is already the channel). It pays once sessions run in parallel, or the owner answers later or from a phone |
 | **clerk** (forwards each comment to the session that wrote the post) | a page cannot message a session; "If you receive this immediately after limit reset, good." | forwarded within about a minute of a usage-limit reset (one sample, 2026-11-12); his median wait 0.8 min | Haiku, low: BC27 $1.20 for 4 h 10 min, 209k context; replaced past 200k (22 clerks in 8 days) | no board; or only one running session at a time (he answers in its chat) |
 | **orchestrator** (launches parts, relays, checks each Done, hands over) | "to optimize my use of it in parallel"; "Why is everyone telling me to do it ?" | Harmonize runs many parts at once through it; 47 orchestrators since 2026-11-10 | the largest: orchestrator 46 re-read 70.8 M cached tokens, $24.88 in 5 h 15 min; a takeover ~150k | **no parallel work**: one session at a time needs nobody to launch or check others |
@@ -85,6 +111,15 @@ Step 0 answers four questions, then recommends; the install takes exactly that (
 | sessions run in parallel, or he answers later or from a phone | memory + board + clerk | "triple tokens"; a comment must reach the session that wrote the post |
 | more parts than the owner can launch and check by hand (about 3 or more at once) | everything: + orchestrator, cards, consultant | "to optimize my use of it in parallel"; "it should do it itself" |
 | work outside code | + the runners it needs | Microsoft 365 through Chrome |
+
+**Goal 4 is only half served (named, not hidden):** what a session writes on the board, and every comment, is kept as a
+file in git. **What the owner types in a session's chat is not**: it lives only in that session's transcript (in
+Harmonize, 19 standing rules quote chat words found nowhere on the board, WORKFLOW-KIT § 1.6). The say-it-once hook
+keeps the answers on the board, but his own chat words stay in the chat. The fix proposed: a UserPromptSubmit hook that
+appends each typed message, verbatim with its time and session, to the session's post as a comment `from: "owner",
+via: "chat"` (or to `.story/said/<date>.md` without a board). Not built; the owner decides.
+**The drift log with anchors** ("an anchor to its source", 2026-11-15 23:51): partly, every post names its
+`session_id`, every comment its `post_id`, a step its `sources`; a full source chain from prompt to prompt is not built.
 
 **Not served by a kit part:** typing "continue" (84 of the friend's 288 messages) is a limit of the chat itself; a
 Claude Code session runs a step to its end without it, so the answer is where the work runs (§ Runners), not a part.

@@ -240,12 +240,14 @@ with tempfile.TemporaryDirectory() as d:
     cl_clerk = open(os.path.join(t_cl, ".kit", "clerk.md"), encoding="utf-8").read()
     cl_board = open(os.path.join(t_cl, ".kit", "BOARD.md"), encoding="utf-8").read()
     cl_cards = open(os.path.join(t_cl, ".claude", "agents", "kit-cards.md"), encoding="utf-8").read()
-    check("--runtime claude installs .claude/ hooks, settings, agents, and no .agents/ or local board_server",
+    check("--runtime claude installs .claude/ hooks, settings, agents, no .agents/, and the Artifact mode's local copy",
           rc == 0
           and os.path.isfile(os.path.join(t_cl, ".claude", "settings.json"))
           and os.path.isfile(os.path.join(t_cl, ".claude", "agents", "kit-cards.md"))
           and not os.path.exists(os.path.join(t_cl, ".agents"))
-          and not os.path.exists(os.path.join(t_cl, ".kit", "board_server.py"))
+          and os.path.isfile(os.path.join(t_cl, ".kit", "board_server.py"))      # kit.py artifact pull/load/push
+          and os.path.isfile(os.path.join(t_cl, ".kit", "web_takeover.py"))
+          and not os.path.exists(os.path.join(t_cl, ".kit", "up"))
           and cl_cfg["kit"]["roles"]["clerk"]["model"] == "haiku")
     check("--runtime claude renders native ArtifactData/ArtifactComments/create_session templates with .board/memory",
           "ArtifactData" in cl_board and "ArtifactComments" in cl_clerk

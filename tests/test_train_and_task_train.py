@@ -205,8 +205,8 @@ class TaskTrainHook(unittest.TestCase):
                    "tool_input": ti, "tool_response": tr or {}, "transcript_path": self.tf}
         r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "kit", "hooks", "kit_task_train.py")],
                            input=json.dumps(payload), capture_output=True, text=True, timeout=30,
-                           env=dict(os.environ, CLAUDE_PROJECT_DIR=self.proj, KIT_NO_LAUNCH="1",
-                                    KIT_BOARD_URL="http://127.0.0.1:9"))
+                           env=dict({k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_REMOTE"},  # a computer, even in a web session
+                                    CLAUDE_PROJECT_DIR=self.proj, KIT_NO_LAUNCH="1", KIT_BOARD_URL="http://127.0.0.1:9"))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.addCleanup(lambda: [os.path.exists(p) and os.remove(p) for p in (st, st + ".lock")])
         return json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"] if r.stdout.strip() else ""

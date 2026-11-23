@@ -2,7 +2,7 @@
 
 The board: {{BOARD_URL}} (source `.kit/board.html`). A session's result lives in ONE place, its board post. The owner reads and answers there. Talk to the owner in **{{TALK}}**.
 
-**Your post exists from turn 1.** `set` it in column `info`, `status: "in progress"`, your full turn-1 report as its body; add each finding to it (newest first); at the end set its final column. The message to the orchestrator only points: `Done. Check post <id>.`. Each chat turn ends with a single `·` (the hooks remind you).
+**Your post exists from turn 1.** `set` it in column `info`, `status: "in progress"`, your full turn-1 report as its body; add each finding to it (newest first); at the end set its final column. The message to the orchestrator only points: `Done. Check post <id>.`. A turn the board or another session opened ends with a single `·` (the hooks remind you); when the owner types in your chat, answer him briefly in words, never a lone `·`.
 
 **Do it, don't ask:** what is in your reach and in the owner's direction, do and report. Ask only for a choice, money, a licence, a change of direction, deleting.
 

@@ -216,6 +216,14 @@
   "kind": "js"
  },
  {
+  "en": "Liked",
+  "kind": "js"
+ },
+ {
+  "en": "Like",
+  "kind": "js"
+ },
+ {
   "en": "2-digit",
   "kind": "js"
  },
@@ -436,10 +444,6 @@
   "kind": "js"
  },
  {
-  "en": "✓ reviewed",
-  "kind": "js"
- },
- {
   "en": "You",
   "kind": "js"
  },
@@ -468,6 +472,10 @@
   "kind": "js"
  },
  {
+  "en": "Liked: ",
+  "kind": "js"
+ },
+ {
   "en": " liked the post (",
   "kind": "js"
  },
@@ -477,6 +485,10 @@
  },
  {
   "en": " · seen",
+  "kind": "js"
+ },
+ {
+  "en": " · liked by ",
   "kind": "js"
  },
  {
@@ -501,14 +513,6 @@
  },
  {
   "en": "Could not save the file (",
-  "kind": "js"
- },
- {
-  "en": "👍 Liked",
-  "kind": "js"
- },
- {
-  "en": "👍 Like",
   "kind": "js"
  },
  {
@@ -652,7 +656,7 @@
   "kind": "js"
  },
  {
-  "en": "👍 orchestrator: taking care of it",
+  "en": "orchestrator: taking care of it",
   "kind": "js"
  },
  {
@@ -660,7 +664,7 @@
   "kind": "js"
  },
  {
-  "en": "✓ Seen",
+  "en": "Seen",
   "kind": "js"
  },
  {
@@ -685,6 +689,14 @@
  },
  {
   "en": "Where this began: ",
+  "kind": "js"
+ },
+ {
+  "en": "You agreed with this comment",
+  "kind": "js"
+ },
+ {
+  "en": "Agree without writing",
   "kind": "js"
  },
  {
@@ -1085,10 +1097,6 @@
  },
  {
   "en": "-7deg",
-  "kind": "js"
- },
- {
-  "en": "✓ Done",
   "kind": "js"
  },
  {

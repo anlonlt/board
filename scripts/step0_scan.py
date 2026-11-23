@@ -523,6 +523,27 @@ def detect_current_runtime():
     return "generic"
 
 
+def device_survey(save=False):
+    """CL15: this device's session cap (.kit/device.py, scripts/device.py in the kit's repo); None if missing."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "device.py")
+    if not os.path.isfile(path):
+        return None
+    spec = importlib.util.spec_from_file_location("kit_device", path)
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+        s = mod.survey()
+        if save:
+            st = mod.load_store()
+            st["survey"] = s
+            mod.save_store(st)
+        s["summary"] = mod.summary(s)
+        return s
+    except Exception as e:  # a probe never breaks step 0
+        return {"error": str(e)}
+
+
 def build_step0_profile(target_dir, home_dir=None):
     target = os.path.abspath(target_dir)
     projects = discover_projects(target, home_dir=home_dir)
@@ -585,6 +606,7 @@ def build_step0_profile(target_dir, home_dir=None):
         "mcp_readers": mcp_info["readers"],
         "mcp_reader_details": mcp_info["details"],
         "mcp_capabilities": mcp_info["capabilities"],
+        "device": device_survey(),
     }
 
 
@@ -692,6 +714,15 @@ def render_markdown_report(profile):
         for d in mcp_details:
             lines.append("- **`%s`** (`%s`): %s" % (d["id"], d["server"], d["reason"]))
         lines.append("- **Artifact `capabilities.mcp`:** `%s`" % json.dumps(profile.get("mcp_capabilities") or {"servers": []}))
+    dev = profile.get("device") or {}
+    if dev.get("summary"):
+        lines.append("")
+        lines.append("## 5. This device (session cap)")
+        lines.append("- %s" % dev["summary"])
+        lines.append("- Cores %s · swap %s MB · GPUs: %s (information only: sessions use the API, RAM bounds them)." % (
+            dev.get("cores"), dev.get("swap_total_mb"), ", ".join(dev.get("gpus") or []) or "none found"))
+        lines.append("- Launches past the cap wait their turn (`.kit/device.py --gate`, the guard). Override on this "
+                     "machine: `python3 -I .kit/device.py --set-cap N`.")
     lines.append("")
     return "\n".join(lines)
 
@@ -705,6 +736,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     profile = build_step0_profile(a.target, home_dir=a.home)
+    device_survey(save=True)  # the cap is the machine's: ~/.config/board-kit/device.json, never the repo
     if a.out_json:
         os.makedirs(os.path.dirname(os.path.abspath(a.out_json)), exist_ok=True)
         with open(a.out_json, "w", encoding="utf-8") as fh:

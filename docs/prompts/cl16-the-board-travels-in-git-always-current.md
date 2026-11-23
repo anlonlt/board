@@ -1,0 +1,24 @@
+Board, part CL16: The board travels in git, always current (mirror synced on every step). Train `cli`. Your step's post: `cl16-the-board-travels-in-git-always-current` (it exists already).
+
+## The task
+Goal: the board travels in git, always current, so a clone anywhere (another computer, Claude Code web) sees the same trains. Today .kit/board_data/board.db is gitignored and board-mirror was last synced 2026-11-20 (two days stale), so after a crash or on the web `kit.py resume` finds nothing.
+
+First diagnose: the board server already runs with `--auto-sync-interval 15 --auto-sync-push` (board_server.py enable_auto_sync), yet on 2026-11-22 four new posts (CL15-CL18, made with `kit.py step new` while the server ran) did not reach origin/board-mirror within a minute, and the ../board-board-mirror worktree is still at 78fa427. Find why (dirty flag not set by that write path? push failing silently? lock left in .kit-sync.lock?), make failures visible in the server log, and add a test that fails while it is broken.
+
+Do:
+- Sync the board to the `board-mirror` branch automatically (`kit.py sync-db` / `sync`) after every step change (`kit.py step new|start|complete|drop`, so the kit_task_train hook covers it), after `kit.py done`, and in `end_session.py` and `handover.py`; debounce (e.g. at most one push per minute, a final one guaranteed) and never block the tool on a network failure (retry later, say so once).
+- `kit.py resume` (and `train`, `board_cli.py` reads) work without a local board.db: they read the mirror (fetch origin/board-mirror). When both exist, the newer wins and the older is merged, never lost; say which source was used and its age.
+- Writes from a machine without the board server (web, another computer) go to the mirror and are imported by the board server when it next runs (`kit_import.py` / `git_watch.py`), conflicts resolved per post by updated_at.
+
+Bars: a test with a fresh clone and no .kit/board_data that gets the same `kit.py resume` output as the source; a test that a step change reaches origin/board-mirror; a write made from the mirror side shows on the local board after import. Mirror .kit/ changes into kit/.
+Holds: never force-push board-mirror; no secrets (the token) in the mirror.
+
+## What this step answers (the owner's words, or a review's)
+(none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## How you work (the same for every part; written by the kit, not the orchestrator)
+1. **Context, not a summary:** `python3 -I .kit/kit.py train cli --zoom CL16` shows the train so far: what each earlier step found, its `check` and `handoff`. Read the owner's words above yourself (never trust a paraphrase of them, this prompt's included); a number from an earlier step is rechecked with its `check` command before you build on it.
+2. **Turn 1:** `python3 -I .kit/board_cli.py update posts cl16-the-board-travels-in-git-always-current --data '{"session_id":"board-cl16","status":"in progress","body":"<one line: what you are doing first>"}'`. Keep your own working checklist with TaskCreate/TaskUpdate if it helps you; it stays yours.
+3. **Your result is the post, in the kit's format** (`.kit/BOARD.md` § The post format): `verdict` (one plain sentence answering the task), `bars` (each number with its denominator), `artifacts` (repo paths: they open in the board's viewers), `not_checked`, `check` (the one command that reproduces your main number), `handoff` (what the next step needs), and the `body`: the whole result, after a first line saying what the owner must know or do. Say it once, on the board: the post is complete, messages only point to it; the lead says what he must know, the rest under `##` sections, which fold as he likes (`.kit/BOARD.md` § Sections fold, `kit.py sections`); a repo document (`docs/CL16.md`) only for a report to keep or what a post body cannot show (pictures inline, diagrams), embedded as `` `docs/CL16.md § Section` `` and never restated. Pick the board feature for each kind of content from `.kit/BOARD.md` § Which feature for what (audio takes, pictures to compare, a question for the owner).
+4. **Done:** `python3 -I .kit/kit.py done cl16-the-board-travels-in-git-always-current` must say OK (it checks the format and that your artifacts exist); commit and push your work; `python3 -I .kit/end_session.py`; then `SendMessage` to `board-orchestrator`: `Done. Check post cl16-the-board-travels-in-git-always-current.` (if the send fails, the orchestrator is mid hand-over: wait 30 s and send again). A review of your step starts by itself.
+5. **Then stay available:** the board clerk forwards the owner's comments on your post to you, each with the one command that answers it in his thread (`board_cli.py reply`). Talk to him in en, plainly, on the board, never at length in chat; each chat turn ends with `·`.
