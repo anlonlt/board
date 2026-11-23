@@ -418,10 +418,12 @@ def build_agy_hooks(board=True):
         "SessionStart": [{"type": "command", "command": CMD % "kit_session_start.py"}],
         "PreToolUse": [
             {"matcher": "run_command", "hooks": [{"type": "command", "command": CMD % "kit_guard.py"}]},
+            {"matcher": "invoke_subagent", "hooks": [{"type": "command", "command": CMD % "kit_guard.py"}]},
         ],
         "Stop": [
             {"type": "command", "command": CMD % "kit_stop.py"},
             {"type": "command", "command": CMD % "kit_pre_compact.py"},
+            {"type": "command", "command": CMD % "kit_web_save.py"},
         ],
     }
     if board:
@@ -453,6 +455,26 @@ def merge_hooks(t, dry, log, board=True):
              + len(desired.get("PostToolUse", [])) + len(desired.get("PreInvocation", []))
              + len(desired.get("PostInvocation", [])) + len(desired.get("Stop", [])))
     log.append(".agents/hooks.json: kit-board hook block merged in (%d handlers; other hooks kept)" % count)
+    if not dry:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(s, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+
+
+def merge_agy_mcp(t, dry, log):
+    """Merge the zero-dependency board-kit stdio MCP server into .agents/mcp_config.json (other servers kept)."""
+    p = os.path.join(t, ".agents", "mcp_config.json")
+    s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    servers = s.setdefault("mcpServers", {})
+    desired = {
+        "command": "python3",
+        "args": ["-I", os.path.join(t, ".kit", "mcp_stdio.py"), "--root", t],
+    }
+    if servers.get("board-kit") == desired:
+        return
+    servers["board-kit"] = desired
+    log.append(".agents/mcp_config.json: board-kit MCP server merged in (other servers kept)")
     if not dry:
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "w", encoding="utf-8") as fh:
@@ -493,9 +515,21 @@ def merge_claude_settings(t, dry, log, board=True, spec=None):
                 fh.write("\n")
 
 
+def under_tempdir(t):
+    """True when t is inside the system temp folder (tempfile.gettempdir(), /tmp, $TMPDIR)."""
+    import tempfile
+    real = os.path.realpath(t)
+    roots = {os.path.realpath(r) for r in (tempfile.gettempdir(), "/tmp", os.environ.get("TMPDIR") or "/tmp")}
+    return any(real == r or real.startswith(r.rstrip(os.sep) + os.sep) for r in roots)
+
+
 def install_cmd(t, cmd_name, dry, log, extra_args=""):
     """Install a one-word launcher in ~/.local/bin/<cmd_name> (override dir with $KIT_BIN_DIR)."""
     if not cmd_name or "/" in cmd_name or " " in cmd_name:
+        return
+    if not os.environ.get("KIT_BIN_DIR") and under_tempdir(t):
+        # A trial install in /tmp would point the real `board` at a folder that disappears.
+        log.append("SKIPPED command `%s`: %s is a temp folder (set KIT_BIN_DIR to install its launcher)" % (cmd_name, t))
         return
     bin_dir = os.environ.get("KIT_BIN_DIR") or os.path.expanduser("~/.local/bin")
     dst = os.path.join(bin_dir, cmd_name)
@@ -834,6 +868,7 @@ def main(argv=None):
             orch_tpl = rd("kit", "arena", "orchestrator.template.md") if rt == "arena" else rd("kit", "orchestrator.template.md")
             ins.put(".kit/orchestrator.md", render(orch_tpl, c))
             ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
+            ins.put(".kit/part.md", render(rd("kit", "part.template.md"), c))
             ins.put(".kit/runner.md", render(rd("kit", "runner.template.md"), c))
             ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "ORCHESTRATOR.template.md"), c))
             if claude_cli:
@@ -856,6 +891,8 @@ def main(argv=None):
             open(gi, "a", encoding="utf-8").write(prefix + "\n".join(gi_add) + "\n")
     if want_agy:
         merge_hooks(t, a.dry_run, ins.log, parts["board"])
+        if parts["board"] and not claude_only:
+            merge_agy_mcp(t, a.dry_run, ins.log)
         if c["kit"].get("cmd"):
             install_cmd(t, c["kit"]["cmd"], a.dry_run, ins.log)
             if parts["board"] and c["kit"]["cmd"] != "board":

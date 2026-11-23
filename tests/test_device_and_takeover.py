@@ -73,12 +73,18 @@ class GuardCap(unittest.TestCase):
     def test_counts_only_real_launches(self):
         self.assertEqual(guard.session_launches('KIT_ROLE=part claude --bg -n a -w b "x"'), 1)
         self.assertEqual(guard.session_launches('python3 -I .kit/device.py --gate && KIT_ROLE=part claude --bg -n a "x"'), 1)
+        self.assertEqual(guard.session_launches('agy --mode auto -p "Your prompt is docs/prompts/x.md"'), 1)
         self.assertEqual(guard.session_launches('git commit -m "claude --bg"'), 0)
         self.assertEqual(guard.session_launches("claude agents --json"), 0)
+        self.assertEqual(guard.subagent_launch_count("invoke_subagent", {"TypeName": "self", "Role": "Part: CL9"}), 1)
+        self.assertEqual(guard.subagent_launch_count("invoke_subagent", {"TypeName": "kit-cards", "Role": "Board Cards Builder"}), 0)
+        self.assertEqual(guard.subagent_launch_count("invoke_subagent", {"TypeName": "self", "Role": "Board Clerk"}), 0)
 
     def test_refuses_past_the_cap(self):
         why = guard.capacity_refusal('claude --bg -n a "x"', ROOT, survey=chromebook(3))
         self.assertIn("holds 3", why or "")
+        why_sub = guard.capacity_refusal("", ROOT, survey=chromebook(3), extra=1)
+        self.assertIn("holds 3", why_sub or "")
 
     def test_allows_with_a_slot_and_in_the_cloud(self):
         self.assertIsNone(guard.capacity_refusal('claude --bg -n a "x"', ROOT, survey=chromebook(1)))
@@ -103,6 +109,21 @@ class WebTakeover(unittest.TestCase):
         r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "kit/web_takeover.py"), "--stop-hook"], input="{}",
                            capture_output=True, text=True, env=env, timeout=30)
         self.assertEqual((r.returncode, r.stdout), (0, ""))
+        # agy Stop contract returns {"decision": "allow"}
+        r_agy = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "kit/hooks/kit_web_save.py")],
+                               input=json.dumps({"hookEventName": "Stop", "cwd": ROOT}),
+                               capture_output=True, text=True, env=env, timeout=30)
+        self.assertEqual(r_agy.returncode, 0)
+        self.assertEqual(json.loads(r_agy.stdout).get("decision"), "allow")
+        # agy handover --dry-run
+        r_ho = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "kit/handover.py"),
+                               "--role", "orchestrator", "--cli", "agy", "--dry-run"],
+                              capture_output=True, text=True, timeout=30)
+        self.assertEqual(r_ho.returncode, 0, r_ho.stderr)
+        plan = json.loads(r_ho.stdout)
+        self.assertEqual(plan["cli"], "agy")
+        self.assertIn(".kit/orchestrator.md", plan["prompt"])
+        self.assertIn("kit.py resume", plan["prompt"])
 
     def test_session_start_briefs_web_only(self):
         hook = os.path.join(ROOT, "kit", "hooks", "kit_session_start.py")

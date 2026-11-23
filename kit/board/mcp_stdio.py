@@ -90,6 +90,61 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "board_step_new",
+        "description": "Create or adopt a train step post and generate its prompt (docs/prompts/<post-id>.md). The train IS the task list.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["train", "part", "title"],
+            "properties": {
+                "train": {"type": "string", "description": "Project/train id (e.g. planner)"},
+                "part": {"type": "string", "description": "Step/part code (e.g. PL4)"},
+                "title": {"type": "string", "description": "Short step title"},
+                "task": {"type": "string", "description": "Goal, bars, and holds (the task only; kit adds how a part works)"},
+                "parent": {"type": "string", "description": "Optional preceding part code"},
+                "sources": {"type": "array", "items": {"type": "string"}, "description": "Owner or review comment ids this step answers"},
+                "model": {"type": "string", "description": "Optional model override"},
+                "review": {"type": "boolean", "default": True, "description": "Set false to skip automatic review on completion"},
+                "cli": {"type": "string", "enum": ["agy", "claude"], "description": "Target CLI for prompt/launch format"},
+            },
+        },
+    },
+    {
+        "name": "board_step_update",
+        "description": "Update a train step's lifecycle: start (checks device session cap), complete (marks complete + starts review), or drop (only if unstarted).",
+        "inputSchema": {
+            "type": "object",
+            "required": ["post_id", "action"],
+            "properties": {
+                "post_id": {"type": "string", "description": "Step post id"},
+                "action": {"type": "string", "enum": ["start", "complete", "drop"]},
+                "cli": {"type": "string", "enum": ["agy", "claude"]},
+            },
+        },
+    },
+    {
+        "name": "board_resume",
+        "description": "Rebuild orchestrator state from the board alone: active trains, open steps, session status, device capacity, and unanswered owner comments.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cli": {"type": "string", "enum": ["agy", "claude"]},
+            },
+        },
+    },
+    {
+        "name": "board_train",
+        "description": "Build a low-token Train-as-Tasklist context pack: ancestor zoom-out + current-step zoom-in.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["target"],
+            "properties": {
+                "target": {"type": "string", "description": "Train id, part code, or post id"},
+                "zoom": {"type": "string", "description": "Optional part or post id to zoom into"},
+                "as_json": {"type": "boolean", "default": False},
+            },
+        },
+    },
 ]
 
 
@@ -145,6 +200,45 @@ class MCPServer:
             return self._run_py(self.kit_py, cmd)
         if name == "board_search":
             cmd = ["search", str(args.get("query") or ""), "--limit", str(int(args.get("limit") or 20))]
+            return self._run_py(self.kit_py, cmd)
+        if name == "board_step_new":
+            cmd = ["step", "new", "--train", str(args["train"]), "--part", str(args["part"]),
+                   "--title", str(args.get("title") or args["part"]), "--task", str(args.get("task") or "")]
+            if args.get("parent"):
+                cmd.extend(["--parent", str(args["parent"])])
+            for src in (args.get("sources") or []):
+                cmd.extend(["--source", str(src)])
+            if args.get("model"):
+                cmd.extend(["--model", str(args["model"])])
+            if args.get("review") is False:
+                cmd.append("--no-review")
+            if args.get("cli"):
+                cmd.extend(["--cli", str(args["cli"])])
+            return self._run_py(self.kit_py, cmd)
+        if name == "board_step_update":
+            action = str(args.get("action") or "")
+            pid = str(args.get("post_id") or "")
+            if action not in ("start", "complete", "drop") or not pid:
+                return False, "board_step_update requires post_id and action in (start, complete, drop)"
+            if action == "start":
+                cap_ok, cap_msg = self._run_py(self.kit_py, ["capacity", "--gate"])
+                if not cap_ok and "NO FREE SLOT" in cap_msg:
+                    return False, "Post %s stays planned: %s" % (pid, cap_msg)
+            cmd = ["step", action, pid]
+            if args.get("cli"):
+                cmd.extend(["--cli", str(args["cli"])])
+            return self._run_py(self.kit_py, cmd)
+        if name == "board_resume":
+            cmd = ["resume"]
+            if args.get("cli"):
+                cmd.extend(["--cli", str(args["cli"])])
+            return self._run_py(self.kit_py, cmd)
+        if name == "board_train":
+            cmd = ["train", str(args["target"])]
+            if args.get("zoom"):
+                cmd.extend(["--zoom", str(args["zoom"])])
+            if args.get("as_json"):
+                cmd.append("--json")
             return self._run_py(self.kit_py, cmd)
         if name == "board_reply":
             cmd = self._cli_base_args() + ["reply", str(args["post_id"]), "--text", str(args["text"]), "--from", str(args.get("sender") or "agent")]

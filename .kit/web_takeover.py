@@ -65,7 +65,8 @@ def mirror_path():
 
 
 def is_web():
-    return str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes")
+    return any(str(os.environ.get(v) or "").lower() in ("1", "true", "yes")
+               for v in ("CLAUDE_CODE_REMOTE", "KIT_REMOTE", "AGY_REMOTE"))
 
 
 def git_identity():
