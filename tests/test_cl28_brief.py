@@ -277,6 +277,31 @@ class Adopt(unittest.TestCase):
         self.assertNotIn("Train A (", out)  # A3's posts are done: no open step
 
 
+class AdoptOnAnArtifactBoard(unittest.TestCase):
+    """A web container has no board server: adopt prints the ArtifactData writes, pinned, and never calls the server."""
+
+    def test_batches_without_a_server(self):
+        kit = load_kit()
+        posts = json.loads(json.dumps(POSTS))
+        kit._load_board_docs = lambda m, db_path=None: (posts, {})
+        kit.attached_board = lambda: {"url": "https://claude.ai/artifact/X", "prefix": "repos/board/"}
+        kit.artifact_url = lambda: "https://claude.ai/artifact/X"
+        versions = {"posts/%s" % k: 3 for k in posts if k != "K3i-switch"}
+        kit._art_state = lambda: {"versions": versions}
+
+        def no_server(*a, **k):
+            raise AssertionError("adopt called the board server")
+        kit._local_update = kit._board_request = no_server
+        with tempfile.TemporaryDirectory() as d:
+            r = kit.adopt_trains(out_dir=d)
+            writes = [w for pth in r["batches"] for w in json.load(open(pth))]
+        hl6 = [w for w in writes if w["doc_id"] == "HL6-retrain-all"][0]
+        self.assertEqual(hl6, {"op": "update", "collection": "repos/board/posts", "doc_id": "HL6-retrain-all",
+                               "data": {"train": "HL"}, "if_version": 3})
+        self.assertEqual(r["need_pin"], ["posts/K3i-switch"])
+        self.assertIn("ArtifactData` `batch`", kit.adopt_text(r))
+
+
 class MemoryHoldsWhatNoPostHolds(unittest.TestCase):
     """The owner, 2026-11-23: "everything is on the board": compact archives the state files, awaits.md and closed
     issues once; the orchestrator's timers, lessons and open issues (until posted) stay."""

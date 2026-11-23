@@ -1310,7 +1310,14 @@ def main(argv=None):
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], CLAUDE_CLI_SETTINGS if claude_cli_hooks else CLAUDE_SETTINGS)
     elif new_hooks.get(RUNTIME_HOOK_DIRS["claude"]):
         added_h = set(new_hooks[RUNTIME_HOOK_DIRS["claude"]])
-        web = "claude.ai/" in str(c.get("board_url") or "") or bool((c["kit"].get("artifact") or {}).get("url"))
+        # the web runtime (ArtifactData replies) when the config names an Artifact board or the target's settings
+        # already carry the kit's web hooks (Harmonize: runtime agy in the config, Claude Code web hooks in .claude)
+        try:
+            cur_st = open(os.path.join(t, ".claude", "settings.json"), encoding="utf-8").read()
+        except OSError:
+            cur_st = ""
+        web = ("claude.ai/" in str(c.get("board_url") or "") or bool((c["kit"].get("artifact") or {}).get("url"))
+               or "ArtifactData" in cur_st or "kit_orchestrator_guard.py" in cur_st)
         spec = [x for x in (CLAUDE_SETTINGS if web else CLAUDE_CLI_SETTINGS) if x[2] in added_h]
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], spec)
     if new_hooks.get(RUNTIME_HOOK_DIRS["agy"]):
