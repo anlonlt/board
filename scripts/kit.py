@@ -2939,30 +2939,14 @@ def _short(s, n):
     return s if len(s) <= n else s[:n - 1].rstrip() + "…"
 
 
-def _owner_chat(days, now):
-    """The owner's chat lines the kit recorded (kit_brief_guard.py on each prompt he typed), newest last."""
-    out = []
-    try:
-        with open(os.path.join(ROOT, ".kit", "run", "owner_chat.jsonl"), encoding="utf-8") as fh:
-            for line in fh:
-                try:
-                    e = json.loads(line)
-                    if now - iso(e["at"]) <= timedelta(days=days):
-                        out.append(e)
-                except (ValueError, KeyError, TypeError):
-                    continue
-    except OSError:
-        pass
-    return out
-
-
 def brief_stamp_dir():
     return os.path.join(ROOT, ".kit", "run", "brief")
 
 
 def brief(m, days=3, db_path=None, board_dir=None, now=None, limit=12):
     """One short page for the orchestrator, before it answers the owner: open decisions (age, default, what each
-    blocks), the owner's decisions of the last `days` days (comments, Likes, answers, chat lines the kit recorded), each
+    blocks), the owner's decisions of the last `days` days (comments, Likes, answers; a chat decision is a comment the
+    orchestrator wrote for it), each
     train's real state from its posts. The board is the one record: no memory file is read (the owner, 11-23)."""
     now = now or datetime.now(timezone.utc)
     if board_dir:
@@ -3015,8 +2999,6 @@ def brief(m, days=3, db_path=None, board_dir=None, now=None, limit=12):
         else:
             what = '"%s"' % _short(c.get("text"), 140)
         his.append((c["created_at"], "%s on %s: %s" % (c["created_at"][5:16].replace("T", " "), c.get("post_id"), what)))
-    for e in _owner_chat(days, now):
-        his.append((e["at"], '%s chat: "%s"' % (e["at"][5:16].replace("T", " "), _short(e.get("text"), 140))))
     his.sort()
     out.append("")
     out.append("## The owner's decisions, last %d days (%d)" % (days, len(his)))

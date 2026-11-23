@@ -10,8 +10,6 @@ you check before answering?" This hook is that check:
     `reply_to` in comments or repos/<id>/comments; `board_cli.py reply` in Bash / run_command) is refused unless
     `kit.py brief` ran in this session in the last `kit.brief.max_age_min` minutes (15); the refusal names the command.
   - PostToolUse on Bash / run_command: a `kit.py brief` that ran stamps the session (.kit/run/brief/<session>).
-  - UserPromptSubmit / PreInvocation: a line the owner typed in the chat is recorded (.kit/run/owner_chat.jsonl, the
-    last 200, 300 characters each) so the brief can list the owner's chat decisions next to the board ones.
 Everyone else (parts, the clerk, the owner's own sessions) is never refused. Exit 2 with the reason on stderr (Claude
 Code), {"decision": "deny"} (agy).
 """
@@ -116,32 +114,6 @@ def allow(claude):
     return 0
 
 
-def record_chat(data):
-    p = str(data.get("prompt") or data.get("lastUserInput") or "").strip()
-    if not p:
-        return
-    try:
-        from kit_say_it_once import not_typed
-        if not_typed(p):
-            return
-    except Exception:  # noqa: BLE001
-        if p.startswith("<") or "SYSTEM NOTIFICATION" in p[:400]:
-            return
-    path = os.path.join(project_dir(data), ".kit", "run", "owner_chat.jsonl")
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        try:
-            lines = open(path, encoding="utf-8").read().splitlines()[-199:]
-        except OSError:
-            lines = []
-        lines.append(json.dumps({"at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                                 "session": sid_of(data), "text": p[:300]}, ensure_ascii=False))
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write("\n".join(lines) + "\n")
-    except OSError:
-        pass
-
-
 def main():
     try:
         data = json.load(sys.stdin)
@@ -149,11 +121,6 @@ def main():
         return 0
     claude = is_claude_payload(data)
     ev = str(data.get("hook_event_name") or data.get("hookEventName") or "")
-    if ev in ("UserPromptSubmit", "PreInvocation"):
-        record_chat(data)
-        if not claude:
-            print("{}")
-        return 0
     tc = data.get("toolCall") or {}
     ti = data.get("tool_input") or tc.get("args") or {}
     if ev in ("PostToolUse", "PostInvocation"):
@@ -180,8 +147,7 @@ def main():
     return refuse(claude, (
         "NOT SENT: you answer the owner only from a fresh brief (the kit's brief guard, CL28). Last brief in this "
         "session: %s. Run `%s` first: the open decision posts and what each blocks, the owner's decisions of the last days "
-        "(board and chat), each train's real state from its posts, and every memory line a post contradicts (fix those "
-        "lines first). Then answer from it, and send this reply again."
+        "(on the board), each train's real state from its posts. Then answer from it, and send this reply again."
         % ("never" if age is None else "%d min ago (more than %d)" % (age, cap), WAY)))
 
 

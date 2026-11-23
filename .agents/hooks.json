@@ -90,10 +90,6 @@
       {
         "type": "command",
         "command": "python3 -I hooks/kit/kit_board_typing.py"
-      },
-      {
-        "type": "command",
-        "command": "python3 -I hooks/kit/kit_brief_guard.py"
       }
     ],
     "PostInvocation": [

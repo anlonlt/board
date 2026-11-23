@@ -1,6 +1,6 @@
 {
  ".agents/hooks/kit/kit_board_typing.py": "b96bc2ffa26ede4d87dcf018d67092f5c9fb8d07c196d4c6f88843340d4811a9",
- ".agents/hooks/kit/kit_brief_guard.py": "0bef5b26cfc7b130595cfe12272b57e089116498dfece752e7727f16371f665a",
+ ".agents/hooks/kit/kit_brief_guard.py": "0c5cc12b6bae79ec84049a3a99c442e638392f40a6e21b8484ecda01820d410b",
  ".agents/hooks/kit/kit_cards_reminder.py": "9dbf9c731f0e2270cad55d0afcc7bccc3d6cd8fdd73f9af868a30c87a581bcf8",
  ".agents/hooks/kit/kit_config.py": "da30203450d3936fa7f167def458f08f507e91cedd50dc16ce9c138e01142734",
  ".agents/hooks/kit/kit_guard.py": "5c5cb9c5ad52b62c35fe438fe0353c8d48caf1aad9d203d5042f841f0da751f8",
@@ -21,7 +21,7 @@
  ".board/memory/state/.gitkeep": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
  ".claude/agents/kit-cards.md": "4cb2cf8423c3c5c8a86b3f0bd7908bf709bd2aa5feae69b711d273377af3d614",
  ".claude/hooks/kit/kit_board_typing.py": "b96bc2ffa26ede4d87dcf018d67092f5c9fb8d07c196d4c6f88843340d4811a9",
- ".claude/hooks/kit/kit_brief_guard.py": "0bef5b26cfc7b130595cfe12272b57e089116498dfece752e7727f16371f665a",
+ ".claude/hooks/kit/kit_brief_guard.py": "0c5cc12b6bae79ec84049a3a99c442e638392f40a6e21b8484ecda01820d410b",
  ".claude/hooks/kit/kit_cards_reminder.py": "9dbf9c731f0e2270cad55d0afcc7bccc3d6cd8fdd73f9af868a30c87a581bcf8",
  ".claude/hooks/kit/kit_config.py": "da30203450d3936fa7f167def458f08f507e91cedd50dc16ce9c138e01142734",
  ".claude/hooks/kit/kit_guard.py": "5c5cb9c5ad52b62c35fe438fe0353c8d48caf1aad9d203d5042f841f0da751f8",
@@ -46,7 +46,7 @@
  ".kit/claude-cli/ORCHESTRATOR.md": "4879816d7a100ba59a2c67325ce292dcf28a3f9741e25f66cf5d7f23a1f38a5a",
  ".kit/claude-cli/clerk.md": "d1464cced04909c046226185ee45307582d81e52f4262973410f6c3da9b3b88e",
  ".kit/claude-cli/consultant.md": "0e29e655ec1f19c2859aa59ae35bc679746cd3f91106b5964f7c14cd5adc7ae6",
- ".kit/claude-cli/orchestrator.md": "9e64cd20f0349ca1b3d5a05c659dd4b0a6315711832a88916ccff0f42f6f4248",
+ ".kit/claude-cli/orchestrator.md": "cd5a0ef002f30c31cb0c52d563fddbb32da933a44513ff1292682140fbb1a47b",
  ".kit/claude-cli/part.md": "a71c89dbe7d14bff40988cb7f6f4d6fdb0925e50371a30ea6cdcf18fd22319ea",
  ".kit/claude-cli/takeover.md": "055039a85bd3543705975ffd413caeb8c4736167686cba732d86f66433f269bd",
  ".kit/clerk.md": "7a18ed588a9e0448755eb13da3c6aeabfd6de11d5a3ddfe87b1df7b7135e4eac",
@@ -61,7 +61,7 @@
  ".kit/kit_cards.py": "f7352a5317a42f958167146364539996603f8f8926a12da71f36ef6d4fa07ca8",
  ".kit/kit_import.py": "7ee7050f20af4343885704ca613b86945472e9ceec08ec8e0fb47645578ba809",
  ".kit/mcp_stdio.py": "c8976d46cd2f786d547ef3c0005e46944a6605c7b1bc745328edbcf6e8c5b6cc",
- ".kit/orchestrator.md": "e06fcec50112bc7f29e3f66142bd318821c1d9e5df4b7db166fa7ad8bcbb997b",
+ ".kit/orchestrator.md": "510980f2a50930cbe066255c704e1cf7796bf467eb00978b30d1d9a0c208d394",
  ".kit/part.md": "24e155ca4e7470b3addedc340a552011f03091240c8ff0a349db7810ad3e0c2e",
  ".kit/runner.md": "71d6c50e8b088f539254f1435631e00cd5cc9a3da3cc280f929de414b4cf0a7d",
  ".kit/shim.js": "fd8a479ddbcb63da70dcf2f7a0db74aa609200ba3344c27414b9f026f424f3cb",
@@ -73,5 +73,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "6c4c7d537524f7c6977d900f09caa6aa07373c0ee70dae2d3ac5e9e40680b081",
- "_kit_commit": "bac4f69 2026-11-23T07:47:21+00:00"
+ "_kit_commit": "28a4cdb 2026-11-23T07:52:55+00:00"
 }

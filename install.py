@@ -44,7 +44,6 @@ CLAUDE_SETTINGS = [
     ("PreToolUse", "ArtifactData|mcp__claude-code-remote__create_session", "kit_orchestrator_guard.py"),
     ("PreToolUse", "ArtifactData|Bash", "kit_brief_guard.py"),
     ("PostToolUse", "Bash", "kit_brief_guard.py"),
-    ("UserPromptSubmit", None, "kit_brief_guard.py"),
     ("PostToolUse", "ArtifactData|mcp__claude-code-remote__send_message", "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_board_typing.py"),
@@ -67,7 +66,6 @@ CLAUDE_CLI_SETTINGS = [
     ("PostToolUse", "Bash", "kit_brief_guard.py"),
     ("UserPromptSubmit", None, "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_board_typing.py"),
-    ("UserPromptSubmit", None, "kit_brief_guard.py"),
     ("Stop", None, "kit_stop.py"),
     ("Stop", None, "kit_say_it_once.py"),
     ("Stop", None, "kit_pre_compact.py"),
@@ -537,7 +535,6 @@ def build_agy_hooks(board=True):
         spec["PreInvocation"] = [
             {"type": "command", "command": CMD % "kit_say_it_once.py"},
             {"type": "command", "command": CMD % "kit_board_typing.py"},
-            {"type": "command", "command": CMD % "kit_brief_guard.py"},
         ]
         spec["PostInvocation"] = [
             {"type": "command", "command": CMD % "kit_say_it_once.py"},

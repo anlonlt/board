@@ -211,15 +211,6 @@ class Guard(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
         self.assertEqual(json.loads(r.stdout)["decision"], "deny")
 
-    def test_the_owners_chat_line_is_recorded(self):
-        hook({"hook_event_name": "UserPromptSubmit", "session_id": "s-orch", "prompt": "close A3, it's done"}, self.proj,
-             role="")
-        hook({"hook_event_name": "UserPromptSubmit", "session_id": "s-orch",
-              "prompt": "<task-notification>x</task-notification>"}, self.proj, role="")
-        lines = open(os.path.join(self.proj, ".kit", "run", "owner_chat.jsonl")).read().splitlines()
-        self.assertEqual(len(lines), 1)
-        self.assertEqual(json.loads(lines[0])["text"], "close A3, it's done")
-
 
 class TrainsCard(unittest.TestCase):
     def test_states(self):
