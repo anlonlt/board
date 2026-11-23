@@ -128,10 +128,22 @@
   function loadAssets() {
     if (assetMap) return Promise.resolve(assetMap);
     var c = window.claude;
-    return (c && c.use ? c.use("db") : Promise.resolve(null)).then(function (db) {
-      if (!db) return {};
-      if (window.__KIT_WRAP_DB__) db = window.__KIT_WRAP_DB__(db);
-      return db.doc("kit_docs/_index").get().then(function (s) { assetMap = (s.exists && s.data().assets) || {}; return assetMap; });
+    /* CL10 (his 02:22 "All the pictures don't show up here"): a post of an attached board shown under "All boards" or
+       the primary board names pictures mapped in ITS index (repos/<id>/kit_docs/_index): every board's map is read,
+       the shown board's last so its own pictures win. */
+    return (c && c.use ? c.use("db") : Promise.resolve(null)).then(function (raw) {
+      if (!raw) return {};
+      var R = window.__KIT_REPOS__, act = R ? R.active() : "";
+      var keys = [""].concat(R ? R.list().map(function (r) { return r.id; }) : []);
+      keys.sort(function (a, b) { return (a === act) - (b === act); });
+      return Promise.all(keys.map(function (k) {
+        return raw.doc((k ? "repos/" + k + "/" : "") + "kit_docs/_index").get()
+          .then(function (s) { return (s.exists && s.data().assets) || {}; }, function () { return {}; });
+      })).then(function (maps) {
+        assetMap = {};
+        maps.forEach(function (m) { Object.keys(m).forEach(function (k) { assetMap[k] = m[k]; }); });
+        return assetMap;
+      });
     }).catch(function () { return {}; });
   }
   function fixImg(img) {
