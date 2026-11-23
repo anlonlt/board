@@ -157,7 +157,7 @@ class AttachedBoardFromConfig(Base):
         r = k.artifact_load(url=self.url, token=TOKEN)
         self.assertEqual(r["taken"], 1)
         self.assertEqual(self.local("posts/cl99-launch-me")["data"]["part"], "CL99")
-        pd = self.tmp / "art" / "pin" / "repos" / "board" / "posts"    # CL31: the get saves the live copy for the pin
+        pd = self.tmp / "art" / "pin" / "v5" / "repos" / "board" / "posts"  # CL31: the get saves the live copy for the pin
         pd.mkdir(parents=True)
         (pd / "cl99-launch-me.json").write_text(json.dumps(POST))
         k.artifact_pin(["repos/board/posts/cl99-launch-me=5"])        # the pin names the Artifact's collection
@@ -241,10 +241,10 @@ class Launch(Base):
             base = Path(k._base_path("posts", did))
             base.parent.mkdir(parents=True, exist_ok=True)
             base.write_text(json.dumps(data))
-        pd = Path(k._pin_dir()) / "repos" / "board" / "posts"             # CL31: the gets saved the live copies
-        pd.mkdir(parents=True, exist_ok=True)
-        (pd / "cl99-launch-me.json").write_text(json.dumps(POST))
-        (pd / "_trains.json").write_text(json.dumps(TRAINS))
+        for v, did, data in (("v2", "cl99-launch-me", POST), ("v7", "_trains", TRAINS)):  # CL31: the gets saved the live copies
+            pd = Path(k._pin_dir()) / v / "repos" / "board" / "posts"
+            pd.mkdir(parents=True, exist_ok=True)
+            (pd / (did + ".json")).write_text(json.dumps(data))
         k.artifact_pin(["posts/cl99-launch-me=2", "posts/_trains=7"])
         st = k._art_state()
         st["loaded_at"] = k.zstamp(k.datetime.now(k.timezone.utc))      # CL30: push needs a copy loaded once
