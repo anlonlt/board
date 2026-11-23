@@ -40,30 +40,30 @@ check("the table is current: a fresh extract finds no visible string it lacks",
 # Issue #4: decoded emojis/arrows, ternary branches (on ? "A" : "B"), real newlines, and backward-compat old \uXXXX tables
 check("table keys are decoded plain text (no \\\\u escapes in strings.en.json)",
       all("\\u" not in r["en"] and "\\n" not in r["en"] for r in table)
-      and any(r["en"] == "👍 Like" for r in table)
-      and any(r["en"] == "👍 Liked" for r in table)
+      and any(r["en"] == "Like" for r in table)
+      and any(r["en"] == "Liked" for r in table)
       and any(r["en"] == "← Discussions" for r in table)
       and any(r["en"] == " posts\n*Exported " for r in table))
 
 fr_issue4 = {
-    "👍 Like": "👍 J'aime",
-    "👍 Liked": "👍 Aimé",
+    "Like": "J'aime",
+    "Liked": "Aimé",
     "← Board": "← Tableau",
     "← Discussions": "← Discussions FR",
     "You approved this": "Vous avez approuvé",
     "New discussion": "Nouvelle discussion",
     " posts\n*Exported ": " billets\n*Exporté ",
     # Also test old-style \uXXXX key and value compatibility:
-    "\\u2713 Seen": "\\u2713 Vu",
+    "Seen": "\\u00c9t\\u00e9 vu",
     "New above \\u2191": "Nouveau plus haut \\u2191",
 }
 out_i4, used_i4, _ = strings.apply(page, table, fr_issue4)
-check("issue #4: both ternary branches translated (👍 Liked / 👍 Like, ← Discussions / ← Board)",
-      '"👍 Aimé"' in out_i4 and '"👍 J\'aime"' in out_i4
+check("issue #4: both ternary branches translated (Liked / Like, ← Discussions / ← Board)",
+      '"Aimé"' in out_i4 and '"J\'aime"' in out_i4
       and '"← Discussions FR"' in out_i4 and '"← Tableau"' in out_i4
       and '"Vous avez approuvé"' in out_i4 and '"Nouvelle discussion"' in out_i4)
 check("issue #4: old \\\\uXXXX keys and values decode cleanly without double-escaping \\\\u in output",
-      '"✓ Vu"' in out_i4 and '"Nouveau plus haut ↑"' in out_i4 and "\\\\u" not in out_i4)
+      '"Été vu"' in out_i4 and '"Nouveau plus haut ↑"' in out_i4 and "\\\\u" not in out_i4)
 check("issue #4: newline in translation is valid JS escape (\\n, never raw newline inside literal)",
       '" billets\\n*Exporté "' in out_i4)
 
