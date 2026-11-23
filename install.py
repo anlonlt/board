@@ -300,6 +300,98 @@ def trunk(t, k, named, log):
                              "name an existing branch with --main-branch" % (k["main_branch"], k["main_branch"]))
 
 
+# CL22: the owner's permissions the repo already gives, and the ones an earlier install recorded, are never turned off.
+GRANT_FILES = ("CLAUDE.md", "AGENTS.md", os.path.join(".claude", "CLAUDE.md"), "GEMINI.md")
+PERMISSIVE_MODES = ("auto", "acceptEdits", "bypassPermissions", "dontAsk")
+_NEG = re.compile(r"\b(never|not|don'?t|doesn'?t|isn'?t|cannot|can'?t|forbidden|refuse[sd]?|no permission)\b", re.I)
+_PUSH = re.compile(r"\bpush(es|ing|ed)?\b", re.I)
+_PERM = re.compile(r"\b(permission|permitted|allowed|allow|may|ok|okay|authori[sz]ed|fine|free to)\b", re.I)
+
+
+def detect_trunk_push(t, trunk_name=None):
+    """(file, line no, line) of the first line in the repo's own instructions granting pushes to the trunk, else None."""
+    names = {"main", "master", "trunk"} | ({trunk_name} if trunk_name else set())
+    trunk_re = re.compile(r"(?<![\w/-])`?(%s)`?(?![\w/-])" % "|".join(re.escape(n) for n in sorted(names)), re.I)
+    for rel in GRANT_FILES:
+        fp = os.path.join(t, rel)
+        if not os.path.isfile(fp):
+            continue
+        for i, line in enumerate(open(fp, encoding="utf-8", errors="replace").read().splitlines(), 1):
+            for sent in re.split(r"(?<=[.!?])\s+", line):
+                if _PUSH.search(sent) and trunk_re.search(sent) and _PERM.search(sent) and not _NEG.search(sent):
+                    return rel, i, line.strip()
+    return None
+
+
+def detect_permission_mode(t):
+    """(file, mode) when the repo's .claude settings already set a permissive defaultMode, else None."""
+    for rel in (os.path.join(".claude", "settings.local.json"), os.path.join(".claude", "settings.json")):
+        fp = os.path.join(t, rel)
+        try:
+            mode = (json.load(open(fp, encoding="utf-8")).get("permissions") or {}).get("defaultMode")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if mode in PERMISSIVE_MODES:
+            return rel, mode
+    return None
+
+
+def ask_yes_no(question):
+    """One question on a terminal; None without one (an agent's install: it asks the owner with its own tool)."""
+    try:
+        if not sys.stdin.isatty():
+            return None
+        return input(question + " [y/N] ").strip().lower() in ("y", "yes", "o", "oui")
+    except (EOFError, OSError):
+        return None
+
+
+def keep_on(old, new, path="kit", kept=None):
+    """Every boolean on in the old kit config that the new one turns off is put back on (and listed)."""
+    kept = [] if kept is None else kept
+    if isinstance(old, dict) and isinstance(new, dict):
+        for key, ov in old.items():
+            if path == "kit" and key in ("parts", "setup", "funnel"):
+                continue                                   # the install's own state, and features, not permissions
+            if key in new:
+                if ov is True and new[key] is False:
+                    new[key] = True
+                    kept.append("%s.%s" % (path, key))
+                elif isinstance(ov, dict):
+                    keep_on(ov, new[key], "%s.%s" % (path, key), kept)
+    return kept
+
+
+def permissions(t, k, old_k, a, first, log):
+    """trunk_push and claude_permission_mode: found in the repo, kept from before, asked once, or off."""
+    if first:
+        if a.trunk_push:
+            log.append("trunk push: %s (--trunk-push %s)" % ("on" if k["trunk_push"] else "off", a.trunk_push))
+        else:
+            found = detect_trunk_push(t, k.get("main_branch"))
+            if found:
+                k["trunk_push"] = True
+                log.append("trunk push: on (the repo already grants it: %s:%d: %s)" % found)
+            else:
+                ans = ask_yes_no("Every session ends by merging its work onto the trunk and pushing it, never forced. "
+                                 "Do you give that standing permission?")
+                k["trunk_push"] = bool(ans)
+                log.append("trunk push: %s" % ("on (asked)" if ans else "off (asked)" if ans is False else
+                           "off (nothing in %s grants it; ask the owner once, then rerun with --trunk-push yes)"
+                           % "/".join(GRANT_FILES[:2])))
+        found = detect_permission_mode(t)
+        if found:
+            k["claude_permission_mode"] = found[1]
+            log.append("permission mode: %s (the repo already sets it: %s defaultMode)" % (found[1], found[0]))
+        return
+    old_k = old_k or {}
+    for key in keep_on(old_k, k):
+        log.append("KEPT %s: on (already on in .kit/config.json; to turn it off, edit that file)" % key)
+    if old_k.get("claude_permission_mode") and k.get("claude_permission_mode") != old_k["claude_permission_mode"]:
+        k["claude_permission_mode"] = old_k["claude_permission_mode"]
+        log.append("KEPT kit.claude_permission_mode: %s (already set in .kit/config.json)" % k["claude_permission_mode"])
+
+
 def slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "project"
 
@@ -711,7 +803,10 @@ def main(argv=None):
                          "(--no-board, --no-clerk, --no-orchestrator). Only if the owner declines step 0: --no-survey \"<why>\".")
     if a.survey and not os.path.isfile(a.survey):
         raise SystemExit("install: --survey %s: no such file" % a.survey)
+    old_p = os.path.join(t, ".kit", "config.json")
+    old_k = json.load(open(old_p, encoding="utf-8")).get("kit") if os.path.exists(old_p) else None
     c = load_config(t, a)
+    perm_log = []
     if a.no_funnel:
         c["kit"]["funnel"] = False
     elif "funnel" not in c["kit"]:
@@ -766,6 +861,8 @@ def main(argv=None):
             c["kit"]["mcp_readers"] = detected_mr
     ins = Installer(t, a.dry_run)
     trunk(t, c["kit"], a.main_branch, ins.log if (first or a.main_branch) else None) if (first or a.main_branch) else None
+    permissions(t, c["kit"], old_k, a, first, perm_log)
+    ins.log.extend(perm_log)
     parts = c["kit"]["parts"]
     notes = []
     cfg = json.dumps(c, indent=1, ensure_ascii=False) + "\n"
