@@ -19,8 +19,10 @@ from datetime import datetime, timedelta, timezone
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KIT = os.path.join(ROOT, "scripts", "kit.py")
 HOOK = os.path.join(ROOT, "kit", "hooks", "kit_brief_guard.py")
-sys.path.insert(0, os.path.join(ROOT, "kit", "board"))
-import kit_cards  # noqa: E402
+import importlib.util  # noqa: E402
+_spec = importlib.util.spec_from_file_location("kit_cards_cl28", os.path.join(ROOT, "kit", "board", "kit_cards.py"))
+kit_cards = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(kit_cards)
 
 NOW = datetime.now(timezone.utc)
 

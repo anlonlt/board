@@ -6,8 +6,9 @@
 TRAINS (the owner, 2026-11-20: "shouldn't trains be built automatically, since it's integrated into the where we are
 card?"): one train per project, its root the project (part `P-<id>`, its post the import's `P-<id>`); under it every
 board post that names the project in `train` (each part's post carries `train: "<project id>"`, and `parent: "<part>"`
-when it continues another part). A part's state comes from its post: column `done` -> done, `question`/`todo` -> you,
-else running while `status` says "in progress", else idle. Its prompt: `docs/prompts/<part>*.md` when one exists.
+when it continues another part). A part's state comes from its post: column `done` or a status
+"done ..." -> done (never running), status "closed ..." -> closed, "held" / "on hold" / "paused" -> held,
+`question`/`todo` -> you, else running while `status` says "in progress", else idle. Its prompt: `docs/prompts/<part>*.md` when one exists.
 DIR is a folder of posts as `ArtifactData` `list` `posts` saves them (`DIR/posts/<id>.json`), or the board's git
 copy (`../<project>-board-mirror/board`). Each dashboard row names its train, so a tap on the row opens it.
 
@@ -205,13 +206,27 @@ def check_safety(board_dir, new_rows, force=False):
     return None
 
 
+# CL28: a post's status says more than its column. Harmonize's HL1 (column info, status "done" since 11-17) showed as
+# running on the Trains card, and a held part (status "held: waits for VR5") had no state of its own.
+DONE_STATUS = re.compile(r"^\s*(done|complete|completed|finished|merged)\s*($|[,:;.(\-])", re.I)
+CLOSED_STATUS = re.compile(r"^\s*(closed|dropped|superseded|abandoned)\b", re.I)
+HELD_STATUS = re.compile(r"^\s*(held|on[ -]?hold|hold|paused|parked)\b", re.I)
+FINISHED = ("done", "closed")
+
+
 def post_state(p):
-    col, st = p.get("column"), str(p.get("status") or "").lower()
-    if col == "done":
+    """done (column done, or a status that says done), closed, held (held / on hold / paused), you (a question or a
+    todo for the owner), running (status in progress), else idle. A done post is never running."""
+    col, st = p.get("column"), str(p.get("status") or "")
+    if col == "done" or DONE_STATUS.match(st):
         return "done"
+    if CLOSED_STATUS.match(st):
+        return "closed"
+    if HELD_STATUS.match(st):
+        return "held"
     if col in ("question", "todo"):
         return "you"
-    return "running" if "progress" in st else "idle"
+    return "running" if "progress" in st.lower() else "idle"
 
 
 def _load_board_posts(board):
@@ -313,7 +328,7 @@ def synthesize_linked_rows(board, existing_rows):
             step_label = _step_summary(lk["title"] or lk["part"], max_len=90)
             steps.append(step_label)
             st = post_state({"column": lk["column"], "status": lk["status"]})
-            if st == "done":
+            if st in FINISHED:
                 done_count += 1
             elif st == "you":
                 has_you = True
@@ -402,7 +417,7 @@ def steps_from_train(r, links_by_train):
     parts = [lk for lk in links_by_train.get(wid, []) if lk["post_id"] != "P-" + wid]
     if not parts:
         return r
-    done = [lk for lk in parts if post_state({"column": lk["column"], "status": lk["status"]}) == "done"]
+    done = [lk for lk in parts if post_state({"column": lk["column"], "status": lk["status"]}) in FINISHED]
     open_ = [lk for lk in parts if lk not in done]
     steps = [_step_summary(lk["title"] or lk["part"], max_len=90) for lk in done + open_]
     nxt = r.get("_next") or ""

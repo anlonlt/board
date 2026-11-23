@@ -63,7 +63,7 @@ CLAUDE_CLI_SETTINGS = [
     ("PreToolUse", "SendMessage", "kit_say_it_once.py"),
     ("PostToolUse", "SendMessage|Bash", "kit_say_it_once.py"),
     ("PostToolUse", "TaskCreate|TaskUpdate", "kit_task_train.py"),
-    ("PreToolUse", "ArtifactData|Bash", "kit_brief_guard.py"),
+    ("PreToolUse", "Bash", "kit_brief_guard.py"),
     ("PostToolUse", "Bash", "kit_brief_guard.py"),
     ("UserPromptSubmit", None, "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_board_typing.py"),

@@ -261,8 +261,13 @@ with tempfile.TemporaryDirectory() as d:
           run("kit_say_it_once.py", St(transcript(62, "x" * 200, human=True), "s4o"), proj, role="orchestrator")[1].get("decision") == "allow")
     check("stop: a background session's · passes",
           run("kit_say_it_once.py", St(transcript(65, "·", human=True), "s4rp"), proj, role="part")[1].get("decision") == "allow")
-    check("say: no 'the owner typed this' reminder in a background session",
-          injected_text(run("kit_say_it_once.py", {"hookEventName": "PreInvocation", "conversationId": "pr-" + RUN, "lastUserInput": "launch"}, proj, role="clerk")[1]) == "")
+    pre_bg = injected_text(run("kit_say_it_once.py", {"hookEventName": "PreInvocation", "conversationId": "pr-" + RUN, "lastUserInput": "launch"}, proj, role="clerk")[1])
+    check("say: no 'the owner typed this' reminder in a background session", "typed" not in pre_bg)
+    # CL26: a Stop block speaks after the text is on his screen; the earliest a hook can act is before the turn
+    check("say: a background session gets the single-dot rule BEFORE its turn (PreInvocation)", "\u00b7" in pre_bg)
+    pre_x = injected_text(run("kit_say_it_once.py", {"hookEventName": "PreInvocation", "conversationId": "px-" + RUN,
+                                                     "lastUserInput": "<cross-session from=\"o\">go on</cross-session>"}, proj)[1])
+    check("say: a turn another session opened gets the single-dot rule before the turn", "\u00b7" in pre_x and "typed" not in pre_x)
 
     # chat_verbose mode allows long human chat answers and skips PreInvocation length reminder
     cfgp_v = os.path.join(proj, ".kit", "config.json")
@@ -327,6 +332,12 @@ with tempfile.TemporaryDirectory() as d:
     check("claude hook: say_it_once PreToolUse refuses long message with exit 2", rc_csay == 2 and "REFUSED" in err_csay)
     rc_cup, out_cup, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "UserPromptSubmit", "prompt": "hi"})
     check("claude hook: say_it_once UserPromptSubmit emits hookSpecificOutput", rc_cup == 0 and "hookSpecificOutput" in out_cup and "123" in out_cup)
+    for label, prompt in (("a launch prompt (a web part has no KIT_ROLE)", "Your prompt is docs/prompts/cl9-x.md: read it and do it."),
+                          ("a session's message", "<cross-session-message from=\"o\">Check post p</cross-session-message>"),
+                          ("a timer", "[SYSTEM NOTIFICATION - NOT USER INPUT] wake")):
+        rc_cnh, out_cnh, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "UserPromptSubmit", "prompt": prompt})
+        check("claude hook: %s gets the single-dot rule at UserPromptSubmit, before the turn" % label,
+              rc_cnh == 0 and "\u00b7" in out_cnh and "typed" not in out_cnh)
     rc_cpt, out_cpt, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse"})
     check("claude hook: say_it_once PostToolUse emits hookSpecificOutput with ·", rc_cpt == 0 and "hookSpecificOutput" in out_cpt and "·" in out_cpt)
     _, out_cb, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "git status"}})
@@ -353,7 +364,8 @@ with tempfile.TemporaryDirectory() as d:
     _, out_ccp, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse", "transcript_path": cf_t}, role="part")
     check("claude hook: a part gets the · reminder after a board write even on a 'human' opener", "·" in out_ccp)
     _, out_ccu, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "UserPromptSubmit", "prompt": "Your prompt is x: read it"}, role="part")
-    check("claude hook: no chat_answer_chars reminder in a part's session", out_ccu.strip() == "")
+    check("claude hook: no chat_answer_chars reminder in a part's session", "characters" not in out_ccu)
+    check("claude hook: a part's session gets the single-dot rule instead (CL26)", "\u00b7" in out_ccu)
     cf_tx = os.path.join(d, "claude-tx.jsonl")
     with open(cf_tx, "w") as fh:
         fh.write(json.dumps({"type": "user", "uuid": "cx1", "message": {"content": "<task-notification>done</task-notification>"}}) + "\n")
