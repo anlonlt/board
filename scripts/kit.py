@@ -2896,16 +2896,11 @@ def _train_lines(posts, alive, h="##", board=None):
 # ---------------------------------------------------------------- brief (CL28)
 # The owner, 2026-11-23, after orchestrator 51 answered from a stale memory line ("A3 waits on your choice") and missed
 # two open decision posts: "What does the kit make you check before answering?" `kit.py brief` is that check: one short
-# page from the posts, never from the cards or the memory, and the memory lines the posts contradict. A hook
+# page from the board documents only (the owner, 07:41: "everything is on the board"), never the cards or a memory. A hook
 # (kit_brief_guard.py) refuses an orchestrator's reply to the owner when no brief ran in the last 15 minutes.
 BRIEF_DONE = re.compile(r"^\s*(done|complete|completed|finished|merged)\s*($|[,:;.(\-])", re.I)
 BRIEF_CLOSED = re.compile(r"^\s*(closed|dropped|superseded|abandoned)\b", re.I)
 BRIEF_HELD = re.compile(r"^\s*(held|on[ -]?hold|hold|paused|parked)\b", re.I)
-BRIEF_TOKEN = re.compile(r"(?<![\w-])([A-Z]{1,3}\d+[a-z]?(?:-[A-Za-z0-9]+)*)(?![\w])")
-BRIEF_WAIT = re.compile(r"\b(waits?|waiting|awaits?|your (choice|call|answer|tap|go|decision)|to decide|undecided|"
-                        r"pending|blocked|in progress|running|open question|not yet (answered|decided))\b", re.I)
-BRIEF_HIM = re.compile(r"\b(your|you|owner|him|his)\b", re.I)
-BRIEF_OVER = re.compile(r"\b(done|closed|finished|completed?|merged|settled|answered)\b", re.I)
 
 
 def step_state(p):
@@ -2944,27 +2939,6 @@ def _short(s, n):
     return s if len(s) <= n else s[:n - 1].rstrip() + "…"
 
 
-def _memory_files(mem):
-    out = []
-    for pat in ("state/*.md", "awaits*.md", "*/awaits*.md"):
-        out.extend(sorted(glob.glob(os.path.join(mem, pat))))
-    return [f for f in dict.fromkeys(out) if os.path.isfile(f)]
-
-
-def _file_date(path):
-    try:
-        r = subprocess.run(["git", "-C", os.path.dirname(path), "log", "-1", "--format=%cs", "--", path],
-                           capture_output=True, text=True, timeout=10)
-        if r.stdout.strip():
-            return r.stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        pass
-    try:
-        return datetime.fromtimestamp(os.path.getmtime(path), timezone.utc).strftime("%Y-%m-%d")
-    except OSError:
-        return "?"
-
-
 def _owner_chat(days, now):
     """The owner's chat lines the kit recorded (kit_brief_guard.py on each prompt he typed), newest last."""
     out = []
@@ -2982,19 +2956,14 @@ def _owner_chat(days, now):
     return out
 
 
-def _rel(path):
-    r = os.path.relpath(path, ROOT)
-    return path if r.startswith("..") else r
-
-
 def brief_stamp_dir():
     return os.path.join(ROOT, ".kit", "run", "brief")
 
 
-def brief(m, days=3, db_path=None, board_dir=None, memory_dir=None, now=None, limit=12):
+def brief(m, days=3, db_path=None, board_dir=None, now=None, limit=12):
     """One short page for the orchestrator, before it answers the owner: open decisions (age, default, what each
     blocks), the owner's decisions of the last `days` days (comments, Likes, answers, chat lines the kit recorded), each
-    train's real state from its posts, and every memory line a post contradicts."""
+    train's real state from its posts. The board is the one record: no memory file is read (the owner, 11-23)."""
     now = now or datetime.now(timezone.utc)
     if board_dir:
         posts, comments = load_dir(board_dir, "posts"), load_dir(board_dir, "comments")
@@ -3085,57 +3054,6 @@ def brief(m, days=3, db_path=None, board_dir=None, memory_dir=None, now=None, li
     if finished:
         out.append("- all done: %s" % ", ".join(finished))
 
-    # 4. memory lines the posts contradict
-    mem = memory_dir or _resolve_memory_dir()
-    idx = {}
-    for k in posts:
-        for name in {part[k], k}:
-            idx.setdefault(name, set()).add(k)
-
-    def lookup(tok):
-        hit = set(idx.get(tok, ()))
-        for name, ks in idx.items():
-            if name.startswith(tok) and len(name) > len(tok) and not name[len(tok)].isdigit():
-                hit |= ks
-        return hit
-
-    flags = []
-    for f in _memory_files(mem):
-        try:
-            with open(f, encoding="utf-8") as fh:
-                lines = fh.read().splitlines()
-        except OSError:
-            continue
-        fdate = None
-        for n, line in enumerate(lines, 1):
-            if re.match(r"^\s*-\s*\[[xX ]\]", line):
-                continue  # a ticked/unticked step list says what is planned, not what waits
-            for mt in BRIEF_TOKEN.finditer(line):
-                tok = mt.group(1)
-                ks = lookup(tok)
-                if not ks:
-                    continue
-                near = line[mt.end():mt.end() + 40]  # what the line says of this step: the words right after it
-                states = {k: st[k] for k in ks}
-                opened = [k for k, s_ in states.items() if s_ in ("you", "running")]
-                if BRIEF_OVER.search(near[:25]) and opened:
-                    why = "says it is over; its posts: %s" % ", ".join("%s %s" % (k, states[k]) for k in sorted(opened))
-                elif BRIEF_WAIT.search(near) and not any(s_ in ("you", "running", "idle") for s_ in states.values()) and (
-                        any(s_ in ("done", "closed") for s_ in states.values()) or BRIEF_HIM.search(near)):
-                    why = "says it waits; its posts: %s" % ", ".join("%s %s" % (k, s_) for k, s_ in sorted(states.items()))
-                else:
-                    continue
-                fdate = fdate or _file_date(f)
-                last = max(str(posts[k].get("updated_at") or posts[k].get("created_at") or "")[:10] for k in ks)
-                flags.append("- %s:%d (memory %s, post %s) %s: \"%s\" %s" % (
-                    _rel(f), n, fdate, last or "?", tok, _short(line.strip("-* "), 100), why))
-    out.append("")
-    out.append("## Memory that contradicts a post (%d)" % len(flags))
-    out.extend(flags[:20] if flags else ["none (%s)" % _rel(mem)])
-    if len(flags) > 20:
-        out.append("(+%d more)" % (len(flags) - 20))
-    if flags:
-        out.append("Fix each line in the memory to match its post before you answer from it.")
     return "\n".join(out) + "\n"
 
 
@@ -3658,11 +3576,11 @@ def main(argv=None):
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
-    s = sp.add_parser("brief", help="before answering the owner: open decisions, his recent decisions, each train from "
-                      "its posts, memory lines a post contradicts")
+    s = sp.add_parser("brief", help="before answering the owner: open decisions, the owner's recent decisions, each train "
+                      "from its posts")
     s.add_argument("--days", type=int, default=3); s.add_argument("--db", default=None)
     s.add_argument("--board", dest="board_dir", default=None, help="a folder of posts/ and comments/ JSON instead of the local board")
-    s.add_argument("--memory", dest="memory_dir", default=None); s.add_argument("--session", default=None)
+    s.add_argument("--session", default=None)
     s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
     s.add_argument("action", choices=["pull", "load", "push", "sent", "pin"]); s.add_argument("args", nargs="*")
     s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
@@ -3820,7 +3738,7 @@ def main(argv=None):
         print(resume(m, db_path=a.db, cli=a.cli), end="")
         return 0
     if a.cmd == "brief":
-        print(brief(m, days=a.days, db_path=a.db, board_dir=a.board_dir, memory_dir=a.memory_dir), end="")
+        print(brief(m, days=a.days, db_path=a.db, board_dir=a.board_dir), end="")
         brief_mark(a.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID"))
         return 0
     if a.cmd == "launch":

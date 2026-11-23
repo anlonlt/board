@@ -180,8 +180,7 @@ def main():
     return refuse(claude, (
         "NOT SENT: you answer the owner only from a fresh brief (the kit's brief guard, CL28). Last brief in this "
         "session: %s. Run `%s` first: the open decision posts and what each blocks, the owner's decisions of the last days "
-        "(board and chat), each train's real state from its posts, and every memory line a post contradicts (fix those "
-        "lines first). Then answer from it, and send this reply again."
+        "(board and chat), each train's real state from its posts. Then answer from it, and send this reply again."
         % ("never" if age is None else "%d min ago (more than %d)" % (age, cap), WAY)))
 
 

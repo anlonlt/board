@@ -80,8 +80,8 @@ class Brief(unittest.TestCase):
                      "## Steps\n- [ ] A3 run anyway\n")
         with open(os.path.join(self.mem, "state", "harmony.md"), "w") as fh:
             fh.write("# Harmony\nNext: HL5 is done, nothing waits.\nHL3 runs (in progress).\n")
-        r = subprocess.run([sys.executable, "-I", KIT, "brief", "--board", self.board, "--memory", self.mem,
-                            "--session", "test-cl28"], capture_output=True, text=True, timeout=60)
+        r = subprocess.run([sys.executable, "-I", KIT, "brief", "--board", self.board, "--session", "test-cl28"],
+                           capture_output=True, text=True, timeout=60, cwd=self.tmp.name)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.out = r.stdout
 
@@ -120,16 +120,10 @@ class Brief(unittest.TestCase):
         self.assertIn("all done:", s)
         self.assertIn("A", s.split("all done:")[1])
 
-    def test_memory_lines_a_post_contradicts(self):
-        s = self.section("Memory that contradicts a post")
-        self.assertIn("speaker.md:2", s)
-        self.assertIn("A3 waits on your choice", s)
-        self.assertIn("A3-data done", s)
-        self.assertIn("A3-recipe done", s)
-        self.assertIn("harmony.md:2", s)  # "HL5 is done" while HL5 is an open question
-        self.assertIn("HL5-harmony-ai-question you", s)
-        self.assertNotIn("harmony.md:3", s)  # HL3 runs, and its post says so
-        self.assertNotIn("speaker.md:4", s)  # a step list is not a claim
+    def test_reads_the_board_only(self):
+        # the owner, 07:41: "everything is on the board": a memory file is never read nor compared
+        self.assertNotIn("Memory", self.out)
+        self.assertNotIn("speaker.md", self.out)
 
     def test_short(self):
         self.assertLess(len(self.out), 2500)
