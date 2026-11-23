@@ -1512,7 +1512,9 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
 
 
 def compact_memory(days=30, dry_run=False, root_dir=None):
-    """Archive completed state files and aged lessons into <memory_dir>/archive/ + digest.md so SessionStart stays lean."""
+    """Archive into <memory_dir>/archive/ (+ digest.md) what the board now holds (CL28): every workstream state file
+    but state/orchestrator.md, awaits.md, closed issues; and lessons past the 15 newest older than `days`. An open
+    issue stays, listed, until it is posted on the board."""
     import time
     base = os.path.abspath(root_dir or ROOT)
     rel_m = None
@@ -1542,8 +1544,27 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
                 first = open(fp, encoding="utf-8", errors="ignore").readline().strip()
             except OSError:
                 continue
-            if re.match(r"^Next:\s*(?:done|closed|archived|complete(?:d)?)\b", first, re.I):
+            # CL28: where a workstream stands is its train on the board; every state file but the orchestrator's
+            # timers is archived (it was archived only once its Next: said done)
+            if fn != "orchestrator.md":
                 to_move.append(("state", fn, fp, first))
+    # 1b. CL28: awaits.md (what waits on the owner is a question post) and closed issues (a defect is an issue post)
+    aw = os.path.join(mdir, "awaits.md")
+    if os.path.isfile(aw):
+        to_move.append((".", "awaits.md", aw, "what waited on the owner (now: question posts)"))
+    open_issues = []
+    issues_dir = os.path.join(mdir, "issues")
+    if os.path.isdir(issues_dir):
+        for fn in sorted(os.listdir(issues_dir)):
+            fp = os.path.join(issues_dir, fn)
+            if not fn.endswith(".md"):
+                continue
+            text = open(fp, encoding="utf-8", errors="ignore").read()
+            title = (text.splitlines() or [fn])[0].lstrip("# ").strip()[:120]
+            if re.search(r"^status:\s*closed", text, re.I | re.M):
+                to_move.append(("issues", fn, fp, title))
+            else:
+                open_issues.append("  - issues/%s: %s" % (fn, title))
     # 2. Aged lessons (keep 15 newest; archive older than `days`)
     if os.path.isdir(lessons_dir):
         lfiles = [os.path.join(lessons_dir, fn) for fn in os.listdir(lessons_dir) if fn.endswith(".md")]
@@ -1560,14 +1581,18 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
                 except OSError:
                     pass
                 to_move.append(("lessons", fn, fp, first or fn))
+    tail = ("\n%d open issue(s) stay: post each on the board (`kind: \"issue\"`, `status: \"open\"`), then mark the file "
+            "`Status: closed (posted as <post id>)` and compact again:\n" % len(open_issues) + "\n".join(open_issues)
+            ) if open_issues else ""
     if not to_move:
-        return "compact: nothing to archive (0 completed state files, 0 aged lessons >%dd)" % int(days)
+        return "compact: nothing to archive (0 state files, 0 aged lessons >%dd)" % int(days) + tail
     if dry_run:
         return "compact (dry-run): would archive %d file(s):\n" % len(to_move) + "\n".join(
             "  - %s/%s: %s" % (k, fn, summ) for k, fn, _, summ in to_move
-        )
+        ) + tail
     os.makedirs(os.path.join(arch_dir, "state"), exist_ok=True)
     os.makedirs(os.path.join(arch_dir, "lessons"), exist_ok=True)
+    os.makedirs(os.path.join(arch_dir, "issues"), exist_ok=True)
     added_lines = []
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     for kind, fn, fp, summ in to_move:
@@ -1580,7 +1605,7 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
         hdr = "" if existing_digest else "# Archived Memory Digest\n\n"
         with open(digest_path, "a", encoding="utf-8") as fh:
             fh.write(hdr + "\n".join(added_lines) + "\n")
-    return "compact: archived %d file(s) into %s (updated archive/digest.md)" % (len(to_move), os.path.relpath(arch_dir, base))
+    return "compact: archived %d file(s) into %s (updated archive/digest.md)" % (len(to_move), os.path.relpath(arch_dir, base)) + tail
 
 
 def report_metrics(m, db_path=None):
@@ -3015,7 +3040,7 @@ def brief(m, days=3, db_path=None, board_dir=None, now=None, limit=12, session=N
         dflt = p.get("default_option") or ""
         out.append("- %s `%s` %s old: %s%s%s" % (pt, k, _age(str(p.get("created_at") or ""), now), _short(p.get("title"), 90),
                                                (" · default: " + _short(dflt, 60)) if dflt else "",
-                                               (" · blocks " + ", ".join(blocks[:4])) if blocks else ""))
+                                               (" · blocks " + ", ".join(list(dict.fromkeys(blocks))[:4])) if blocks else ""))
     if not qs:
         out.append("none")
 
@@ -3766,7 +3791,9 @@ def main(argv=None):
         return 0
     if a.cmd == "brief":
         sess = a.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
-        print(brief(m, days=a.days, db_path=a.db, board_dir=a.board_dir, session=sess), end="")
+        # the _orchestrator check is the orchestrator's (a part's own session is never named there)
+        mine = a.session or (sess if os.environ.get("KIT_ROLE") == "orchestrator" else None)
+        print(brief(m, days=a.days, db_path=a.db, board_dir=a.board_dir, session=mine), end="")
         brief_mark(sess)
         return 0
     if a.cmd == "launch":

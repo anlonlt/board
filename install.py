@@ -15,7 +15,7 @@ Copies, renders and merges; never deletes, never replaces what it did not write:
   .claude/hooks/kit/, .claude/settings.json, .claude/skills/*, .claude/agents/kit-cards.md
                       (--runtime local, the default: the same hooks for the Claude Code CLI, merged into settings.json)
   .kit/claude-cli/    the orchestrator / consultant / guide for a Claude Code CLI session (--runtime local)
-  .board/memory/      state/, issues/, lessons/, awaits.md (or .story/ if already present)
+  .board/memory/      lessons/, state/ (the orchestrator's timers) (or .story/ if already present)
 """
 import argparse
 import hashlib
@@ -1024,11 +1024,11 @@ def main(argv=None):
                 for f in ("orchestrator", "ORCHESTRATOR", "consultant", "clerk", "part", "takeover"):
                     ins.put(".kit/claude-cli/%s.md" % f, render(rd("kit", "claude-cli", f + ".template.md"), c))
     mdir = c["kit"].get("memory_dir") or ".board/memory"
-    for d in ("state", "issues", "lessons"):
+    # CL28: memory holds only what no post holds (lessons; state/ for the orchestrator's timers); what waits on the
+    # owner is a question post and a defect an issue post, so no awaits.md nor issues/ is made any more
+    for d in ("state", "lessons"):
         if not os.path.isdir(os.path.join(t, mdir, d)):
             ins.put("%s/%s/.gitkeep" % (mdir, d), "")
-    if not os.path.exists(os.path.join(t, mdir, "awaits.md")):
-        ins.put("%s/awaits.md" % mdir, "# What awaits the owner\n\n")
     gi = os.path.join(t, ".gitignore")
     cur = open(gi, encoding="utf-8").read() if os.path.exists(gi) else ""
     gi_add = [x for x in ("%s/before-compaction.md" % mdir, ".kit/board_data/", ".kit/handover.flag", ".kit/handover.log",

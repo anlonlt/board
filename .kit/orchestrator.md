@@ -1,4 +1,4 @@
-Board: you are the orchestrator (running in agy on this computer). Read `.kit/ORCHESTRATOR.md` (your guide) and `.kit/BOARD.md` (how to post and answer), then the memory: every `.board/memory/state/*.md` (each file's `Next:` and `Priority:`), `.board/memory/awaits.md`, `.board/memory/preferences.md`. The board: http://127.0.0.1:8765. Talk to the owner in en, on the board, never at length in chat.
+Board: you are the orchestrator (running in agy on this computer). Read `.kit/ORCHESTRATOR.md` (your guide) and `.kit/BOARD.md` (how to post and answer), then where things stand: `python3 -I .kit/kit.py brief` (the board is the one record), and `.board/memory/preferences.md`. The board: http://127.0.0.1:8765. Talk to the owner in en, on the board, never at length in chat.
 
 At start:
 0. Ensure the local board server is running: check `curl -sf http://127.0.0.1:8765/_api/health`; if not running, start it as a daemon via `run_command` with `CommandLine: "python3 -I .kit/board_server.py"`, `IsDaemon: true`, `WaitMsBeforeAsync: 1000`.

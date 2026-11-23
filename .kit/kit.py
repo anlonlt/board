@@ -392,7 +392,7 @@ class _Waits:
                 and (c.get("text") or "").strip() not in ("", "\U0001F44D"))
 
     def is_answer(self, c):
-        # a review is not an answer to him (it may be under the same post, later): only a reply to his comment is
+        # a review is not an answer to him (it may be under the same post, later): only a reply to the owner's comment is
         return (c.get("from") not in (self.owner, self.clerk) and not c.get("like")
                 and not self.CLERK_LINE.match(c.get("text") or "")
                 and (c.get("kind") != "review" or bool(c.get("reply_to"))))
@@ -1512,7 +1512,9 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
 
 
 def compact_memory(days=30, dry_run=False, root_dir=None):
-    """Archive completed state files and aged lessons into <memory_dir>/archive/ + digest.md so SessionStart stays lean."""
+    """Archive into <memory_dir>/archive/ (+ digest.md) what the board now holds (CL28): every workstream state file
+    but state/orchestrator.md, awaits.md, closed issues; and lessons past the 15 newest older than `days`. An open
+    issue stays, listed, until it is posted on the board."""
     import time
     base = os.path.abspath(root_dir or ROOT)
     rel_m = None
@@ -1542,8 +1544,27 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
                 first = open(fp, encoding="utf-8", errors="ignore").readline().strip()
             except OSError:
                 continue
-            if re.match(r"^Next:\s*(?:done|closed|archived|complete(?:d)?)\b", first, re.I):
+            # CL28: where a workstream stands is its train on the board; every state file but the orchestrator's
+            # timers is archived (it was archived only once its Next: said done)
+            if fn != "orchestrator.md":
                 to_move.append(("state", fn, fp, first))
+    # 1b. CL28: awaits.md (what waits on the owner is a question post) and closed issues (a defect is an issue post)
+    aw = os.path.join(mdir, "awaits.md")
+    if os.path.isfile(aw):
+        to_move.append((".", "awaits.md", aw, "what waited on the owner (now: question posts)"))
+    open_issues = []
+    issues_dir = os.path.join(mdir, "issues")
+    if os.path.isdir(issues_dir):
+        for fn in sorted(os.listdir(issues_dir)):
+            fp = os.path.join(issues_dir, fn)
+            if not fn.endswith(".md"):
+                continue
+            text = open(fp, encoding="utf-8", errors="ignore").read()
+            title = (text.splitlines() or [fn])[0].lstrip("# ").strip()[:120]
+            if re.search(r"^status:\s*closed", text, re.I | re.M):
+                to_move.append(("issues", fn, fp, title))
+            else:
+                open_issues.append("  - issues/%s: %s" % (fn, title))
     # 2. Aged lessons (keep 15 newest; archive older than `days`)
     if os.path.isdir(lessons_dir):
         lfiles = [os.path.join(lessons_dir, fn) for fn in os.listdir(lessons_dir) if fn.endswith(".md")]
@@ -1560,14 +1581,18 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
                 except OSError:
                     pass
                 to_move.append(("lessons", fn, fp, first or fn))
+    tail = ("\n%d open issue(s) stay: post each on the board (`kind: \"issue\"`, `status: \"open\"`), then mark the file "
+            "`Status: closed (posted as <post id>)` and compact again:\n" % len(open_issues) + "\n".join(open_issues)
+            ) if open_issues else ""
     if not to_move:
-        return "compact: nothing to archive (0 completed state files, 0 aged lessons >%dd)" % int(days)
+        return "compact: nothing to archive (0 state files, 0 aged lessons >%dd)" % int(days) + tail
     if dry_run:
         return "compact (dry-run): would archive %d file(s):\n" % len(to_move) + "\n".join(
             "  - %s/%s: %s" % (k, fn, summ) for k, fn, _, summ in to_move
-        )
+        ) + tail
     os.makedirs(os.path.join(arch_dir, "state"), exist_ok=True)
     os.makedirs(os.path.join(arch_dir, "lessons"), exist_ok=True)
+    os.makedirs(os.path.join(arch_dir, "issues"), exist_ok=True)
     added_lines = []
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     for kind, fn, fp, summ in to_move:
@@ -1580,7 +1605,7 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
         hdr = "" if existing_digest else "# Archived Memory Digest\n\n"
         with open(digest_path, "a", encoding="utf-8") as fh:
             fh.write(hdr + "\n".join(added_lines) + "\n")
-    return "compact: archived %d file(s) into %s (updated archive/digest.md)" % (len(to_move), os.path.relpath(arch_dir, base))
+    return "compact: archived %d file(s) into %s (updated archive/digest.md)" % (len(to_move), os.path.relpath(arch_dir, base)) + tail
 
 
 def report_metrics(m, db_path=None):
@@ -2184,6 +2209,47 @@ def _active_cli(explicit=None):
     return cfg_cli if cfg_cli in ("agy", "claude") else "claude"
 
 
+def _ancestor(comm_name):
+    """True when a process named `comm_name` (e.g. agy) encloses this one (/proc; False where there is none)."""
+    pid, seen = os.getppid(), set()
+    while pid > 1 and pid not in seen and os.path.exists("/proc/%d/comm" % pid):
+        seen.add(pid)
+        try:
+            with open("/proc/%d/comm" % pid, encoding="utf-8") as fh:
+                if fh.read().strip() == comm_name:
+                    return True
+            with open("/proc/%d/stat" % pid, encoding="utf-8") as fh:
+                st = fh.read()
+            pid = int(st[st.rindex(")") + 2:].split()[1])
+        except (OSError, ValueError, IndexError):
+            return False
+    return False
+
+
+def _launcher(explicit=None):
+    """CL26: the runtime a launcher (review, part, clerk) starts a session with: the one it runs in, never a binary
+    that is absent. "web" (a Claude Code web/cloud session: a script cannot start one, the orchestrator makes the
+    create_session call), "agy", "claude" (`claude --bg`), or None (nothing runnable here: the caller says so).
+    Order: the web; inside agy with agy on PATH; inside Claude Code with claude on PATH; the preferred CLI (explicit,
+    $KIT_CLI, kit.cli) when on PATH; any CLI on PATH."""
+    if _is_web():
+        return "web"
+    have = lambda b: shutil.which(b) is not None  # noqa: E731
+    if (os.environ.get("AGY_PID") or _ancestor("agy")) and have("agy"):
+        return "agy"
+    if (os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID")) and have("claude"):
+        return "claude"
+    pref = [explicit, os.environ.get("KIT_CLI"), (_kit_config().get("kit") or {}).get("cli")]
+    for b in [str(x or "").strip().lower() for x in pref] + ["claude", "agy"]:
+        if b in ("agy", "claude") and have(b):
+            return b
+    return None
+
+
+NO_RUNTIME = ("NOT STARTED: no runtime to start a session here (not a Claude Code web session; neither `claude` nor "
+              "`agy` on PATH)")
+
+
 def review_sample(bars, seed=None):
     """The bars a step review reruns: one in five picked at random (at least one), plus every bar marked [visual].
     The part cannot know which, so cutting corners on any claim does not pay; the review stays a few thousand tokens."""
@@ -2247,7 +2313,10 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
             rid = "%s-%d" % (base, n)
             n += 1
     session = "%s-review-%s" % (slug, _slug(rid[3:], 30))
-    if active == "agy":
+    # a dry run shows what an explicitly named CLI would run (nothing runs, so its binary need not be here)
+    run = cli if (dry_run and cli in ("agy", "claude")) else _launcher(cli)
+    # the guide of the runtime that runs the review; on the web, kit.cli's (Harmonize: agy's send_message <ORCH_ID>)
+    if (run if run in ("agy", "claude") else active) == "agy":
         cands = (os.path.join(ROOT, ".kit", "consultant.md"), os.path.join(ROOT, ".kit", "claude-cli", "consultant.md"))
     else:
         cands = (os.path.join(ROOT, ".kit", "claude-cli", "consultant.md"), os.path.join(ROOT, ".kit", "consultant.md"))
@@ -2269,28 +2338,45 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
     out = os.path.join(run_dir, rid + ".md")
     if os.path.exists(out) and not force and not dry_run:
         return 0, "review %s already started (prompt %s); --force to start it again" % (rid, os.path.relpath(out, ROOT))
-    if active == "agy":
-        cmd = ["agy", "--mode", "auto", "-p", "Your prompt is %s: read it and do it." % os.path.relpath(out, ROOT)]
+    text = "Your prompt is %s: read it and do it." % os.path.relpath(out, ROOT)
+    # CL26: `run` is the runtime this runs in, never kit.cli's binary when it is absent
+    if run == "web":
+        call = {"title": "Review %s" % rid, "source_url": _github_url(),
+                "source_revision": _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "main",
+                "prompt": text}
+        start = ("review %s NOT STARTED by the kit (a web session cannot start one): prompt %s written; start it "
+                 "now with the claude-code-remote `create_session` tool: %s" % (rid, os.path.relpath(out, ROOT),
+                                                                               json.dumps(call, ensure_ascii=False)))
+    elif run == "agy":
+        cmd = ["agy", "--mode", "auto", "-p", text]
+    elif run is None:
+        start = None
     else:
         mode = k.get("claude_permission_mode") or "auto"
         model = ((k.get("claude_cli_roles") or {}).get("consultant") or {}).get("model") or "opus"
         cmd = ["claude", "--bg", "-n", session, "--permission-mode", mode]
         if model != "inherit":
             cmd += ["--model", model]
-        cmd.append("Your prompt is %s: read it and do it." % os.path.relpath(out, ROOT))
+        cmd.append(text)
     if dry_run:
-        return 0, "would write %s and run: %s\n\n%s" % (os.path.relpath(out, ROOT), " ".join(cmd), tpl)
+        how = " ".join(cmd) if run in ("agy", "claude") else ("create_session (web)" if run == "web" else NO_RUNTIME)
+        return 0, "would write %s and run: %s\n\n%s" % (os.path.relpath(out, ROOT), how, tpl)
     os.makedirs(run_dir, exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(tpl)
     if os.environ.get("KIT_NO_LAUNCH"):
         return 0, "review %s prompt written (KIT_NO_LAUNCH: not started)" % rid
+    if run == "web":
+        return 0, start
+    if run is None:
+        return 1, "review %s %s. Its prompt is %s: start it by hand." % (rid, NO_RUNTIME, os.path.relpath(out, ROOT))
     try:
         subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True, env=dict(os.environ, KIT_ROLE="review"))
     except OSError as e:
-        return 1, "could not start the review session: %s" % e
-    return 0, "review %s started (%s)" % (rid, "agy -p" if active == "agy" else ("session " + session))
+        return 1, "review %s NOT STARTED: %s could not run (%s). Its prompt is %s." % (rid, cmd[0], e,
+                                                                                        os.path.relpath(out, ROOT))
+    return 0, "review %s started (%s)" % (rid, "agy -p" if run == "agy" else ("session " + session))
 
 
 # ---------------------------------------------------------------- steps: the train is the task list (any CLI)
@@ -2402,10 +2488,37 @@ def _write_step_prompt(pid, doc, sources, cli=None):
     return rel, True
 
 
-def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None, cli=None):
+def _step_board(train, posts, board=None):
+    """CL25: the attached board a step goes on, as (id, its posts), or (None, None) for this repo's own board.
+    `board` names it (`step new --board <id>`); else a train this board has no post of, found on exactly one attached
+    board (Harmonize's orchestrator plans the kit's `cli` train, which lives under repos/board/ in the Artifact)."""
+    own = any(_norm_train(p.get("train")) == _norm_train(train) for k, p in posts.items()
+              if not k.startswith("_") and isinstance(p, dict))
+    if not board and own:
+        return None, None
+    try:
+        shown, _ = _attached_boards()
+    except Exception:  # an unreadable attached board never blocks a step on this one
+        shown = []
+    if board:
+        rid = _repo_id(board)
+        b = next((x for x in shown if x["id"] == rid), None)
+        return rid, dict((b or {}).get("posts") or {})
+    hits = [b for b in shown if any(_norm_train((p or {}).get("train")) == _norm_train(train)
+                                    for p in (b.get("posts") or {}).values() if isinstance(p, dict))]
+    return (hits[0]["id"], dict(hits[0]["posts"])) if len(hits) == 1 else (None, None)
+
+
+def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None, cli=None,
+             board=None):
     """A train step: its post (adopted when the train already has one for that part, never duplicated) and its
-    generated prompt. Returns {post, adopted, prompt, prompt_written, launch} or {error}."""
+    generated prompt. Returns {post, adopted, prompt, prompt_written, launch} or {error}. On an attached board (CL25)
+    also {board, artifact_write}: the post is a file under .kit/run/artifact/out/repos/<id>/posts/, sent by the one
+    ArtifactData call `artifact_write` names (the orchestrator guard lets that file through)."""
     posts = _all_posts(db_path)
+    att, att_posts = _step_board(train, posts, board)
+    if att:
+        posts = att_posts
     found = None
     for pid, p in posts.items():
         if pid.startswith("_") or p.get("removed"):
@@ -2416,8 +2529,11 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
     if found:
         rel = "docs/prompts/%s.md" % found
         has = os.path.exists(os.path.join(ROOT, rel))
-        return {"post": found, "adopted": True, "prompt": rel if has else None, "prompt_written": False,
-                "launch": _launch_line(part, rel, model, cli=cli) if has else None}
+        res = {"post": found, "adopted": True, "prompt": rel if has else None, "prompt_written": False,
+               "launch": _launch_line(part, rel, model, cli=cli) if has else None}
+        if att:
+            res["board"] = att
+        return res
     title = re.sub(r"^\s*%s\b[\s:.-]*" % re.escape(part), "", title or part, flags=re.I) or title or part
     base = "%s-%s" % (_slug(part, 12), _slug(title))
     pid, n = base, 2
@@ -2432,11 +2548,23 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         doc["sources"] = list(sources)
     if review is False:
         doc["review_auto"] = False
-    if not _board_write("set", "posts", pid, doc):
+    write = None
+    if att:
+        fp = os.path.join(os.path.abspath(_art_dir()), "out", "repos", att, "posts", pid + ".json")
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        write_doc(fp, doc)
+        write = {"action": "set", "url": artifact_url() or str(CONFIG.get("board_url") or ""),
+                 "collection": "repos/%s/posts" % att, "doc_id": pid, "file_path": fp}
+    elif not _board_write("set", "posts", pid, doc):
         return {"error": "the board did not take step %s (is the board server running?)" % part}
     rel, made = _write_step_prompt(pid, doc, list(sources), cli=cli)
-    return {"post": pid, "adopted": False, "prompt": rel, "prompt_written": made,
-            "launch": _launch_line(part, rel, model, cli=cli) if rel else None}
+    res = {"post": pid, "adopted": False, "prompt": rel, "prompt_written": made,
+           "launch": _launch_line(part, rel, model, cli=cli) if rel else None}
+    if att:
+        res.update({"board": att, "artifact_write": write,
+                    "next": "send the post: ArtifactData %s (no other way: a hand-written step post is refused)"
+                            % json.dumps(write, ensure_ascii=False)})
+    return res
 
 
 def step_start(pid):
@@ -2566,7 +2694,8 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     answered. Refuses a prompt that is not committed."""
     url = url or local_board_url()
     token = _resolve_board_token(token)
-    web = _is_web() if web is None else web
+    run = _launcher(cli)
+    web = (run == "web") if web is None else web
     try:
         d = _board_request(url, "doc/posts/" + urllib.parse.quote(pid, safe=""), token=token)
     except Exception as e:
@@ -2597,6 +2726,9 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                                      "prompt": text}
             sess = "pending: create_session (%s)" % name
         else:
+            if not shutil.which("claude"):     # CL26: never an OSError on an absent binary
+                return dict(out, ok=False, error=(NO_RUNTIME.replace("neither `claude` nor `agy`", "no `claude`") +
+                            "; an agy orchestrator starts a part with: %s" % _launch_line(part, rel, model, cli="agy")))
             if gate and _device() is not None:
                 try:
                     ok, why = _device().gate(_device().survey())
@@ -2740,7 +2872,7 @@ def _train_lines(posts, alive, h="##", board=None):
     for t in sorted(trains):
         nat = lambda v: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", str(v).lower())]
         steps = sorted(trains[t], key=lambda x: (str(x[1].get("created_at") or ""), nat(x[1].get("part") or x[0])))
-        open_steps = [x for x in steps if str(x[1].get("column") or "info").lower() != "done"]
+        open_steps = [x for x in steps if step_state(x[1]) not in ("done", "closed")]
         if not open_steps:
             continue
         n_active += 1
@@ -2749,12 +2881,13 @@ def _train_lines(posts, alive, h="##", board=None):
         for pid, p in steps:
             col = str(p.get("column") or "info").lower()
             st = str(p.get("status") or "").lower()
-            if col == "done":
+            if step_state(p) in ("done", "closed"):
                 if (pid, p) not in steps[-2:]:
                     continue
                 out.append("- [x] %s `%s` %s" % (p.get("part") or pid, pid, str(p.get("title") or "")[:80]))
                 continue
-            box = "[?]" if col == "question" else ("[!]" if col == "todo" else ("[~]" if "progress" in st else "[ ]"))
+            box = ("[h]" if step_state(p) == "held" else "[?]" if col == "question" else
+                   ("[!]" if col == "todo" else ("[~]" if "progress" in st else "[ ]")))
             sess = str(p.get("session_id") or "")
             if sess:
                 life = "unknown" if alive is None else ("running" if sess in alive else "not running")
@@ -2785,6 +2918,201 @@ def _train_lines(posts, alive, h="##", board=None):
                 out.extend(_attached_step_detail(board, pid, p, "running" not in who or "not running" in who))
     return out, n_active
 
+
+# ---------------------------------------------------------------- brief (CL28)
+# The owner, 2026-11-23, after orchestrator 51 answered from a stale memory line ("A3 waits on your choice") and missed
+# two open decision posts: "What does the kit make you check before answering?" `kit.py brief` is that check: one short
+# page from the board documents only (the owner, 07:41: "everything is on the board"), never the cards or a memory. A hook
+# (kit_brief_guard.py) refuses an orchestrator's reply to the owner when no brief ran in the last 15 minutes.
+BRIEF_DONE = re.compile(r"^\s*(done|complete|completed|finished|merged)\s*($|[,:;.(\-])", re.I)
+BRIEF_CLOSED = re.compile(r"^\s*(closed|dropped|superseded|abandoned)\b", re.I)
+BRIEF_HELD = re.compile(r"^\s*(held|on[ -]?hold|hold|paused|parked)\b", re.I)
+
+
+def step_state(p):
+    """As kit_cards.post_state: done, closed, held, you, running, idle (a done post is never running)."""
+    col, st = str(p.get("column") or ""), str(p.get("status") or "")
+    if col == "done" or BRIEF_DONE.match(st):
+        return "done"
+    if BRIEF_CLOSED.match(st):
+        return "closed"
+    if BRIEF_HELD.match(st):
+        return "held"
+    if col in ("question", "todo"):
+        return "you"
+    return "running" if "progress" in st.lower() else "idle"
+
+
+def _train_key(pid, p):
+    t = str(p.get("train") or "").strip()
+    if t:
+        return t[2:] if t.lower().startswith("p-") else t
+    mm = re.match(r"^([A-Za-z]+)\d", str(p.get("part") or pid))
+    return mm.group(1).upper() if mm else ""
+
+
+def _age(stamp, now):
+    try:
+        d = now - iso(stamp)
+    except (ValueError, TypeError, AttributeError):
+        return "?"
+    h = int(d.total_seconds() // 3600)
+    return "%dd %dh" % (h // 24, h % 24) if h >= 24 else "%dh" % h if h else "%dmin" % max(0, int(d.total_seconds() // 60))
+
+
+def _short(s, n):
+    s = re.sub(r"\s+", " ", str(s or "")).strip()
+    return s if len(s) <= n else s[:n - 1].rstrip() + "…"
+
+
+def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
+    """CL28, once per board: a post made before the kit's trains has a `part` but no `train`, so neither `resume`, the
+    brief nor the orchestrator's task list sees it (Harmonize: HL6, VR5, HL5, the A3 posts). Give each its train from
+    its part's letters (HL6 -> HL, A3-data -> A), written through the local board, then `artifact push` when the board
+    is an attached Artifact. Returns {train: [post ids]}."""
+    posts, _ = _load_board_docs(m or ROOT, db_path=db_path)
+    plan = {}
+    for pid, p in sorted(posts.items()):
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("removed") or str(p.get("train") or "").strip():
+            continue
+        t = _train_key(pid, p)
+        if t:
+            plan.setdefault(t, []).append(pid)
+    if dry_run or not plan:
+        return {"trains": plan, "written": 0}
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    n = 0
+    for t, ids in plan.items():
+        for pid in ids:
+            if _local_update(url, token, "posts", pid, {"train": t}) is not None:
+                n += 1
+    out = {"trains": plan, "written": n}
+    if attached_board():
+        try:
+            r = artifact_push(url=url, token=token)
+            out.update({"batches": r["batches"], "need_pin": r["need_pin"]})
+        except Exception as e:  # the local copy has it; the next `artifact push` carries it
+            out["push_error"] = str(e)
+    return out
+
+def brief_stamp_dir():
+    return os.path.join(ROOT, ".kit", "run", "brief")
+
+
+def brief(m, days=3, db_path=None, board_dir=None, now=None, limit=12, session=None):
+    """One short page for the orchestrator, before it answers the owner: open decisions (age, default, what each
+    blocks), the owner's decisions of the last `days` days (comments, Likes, answers; a chat decision is a comment the
+    orchestrator wrote for it), each
+    train's real state from its posts. The board is the one record: no memory file is read (the owner, 11-23)."""
+    now = now or datetime.now(timezone.utc)
+    if board_dir:
+        posts, comments = load_dir(board_dir, "posts"), load_dir(board_dir, "comments")
+    else:
+        posts, comments = _load_board_docs(m, db_path=db_path)
+    orch = posts.get("_orchestrator") if isinstance(posts.get("_orchestrator"), dict) else {}
+    posts = {k: v for k, v in posts.items() if isinstance(v, dict) and not k.startswith("_") and not v.get("removed")}
+    st = {k: step_state(v) for k, v in posts.items()}
+    part = {k: str(v.get("part") or k) for k, v in posts.items()}
+    out = ["# Brief, %s UTC (from the posts; answer from this, not from memory)" % now.strftime("%Y-%m-%d %H:%M")]
+    named = str(orch.get("session_id") or "")
+    if session and named != session:
+        # the clerk sends the owner's words to the session `_orchestrator` names: a stale id there made it start a
+        # fresh orchestrator at each of his comments (Harmonize, 2026-11-23)
+        out.append("MISMATCH: `_orchestrator` names session %s, you are %s: write your id on it (and on each attached "
+                   "board's repos/<id>/posts/_orchestrator) before you answer." % (named or "none", session))
+
+    # 1. open decisions
+    qs = sorted((k for k in posts if st[k] == "you"), key=lambda k: str(posts[k].get("created_at") or ""))
+    out.append("")
+    out.append("## Open decisions (%d)" % len(qs))
+    for k in qs:
+        p, pt = posts[k], part[k]
+        wr = re.compile(r"(?<![\w-])%s(?![\w])" % re.escape(pt))
+        wk = re.compile(r"(?<![\w-])%s(?![\w])" % re.escape(k))
+        blocks = []
+        for j, q in posts.items():
+            if j == k or part[j] == pt or st[j] in ("done", "closed"):
+                continue
+            text = " ".join(str(q.get(f) or "") for f in ("parent", "status", "blocked_by", "title"))
+            if str(q.get("parent") or "") in (pt, k) or wr.search(text) or wk.search(text):
+                blocks.append("%s (%s)" % (part[j], _short(q.get("status"), 40) if q.get("status") else st[j]))
+        dflt = p.get("default_option") or ""
+        out.append("- %s `%s` %s old: %s%s%s" % (pt, k, _age(str(p.get("created_at") or ""), now), _short(p.get("title"), 90),
+                                               (" · default: " + _short(dflt, 60)) if dflt else "",
+                                               (" · blocks " + ", ".join(list(dict.fromkeys(blocks))[:4])) if blocks else ""))
+    if not qs:
+        out.append("none")
+
+    # 2. the owner's decisions, last N days
+    owner = CONFIG.get("fields", {}).get("owner", "owner")
+    since_t = now - timedelta(days=days)
+    his = []
+    for cid, c in comments.items():
+        if not isinstance(c, dict) or c.get("from") not in (owner, "viewer") or not c.get("created_at"):
+            continue
+        try:
+            if iso(c["created_at"]) < since_t:
+                continue
+        except ValueError:
+            continue
+        if c.get("like"):
+            what = "Like" + ((" on comment " + str(c["comment_id"])) if c.get("comment_id") else "")
+        elif c.get("answer"):
+            what = "Answer: " + _short(c.get("answer"), 80)
+        else:
+            what = '"%s"' % _short(c.get("text"), 140)
+        his.append((c["created_at"], "%s on %s: %s" % (c["created_at"][5:16].replace("T", " "), c.get("post_id"), what)))
+    his.sort()
+    out.append("")
+    out.append("## The owner's decisions, last %d days (%d)" % (days, len(his)))
+    if len(his) > limit:
+        out.append("(the %d most recent; the rest: `kit.py since %s`)" % (limit, zstamp(since_t)))
+    out.extend("- " + line for _, line in his[-limit:])
+    if not his:
+        out.append("none")
+
+    # 3. each train from its posts
+    trains = {}
+    for k in posts:
+        t = _train_key(k, posts[k])
+        if t:
+            trains.setdefault(t, []).append(k)
+    out.append("")
+    out.append("## Trains (from the posts, not the cards)")
+    finished = []
+    nat = lambda v: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", str(v).lower())]
+    for t in sorted(trains, key=nat):
+        ks = sorted(trains[t], key=lambda k: nat(part[k]))
+        by = {}
+        for k in ks:
+            by.setdefault(st[k], []).append(part[k])
+        n_over = len(by.get("done", [])) + len(by.get("closed", []))
+        if n_over == len(ks):
+            finished.append(t)
+            continue
+        bits = ["%d/%d done" % (n_over, len(ks))]
+        for s in ("running", "you", "held", "idle"):
+            if by.get(s):
+                names = list(dict.fromkeys(by[s]))
+                bits.append("%s: %s" % (s, ", ".join(names[:6]) + (" +%d" % (len(names) - 6) if len(names) > 6 else "")))
+        out.append("- %s: %s" % (t, " · ".join(bits)))
+    if finished:
+        out.append("- all done: %s" % ", ".join(finished))
+
+    return "\n".join(out) + "\n"
+
+
+def brief_mark(session=None):
+    """The stamp kit_brief_guard.py checks: one per session (its hook writes it too), and `last` for runtimes without
+    session ids (agy: board_cli reply checks it)."""
+    d = brief_stamp_dir()
+    os.makedirs(d, exist_ok=True)
+    now = zstamp(datetime.now(timezone.utc))
+    names = ["last"] + ([re.sub(r"[^A-Za-z0-9._-]", "_", session)] if session else [])
+    for name in names:
+        with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+            fh.write(now + "\n")
 
 # ---------------------------------------------------------------- attached boards (cross-repo, kit_repos/_index)
 def _repo_id(name):
@@ -3020,7 +3348,7 @@ def resume(m, db_path=None, alive=None, cli=None):
                    "and continue it with `invoke_subagent(..., Workspace=\"share\")` or ask the owner."
                    + (" Each step belongs to a board: this one (\"%s\") or the attached board named in its heading; "
                       "an attached board's step is planned, updated and continued in that board's clone (its relaunch "
-                      "line), and a reply to his comment there goes to repos/<id>/comments."
+                      "line), and a reply to the owner's comment there goes to repos/<id>/comments."
                       % _repo_id(_kit_config().get("project") or os.path.basename(ROOT)) if boards else ""))
     elif boards:
         out.append("Rebuild your task list: one TaskCreate per open step above, subject \"<PART> <title>\", metadata "
@@ -3294,6 +3622,13 @@ def main(argv=None):
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
+    s = sp.add_parser("brief", help="before answering the owner: open decisions, the owner's recent decisions, each train "
+                      "from its posts")
+    s.add_argument("--days", type=int, default=3); s.add_argument("--db", default=None)
+    s.add_argument("--board", dest="board_dir", default=None, help="a folder of posts/ and comments/ JSON instead of the local board")
+    s.add_argument("--session", default=None)
+    s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
+    s.add_argument("--dry-run", action="store_true"); s.add_argument("--db", default=None)
     s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
     s.add_argument("action", choices=["pull", "load", "push", "sent", "pin"]); s.add_argument("args", nargs="*")
     s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
@@ -3319,6 +3654,8 @@ def main(argv=None):
     s.add_argument("--source", action="append", default=[]); s.add_argument("--model")
     s.add_argument("--no-review", action="store_true"); s.add_argument("--db", default=None)
     s.add_argument("--cli", choices=["agy", "claude"], default=None)
+    s.add_argument("--board", default=None, help="an attached board's id (repos/<id>/ in the Artifact): the step goes "
+                   "on its train (default: this board, or the one attached board that holds the train)")
     s = sp.add_parser("review"); s.add_argument("post", nargs="?"); s.add_argument("--train", default=None)
     s.add_argument("--dry-run", action="store_true"); s.add_argument("--force", action="store_true"); s.add_argument("--db", default=None)
     s.add_argument("--cli", choices=["agy", "claude"], default=None)
@@ -3387,7 +3724,7 @@ def main(argv=None):
                 with open(a.task_file, encoding="utf-8") as fh:
                     task = fh.read()
             res = step_new(a.train, a.part, a.title or a.part, task=task, parent=a.parent, sources=a.source,
-                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli)
+                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board)
         elif not a.post:
             res = {"error": "step %s needs a post id" % a.action}
         elif a.action == "start":
@@ -3447,6 +3784,17 @@ def main(argv=None):
         return 0
     if a.cmd == "resume":
         print(resume(m, db_path=a.db, cli=a.cli), end="")
+        return 0
+    if a.cmd == "adopt":
+        r = adopt_trains(url=a.board_url if hasattr(a, "board_url") else None, dry_run=a.dry_run, db_path=a.db, m=m)
+        print(json.dumps(r, ensure_ascii=False, indent=1))
+        return 0
+    if a.cmd == "brief":
+        sess = a.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
+        # the _orchestrator check is the orchestrator's (a part's own session is never named there)
+        mine = a.session or (sess if os.environ.get("KIT_ROLE") == "orchestrator" else None)
+        print(brief(m, days=a.days, db_path=a.db, board_dir=a.board_dir, session=mine), end="")
+        brief_mark(sess)
         return 0
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset)

@@ -277,6 +277,32 @@ class Adopt(unittest.TestCase):
         self.assertNotIn("Train A (", out)  # A3's posts are done: no open step
 
 
+class MemoryHoldsWhatNoPostHolds(unittest.TestCase):
+    """The owner, 2026-11-23: "everything is on the board": compact archives the state files, awaits.md and closed
+    issues once; the orchestrator's timers, lessons and open issues (until posted) stay."""
+
+    def test_compact_archives_what_the_board_holds(self):
+        kit = load_kit()
+        with tempfile.TemporaryDirectory() as d:
+            mem = os.path.join(d, ".board", "memory")
+            for sub in ("state", "issues", "lessons"):
+                os.makedirs(os.path.join(mem, sub))
+            files = {"state/app.md": "Next: ship the login screen\n", "state/orchestrator.md": "timer at 09:00\n",
+                     "awaits.md": "- [app] pick a colour\n", "issues/2026-11-01-a.md": "# crash\nStatus: closed (abc)\n",
+                     "issues/2026-11-02-b.md": "# slow page\nStatus: open\n", "lessons/l.md": "# a lesson\n"}
+            for rel, text in files.items():
+                with open(os.path.join(mem, rel), "w") as fh:
+                    fh.write(text)
+            out = kit.compact_memory(root_dir=d)
+            left = sorted(os.path.relpath(os.path.join(r, f), mem) for r, _, fs in os.walk(mem) for f in fs
+                          if "archive" not in r)
+            self.assertEqual(left, ["issues/2026-11-02-b.md", "lessons/l.md", "state/orchestrator.md"], out)
+            self.assertTrue(os.path.isfile(os.path.join(mem, "archive", "state", "app.md")))
+            self.assertTrue(os.path.isfile(os.path.join(mem, "archive", "awaits.md")))
+            self.assertIn("1 open issue(s) stay", out)
+            self.assertIn("slow page", out)
+
+
 POSTS_WITH_TRAIN = {k: dict(v, train="harmony") for k, v in POSTS.items() if not k.startswith("_")}
 
 if __name__ == "__main__":
