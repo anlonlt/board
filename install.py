@@ -123,13 +123,42 @@ def sha(b):
     return hashlib.sha256(b).hexdigest()
 
 
+def past_kit_blobs(rel):
+    """CL25: git blob ids of every committed version of the kit's file `rel` (empty without the kit's git history).
+    A target file equal to one of them is a stale copy of the kit's, not the project's own change."""
+    try:
+        r = subprocess.run(["git", "-C", KIT, "log", "--format=", "--raw", "--no-abbrev", "--", rel],
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    out = set()
+    for line in r.stdout.splitlines():
+        f = line.split()
+        if len(f) >= 4 and line.startswith(":"):
+            out.update(x for x in f[2:4] if set(x) != {"0"})
+    return out
+
+
+def git_blob(b):
+    return hashlib.sha1(b"blob %d\0" % len(b) + b).hexdigest()
+
+
+# CL25: a runtime is installed when its kit hooks directory is in the target, whatever kit.runtime / kit.cli say.
+RUNTIME_HOOK_DIRS = {"agy": ".agents/hooks/kit/", "claude": ".claude/hooks/kit/"}
+
+
+def present_runtimes(t):
+    return {n for n, d in RUNTIME_HOOK_DIRS.items() if os.path.isdir(os.path.join(t, d))}
+
+
 class Installer:
     def __init__(self, target, dry):
         self.t, self.dry, self.log, self.kept = os.path.abspath(target), dry, [], []
         mp = os.path.join(self.t, ".kit", "manifest.json")
         self.manifest = json.load(open(mp, encoding="utf-8")) if os.path.exists(mp) else {}
 
-    def put(self, rel, data):
+    def put(self, rel, data, past=()):
+        """`past`: git blob ids of earlier kit versions of this file; a target copy equal to one is refreshed (CL25)."""
         if isinstance(data, str):
             data = data.encode("utf-8")
         p = os.path.join(self.t, rel)
@@ -138,7 +167,7 @@ class Installer:
             if cur == data:
                 self.manifest[rel] = sha(data)
                 return
-            if self.manifest.get(rel) != sha(cur):
+            if self.manifest.get(rel) != sha(cur) and not (past and git_blob(cur) in past):
                 self.kept.append("KEPT (not the kit's, or changed since): " + rel)
                 return
             self.log.append("updated " + rel)
@@ -867,12 +896,22 @@ def main(argv=None):
         ins.put(".kit/device.py", rd("scripts", "device.py"))
         ins.put(".kit/step0_scan.py", rd("scripts", "step0_scan.py"))
         ins.put(".kit/twrp_wizard.py", rd("scripts", "twrp_wizard.py"))
+    # CL25: a runtime whose hooks are in the target but that kit.runtime does not name (Harmonize: runtime and cli agy,
+    # its live Claude Code hooks in .claude/hooks/kit/) gets the kit files it has refreshed; nothing is added to it
+    # (no new hook, no settings.json), and an absent runtime is never installed (CL22: keep what is installed).
+    present = present_runtimes(t)
+    also_agy = "agy" in present and not want_agy
+    also_claude = "claude" in present and not want_claude
     for h in HOOKS:
         if parts["board"] or h in MEMORY_HOOKS:
+            past = past_kit_blobs("kit/hooks/" + h)
             if want_agy:
-                ins.put(".agents/hooks/kit/" + h, rd("kit", "hooks", h))
+                ins.put(".agents/hooks/kit/" + h, rd("kit", "hooks", h), past)
             if want_claude:
-                ins.put(".claude/hooks/kit/" + h, rd("kit", "hooks", h))
+                ins.put(".claude/hooks/kit/" + h, rd("kit", "hooks", h), past)
+        for on, d in ((also_agy, RUNTIME_HOOK_DIRS["agy"]), (also_claude, RUNTIME_HOOK_DIRS["claude"])):
+            if on and os.path.isfile(os.path.join(t, d + h)):
+                ins.put(d + h, rd("kit", "hooks", h), past_kit_blobs("kit/hooks/" + h))
     if want_agy:
         ins.put(".agents/skills/memory/SKILL.md", rd("kit", "skills", "memory", "SKILL.md"))
     if want_claude:
