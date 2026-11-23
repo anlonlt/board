@@ -7,9 +7,9 @@
  "launched_at": "2026-11-23T22:03:45Z",
  "part": "CL31",
  "planned_by": "orchestrator",
- "session_id": "pending: create_session (board-cl31)",
+ "session_id": "session_01AE1HGkkr6HqqYx5NmLetyz",
  "status": "in progress",
  "title": "kit artifact push never overwrites a newer live card (_dashboard, _trains)",
  "train": "cli",
- "updated_at": "2026-11-23T22:03:45Z"
+ "updated_at": "2026-11-23T22:04:06Z"
 }
