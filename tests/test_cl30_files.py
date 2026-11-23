@@ -168,6 +168,34 @@ class LoadConsumesThePull(Base):
         self.assertEqual(api_req(self.url, "doc/posts/P1", token=TOKEN)["data"]["title"], "Newer here")
 
 
+class RefsKeepTheirDot(unittest.TestCase):
+    """O52's check of 0448fa0 (Harmonize, 91 of 119 files): `lstrip("./")` made `.story/x` into `story/x` (27 refs
+    missed), and a path inside a code span with other words was not a reference."""
+
+    def kas(self):
+        spec = importlib.util.spec_from_file_location("kas_cl30_refs", str(ROOT / "kit" / "claude" / "kit_artifact_sync.py"))
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+
+    def test_post_refs(self):
+        refs = self.kas().post_refs({"body": "See `.story/state/x.md`, `.claude/hooks/a.py`, `./docs/a.md` and "
+                                             "`read docs/prompts/O44-orchestrator.md first`.",
+                                     "images": [".kit/shot.png"]})
+        for r in (".story/state/x.md", ".claude/hooks/a.py", "docs/a.md", "docs/prompts/O44-orchestrator.md", ".kit/shot.png"):
+            self.assertIn(r, refs)
+        self.assertNotIn("story/state/x.md", refs)
+
+    def test_tar_names(self):
+        k = load_kit(ROOT)
+        bs_spec = importlib.util.spec_from_file_location("bs_cl30_refs", str(ROOT / "kit" / "board" / "board_server.py"))
+        bs = importlib.util.module_from_spec(bs_spec)
+        bs_spec.loader.exec_module(bs)
+        for f in (k.tar_name, bs.tar_name, self.kas().tar_name):
+            self.assertEqual(f("./board/posts/a.json"), "board/posts/a.json")
+            self.assertEqual(f(".story/x.md"), ".story/x.md")
+
+
 class EmbedSaysWhatIsMissing(unittest.TestCase):
     def test_a_missing_embed_is_named_not_removed(self):
         js = (ROOT / "kit" / "board" / "shim.js").read_text(encoding="utf-8")
