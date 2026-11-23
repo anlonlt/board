@@ -34,6 +34,13 @@ const VV = `(() => {
   const tpl = fs.readFileSync(path.join(KIT, 'kit', 'board', 'board.template.html'), 'utf8').replace(/\{\{[A-Z_]+\}\}/g, 'Test');
   fs.writeFileSync(path.join(root, '.kit', 'board.html'), tpl);
   fs.writeFileSync(path.join(root, '.kit', 'config.json'), JSON.stringify({ project: 'Test' }));
+  // a repo doc for the viewer checks (his 08:20): wrapped list items, a section name with a comma, pictures above it
+  fs.mkdirSync(path.join(root, 'docs'));
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+  fs.writeFileSync(path.join(root, 'docs', 'pic.png'), PNG);
+  const filler = Array(14).fill('A paragraph of filler that takes room in the viewer so the sections below sit far down.').join('\n\n');
+  fs.writeFileSync(path.join(root, 'docs', 't.md'), '# T\n\nIntro.\n\n## First section\n\n![a picture](pic.png)\n\n![another](pic.png)\n\n- A list item whose text\n  runs on a second source line that stays in the item.\n- Second item.\n\n' + filler +
+    '\n\n## Looked at, not a problem\n\nText of it.\n\n' + filler + '\n\n## Third\n\nThe end.\n\n' + filler + '\n\n## What is left\n\nA short last section.\n');
   const port = await freePort();
   const env = Object.assign({}, process.env); delete env.KIT_BOARD_TOKEN;
   const srv = spawn('python3', ['-I', path.join(KIT, 'kit', 'board', 'board_server.py'), '--host', '127.0.0.1', '--port', String(port), '--root', root], { env, stdio: 'ignore' });
@@ -46,7 +53,7 @@ const VV = `(() => {
   await put('posts', '_orchestrator', { title: 'Ask the orchestrator', column: 'info', created_at: at(500) });
   await put('posts', '_trains', { column: 'info', created_at: at(500), rows: [] });
   await put('posts', 'cl1-done', { title: 'CL1 a done step', part: 'CL1', train: 'cli', column: 'done', status: 'complete', created_at: at(400), done_at: at(390), verdict: 'Done and checked.', body: 'done' });
-  await put('posts', 'cl2-open', { title: 'CL2 the step running now', part: 'CL2', parent: 'CL1', train: 'cli', column: 'info', status: 'in progress', created_at: at(300), verdict: 'Working on it.', body: 'Lead.\n\n## What I did\n\n' + LONG.repeat(12) });
+  await put('posts', 'cl2-open', { title: 'CL2 the step running now', part: 'CL2', parent: 'CL1', train: 'cli', column: 'info', status: 'in progress', created_at: at(300), verdict: 'Working on it.', body: 'Lead.\n\nSee `docs/t.md § Looked at, not a problem`, `docs/t.md § Third` and `docs/t.md § What is left`.\n\n## What I did\n\n' + LONG.repeat(12) });
   await put('posts', 'd1-q', { title: 'D1 a question for him', part: 'D1', train: 'demo', column: 'question', created_at: at(200), body: 'Which one?', options: ['A', 'B'] });
   for (let i = 0; i < 8; i++) await put('comments', 'c' + i, { post_id: 'cl2-open', from: i % 2 ? 'owner' : 'orchestrator', text: LONG.repeat(3), created_at: at(100 - i), delivered: true, read: true });
   await put('comments', 'w1', { post_id: '_orchestrator', from: 'orchestrator', text: 'Welcome. ' + LONG.repeat(4), created_at: at(90) });
@@ -178,6 +185,35 @@ const VV = `(() => {
     check('phone: a feed post\'s comments open as a full sheet (no 12 px frame)', fs2 && fs2.l <= 0 && fs2.t <= 0 && fs2.r >= 411 && fs2.b >= 860, fs2);
     check('phone: no page error', p.errs.length === 0, p.errs.slice(0, 3));
     await p.close();
+  }
+
+  {
+    // his 08:20: a list item's wrapped line stays in the item; a section with a comma is linked and embedded; the
+    // section asked for is the first thing in its viewer, also once the pictures above it have loaded (slowly)
+    const ctx = await b.newContext({ viewport: { width: 411, height: 860 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+    await ctx.route('**/_api/repo-asset**', async (r) => { await new Promise((x) => setTimeout(x, 900)); await r.continue(); });
+    await ctx.route('**/pic.png**', async (r) => { await new Promise((x) => setTimeout(x, 900)); await r.continue(); });
+    const p = await ctx.newPage(); p.errs = []; p.on('pageerror', (e) => p.errs.push(String(e)));
+    await p.goto(URL0 + '/#/post/cl2-open'); await p.waitForTimeout(3500);
+    const v = await p.evaluate(() => {
+      const codes = [...document.querySelectorAll('#p-body code')];
+      const comma = codes.find((c) => /Looked at, not a problem/.test(c.textContent));
+      const cards = [...document.querySelectorAll('.kit-inline-embed')];
+      const card = (re) => cards.find((c) => re.test((c.querySelector('.iettl') || {}).textContent || ''));
+      const top = (re, name) => { const c = card(re); if (!c) return 'no embed'; const bd = c.querySelector('.kit-inline-embed-body'); const h = [...bd.querySelectorAll('h1,h2,h3,h4')].find((x) => x.textContent.trim() === name); return h ? Math.round(h.getBoundingClientRect().top - bd.getBoundingClientRect().top) : 'no heading'; };
+      const li = [...document.querySelectorAll('.kit-inline-embed li')].find((x) => /A list item/.test(x.textContent));
+      return { linked: !!(comma && comma.classList.contains('kit-doc-link')), commaEmbed: !!card(/Looked at, not a problem/), third: top(/§ Third/, 'Third'), looked: top(/Looked at/, 'Looked at, not a problem'), last: top(/What is left/, 'What is left'),
+        li: li ? li.textContent : 'no item', stray: [...document.querySelectorAll('.kit-inline-embed p')].some((x) => /^runs on a second/.test(x.textContent.trim())) };
+    });
+    check('a section name with a comma is linked and shown in its viewer (his 08:20)', v.linked && v.commaEmbed, v);
+    check('a list item\'s wrapped source line stays in the item, not a paragraph of its own (his 08:20)', /stays in the item/.test(v.li) && !v.stray, v);
+    check('the section asked for is the first thing in its viewer, after slow pictures loaded, the last one too (his 08:20): ' + v.third + ' / ' + v.looked + ' / ' + v.last + ' px from the top', typeof v.third === 'number' && v.third >= 0 && v.third <= 14 && typeof v.looked === 'number' && v.looked >= 0 && v.looked <= 14 && typeof v.last === 'number' && v.last >= 0 && v.last <= 14, v);
+    // the same in the document viewer opened on that section
+    await p.evaluate(() => window._kitOpenRepoDoc('docs/t.md', 'What is left')); await p.waitForTimeout(2800);
+    const dv = await p.evaluate(() => { const hs = [...document.querySelectorAll('.kit-docs-modal h2')].filter((h) => h.offsetParent && h.textContent.trim() === 'What is left'); const h = hs[hs.length - 1]; if (!h) return 'no heading'; let sc = h.parentElement; while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement; return sc ? Math.round(h.getBoundingClientRect().top - sc.getBoundingClientRect().top) : 'no scroller'; });
+    check('the document viewer opened on its last, short section shows that heading first (' + dv + ' px from its top)', typeof dv === 'number' && dv >= 0 && dv <= 30, dv);
+    check('viewer checks: no page error', p.errs.length === 0, p.errs.slice(0, 3));
+    await ctx.close();
   }
 
   {
