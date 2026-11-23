@@ -52,6 +52,38 @@ def default_url():
     return "http://127.0.0.1:8765"
 
 
+def attached_board(root=None):
+    """{"url", "prefix"} when this repo's board lives in a claude.ai Artifact (CL13): `kit.artifact` in
+    .kit/config.json (an attached board inside another project's Artifact, e.g. prefix repos/board/), or a claude.ai
+    board_url (a board of its own, prefix ""). None for a board that is only local."""
+    try:
+        c = json.load(open(os.path.join(root or ROOT, ".kit", "config.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    a = (c.get("kit") or {}).get("artifact")
+    a = a if isinstance(a, dict) else {}
+    url = os.environ.get("KIT_ARTIFACT_URL") or str(a.get("url") or "")
+    prefix = a.get("prefix")
+    if prefix is None and a.get("repo"):
+        prefix = "repos/%s/" % re.sub(r"[^a-z0-9_-]+", "-", str(a["repo"]).lower()).strip("-")
+    if not url and "claude.ai/" in str(c.get("board_url") or ""):
+        url = str(c["board_url"])
+    if not url:
+        return None
+    prefix = os.environ.get("KIT_ARTIFACT_PREFIX", prefix or "")
+    return {"url": url.rstrip("/"), "prefix": prefix if not prefix or prefix.endswith("/") else prefix + "/"}
+
+
+def _no_server_hint():
+    a = attached_board()
+    if not a:
+        return ""
+    return (" This repo's board lives in the Artifact %s under %sposts and %scomments: in a cloud session, "
+            "`python3 -I .kit/web_takeover.py` starts the local copy, `python3 -I .kit/kit.py artifact pull` "
+            "names the ArtifactData calls that fill it, `kit.py artifact push` the batch that sends it back."
+            % (a["url"], a["prefix"], a["prefix"]))
+
+
 def default_token():
     if os.environ.get("KIT_BOARD_TOKEN"):
         return os.environ["KIT_BOARD_TOKEN"].strip()
@@ -86,7 +118,7 @@ def req(base, method, path, body=None, headers=None, timeout=60, token=None):
         msg = e.read().decode("utf-8", errors="replace")
         raise SystemExit("board_cli: HTTP %d %s: %s" % (e.code, path, msg))
     except urllib.error.URLError as e:
-        raise SystemExit("board_cli: cannot reach board server at %s (%s). Start it with: python3 -I .kit/board_server.py" % (base, e.reason))
+        raise SystemExit("board_cli: cannot reach board server at %s (%s). Start it with: python3 -I .kit/board_server.py.%s" % (base, e.reason, _no_server_hint()))
 
 
 def load_json_arg(data_str, file_path):
