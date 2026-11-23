@@ -10,12 +10,21 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 fails = 0
 
 
-def run(hook, data, proj):
+def role_env(role=None, base=None):
+    """The hooks read KIT_ROLE: a test pins it (none = a session the owner types in), whatever launched the suite."""
+    env = dict(base if base is not None else os.environ)
+    env.pop("KIT_ROLE", None)
+    if role:
+        env["KIT_ROLE"] = role
+    return env
+
+
+def run(hook, data, proj, role=None):
     payload = dict(data)
     payload.setdefault("cwd", proj)
     payload.setdefault("workspacePaths", [proj])
     r = subprocess.run([sys.executable, "-I", os.path.join(HERE, hook)], input=json.dumps(payload), capture_output=True,
-                       text=True, timeout=30)
+                       text=True, timeout=30, env=role_env(role))
     try:
         parsed = json.loads(r.stdout) if r.stdout.strip() else {}
     except ValueError:
@@ -232,12 +241,28 @@ with tempfile.TemporaryDirectory() as d:
     St = lambda f, sid: {"hookEventName": "Stop", "terminationReason": "NO_TOOL_CALL", "transcriptPath": f, "conversationId": sid + RUN}
     f1 = transcript(10, "x" * 200)
     rc1, out1, _ = run("kit_say_it_once.py", St(f1, "s1"), proj)
-    check("stop: a long answer to the owner is blocked, naming the language", out1.get("decision") == "continue" and "French" in out1.get("reason", ""))
-    check("stop: blocked once per turn, then it passes", run("kit_say_it_once.py", St(f1, "s1"), proj)[1].get("decision") == "allow")
+    check("stop: a long answer to the owner is never retried (he has read it already)", out1.get("decision") == "allow")
     check("stop: a short answer to the owner passes", run("kit_say_it_once.py", St(transcript(20, "oui"), "s2"), proj)[1].get("decision") == "allow")
     f3 = transcript(30, "I've taken over as orchestrator and nothing is running yet.", human=False)
     check("stop: a turn a session or timer opened must end with ·", run("kit_say_it_once.py", St(f3, "s3"), proj)[1].get("decision") == "continue")
     check("stop: · passes", run("kit_say_it_once.py", St(transcript(40, "·", human=False), "s4"), proj)[1].get("decision") == "allow")
+    # CL14: only "·" alone passes a non-human turn; text followed by "·", or a short word, does not.
+    check("stop: text followed by · fails",
+          run("kit_say_it_once.py", St(transcript(41, "Merged and pushed.\n\n·", human=False), "s4t"), proj)[1].get("decision") == "continue")
+    check("stop: a short word instead of · fails",
+          run("kit_say_it_once.py", St(transcript(42, "ok.", human=False), "s4w"), proj)[1].get("decision") == "continue")
+    check("stop: · with surrounding blank lines passes",
+          run("kit_say_it_once.py", St(transcript(43, "\n·\n", human=False), "s4b"), proj)[1].get("decision") == "allow")
+    # CL14: a background session (KIT_ROLE clerk, part, consultant, cards, review) never has the owner typing.
+    for i, role in enumerate(("clerk", "part", "consultant", "cards", "review")):
+        check("stop: a %s's turn opened as human must still end with ·" % role,
+              run("kit_say_it_once.py", St(transcript(46 + 3 * i, "x" * 509, human=True), "s4r%d" % i), proj, role=role)[1].get("decision") == "continue")
+    check("stop: the orchestrator's turn the owner typed may answer in words",
+          run("kit_say_it_once.py", St(transcript(62, "x" * 200, human=True), "s4o"), proj, role="orchestrator")[1].get("decision") == "allow")
+    check("stop: a background session's · passes",
+          run("kit_say_it_once.py", St(transcript(65, "·", human=True), "s4rp"), proj, role="part")[1].get("decision") == "allow")
+    check("say: no 'the owner typed this' reminder in a background session",
+          injected_text(run("kit_say_it_once.py", {"hookEventName": "PreInvocation", "conversationId": "pr-" + RUN, "lastUserInput": "launch"}, proj, role="clerk")[1]) == "")
 
     # chat_verbose mode allows long human chat answers and skips PreInvocation length reminder
     cfgp_v = os.path.join(proj, ".kit", "config.json")
@@ -255,6 +280,8 @@ with tempfile.TemporaryDirectory() as d:
           run("kit_stop.py", {"hookEventName": "Stop", "conversationId": "setup-" + RUN, "lastUserInput": "t3"}, proj)[1].get("decision") == "allow")
     f5 = transcript(50, "x" * 900)
     check("setup: a long closing message is not blocked", run("kit_say_it_once.py", St(f5, "s5"), proj)[1].get("decision") == "allow")
+    check("setup: a background session's long closing is still blocked (CL14)",
+          run("kit_say_it_once.py", St(transcript(70, "x" * 509, human=True), "s5c"), proj, role="clerk")[1].get("decision") == "continue")
     check("setup: no reminder after a post",
           injected_text(run("kit_say_it_once.py", {"hookEventName": "PostInvocation", "conversationId": "setup-p-" + RUN}, proj)[1]) == "")
     check("setup: no reminder on the owner's prompt",
@@ -280,8 +307,8 @@ with tempfile.TemporaryDirectory() as d:
     check("stop: allows after pushing branch with upstream", out_pu.get("decision") == "allow")
 
     # Claude Code Web hook contract compatibility (exit 2 + stderr on refusal, hookSpecificOutput, plain stdout SessionStart)
-    def run_claude(hook, data):
-        env = dict(os.environ, CLAUDE_PROJECT_DIR=proj)
+    def run_claude(hook, data, role=None):
+        env = role_env(role, dict(os.environ, CLAUDE_PROJECT_DIR=proj))
         r = subprocess.run([sys.executable, "-I", os.path.join(HERE, hook)], input=json.dumps(data),
                            capture_output=True, text=True, env=env, timeout=30)
         return r.returncode, r.stdout, r.stderr
@@ -312,9 +339,27 @@ with tempfile.TemporaryDirectory() as d:
         fh.write(json.dumps({"type": "user", "uuid": "cu1", "origin": {"kind": "human"}, "message": {"content": "go"}}) + "\n")
         fh.write(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "x" * 200}]}}) + "\n")
     rc_cst, _, err_cst = run_claude("kit_say_it_once.py", {"hook_event_name": "Stop", "transcript_path": cf_t, "session_id": "cs1-" + RUN})
-    check("claude hook: say_it_once Stop parses Claude transcript and blocks with exit 2", rc_cst == 2 and "French" in err_cst)
-    rc_cst2, _, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "Stop", "transcript_path": cf_t, "session_id": "cs1-" + RUN})
-    check("claude hook: say_it_once Stop passes on second try", rc_cst2 == 0)
+    check("claude hook: a long answer to the owner is not sent twice (no Stop retry)", rc_cst == 0 and err_cst == "")
+    _, out_cph, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse", "transcript_path": cf_t})
+    check("claude hook: no · reminder after a board write on a turn the owner typed", out_cph.strip() == "")
+    cf_n = os.path.join(d, "claude-n.jsonl")
+    with open(cf_n, "w") as fh:
+        fh.write(json.dumps({"type": "user", "uuid": "cn1", "message": {"content": "<task-notification>done</task-notification>"}}) + "\n")
+    _, out_cpn, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse", "transcript_path": cf_n})
+    check("claude hook: · reminder after a board write on a turn a session opened", "·" in out_cpn)
+    # CL14: the clerk's launch prompt has origin "human" in Claude Code, yet nobody types in its chat.
+    rc_ccl, _, err_ccl = run_claude("kit_say_it_once.py", {"hook_event_name": "Stop", "transcript_path": cf_t, "session_id": "cs-clerk-" + RUN}, role="clerk")
+    check("claude hook: the clerk's 200-char closing on a 'human' launch prompt is blocked (exit 2, ·)", rc_ccl == 2 and "·" in err_ccl)
+    _, out_ccp, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "PostToolUse", "transcript_path": cf_t}, role="part")
+    check("claude hook: a part gets the · reminder after a board write even on a 'human' opener", "·" in out_ccp)
+    _, out_ccu, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "UserPromptSubmit", "prompt": "Your prompt is x: read it"}, role="part")
+    check("claude hook: no chat_answer_chars reminder in a part's session", out_ccu.strip() == "")
+    cf_tx = os.path.join(d, "claude-tx.jsonl")
+    with open(cf_tx, "w") as fh:
+        fh.write(json.dumps({"type": "user", "uuid": "cx1", "message": {"content": "<task-notification>done</task-notification>"}}) + "\n")
+        fh.write(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "Done, merged.\n\n·"}]}}) + "\n")
+    rc_ctx, _, _ = run_claude("kit_say_it_once.py", {"hook_event_name": "Stop", "transcript_path": cf_tx, "session_id": "cs-tx-" + RUN})
+    check("claude hook: text then · on a turn a session opened is blocked", rc_ctx == 2)
     with open(os.path.join(proj, "f.txt"), "w") as fh:
         fh.write("dirty-claude")
     rc_cstop1, _, err_cstop1 = run_claude("kit_stop.py", {"hook_event_name": "Stop"})
