@@ -5,7 +5,7 @@ Board: one review, on demand, of a whole train. You are the consultant (running 
 Read: the train of `<POST_ID>` (`python3 -I .kit/board_cli.py get posts _trains --out-dir /tmp/cons`), each post of that train and its comments (`board_cli.py get`/`query` with `--out-dir`, board http://127.0.0.1:8765; read the saved files, never the whole board), the commits the Done names, and `.board/memory/state/<PROJECT_ID>.md`.
 
 Then ONE comment under `<POST_ID>` (`python3 -I .kit/board_cli.py set comments CR-<POST_ID> --data '{"post_id":"<POST_ID>","text":"...","from":"consultant","kind":"review","created_at":"<UTC>"}'`, real time from `date -u`), in plain words, in en:
-1. **Does the Done hold?** What you checked and HOW (rerun, not reread, where a rerun is cheap), and what you did not check.
+1. **Does the Done hold?** What you checked and HOW (rerun, not reread, where a rerun is cheap), and what you did not check. **Breaks:** the step's `breaks` makes its `check` fail. A command one `kit.py done` already ran: rerun it in a scratch copy where cheap. A `manual: ...` one (a browser or Microsoft 365 step, which `kit.py done` cannot run) is yours: run the check, perform the breaks in a scratch copy or a test account, see the check fail, undo it, and say what you saw. A check you saw pass but never saw fail holds nothing.
 2. **The train's goal check**, each answered with a fact from the posts:
    - What does the train serve in the end (what the owner wants done)? Is its current measure that, or a stand-in for it?
    - Did a known-good case pass its bar (a real good answer, the owner's own example)? If not, the bar is a report, not a gate.
