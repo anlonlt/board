@@ -4409,6 +4409,29 @@ def _launch_workflow():
     return lines
 
 
+def principles_for(role, train=None):
+    """The hook point a principles file plugs into (CL32; its format and flow are CL34's): lines of
+    <memory>/principles.md whose `scope:` is all, this role, or this train. No file: nothing."""
+    p = os.path.join(_resolve_memory_dir(), "principles.md")
+    try:
+        with open(p, encoding="utf-8") as fh:
+            lines = [l.rstrip() for l in fh if l.strip().startswith(("-", "*"))]
+    except OSError:
+        return []
+    out = []
+    for l in lines:
+        m = re.search(r"scope:\s*([\w ,.-]+)", l, re.I)
+        scopes = {x.strip().lower() for x in re.split(r"[,\s]+", m.group(1)) if x.strip()} if m else {"all"}
+        if scopes & {"all", role, str(train or "").lower()} - {""}:
+            out.append(l)
+    return out
+
+
+def _principle_lines(role, train=None):
+    pr = principles_for(role, train)
+    return (["", "## Principles (scope: all, %s%s)" % (role, (", " + train) if train else "")] + pr) if pr else []
+
+
 def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=None, now=None):
     """`kit.py resume --role R`: what that role needs and nothing else (CL32), so a session starts from this alone."""
     if role not in ROLES:
@@ -4432,6 +4455,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "not running and not complete: post status stalled, continue it from its branch.",
                 "- Before you answer the owner: this resume, under 15 minutes old (the brief guard refuses otherwise)."]
         out += ["", "## Lessons for the orchestrator"] + _lesson_lines(lessons_for("orchestrator"))
+        out += _principle_lines("orchestrator")
         pref = os.path.join(_resolve_memory_dir(), "preferences.md")
         if os.path.isfile(pref):
             with open(pref, encoding="utf-8") as fh:
@@ -4459,6 +4483,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         if len(out) and out[-1] == "## Your post now":
             out.append("- (nothing yet: at turn 1 set session_id, status in progress and a one-line body)")
         out += ["", "## Lessons that touch your files (%d files changed)" % len(files)] + _lesson_lines(lessons_for("part", files))
+        out += _principle_lines("part", p.get("train"))
         out += ["", "## Your tests", "- `%s` (0 failed before you commit)" % _test_command()]
         areas = real_project_areas()
         cons = consumers(p.get("consumers"))
@@ -4505,6 +4530,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                     ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"),
                 "- Its post says: %s" % (json.dumps(rp, ensure_ascii=False)[:500] if rp else "NO real-project result")]
         out += ["", "## Lessons for a review"] + _lesson_lines(lessons_for("review"))
+        out += _principle_lines("review", p.get("train"))
     return "\n".join(out) + "\n"
 
 

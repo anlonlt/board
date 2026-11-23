@@ -161,6 +161,18 @@ class Lessons(unittest.TestCase):
         self.assertEqual(self.ids(kit.lessons_for("orchestrator")), ["K1", "51a"])
 
 
+class Principles(unittest.TestCase):
+    def test_scope_filter_hook(self):
+        with tempfile.TemporaryDirectory() as t:
+            mem = Path(t) / ".board" / "memory"
+            mem.mkdir(parents=True)
+            with mock.patch.object(kit, "ROOT", t), mock.patch.object(kit, "CONFIG", {}):
+                self.assertEqual(kit.principles_for("part"), [])
+                (mem / "principles.md").write_text("- A (scope: all)\n- B (scope: part)\n- C (scope: cli)\n- D (scope: clerk)\n")
+                self.assertEqual(kit.principles_for("part", "cli"), ["- A (scope: all)", "- B (scope: part)", "- C (scope: cli)"])
+                self.assertEqual(kit.principles_for("clerk"), ["- A (scope: all)", "- D (scope: clerk)"])
+
+
 class RealProject(unittest.TestCase):
     def repo(self, path, text):
         d = Path(self.tmp.name)
