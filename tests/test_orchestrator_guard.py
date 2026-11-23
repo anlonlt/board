@@ -145,5 +145,62 @@ class OrchestratorGuard(unittest.TestCase):
         self.assertEqual(rc, 0)
 
 
+class LaunchRepo(OrchestratorGuard):
+    """CL26 item 3 (the owner, via orchestrator 51): a part's session must clone the repo that holds its step. CL25 and
+    CL26 (train `cli`, on the attached board `board` = anlonlt/board) were launched with source_url anlonlt/harmonize
+    and could not push their work. The guard refuses a create_session whose source_url is not the step's repo (its
+    post on an attached board, in the local copy) or not a repo holding the named prompt file."""
+    CS = "mcp__claude-code-remote__create_session"
+    PROMPT = "Your prompt is docs/prompts/cl9-x.md: read it and do it."
+
+    def setUp(self):
+        super().setUp()
+        json.dump({"project": "Harmonize", "kit": {"github": "anlonlt/harmonize"}},
+                  open(os.path.join(self.proj, ".kit", "config.json"), "w"))
+        os.makedirs(os.path.join(self.proj, "docs", "prompts"))
+        os.environ.pop("KIT_ARTIFACT_DIR", None)
+        self.art = os.path.join(self.proj, ".kit", "run", "artifact", "in")
+
+    def attach_board(self, post_id=None):
+        idx = os.path.join(self.art, "kit_repos", "_index.json")
+        os.makedirs(os.path.dirname(idx))
+        json.dump({"repos": [{"id": "board", "name": "board", "github": "anlonlt/board"}]}, open(idx, "w"))
+        if post_id:
+            pp = os.path.join(self.art, "repos", "board", "posts", post_id + ".json")
+            os.makedirs(os.path.dirname(pp))
+            json.dump({"id": post_id, "data": {"train": "cli", "part": "CL9"}, "version": 1}, open(pp, "w"))
+
+    def launch(self, src):
+        ti = {"prompt": self.PROMPT, "title": "CL9"}
+        if src:
+            ti["source_url"] = src
+        return self.run_hook(self.CS, ti)
+
+    def test_a_step_on_an_attached_board_launches_from_that_repo(self):
+        self.attach_board("cl9-x")
+        rc, err = self.launch("https://github.com/anlonlt/harmonize")
+        self.assertEqual(rc, 2, err)
+        self.assertIn("anlonlt/board", err)
+        self.assertEqual(self.launch("https://github.com/anlonlt/board")[0], 0)
+        self.assertEqual(self.launch("anlonlt/board.git")[0], 0)
+
+    def test_a_prompt_in_this_repo_launches_from_this_repo(self):
+        open(os.path.join(self.proj, "docs", "prompts", "cl9-x.md"), "w").write("x\n")
+        other = os.path.join(os.path.dirname(self.proj), "other")       # a clone next to it, without the prompt
+        os.makedirs(os.path.join(other, ".git"), exist_ok=True)
+        cfg = json.load(open(os.path.join(self.proj, ".kit", "config.json")))
+        cfg["portfolio"] = [{"name": "other", "github": "anlonlt/other", "path": other}]
+        json.dump(cfg, open(os.path.join(self.proj, ".kit", "config.json"), "w"))
+        rc, err = self.launch("https://github.com/anlonlt/other")
+        self.assertEqual(rc, 2, err)
+        self.assertIn("docs/prompts/cl9-x.md", err)
+        self.assertEqual(self.launch("https://github.com/anlonlt/harmonize")[0], 0)
+        self.assertEqual(self.launch(None)[0], 0)
+
+    def test_unknown_step_and_no_clone_passes(self):
+        self.attach_board()
+        self.assertEqual(self.launch("https://github.com/anlonlt/board")[0], 0)   # nothing here to check against
+
+
 if __name__ == "__main__":
     unittest.main()
