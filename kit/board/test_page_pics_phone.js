@@ -31,9 +31,14 @@ const check = (name, ok) => { console.log((ok ? 'ok   ' : 'FAIL ') + name); if (
     check('a finger dragging the bottom edge down 160 px grows the row (height ' + Math.round(before.h) + ' -> ' + Math.round(after.h) + ' px)', after.h > before.h * 1.3);
     check('the page itself never scrolls sideways (' + after.docW + ' of ' + after.vw + ' px)', after.docW <= after.vw);
     if (process.argv[2]) await p.screenshot({ path: process.argv[2] });
-    await touch('touchStart', y + 160);
-    for (let k = 1; k <= 8; k++) { await touch('touchMove', y + 160 - k * 20); await p.waitForTimeout(40); }
-    await touch('touchEnd', y); await p.waitForTimeout(500);
+    // the grip moved down with the row: bring it back on screen and start from where it is now (on an iPhone 13's
+    // 664 px it was at 712, below the screen, and the touch missed it)
+    await grip.scrollIntoViewIfNeeded(); await p.waitForTimeout(300);
+    const g2 = await grip.boundingBox(), y2 = g2.y + g2.height / 2;
+    const touch2 = (type, yy) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: g2.x + g2.width / 2, y: yy }] });
+    await touch2('touchStart', y2);
+    for (let k = 1; k <= 8; k++) { await touch2('touchMove', y2 - k * 20); await p.waitForTimeout(40); }
+    await touch2('touchEnd', y2 - 160); await p.waitForTimeout(500);
     const back = await p.evaluate(() => document.querySelector('#p-imgs .grp-row, #p-imgs .pic').getBoundingClientRect().height);
     check('dragging it back up shrinks it again (' + Math.round(back) + ' px)', back < after.h * 0.85);
   }
