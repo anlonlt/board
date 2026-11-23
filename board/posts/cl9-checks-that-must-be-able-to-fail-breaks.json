@@ -16,7 +16,7 @@
  "breaks": "python3 -c \"p='scripts/kit.py'; s=open(p).read(); open(p,'w').write(s.replace('if rc2 == 0:', 'if False:'))\"",
  "check": "python3 tests/test_breaks.py",
  "column": "info",
- "created_at": "2026-11-23T02:06:21Z",
+ "created_at": "2026-11-23T02:06:39Z",
  "from": "orchestrator",
  "handoff": "From now on every part post with a check needs breaks (or manual: for a browser step). A review must perform a manual: breaks itself. CL10 can use manual: for its browser checks.",
  "not_checked": [
@@ -30,6 +30,6 @@
  "status": "done",
  "title": "Checks that must be able to fail (breaks)",
  "train": "cli",
- "updated_at": "2026-11-23T02:06:21Z",
+ "updated_at": "2026-11-23T02:06:39Z",
  "verdict": "Posts now carry a `breaks` field, and `kit.py done` refuses any check that still passes once breaks is applied in a throwaway copy."
 }
