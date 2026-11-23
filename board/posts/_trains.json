@@ -16,7 +16,8 @@
     "CL18",
     "CL19",
     "CL12",
-    "CL20"
+    "CL20",
+    "CL21"
    ],
    "parent": "",
    "part": "P-cli",
@@ -396,17 +397,6 @@
   {
    "also": [],
    "children": [],
-   "parent": "CL8",
-   "part": "CL9",
-   "post": "cl9-checks-that-must-be-able-to-fail-breaks",
-   "prompt": "",
-   "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
-   "state": "running",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [],
    "parent": "P-cli",
    "part": "CL12",
    "post": "cl12-board-ui-text-never-runs-off-screen-badg",
@@ -423,6 +413,28 @@
    "post": "cl20-resume-reads-attached-boards",
    "prompt": "",
    "session": "28b46b80-c031-5e0d-a4b4-23ace846ca3d",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL21",
+   "post": "cl21-seen-state-saves",
+   "prompt": "",
+   "session": "3d6af1ec-6576-5483-a7f2-a89248f8e580",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "CL8",
+   "part": "CL9",
+   "post": "cl9-checks-that-must-be-able-to-fail-breaks",
+   "prompt": "",
+   "session": "session_01AE1HGh4JxgdeZK6pUvd46d",
    "state": "idle",
    "store": []
   }
