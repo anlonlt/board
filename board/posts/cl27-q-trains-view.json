@@ -1,0 +1,28 @@
+{
+ "body": "You said the train view looked half-baked and the task list was more informative and less scroll-heavy, so CL27 made the Trains view every train's task list (A). B is the flow map it replaced. A stays if you tap nothing.",
+ "captions": [
+  "A: each train's task list, done steps one line each",
+  "B: the flow map (before CL27)"
+ ],
+ "column": "question",
+ "created_at": "2026-11-23T07:35:05Z",
+ "default_option": "A: task lists (now)",
+ "image_groups": [
+  {
+   "count": 2,
+   "title": "Trains view at 411 px"
+  }
+ ],
+ "images": [
+  "/_blob/2271776e02e92e3f639a9c94d043e133",
+  "/_blob/d4f24f6e1e0faba67e1bf94e8de9792d"
+ ],
+ "options": [
+  "A: task lists (now)",
+  "B: the old flow map"
+ ],
+ "priority": 2,
+ "session_id": "0faff95e-f88f-5a1c-a860-7d8c1604b331",
+ "title": "The Trains view: task lists (A) or the old flow map (B)?",
+ "train": "cli"
+}
