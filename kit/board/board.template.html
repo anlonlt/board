@@ -3155,7 +3155,14 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
     if (!cmts || typeof cmts.canSendToClaude !== "function") return;
     cmts.canSendToClaude().then(function (v) { canSend = str(v); }, function (e) { canSend = (e && e.code) || "off"; });
   }
-  function prefixFor(p, n) { return "[post " + p.id + "] " + (n ? "[image " + n + "] " : ""); }
+  /* A post of an attached board (the header switcher; kit/claude/artifact_repos.js) is named with its board, so the clerk
+     reads it in repos/<id>/ and sends it to that board's sessions: "[repo <id>] [post <id>] ...". */
+  function repoOf(p) {
+    var R = window.__KIT_REPOS__, pre = R && R.prefixOf ? R.prefixOf("posts", p.id) : "";
+    var m = /^repos\/([^/]+)\/$/.exec(pre || "");
+    return m ? m[1] : "";
+  }
+  function prefixFor(p, n) { var r = repoOf(p); return (r ? "[repo " + r + "] " : "") + "[post " + p.id + "] " + (n ? "[image " + n + "] " : ""); }
   /* Starts the send at once, inside the viewer's gesture; resolves to "" when sent, else the reason. */
   function sendToClaude(p, n, anchorEl, text) {
     if (!cmts || typeof cmts.sendToClaude !== "function") return Promise.resolve("sending to Claude is not available in this view");

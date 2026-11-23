@@ -30,7 +30,10 @@ const STUB = `(function () {
       delete: async () => { window.__writes.push(["delete", path]); },
       onSnapshot: (f) => { setTimeout(() => f({ id, exists: false, data: () => undefined, metadata: { fromCache: false } }), 0); return () => {}; } }; };
   const db = { collection: (c) => Object.assign(q(c), { doc: (id) => docRef(c + "/" + (id || "new" + (++n))) }), doc: docRef };
-  const caps = { db, user: { isOwner: async () => true, id: async () => "u1", me: async () => ({ id: "u1", name: "Owner" }) } };
+  window.__sent = [];
+  const comments = { sendToClaude: async (x) => { window.__sent.push(x.text); return { threadId: "t1" }; },
+                     anchorFor: async () => ({}), canSendToClaude: async () => "available" };
+  const caps = { db, comments, user: { isOwner: async () => true, id: async () => "u1", me: async () => ({ id: "u1", name: "Owner" }) } };
   window.claude = { use: async (k) => caps[k] || null };
 })();`;
 
@@ -50,6 +53,16 @@ const STUB = `(function () {
   res.checks.pickedSongs = await pick('Songs board');
   await p.wait(500);
   res.checks.songsOnly = (await titles()) === 'Song post';
+  // a comment on the attached board's post names its board for the clerk: [repo songs] [post P-song]
+  await p.evaluate(() => { const c = [...document.querySelectorAll('.card')].find(x => /Song post/.test(x.textContent)); (c.querySelector('.card-open') || c).click(); });
+  await p.wait(400);
+  await p.evaluate(() => { const t = document.getElementById('c-text'); t.value = 'hello songs'; document.getElementById('composer').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); });
+  await p.wait(500);
+  res.sent = await p.evaluate(() => window.__sent.slice());
+  res.checks.sentWithRepo = await p.evaluate(() => window.__sent.some(t => t.indexOf('[repo songs] [post P-song] ') === 0 && /hello songs/.test(t)));
+  res.checks.savedOnItsBoard = await p.evaluate(() => window.__writes.some(w => w[0] === 'set' && /^repos\/songs\/comments\//.test(w[1]) && w[2].text === 'hello songs'));
+  await p.evaluate(() => { const b = document.getElementById('back'); if (b) b.click(); });
+  await p.wait(300);
   res.checks.title = await p.evaluate(() => document.querySelector('header.top h1').textContent);
   res.checks.pickedAll = await pick('All boards');
   await p.wait(500);

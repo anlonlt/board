@@ -125,6 +125,22 @@ class CrossRepoSync(unittest.TestCase):
         self.assertEqual(idx["primary"]["name"], "Harmonize")
         self.assertIn("repos/board/posts", {r["collection"] for r in rows})
 
+    def test_boards_back_sends_artifact_comments_to_the_repo(self):
+        dump = Path(self.tmp) / "dump" / "repos" / "songs" / "comments"
+        dump.mkdir(parents=True)
+        (dump / "c1.json").write_text(json.dumps({"post_id": "P1", "text": "go", "created_at": "x"}))       # already there
+        (dump / "h1.json").write_text(json.dumps({"post_id": "P1", "text": "from the Artifact", "from": "owner",
+                                                  "created_at": "2026-11-23T01:00:00Z"}))
+        kas.main(["boards-back", "--repo", str(self.primary), "--out", self.out, "--from", str(Path(self.tmp) / "dump"),
+                  "--clone", "Songs=%s" % self.clone])
+        git(self.seed, "pull", "-q", "origin", "board-mirror")
+        self.assertEqual(json.loads((self.seed / "board" / "comments" / "h1.json").read_text())["text"], "from the Artifact")
+        self.assertEqual(sorted(p.name for p in (self.seed / "board" / "comments").glob("*.json")), ["c1.json", "h1.json"])
+        # the forward sync does not send it again (it is in the state now)
+        self.run_boards()
+        self.assertNotIn(("repos/songs/comments", "h1"),
+                         {(r["collection"], r["doc_id"]) for r in batch_entries(self.out)})
+
     def test_docs_into_attached_repo(self):
         self.assertEqual(kas.prefix(type("A", (), {"into": "Songs"})()), "repos/songs/")
         self.assertEqual(kas.prefix(type("A", (), {"into": ""})()), "")

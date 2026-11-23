@@ -46,4 +46,6 @@ lists `to archive:` the sessions of posts he moved to Done (his move is his ackn
 archived id to `.kit/archived.txt` (commit it). A replaced clerk or orchestrator: archive it once its successor
 answered. A review session: once you acted on its verdict. Archiving is undone with `unarchive_session`.
 
+**Attached boards** (`kit_repos/_index`; the header switcher): each attached repository's posts and comments live under `repos/<id>/`. The clerk routes a comment marked `[repo <id>]` to that board's sessions and orchestrator. Keep them current: `python3 -I .kit/kit_artifact_sync.py boards --clone <name>=<path>` brings each board's posts and answers here (one batch per 50), `boards-back --from <dump of repos/<id>/comments>` sends the comments written here to that repository's own board; run both at each hand-over and when an attached board's session says it answered on its own board.
+
 Keep a `send_later` every ~30 min while parts run. Messages to sessions: at most {{MSG}} characters; results live in posts. Hand over (guide § 4) before your context passes about 75 % of its limit.

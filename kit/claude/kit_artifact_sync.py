@@ -22,6 +22,12 @@ else its recorded path, else ../<name>. Only what changed since the last run is 
 --full rewrites all), and a post or comment gone from a mirror is deleted. A write to a document already in the
 Artifact needs its version: pass --versions (a {"<collection>/<doc_id>": version} map from ArtifactData list). `docs` and `diffs` take --into <id> to
 fill an attached board's Repo Docs reader and diffs (repos/<id>/kit_docs, repos/<id>/kit_git) from its clone.
+`boards-back` is the other way: comments written in the Artifact on an attached board's posts (dump them with
+`ArtifactData list collection repos/<id>/comments, out_dir <dump>`) go to that repo's board-mirror branch, where its
+next `kit.py reconcile` adds them to its board:
+
+    python3 -I kit_artifact_sync.py boards-back --repo . --from <dump> --clone board=/home/user/board
+
 `docs` also lists the pictures to upload in /tmp/kas/images.txt: upload them with `Artifact` `publish`,
 `url` the board, `asset: true`, `file_paths` (25 per call), save the results as {"<repo path>": "<url>"} in
 uploaded.json, then run `assets`. Nothing here writes to the Artifact by itself: the session makes the calls.
@@ -200,6 +206,81 @@ def cmd_boards(a):
     return rows, writes
 
 
+def cmd_boards_back(a):
+    """The other way: comments written in this Artifact on an attached board's posts (the owner's, or a session's that
+    answered here) go to that repository's own board, as files on its board-mirror branch (committed, pushed), where
+    its next `kit.py reconcile` (its terminal keyword, its web takeover) adds them. Read the Artifact first:
+    `ArtifactData list collection repos/<id>/comments, out_dir <dump>` for each attached board, then --from <dump>."""
+    import hashlib
+    import subprocess
+    import tempfile
+    try:
+        cfg = json.load(open(os.path.join(a.repo, ".kit", "config.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        cfg = {}
+    clones = dict(x.split("=", 1) for x in (a.clone or []) if "=" in x)
+    portfolio = list(cfg.get("portfolio") or []) + [{"name": n, "github": g} for n, _, g in
+                                                    (x.partition("=") for x in (a.attach or []))]
+    state_p = os.path.join(a.out, "boards-state.json")
+    state = json.load(open(state_p, encoding="utf-8")) if os.path.exists(state_p) else {}
+    total = 0
+    for item in portfolio:
+        name = str(item.get("name") or "")
+        rid = repo_id(name)
+        dump = os.path.join(a.from_dir, "repos", rid, "comments")
+        clone = next((c for c in (clones.get(name), clones.get(rid), item.get("path"))
+                      if c and os.path.isdir(os.path.join(c, ".git"))), None)
+        if not os.path.isdir(dump) or not clone:
+            print("%s: %s" % (name, "no clone here" if not clone else "nothing read from the Artifact (%s)" % dump))
+            continue
+        ref, board = read_mirror(clone)
+        if not ref:
+            print("%s: no board-mirror branch" % name)
+            continue
+        new = {}
+        for f in glob.glob(os.path.join(dump, "*.json")):
+            did = os.path.basename(f)[:-5]
+            data = _read_json_file(f)
+            if isinstance(data, dict) and did not in board["comments"]:
+                new[did] = data
+        if not new:
+            print("%s: nothing new to send back" % name)
+            continue
+        branch = ref.split("/", 1)[-1] if ref.startswith("origin/") else ref
+        wt = tempfile.mkdtemp(prefix="kit-back-")
+        os.rmdir(wt)
+        subprocess.run(["git", "-C", clone, "worktree", "add", "-q", "--detach", wt, ref], check=True, capture_output=True)
+        try:
+            os.makedirs(os.path.join(wt, "board", "comments"), exist_ok=True)
+            for did, data in new.items():
+                with open(os.path.join(wt, "board", "comments", did + ".json"), "w", encoding="utf-8") as fh:
+                    json.dump(data, fh, ensure_ascii=False, indent=1, sort_keys=True)
+                    fh.write("\n")
+                body = json.dumps(data, ensure_ascii=False, sort_keys=True)
+                state["%s/comments/%s" % (rid, doc_id(did))] = hashlib.sha1(body.encode("utf-8")).hexdigest()
+            subprocess.run(["git", "-C", wt, "add", "board/comments"], check=True, capture_output=True)
+            msg = "board: %d comment(s) written in %s's Artifact board" % (len(new), cfg.get("project") or "the primary")
+            subprocess.run(["git", "-C", wt, "commit", "-q", "-m", msg], check=True, capture_output=True)
+            r = subprocess.run(["git", "-C", wt, "push", "-q", "origin", "HEAD:" + branch], capture_output=True, text=True)
+            print("%s: %d comment(s) to its %s branch: %s" % (name, len(new), branch,
+                                                            "pushed" if r.returncode == 0 else "PUSH REFUSED: " + r.stderr.strip()[-200:]))
+            total += len(new) if r.returncode == 0 else 0
+        finally:
+            subprocess.run(["git", "-C", clone, "worktree", "remove", "--force", wt], capture_output=True)
+    os.makedirs(a.out, exist_ok=True)
+    with open(state_p, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+    return total
+
+
+def _read_json_file(p):
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
 def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -274,9 +355,13 @@ def main(argv):
     b.add_argument("--project", default="", help="the primary board's name (default: .kit/config.json project)")
     b.add_argument("--versions", default="", help='JSON {"<collection>/<doc_id>": version} of the documents already in the Artifact '
                    "(from ArtifactData list/get), added as if_version so existing documents can be rewritten")
+    k = sub.add_parser("boards-back", help="comments written in the Artifact on an attached board -> that repo's board-mirror")
+    k.add_argument("--repo", default="."); k.add_argument("--out", default="/tmp/kas")
+    k.add_argument("--from", dest="from_dir", required=True, help="the ArtifactData out_dir holding repos/<id>/comments")
+    k.add_argument("--clone", action="append", default=[]); k.add_argument("--attach", action="append", default=[])
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
-    {"docs": cmd_docs, "assets": cmd_assets, "diffs": cmd_diffs, "boards": cmd_boards}[a.cmd](a)
+    {"docs": cmd_docs, "assets": cmd_assets, "diffs": cmd_diffs, "boards": cmd_boards, "boards-back": cmd_boards_back}[a.cmd](a)
     return 0
 
 
