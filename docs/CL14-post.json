@@ -20,7 +20,8 @@
   "the board post itself: this cloud session could not reach his board (127.0.0.1:8765 refused, no kit board artifact named in docs), so the post lives in docs/CL14.md until he or the orchestrator copies it"
  ],
  "issues": [
-  "kit/board/test_strings.py: 2 failures already on origin/main (strings table not current; test_page.js 'Remove on a post writes removed: true') - belongs to another part"
+  "kit/board/test_strings.py: 2 failures already on origin/main (strings table not current; test_page.js 'Remove on a post writes removed: true') - belongs to another part",
+  "not merged into main: no permission to push main from this session (kit.trunk_push off); the branch merges clean"
  ],
  "check": "python3 -I kit/hooks/test_hooks.py | tail -1",
  "handoff": "Background roles are detected by KIT_ROLE not in ('', 'orchestrator'); any new launch path must set KIT_ROLE. SendMessage limits untouched.",
