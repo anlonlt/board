@@ -201,6 +201,12 @@ class O55Gaps(unittest.TestCase):
             self.assertEqual(row["role"], "clerk")
 
     def test_work_measure_and_cost_per_unit(self):
+        # run from inside a cloud session too: its own ids must not leak into this fixture's row
+        for k in ("CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUDE_CODE_SESSION_ID"):
+            if k in os.environ:
+                self.addCleanup(os.environ.__setitem__, k, os.environ.pop(k))
+        os.environ["CLAUDE_CODE_REMOTE_SESSION_ID"] = "cse_SOMEONE"      # a cloud session that is not this transcript's
+        self.addCleanup(os.environ.pop, "CLAUDE_CODE_REMOTE_SESSION_ID", None)
         with tempfile.TemporaryDirectory() as d:
             root = project(d)
             g = ["git", "-C", root, "-c", "user.name=t", "-c", "user.email=t@t"]

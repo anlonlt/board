@@ -573,7 +573,8 @@ def record(root, transcript, role=None, part=None, title=None, conf=None):
     conf = kit_conf(root) if conf is None else conf
     row = parse_transcript(transcript, conf)
     rid = str(os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID") or "")
-    if rid.startswith("cse_") and os.environ.get("CLAUDE_CODE_SESSION_ID") in (None, "", row.get("session_id")):
+    # only when the transcript is this very session's (a test or a backfill run inside a cloud session is not)
+    if rid.startswith("cse_") and os.environ.get("CLAUDE_CODE_SESSION_ID") == row.get("session_id"):
         row["ccr_session_id"] = "session_" + rid[4:]       # the cloud session's own id, as its commit trailers carry it
     osid = orchestrator_session(root)
     if osid and osid in (row.get("session_id"), row.get("ccr_session_id"), os.environ.get("KIT_SESSION_NAME")):

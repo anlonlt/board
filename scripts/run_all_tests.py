@@ -35,7 +35,8 @@ SUITES = [
 # suites depend on who runs them (KIT_ROLE=clerk fails the hook tests), so every suite runs without them.
 # CL26: so are the runtime markers the launchers read (a suite run from a web session must not launch as one).
 SESSION_VARS = ("KIT_ROLE", "KIT_BOARD_TOKEN", "KIT_BOARD_URL", "KIT_BOARD_REPO", "KIT_BREAKS_COPY", "CLAUDE_PROJECT_DIR",
-                "KIT_CLI", "CLAUDE_CODE_REMOTE", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PID", "AGY_PID")
+                "KIT_CLI", "CLAUDE_CODE_REMOTE", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PID", "AGY_PID",
+                "CLAUDE_CODE_REMOTE_SESSION_ID")   # CL37: usage.py reads it as the session's commit trailer
 
 
 def bin_snapshot(path):
