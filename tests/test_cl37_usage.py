@@ -280,7 +280,8 @@ class O55Gaps2(unittest.TestCase):
                     else:
                         os.environ[k] = v
             self.assertEqual(row["ccr_session_id"], "session_MINE")
-            # the transcript's cwd (/w/proj) is gone, so the project is read: only this session's trailer counts
+            # the project the row is recorded for is read (the transcript's cwd /w/proj is not it): only this session's
+            # trailer counts
             self.assertEqual((row["work"]["commits"], row["work"]["by"], row["work"]["lines_added"]), (1, "trailer", 3))
 
     def test_a_hand_over_with_no_role_word(self):
