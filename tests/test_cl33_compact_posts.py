@@ -172,7 +172,8 @@ class O54Gaps(unittest.TestCase):
         self.kit.compact_memory(root_dir=clone, board=b)
         dates = {v["title"]: v["created_at"] for v in questions(b).values()}
         self.assertFalse([t for t, c in dates.items() if c.startswith("2026-11-23")], dates)
-        self.assertTrue(dates["Since 2026-11-10, the tempo."].startswith("2026-11-10"), dates)
+        tempo = next(v for v in questions(b).values() if v["title"].startswith("Since 2026-11-10"))
+        self.assertTrue(tempo.get("date_unknown"), tempo)  # never guessed from a date in the text (O54)
 
     def test_default_without_its_trailing_reference_and_title_not_cut_mid_parenthesis(self):
         long = "Choose the night layout " + "with many words " * 9 + "(the one in the docs screen, long note)"
@@ -183,6 +184,47 @@ class O54Gaps(unittest.TestCase):
         (v,) = questions(b).values()
         self.assertEqual(v["default_option"], "the dark one")
         self.assertEqual(v["title"].count("("), v["title"].count(")"), v["title"])
+
+    def test_bare_named_id_without_digit_matches(self):
+        # O54, third check: the real point names q-look-aids-in-the-night bare, no backticks, no digit
+        self.write_awaits("- [docs] Look at the aids in the night on the docs screen, then say if they stay; asked "
+                          "on the board as q-look-aids-in-the-night. Default: they stay · deadline 2099-12-31\n")
+        b = FakeBoard({"F5-aids-in-the-night": {"column": "question", "part": "F5",
+                                                "title": "Aids in the night: keep them?"}})
+        out = self.kit.compact_memory(root_dir=self.d, board=b)
+        self.assertEqual([w for w in b.writes if w.startswith("aw-")], [], out)
+
+    def test_words_like_you_and_keep_alone_are_no_double(self):
+        self.write_awaits("- [app] The heard card: do you keep it under the score? Default: keep · "
+                          "deadline 2099-12-31\n")
+        b = FakeBoard({"F5-aids-in-the-night": {"column": "question", "part": "F5",
+                                                "title": "Aids in the night: do you keep them?"}})
+        out = self.kit.compact_memory(root_dir=self.d, board=b, dry_run=True)
+        self.assertIn("0 possible double(s)", out)
+
+    def test_every_reference_stays_in_the_body(self):
+        self.write_awaits("- [app] Open the window, T4-s1-write-gate decides. Default: open it — board E11-window "
+                          "· deadline 2099-12-31\n"
+                          "- [app] Held vibrato. Default: off — step `s1-held-vibrato`, board Z4-speaker "
+                          "· deadline 2099-12-31\n"
+                          "- [app] Layout. Default: dark — `docs/WORKPLAN.md` § C1 item 5 · deadline 2099-12-31\n")
+        b = FakeBoard()
+        self.kit.compact_memory(root_dir=self.d, board=b)
+        q = {v["title"]: v for v in questions(b).values()}
+        self.assertEqual(sorted(v["default_option"] for v in q.values()), ["dark", "off", "open it"])
+        self.assertIn("board E11-window", q["Open the window, T4-s1-write-gate decides."]["body"])
+        self.assertIn("T4-s1-write-gate", q["Open the window, T4-s1-write-gate decides."]["body"])
+        self.assertIn("step `s1-held-vibrato`, board Z4-speaker", q["Held vibrato."]["body"])
+        self.assertIn("`docs/WORKPLAN.md` § C1 item 5", q["Layout."]["body"])
+
+    def test_no_reliable_date_says_date_unknown(self):
+        b = FakeBoard()
+        self.kit.compact_memory(root_dir=self.d, board=b)   # not a git repo: no blame date
+        for pid, v in questions(b).items():
+            self.assertTrue(v.get("date_unknown"), v)
+        out = "\n".join(self.kit._resume_extras(dict(b.docs), {}))
+        self.assertIn("date unknown", out)
+        self.assertNotIn("0min old", out)
 
 
 class CompactPostsOpenWork(unittest.TestCase):
@@ -299,6 +341,63 @@ class CompactPostsOpenWork(unittest.TestCase):
         out = self.kit.compact_memory(root_dir=self.d)
         self.assertIn("4 open awaits point(s) stay", out)
         self.assertTrue(os.path.isfile(os.path.join(self.mem, "awaits-anlon.md")))
+
+
+REAL_AWAITS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "cl33_harmonize_awaits.md")
+# Harmonize's board on 2026-11-24 (O54): its 5 question posts verbatim (kind unset), and the step posts points name
+REAL_QUESTIONS = {
+    "F5-aids-in-the-night": {"title": "The aids in the night: which do you keep?", "column": "question",
+                             "status": "open", "created_at": "2026-11-12T08:05:00Z"},
+    "HL5-harmony-ai-question": {"title": "The harmony AI: the app's line with the record's key?", "column": "question",
+                                "status": None, "default_option": "Yes: the app's line, the model stays stored",
+                                "created_at": "2026-11-19T16:33:43Z"},
+    "R2-training-plan": {"title": "R2 · The training plan: harmony, chords, a two-voice reader, Modal, and who does "
+                                  "what", "column": "question", "status": "done", "created_at": "2026-11-17T03:25:00Z"},
+    "VR2-two-voice-reader-train": {"title": "VR2 · Train the two-voice reader on Modal: about $5.8, at most $8?",
+                                   "column": "question", "status": "done step A; priced, waiting your tap",
+                                   "created_at": "2026-11-17T19:01:25Z"},
+    "VR5-second-run-question": {"title": "The second reader run: buy nothing now, and HL6 runs now?",
+                                "column": "question", "status": None, "created_at": "2026-11-19T23:53:03Z"},
+}
+REAL_STEPS = ["V6b-vocoder-bank-fixes", "Z4-speaker", "E11-window", "S18c-doubt-marks", "ED7-gesture-map-built",
+              "PA2-pads-on-songs", "T4-s1-write-gate", "PA1-find-the-line", "B9-ear-three-lines"]
+
+
+class RealHarmonizeAwaits(unittest.TestCase):
+    """O54's third check: test on the REAL awaits-anlon.md (31 points) and the real board's question posts."""
+
+    def setUp(self):
+        self.kit = load_kit()
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d)
+        self.mem = tree(self.d, checker=False)   # its cited docs/ paths are not in this fixture
+        shutil.copy(REAL_AWAITS, os.path.join(self.mem, "awaits-anlon.md"))
+        posts = {k: dict(v) for k, v in REAL_QUESTIONS.items()}
+        for i, k in enumerate(REAL_STEPS):
+            posts[k] = {"title": k, "part": k.split("-")[0], "column": "done" if i % 2 else "info",
+                        "status": "done" if i % 2 else "in progress"}
+        self.board = FakeBoard(posts)
+
+    def test_29_posted_2_matched_0_possible_doubles(self):
+        out = self.kit.compact_memory(root_dir=self.d, board=self.board, dry_run=True)
+        self.assertIn("29 question post(s) planned", out)
+        self.assertIn("2 already on the board (matched, not posted again: ", out)
+        self.assertIn("F5-aids-in-the-night", out)
+        self.assertIn("HL5-harmony-ai-question", out)
+        self.assertIn("0 possible double(s)", out)
+
+    def test_defaults_clean_and_every_reference_in_the_body(self):
+        self.kit.compact_memory(root_dir=self.d, board=self.board)
+        q = questions(self.board)
+        self.assertEqual(len(q), 29)
+        for v in q.values():
+            self.assertNotIn("\u2014", v["default_option"], v["default_option"])
+            self.assertIn("Reference: ", v["body"], v["title"])
+            self.assertTrue(v.get("date_unknown"))
+        refs = " ".join(v["body"] for v in q.values())
+        for r in ("`docs/WORKPLAN.md` § C1 item 5", "board E11-window", "step `s1-held-vibrato`, board Z4-speaker",
+                  "board T4-s1-write-gate", "board B9-ear-three-lines"):
+            self.assertIn(r, refs)
 
 
 if __name__ == "__main__":
