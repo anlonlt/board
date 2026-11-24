@@ -299,7 +299,7 @@ def parse_transcript(path, conf=None, depth=0):
 PART_PROMPT = re.compile(r"docs/prompts/([A-Za-z0-9._-]+)\.md")
 ROLE_FILE = re.compile(r"^[a-z]{1,3}\d+[a-z]?-(?:board-)?(orchestrator|clerk)$")
 ROLE_POINTER = re.compile(r"--role (orchestrator|clerk|review)\b|\.kit/(?:claude-cli/)?(orchestrator|clerk|consultant)\.md|"
-                          r"\.kit/claude-cli/takeover\.md|\byou are (?:the )?orchestrator\b", re.I)
+                          r"\.kit/claude-cli/takeover\.md|\byou are (?:the )?orchestrator\b|\bpost _(handover|orchestrator)\b", re.I)
 PART_ID = re.compile(r"^([A-Za-z]{1,4}\d+[a-z]?(?:-[A-Z]\d?)?)\b")
 
 
@@ -498,22 +498,38 @@ def orchestrator_session(root):
         return None
 
 
-def git_work(repo, started, ended, kit_cmds=None, tests_run=None):
-    """What the session made, the denominator for cost: its commits on this branch's first-parent line between its
-    first and last event (merges and the commits they bring excluded), their files and lines, tests run, Done checks."""
+def git_work(repo, started, ended, kit_cmds=None, tests_run=None, ccr_id=None):
+    """What the session made, the denominator for cost: ITS commits, their files and lines, tests run, Done checks.
+    A cloud session's commits are the ones carrying its own `Claude-Session` trailer (any time, any branch here).
+    Without that id (a computer's CLI session): this branch's first-parent commits between its first and last event
+    that carry no other session's trailer. Shallow-boundary commits are never counted (git shows their whole tree)."""
     out = {"commits": 0, "files": 0, "lines_added": 0, "lines_deleted": 0, "tests_run": int(tests_run or 0),
-           "done_checks": int((kit_cmds or {}).get("kit done", 0))}
-    if not (started and ended):
+           "done_checks": int((kit_cmds or {}).get("kit done", 0)), "by": "trailer" if ccr_id else "window"}
+    boundary = set()
+    rc, sp = git(repo, "rev-parse", "--git-path", "shallow")
+    if rc == 0 and sp:
+        try:
+            with open(sp if os.path.isabs(sp) else os.path.join(repo, sp), encoding="utf-8") as fh:
+                boundary = set(fh.read().split())
+        except OSError:
+            pass
+    if ccr_id:
+        args = ["log", "--all", "--no-merges"]
+    elif started and ended:
+        args = ["log", "--first-parent", "--no-merges", "--since=" + str(started), "--until=" + str(ended), "HEAD"]
+    else:
         return out
-    rc, log = git(repo, "log", "--first-parent", "--no-merges", "--since=" + str(started), "--until=" + str(ended),
-                  "--format=@%H", "--numstat", "HEAD")
+    rc, log = git(repo, *args, "--format=@%H %(trailers:key=Claude-Session,valueonly,separator=;)", "--numstat")
     if rc:
         return out
-    files = set()
+    files, take = set(), False
     for line in log.splitlines():
         if line.startswith("@"):
-            out["commits"] += 1
-        elif "\t" in line:
+            sha, _, tr = line[1:].partition(" ")
+            ids = set(re.findall(r"session_[A-Za-z0-9]+", tr))
+            take = sha not in boundary and ((ccr_id in ids) if ccr_id else not ids)
+            out["commits"] += take
+        elif take and "\t" in line:
             a, d, f = (line.split("\t") + ["", ""])[:3]
             files.add(f)
             out["lines_added"] += int(a) if a.isdigit() else 0
@@ -556,14 +572,18 @@ def work_by_trailer(repos, refs=("--all",)):
 def record(root, transcript, role=None, part=None, title=None, conf=None):
     conf = kit_conf(root) if conf is None else conf
     row = parse_transcript(transcript, conf)
+    rid = str(os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID") or "")
+    if rid.startswith("cse_") and os.environ.get("CLAUDE_CODE_SESSION_ID") in (None, "", row.get("session_id")):
+        row["ccr_session_id"] = "session_" + rid[4:]       # the cloud session's own id, as its commit trailers carry it
     osid = orchestrator_session(root)
-    if osid and osid in (row.get("session_id"), os.environ.get("KIT_SESSION_NAME")):
+    if osid and osid in (row.get("session_id"), row.get("ccr_session_id"), os.environ.get("KIT_SESSION_NAME")):
         row["is_orchestrator"] = True
     r, p = classify(row, title)
     env_role = os.environ.get("KIT_ROLE") if os.environ.get("KIT_ROLE") in ("orchestrator", "clerk", "review", "part") else None
     row["role"], row["part"] = role or env_role or r, part or p
     row["work"] = git_work(row.get("cwd") if row.get("cwd") and os.path.isdir(str(row.get("cwd"))) else root,
-                           row.get("started"), row.get("ended"), row.get("kit_cmds"), row.get("tests_run"))
+                           row.get("started"), row.get("ended"), row.get("kit_cmds"), row.get("tests_run"),
+                           row.get("ccr_session_id"))
     row["kit_commit"], row["kit_date"] = kit_version(root)
     row["recorded_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     row["recorded_by"] = "usage.py"

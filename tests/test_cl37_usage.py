@@ -229,6 +229,59 @@ class O55Gaps(unittest.TestCase):
             self.assertAlmostEqual(res["cost $ per 100 lines changed"]["median"], 100 * row["cost_usd_all"] / 3)
 
 
+class O55Gaps2(unittest.TestCase):
+    def _repo(self, d):
+        root = project(d)
+        g = ["git", "-C", root, "-c", "user.name=t", "-c", "user.email=t@t"]
+        env = dict(os.environ, GIT_COMMITTER_DATE="2026-11-20T10:03:00+00:00", GIT_AUTHOR_DATE="2026-11-20T10:03:00+00:00")
+        for i, (f, n, trailer) in enumerate((("a.py", 3, "session_MINE"), ("b.py", 5, "session_OTHER"),
+                                             ("c.py", 7, None))):
+            Path(root, f).write_text("x\n" * n)
+            subprocess.run(g + ["add", f], check=True)
+            msg = "c%d" % i + ("\n\nClaude-Session: https://claude.ai/code/%s" % trailer if trailer else "")
+            subprocess.run(g + ["commit", "-qm", msg], check=True, env=env)
+        return root
+
+    def test_git_work_counts_only_this_sessions_commits(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._repo(d)
+            w = usage.git_work(root, "2026-11-20T10:00:00+00:00", "2026-11-20T10:08:00+00:00", ccr_id="session_MINE")
+            self.assertEqual((w["commits"], w["lines_added"], w["by"]), (1, 3, "trailer"))
+            w = usage.git_work(root, "2026-11-20T10:00:00+00:00", "2026-11-20T10:08:00+00:00")
+            self.assertEqual((w["commits"], w["lines_added"], w["by"]), (1, 7, "window"))  # no other session's commit
+
+    def test_shallow_boundary_commit_is_not_counted(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = self._repo(d)
+            sh = os.path.join(d, "shallow")
+            subprocess.run(["git", "clone", "-q", "--depth", "1", "file://" + src, sh], check=True)
+            w = usage.git_work(sh, "2026-11-20T10:00:00+00:00", "2026-11-20T10:08:00+00:00")
+            self.assertEqual((w["commits"], w["lines_added"]), (0, 0))       # the boundary shows the whole tree
+
+    def test_the_hook_takes_the_cloud_session_id(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._repo(d)
+            old = {k: os.environ.get(k) for k in ("CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUDE_CODE_SESSION_ID")}
+            os.environ["CLAUDE_CODE_REMOTE_SESSION_ID"] = "cse_MINE"
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s-part"
+            try:
+                tp = fixture(d)
+                row = usage.record(root, tp)
+            finally:
+                for k, v in old.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+            self.assertEqual(row["ccr_session_id"], "session_MINE")
+            # the transcript's cwd (/w/proj) is gone, so the project is read: only this session's trailer counts
+            self.assertEqual((row["work"]["commits"], row["work"]["by"], row["work"]["lines_added"]), (1, "trailer", 3))
+
+    def test_a_hand_over_with_no_role_word(self):
+        self.assertEqual(usage.classify({"branch": "claude/x", "first_prompt": "Run kit.py resume, then read post "
+                                         "_handover."})[0], "orchestrator")
+
+
 class InstallShallow(unittest.TestCase):
     def test_a_hook_new_after_the_manifest_date_is_new_without_kit_history(self):
         spec2 = importlib.util.spec_from_file_location("kit_install_mod", ROOT / "install.py")
