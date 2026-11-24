@@ -15,8 +15,8 @@
    "version": 2
   },
   ".kit+2F~board.html": {
-   "sha": "fe3a556371a9f86d30c7bdb20cd5c8e92c5a85f335c7ddcd0ae28c97d21f294e",
-   "version": 2
+   "sha": "baf46d1bd23754828ba7aa643bac84259b372a433a7cee7235059f6879493dc6",
+   "version": 3
   },
   ".kit+2F~claude-cli+2F~part.md": {
    "sha": "118c7285ff107a4736ea0e0f012a5a4afcd020ade9b14ba3634a037715970360",
@@ -75,8 +75,8 @@
    "version": 2
   },
   "kit+2F~board+2F~board.template.html": {
-   "sha": "fa732ce8318e61369b43b124f2be0eabc863da38d76e31243b22eaafb14bf9dd",
-   "version": 3
+   "sha": "5c53f7481972f2969dc4676258ac721b001c1540bd830e0b53781fbc283df117",
+   "version": 4
   },
   "kit+2F~claude+2F~SKILL.board.md": {
    "sha": "47ea8d795f83947e8011652983e43557bb4f724d7d28485bebf2e62e73315582",
