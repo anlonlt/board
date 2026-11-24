@@ -195,6 +195,16 @@ def known_repos(root):
     return own, repos, ids
 
 
+def kit_roots(root):
+    """This repo and the clones of the boards attached to it (K1: a step or an answer on an attached board runs the kit
+    from that board's clone, so its pull and push live under the clone's .kit/run/artifact)."""
+    try:
+        clones = [c for c in known_repos(root)[1].values() if c]
+    except Exception:
+        clones = []
+    return [root] + [c for c in clones if os.path.abspath(c) != os.path.abspath(root)]
+
+
 def art_in(root):
     return os.path.join(os.environ.get("KIT_ARTIFACT_DIR") or os.path.join(root, ".kit", "run", "artifact"), "in")
 
@@ -231,8 +241,8 @@ def _hand_write(w, root):
     m = BOARD_COLL.match(str(w.get("collection") or ""))
     if op not in WRITE_OPS or not m:
         return None
-    if under(str(w.get("file_path") or ""), root, ".kit", "run", "artifact", "out"):
-        return None                                   # a batch from `kit.py artifact push`
+    if any(under(str(w.get("file_path") or ""), r, ".kit", "run", "artifact", "out") for r in kit_roots(root)):
+        return None                                   # a batch from `kit.py artifact push` (here or an attached clone)
     keys = set((w.get("data") or {}).keys()) if isinstance(w.get("data"), dict) else None
     did = str(w.get("doc_id") or "")
     if op == "update" and keys:
@@ -247,7 +257,7 @@ def board_verdict(ti, root, orch):
     """CL30: the board rules for every session (the orchestrator, parts, the clerk, reviews)."""
     act = str(ti.get("action") or "")
     if act in ("list", "query") and BOARD_COLL.match(str(ti.get("collection") or "")):
-        if under(str(ti.get("out_dir") or ""), root, ".kit", "run", "artifact"):
+        if any(under(str(ti.get("out_dir") or ""), r, ".kit", "run", "artifact") for r in kit_roots(root)):
             return None
         q = ti.get("query") or {}
         try:
