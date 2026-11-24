@@ -12,7 +12,9 @@ const STUB = `(function () {
     posts: {
       "P-a": {
         title: "A post", column: "info", created_at: now, priority: 1,
-        body: "See docs/guide.md, commit abc1234def, [Budget](https://contoso.sharepoint.com/sites/fin/Shared%20Documents/Budget.xlsx) and [Thread](https://mail.google.com/mail/u/0/#inbox/FMfcgzQXJwThread123)."
+        body: "See docs/guide.md, commit abc1234def, [Budget](https://contoso.sharepoint.com/sites/fin/Shared%20Documents/Budget.xlsx) and [Thread](https://mail.google.com/mail/u/0/#inbox/FMfcgzQXJwThread123)." +
+          "\\n\\n\\u0060\\u0060\\u0060mermaid\\nflowchart LR\\n  A[\\"Session\\"] --> B[\\"Post\\"]\\n\\u0060\\u0060\\u0060\\n\\n![pic](docs/pic.png)\\n\\n" +
+          "\\u0060\\u0060\\u0060svg\\n<svg viewBox='0 0 10 10'><rect width='10' height='10'/></svg>\\n\\u0060\\u0060\\u0060"
       },
       "_orchestrator": { title: "Ask the orchestrator", column: "info", created_at: now }
     },
@@ -100,6 +102,12 @@ const STUB = `(function () {
   if (hasAi) { await p.evaluate(() => document.getElementById('ai-share').click()); await p.wait(500); }
   res.aiShare = await p.evaluate(() => ({ note: (document.getElementById('c-note') || {}).textContent || '', saved: window.__saved.map(f => f.filename), prompted: !!window.__prompted }));
   res.deliverables = await p.evaluate(() => !!document.getElementById('kit-post-artifacts'));
+  // CL36: the post body draws a mermaid block, an inline picture (mapped to its uploaded asset) and an svg block, as on the local page
+  await p.wait(400);
+  res.cl36 = await p.evaluate(() => { const b = document.getElementById('p-body'); if (!b) return 'no body';
+    const pic = b.querySelector('img.md-img');
+    return { mermaid: b.querySelectorAll('.kit-mmd-box .kit-mmd-row').length, pic: pic ? pic.getAttribute('src') : '', svg: !!b.querySelector('.kit-svg-box img') }; });
+  if (!(res.cl36 && res.cl36.mermaid === 1 && /^\/_blob\/0123456789abcdef/.test(res.cl36.pic) && res.cl36.svg)) syn.errors.push('CL36: post body diagrams/pictures not drawn: ' + JSON.stringify(res.cl36));
   // Check disarmed SharePoint + Gmail links (no href attribute)
   res.disarmed = await p.evaluate(() => [...document.querySelectorAll('#p-body a[data-mcp-href]')].map(a => ({ adapter: a.getAttribute('data-mcp-adapter'), hasHref: a.hasAttribute('href') })));
   await p.evaluate(() => { const a = document.querySelector('#p-body a[data-mcp-adapter="sharepoint"]'); if (a) a.click(); });

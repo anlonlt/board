@@ -7,6 +7,6 @@ description: How an agy or Claude Code session reports on this project's local b
 
 Read `.kit/BOARD.md` (how to post and answer via `.kit/board_cli.py`) before your first board write. The orchestrator also reads `.kit/ORCHESTRATOR.md` (agy) or `.kit/claude-cli/ORCHESTRATOR.md` (Claude Code CLI). The local board server is `.kit/board_server.py`; the board's url and every limit live in `.kit/config.json`.
 
-What a finished post carries and which board feature fits which content (audio takes, pictures to compare, a long report as a linked doc, a choice for the owner): `.kit/BOARD.md` § The post format and § Which feature for what; `python3 -I .kit/kit.py done <post>` checks a post before Done. Answer the owner with the one `board_cli.py reply` command the clerk's message gives.
+What a finished post carries and which board feature fits which content (audio takes, pictures to compare, pictures and diagrams drawn in the body, a choice for the owner; never a docs file for your text): `.kit/BOARD.md` § The post format and § Which feature for what; `python3 -I .kit/kit.py done <post>` checks a post before Done. Answer the owner with the one `board_cli.py reply` command the clerk's message gives.
 
 Lookups without dumping the board (`.kit/ORCHESTRATOR.md` § 3): `python3 -I .kit/kit.py post <id>`, `open`, `since <ISO>`, `session <post>`, after a sync.

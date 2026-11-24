@@ -38,7 +38,7 @@ The owner and the train view read fields, not prose. A finished post carries:
 | `handoff` | what the next step needs from yours | the step's Handoff, and the next part's context |
 | `real_project` | `{project, command, output}`: the dry run on a project that uses the kit (a clone, never pushed), required when the change touches compact, install, resume, hooks or artifact | `kit.py done` refuses without it; the review reruns it |
 | `body` | the whole result, after a first line saying what he must know or do; `##` sections, tables | the post |
-**Say it once, on the board:** the post is the one place your result lives, complete; messages and chat only point to it. The fields come first so the answer is never buried; the body holds the rest, as long as it needs. A repo document (`docs/<part>.md`) only for what is a document to keep or needs what a post body cannot show (pictures inline, diagrams): commit it and embed its sections as `` `docs/<part>.md § Section` `` (the page shows them inline and he comments on them in place); then the body points to it and never restates it. Update the post as you go (`board_cli.py update` / `str-replace`); a post is never rewritten in full.
+**Say it once, on the board:** the post is the one place your result lives, complete; messages and chat only point to it. The fields come first so the answer is never buried; the body holds the rest, as long as it needs. Pictures and diagrams go in the body too, where he reads: a picture as `![what it shows](docs/<part>/pic.png)` (a committed path, or `/_blob/<id>`), a diagram as a ```` ```mermaid ```` or ```` ```svg ```` block, an `.svg` file by its path in a code span; the page draws them with the document viewer's renderer. A repo `docs/*.md` file is never used for your text: `kit.py done` refuses a body that is mostly `` `docs/X.md § Section` `` embeds of a file your step wrote (CL36). Update the post as you go (`board_cli.py update` / `str-replace`); a post is never rewritten in full.
 
 ## Which feature for what
 Pick the board feature for each kind of content; the page does the rest.
@@ -46,7 +46,7 @@ Pick the board feature for each kind of content; the page does the rest.
 |---|---|---|
 | a number | a `bars` item with its denominator | the train's Bars, comparable across steps |
 | a file you made (`.md`, `.html`, `.pdf`, image) | its repo path in `artifacts` and in a code span in the body: `` `out/report.html` `` | an inline viewer under the paragraph (HTML: phone/desktop toggle; PDF: page comments) and a chip in the train |
-| a report to keep, with pictures or diagrams | `docs/<part>.md`, embedded as `` `docs/<part>.md § Section` `` | that section inline; his comment comes back quoting the section |
+| a picture or a diagram | in the body: `![what it shows](docs/<part>/pic.png)`, a ```` ```mermaid ```` or ```` ```svg ```` block, or the `.svg` path in a code span | drawn in the post where he reads it, by the document viewer's renderer (local page and Artifact) |
 | audio or video takes (`.mp3`, `.wav`, `.m4a`, `.flac`, `.mp4`, ...) | repo paths in code spans, or `[take-1.mp3](/_blob/<id>)` (the link text must end in the extension) | an inline player; his "Comment @ mm:ss" comes back with the time |
 | pictures to compare | `images` in order + `image_groups: [{title, count}]` + `captions` | rows side by side with synced zoom; he can select any two for a compare grid |
 | unrelated pictures | `images` + `layout_phone` / `layout_computer`: `"rows"`, `"strip"` or `"gallery:N"` | the layout you chose |
@@ -55,7 +55,7 @@ Pick the board feature for each kind of content; the page does the rest.
 | a code change | the commit sha in the body | a foldable diff under the body |
 | what he should read first | a paragraph starting "For you:" | highlighted in Feed and Focus |
 | your audit trail | paragraphs starting "Not checked:", "What I checked:", "Commits:" at the end | folded into "Checks (n)" |
-Post bodies take `**bold**`, `` `code` ``, `#` headings, `| tables |`, `>` quotes, lists, `- [ ]` task lists and links; no images inline (use `images`), no italics, no diagrams (those work in `docs/` files, opened in the viewer).
+Post bodies take `**bold**`, `` `code` ``, `#` headings, `| tables |`, `>` quotes, lists, `- [ ]` task lists, links, pictures inline (`![alt](repo/path.png)`) and diagrams (```` ```mermaid ```` and ```` ```svg ```` blocks), drawn as the document viewer draws them; no italics.
 
 **Sections fold.** In a post body or a comment, each `##` / `###` heading folds what follows it; the lead (the text above the first heading) always shows: put there what he must know or do. The board learns which section names he opens and which he folds, on every post and comment (`python3 -I .kit/kit.py sections`); an audit-like section (What I checked, Not checked, Commits, Details, Log) folds unless he opens such sections; end a heading with `{fold}` to fold it yourself. So the detail stays on the board, complete, without crowding what he reads first.
 

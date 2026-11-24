@@ -7,27 +7,35 @@
   "docs/assets/cl12/before-411-lanes.png": {
    "sha": "6f09bd5f5c3dda656a085704f997e267f70935330e0ede1ab6d8b8e55fda2f09",
    "url": "/_blob/8a5fe04308b288698cf2209b01023764"
+  },
+  "docs/cl36/post-body.png": {
+   "sha": "c758cb189307daff22507277456b89aee9e0bf119b163c37868d38a8d089b6bf",
+   "url": "/_blob/b2d63ce870cacc72888e9cb5353e8472"
   }
  },
  "docs": {
   ".kit+2F~BOARD.md": {
-   "sha": "d92ffee3fae673e4e217f24f3974c45cb15ae2e69002add0f2ee7631d38ccb47",
-   "version": 2
+   "sha": "06a88b950e611edc9964112dd90dd86806227bd47bf7cdc4caf0b02d77933d74",
+   "version": 3
   },
   ".kit+2F~board.html": {
-   "sha": "fe3a556371a9f86d30c7bdb20cd5c8e92c5a85f335c7ddcd0ae28c97d21f294e",
-   "version": 2
+   "sha": "",
+   "version": 4
   },
   ".kit+2F~claude-cli+2F~part.md": {
-   "sha": "118c7285ff107a4736ea0e0f012a5a4afcd020ade9b14ba3634a037715970360",
-   "version": 2
+   "sha": "1c9e1823d772b816b6a0e8732257cb8b48f1d54d4bb642c9ac8e78f65f9ed36d",
+   "version": 3
   },
   ".kit+2F~claude-cli+2F~takeover.md": {
    "sha": "d80abd018b630a43799fd04bc5de0222f88394c7807933121d98296bbf117ae8",
    "version": 2
   },
   ".kit+2F~lessons.md": {
-   "sha": "7d6d4d66afb120b9189fc1ffe2fd4058e30f814a536a79f7d900796d0beaad5b",
+   "sha": "45d7fb7820c8f303e8341624a11e419a9f1644e20abe1601fd9a757bc98c890c",
+   "version": 2
+  },
+  ".kit+2F~part.md": {
+   "sha": "caed20d0897f4e22fe5437a611ca56c99447b974611dcecebc2562d3fb2b54ef",
    "version": 1
   },
   ".kit+2F~part.md": {
@@ -66,6 +74,10 @@
    "sha": "6f09bd5f5c3dda656a085704f997e267f70935330e0ede1ab6d8b8e55fda2f09",
    "version": 1
   },
+  "docs+2F~cl36+2F~post-body.png": {
+   "sha": "c758cb189307daff22507277456b89aee9e0bf119b163c37868d38a8d089b6bf",
+   "version": 1
+  },
   "docs+2F~prompts+2F~cl9b-cheap-breaks-revert-asked-pair-sample.md": {
    "sha": "08163f92391e1658bcb3b364ea3901aaa2659b76daeb60fa7b75ff1b64ca14c2",
    "version": 1
@@ -75,8 +87,8 @@
    "version": 4
   },
   "kit+2F~board+2F~board.template.html": {
-   "sha": "fa732ce8318e61369b43b124f2be0eabc863da38d76e31243b22eaafb14bf9dd",
-   "version": 3
+   "sha": "",
+   "version": 4
   },
   "kit+2F~claude+2F~SKILL.board.md": {
    "sha": "47ea8d795f83947e8011652983e43557bb4f724d7d28485bebf2e62e73315582",
@@ -103,8 +115,8 @@
    "version": 2
   },
   "kit+2F~claude-cli+2F~part.template.md": {
-   "sha": "29506a6b915161285d104c8dfe7537a5ea144a544f00bbdf977ef9a859a1255a",
-   "version": 2
+   "sha": "0916a36a0c7393f28b0e50573e297f6a4361e0720ffddd0d15016a832712a564",
+   "version": 3
   },
   "kit+2F~claude-cli+2F~takeover.template.md": {
    "sha": "300fea006a383684a0ae536f89fa9e7d89fcfd5139e025523de6351c4a36a353",
@@ -115,7 +127,15 @@
    "version": 2
   },
   "kit+2F~lessons.md": {
-   "sha": "7d6d4d66afb120b9189fc1ffe2fd4058e30f814a536a79f7d900796d0beaad5b",
+   "sha": "45d7fb7820c8f303e8341624a11e419a9f1644e20abe1601fd9a757bc98c890c",
+   "version": 2
+  },
+  "kit+2F~part.template.md": {
+   "sha": "dd42a47cbc30480f640f2dd3a7c5b0f7ce975451228d472114a88faaa00c85f5",
+   "version": 1
+  },
+  "kit+2F~skills+2F~board+2F~SKILL.md": {
+   "sha": "08d6d95b3ebc366f1c8ead2a7967735c102aac33a10788d1efdafebc0aa8aae9",
    "version": 1
   },
   "kit+2F~skills+2F~memory+2F~SKILL.md": {
