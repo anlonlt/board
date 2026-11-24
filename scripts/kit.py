@@ -4746,6 +4746,24 @@ def train_steps(posts, train):
     return sorted(rows, key=lambda x: (str(x[1].get("created_at") or ""), x[0]))
 
 
+def train_questions(posts, pid, post, limit=8):
+    """The owner's open questions that bear on a step: on its train, or naming one of its train's parts. A part never
+    decides one, and never works past it."""
+    parts = {str(q.get("part") or i) for i, q in train_steps(posts, post.get("train") or "")} | {str(post.get("part") or pid)}
+    parts = {x for x in parts if re.search(r"\d", x) and len(x) >= 2}        # a bare letter or word is no name
+    wr = re.compile(r"(?<![\w-])(%s)(?![\w])" % "|".join(sorted(map(re.escape, parts), key=len, reverse=True))) if parts else None
+    out = []
+    for i, q in sorted(posts.items()):
+        if i == pid or i.startswith("_") or not isinstance(q, dict) or q.get("removed") or q.get("column") != "question" or step_state(q) != "you":
+            continue
+        same = str(q.get("train") or "").strip() and _norm_train(q["train"]) == _norm_train(post.get("train") or "")
+        text = "%s %s" % (q.get("title") or "", str(q.get("body") or "")[:1200])
+        if same or (wr and wr.search(text)):
+            dflt = q.get("default_option") or ""
+            out.append("- `%s` %s%s" % (i, re.sub(r"\s+", " ", str(q.get("title") or i)).strip(), (" · default: " + _short(dflt, 60)) if dflt else ""))
+    return out[:limit] + (["- (%d more: `kit.py resume`)" % (len(out) - limit)] if len(out) > limit else [])
+
+
 def found_so_far(posts, train, skip=None, last=8):
     """The last finished steps of a train, briefly, and how many came before them."""
     rows = [(pid, q) for pid, q in train_steps(posts, train) if pid != skip and step_state(q) == "done"
@@ -5689,6 +5707,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         if got:
             out += ["", "## Found so far on train %s (build on it, never redo it; `kit.py train %s --sections <PART>` for one step's "
                     "bars, check and scripts, `--full <PART>` for all of it)" % (_norm_train(p["train"]), _norm_train(p["train"]))] + got
+        qs = train_questions(posts, pid, p) if p.get("train") else []
+        if qs:
+            out += ["", "## Waiting on the owner, on this train (never decide one, never work past it)"] + qs
         if p.get("differs"):
             out += ["", "## What this step does differently", str(p["differs"])]
         out += ["", "## Your tests", "- `%s` (0 failed before you commit)" % _test_command()]

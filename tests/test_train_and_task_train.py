@@ -174,6 +174,16 @@ class TrainDepths(unittest.TestCase):
         self.assertIn("## Found so far on train b", part)
         self.assertIn("found number 3", part)
 
+    def test_a_part_sees_what_waits_on_the_owner_on_its_train(self):
+        q = {"column": "question", "status": "open"}
+        posts = dict(self.posts, q1=dict(q, title="Ours: which bar?", train="B"), q2=dict(q, title="Another: buy a run?", body="B15 waits on this", train="zz"),
+                     q3=dict(q, title="Not ours", train="zz", body="B150 and XB15"), q4=dict(q, title="Answered", train="b", status="done"))
+        got = "\n".join(self.kit.train_questions(posts, "b15", posts["b15"]))
+        self.assertIn("Ours: which bar?", got)
+        self.assertIn("Another: buy a run?", got)
+        self.assertNotIn("Not ours", got)
+        self.assertNotIn("Answered", got)
+
     def gate(self, text=None, **post):
         path = os.path.join(self.tmp, "prompt.md")
         with open(path, "w") as fh:

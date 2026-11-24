@@ -159,6 +159,29 @@ class MemoryLedgerFlow(unittest.TestCase):
         self.assertTrue(ledger.confirm_principle(str(self.mdir), pid, "his")["ok"])
         self.assertEqual(ledger.load_entries(str(self.mdir))[-1]["confirmed_by"], "his")
 
+    def test_a_scope_may_hold_alternatives(self):
+        self.assertIn("unknown scope", ledger.observe(str(self.mdir), "x", scope="role:orchestrator | clerk")["error"])
+        ledger.observe(str(self.mdir), "The page's cards", scope="role:orchestrator | train:bd, role:part | files:docs/board/*", kind="rule")
+        e, = ledger.load_entries(str(self.mdir))
+        self.assertIn("scope: role:orchestrator | train:bd, role:part | files:docs/board/*", (self.mdir / "ledger.md").read_text())
+        got = lambda role, train=None, files=None: bool(ledger.for_resume(str(self.mdir), role, train=train, files=files)["active"])   # noqa: E731
+        self.assertEqual([got("orchestrator"), got("part", "BD"), got("part", "VR"), got("review", "BD"), got("clerk"),
+                          got("part", "VR", ["docs/board/x.html"])], [True, True, False, False, False, True])
+        self.assertEqual(len(ledger.for_files(str(self.mdir), ["docs/board/x.html"], role="part")), 1)     # its files alternative alone
+        self.assertEqual(ledger.for_files(str(self.mdir), ["app/a.kt"], role="orchestrator"), [])
+        before = (self.mdir / "ledger.md").read_text()
+        ledger.save_entries(str(self.mdir), [e])
+        self.assertEqual((self.mdir / "ledger.md").read_text(), before)
+
+    def test_resume_prints_the_rule_not_its_evidence(self):
+        ledger.observe(str(self.mdir), "Keep it short", quote="why so long ?", source="c1", kind="rule")
+        ledger.observe(str(self.mdir), "A moved host is not a refusal", source=".story/lessons/a.md", kind="lesson")
+        out = "\n".join(ledger.format_resume(str(self.mdir), "part"))
+        self.assertIn("- **R1**: Keep it short\n", out + "\n")
+        self.assertNotIn("why so long", out)
+        self.assertIn("A moved host is not a refusal (`.story/lessons/a.md`)", out)
+        self.assertIn("quote: why so long ?", (self.mdir / "ledger.md").read_text())
+
     def test_the_clerk_has_no_ledger(self):
         self.assertIn("only routes", ledger.observe(str(self.mdir), "x", scope="role:clerk")["error"])
         self.assertIn("unknown scope", ledger.observe(str(self.mdir), "x", scope="clerk")["error"])

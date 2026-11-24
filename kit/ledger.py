@@ -80,7 +80,7 @@ def _locked(memory_dir):
 
 def scope_error(scope):
     """Why a scope is refused (None: fine). An unknown scope would reach every role: it is never guessed."""
-    for s in _norm_scopes(scope):
+    for s in (x for g in scope_groups(scope) for x in g):
         head, _, val = s.partition(":")
         head, val = head.strip().lower(), val.strip()
         if head == "role" and val.lower() == "clerk":
@@ -98,25 +98,40 @@ def scope_error(scope):
 
 def _reach(scope):
     """A scope as a comparable set; `project` and `all` reach the same sessions of one project."""
-    return frozenset("all" if s.lower() == "project" else s.lower() if s.lower().startswith(("role:", "all")) else s
-                     for s in _norm_scopes(scope))
+    return frozenset(frozenset("all" if s.lower() == "project" else s.lower() if s.lower().startswith(("role:", "all")) else s
+                               for s in g) for g in scope_groups(scope))
 
 
 def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _norm_scopes(scope):
-    if isinstance(scope, (list, tuple, set)):
-        raw = list(scope)
-    else:
-        raw = re.split(r"[,;]+", str(scope or "project"))
+def scope_groups(scope):
+    """A scope as its alternatives, each a list that must hold together: `role:orchestrator | train:bd, role:part` is
+    the orchestrator, or a part of train bd."""
+    text = ", ".join(str(x) for x in scope) if isinstance(scope, (list, tuple, set)) else str(scope or "project")
     out = []
-    for s in raw:
-        t = s.strip()
-        if t and t not in out:
-            out.append(t)
-    return out or ["project"]
+    for alt in text.split("|"):
+        g = [t.strip() for t in re.split(r"[,;]+", alt) if t.strip()]
+        if g:
+            out.append(list(dict.fromkeys(g)))
+    return out or [["project"]]
+
+
+def _norm_scopes(scope):
+    """The scope as it is kept: its terms, with "|" between alternatives."""
+    out = []
+    for g in scope_groups(scope):
+        out += (["|"] if out else []) + g
+    return out
+
+
+def scope_text(scope):
+    return " | ".join(", ".join(g) for g in scope_groups(scope))
+
+
+def _is_files_group(g):
+    return any(s.lower().startswith("files:") for s in g)
 
 
 def scope_priority(scopes):
@@ -200,7 +215,7 @@ def render_ledger(entries):
     ]
     for e in entries:
         out.append("## %s (%s, %s): %s" % (e["id"], e["kind"], e["status"], _flat(e["summary"])))
-        out.append("scope: %s" % ", ".join(_norm_scopes(e.get("scope"))))
+        out.append("scope: %s" % scope_text(e.get("scope")))
         if e.get("enforced_by"):
             out.append("enforced_by: %s" % e["enforced_by"])
         if e.get("theme"):
@@ -275,7 +290,7 @@ def _next_id(entries, prefix):
 
 
 def _scopes_overlap(s1, s2):
-    a, b = set(_norm_scopes(s1)), set(_norm_scopes(s2))
+    a, b = set(_norm_scopes(s1)) - {"|"}, set(_norm_scopes(s2)) - {"|"}
     if "all" in a or "all" in b:
         return True
     if a & b:
@@ -373,7 +388,7 @@ def distil_candidates(memory_dir, min_cluster=3):
             unthemed.append(e)
 
     clusters = []
-    for (th, _), items in sorted(by_theme.items(), key=lambda kv: (kv[0][0], sorted(kv[0][1]))):
+    for (th, _), items in sorted(by_theme.items(), key=lambda kv: (kv[0][0], sorted(sorted(g) for g in kv[0][1]))):
         if len(items) >= min_cluster:
             clusters.append({
                 "theme": th,
@@ -510,27 +525,27 @@ def _confirm(memory_dir, pid, by, summary):
     return {"ok": True, "principle": target, "subsumed": subsumed, "path": path}
 
 
-def _matches_scope(entry, role, train=None, files=None):
-    """Check whether entry's scope applies to (role, train, files)."""
-    scopes = _norm_scopes(entry.get("scope"))
-    role_l = str(role or "").lower()
+def _matches_scope(entry, role, train=None, files=None, resume=False):
+    """Check whether entry's scope applies to (role, train, files): one of its alternatives holds whole. `resume`: a
+    `files:` alternative is the JIT hook's, at the edit, and does not count."""
+    role_l, train_l = str(role or "").lower(), str(train or "").lower()
     if role_l == "clerk":
         return False
-    train_l = str(train or "").lower()
-    has_role_constraint = any(s.lower().startswith("role:") for s in scopes)
-    if has_role_constraint and ("role:" + role_l) not in {s.lower() for s in scopes}:
-        return False
-    has_train_constraint = any(s.lower().startswith("train:") for s in scopes)
-    if has_train_constraint and (not train_l or ("train:" + train_l) not in {s.lower() for s in scopes}):
-        return False
-    file_globs = [s.split(":", 1)[1].strip() for s in scopes if s.lower().startswith("files:")]
-    if file_globs:
-        if files is None:
-            return False
-        if not any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(os.path.basename(f), g)
-                   for g in file_globs for f in files):
-            return False
-    return True
+    for g in scope_groups(entry.get("scope")):
+        low = [s.lower() for s in g]
+        if resume and _is_files_group(g):
+            continue
+        roles = [s for s in low if s.startswith("role:")]
+        if roles and "role:" + role_l not in roles:
+            continue
+        trains = [s for s in low if s.startswith("train:")]
+        if trains and "train:" + train_l not in trains:
+            continue
+        globs = [s.split(":", 1)[1].strip() for s in g if s.lower().startswith("files:")]
+        if globs and not any(fnmatch.fnmatch(f, x) or fnmatch.fnmatch(os.path.basename(f), x) for x in globs for f in files or []):
+            continue
+        return True
+    return False
 
 
 def is_hook_enforced(entry):
@@ -548,10 +563,8 @@ def for_files(memory_dir, file_paths, kit_root=None, role=None, train=None):
     for e in entries:
         if e.get("status") != "active" or is_hook_enforced(e):
             continue
-        globs = [s.split(":", 1)[1].strip() for s in _norm_scopes(e.get("scope")) if s.lower().startswith("files:")]
-        if not globs or not _matches_scope(e, role, train=train, files=file_paths):
-            continue
-        if any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(os.path.basename(f), g) for g in globs for f in file_paths):
+        groups = [g for g in scope_groups(e.get("scope")) if _is_files_group(g)]
+        if groups and _matches_scope({"scope": " | ".join(", ".join(g) for g in groups)}, role, train=train, files=file_paths):
             hits.append(e)
     hits.sort(key=lambda x: (-scope_priority(x.get("scope")), x["id"]))
     return hits
@@ -583,10 +596,7 @@ def for_resume(memory_dir, role, train=None, files=None, kit_root=None, skip_fil
         if is_hook_enforced(e):
             hook_count += 1
             continue
-        scopes = _norm_scopes(e.get("scope"))
-        if skip_file_scoped and any(s.lower().startswith("files:") for s in scopes):
-            continue
-        if not _matches_scope(e, role, train=train, files=files):
+        if not _matches_scope(e, role, train=train, files=files, resume=skip_file_scoped):
             continue
         if e["kind"] == "principle":
             principles.append(e)
@@ -634,9 +644,8 @@ def format_resume(memory_dir, role, train=None, files=None, kit_root=None, skip_
     if data["active"]:
         lines.append("")
         lines.append("## Active Rules & Observations (un-subsumed)")
-        for r in data["active"]:
-            q = (' — "%s"' % _flat(r["quote"])[:120]) if r.get("quote") else ""
-            lines.append("- **%s** (%s): %s%s" % (r["id"], ", ".join(r["scope"]), r["summary"], q))
+        for r in data["active"]:                # the rule alone: its words and source stay in the ledger (`kit.py ledger show`)
+            lines.append("- **%s**: %s%s" % (r["id"], r["summary"], (" (`%s`)" % r["source"]) if r["kind"] == "lesson" and r.get("source") else ""))
     if data["proposed_principles"]:
         lines.append("")
         lines.append("## Proposed Principles awaiting owner confirmation")
