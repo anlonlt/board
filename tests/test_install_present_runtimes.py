@@ -118,7 +118,8 @@ class PresentRuntimes(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in self.cl.iterdir()), ["kit_board_guard.py", "kit_brief_guard.py",
                                                                       "kit_config.py", "kit_usage.py"])  # CL30's, CL37's
         s = json.loads(st.read_text())
-        self.assertEqual(s["permissions"], mine["permissions"])
+        # the project's own rules kept, first; CL38 adds the add_repo rule once
+        self.assertEqual(s["permissions"], {"allow": ["Bash(git status)", "mcp__claude-code-remote__add_repo"]})
         self.assertEqual(s["hooks"]["Stop"][0], mine["hooks"]["Stop"][0])         # the project's own Stop kept, first
         cmds = [h["command"] for ev in s["hooks"].values() for g in ev for h in g["hooks"]]
         self.assertEqual(sum("kit_brief_guard.py" in c for c in cmds), 2, cmds)

@@ -1705,6 +1705,8 @@
         if (i < lines.length) i++;
         if (lang === "mermaid") {
           html += renderMermaidBlock(code.join("\n"));
+        } else if (lang === "svg") {
+          html += renderSvgBlock(code.join("\n"));
         } else {
           html += "<pre><code>" + escH(code.join("\n")) + "</code></pre>";
         }
@@ -1831,6 +1833,21 @@
     return '<div class="kit-mmd-box">' + rowsHtml + '</div>';
   }
 
+  /* CL36 (the owner, 2026-11-24: "What was wrong with the SVG that they included in the post then?"): an SVG written in
+     a ```svg block draws as a picture (an <img> of it: its scripts never run). Post bodies and the document viewer
+     draw diagrams and pictures with these same functions (window._kitRenderMermaid, _kitRenderSvg, _kitAssetUrl). */
+  function renderSvgBlock(src) {
+    var s = String(src || "").trim();
+    if (!/^<svg[\s>]/i.test(s) || !/<\/svg>\s*$/i.test(s)) {
+      return "<pre><code>" + s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }) + "</code></pre>";
+    }
+    if (!/\sxmlns=/.test(s)) s = s.replace(/^<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+    return '<div class="kit-svg-box"><img class="kit-svg-inline" alt="diagram" src="data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s).replace(/'/g, "%27") + '"></div>';
+  }
+  window._kitRenderMermaid = renderMermaidBlock;
+  window._kitRenderSvg = renderSvgBlock;
+  window._kitAssetUrl = function (p) { return resolveAssetUrl(p, "", undefined); };
+
   function initRepoDocBrowser() {
     var tools = document.querySelector("header.top .tools");
     if (!tools || document.getElementById("kit-docs-btn")) return;
@@ -1881,6 +1898,9 @@
         ".kit-docs-md img{max-width:100%;height:auto;border-radius:8px;vertical-align:middle;margin:2px;}" +
         ".kit-docs-md p[style*='text-align:center'] img{display:inline-block;margin:3px 4px;}" +
         ".kit-docs-md .kit-sec-hit{background:color-mix(in srgb, var(--ember) 18%, transparent);border-radius:6px;padding:2px 6px;}" +
+        "img.md-img{max-width:100%;height:auto;border-radius:8px;vertical-align:middle;margin:2px 0;}" +
+        ".kit-svg-box{margin:1em 0;max-width:100%;overflow-x:auto;}" +
+        ".kit-svg-inline{display:block;max-width:100%;height:auto;border-radius:8px;background:#fff;}" +
         ".kit-mmd-box{display:flex;flex-direction:column;gap:8px;margin:1em 0;padding:14px;border-radius:12px;background:var(--sunk);border:1px solid var(--line);max-width:100%;overflow-x:auto;box-sizing:border-box;}" +
         ".kit-mmd-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:10px;min-width:0;}" +
         ".kit-mmd-node{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 12px;display:flex;flex-direction:column;gap:2px;min-width:0;box-shadow:var(--shadow);}" +

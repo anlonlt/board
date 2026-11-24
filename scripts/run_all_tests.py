@@ -26,6 +26,8 @@ SUITES = [
     # CL23: a thread nested deep opens without freezing the page (it was nested grids: seconds per layout)
     ("kit/board/test_page_speed.js", [shutil.which("node") or "node", "kit/board/test_page_speed.js"]),
     ("kit/board/test_page_ux.js", [shutil.which("node") or "node", "kit/board/test_page_ux.js"]),
+    # CL36: a post body draws a mermaid block, an svg block and an inline picture, as the document viewer does
+    ("kit/board/test_page_body.js", [shutil.which("node") or "node", "kit/board/test_page_body.js"]),
 ]
 
 

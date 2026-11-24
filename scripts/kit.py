@@ -1350,7 +1350,7 @@ def artifact_push(url=None, token=None, out_dir=None):
     # CL30 (the owner, 10:3x: "push must also send every file a post references"): the files of EVERY post and comment
     # here, not only of those sent now; the documents are mirrored by this push itself (no second command)
     files_text, mirror = _artifact_files(every, os.path.join(out_dir, "files"),
-                                         changed=[_read_json(e["file_path"]) for e in entries])
+                                         changed=[(e["doc_id"], _read_json(e["file_path"])) for e in entries])
     pending = {}
     for did, ref, sha, data, ver in mirror:
         fp = os.path.join(os.path.abspath(out_dir), "docs", "%04d.json" % len(entries))
@@ -1422,7 +1422,12 @@ def _artifact_files(docs, out, changed=None):
             mirror.append((did, ref, kas.sha256_of(os.path.join(ROOT, ref)), data, (st["docs"].get(did) or {}).get("version")))
     plan["mirror"] = []                                 # in the push's batches, not a second step
     if changed is not None:                             # "stays a repo link": said for the posts sent now only
-        plan["links"] = kas.plan_files(ROOT, [x for x in changed if isinstance(x, dict)], st)["links"]
+        by = {}                                         # CL33 (O54): each link names the post that cites it
+        for did, d in changed:
+            if isinstance(d, dict):
+                for ref, why in kas.plan_files(ROOT, [d], st)["links"]:
+                    by.setdefault((ref, why), []).append(str(d.get("post_id") or did))
+        plan["links"] = [[ref, why, ids] for (ref, why), ids in by.items()]
     if not (plan["upload"] or plan["links"]):
         return "", mirror
     os.makedirs(out, exist_ok=True)
@@ -1856,6 +1861,88 @@ def init(m):
     return "init: created worktree %s from %s. Next: python3 -I .kit/kit.py sync-db --commit" % (m, src)
 
 
+
+# ---------------------------------------------------------------- CL38: attaching another repo on Claude Code on the web
+ADD_REPO_RULE = "mcp__claude-code-remote__add_repo"
+
+
+def add_repo_allowed(root=None):
+    """(needs it, has it): a project with Claude Code settings and an attached board (portfolio, an Artifact board, or
+    a kit repo) needs mcp__claude-code-remote__add_repo in .claude/settings.json permissions.allow, else auto mode's
+    classifier refuses add_repo ("Unauthorized Access") in every web session it starts."""
+    root = root or ROOT
+    st = _read_json(os.path.join(root, ".claude", "settings.json"))
+    cfg = _read_json(os.path.join(root, ".kit", "config.json")) or {}
+    kit = cfg.get("kit") or {}
+    attached = bool(cfg.get("portfolio") or (kit.get("artifact") or {}).get("url")
+                    or os.path.isfile(os.path.join(root, "install.py")))
+    if st is None or not attached:
+        return False, False
+    allow = ((st.get("permissions") or {}).get("allow") or [])
+    return True, ADD_REPO_RULE in allow
+
+
+def attach_repo(spec, root=None, clone=True):
+    """`kit.py attach <owner/repo>`: the add_repo call to make, a clone next to this project, the register_repo_root
+    call, and the repo recorded in .kit/config.json portfolio. Returns (text, rc)."""
+    root = root or ROOT
+    m_ = re.match(r"^(?:https?://github\.com/)?([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$", spec.strip())
+    if not m_:
+        return "attach: name the repo as owner/repo (got %r)" % spec, 2
+    owner, repo = m_.group(1), m_.group(2)
+    gh = "%s/%s" % (owner, repo)
+    dest = os.path.join(os.path.dirname(os.path.abspath(root)), repo)
+    out = ["# Attach %s to this board" % gh]
+    need, has = add_repo_allowed(root)
+    if need and not has:
+        out.append("WARNING: .claude/settings.json does not allow %s: run `python3 -I install.py <this project> --update` "
+                   "from the kit, commit it, and start a NEW session (a running one never rereads its settings)" % ADD_REPO_RULE)
+    if not os.path.isdir(os.path.join(dest, ".git")):
+        if clone:
+            r = subprocess.run(["git", "clone", "-q", "https://github.com/%s.git" % gh, dest],
+                               capture_output=True, text=True, timeout=600)
+            ok = r.returncode == 0
+        else:
+            ok = False
+        if not ok:
+            out += ["1. Make this call (Claude Code on the web; on a computer, clone it yourself):",
+                    "   `mcp__claude-code-remote__add_repo` {\"owner\": \"%s\", \"repo\": \"%s\", \"access\": \"read\"}"
+                    % (owner, repo),
+                    "   (\"push\" only if this session must push to it).",
+                    "2. Then run this command again: it clones %s into %s and records it." % (gh, dest)]
+            return "\n".join(out), 1
+        out.append("cloned: %s -> %s" % (gh, dest))
+    else:
+        out.append("clone: %s (already there)" % dest)
+    p = os.path.join(root, ".kit", "config.json")
+    cfg = _read_json(p)
+    if cfg is None:
+        return "\n".join(out + ["attach: no .kit/config.json in %s (install the kit first)" % root]), 2
+    port = cfg.setdefault("portfolio", [])
+    row = next((x for x in port if isinstance(x, dict) and (x.get("github") == gh or
+                                                             os.path.abspath(x.get("path") or "/-") == dest)), None)
+    if row is None:
+        port.append({"name": repo, "path": dest, "github": gh})
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=1, ensure_ascii=False)
+            fh.write("\n")
+        out.append("recorded: .kit/config.json portfolio += %s (commit it)" % gh)
+    else:
+        changed = False
+        for k_, v_ in (("github", gh), ("path", dest)):
+            if not row.get(k_):
+                row[k_] = v_
+                changed = True
+        if changed:
+            with open(p, "w", encoding="utf-8") as fh:
+                json.dump(cfg, fh, indent=1, ensure_ascii=False)
+                fh.write("\n")
+        out.append("recorded: already in .kit/config.json portfolio%s" % (" (filled in)" if changed else ""))
+    out.append("Last (on the web): `mcp__claude-code-remote__register_repo_root` {\"owner\": \"%s\", \"repo\": \"%s\", "
+               "\"directory\": \"%s\"} so its CLAUDE.md and skills load." % (owner, repo, dest))
+    return "\n".join(out), 0
+
+
 def doctor(m, db_path=None):
     """Verify SQLite integrity, mirror worktree health, sync freshness, and referenced blobs."""
     issues = []
@@ -1895,6 +1982,12 @@ def doctor(m, db_path=None):
             issues.append("mirror branch is %r, expected %r" % (br, BRANCH))
     else:
         lines.append("mirror: not initialized at %s (run: python3 -I .kit/kit.py init)" % m)
+    need, has = add_repo_allowed()
+    if need:
+        lines.append("add_repo: %s" % ("allowed" if has else "NOT allowed in .claude/settings.json permissions.allow"))
+        if not has:
+            issues.append("%s missing from .claude/settings.json permissions.allow: web sessions cannot attach repos "
+                          "(install.py --update adds it; start a new session after)" % ADD_REPO_RULE)
     lines.append("doctor: %s" % ("OK" if not issues else ("%d issue(s): %s" % (len(issues), "; ".join(issues)))))
     return "\n".join(lines), (1 if issues else 0)
 
@@ -2081,10 +2174,19 @@ class _LocalBoard:
     def write(self, pid, doc):
         return _board_write("set", "posts", pid, doc)
 
+    def comment(self, cid, doc):
+        return _board_write("set", "comments", cid, doc)
+
+    def has_comment(self, cid):
+        return cid in _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=self.db_path)[1]
+
     def sent(self, pid):
         if not self.artifact:
             return True
-        return _read_json(_base_path("posts", pid)) == self.posts().get(pid)
+        posts, comments = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=self.db_path)
+        if pid in comments:
+            return _read_json(_base_path("comments", pid)) == comments.get(pid)
+        return _read_json(_base_path("posts", pid)) == posts.get(pid)
 
     def push_hint(self):
         return ("`python3 -I .kit/kit.py artifact push`, the ArtifactData batches it prints, `kit.py artifact sent "
@@ -2351,7 +2453,7 @@ def compact_memory(days=30, dry_run=False, root_dir=None, board=None):
                     open_issue_files.append((fn, t))
     # CL33: every open awaits point and open issue becomes a board post first; then it no longer holds memory
     on_board = False
-    planned, matched, post_lines, issue_post = [], [], [], {}
+    planned, matched, post_lines, issue_post, notes = [], [], [], {}, []
     if board is not None and (points or open_issue_files):
         existing = board.posts()
         taken = set(existing)
@@ -2364,6 +2466,21 @@ def compact_memory(days=30, dry_run=False, root_dir=None, board=None):
             hit = _match_post(existing, doc, "question", text=s)
             if hit:
                 matched.append(hit)
+                if existing[hit].get("from") == "kit compact" or existing[hit].get("source_key") == doc["source_key"]:
+                    continue                    # its own post from an earlier run: nothing to add
+                # what the point adds (its reference, default, deadline) goes under that post as one comment, never
+                # into its body (O54: F5's matched point left its refs and deadline on no post)
+                ref = re.search(r"^Reference: (.*)$", doc["body"], re.M)
+                note = ["From `%s/%s` (archived by `kit.py compact`), the open point this post answers:" % (
+                    rel_m.replace(os.sep, "/"), n), "", "> " + s, "",
+                    "Default: %s · deadline %s%s" % (doc.get("default") or "(none written)",
+                                                     doc.get("deadline") or "(none)",
+                                                     " · reference: " + ref.group(1) if ref else "")]
+                if doc.get("overdue"):
+                    note += ["", "**OVERDUE**: the default applies."]
+                notes.append(("cmt-%s" % doc["source_key"], {"post_id": hit, "text": "\n".join(note),
+                                                             "from": "kit compact", "created_at": _now_z(),
+                                                             "delivered": False, "read": False}))
                 continue
             base_id, k = pid, 2
             while pid in taken:
@@ -2518,12 +2635,14 @@ def compact_memory(days=30, dry_run=False, root_dir=None, board=None):
     if on_board:
         # the posts first: nothing leaves memory until every point and issue is on the board (and sent there)
         failed = [pid for pid, doc in planned if not board.write(pid, doc)]
+        has = getattr(board, "has_comment", None)
+        failed += [cid for cid, c in notes if not (has and has(cid)) and not board.comment(cid, c)]
         if failed:
             return ("compact: the board did not take %d post(s) (%s); nothing archived: is the board server running?"
                     % (len(failed), ", ".join(failed[:5]))) + tail
-        unsent = [pid for pid in [p for p, _ in planned] + matched if not board.sent(pid)]
+        unsent = [pid for pid in [p for p, _ in planned] + matched + [c for c, _ in notes] if not board.sent(pid)]
         if unsent:
-            return ("compact: %d post(s) are in the board's local copy, not yet on the Artifact; nothing archived. Send "
+            return ("compact: %d post(s) or comment(s) are in the board's local copy, not yet on the Artifact; nothing archived. Send "
                     "them: %s; then `kit.py compact` again." % (len(unsent), board.push_hint() or "kit.py artifact push")
                     ) + tail
     _apply_compaction(mdir, ops)
@@ -2795,6 +2914,65 @@ def _as_list(v):
     return v if isinstance(v, list) else [v]
 
 
+EMBED_RE = re.compile(r"`((?:\./)?docs/[^`\s]+\.md)\s*\u00a7[^`]*`")
+
+
+def part_docs(root, part):
+    """The repo docs/*.md files a part wrote: docs/<PART>.md (any case), and every docs/*.md added on this branch since
+    it left main (committed or not yet), docs/prompts/ aside (the kit writes those)."""
+    out = set()
+    part = str(part or "").strip().lower()
+    base = ""
+    for ref in ("origin/main", "main"):
+        r = _git(root, "merge-base", "HEAD", ref, text=True)
+        if r.returncode == 0 and r.stdout.strip():
+            base = r.stdout.strip()
+            break
+    names = []
+    if base:
+        names += _git(root, "diff", "--name-only", "--diff-filter=A", base, "HEAD", "--", "docs", text=True).stdout.split()
+    names += _git(root, "ls-files", "--others", "--exclude-standard", "--", "docs", text=True).stdout.split()
+    for n in names:
+        if n.endswith(".md") and not n.startswith("docs/prompts/"):
+            out.add(n)
+    for n in glob.glob(os.path.join(root, "docs", "*.md")):
+        if part and os.path.splitext(os.path.basename(n))[0].lower() == part:
+            out.add("docs/" + os.path.basename(n))
+    return out
+
+
+def check_body_in_post(p, root=ROOT):
+    """CL36 (the owner, 2026-11-24: "why sessions are writing out documents and linking them inside posts section by
+    section instead of keeping everything in a post?"): a part's result lives in its post body; a body that is mostly
+    `docs/X.md \u00a7 Section` embeds of a docs file the part wrote is refused. Embeds of files it did not write (the
+    kit's guides, an earlier part's report) stay allowed, and so do posts written before this rule (done is not rerun)."""
+    body = str(p.get("body") or "")
+    hits = EMBED_RE.findall(body)
+    if not hits:
+        return []
+    mine = part_docs(root, p.get("part"))
+    own = [h for h in hits if h.lstrip("./") in mine]
+    if not own:
+        return []
+    lines, infence = [], False
+    for l in body.splitlines():
+        t = l.strip()
+        if t.startswith("```"):
+            infence = not infence
+            lines.append("fence")
+            continue
+        if infence or not t or re.match(r"#{1,6}\s", t):
+            continue
+        lines.append(t)
+    embed_lines = [l for l in lines if any(o in l for o in own) and len(EMBED_RE.sub("", l).strip(" -*:.,;")) < 40]
+    if len(own) >= 2 and len(embed_lines) * 2 >= len(lines):
+        files = sorted({o.lstrip("./") for o in own})
+        return ["body: %d of its %d lines only embed sections of %s, a docs file this step wrote: the result lives in "
+                "the post body (CL36). Put the text in the body under ## sections, pictures as ![what](path.png), "
+                "diagrams as ```mermaid or ```svg blocks; then drop the file" % (len(embed_lines), len(lines), ", ".join(files))]
+    return []
+
+
 def check_done(p, root=ROOT, body_max=1500):
     """(errors, warnings) of a post against the kit's post format (.kit/BOARD.md § The post format)."""
     err, warn = [], []
@@ -2825,8 +3003,9 @@ def check_done(p, root=ROOT, body_max=1500):
     body = str(p.get("body") or "")
     if len(body) > body_max:
         # Not an error: the post is where the detail goes. Only a nudge to keep the answer first and the sections clear.
-        warn.append("body: %d characters (over %d): fine if it is the result itself, with ## sections; a report to keep "
-                    "or one with pictures or diagrams reads better as docs/<part>.md embedded by section" % (len(body), body_max))
+        warn.append("body: %d characters (over %d): fine if it is the result itself, with ## sections (they fold); "
+                    "pictures and diagrams go in it too" % (len(body), body_max))
+    err += check_body_in_post(p, root=root)
     # Say it once: a body that embeds a repo doc points to its sections; it does not repeat them.
     docs = set(re.findall(r"`([^`\s]+\.md)(?:\s*\u00a7[^`]*)?`", body)) | {
         str(a).split(" \u00a7")[0].strip("` ") for a in _as_list(p.get("artifacts")) if str(a).split(" \u00a7")[0].strip("` ").endswith(".md")}
@@ -4092,7 +4271,7 @@ def _resume_extras(posts, comments, now=None, days=3, limit=12, session=None):
                 blocks.append("%s (%s)" % (part[j], _short(q.get("status"), 40) if q.get("status") else st[j]))
         dflt = p.get("default_option") or ""
         age = "date unknown" if p.get("date_unknown") else _age(str(p.get("created_at") or ""), now) + " old"
-        out.append("- %s `%s` %s: %s%s%s" % (pt, k, age, _short(p.get("title"), 90),
+        out.append("- %s %s: %s%s%s" % ("`%s`" % k if pt == k else "%s `%s`" % (pt, k), age, _short(p.get("title"), 90),
                                                (" · default: " + _short(dflt, 60)) if dflt else "",
                                                (" · blocks " + ", ".join(list(dict.fromkeys(blocks))[:4])) if blocks else ""))
     if not qs:
@@ -4186,6 +4365,7 @@ COMMANDS = [
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor", "the board's size, columns, oldest question, missing files / its health"),
     ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
+    ("launch and finish", "kit.py attach <owner/repo>", "attach another repo (web: the add_repo call, clone next to this project, register, record in the portfolio)"),
     ("read the board", "board_cli.py get|list|query <coll> ...", "raw documents of the local board (prefer the lookups above)"),
     ("read the board", "board_cli.py inbox", "unread owner comments, Likes and option taps, compact"),
     ("write the board", "TaskCreate {train, part} (Claude Code) / kit.py step new", "plan a step: its post and its prompt docs/prompts/<id>.md, never by hand"),
@@ -4846,6 +5026,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                            "/".join(REAL_PROJECT_AREAS), ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"))
         orch = (posts.get("_orchestrator") or {}).get("session_id") or "the orchestrator"
         out += ["", "## How you report Done",
+                "0. Your result lives in your post body: the text under `##` sections, pictures as `![what](path.png)`, "
+                "diagrams as ```mermaid or ```svg blocks (the page draws them); never a `docs/*.md` file for your text "
+                "(`done` refuses a body made of its section embeds; CL36).",
                 "1. The post in the kit's format (`.kit/BOARD.md` § The post format); `python3 -I .kit/kit.py done %s` says OK." % pid,
                 "2. Commit, push your branch; `python3 -I .kit/end_session.py`.",
                 "3. SendMessage %s: `Done. Check post %s.`" % (orch, pid)]
@@ -5146,6 +5329,7 @@ def main(argv=None):
     s = sp.add_parser("session"); s.add_argument("post")
     s = sp.add_parser("reads"); s.add_argument("--at")
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
+    s = sp.add_parser("attach"); s.add_argument("repo"); s.add_argument("--no-clone", action="store_true")
     s = sp.add_parser("compact"); s.add_argument("--days", type=int, default=30); s.add_argument("--dry-run", action="store_true")
     s.add_argument("--no-board", action="store_true", help="post nothing: open awaits points and issues stay in memory")
     s = sp.add_parser("report"); s.add_argument("--db", default=None)
@@ -5241,6 +5425,10 @@ def main(argv=None):
             if a.commit:
                 print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
         return 0
+    if a.cmd == "attach":
+        out, rc = attach_repo(a.repo, clone=not a.no_clone)
+        print(out)
+        return rc
     if a.cmd == "doctor":
         out, rc = doctor(m, db_path=a.db)
         print(out)

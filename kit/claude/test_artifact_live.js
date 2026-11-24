@@ -31,7 +31,9 @@ const STUB = `(function () {
     "posts": { "P-main": { title: "Main post", column: "info", created_at: iso(-86400000) } },
     "comments": {},
     "repos/board/posts": REAL ? REAL.posts : { "cl34": { title: "CL34 memory flow", column: "done", created_at: iso(-3600000), body: "A design." } },
-    "repos/board/comments": REAL ? REAL.comments : { "parent1": { post_id: "cl34", from: "owner", text: "Why is it in docs?", created_at: iso(-600000) } },
+    "repos/board/comments": REAL ? REAL.comments : Object.assign({ "parent1": { post_id: "cl34", from: "owner", text: "Why is it in docs?", created_at: iso(-600000) } },
+      /* 300 older comments on another post, so a full read weighs what a busy board's does */
+      Object.fromEntries(Array.from({ length: 300 }, (_, i) => ["old" + i, { post_id: "P-old", from: "owner", text: "An older comment, number " + i + ". ".repeat(40), created_at: iso(-172800000 + i * 1000) }]))),
     "kit_repos": { "_index": { repos: [{ id: "board", name: "Board", github: "anlonlt/board" }], primary: { name: "Harmonize" } } }
   };
   window.__real = REAL; window.__store = store; window.__reads = 0; window.__writes = [];
@@ -39,7 +41,17 @@ const STUB = `(function () {
   const snap = (c) => ({ metadata: { fromCache: false, hasPendingWrites: false },
     docs: Object.entries(store[c] || {}).map(([id, d]) => ({ id, exists: true, data: () => d, metadata: {} })) });
   const fire = (c) => subs.forEach((s) => s.live && (!c || s.c === c) && s.f(snap(s.c)));
-  const q = (c) => ({ orderBy: () => q(c), where: () => q(c), limit: () => q(c), get: async () => { window.__reads++; return snap(c); },
+  window.__bytes = 0;
+  /* get() honours where (">", ">=", "<", "=="), orderBy and limit (missing fields last) and counts the bytes it returns, as the wire would */
+  const q = (c, ops) => ({ orderBy: (f, dir) => q(c, (ops || []).concat([["o", f, dir || "asc"]])), where: (f, op, v) => q(c, (ops || []).concat([["w", f, op, v]])), limit: (n) => q(c, (ops || []).concat([["l", n]])),
+    get: async () => { window.__reads++; let docs = snap(c).docs;
+      (ops || []).filter((o) => o[0] === "w").forEach(([, f, op, v]) => { docs = docs.filter((d) => { const x = d.data()[f];
+        if (x === undefined) return false; return op === ">" ? x > v : op === ">=" ? x >= v : op === "<" ? x < v : op === "==" ? x === v : true; }); });
+      (ops || []).forEach(([k, f, dir]) => {
+        if (k === "o") docs = docs.slice().sort((a, b) => { const x = a.data()[f], y = b.data()[f]; if (x === y) return 0; if (x === undefined) return 1; if (y === undefined) return -1; return (x < y ? -1 : 1) * (dir === "desc" ? -1 : 1); });
+        if (k === "l") docs = docs.slice(0, f); });
+      window.__bytes += JSON.stringify(docs.map((d) => [d.id, d.data()])).length;
+      return { metadata: { fromCache: false, hasPendingWrites: false }, docs }; },
     onSnapshot: (f, e) => { const s = { c, f, e, live: true }; subs.push(s); setTimeout(() => s.live && f(snap(c)), 0); return () => { s.live = false; }; } });
   /* the host stops answering: each listener on c gets one terminal error and is dead */
   window.__kill = (c) => subs.forEach((s) => { if (s.live && s.c === c) { s.live = false; if (s.e) s.e({ code: "unavailable", message: "host gone" }); } });
@@ -75,9 +87,20 @@ const STUB = `(function () {
   await p.evaluate((w) => { const re = new RegExp(w); const c = [...document.querySelectorAll('.card')].find(x => re.test(x.textContent)); if (c) (c.querySelector('.card-open') || c).click(); }, want.source);
   await p.wait(1200);
   res.checks.postOpen = await shown(REAL ? 'seeing quite a bit of this' : 'Why is it in docs?');
+  // what a quiet timer tick costs (only what is new) vs a full read (on return to the page)
+  await p.wait(3200);
+  await p.evaluate(() => { window.__bytes = 0; });
+  await p.wait(3000);
+  res.bytes = { timerRead: await p.evaluate(() => window.__bytes) };
+  await p.evaluate(() => { window.__bytes = 0; window.dispatchEvent(new Event('focus')); });
+  await p.wait(500);
+  res.bytes.fullRead = await p.evaluate(() => window.__bytes);
+  res.checks.timerReadUnderAFifthOfFull = res.bytes.timerRead > 0 && res.bytes.timerRead * 5 < res.bytes.fullRead;
   if (REAL) {
     // his case: O54's real reply, written from outside while the stream says nothing
-    await p.evaluate(() => window.__outside('repos/board/comments', 'o54-docs-in-posts-0130', window.__real.o54, true));
+    // written as it was: at 01:24:5x, stamped 01:30:00 (5 min ahead of the real time)
+    await p.evaluate(() => window.__outside('repos/board/comments', 'o54-docs-in-posts-0130',
+      Object.assign({}, window.__real.o54, { created_at: new Date(Date.now() + 305000).toISOString() }), true));
     const t0 = Date.now(); let ok = false;
     while (Date.now() - t0 < 8000 && !(ok = await shown('the kit tells them to'))) await p.wait(250);
     res.ms.o54 = ok ? Date.now() - t0 : -1;
@@ -105,6 +128,13 @@ const STUB = `(function () {
   await p.evaluate(() => window.__outside('repos/board/comments', 'agent-after-kill', { post_id: 'cl34', from: 'harmonize-cl34', text: 'A write after the listener died.', created_at: new Date().toISOString() }));
   res.ms.afterKill = await until('A write after the listener died.', 8000);
   res.checks.afterKillShownWithin8s = res.ms.afterKill >= 0;
+  // (4) a burst of 150 comments the stream never delivers: more than one page of the poll (100), all read
+  await p.evaluate(() => { const t0 = Date.now(); for (let i = 0; i < 150; i++) window.__outside('repos/board/comments', 'burst' + i,
+    { post_id: 'cl34', from: 'harmonize-cl34', text: 'Burst comment ' + i + ' end.', created_at: new Date(t0 + i).toISOString() }, true); });
+  const tb = Date.now(); let first = false, lastB = false;
+  while (Date.now() - tb < 8000 && !(first && lastB)) { await p.wait(250); first = first || await shown('Burst comment 0 end.'); lastB = lastB || await shown('Burst comment 149 end.'); }
+  res.ms.burst = first && lastB ? Date.now() - tb : -1;
+  res.checks.burstOf150AllShown = first && lastB;
   res.errors = syn.errors.concat(p.errors.filter(e => !/net::ERR_|Failed to load resource/.test(e)));
   res.failed = Object.entries(res.checks).filter(([k, v]) => v === false).map(([k]) => k);
   console.log(JSON.stringify(res, null, 1));
