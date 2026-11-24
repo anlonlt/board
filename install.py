@@ -1002,7 +1002,12 @@ def main(argv=None):
             if on and os.path.isfile(os.path.join(t, d + h)):
                 ins.put(d + h, rd("kit", "hooks", h), past_kit_blobs("kit/hooks/" + h))
             elif (on and (parts["board"] or h in MEMORY_HOOKS) and h != "test_hooks.py"
-                  and (d + h) not in ins.manifest and new_since_install(h, prev_kit, prev_date)):
+                  and (d + h) not in ins.manifest
+                  and (new_since_install(h, prev_kit, prev_date)
+                       # CL37: a later hook (HOOKS_ADDED) the other runtime got from the kit (its manifest line):
+                       # this runtime missed it, whatever the dates or the kit clone's history
+                       or (h in HOOKS_ADDED
+                           and any((o + h) in ins.manifest for o in RUNTIME_HOOK_DIRS.values() if o != d)))):
                 # CL28: a hook the kit added since this runtime was installed (kit_brief_guard.py on Harmonize, whose
                 # config names agy while its Claude Code hooks live in .claude/hooks/kit/) goes in too, with its own
                 # settings.json lines; a kit hook the project removed (it is in the manifest) is never put back.
