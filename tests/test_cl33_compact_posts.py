@@ -17,6 +17,7 @@ points in memory because they were not on the board. Now compact
 python3 -m unittest tests.test_cl33_compact_posts -v
 """
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -29,6 +30,7 @@ class FakeBoard:
 
     def __init__(self, posts=None, artifact=False):
         self.docs = dict(posts or {})
+        self.comments = {}
         self.writes = []
         self.artifact = artifact
         self.pending = set()
@@ -42,6 +44,15 @@ class FakeBoard:
         if self.artifact:
             self.pending.add(pid)
         return True
+
+    def comment(self, cid, doc):
+        self.comments[cid] = doc
+        if self.artifact:
+            self.pending.add(cid)
+        return True
+
+    def has_comment(self, cid):
+        return cid in self.comments
 
     def sent(self, pid):
         return pid not in self.pending
@@ -398,6 +409,65 @@ class RealHarmonizeAwaits(unittest.TestCase):
         for r in ("`docs/WORKPLAN.md` § C1 item 5", "board E11-window", "step `s1-held-vibrato`, board Z4-speaker",
                   "board T4-s1-write-gate", "board B9-ear-three-lines"):
             self.assertIn(r, refs)
+
+
+class O54FourthCheck(unittest.TestCase):
+    """O54's fourth check (58056f9 passes on Harmonize): the page ignores date_unknown; a matched point's reference,
+    default and deadline end up on no post; resume prints each aw- id twice; push's link lines name no post."""
+
+    def setUp(self):
+        self.kit = load_kit()
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d)
+        self.mem = tree(self.d, checker=False)
+        shutil.copy(REAL_AWAITS, os.path.join(self.mem, "awaits-anlon.md"))
+        self.board = FakeBoard({k: dict(v) for k, v in REAL_QUESTIONS.items()})
+
+    def test_matched_point_leaves_one_comment_under_its_post(self):
+        self.kit.compact_memory(root_dir=self.d, board=self.board)
+        on = {c["post_id"]: c for c in self.board.comments.values()}
+        self.assertEqual(sorted(on), ["F5-aids-in-the-night", "HL5-harmony-ai-question"])
+        f5 = on["F5-aids-in-the-night"]["text"]
+        for x in ("`SkyLooks`, q-look-aids-in-the-night", "your fallbacks, the needle and the columns", "2026-11-30"):
+            self.assertIn(x, f5)
+        self.assertEqual(self.board.docs["F5-aids-in-the-night"], REAL_QUESTIONS["F5-aids-in-the-night"])  # body untouched
+        n = len(self.board.comments)
+        shutil.copy(REAL_AWAITS, os.path.join(self.mem, "awaits-anlon.md"))
+        self.kit.compact_memory(root_dir=self.d, board=self.board)
+        self.assertEqual(len(self.board.comments), n)
+
+    def test_unsent_comment_holds_the_archive(self):
+        b = FakeBoard({k: dict(v) for k, v in REAL_QUESTIONS.items()}, artifact=True)
+        self.kit.compact_memory(root_dir=self.d, board=b)
+        b.pending = {x for x in b.pending if x in b.comments}   # posts sent, comments not
+        self.kit.compact_memory(root_dir=self.d, board=b)
+        self.assertTrue(os.path.isfile(os.path.join(self.mem, "awaits-anlon.md")))
+
+    def test_resume_names_an_aw_post_once(self):
+        self.kit.compact_memory(root_dir=self.d, board=self.board)
+        out = "\n".join(self.kit._resume_extras(dict(self.board.docs), {}))
+        self.assertNotRegex(out, r"- (aw-[\w-]+) `\1`")
+        self.assertIn("`aw-", out)
+
+    def test_page_shows_date_unknown_and_no_waiting_count(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        page = open(os.path.join(root, "kit", "board", "board.template.html"), encoding="utf-8").read()
+        self.assertFalse("when(p.created_at)" in page, "a card still dates a post by created_at alone")
+        self.assertTrue("date unknown" in page)
+        self.assertTrue(re.search(r"!p\.date_unknown[^\n]*p\.created_at\)[^\n]*\{\s*\n\s*var ageH", page),
+                        "the waiting count still counts a post whose date is unknown")
+
+    def test_push_link_lines_name_their_post_under_a_heading(self):
+        import importlib.util
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        spec = importlib.util.spec_from_file_location("kas33", os.path.join(root, "kit", "claude", "kit_artifact_sync.py"))
+        kas = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(kas)
+        txt = kas.plan_text({"upload": [], "mirror": [], "links": [["pipeline/x.py", "the board's viewers do not open .py "
+                                                                    "files", ["aw-chords-billboard"]]]}, "u", "/o", "")
+        lines = txt.strip().split("\n")
+        self.assertFalse(lines[0].startswith("- "), txt)
+        self.assertIn("post aw-chords-billboard", txt)
 
 
 if __name__ == "__main__":
