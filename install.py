@@ -70,7 +70,7 @@ CLAUDE_SETTINGS = [
 CLAUDE_CLI_SETTINGS = [
     ("SessionStart", None, "kit_session_start.py"),
     ("PreToolUse", "Bash", "kit_guard.py"),
-    ("PreToolUse", "SendMessage", "kit_say_it_once.py"),
+    ("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage", "kit_say_it_once.py"),
     ("PostToolUse", "SendMessage|Bash", "kit_say_it_once.py"),
     ("PostToolUse", "TaskCreate|TaskUpdate", "kit_task_train.py"),
     ("PreToolUse", "Bash", "kit_brief_guard.py"),
@@ -96,7 +96,7 @@ DEFAULT_KIT = {
     "cli": "auto",
     "mode": "local",
     "talk_language": "English",
-    "limits": {"message_chars": 600, "done_message_chars": 240, "chat_answer_chars": 600},
+    "limits": {"message_chars": 200, "done_message_chars": 200, "chat_answer_chars": 600},
     "guard": {"never_add": ["*.keystore", "*.jks", "*.pem", ".env", "keystore.properties"], "allow_add": []},
     "session_start_lines": [],
     # Context RESET points (kit_pre_compact.py; README § Context Reset): the orchestrator at 380k (a takeover costs

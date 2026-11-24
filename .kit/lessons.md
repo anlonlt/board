@@ -13,7 +13,7 @@ from: O53 2026-11-23 22:04
 roles: part, review, orchestrator
 files: scripts/kit.py, install.py, kit/hooks/*, kit/web_takeover.py, kit/claude/kit_artifact_sync.py, kit/board/board_server.py
 from: CL29
-The kit's suite passed CL29's compact while Harmonize's story checker went red. Clone the consuming project read-only (add_repo read; never push it), run the changed command there, and put the command and its output in the post's `real_project`; `kit.py done` refuses without it.
+The kit's suite passed CL29's compact while Harmonize's story checker went red. The orchestrator's session, which holds both repos, runs the changed command in a clone of the consuming project (never pushed) and puts the command and its output in the part's `real_project`; a launched part never attaches a repo (CL38: its classifier refuses add_repo unless the owner types it); `kit.py done` says it is pending until then.
 
 ## K3: Reuse the kit's commands before writing code
 roles: part

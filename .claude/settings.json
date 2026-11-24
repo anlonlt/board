@@ -21,7 +21,7 @@
         ]
       },
       {
-        "matcher": "SendMessage",
+        "matcher": "mcp__claude-code-remote__send_message|SendMessage",
         "hooks": [
           {
             "type": "command",

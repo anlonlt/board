@@ -1943,6 +1943,53 @@ def attach_repo(spec, root=None, clone=True):
     return "\n".join(out), 0
 
 
+
+# ---------------------------------------------------------------- CL38: branches fully on the trunk, swept
+KEEP_BRANCHES = ("board-mirror", "kit-usage")
+
+
+def merged_branches(root=None, delete=False):
+    """`kit.py branches [--delete]`: origin's branches whose every commit is on origin/<trunk> (a part's `cl<N>`, an
+    old `part-<post>`), listed; with --delete, removed from origin in one push. The trunk, the board mirror, the usage
+    ledger and the branch checked out here are never touched; a branch with a commit not on the trunk is kept and
+    named. Returns (text, rc)."""
+    root = root or ROOT
+
+    def g(*a):
+        return subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=300)
+    cfg = _read_json(os.path.join(root, ".kit", "config.json")) or {}
+    trunk = str((cfg.get("kit") or {}).get("main_branch") or "main")
+    keep = {trunk, "HEAD", (cfg.get("mirror") or {}).get("branch") or "board-mirror"} | set(KEEP_BRANCHES)
+    keep.add(g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip())
+    try:              # a part still at work keeps its branch, even fully merged (it pushes there again)
+        busy = {str(p.get("branch")) for p in _all_posts().values() if isinstance(p, dict) and p.get("branch")
+                and str(p.get("status") or "").lower() not in ("done", "dropped")}
+        keep |= busy | {"part-" + _slug(pid, 60) for pid, p in _all_posts().items() if isinstance(p, dict)
+                        and str(p.get("status") or "").lower() not in ("done", "dropped") and p.get("branch")}
+    except Exception:
+        pass
+    if g("fetch", "-q", "--prune", "origin").returncode:
+        return "branches: cannot fetch origin", 1
+    names = [x[len("origin/"):] for x in g("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin").stdout.split()
+             if x.startswith("origin/")]
+    done_, kept = [], []
+    for b in sorted(names):
+        if b in keep:
+            continue
+        (done_ if g("merge-base", "--is-ancestor", "origin/" + b, "origin/" + trunk).returncode == 0 else kept).append(b)
+    out = ["# Branches on origin (%d): %d fully on %s, %d with work not on it" % (len(names), len(done_), trunk, len(kept)),
+           "fully on %s: %s" % (trunk, " ".join(done_) or "none"),
+           "kept (work not on %s): %s" % (trunk, " ".join(kept) or "none")]
+    if not delete:
+        out.append("Delete those fully on %s: `python3 -I .kit/kit.py branches --delete` (the owner's go)." % trunk)
+        return "\n".join(out), 0
+    if not done_:
+        return "\n".join(out + ["nothing to delete"]), 0
+    r = g("push", "origin", "--delete", *done_)
+    if r.returncode:
+        return "\n".join(out + ["delete failed: %s" % (r.stderr or r.stdout).strip()[-300:]]), 1
+    return "\n".join(out + ["deleted %d branch(es) from origin" % len(done_)]), 0
+
 def doctor(m, db_path=None):
     """Verify SQLite integrity, mirror worktree health, sync freshness, and referenced blobs."""
     issues = []
@@ -3279,6 +3326,26 @@ def pair(pid, answer=None, db_path=None, root=None, timeout=900):
     return 0, "\n".join(lines)
 
 
+def check_trunk_merged(root=ROOT):
+    """CL38: Done is judged by the kit as it is on the trunk now, not as it was when the part started (CL37 started
+    before CL36's rule and skipped it): the work must contain origin/<trunk>. No origin, or a fetch that fails: no
+    refusal (a local repo, a test)."""
+    def g(*a):
+        return subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=120)
+    try:
+        if g("remote", "get-url", "origin").returncode:
+            return []
+        trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+        if g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == trunk or g("fetch", "-q", "origin", trunk).returncode:
+            return []
+        if g("merge-base", "--is-ancestor", "origin/" + trunk, "HEAD").returncode:
+            return ["the trunk moved since you started: merge it first (`git fetch origin %s && git merge --no-edit "
+                    "origin/%s`), rerun the tests, then done again: Done is checked against the kit on %s now" % (trunk, trunk, trunk)]
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return []
+
+
 def done(pid, db_path=None, root=None):
     p = _get_post(pid, db_path=db_path)
     if not p:
@@ -3289,7 +3356,8 @@ def done(pid, db_path=None, root=None):
     e_a, n_a = check_asked(p, db_path=db_path)
     err += e_a
     warn += n_a
-    err += check_real_project(p, root=root)          # CL32: compact/install/resume/hooks/artifact: a real project too
+    warn += check_real_project(p, root=root)         # CL32/CL38: a real project too, run by the orchestrator (pending)
+    err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
     if attached_board() and _read_json(_base_path("posts", pid)) != p:
         # CL28: a part updated its post on the local copy only and said "Done": the live board (the Artifact) still
         # showed it planned, with none of its results (the owner: "How come you said you posted when you didn't?")
@@ -3826,6 +3894,21 @@ def _find_attached_post(pid):
     return None, None
 
 
+def _prompt_branch(clone, pid, g):
+    """CL38: the prompt goes on the clone's trunk when its owner gave the standing permission to push it (no
+    `part-<post>` branch left behind, 40 of them on anlonlt/board by CL38); else on `part-<post>` as before. Never
+    when the clone's local trunk holds commits origin does not have (checkout -B would drop them)."""
+    k = (_read_json(os.path.join(clone, ".kit", "config.json")) or {}).get("kit") or {}
+    trunk = str(k.get("main_branch") or "main")
+    if k.get("trunk_push"):
+        g("fetch", "-q", "origin", trunk)
+        local = g("rev-parse", "--verify", "--quiet", "refs/heads/" + trunk).returncode == 0
+        if g("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + trunk).returncode == 0 and (
+                not local or g("merge-base", "--is-ancestor", trunk, "origin/" + trunk).returncode == 0):
+            return trunk
+    return "part-%s" % _slug(pid, 60)
+
+
 def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=False, cli=None):
     """Launch a step of an attached board from its own clone (the kit way, no hand step): the prompt this project
     wrote goes on a `part-<post>` branch of that clone (committed, pushed), then that clone's kit.py launch runs with
@@ -3842,7 +3925,7 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
 
     def g(*a, **kw):
         return subprocess.run(["git", "-C", clone] + list(a), capture_output=True, text=True, timeout=kw.get("timeout", 120))
-    branch = "part-%s" % _slug(pid, 60)
+    branch = _prompt_branch(clone, pid, g)
     restore = []      # the branch the clone was on: it goes back there whatever happens
     try:
         return _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset)
@@ -3976,7 +4059,9 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     text = "Your prompt is %s: read it and do it." % rel
     cons = consumers(post.get("consumers"))
     if cons:     # CL32: a kit part tests on the projects that use it; its session must reach them from its first step
-        text += (" First: add_repo (read) %s, clone next to this repo, never push it: your real-project dry run."
+        # CL38: a launched session's classifier refuses add_repo unless the owner types it; parts never attach. The
+        # orchestrator's session holds both repos and runs the real-project check; files come from kit_docs.
+        text += (" Never attach a repo: the real-project run on %s is the orchestrator's (done says pending until then)."
                  % ", ".join(c["github"] or c["name"] for c in cons))
         out["consumers"] = [c["github"] or c["name"] for c in cons]
     if session_id:                                   # the second half of a web launch: create_session answered
@@ -4365,6 +4450,7 @@ COMMANDS = [
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor", "the board's size, columns, oldest question, missing files / its health"),
     ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
+    ("launch and finish", "kit.py branches [--delete]", "origin's branches fully on the trunk (finished parts), and with --delete removes them"),
     ("launch and finish", "kit.py attach <owner/repo>", "attach another repo (web: the add_repo call, clone next to this project, register, record in the portfolio)"),
     ("read the board", "board_cli.py get|list|query <coll> ...", "raw documents of the local board (prefer the lookups above)"),
     ("read the board", "board_cli.py inbox", "unread owner comments, Likes and option taps, compact"),
@@ -4857,9 +4943,9 @@ def check_real_project(p, root=ROOT):
     if good:
         return []
     cons = ", ".join(c.get("github") or c.get("name") for c in consumers()) or "a project that uses the kit"
-    return ["real_project: your change touches %s; run it on a real project (%s: add_repo read, clone it next to this "
-            "repo, never push it) and put {\"project\", \"command\", \"output\"} in the post's real_project"
-            % (", ".join(areas), cons)]
+    return ["real_project: your change touches %s; the run on a real project (%s) is pending: the orchestrator runs it "
+            "from its session (it holds both repos) and writes {\"project\", \"command\", \"output\"} in the post's "
+            "real_project; a part never attaches a repo (CL38)" % (", ".join(areas), cons)]
 
 
 def consumers(extra=None):
@@ -5020,8 +5106,10 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         areas = real_project_areas()
         cons = consumers(p.get("consumers"))
         if areas or cons:
-            out.append("- Real project: %s. A change to %s needs a dry run in a clone of %s (add_repo read; never push "
-                       "it); its command and output go in the post's `real_project`, or `done` refuses." % (
+            out.append("- Real project: %s. A change to %s gets a dry run on %s, run by the orchestrator from its session "
+                       "(it holds both repos) and written in your post's `real_project`; you never attach a repo (CL38). "
+                       "A file of that project you need: the Artifact's `kit_docs` (`ArtifactData get`, doc_id = its "
+                       "path with `/` written `+2F~`), else ask under your post." % (
                            ("your change touches " + ", ".join(areas)) if areas else "nothing of compact/install/resume/hooks/artifact touched yet",
                            "/".join(REAL_PROJECT_AREAS), ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"))
         orch = (posts.get("_orchestrator") or {}).get("session_id") or "the orchestrator"
@@ -5061,7 +5149,8 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         rp = p.get("real_project")
         cons = consumers(p.get("consumers"))
         out += ["", "## The real-project check",
-                "- Rerun its `check`, then its claim on a real project: %s (add_repo read, clone, never push)." % (
+                "- Rerun its `check`, then its claim on a real project: %s, from the orchestrator's session (it holds both "
+                "repos; a launched session cannot attach one), by subagent; write the run in the post's real_project." % (
                     ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"),
                 "- Its post says: %s" % (json.dumps(rp, ensure_ascii=False)[:500] if rp else "NO real-project result")]
         out += ["", "## Lessons for a review"] + _lesson_lines(lessons_for("review"))
@@ -5330,6 +5419,7 @@ def main(argv=None):
     s = sp.add_parser("reads"); s.add_argument("--at")
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
     s = sp.add_parser("attach"); s.add_argument("repo"); s.add_argument("--no-clone", action="store_true")
+    s = sp.add_parser("branches"); s.add_argument("--delete", action="store_true")
     s = sp.add_parser("compact"); s.add_argument("--days", type=int, default=30); s.add_argument("--dry-run", action="store_true")
     s.add_argument("--no-board", action="store_true", help="post nothing: open awaits points and issues stay in memory")
     s = sp.add_parser("report"); s.add_argument("--db", default=None)
@@ -5425,6 +5515,10 @@ def main(argv=None):
             if a.commit:
                 print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
         return 0
+    if a.cmd == "branches":
+        out, rc = merged_branches(delete=a.delete)
+        print(out)
+        return rc
     if a.cmd == "attach":
         out, rc = attach_repo(a.repo, clone=not a.no_clone)
         print(out)

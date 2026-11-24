@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -120,6 +121,116 @@ class DoctorAndAttach(unittest.TestCase):
         kit.attach_repo("anlonlt/harmonize", root=str(self.t), clone=False)   # twice: recorded once
         port = json.loads((self.t / ".kit" / "config.json").read_text())["portfolio"]
         self.assertEqual(sum(1 for x in port if x.get("github") == "anlonlt/harmonize"), 1)
+
+
+HOOK = ROOT / "kit" / "hooks" / "kit_say_it_once.py"
+
+
+def say(msg, tool="mcp__claude-code-remote__send_message"):
+    data = {"hook_event_name": "PreToolUse", "session_id": "s", "tool_name": tool, "tool_input": {"message": msg}}
+    return subprocess.run([sys.executable, "-I", str(HOOK)], input=json.dumps(data), capture_output=True, text=True,
+                          env=dict(ENV, KIT_ROLE="part"), timeout=60)
+
+
+class MessagesArePointers(unittest.TestCase):
+    """CL38 (the owner, 02:14): messages between sessions are pointers, said once on the board."""
+
+    def test_pointer_passes(self):
+        self.assertEqual(say("Done. Check post cl38-attaching-repos-on-the-web-install-py-al.").returncode, 0)
+        self.assertEqual(say("Gaps under your post.", tool="SendMessage").returncode, 0)
+
+    def test_over_200_refused_whatever_the_config(self):
+        r = say("x" * 201)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("limit 200", r.stderr)
+
+    def test_table_quote_code_refused(self):
+        for msg, what in (("| a | b |\n|---|---|", "a table"), ("see:\n> his words", "a quote"), ("```x```", "a code block")):
+            r = say(msg)
+            self.assertEqual(r.returncode, 2, msg)
+            self.assertIn(what, r.stderr)
+
+    def test_owner_forward_never_cut(self):
+        self.assertEqual(say("Board comment from the owner on post x: " + "y" * 900).returncode, 0)
+
+    def test_cli_install_hooks_both_send_tools(self):
+        sys.path.insert(0, str(ROOT))
+        import importlib
+        inst = importlib.import_module("install")
+        pre = [m for ev, m, f in inst.CLAUDE_CLI_SETTINGS if ev == "PreToolUse" and f == "kit_say_it_once.py"]
+        self.assertIn("mcp__claude-code-remote__send_message", pre[0].split("|"))
+        self.assertIn("SendMessage", pre[0].split("|"))
+
+
+class Branches(unittest.TestCase):
+    """CL38: the prompt goes on the trunk, Done needs the trunk merged, finished branches are swept."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        b = Path(self.tmp.name)
+        self.remote, self.t = b / "remote.git", b / "work"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.remote)], check=True)
+        subprocess.run(["git", "clone", "-q", str(self.remote), str(self.t)], check=True, capture_output=True)
+        self.git("checkout", "-q", "-B", "main")
+        (self.t / ".kit").mkdir()
+        (self.t / ".kit" / "config.json").write_text(json.dumps({"kit": {"main_branch": "main", "trunk_push": True}}))
+        self.commit("a")
+        self.git("push", "-q", "origin", "main")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def git(self, *a):
+        return subprocess.run(["git", "-C", str(self.t), "-c", "user.email=t@t", "-c", "user.name=t"] + list(a),
+                              capture_output=True, text=True)
+
+    def commit(self, name):
+        (self.t / name).write_text(name)
+        self.git("add", name)
+        self.git("commit", "-q", "-m", name)
+
+    def test_done_refuses_until_the_trunk_is_merged(self):
+        self.git("checkout", "-q", "-b", "cl99")
+        self.commit("mine")
+        self.assertEqual(kit.check_trunk_merged(str(self.t)), [])
+        self.git("checkout", "-q", "main")
+        self.commit("newer-rule")
+        self.git("push", "-q", "origin", "main")
+        self.git("checkout", "-q", "cl99")
+        err = kit.check_trunk_merged(str(self.t))
+        self.assertEqual(len(err), 1)
+        self.assertIn("merge it first", err[0])
+        self.git("merge", "-q", "--no-edit", "origin/main")
+        self.assertEqual(kit.check_trunk_merged(str(self.t)), [])
+
+    def test_prompt_goes_on_the_trunk(self):
+        g = lambda *a, **kw: self.git(*a)  # noqa: E731
+        self.assertEqual(kit._prompt_branch(str(self.t), "cl99-x", g), "main")
+        (self.t / ".kit" / "config.json").write_text(json.dumps({"kit": {"trunk_push": False}}))
+        self.assertEqual(kit._prompt_branch(str(self.t), "cl99-x", g), "part-cl99-x")
+
+    def test_branches_lists_and_deletes_only_merged(self):
+        self.git("checkout", "-q", "-b", "cl97")
+        self.commit("merged-work")
+        self.git("push", "-q", "origin", "cl97")
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "cl97")
+        self.git("push", "-q", "origin", "main")
+        self.git("checkout", "-q", "-b", "cl98")
+        self.commit("open-work")
+        self.git("push", "-q", "origin", "cl98")
+        self.git("checkout", "-q", "main")
+        with unittest.mock.patch.object(kit, "_all_posts", return_value={}):
+            out, rc = kit.merged_branches(str(self.t))
+            self.assertEqual(rc, 0, out)
+            self.assertIn("fully on main: cl97", out)
+            self.assertIn("kept (work not on main): cl98", out)
+            out, rc = kit.merged_branches(str(self.t), delete=True)
+        self.assertEqual(rc, 0, out)
+        heads = subprocess.run(["git", "-C", str(self.remote), "branch"], capture_output=True, text=True).stdout
+        self.assertNotIn("cl97", heads)
+        self.assertIn("cl98", heads)
+        self.assertIn("main", heads)
 
 
 if __name__ == "__main__":
