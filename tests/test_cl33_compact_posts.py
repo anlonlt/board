@@ -58,6 +58,70 @@ def issues(board):
     return {k: v for k, v in board.docs.items() if v.get("kind") == "issue"}
 
 
+class O54Gaps(unittest.TestCase):
+    """O54's Harmonize run (2026-11-24): 2 of 31 points doubled, default not shown, workstream as part made 12
+    pseudo-trains and false 'blocks', every post 0 min old."""
+
+    def setUp(self):
+        self.kit = load_kit()
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d)
+        self.mem = tree(self.d)
+
+    def write_awaits(self, text):
+        with open(os.path.join(self.mem, "awaits-anlon.md"), "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    def test_point_naming_a_post_id_is_matched(self):
+        self.write_awaits("- [app] The harmony AI: answer on the board `HL5-harmony-ai-question`. Default: wait "
+                          "· deadline 2099-12-31\n")
+        b = FakeBoard({"HL5-harmony-ai-question": {"column": "question", "title": "Which model for harmony?"}})
+        out = self.kit.compact_memory(root_dir=self.d, board=b)
+        self.assertEqual([w for w in b.writes if w.startswith("aw-")], [], out)
+
+    def test_point_with_a_close_title_is_matched(self):
+        self.write_awaits("- [app] The aids in the night: keep them on? Default: on · deadline 2099-12-31\n")
+        b = FakeBoard({"F5-aids-in-the-night": {"column": "question", "part": "F5", "title": "Aids in the night"}})
+        out = self.kit.compact_memory(root_dir=self.d, board=b)
+        self.assertEqual([w for w in b.writes if w.startswith("aw-")], [], out)
+
+    def test_unrelated_question_is_not_matched(self):
+        self.write_awaits("- [app] Pick the colour of the play button. Default: blue · deadline 2099-12-31\n")
+        b = FakeBoard({"F5-aids-in-the-night": {"column": "question", "part": "F5", "title": "Aids in the night"}})
+        self.kit.compact_memory(root_dir=self.d, board=b)
+        self.assertEqual(len([w for w in b.writes if w.startswith("aw-")]), 1)
+
+    def test_default_is_the_one_tap_answer(self):
+        b = FakeBoard()
+        self.kit.compact_memory(root_dir=self.d, board=b)
+        for v in questions(b).values():
+            self.assertEqual(v["default_option"], v["default"])
+            self.assertIn(v["default"], v["options"])
+
+    def test_workstream_is_not_a_part_or_train(self):
+        b = FakeBoard()
+        self.kit.compact_memory(root_dir=self.d, board=b)
+        for pid, v in questions(b).items():
+            self.assertNotIn(v.get("part"), ("app", "sync", "orchestrator"))
+            self.assertFalse(v.get("train"), v)
+            self.assertEqual(self.kit._train_key(pid, v), "")
+        # resume: an app question no longer 'blocks' every post with the word app in it
+        posts = dict(b.docs)
+        posts["HL5-x"] = {"part": "HL5", "column": "info", "status": "in progress", "title": "the app screen"}
+        out = "\n".join(self.kit._resume_extras(posts, {}))
+        self.assertNotIn("blocks HL5", out)
+
+    def test_post_keeps_the_point_date(self):
+        import subprocess
+        env = dict(os.environ, GIT_AUTHOR_DATE="2026-11-02T10:00:00Z", GIT_COMMITTER_DATE="2026-11-02T10:00:00Z")
+        for c in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
+            subprocess.run(["git", "-C", self.d] + c, check=True, env=env)
+        b = FakeBoard()
+        self.kit.compact_memory(root_dir=self.d, board=b)
+        for v in questions(b).values():
+            self.assertTrue(v["created_at"].startswith("2026-11-02"), v["created_at"])
+
+
 class CompactPostsOpenWork(unittest.TestCase):
     def setUp(self):
         self.kit = load_kit()
@@ -70,14 +134,13 @@ class CompactPostsOpenWork(unittest.TestCase):
         out = self.kit.compact_memory(root_dir=self.d, board=b)
         q = questions(b)
         self.assertEqual(len(q), 4, out)
-        by_part = sorted(v["part"] for v in q.values())
-        self.assertEqual(by_part, ["app", "app", "orchestrator", "sync"])
+        by_ws = sorted(v["workstream"] for v in q.values())
+        self.assertEqual(by_ws, ["app", "app", "orchestrator", "sync"])
         for v in q.values():
             self.assertEqual(v["column"], "question")
-            self.assertEqual(v["train"], v["part"])
             self.assertTrue(v.get("default"), v)
             self.assertRegex(v.get("deadline", ""), r"^\d{4}-\d\d-\d\d$")
-        sync = next(v for v in q.values() if v["part"] == "sync")
+        sync = next(v for v in q.values() if v["workstream"] == "sync")
         self.assertEqual(sync["default"], "yes it costs nothing")  # the continuation line is part of the point
         self.assertIn("Keep the cloud copy?", sync["title"])
 
