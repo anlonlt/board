@@ -39,6 +39,9 @@ HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.
 # CL30: the kit's guards. One whose file is in a present Claude Code runtime but that has no settings.json line (or a
 # narrower matcher than the kit's) is a hole, not a choice (Harmonize: kit_cards_reminder.py wired nowhere, the brief
 # guard on Bash only): --update wires it. Other kit hooks (a project's own hand-over, its Stop) are left as they are.
+MESSAGE_GUARD = "kit_say_it_once.py"
+SEND_TOOLS = "mcp__claude-code-remote__send_message|SendMessage"
+MESSAGE_CEILING = 200   # CL38: kit_say_it_once.py's ceiling; a config limit above it is lowered at install/--update
 GUARD_HOOKS = ("kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "kit_task_train.py",
                "kit_cards_reminder.py")
 # agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
@@ -50,6 +53,7 @@ CLAUDE_SETTINGS = [
     ("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage", "kit_say_it_once.py"),
     ("PreToolUse", "ArtifactData|mcp__claude-code-remote__create_session", "kit_orchestrator_guard.py"),
     ("PreToolUse", "ArtifactData|Bash", "kit_brief_guard.py"),
+    ("PreToolUse", "Edit|Write|MultiEdit", "kit_memory_jit.py"),      # a files: rule of the ledger, at the edit
     ("PostToolUse", "Bash", "kit_brief_guard.py"),
     ("PostToolUse", "ArtifactData|mcp__claude-code-remote__send_message", "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_say_it_once.py"),
@@ -71,10 +75,11 @@ CLAUDE_SETTINGS = [
 CLAUDE_CLI_SETTINGS = [
     ("SessionStart", None, "kit_session_start.py"),
     ("PreToolUse", "Bash", "kit_guard.py"),
-    ("PreToolUse", "SendMessage", "kit_say_it_once.py"),
+    ("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage", "kit_say_it_once.py"),
     ("PostToolUse", "SendMessage|Bash", "kit_say_it_once.py"),
     ("PostToolUse", "TaskCreate|TaskUpdate", "kit_task_train.py"),
     ("PreToolUse", "Bash", "kit_brief_guard.py"),
+    ("PreToolUse", "Edit|Write|MultiEdit", "kit_memory_jit.py"),
     ("PostToolUse", "Bash", "kit_brief_guard.py"),
     ("UserPromptSubmit", None, "kit_say_it_once.py"),
     ("UserPromptSubmit", None, "kit_board_typing.py"),
@@ -97,7 +102,7 @@ DEFAULT_KIT = {
     "cli": "auto",
     "mode": "local",
     "talk_language": "English",
-    "limits": {"message_chars": 600, "done_message_chars": 240, "chat_answer_chars": 600},
+    "limits": {"message_chars": 200, "done_message_chars": 200, "chat_answer_chars": 600},
     "guard": {"never_add": ["*.keystore", "*.jks", "*.pem", ".env", "keystore.properties"], "allow_add": []},
     "session_start_lines": [],
     # Context RESET points (kit_pre_compact.py; README § Context Reset): the orchestrator at 380k (a takeover costs
@@ -185,13 +190,24 @@ def _in_kit_at(commit, hook):
         return None
 
 
-def new_since_install(hook, prev_kit):
+# CL37: when each later hook entered the kit. A shallow kit clone has no history for _in_kit_at to read; the target's
+# manifest still records the date of the kit it was last installed from, and a hook added after that date is new.
+HOOKS_ADDED = {"kit_usage.py": "2026-11-24T01:55:00+00:00", "kit_memory_jit.py": "2026-11-24T06:00:00+00:00"}
+
+
+def new_since_install(hook, prev_kit, prev_date=None):
     """True when kit/hooks/<hook> is a hook the kit added since the target's runtime was set up (CL28): absent at the
-    kit commit the target was last installed from, or at HOOKS_BASELINE. Unknown (not a git clone, no recorded
-    commit): False, nothing is added (CL22)."""
+    kit commit the target was last installed from, or at HOOKS_BASELINE. When this kit clone cannot tell (shallow:
+    those commits are not here), the manifest's install date against HOOKS_ADDED decides (CL37). Unknown (no recorded
+    commit, no date): False, nothing is added (CL22)."""
     if not prev_kit or prev_kit == "unknown":
         return False
-    return any(_in_kit_at(c, hook) is False for c in (prev_kit, HOOKS_BASELINE))
+    seen = [_in_kit_at(c, hook) for c in (prev_kit, HOOKS_BASELINE)]
+    if any(x is False for x in seen):
+        return True
+    if all(x is None for x in seen) and prev_date and hook in HOOKS_ADDED:
+        return str(prev_date) < HOOKS_ADDED[hook]
+    return False
 
 
 def present_runtimes(t):
@@ -438,6 +454,52 @@ def permissions(t, k, old_k, a, first, log):
         log.append("KEPT kit.claude_permission_mode: %s (already set in .kit/config.json)" % k["claude_permission_mode"])
 
 
+def web_setup_line(name):
+    """The environment's setup script: THIS project's hooks at user level (one project's: two sets would both run in
+    the parent folder). It starts in the folder holding the checkouts; a missing repo is skipped, never a failure."""
+    return "if [ -f %s/.kit/user_hooks.py ]; then python3 -I %s/.kit/user_hooks.py install; fi" % (name, name)
+
+
+def web_multi(c, a, first, log):
+    """CL39: several repos on the web. Asked once (or --web-multi), kept after; the environment to create goes in
+    kit.web_env, which the orchestrator proposes with create_environment once, on the owner's Like on the board."""
+    k = c["kit"]
+    cur = k.get("web_env")
+    on = None
+    if a.web_multi:
+        on = a.web_multi == "yes"
+    elif isinstance(cur, dict):
+        on = bool(cur.get("on", True))
+    elif first:
+        on = ask_yes_no("Does this project manage several repos from Claude Code web sessions (one environment "
+                        "holding every repo, its hooks installed at user level)?")
+        if on is None:
+            log.append("web, several repos: not asked (no terminal); ask the owner once, then rerun with "
+                       "--web-multi yes|no")
+            return False
+    if not on:
+        if isinstance(cur, dict) and cur.get("on", True):
+            cur["on"] = False
+            log.append("web, several repos: off (--web-multi no)")
+        return False
+    repos = [x.strip() for x in (a.web_repos or "").split(",") if x.strip()]
+    if not repos:
+        repos = list((cur or {}).get("repos") or [])
+    if not repos:
+        repos = [k.get("github")] + [x.get("github") for x in c.get("portfolio") or [] if isinstance(x, dict)]
+        repos = [r for r in dict.fromkeys(repos) if r]
+    env = dict(cur or {}, on=True, repos=repos, name=(cur or {}).get("name") or slug(c.get("project") or "project"),
+               setup_script=web_setup_line((k.get("github") or (repos[0] if repos else "") or "").split("/")[-1]
+                                           or os.path.basename(os.path.abspath(a.target))))
+    env.setdefault("environment_id", None)
+    if env != cur:
+        k["web_env"] = env
+        log.append("web, several repos: on; the environment to create (kit.web_env): repos %s, setup script `%s`; "
+                   "the orchestrator proposes it once, on the owner's Like (`kit.py web-env ask`)"
+                   % (", ".join(repos) or "(none: pass --web-repos)", env["setup_script"].replace("\n", "; ")))
+    return True
+
+
 def slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "project"
 
@@ -518,8 +580,11 @@ def render(text, c):
             "TALK": c["language"]["talk"], "MAIN_BRANCH": k["main_branch"],
             "WAIT": str(k["clerk"]["wait_minutes"]),
             "ORCH_IDLE": str(k["clerk"].get("orchestrator_idle_minutes", 30)),
-            "REPO_LINE": (", `source_url: \"https://github.com/%s\"`" % k["github"]) if k.get("github")
-                         else " (no `source_url`: it gets this session's environment and repositories)",
+            "REPO_LINE": ((", `environment_id: \"%s\"` (CL39: the environment holding every repo; never add_repo)"
+                           % (k.get("web_env") or {})["environment_id"]) if (k.get("web_env") or {}).get("on")
+                          and (k.get("web_env") or {}).get("environment_id")
+                          else (", `source_url: \"https://github.com/%s\"`" % k["github"]) if k.get("github")
+                          else " (no `source_url`: it gets this session's environment and repositories)"),
             "CONTEXT_K": clerk_limit_k,
             "CLERK_LIMIT_K": clerk_limit_k,
             # Claude Code's own compaction only as a safety net just past the reset point, if a hand-over ever fails.
@@ -557,6 +622,7 @@ def build_agy_hooks(board=True):
         "PreToolUse": [
             {"matcher": "run_command", "hooks": [{"type": "command", "command": CMD % "kit_guard.py"}]},
             {"matcher": "invoke_subagent", "hooks": [{"type": "command", "command": CMD % "kit_guard.py"}]},
+            {"matcher": "edit_file|write_file", "hooks": [{"type": "command", "command": CMD % "kit_memory_jit.py"}]},
         ],
         "Stop": [
             {"type": "command", "command": CMD % "kit_stop.py"},
@@ -626,57 +692,6 @@ def merge_agy_mcp(t, dry, log):
 
 # CL38: the permission rules every Claude Code project of the kit gets in .claude/settings.json permissions.allow.
 ALLOW_RULES = ("mcp__claude-code-remote__add_repo",)
-
-
-def merge_unified_claude_settings(t, dry, log, board=True):
-    """Wire 1 entry per lifecycle event pointing to `.kit/hook.py <Event>` (preserves existing user hooks & perms)."""
-    p = os.path.join(t, ".claude", "settings.json")
-    s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
-    hooks = s.setdefault("hooks", {})
-    added = 0
-    if board:
-        env = s.setdefault("env", {})
-        if env.get("CLAUDE_CODE_ENABLE_TODO_TOOLS") != "1":
-            env["CLAUDE_CODE_ENABLE_TODO_TOOLS"] = "1"
-            added += 1
-    allow = s.setdefault("permissions", {}).setdefault("allow", [])
-    for rule in ALLOW_RULES:
-        if rule not in allow:
-            allow.append(rule)
-            added += 1
-    for ev in ("SessionStart", "PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "SessionEnd", "PreCompact"):
-        cmd = 'python3 -I "$CLAUDE_PROJECT_DIR/.kit/hook.py" %s' % ev
-        groups = hooks.setdefault(ev, [])
-        if any(h.get("command") == cmd for g in groups for h in g.get("hooks", [])):
-            continue
-        groups.append({"hooks": [{"type": "command", "command": cmd}]})
-        added += 1
-    if added:
-        log.append(".claude/settings.json: %d unified hook/permission lines merged in (.kit/hook.py)" % added)
-        if not dry:
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            with open(p, "w", encoding="utf-8") as fh:
-                json.dump(s, fh, indent=2, ensure_ascii=False)
-                fh.write("\n")
-
-
-def merge_unified_agy_hooks(t, dry, log):
-    """Wire 1 entry per lifecycle event pointing to `../.kit/hook.py <Event>` in .agents/hooks.json."""
-    p = os.path.join(t, ".agents", "hooks.json")
-    s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
-    kb = {}
-    for ev in ("SessionStart", "PreInvocation", "PostInvocation", "Stop"):
-        kb[ev] = [{"type": "command", "command": "python3 -I ../.kit/hook.py %s" % ev}]
-    for ev in ("PreToolUse", "PostToolUse"):
-        kb[ev] = [{"matcher": ".*", "hooks": [{"type": "command", "command": "python3 -I ../.kit/hook.py %s" % ev}]}]
-    if s.get("kit-board") != kb:
-        s["kit-board"] = kb
-        log.append(".agents/hooks.json: unified kit-board dispatcher merged in (.kit/hook.py)")
-        if not dry:
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            with open(p, "w", encoding="utf-8") as fh:
-                json.dump(s, fh, indent=2, ensure_ascii=False)
-                fh.write("\n")
 
 
 def merge_claude_settings(t, dry, log, board=True, spec=None):
@@ -830,8 +845,6 @@ def main(argv=None):
     ap.add_argument("--no-survey", metavar="WHY", help="install without step 0 (the reason is recorded)")
     ap.add_argument("--quick", action="store_true", help="<60s trial install: skips Step 0 ceremony, defaults project/language, and bootstraps local DB")
     ap.add_argument("--parts", help="comma list among memory,board,clerk,orchestrator (memory always)")
-    ap.add_argument("--unified-hooks", action="store_true",
-                    help="wire a single .kit/hook.py <Event> dispatcher per lifecycle event instead of per-hook entries")
     ap.add_argument("--no-board", action="store_true", help="memory and its hooks only (no page, clerk, orchestrator)")
     ap.add_argument("--no-clerk", action="store_true")
     ap.add_argument("--no-orchestrator", action="store_true")
@@ -841,6 +854,10 @@ def main(argv=None):
                     "the project's own settings in .kit/config.json are reused; nothing else is asked")
     ap.add_argument("--verify", action="store_true", help="Verify installed kit files against SHA-256 hashes in .kit/manifest.json")
     ap.add_argument("--uninstall", action="store_true", help="Remove unmodified kit files recorded in .kit/manifest.json")
+    ap.add_argument("--web-multi", choices=["yes", "no"], help="CL39: the project manages several repos from Claude Code "
+                    "web sessions (one environment with every repo; the project's hooks at user level)")
+    ap.add_argument("--web-repos", help="CL39: the environment's repos, owner/name comma list (default: this repo and "
+                    "the portfolio's GitHub repos)")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     if a.quick:
@@ -934,6 +951,12 @@ def main(argv=None):
     old_k = json.load(open(old_p, encoding="utf-8")).get("kit") if os.path.exists(old_p) else None
     c = load_config(t, a)
     perm_log = []
+    lim = c["kit"].setdefault("limits", {})
+    for key in ("message_chars", "done_message_chars"):
+        if not isinstance(lim.get(key), int) or lim[key] > MESSAGE_CEILING:
+            if key in lim:
+                perm_log.append("kit.limits.%s: %s -> %d (CL38: messages between sessions are pointers)" % (key, lim[key], MESSAGE_CEILING))
+            lim[key] = MESSAGE_CEILING
     if a.no_funnel:
         c["kit"]["funnel"] = False
     elif "funnel" not in c["kit"]:
@@ -989,6 +1012,7 @@ def main(argv=None):
     ins = Installer(t, a.dry_run)
     trunk(t, c["kit"], a.main_branch, ins.log if (first or a.main_branch) else None) if (first or a.main_branch) else None
     permissions(t, c["kit"], old_k, a, first, perm_log)
+    multi_web = web_multi(c, a, first, perm_log)
     ins.log.extend(perm_log)
     parts = c["kit"]["parts"]
     notes = []
@@ -1012,10 +1036,12 @@ def main(argv=None):
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
     ins.put(".kit/usage.py", rd("scripts", "usage.py"))       # CL37: the usage ledger (kit.py usage)
     ins.put(".kit/ledger.py", rd("kit", "ledger.py"))        # 3-layer memory ledger (observations -> principles)
-    ins.put(".kit/hook.py", rd("kit", "hook.py"))            # unified lifecycle hook dispatcher
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     # the Artifact board's tools, whatever runs the sessions: its docs mirror and (Artifact mode) the local copy's server
     ins.put(".kit/kit_artifact_sync.py", rd("kit", "claude", "kit_artifact_sync.py"))
+    if multi_web:      # CL39: the environment's setup script runs it: the project's hooks at user level
+        ins.put(".kit/user_hooks.py", rd("kit", "user_hooks.py"))
+        ins.put(".kit/handover.py", rd("kit", "handover.py"))   # its web successor starts in the environment
     if claude_only:
         ins.put(".kit/web_takeover.py", rd("kit", "web_takeover.py"))
         ins.put(".kit/device.py", rd("scripts", "device.py"))
@@ -1033,6 +1059,7 @@ def main(argv=None):
     present = present_runtimes(t)
     new_hooks = {}
     prev_kit = str(ins.manifest.get("_kit_commit") or "").split(" ")[0]
+    prev_date = (str(ins.manifest.get("_kit_commit") or "").split(" ") + ["", ""])[1]
     also_agy = "agy" in present and not want_agy
     also_claude = "claude" in present and not want_claude
     for h in HOOKS:
@@ -1046,12 +1073,24 @@ def main(argv=None):
             if on and os.path.isfile(os.path.join(t, d + h)):
                 ins.put(d + h, rd("kit", "hooks", h), past_kit_blobs("kit/hooks/" + h))
             elif (on and (parts["board"] or h in MEMORY_HOOKS) and h != "test_hooks.py"
-                  and (d + h) not in ins.manifest and new_since_install(h, prev_kit)):
+                  and (d + h) not in ins.manifest
+                  and (new_since_install(h, prev_kit, prev_date)
+                       # CL37: a later hook (HOOKS_ADDED) the other runtime got from the kit (its manifest line):
+                       # this runtime missed it, whatever the dates or the kit clone's history
+                       or (h in HOOKS_ADDED
+                           and any((o + h) in ins.manifest for o in RUNTIME_HOOK_DIRS.values() if o != d)))):
                 # CL28: a hook the kit added since this runtime was installed (kit_brief_guard.py on Harmonize, whose
                 # config names agy while its Claude Code hooks live in .claude/hooks/kit/) goes in too, with its own
                 # settings.json lines; a kit hook the project removed (it is in the manifest) is never put back.
                 ins.put(d + h, rd("kit", "hooks", h))
                 new_hooks.setdefault(d, []).append(h)
+    # CL38: messages between sessions are pointers (200 characters, no table or quote). A project with its own
+    # say-it-once hook (Harmonize's, at 600) still gets the kit's message guard, wired on PreToolUse only: its own
+    # hook keeps every other event.
+    message_guard = False
+    if also_claude and parts["board"]:
+        ins.put(RUNTIME_HOOK_DIRS["claude"] + MESSAGE_GUARD, rd("kit", "hooks", MESSAGE_GUARD), past_kit_blobs("kit/hooks/" + MESSAGE_GUARD))
+        message_guard = True
     if want_agy:
         ins.put(".agents/skills/memory/SKILL.md", rd("kit", "skills", "memory", "SKILL.md"))
     if want_claude:
@@ -1137,10 +1176,7 @@ def main(argv=None):
             prefix = "" if cur.endswith("\n") or not cur else "\n"
             open(gi, "a", encoding="utf-8").write(prefix + "\n".join(gi_add) + "\n")
     if want_agy:
-        if getattr(a, "unified_hooks", False):
-            merge_unified_agy_hooks(t, a.dry_run, ins.log)
-        else:
-            merge_hooks(t, a.dry_run, ins.log, parts["board"])
+        merge_hooks(t, a.dry_run, ins.log, parts["board"])
         if parts["board"] and not claude_only:
             merge_agy_mcp(t, a.dry_run, ins.log)
         if c["kit"].get("cmd"):
@@ -1408,10 +1444,7 @@ def main(argv=None):
         finally:
             store.close()
     if want_claude:
-        if getattr(a, "unified_hooks", False):
-            merge_unified_claude_settings(t, a.dry_run, ins.log, parts["board"])
-        else:
-            merge_claude_settings(t, a.dry_run, ins.log, parts["board"], CLAUDE_CLI_SETTINGS if claude_cli_hooks else CLAUDE_SETTINGS)
+        merge_claude_settings(t, a.dry_run, ins.log, parts["board"], CLAUDE_CLI_SETTINGS if claude_cli_hooks else CLAUDE_SETTINGS)
     elif "claude" in present:
         added_h = set(new_hooks.get(RUNTIME_HOOK_DIRS["claude"]) or [])
         # CL30: the kit's guards whose files are there are wired too (and their matchers widened)
@@ -1425,6 +1458,8 @@ def main(argv=None):
         web = ("claude.ai/" in str(c.get("board_url") or "") or bool((c["kit"].get("artifact") or {}).get("url"))
                or "ArtifactData" in cur_st or "kit_orchestrator_guard.py" in cur_st)
         spec = [x for x in (CLAUDE_SETTINGS if web else CLAUDE_CLI_SETTINGS) if x[2] in added_h]
+        if message_guard and not any(x[2] == MESSAGE_GUARD and x[0] == "PreToolUse" for x in spec):
+            spec.append(("PreToolUse", SEND_TOOLS, MESSAGE_GUARD))
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], spec)
     if new_hooks.get(RUNTIME_HOOK_DIRS["agy"]):
         ins.log.append(".agents/hooks/kit/: new kit hook(s) %s copied; run --update with --runtime agy to wire them in "

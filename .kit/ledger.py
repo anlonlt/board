@@ -15,14 +15,25 @@ Layers:
 Also supports `kind=decision` (with `because:` and `rejected:`) so settled architectural/product
 choices are never re-litigated.
 
+A row never goes to the clerk: it only routes, and its rules are the kit's own prompt (kit/*/clerk.template.md).
+
 Storage: Markdown at `<memory_dir>/ledger.md` (and optional kit-global `kit/ledger.md` / `.kit/ledger.md`).
 No external dependencies (stdlib only).
 """
+import contextlib
 import fnmatch
+import hashlib
 import json
 import os
 import re
+import tempfile
 from datetime import datetime, timezone
+
+try:
+    import fcntl
+except ImportError:      # Windows
+    fcntl = None
+    import msvcrt
 
 KINDS = ("observation", "rule", "decision", "principle", "lesson")
 STATUSES = ("active", "proposed", "subsumed", "replaced", "archived", "dropped")
@@ -36,6 +47,59 @@ STOP_WORDS = frozenset({
 })
 ENTRY_HEAD = re.compile(r"^##\s+([A-Za-z][A-Za-z0-9_.-]*)\s*\(([^)]+)\)\s*:\s*(.+?)\s*$")
 KV_LINE = re.compile(r"^([a-z_]+)\s*:\s*(.*)$")
+ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
+MULTILINE = ("quote", "because", "rejected")     # kept line by line: "  | <line>" under the first
+CONT = "  |"
+SCOPE_ROLES = ("orchestrator", "part", "review")
+
+
+def _lines(value):
+    """Verbatim text as lines: every line break a file or an editor could read as one becomes \\n."""
+    return re.sub(r"\r\n|[\r\v\f\x1c-\x1e\x85\u2028\u2029]", "\n", str(value or "")).strip().split("\n")
+
+
+def _flat(value):
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+@contextlib.contextmanager
+def _locked(memory_dir):
+    """One writer at a time: read, change and write happen under this lock (a machine-local file, never in git)."""
+    key = hashlib.sha1(os.path.realpath(memory_dir).encode("utf-8")).hexdigest()[:16]
+    fh = open(os.path.join(tempfile.gettempdir(), "kit-ledger-%s.lock" % key), "a+")
+    try:
+        if fcntl is not None:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        else:
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+        yield
+    finally:
+        fh.close()                                # closing frees the lock
+
+
+def scope_error(scope):
+    """Why a scope is refused (None: fine). An unknown scope would reach every role: it is never guessed."""
+    for s in _norm_scopes(scope):
+        head, _, val = s.partition(":")
+        head, val = head.strip().lower(), val.strip()
+        if head == "role" and val.lower() == "clerk":
+            return ("scope role:clerk refused: the clerk only routes and reads no ledger; its rules are the kit's "
+                    "(kit/*/clerk.template.md)")
+        if head in ("all", "project") and not val:
+            continue
+        if head == "role" and val.lower() in SCOPE_ROLES:
+            continue
+        if head in ("train", "files") and val:
+            continue
+        return "unknown scope %r (all, project, role:%s, train:<name>, files:<glob>)" % (s, "|".join(SCOPE_ROLES))
+    return None
+
+
+def _reach(scope):
+    """A scope as a comparable set; `project` and `all` reach the same sessions of one project."""
+    return frozenset("all" if s.lower() == "project" else s.lower() if s.lower().startswith(("role:", "all")) else s
+                     for s in _norm_scopes(scope))
 
 
 def _now_iso():
@@ -76,7 +140,12 @@ def parse_ledger(text, source=""):
     """Parse Markdown ledger into list of entry dicts."""
     entries = []
     cur = None
-    for line in str(text or "").splitlines():
+    last = None
+    for line in str(text or "").split("\n"):
+        if cur is not None and last in MULTILINE and line.startswith(CONT):
+            rest = line[len(CONT):]
+            cur[last] += "\n" + (rest[1:] if rest.startswith(" ") else rest)
+            continue
         m = ENTRY_HEAD.match(line)
         if m:
             meta = [x.strip().lower() for x in m.group(2).split(",")]
@@ -97,17 +166,20 @@ def parse_ledger(text, source=""):
                 "subsumes": [],
                 "subsumed_by": "",
                 "replaces": "",
+                "confirmed_by": "",
                 "created_at": "",
                 "_file": source,
             }
             entries.append(cur)
+            last = None
             continue
         if cur is None:
             continue
-        kv = KV_LINE.match(line.strip())
+        kv = KV_LINE.match(line.rstrip())
         if not kv:
             continue
         k, v = kv.group(1).lower(), kv.group(2).strip()
+        last = k
         if k == "scope":
             cur["scope"] = _norm_scopes(v)
         elif k == "subsumes":
@@ -127,20 +199,21 @@ def render_ledger(entries):
         "",
     ]
     for e in entries:
-        out.append("## %s (%s, %s): %s" % (e["id"], e["kind"], e["status"], e["summary"]))
+        out.append("## %s (%s, %s): %s" % (e["id"], e["kind"], e["status"], _flat(e["summary"])))
         out.append("scope: %s" % ", ".join(_norm_scopes(e.get("scope"))))
         if e.get("enforced_by"):
             out.append("enforced_by: %s" % e["enforced_by"])
         if e.get("theme"):
             out.append("theme: %s" % e["theme"])
-        if e.get("quote"):
-            out.append("quote: %s" % e["quote"])
-        if e.get("source"):
-            out.append("source: %s" % e["source"])
-        if e.get("because"):
-            out.append("because: %s" % e["because"])
-        if e.get("rejected"):
-            out.append("rejected: %s" % e["rejected"])
+        for k in ("quote", "source", "because", "rejected", "confirmed_by"):
+            if not e.get(k):
+                continue
+            if k not in MULTILINE:
+                out.append("%s: %s" % (k, _flat(e[k])))
+                continue
+            first, *more = _lines(e[k])
+            out.append("%s: %s" % (k, first))
+            out += [(CONT + " " + x) if x else CONT for x in more]
         if e.get("subsumes"):
             out.append("subsumes: %s" % ", ".join(e["subsumes"]))
         if e.get("subsumed_by"):
@@ -178,8 +251,16 @@ def load_entries(memory_dir, kit_root=None):
 def save_entries(memory_dir, entries):
     os.makedirs(memory_dir, exist_ok=True)
     p = ledger_path(memory_dir)
-    with open(p, "w", encoding="utf-8") as fh:
-        fh.write(render_ledger(entries))
+    fd, tmp = tempfile.mkstemp(prefix=".ledger-", dir=memory_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(render_ledger(entries))
+        os.chmod(tmp, (os.stat(p).st_mode & 0o777) if os.path.exists(p) else 0o644)
+        os.replace(tmp, p)                        # a reader sees the old file or the new one, never half
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
     return p
 
 
@@ -226,9 +307,20 @@ def observe(memory_dir, summary, quote="", source="", scope="project", theme="",
     kind = str(kind or "observation").strip().lower()
     if kind not in KINDS:
         return {"error": "unknown kind %r (one of %s)" % (kind, ", ".join(KINDS))}
-    summary = str(summary or "").strip()
+    summary = _flat(summary)
     if not summary:
         return {"error": "summary is required"}
+    err = scope_error(scope)
+    if err:
+        return {"error": err}
+    if entry_id and not ID_RE.match(str(entry_id)):
+        return {"error": "bad id %r" % entry_id}
+    with _locked(memory_dir):
+        return _observe(memory_dir, summary, quote, source, scope, theme, kind, enforced_by, because, rejected,
+                        replaces, entry_id)
+
+
+def _observe(memory_dir, summary, quote, source, scope, theme, kind, enforced_by, because, rejected, replaces, entry_id):
     entries = load_entries(memory_dir)
     scopes = _norm_scopes(scope)
     conflicts = find_conflicts(entries, summary, scopes, theme=theme.strip().lower())
@@ -247,11 +339,11 @@ def observe(memory_dir, summary, quote="", source="", scope="project", theme="",
         "summary": summary,
         "scope": scopes,
         "enforced_by": str(enforced_by or "review").strip(),
-        "quote": str(quote or "").strip(),
-        "source": str(source or "").strip(),
+        "quote": "\n".join(_lines(quote)),
+        "source": _flat(source),
         "theme": str(theme or "").strip().lower(),
-        "because": str(because or "").strip(),
-        "rejected": str(rejected or "").strip(),
+        "because": "\n".join(_lines(because)),
+        "rejected": "\n".join(_lines(rejected)),
         "subsumes": [],
         "subsumed_by": "",
         "replaces": str(replaces or "").strip(),
@@ -265,7 +357,8 @@ def observe(memory_dir, summary, quote="", source="", scope="project", theme="",
 def distil_candidates(memory_dir, min_cluster=3):
     """Find clusters of active, un-subsumed observations/rules ready to distil into a Principle.
 
-    Clusters first by explicit `theme`, then by shared scope + keyword overlap for unthemed entries.
+    Only rows of the same scope cluster together (by `theme`, else by keyword overlap): one principle replaces
+    them, and it reaches exactly the sessions they reached.
     """
     entries = load_entries(memory_dir)
     pool = [e for e in entries if e.get("status") == "active" and e.get("kind") in ("observation", "rule", "lesson")
@@ -275,12 +368,12 @@ def distil_candidates(memory_dir, min_cluster=3):
     for e in pool:
         th = (e.get("theme") or "").strip().lower()
         if th:
-            by_theme.setdefault(th, []).append(e)
+            by_theme.setdefault((th, _reach(e["scope"])), []).append(e)
         else:
             unthemed.append(e)
 
     clusters = []
-    for th, items in sorted(by_theme.items()):
+    for (th, _), items in sorted(by_theme.items(), key=lambda kv: (kv[0][0], sorted(kv[0][1]))):
         if len(items) >= min_cluster:
             clusters.append({
                 "theme": th,
@@ -303,6 +396,8 @@ def distil_candidates(memory_dir, min_cluster=3):
         for b in unthemed[i + 1:]:
             if b["id"] in used:
                 continue
+            if _reach(b["scope"]) != _reach(a["scope"]):
+                continue
             bkw = _keywords(b["summary"] + " " + b.get("quote", ""))
             if len(akw & bkw) >= 2:
                 grp.append(b)
@@ -321,9 +416,20 @@ def distil_candidates(memory_dir, min_cluster=3):
     return clusters
 
 
-def propose_principle(memory_dir, summary, subsumes_ids, scope="all", theme="", pid=None):
+def propose_principle(memory_dir, summary, subsumes_ids, scope=None, theme="", pid=None, widen=False):
     """Create a `proposed` Principle citing all quotes/sources of `subsumes_ids`.
-    Underlying rows remain active until the owner confirms the principle."""
+    Underlying rows remain active until the owner confirms the principle. Its scope is theirs; another one is refused
+    unless `widen` (a files: or role: rule spread to every session is noise there, and lost to the JIT hook)."""
+    err = scope and scope_error(scope)
+    if err:
+        return {"error": err}
+    if not _flat(summary):
+        return {"error": "summary is required"}
+    with _locked(memory_dir):
+        return _propose(memory_dir, summary, subsumes_ids, scope, theme, pid, widen)
+
+
+def _propose(memory_dir, summary, subsumes_ids, scope, theme, pid, widen):
     entries = load_entries(memory_dir)
     by_id = {e["id"]: e for e in entries}
     missing = [i for i in subsumes_ids if i not in by_id]
@@ -331,6 +437,17 @@ def propose_principle(memory_dir, summary, subsumes_ids, scope="all", theme="", 
         return {"error": "unknown observation/rule id(s): %s" % ", ".join(missing)}
     if not subsumes_ids:
         return {"error": "subsumes_ids must name at least one underlying observation or rule"}
+    gone = [i for i in subsumes_ids if by_id[i]["status"] != "active"]
+    if gone:
+        return {"error": "not active: %s" % ", ".join(gone)}
+    reaches = {_reach(by_id[i]["scope"]) for i in subsumes_ids}
+    if scope is None:
+        if len(reaches) > 1:
+            return {"error": "the rows have different scopes: one principle per scope, or name --scope with --widen"}
+        scope = by_id[subsumes_ids[0]]["scope"]
+    elif reaches != {_reach(scope)} and not widen:
+        return {"error": "scope %s is not the scope of %s: keep theirs, or --widen" % (
+            ", ".join(_norm_scopes(scope)), ", ".join(i for i in subsumes_ids if _reach(by_id[i]["scope"]) != _reach(scope)))}
     quotes = [by_id[i]["quote"] for i in subsumes_ids if by_id[i].get("quote")]
     sources = [by_id[i]["source"] for i in subsumes_ids if by_id[i].get("source")]
     pid = pid or _next_id(entries, "P")
@@ -340,7 +457,7 @@ def propose_principle(memory_dir, summary, subsumes_ids, scope="all", theme="", 
         "id": pid,
         "kind": "principle",
         "status": "proposed",
-        "summary": str(summary).strip(),
+        "summary": _flat(summary),
         "scope": _norm_scopes(scope),
         "enforced_by": "review",
         "quote": " | ".join(quotes),
@@ -358,19 +475,30 @@ def propose_principle(memory_dir, summary, subsumes_ids, scope="all", theme="", 
     return {"ok": True, "principle": entry, "path": path}
 
 
-def confirm_principle(memory_dir, pid, summary=None):
+def confirm_principle(memory_dir, pid, by, summary=None):
     """Owner confirms (and optionally refines) a proposed Principle.
     Marks the principle active and retires its `subsumes` rows (`status=subsumed`, `subsumed_by=pid`)
-    so they stay in git as evidence and stop loading into `resume`."""
+    so they stay in git as evidence and stop loading into `resume`. `by`: the id of the owner's comment or Like that
+    says yes (kit.py checks it is his), kept on the row."""
+    if not _flat(by):
+        return {"error": "confirm needs the owner's yes: the id of his comment or Like"}
+    with _locked(memory_dir):
+        return _confirm(memory_dir, pid, _flat(by), summary)
+
+
+def _confirm(memory_dir, pid, by, summary):
     entries = load_entries(memory_dir)
     target = next((e for e in entries if e["id"] == pid), None)
     if not target:
         return {"error": "principle %s not found" % pid}
     if target["kind"] != "principle":
         return {"error": "%s is %s, not a principle" % (pid, target["kind"])}
-    if summary and str(summary).strip():
-        target["summary"] = str(summary).strip()
+    if target["status"] != "proposed":
+        return {"error": "%s is %s, not proposed" % (pid, target["status"])}
+    if _flat(summary):
+        target["summary"] = _flat(summary)
     target["status"] = "active"
+    target["confirmed_by"] = by
     subsumed = []
     want = set(target.get("subsumes") or [])
     for e in entries:
@@ -386,6 +514,8 @@ def _matches_scope(entry, role, train=None, files=None):
     """Check whether entry's scope applies to (role, train, files)."""
     scopes = _norm_scopes(entry.get("scope"))
     role_l = str(role or "").lower()
+    if role_l == "clerk":
+        return False
     train_l = str(train or "").lower()
     has_role_constraint = any(s.lower().startswith("role:") for s in scopes)
     if has_role_constraint and ("role:" + role_l) not in {s.lower() for s in scopes}:
@@ -400,8 +530,6 @@ def _matches_scope(entry, role, train=None, files=None):
         if not any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(os.path.basename(f), g)
                    for g in file_globs for f in files):
             return False
-    if role_l == "clerk":
-        return any(s.lower() in ("role:clerk",) for s in scopes)
     return True
 
 
@@ -410,8 +538,9 @@ def is_hook_enforced(entry):
     return enf.startswith("hook:") or enf.startswith("test:")
 
 
-def for_files(memory_dir, file_paths, kit_root=None):
-    """Return active `files:<glob>` entries matching any path in `file_paths` (for JIT PreToolUse injection)."""
+def for_files(memory_dir, file_paths, kit_root=None, role=None, train=None):
+    """Return active `files:<glob>` entries matching any path in `file_paths` (for JIT PreToolUse injection). A row also
+    scoped to a role or a train comes only to that role or train: a session whose role is not known gets neither."""
     if not file_paths:
         return []
     entries = load_entries(memory_dir, kit_root=kit_root)
@@ -420,7 +549,7 @@ def for_files(memory_dir, file_paths, kit_root=None):
         if e.get("status") != "active" or is_hook_enforced(e):
             continue
         globs = [s.split(":", 1)[1].strip() for s in _norm_scopes(e.get("scope")) if s.lower().startswith("files:")]
-        if not globs:
+        if not globs or not _matches_scope(e, role, train=train, files=file_paths):
             continue
         if any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(os.path.basename(f), g) for g in globs for f in file_paths):
             hits.append(e)
@@ -506,7 +635,7 @@ def format_resume(memory_dir, role, train=None, files=None, kit_root=None, skip_
         lines.append("")
         lines.append("## Active Rules & Observations (un-subsumed)")
         for r in data["active"]:
-            q = (' — "%s"' % r["quote"][:120]) if r.get("quote") else ""
+            q = (' — "%s"' % _flat(r["quote"])[:120]) if r.get("quote") else ""
             lines.append("- **%s** (%s): %s%s" % (r["id"], ", ".join(r["scope"]), r["summary"], q))
     if data["proposed_principles"]:
         lines.append("")
@@ -542,6 +671,9 @@ def check_ledger(memory_dir, root=None, comments=None):
             if os.path.isdir(d):
                 hook_dirs.append(d)
     for e in entries:
+        err = scope_error(e.get("scope"))
+        if err and e["status"] in ("active", "proposed"):
+            errors.append("%s: %s" % (e["id"], err))
         if e["status"] == "active" and str(e.get("enforced_by") or "").startswith("hook:"):
             hname = e["enforced_by"].split(":", 1)[1].strip()
             if hook_dirs and not any(os.path.isfile(os.path.join(d, hname)) for d in hook_dirs):
@@ -554,8 +686,8 @@ def check_ledger(memory_dir, root=None, comments=None):
             src = e["source"].split(",")[0].strip()
             if src in comments:
                 body = str((comments[src] or {}).get("body") or (comments[src] or {}).get("text") or "")
-                q = e["quote"].split("|")[0].strip()
-                if q and q.lower() not in body.lower():
+                q = _flat(e["quote"].split("|")[0])
+                if q and q.lower() not in _flat(body).lower():
                     errors.append("%s: quote not found verbatim in comment %s" % (e["id"], src))
         if e["status"] == "proposed" and e["kind"] == "principle":
             warnings.append("%s: proposed principle waiting on owner confirmation" % e["id"])
@@ -563,13 +695,19 @@ def check_ledger(memory_dir, root=None, comments=None):
 
 
 def init_ledger(memory_dir):
-    """Bootstrap `<memory_dir>/ledger.md`, importing any legacy `<memory_dir>/principles.md` lines."""
+    """Bootstrap `<memory_dir>/ledger.md`, importing any legacy `<memory_dir>/principles.md` lines. Its scopes are bare
+    words (`part`, a train): a role becomes role:<r>, another word train:<w>; a clerk line is named in `skipped`."""
+    with _locked(memory_dir):
+        return _init(memory_dir)
+
+
+def _init(memory_dir):
     p = ledger_path(memory_dir)
     if os.path.isfile(p):
         return {"ok": True, "path": p, "imported": 0, "note": "ledger already exists"}
     entries = []
     legacy = os.path.join(memory_dir, "principles.md")
-    imported = 0
+    imported, skipped = 0, []
     if os.path.isfile(legacy):
         try:
             with open(legacy, encoding="utf-8") as fh:
@@ -579,7 +717,15 @@ def init_ledger(memory_dir):
                         continue
                     text = s.lstrip("-* ").strip()
                     m = re.search(r"\(scope:\s*([^)]+)\)", text, re.I)
-                    scopes = _norm_scopes(m.group(1)) if m else ["all"]
+                    scopes = []
+                    for w in (_norm_scopes(m.group(1)) if m else ["all"]):
+                        lw = w.lower()
+                        scopes.append(lw if lw in ("all", "project") else "role:" + lw if lw in SCOPE_ROLES + ("clerk",)
+                                      else w if ":" in w else "train:" + lw)
+                    scopes = [x for x in scopes if x != "role:clerk"]
+                    if not scopes or scope_error(scopes):
+                        skipped.append(text)
+                        continue
                     clean = re.sub(r"\s*\(scope:\s*[^)]+\)", "", text, flags=re.I).strip()
                     if clean:
                         imported += 1
@@ -603,4 +749,4 @@ def init_ledger(memory_dir):
         except OSError:
             pass
     save_entries(memory_dir, entries)
-    return {"ok": True, "path": p, "imported": imported}
+    return {"ok": True, "path": p, "imported": imported, "skipped": skipped}

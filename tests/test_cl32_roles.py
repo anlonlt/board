@@ -73,7 +73,7 @@ class Server(unittest.TestCase):
 
     def test_unknown_repo_is_refused_not_read_from_the_primary(self):
         with tempfile.TemporaryDirectory() as t:
-            proj = harmonize(Path(t), [{"name": "board", "path": "/home/anon/board", "github": "github:anlonlt/board"}])
+            proj = harmonize(Path(t), [{"name": "board", "path": "/nowhere/anon/board", "github": "github:anlonlt/board"}])
             url, _ = self.start(proj)
             api_req(url, "doc/posts/cl32-x", {"data": {"title": "Harmonize's own post"}}, TOKEN, "PUT")
             with self.assertRaises(urllib.error.HTTPError) as cm:
@@ -83,7 +83,7 @@ class Server(unittest.TestCase):
 
     def test_load_attaches_the_artifact_copy_and_launch_reads_it(self):
         with tempfile.TemporaryDirectory() as t:
-            proj = harmonize(Path(t), [{"name": "board", "path": "/home/anon/board", "github": "github:anlonlt/board"}])
+            proj = harmonize(Path(t), [{"name": "board", "path": "/nowhere/anon/board", "github": "github:anlonlt/board"}])
             url, _ = self.start(proj)
             art = Path(t) / "art"
             d = art / "in" / "repos" / "board" / "posts"
@@ -95,14 +95,14 @@ class Server(unittest.TestCase):
             self.assertEqual(api_req(url, "doc/posts/cl32-x?repo=board", token=TOKEN)["data"]["part"], "CL32")
             self.assertFalse(api_req(url, "doc/posts/cl32-x", token=TOKEN).get("exists"))   # not on Harmonize's own
             # a restart finds it again: .kit/attached/board is a resolved attached board now
-            aid, path, why = board_server.resolve_attached(str(proj), {"name": "board", "path": "/home/anon/board"})
+            aid, path, why = board_server.resolve_attached(str(proj), {"name": "board", "path": "/nowhere/anon/board"})
             self.assertEqual((aid, path), ("board", os.path.join(str(proj), ".kit", "attached", "board")), why)
 
     def test_attached_store_never_pushes(self):
         with tempfile.TemporaryDirectory() as t:
             clone = Path(t) / "board"
             (clone / ".git").mkdir(parents=True)
-            proj = harmonize(Path(t), [{"name": "board", "path": "/home/anon/board", "github": "github:anlonlt/board"}])
+            proj = harmonize(Path(t), [{"name": "board", "path": "/nowhere/anon/board", "github": "github:anlonlt/board"}])
             _, pushes = self.start(proj)
             self.assertEqual(pushes, "board:False")       # found next to the repo; attached, never pushed from here
 
@@ -111,10 +111,10 @@ class Resolve(unittest.TestCase):
     def test_missing_path_finds_the_clone_next_to_the_repo(self):
         with tempfile.TemporaryDirectory() as t:
             proj = harmonize(Path(t), [])
-            item = {"name": "board", "path": "/home/anon/board", "github": "github:anlonlt/board"}
+            item = {"name": "board", "path": "/nowhere/anon/board", "github": "github:anlonlt/board"}
             aid, path, why = board_server.resolve_attached(str(proj), item)
             self.assertIsNone(path)
-            self.assertIn("/home/anon/board", why)
+            self.assertIn("/nowhere/anon/board", why)
             self.assertIn("artifact load", why)
             (Path(t) / "board" / ".git").mkdir(parents=True)
             self.assertEqual(board_server.resolve_attached(str(proj), item)[1], str(Path(t) / "board"))
@@ -175,6 +175,7 @@ class O53Gaps(unittest.TestCase):
             (d / "cl33-x.json").write_text(json.dumps({"id": "cl33-x", "version": 3, "data": {"part": "CL33"}}))
             with mock.patch.dict(os.environ, {"KIT_ARTIFACT_DIR": str(art)}), \
                     mock.patch.object(kit, "_attached_boards", side_effect=RuntimeError("no server")), \
+                    mock.patch.object(kit, "ROOT", os.path.join(t, "harmonize")), \
                     mock.patch.object(kit, "_kit_config", return_value={"project": "Harmonize"}):
                 b, p = kit._find_attached_post("cl33-x")
                 r = kit.launch("cl33-x", url="http://127.0.0.1:9", web=True)

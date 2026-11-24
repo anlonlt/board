@@ -21,7 +21,7 @@
         ]
       },
       {
-        "matcher": "SendMessage",
+        "matcher": "mcp__claude-code-remote__send_message|SendMessage",
         "hooks": [
           {
             "type": "command",
@@ -35,6 +35,15 @@
           {
             "type": "command",
             "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_brief_guard.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_memory_jit.py\""
           }
         ]
       }

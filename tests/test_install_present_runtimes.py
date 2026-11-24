@@ -81,11 +81,11 @@ class PresentRuntimes(unittest.TestCase):
         # here, while its other hooks, kit_pre_compact.py, stay as the project has them)
         self.assertEqual(sorted(p.name for p in self.cl.iterdir()),
                          ["kit_board_guard.py", "kit_brief_guard.py", "kit_config.py", "kit_memory_jit.py",
-                          "kit_pre_compact.py", "kit_task_train.py", "kit_usage.py"])  # CL37's usage + JIT memory hooks arrive too
+                          "kit_pre_compact.py", "kit_say_it_once.py", "kit_task_train.py", "kit_usage.py"])  # CL37's usage hook, CL38's message guard, the JIT memory
         st = json.loads((self.t / ".claude" / "settings.json").read_text())
         cmds = [h["command"] for ev in st["hooks"].values() for g in ev for h in g["hooks"]]
         self.assertTrue(cmds and all(any(g in c for g in ("kit_brief_guard.py", "kit_board_guard.py", "kit_task_train.py",
-                                                          "kit_usage.py"))
+                                                          "kit_usage.py", "kit_say_it_once.py", "kit_memory_jit.py"))
                                      for c in cmds), cmds)
         self.assertEqual(st["env"]["CLAUDE_CODE_ENABLE_TODO_TOOLS"], "1")
         cfg = json.loads((self.t / ".kit" / "config.json").read_text())
@@ -116,7 +116,8 @@ class PresentRuntimes(unittest.TestCase):
         self.assertEqual(r.returncode, 0, out)
         self.assertEqual((self.cl / "kit_brief_guard.py").read_bytes(), (HOOKS / "kit_brief_guard.py").read_bytes(), out)
         self.assertEqual(sorted(p.name for p in self.cl.iterdir()), ["kit_board_guard.py", "kit_brief_guard.py",
-                                                                      "kit_config.py", "kit_memory_jit.py", "kit_usage.py"])  # CL30's, CL37's, JIT memory
+                                                                      "kit_config.py", "kit_memory_jit.py", "kit_say_it_once.py",
+                                                                      "kit_usage.py"])  # CL30's, CL37's, CL38's, the JIT memory
         s = json.loads(st.read_text())
         # the project's own rules kept, first; CL38 adds the add_repo rule once
         self.assertEqual(s["permissions"], {"allow": ["Bash(git status)", "mcp__claude-code-remote__add_repo"]})
@@ -125,7 +126,7 @@ class PresentRuntimes(unittest.TestCase):
         self.assertEqual(sum("kit_brief_guard.py" in c for c in cmds), 2, cmds)
         self.assertEqual(sum("kit_board_guard.py" in c for c in cmds), 2, cmds)   # CL30's new hook: Post Bash, Stop
         self.assertEqual(sum("kit_usage.py" in c for c in cmds), 2, cmds)         # CL37: Stop and SessionEnd
-        self.assertEqual(sum("/hooks/kit/" in c for c in cmds), 6, cmds)  # no other kit hook added
+        self.assertEqual(sum("/hooks/kit/" in c for c in cmds), 8, cmds)  # + CL38's message guard, the JIT memory (PreToolUse)  # no other kit hook added
         # the target's Claude Code hooks are the web ones (an ArtifactData guard is there): the reply tool is matched too
         st.write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": "ArtifactData|mcp__claude-code-remote__create_session",
                       "hooks": [{"type": "command", "command": "python3 -I x/.claude/hooks/kit/kit_orchestrator_guard.py"}]}]}}))

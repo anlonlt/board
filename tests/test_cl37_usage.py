@@ -173,6 +173,179 @@ class Roles(unittest.TestCase):
             self.assertEqual(other["role"], "part")
 
 
+class O55Gaps(unittest.TestCase):
+    def test_a_role_word_inside_a_part_prompt_name_is_a_part(self):
+        for name, part in (("cl24-orchestrator-guard-gaps", "CL24"), ("cl28-the-orchestrator-answers-only", "CL28"),
+                           ("cl5-automatic-reviews-said-once", "CL5")):
+            row = {"branch": "cl24", "first_prompt": "Your prompt is docs/prompts/%s.md: read it." % name}
+            self.assertEqual(usage.classify(row), ("part", part), name)
+        self.assertEqual(usage.classify({"branch": "x", "first_prompt": "docs/prompts/BC32-board-clerk.md"}),
+                         ("clerk", "BC32"))
+
+    def test_a_one_line_hand_over_on_a_claude_branch(self):
+        for prompt, role in (("You are orchestrator 56 of this repository (.kit/claude-cli/orchestrator.md), after a "
+                              "context reset", "orchestrator"),
+                             ("Take over: python3 -I .kit/kit.py resume --role orchestrator", "orchestrator"),
+                             ("Read .kit/claude-cli/takeover.md and take over.", "orchestrator"),
+                             ("Your prompt is .kit/claude-cli/clerk.md: read it and follow it.", "clerk")):
+            self.assertEqual(usage.classify({"branch": "claude/x-y", "first_prompt": prompt})[0], role, prompt)
+
+    def test_kit_role_env_wins(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            os.environ["KIT_ROLE"] = "clerk"
+            try:
+                row = usage.record(root, fixture(d))
+            finally:
+                del os.environ["KIT_ROLE"]
+            self.assertEqual(row["role"], "clerk")
+
+    def test_work_measure_and_cost_per_unit(self):
+        # run from inside a cloud session too: its own ids must not leak into this fixture's row
+        for k in ("CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUDE_CODE_SESSION_ID"):
+            if k in os.environ:
+                self.addCleanup(os.environ.__setitem__, k, os.environ.pop(k))
+        os.environ["CLAUDE_CODE_REMOTE_SESSION_ID"] = "cse_SOMEONE"      # a cloud session that is not this transcript's
+        self.addCleanup(os.environ.pop, "CLAUDE_CODE_REMOTE_SESSION_ID", None)
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            g = ["git", "-C", root, "-c", "user.name=t", "-c", "user.email=t@t"]
+            env = dict(os.environ, GIT_COMMITTER_DATE="2026-11-20T10:03:00+00:00", GIT_AUTHOR_DATE="2026-11-20T10:03:00+00:00")
+            Path(root, "a.py").write_text("1\n2\n3\n")
+            subprocess.run(g + ["add", "a.py"], check=True)
+            subprocess.run(g + ["commit", "-qm", "a"], check=True, env=env)
+            env2 = dict(env, GIT_COMMITTER_DATE="2026-11-21T10:00:00+00:00", GIT_AUTHOR_DATE="2026-11-21T10:00:00+00:00")
+            Path(root, "b.py").write_text("x\n")
+            subprocess.run(g + ["add", "b.py"], check=True)
+            subprocess.run(g + ["commit", "-qm", "later: outside the session"], check=True, env=env2)
+            tp = fixture(d)
+            lines = Path(tp).read_text().splitlines()
+            e = json.loads(lines[2])
+            e["message"]["content"].append({"type": "tool_use", "id": "t9", "name": "Bash",
+                                            "input": {"command": "python3 -m unittest tests.test_x"}})
+            lines[2] = json.dumps(e)
+            Path(tp).write_text("\n".join(lines) + "\n")
+            row = usage.record(root, tp)
+            row["cwd"] = root
+            self.assertEqual(row["work"]["commits"], 1)
+            self.assertEqual((row["work"]["lines_added"], row["work"]["files"]), (3, 1))
+            self.assertEqual(row["tests_run"], 1)
+            res = usage.summarize([row])
+            self.assertAlmostEqual(res["cost $ per commit"]["median"], row["cost_usd_all"])
+            self.assertAlmostEqual(res["cost $ per 100 lines changed"]["median"], 100 * row["cost_usd_all"] / 3)
+
+
+class O55Gaps2(unittest.TestCase):
+    def _repo(self, d):
+        root = project(d)
+        g = ["git", "-C", root, "-c", "user.name=t", "-c", "user.email=t@t"]
+        env = dict(os.environ, GIT_COMMITTER_DATE="2026-11-20T10:03:00+00:00", GIT_AUTHOR_DATE="2026-11-20T10:03:00+00:00")
+        for i, (f, n, trailer) in enumerate((("a.py", 3, "session_MINE"), ("b.py", 5, "session_OTHER"),
+                                             ("c.py", 7, None))):
+            Path(root, f).write_text("x\n" * n)
+            subprocess.run(g + ["add", f], check=True)
+            msg = "c%d" % i + ("\n\nClaude-Session: https://claude.ai/code/%s" % trailer if trailer else "")
+            subprocess.run(g + ["commit", "-qm", msg], check=True, env=env)
+        return root
+
+    def test_git_work_counts_only_this_sessions_commits(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._repo(d)
+            w = usage.git_work(root, "2026-11-20T10:00:00+00:00", "2026-11-20T10:08:00+00:00", ccr_id="session_MINE")
+            self.assertEqual((w["commits"], w["lines_added"], w["by"]), (1, 3, "trailer"))
+            w = usage.git_work(root, "2026-11-20T10:00:00+00:00", "2026-11-20T10:08:00+00:00")
+            self.assertEqual((w["commits"], w["lines_added"], w["by"]), (1, 7, "window"))  # no other session's commit
+
+    def test_shallow_boundary_commit_is_not_counted(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = self._repo(d)
+            sh = os.path.join(d, "shallow")
+            subprocess.run(["git", "clone", "-q", "--depth", "1", "file://" + src, sh], check=True)
+            w = usage.git_work(sh, "2026-11-20T10:00:00+00:00", "2026-11-20T10:08:00+00:00")
+            self.assertEqual((w["commits"], w["lines_added"]), (0, 0))       # the boundary shows the whole tree
+
+    def test_the_hook_takes_the_cloud_session_id(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = self._repo(d)
+            old = {k: os.environ.get(k) for k in ("CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUDE_CODE_SESSION_ID")}
+            os.environ["CLAUDE_CODE_REMOTE_SESSION_ID"] = "cse_MINE"
+            os.environ["CLAUDE_CODE_SESSION_ID"] = "s-part"
+            try:
+                tp = fixture(d)
+                row = usage.record(root, tp)
+            finally:
+                for k, v in old.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+            self.assertEqual(row["ccr_session_id"], "session_MINE")
+            # the project the row is recorded for is read (the transcript's cwd /w/proj is not it): only this session's
+            # trailer counts
+            self.assertEqual((row["work"]["commits"], row["work"]["by"], row["work"]["lines_added"]), (1, "trailer", 3))
+
+    def test_a_hand_over_with_no_role_word(self):
+        self.assertEqual(usage.classify({"branch": "claude/x", "first_prompt": "Run kit.py resume, then read post "
+                                         "_handover."})[0], "orchestrator")
+
+
+class TwoRepoSessions(unittest.TestCase):
+    """CR-cl37 item 2: a session started on two repos reads neither repo's settings, so no project hook runs. kit.py
+    (every command), end_session.py and web_takeover save record the session's row themselves."""
+
+    def test_usage_self_finds_its_own_transcript_and_records(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            home = os.path.join(d, "home")
+            pdir = os.path.join(home, ".claude", "projects", "-w-proj")
+            os.makedirs(pdir)
+            fixture(pdir, sid="s-two", sub=False)
+            Path(root, ".kit", "usage.py").write_text(SCRIPT.read_text())
+            env = {k: v for k, v in os.environ.items() if not k.startswith(("KIT_USAGE", "CLAUDE_CODE"))}
+            env.update(HOME=home, CLAUDE_CODE_SESSION_ID="s-two", KIT_USAGE_PUSH="0")
+            r = subprocess.run([sys.executable, "-I", os.path.join(root, ".kit", "usage.py"), "--root", root, "self"],
+                               capture_output=True, text=True, env=env, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("part", r.stdout)
+            self.assertTrue(Path(root, ".kit", "run", "usage", "s-two.json").is_file())
+
+    def test_every_kit_command_offers_it_detached(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            home = os.path.join(d, "home")
+            pdir = os.path.join(home, ".claude", "projects", "-w-proj")
+            os.makedirs(pdir)
+            fixture(pdir, sid="s-kit", sub=False)
+            Path(root, ".kit", "usage.py").write_text(SCRIPT.read_text())
+            Path(root, ".kit", "kit.py").write_text((ROOT / "scripts" / "kit.py").read_text())
+            env = {k: v for k, v in os.environ.items() if not k.startswith(("KIT_USAGE", "CLAUDE_CODE", "KIT_"))}
+            env.update(HOME=home, CLAUDE_CODE_SESSION_ID="s-kit", KIT_USAGE_PUSH="0")
+            subprocess.run([sys.executable, "-I", os.path.join(root, ".kit", "kit.py"), "commands", "usage"],
+                           capture_output=True, text=True, env=env, cwd=root, timeout=60)
+            import time as _t
+            for _ in range(100):
+                if Path(root, ".kit", "run", "usage", "s-kit.json").is_file():
+                    break
+                _t.sleep(0.1)
+            self.assertTrue(Path(root, ".kit", "run", "usage", "s-kit.json").is_file())
+
+
+class InstallShallow(unittest.TestCase):
+    def test_a_hook_new_after_the_manifest_date_is_new_without_kit_history(self):
+        spec2 = importlib.util.spec_from_file_location("kit_install_mod", ROOT / "install.py")
+        ins = importlib.util.module_from_spec(spec2)
+        spec2.loader.exec_module(ins)
+        orig = ins._in_kit_at
+        ins._in_kit_at = lambda c, h: None                  # a shallow kit clone: neither commit is here
+        try:
+            self.assertTrue(ins.new_since_install("kit_usage.py", "219f713", "2026-11-23T23:32:43+00:00"))
+            self.assertFalse(ins.new_since_install("kit_usage.py", "abc", "2026-11-25T00:00:00+00:00"))
+            self.assertFalse(ins.new_since_install("kit_stop.py", "219f713", "2026-11-23T23:32:43+00:00"))
+            self.assertFalse(ins.new_since_install("kit_usage.py", "", "2026-11-23T23:32:43+00:00"))
+        finally:
+            ins._in_kit_at = orig
+
+
 class Ledger(unittest.TestCase):
     def test_hook_records_silently_and_tree_stays_clean(self):
         with tempfile.TemporaryDirectory() as d:

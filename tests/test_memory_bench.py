@@ -123,18 +123,30 @@ class Measure(Base):
                 for cl in led.distil_candidates(self.mem, min_cluster=3):
                     pr = led.propose_principle(self.mem, "Theme %s: %s" % (cl["theme"], cl["items"][0]["summary"][:9]),
                                                cl["ids"], theme=cl["theme"])
-                    led.confirm_principle(self.mem, pr["principle"]["id"])
+                    led.confirm_principle(self.mem, pr["principle"]["id"], "like-1")
         s = self.bench(Squashed())["board"]
         self.assertEqual(s["rows"][1]["missed"], ["R6"])      # R4 comes back with the lookup, R6 does not
         self.assertLess(s["coverage"], self.bench(mb.Board())["board"]["coverage"])
 
     def test_curation_is_used_only_when_given(self):
-        s = self.bench(mb.Board({"R1": {"scope": "role:clerk"}}))["board"]
+        s = self.bench(mb.Board({"R1": {"scope": "role:orchestrator"}}))["board"]
         self.assertEqual(s["rows"][0]["hit_turn1"], 1)
 
     def test_a_files_rule_comes_from_the_jit_hook(self):
         s = self.bench(mb.Board({"R2": {"scope": "files:app/*.py"}}))["board"]
         self.assertEqual((s["rows"][0]["hit_lookup"], s["rows"][0]["missed"]), (2, []))
+
+    def test_whatever_the_clerk_is_given_is_noise(self):
+        clerk = {"id": "c", "role": "clerk", "post": None, "files": [], "question": "a comment came", "gold": [], "lookup": []}
+        self.probes.write_text(json.dumps({"probes": PROBES + [clerk]}))
+        t = self.bench(mb.Board(), mb.Flat())
+        self.assertEqual([t[n]["roles"]["clerk"]["noise"] for n in ("board", "flat")], [0, 7])
+        self.assertGreater(t["flat"]["roles"]["clerk"]["noise_tokens"], 0)
+        self.assertEqual(t["board"]["roles"]["part"], dict(t["board"]["roles"]["part"], gold=2, hit_turn1=2, noise=4))
+        self.assertIn("| clerk (1) |", mb.format_report(mb.run_benchmark(str(self.proj), str(self.probes), [mb.Flat()])))
+        self.probes.write_text(json.dumps({"probes": [dict(clerk, gold=["R1"])]}))
+        with self.assertRaisesRegex(mb.ToolError, "only routes"):
+            self.bench(mb.Flat())
 
     def test_a_failing_tool_stops_the_run(self):
         bad = self.tmp / "bd"

@@ -13,7 +13,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from kit_config import is_claude_payload, memory_dir, project_dir  # noqa: E402
+from kit_config import config, is_claude_payload, memory_dir, project_dir  # noqa: E402
 
 
 def _load_ledger_module(root):
@@ -49,12 +49,23 @@ def _target_paths(data):
 
 def _seen_file(root, data):
     sid = (data.get("session_id") or data.get("conversationId") or data.get("conversation_id")
-           or os.environ.get("CLAUDE_CODE_SESSION_ID") or "default")
+           or os.environ.get("CLAUDE_CODE_SESSION_ID"))
+    if not sid:
+        return None          # no id: nothing to remember it by (a shared one would silence the rule for everyone)
     h = hashlib.sha1((str(root) + "|" + str(sid)).encode("utf-8")).hexdigest()[:12]
     return os.path.join(tempfile.gettempdir(), "kit-memory-jit-%s.json" % h)
 
 
+def _memory_dir(root, data):
+    """The memory `kit.py resume` reads: kit.memory_dir, else .board/memory, else .story (the kit's order)."""
+    if not config(data).get("kit", {}).get("memory_dir") and os.path.isdir(os.path.join(root, ".board", "memory")):
+        return os.path.join(root, ".board", "memory")
+    return memory_dir(data)
+
+
 def _read_seen(path):
+    if not path:
+        return set()
     try:
         with open(path, encoding="utf-8") as fh:
             return set(json.load(fh))
@@ -63,6 +74,8 @@ def _read_seen(path):
 
 
 def _write_seen(path, ids):
+    if not path:
+        return
     try:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(sorted(ids), fh)
@@ -71,6 +84,9 @@ def _write_seen(path, ids):
 
 
 def handle(data):
+    role = os.environ.get("KIT_ROLE", "").strip().lower() or None
+    if role == "clerk":
+        return None
     root = project_dir(data)
     raw_paths = _target_paths(data)
     if not raw_paths:
@@ -81,8 +97,7 @@ def handle(data):
     ledger = _load_ledger_module(root)
     if ledger is None:
         return None
-    mdir = memory_dir(data)
-    hits = ledger.for_files(mdir, rel_paths, kit_root=root)
+    hits = ledger.for_files(_memory_dir(root, data), rel_paths, kit_root=root, role=role)
     if not hits:
         return None
     sf = _seen_file(root, data)
@@ -94,7 +109,7 @@ def handle(data):
     _write_seen(sf, seen)
     lines = ["Memory JIT for %s:" % ", ".join(rel_paths)]
     for h in fresh:
-        q = (' — "%s"' % h["quote"][:120]) if h.get("quote") else ""
+        q = (' — "%s"' % " ".join(h["quote"].split())[:120]) if h.get("quote") else ""
         lines.append("- **%s** (%s): %s%s" % (h["id"], h["kind"], h["summary"], q))
     msg = "\n".join(lines)
     if is_claude_payload(data):

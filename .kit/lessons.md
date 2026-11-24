@@ -7,13 +7,13 @@ format, `kit.py lesson add`); a lesson only a project doc holds is refused (`kit
 ## K1: A step on another repo's board launches from that repo's clone
 roles: orchestrator
 from: O53 2026-11-23 22:04
-`kit.py launch <post>` from your project finds the post on the attached board and runs the launch in that board's clone next to yours. That clone starts no seeded board and never auto-pushes a board-mirror: an orchestrator's clone of anlonlt/board pushed seeded posts to its board-mirror.
+`kit.py launch <post>` from your project finds the post on the attached board and runs the launch in that board's clone next to yours. That clone starts no seeded board and never auto-pushes a board-mirror: an orchestrator's clone of anlonlt/board pushed seeded posts to its board-mirror. The clone may be read-only (a public board, nothing to attach): a push of the prompt refused for access makes launch put the prompt's full text in the create_session prompt (CL40).
 
 ## K2: A change to compact, install, resume, hooks or artifact is tried on a real project
 roles: part, review, orchestrator
 files: scripts/kit.py, install.py, kit/hooks/*, kit/web_takeover.py, kit/claude/kit_artifact_sync.py, kit/board/board_server.py
 from: CL29
-The kit's suite passed CL29's compact while Harmonize's story checker went red. Clone the consuming project read-only (add_repo read; never push it), run the changed command there, and put the command and its output in the post's `real_project`; `kit.py done` refuses without it.
+The kit's suite passed CL29's compact while Harmonize's story checker went red. The orchestrator's session, which holds both repos, runs the changed command in a clone of the consuming project (never pushed) and puts the command and its output in the part's `real_project`; a launched part never attaches a repo (CL38: a launched session's classifier refuses to attach one unless the owner types it; CL39: on the web the orchestrator's environment holds every repo); `kit.py done` says it is pending until then.
 
 ## K3: Reuse the kit's commands before writing code
 roles: part

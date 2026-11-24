@@ -23,6 +23,9 @@ Rules of the measure:
 - Nothing is distilled, confirmed, scoped or called hook-enforced on the owner's behalf ("carried by" in RULES.md
   names the files that state a rule, not what enforces it). A project's own ledger (--ledger) or its curation
   (--curation, {item id: {"scope": .., "enforced_by": ..}}) is used when given, and the report says so.
+- Each role is scored apart, with its noise: the items (and their tokens) in its packet that the probe does not need.
+  Gold lists only what is strictly needed, so noise is an upper bound, except for the clerk: it only routes, its rules
+  are the kit's own prompt, so its gold is empty and every item it is given is noise.
 - Coverage is printed next to tokens: a small packet that dropped the rules is not a good one.
 
 Limits: a human-written principle that paraphrases its rules earns no recall for them; ~4 chars/token is an estimate.
@@ -132,8 +135,8 @@ def read_questions(db):
         conn.close()
     for did, raw in rows:
         d = json.loads(raw)
-        if isinstance(d, dict) and d.get("column") == "question" and str(d.get("status") or "").lower() not in CLOSED \
-                and not d.get("removed"):
+        if isinstance(d, dict) and (d.get("column") == "question" or (d.get("kind") == "question" and d.get("column") != "done")) \
+                and str(d.get("status") or "").lower() not in CLOSED and not d.get("removed") and not did.startswith("_"):
             out.append({"id": "Q:" + did, "kind": "question", "summary": str(d.get("title") or did), "quote": "",
                         "source": did, "theme": ""})
     return out
@@ -158,7 +161,9 @@ def load_probes(path, snap):
     for p in probes:
         if p.get("role") not in ROLES:
             raise ToolError("probe %s: unknown role %r" % (p.get("id"), p.get("role")))
-        if not p.get("gold"):
+        if p["role"] == "clerk" and p.get("gold"):
+            raise ToolError("probe %s: the clerk only routes: its gold must be empty" % p["id"])
+        if p["role"] != "clerk" and not p.get("gold"):
             raise ToolError("probe %s: no gold items" % p["id"])
         bad = [g for g in p["gold"] if g not in known]
         if bad:
@@ -238,7 +243,7 @@ class Board:
             # a TMPDIR of its own: the hook remembers there what a session has already seen
             tmp = tempfile.mkdtemp(dir=self.d)
             r = _run([sys.executable, "-I", os.path.join(ROOT, "kit", "hooks", "kit_memory_jit.py")], self.d, TMPDIR=tmp,
-                     CLAUDE_PROJECT_DIR=self.d, stdin=json.dumps({
+                     KIT_ROLE=probe["role"], CLAUDE_PROJECT_DIR=self.d, stdin=json.dumps({
                          "cwd": self.d, "session_id": "bench", "hook_event_name": "PreToolUse", "tool_name": "Edit",
                          "tool_input": {"file_path": os.path.join(self.d, f)}}))
             if r.strip():
@@ -381,10 +386,12 @@ def measure(tool, snap, probes, tmp):
         t1, lk = tool.turn1(p), tool.lookup(p)
         hit1 = delivered(t1, snap["items"]) - bh
         hit2 = hit1 | (delivered(lk, snap["items"]) - bh)
+        noise = hit1 - gold
         rows.append({"probe": p["id"], "role": p["role"], "tokens_total": est_tokens(t1),
                      "tokens_memory": max(0, est_tokens(t1) - est_tokens(b)), "tokens_lookup": est_tokens(lk),
                      "gold": len(gold), "hit_turn1": len(hit1 & gold), "hit_lookup": len(hit2 & gold),
-                     "delivered_turn1": len(hit1), "missed": sorted(gold - hit2),
+                     "delivered_turn1": len(hit1), "noise": len(noise),
+                     "noise_tokens": sum(est_tokens(i["summary"]) for i in snap["items"] if i["id"] in noise), "missed": sorted(gold - hit2),
                      "control_hits": len(bh & gold)})
     return rows
 
@@ -396,7 +403,15 @@ def summarize(rows, n_items):
             "tokens_lookup": round(s("tokens_lookup") / n), "gold": gold, "hit_turn1": s("hit_turn1"),
             "hit_lookup": s("hit_lookup"), "items": n_items, "coverage": round(100.0 * s("delivered_turn1") / (n * n_items), 1),
             "precision": round(100.0 * s("hit_turn1") / s("delivered_turn1"), 1) if s("delivered_turn1") else None,
-            "control_hits": s("control_hits")}
+            "control_hits": s("control_hits"),
+            "roles": {r: _role([x for x in rows if x["role"] == r]) for r in ROLES if any(x["role"] == r for x in rows)}}
+
+
+def _role(rows):
+    n = len(rows)
+    return {"probes": n, "gold": sum(r["gold"] for r in rows), "hit_turn1": sum(r["hit_turn1"] for r in rows),
+            "noise": round(sum(r["noise"] for r in rows) / n, 1), "noise_tokens": round(sum(r["noise_tokens"] for r in rows) / n),
+            "tokens_memory": round(sum(r["tokens_memory"] for r in rows) / n)}
 
 
 def run_benchmark(project_dir, probes_path, tools, not_run=()):
@@ -415,7 +430,7 @@ def run_benchmark(project_dir, probes_path, tools, not_run=()):
 
 
 def format_report(rep):
-    pct = lambda a, b: "%d/%d (%.0f%%)" % (a, b, 100.0 * a / b)   # noqa: E731
+    pct = lambda a, b: "%d/%d (%.0f%%)" % (a, b, 100.0 * a / b) if b else "-"   # noqa: E731
     out = ["# Memory benchmark: %s" % rep["project"],
            "%d rules, %d lessons, %d open questions; %d probes" % (rep["items"]["rule"], rep["items"]["lesson"],
                                                                     rep["items"]["question"], rep["probes"])]
@@ -428,6 +443,13 @@ def format_report(rep):
             "-" if s["precision"] is None else "%.0f%%" % s["precision"], s["tokens_memory"], s["tokens_lookup"], s["tokens_total"]))
     out += ["| %s | not run: %s | | | | | | |" % (n, why) for n, why in rep["not_run"]]
     names = list(rep["tools"])
+    out += ["", "Per role, at turn 1: gold found / gold, noise items (~their tokens). The clerk needs none: all it gets is noise.",
+            "", "| role (probes) | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
+    for r in ROLES:
+        cells = [rep["tools"][n]["roles"].get(r) for n in names]
+        if cells and cells[0]:
+            out.append("| %s (%d) | %s |" % (r, cells[0]["probes"], " | ".join(
+                "%s, %g (%dt)" % ("%d/%d" % (c["hit_turn1"], c["gold"]) if c["gold"] else "-", c["noise"], c["noise_tokens"]) for c in cells)))
     out += ["", "Per probe: gold found at turn 1 > after lookup / gold, memory tokens", "",
             "| probe (role) | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
     for k in range(rep["probes"]):

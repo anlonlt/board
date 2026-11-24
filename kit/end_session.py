@@ -9,7 +9,8 @@ and the owner see one history, not a pile of branches. In order, stopping at the
   2. push this branch (`-u`), with retries;
   3. unless --branch-only: fetch the trunk, merge it into this branch if it moved (a conflict stops everything: the
      merge is aborted and the conflicting files are named), then push this branch's HEAD to the trunk, never forced;
-     if the trunk moved during the push, again, up to 8 times.
+     if the trunk moved during the push, again, up to 8 times; then this branch is deleted from origin (every commit
+     of it is on the trunk; `kit.keep_branches: true` keeps it).
 The owner's standing permission to push the trunk is asked once at install (README step 2) and written in CLAUDE.md;
 without it, --branch-only is the default (`kit.trunk_push: false` in .kit/config.json).
 """
@@ -20,6 +21,7 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+KEEP = ("board-mirror", "kit-usage")
 
 
 def git(*a, check=False):
@@ -57,7 +59,9 @@ def main(argv=None):
         return 1
     usage = os.path.join(ROOT, ".kit", "usage.py")
     if os.path.isfile(usage):  # CL37: this session's usage rows onto the ledger branch (the working tree is untouched)
-        try:
+        try:  # this session's own row first (a two-repo session runs no project hook), then the ledger push
+            subprocess.run([sys.executable, "-I", usage, "--root", ROOT, "self", "--no-push"], capture_output=True,
+                           text=True, timeout=60)
             u = subprocess.run([sys.executable, "-I", usage, "--root", ROOT, "push"], capture_output=True, text=True,
                                timeout=120)
             print("end-session: usage ledger: " + (u.stdout.strip() or u.stderr.strip()[-200:] or "?"))
@@ -92,6 +96,16 @@ def main(argv=None):
                 return 1
         if git("push", "origin", "HEAD:" + trunk).returncode == 0:
             print("end-session: %s is at %s" % (trunk, git("rev-parse", "--short", "HEAD").stdout.strip()))
+            if branch != trunk and branch not in KEEP and not k.get("keep_branches"):
+                # CL38 (the owner's Like, o54-branches-0225): the branch is on the trunk now, every commit of it;
+                # origin drops it (a later push of this session makes it again). 40 such branches piled up by CL38.
+                dr = git("push", "-q", "origin", "--delete", branch)
+                if dr.returncode == 0:
+                    git("branch", "--unset-upstream")
+                    print("end-session: origin/%s deleted (all of it is on %s)" % (branch, trunk))
+                else:   # a Claude Code web session's git proxy may refuse it: said, never silent
+                    print("end-session: origin/%s NOT deleted (%s); `kit.py branches --delete` from a session that may"
+                          % (branch, (dr.stderr or dr.stdout).strip().splitlines()[-1:] or "?"))
             return 0
         time.sleep(3)
     print("end-session: the trunk kept moving; run again")

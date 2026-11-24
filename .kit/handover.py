@@ -155,6 +155,11 @@ def main():
         # CL26: a script cannot start a cloud session, and killing CLAUDE_PID would end this one with no successor.
         call = {"title": "%s %d" % (name, gen), "prompt": prompt,
                 "tags": ["orchestrator" if a.role == "orchestrator" else "board-clerk"]}   # CL30: the guard reads them
+        we = k.get("web_env") or {}
+        if we.get("on") and we.get("environment_id"):
+            # CL39: the environment holding every repo (its setup script installs the hooks at user level): the
+            # successor has them all from its first turn and never needs add_repo
+            call["environment_id"] = we["environment_id"]
         plan = {"how": "web", "cli": "web", "create_session": call}
         if a.dry_run:
             print(json.dumps(plan, indent=1))

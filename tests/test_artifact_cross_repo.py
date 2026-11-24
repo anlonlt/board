@@ -132,6 +132,7 @@ class CrossRepoSync(unittest.TestCase):
         (dump / "c1.json").write_text(json.dumps({"post_id": "P1", "text": "go", "created_at": "x"}))       # already there
         (dump / "h1.json").write_text(json.dumps({"post_id": "P1", "text": "from the Artifact", "from": "owner",
                                                   "created_at": "2026-11-23T01:00:00Z"}))
+        git(self.clone, "config", "user.email", "t@t"); git(self.clone, "config", "user.name", "t")   # a machine may have none
         kas.main(["boards-back", "--repo", str(self.primary), "--out", self.out, "--from", str(Path(self.tmp) / "dump"),
                   "--clone", "Songs=%s" % self.clone])
         git(self.seed, "pull", "-q", "origin", "board-mirror")

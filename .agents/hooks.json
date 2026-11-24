@@ -26,6 +26,15 @@
         ]
       },
       {
+        "matcher": "edit_file|write_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I hooks/kit/kit_memory_jit.py"
+          }
+        ]
+      },
+      {
         "matcher": "send_message",
         "hooks": [
           {

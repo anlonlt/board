@@ -2,8 +2,9 @@
 """Say it once (agy): a session's result lives in its board post, not in three copies.
 
 One script, five agy events (dispatched by `hookEventName`):
-  PreToolUse (matcher: send_message): a message over `kit.limits.message_chars` (a "Done." pointer: over
-      `done_message_chars`) is denied: the detail goes in the post. The clerk's verbatim forward of the
+  PreToolUse (matcher: send_message; Claude Code: SendMessage and mcp__claude-code-remote__send_message): a message
+      over `kit.limits.message_chars` (a "Done." pointer: over `done_message_chars`), never more than 200 (CL38), or
+      one holding a table, a quote or a code block, is denied: the detail goes in the post. The clerk's verbatim forward of the
       owner's words ("Board comment from the owner ...") is never cut.
   PreInvocation: when the owner typed a new prompt, injects a systemMessage reminder (once per prompt)
       to answer in at most `chat_answer_chars`, in `language.talk`.
@@ -28,6 +29,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_config import config, in_setup, is_claude_payload, limit  # noqa: E402
 
 FORWARD = "Board comment from the owner"
+MESSAGE_CEILING = 200
+TABLE_RE = re.compile(r"^\s*\|.*\|\s*$", re.M)
+QUOTE_RE = re.compile(r"^\s*>", re.M)
+
+
+def message_shape(msg):
+    """What a message between sessions must not carry (CL38): a table, a quoted block or a code block."""
+    if TABLE_RE.search(msg):
+        return "a table"
+    if QUOTE_RE.search(msg):
+        return "a quote"
+    if "```" in msg:
+        return "a code block"
+    return ""
 # Sessions the kit launches in the background (the clerk, parts, consultants, the cards agent, reviews): the owner never
 # types in their chat, even though Claude Code marks their launch prompt with origin "human". Only the orchestrator
 # (and a session started by hand, no KIT_ROLE) has the owner typing.
@@ -199,10 +214,16 @@ def main():
             if not claude:
                 print(json.dumps({"decision": "allow"}))
             return 0
-        cap = limit("done_message_chars", 240, data) if msg.lstrip().startswith("Done.") else limit("message_chars", 600, data)
-        if len(msg) > cap:
-            reason = ("REFUSED: this message is %d characters (limit %d). Say it once: put the detail in your board post "
-                      "and send a pointer (\"Done. Check post <id>.\")." % (len(msg), cap))
+        # CL38 (the owner, 02:14: messages between sessions wasted his usage): every message between sessions is a
+        # pointer, at most MESSAGE_CEILING characters whatever the config says, and never a table or a quote: the
+        # detail is said once, in a post or a comment, and the message names where.
+        cap = min(limit("done_message_chars", 240, data) if msg.lstrip().startswith("Done.") else limit("message_chars", 600, data),
+                  MESSAGE_CEILING)
+        shape = message_shape(msg)
+        if len(msg) > cap or shape:
+            reason = ("REFUSED: this message %s. Say it once: put the detail in a board post or comment and send a "
+                      "pointer (\"Done. Check post <id>.\", \"Gaps under your post.\")." % (
+                          ("holds %s" % shape) if shape else "is %d characters (limit %d)" % (len(msg), cap)))
             if claude:
                 print(reason, file=sys.stderr)
                 return 2

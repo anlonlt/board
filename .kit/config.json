@@ -54,8 +54,8 @@
   },
   "talk_language": "English",
   "limits": {
-   "message_chars": 600,
-   "done_message_chars": 240,
+   "message_chars": 200,
+   "done_message_chars": 200,
    "chat_answer_chars": 600
   },
   "guard": {

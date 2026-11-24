@@ -1,12 +1,11 @@
 """Tests for the streamlined kit additions:
 1. 3-layer Episodic -> Semantic memory ledger (kit/ledger.py + kit.py ledger + resume_role).
 2. Just-in-time file-scoped memory hook (kit/hooks/kit_memory_jit.py).
-3. Unified lifecycle hook dispatcher (kit/hook.py + install.py --unified-hooks).
-4. Extended kit.py doctor [--fix] (hook parity, legacy conflicts, stale portfolio paths, unsent batches).
+3. Extended kit.py doctor [--fix] (hook parity, legacy conflicts, stale portfolio paths, unsent batches).
 
 Run via: python3 -m unittest tests.test_streamline_doctor_memory -v
 """
-import importlib.util
+import hashlib
 import json
 import os
 import subprocess
@@ -19,18 +18,9 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "kit"))
+sys.path.insert(0, str(ROOT))
 import kit  # noqa: E402
 import ledger  # noqa: E402
-
-
-def _load(name, rel):
-    spec = importlib.util.spec_from_file_location(name, str(ROOT / rel))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-hook_disp = _load("kit_hook_disp", "kit/hook.py")
 
 
 class MemoryLedgerFlow(unittest.TestCase):
@@ -71,7 +61,7 @@ class MemoryLedgerFlow(unittest.TestCase):
         self.assertEqual(len(before["active"]), 3)
 
         # Owner confirms (with refined wording): principle becomes active, O1-O3 become subsumed
-        cf = ledger.confirm_principle(str(self.mdir), "P1", summary="Zero chrome: gestures over buttons on every screen")
+        cf = ledger.confirm_principle(str(self.mdir), "P1", "like-1", summary="Zero chrome: gestures over buttons on every screen")
         self.assertTrue(cf["ok"])
         self.assertEqual(cf["subsumed"], ["O1", "O2", "O3"])
 
@@ -118,13 +108,73 @@ class MemoryLedgerFlow(unittest.TestCase):
         self.assertFalse(chk2["ok"])
         self.assertTrue(any("cmt-99" in e for e in chk2["errors"]))
 
+    def test_a_quote_of_several_lines_is_kept_whole_and_is_never_read_as_fields(self):
+        quote = "First line\nscope: all\n\n## R9 (rule, active): injected\n  | a bar\u2028and a line separator"
+        ledger.observe(str(self.mdir), "Keep\nit short", quote=quote, scope="role:part", because="a\nsource: b")
+        e, = ledger.load_entries(str(self.mdir))
+        self.assertEqual(e["quote"], quote.replace("\u2028", "\n"))
+        self.assertEqual((e["summary"], e["scope"], e["because"], e["source"]),
+                         ("Keep it short", ["role:part"], "a\nsource: b", ""))
+        before = (self.mdir / "ledger.md").read_text()
+        ledger.save_entries(str(self.mdir), ledger.load_entries(str(self.mdir)))
+        self.assertEqual((self.mdir / "ledger.md").read_text(), before)
+        self.assertEqual(len([x for x in ledger.format_resume(str(self.mdir), "part") if x.startswith("- ")]), 1)
+
+    def test_writers_at_the_same_time_lose_nothing(self):
+        code = "import sys; sys.path.insert(0, %r); import ledger; ledger.observe(%r, 'row ' + sys.argv[1])" % (
+            str(ROOT / "kit"), str(self.mdir))
+        ps = [subprocess.Popen([sys.executable, "-c", code, str(i)]) for i in range(20)]
+        self.assertEqual([p.wait() for p in ps], [0] * 20)
+        rows = ledger.load_entries(str(self.mdir))
+        self.assertEqual({e["summary"] for e in rows}, {"row %d" % i for i in range(20)})
+        self.assertEqual(len({e["id"] for e in rows}), 20)
+        self.assertEqual([p.name for p in self.mdir.iterdir()], ["ledger.md"])
+
+    def test_distilling_keeps_the_scope(self):
+        for i in range(3):
+            ledger.observe(str(self.mdir), "files rule %d" % i, scope="files:app/*.py", theme="x", kind="rule")
+            ledger.observe(str(self.mdir), "part rule %d" % i, scope="role:part", theme="x", kind="rule")
+        cl = ledger.distil_candidates(str(self.mdir))
+        self.assertEqual([c["count"] for c in cl], [3, 3])          # one theme, two scopes: two clusters
+        files = next(c["ids"] for c in cl if "files" in c["items"][0]["summary"])
+        mixed = [i for c in cl for i in c["ids"]]
+        self.assertIn("different scopes", ledger.propose_principle(str(self.mdir), "P", mixed)["error"])
+        self.assertIn("not the scope of", ledger.propose_principle(str(self.mdir), "P", files, scope="all")["error"])
+        pr = ledger.propose_principle(str(self.mdir), "P", files)
+        self.assertEqual(pr["principle"]["scope"], ["files:app/*.py"])
+        self.assertTrue(ledger.confirm_principle(str(self.mdir), pr["principle"]["id"], "like-1")["ok"])
+        self.assertEqual([x["id"] for x in ledger.for_files(str(self.mdir), ["app/a.py"])], [pr["principle"]["id"]])
+        self.assertTrue(ledger.propose_principle(str(self.mdir), "Q", [cl[1]["ids"][0] if files == cl[0]["ids"] else cl[0]["ids"][0]],
+                                                 scope="all", widen=True)["ok"])
+
+    def test_confirm_needs_the_owners_own_comment(self):
+        ledger.observe(str(self.mdir), "a")
+        pid = ledger.propose_principle(str(self.mdir), "P", ["O1"])["principle"]["id"]
+        self.assertIn("owner's yes", ledger.confirm_principle(str(self.mdir), pid, "")["error"])
+        docs = ({}, {"his": {"from": "owner", "like": True}, "agent": {"from": "cl9"}})
+        with mock.patch.object(kit, "_load_board_docs", lambda m, db_path=None: docs):
+            self.assertIsNone(kit._not_his_yes("", "his"))
+            for cid, why in (("agent", "not the owner"), ("nope", "no comment"), ("", "--by")):
+                self.assertIn(why, kit._not_his_yes("", cid))
+        self.assertTrue(ledger.confirm_principle(str(self.mdir), pid, "his")["ok"])
+        self.assertEqual(ledger.load_entries(str(self.mdir))[-1]["confirmed_by"], "his")
+
+    def test_the_clerk_has_no_ledger(self):
+        self.assertIn("only routes", ledger.observe(str(self.mdir), "x", scope="role:clerk")["error"])
+        self.assertIn("unknown scope", ledger.observe(str(self.mdir), "x", scope="clerk")["error"])
+        ledger.observe(str(self.mdir), "for all", scope="all")
+        self.assertEqual(ledger.format_resume(str(self.mdir), "clerk"), [])
+        with open(self.mdir / "ledger.md", "a") as fh:
+            fh.write("\n## R7 (rule, active): by hand\nscope: role:clerk\n")
+        self.assertIn("only routes", ledger.check_ledger(str(self.mdir))["errors"][0])
+
     def test_init_imports_legacy_principles_md(self):
         (self.mdir / "principles.md").write_text("- Keep replies short (scope: all)\n- Clerk only routes (scope: clerk)\n")
         res = ledger.init_ledger(str(self.mdir))
         self.assertTrue(res["ok"])
-        self.assertEqual(res["imported"], 2)
+        self.assertEqual((res["imported"], res["skipped"]), (1, ["Clerk only routes (scope: clerk)"]))
         entries = ledger.load_entries(str(self.mdir))
-        self.assertEqual(len(entries), 2)
+        self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["kind"], "principle")
 
 
@@ -150,7 +200,7 @@ class MemoryJitHookAndDispatcher(unittest.TestCase):
     def test_jit_injects_once_per_session_on_matching_file_claude_and_agy(self):
         p_claude = {
             "cwd": str(self.root),
-            "session_id": "sess-jit-1",
+            "session_id": "sess-jit-1-%d" % os.getpid(),
             "hook_event_name": "PreToolUse",
             "tool_name": "Edit",
             "tool_input": {"file_path": str(self.root / "kit" / "board" / "board.template.html")},
@@ -162,13 +212,13 @@ class MemoryJitHookAndDispatcher(unittest.TestCase):
         self.assertIsNone(self._run_jit(p_claude))
 
         # Non-matching file: silent
-        p_other = dict(p_claude, session_id="sess-jit-2", tool_input={"file_path": str(self.root / "README.md")})
+        p_other = dict(p_claude, session_id="sess-jit-2-%d" % os.getpid(), tool_input={"file_path": str(self.root / "README.md")})
         self.assertIsNone(self._run_jit(p_other))
 
         # agy payload
         p_agy = {
             "cwd": str(self.root),
-            "conversationId": "conv-jit-1",
+            "conversationId": "conv-jit-%d" % os.getpid(),
             "hookEventName": "PreToolUse",
             "toolCall": {"name": "edit_file", "args": {"Path": str(self.root / "kit" / "board" / "board.template.html")}},
         }
@@ -177,36 +227,29 @@ class MemoryJitHookAndDispatcher(unittest.TestCase):
         self.assertEqual(out_agy["decision"], "allow")
         self.assertIn("Test phone width 411px", out_agy["injectSteps"][0]["systemMessage"]["systemMessage"])
 
-    def test_unified_hook_dispatcher_merges_and_enforces(self):
-        # Copy hooks into .kit/hooks so dispatcher finds them
-        hdir = self.root / ".kit" / "hooks"
-        hdir.mkdir(parents=True)
-        for f in ("kit_config.py", "kit_guard.py", "kit_memory_jit.py"):
-            (hdir / f).write_text((ROOT / "kit" / "hooks" / f).read_text())
 
-        # Destructive Bash command denied via unified dispatcher (kit_guard exits 2 + stderr on Claude Code)
-        bad_bash = {
-            "cwd": str(self.root),
-            "hook_event_name": "PreToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "rm -rf src"},
-        }
-        out, rc, err = hook_disp.dispatch("PreToolUse", bad_bash, root=str(self.root))
-        self.assertEqual(rc, 2)
-        self.assertIn("REFUSED", err)
+    def test_jit_respects_the_role_and_is_silent_for_the_clerk(self):
+        ledger.observe(str(self.mdir), "Only the orchestrator edits this", scope="files:o/*.md, role:orchestrator")
+        p = {"cwd": str(self.root), "hook_event_name": "PreToolUse", "tool_name": "Edit",
+             "tool_input": {"file_path": str(self.root / "o" / "a.md")}}
 
-        # Edit matching files: glob gets JIT context via unified dispatcher
-        edit_ev = {
-            "cwd": str(self.root),
-            "session_id": "sess-disp-1",
-            "hook_event_name": "PreToolUse",
-            "tool_name": "Edit",
-            "tool_input": {"file_path": str(self.root / "kit" / "board" / "board.template.html")},
-        }
-        out2, rc2, _ = hook_disp.dispatch("PreToolUse", edit_ev, root=str(self.root))
-        self.assertEqual(rc2, 0)
-        self.assertIsNotNone(out2)
-        self.assertIn("Test phone width 411px", out2["hookSpecificOutput"]["additionalContext"])
+        def run(role, path=None):
+            env = {k: v for k, v in os.environ.items() if k not in ("KIT_ROLE", "CLAUDE_CODE_SESSION_ID")}
+            d = dict(p, tool_input={"file_path": str(self.root / path)}) if path else p
+            r = subprocess.run([sys.executable, "-I", str(ROOT / "kit" / "hooks" / "kit_memory_jit.py")], text=True,
+                               input=json.dumps(d), capture_output=True, timeout=20, env=dict(env, **({"KIT_ROLE": role} if role else {})))
+            return "Only the orchestrator" in r.stdout or "411px" in r.stdout
+        self.assertEqual([run(x) for x in ("orchestrator", "part", "clerk", "")], [True, False, False, False])
+        html = "kit/board/board.template.html"
+        self.assertEqual([run(x, html) for x in ("part", "", "clerk")], [True, True, False])
+        self.assertTrue(run("part", html))       # no session id: never silenced by another session
+
+    def test_jit_reads_the_memory_resume_reads(self):
+        (self.root / ".story").mkdir()           # both memories there: kit.py takes .board/memory
+        out = self._run_jit({"cwd": str(self.root), "hook_event_name": "PreToolUse", "tool_name": "Edit",
+                             "session_id": "sess-both-%d" % os.getpid(),
+                             "tool_input": {"file_path": str(self.root / "kit" / "board" / "a.html")}})
+        self.assertIn("411px", out["hookSpecificOutput"]["additionalContext"])
 
 
 class ExtendedDoctor(unittest.TestCase):
@@ -224,6 +267,11 @@ class ExtendedDoctor(unittest.TestCase):
         # Plant hook drift
         (self.proj / ".claude" / "hooks" / "kit" / "kit_guard.py").write_text("# v2\n")
         (self.proj / ".agents" / "hooks" / "kit" / "kit_guard.py").write_text("# v1\n")
+        # the kit recorded v2; the old copy has the newer date, as after a checkout
+        os.utime(self.proj / ".claude" / "hooks" / "kit" / "kit_guard.py", (1000, 1000))
+        sha = hashlib.sha256(b"# v2\n").hexdigest()
+        (self.proj / ".kit" / "manifest.json").write_text(json.dumps({
+            ".claude/hooks/kit/kit_guard.py": sha, ".agents/hooks/kit/kit_guard.py": sha}))
         # Plant unwired guard + overlapping legacy stop.sh + missing add_repo
         (self.proj / ".claude" / "hooks" / "kit" / "kit_orchestrator_guard.py").write_text("# g\n")
         (self.proj / ".claude" / "settings.json").write_text(json.dumps({
@@ -242,6 +290,7 @@ class ExtendedDoctor(unittest.TestCase):
         sib.mkdir()
         (self.proj / ".kit" / "config.json").write_text(json.dumps({
             "project": "Proj",
+            "board_url": "https://claude.ai/artifact/x",
             "kit": {},
             "portfolio": [{"name": "other", "path": "/nonexistent/home/other", "github": "o/other"}],
         }))
@@ -267,33 +316,38 @@ class ExtendedDoctor(unittest.TestCase):
         self.assertIn("portfolio: FIXED", out_fix)
         self.assertEqual(
             (self.proj / ".claude" / "hooks" / "kit" / "kit_guard.py").read_bytes(),
-            (self.proj / ".agents" / "hooks" / "kit" / "kit_guard.py").read_bytes(),
+            b"# v2\n",
         )
+        self.assertEqual((self.proj / ".agents" / "hooks" / "kit" / "kit_guard.py").read_bytes(), b"# v2\n")
         cfg = json.loads((self.proj / ".kit" / "config.json").read_text())
         self.assertEqual(cfg["portfolio"][0]["path"], str(sib))
         s = json.loads((self.proj / ".claude" / "settings.json").read_text())
         self.assertIn(kit.ADD_REPO_RULE, s["permissions"]["allow"])
 
 
-class UnifiedHooksInstall(unittest.TestCase):
-    def test_install_unified_hooks_wires_single_dispatcher(self):
-        with tempfile.TemporaryDirectory() as d:
-            proj = Path(d) / "p"
-            proj.mkdir()
-            subprocess.run(["git", "init", "-q", str(proj)], check=True)
-            env = dict(os.environ, KIT_NO_FUNNEL="1", KIT_BIN_DIR=str(Path(d) / "bin"),
-                       XDG_CONFIG_HOME=str(Path(d) / "xdg"))
-            r = subprocess.run([sys.executable, "-I", str(ROOT / "install.py"), str(proj),
-                                "--quick", "--project", "P", "--runtime", "claude", "--no-survey", "t",
-                                "--no-cmd", "--unified-hooks"],
-                               capture_output=True, text=True, env=env, timeout=120, stdin=subprocess.DEVNULL)
-            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertTrue((proj / ".kit" / "hook.py").is_file())
-            self.assertTrue((proj / ".kit" / "ledger.py").is_file())
-            s = json.loads((proj / ".claude" / "settings.json").read_text())
-            for ev in ("SessionStart", "PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "SessionEnd", "PreCompact"):
-                cmds = [h["command"] for g in s["hooks"].get(ev, []) for h in g.get("hooks", [])]
-                self.assertTrue(any(".kit/hook.py" in c and ev in c for c in cmds), (ev, cmds))
+    def test_fix_touches_no_copy_it_cannot_vouch_for(self):
+        c, a = (self.proj / d / "hooks" / "kit" / "kit_guard.py" for d in (".claude", ".agents"))
+        c.write_text("# his change\n")
+        a.write_text("# another\n")
+        (self.proj / ".claude" / "hooks" / "kit" / "kit_mine.py").write_text("# one runtime only: his choice\n")
+        (self.proj / ".claude" / "settings.json").write_text("{ not json")
+        (self.proj / ".kit" / "config.json").write_text(json.dumps({     # an attached repo: add_repo is needed
+            "project": "P", "portfolio": [{"name": "o", "path": str(self.base), "github": "o/o"}]}))
+        out, _ = kit.doctor(str(self.base / "no-mirror"), fix=True, root=str(self.proj))
+        self.assertIn("NOT FIXED 1 file(s) (kit_guard.py)", out)
+        self.assertEqual((c.read_text(), a.read_text()), ("# his change\n", "# another\n"))
+        self.assertFalse((self.proj / ".agents" / "hooks" / "kit" / "kit_mine.py").exists())
+        self.assertEqual((self.proj / ".claude" / "settings.json").read_text(), "{ not json")
+
+
+class JitWired(unittest.TestCase):
+    def test_every_install_wires_the_jit_hook(self):
+        import install
+        for spec in (install.CLAUDE_SETTINGS, install.CLAUDE_CLI_SETTINGS):
+            self.assertIn(("PreToolUse", "Edit|Write|MultiEdit", "kit_memory_jit.py"), spec)
+        agy = install.build_agy_hooks()["PreToolUse"]
+        self.assertTrue(any(g["matcher"] == "edit_file|write_file" and "kit_memory_jit.py" in g["hooks"][0]["command"]
+                            for g in agy), agy)
 
 
 if __name__ == "__main__":

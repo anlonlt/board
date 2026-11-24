@@ -284,7 +284,7 @@ class TaskTrainHook(unittest.TestCase):
         self.assertIn("## The task\nfit it", prompt)
         self.assertIn("kit.py train planner --zoom PL4", prompt)
         self.assertIn("kit.py done pl4-fit-the-model", prompt)
-        self.assertIn('"session_id":"demo-pl4"', prompt)
+        self.assertIn('"session_id":"\'"$(python3 -I .kit/kit.py whoami demo-pl4)"\'"', prompt)   # CL38: the real session
         self.assertNotIn("<", prompt.replace("<one line", "").replace("<you>", "").replace("<answer>", ""))
         p = self.post("pl4-fit-the-model")
         self.assertEqual((p["title"], p["part"], p["train"], p["status"], p["parent"], p["body"]),

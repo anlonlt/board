@@ -196,6 +196,27 @@ class LaunchRepo(OrchestratorGuard):
             ti["source_url"] = src
         return self.run_hook(self.CS, ti)
 
+    def test_an_attached_clones_own_pull_and_push_pass(self):
+        """O55 (2026-11-24): an orchestrator answering on the kit's board runs the kit from that board's clone (K1), so
+        its pull and its push batch live under the clone's .kit/run/artifact: they are the kit's, not raw reads or hand
+        writes. A path under a folder that is not a known clone stays refused."""
+        self.attach_board()
+        clone = os.path.join(os.path.dirname(self.proj), "board")
+        os.makedirs(os.path.join(clone, ".git"), exist_ok=True)
+        try:
+            ad = "ArtifactData"
+            pull = os.path.join(clone, ".kit", "run", "artifact", "in")
+            self.assertEqual(self.run_hook(ad, {"action": "list", "collection": "repos/board/comments", "out_dir": pull})[0], 0)
+            out = os.path.join(clone, ".kit", "run", "artifact", "out", "docs", "0000.json")
+            self.assertEqual(self.run_hook(ad, {"action": "batch", "writes": [
+                {"op": "set", "collection": "repos/board/comments", "doc_id": "c", "file_path": out}]})[0], 0)
+            stray = os.path.join(tempfile.mkdtemp(), ".kit", "run", "artifact", "out", "docs", "0000.json")
+            self.assertEqual(self.run_hook(ad, {"action": "batch", "writes": [
+                {"op": "set", "collection": "repos/board/comments", "doc_id": "c", "file_path": stray}]})[0], 2)
+        finally:
+            import shutil
+            shutil.rmtree(clone, ignore_errors=True)
+
     def test_a_step_on_an_attached_board_launches_from_that_repo(self):
         self.attach_board("cl9-x")
         rc, err = self.launch("https://github.com/anlonlt/harmonize")

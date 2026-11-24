@@ -54,6 +54,7 @@ import glob
 import fnmatch
 import importlib.util
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -1882,6 +1883,92 @@ def add_repo_allowed(root=None):
     return True, ADD_REPO_RULE in allow
 
 
+WEB_ENV_POST = "KIT-web-env"
+
+
+def web_env(cfg=None):
+    """CL39: kit.web_env from .kit/config.json ({} when the project does not manage several repos on the web)."""
+    we = ((cfg if cfg is not None else _kit_config()).get("kit") or {}).get("web_env") or {}
+    return we if we.get("on", True) and we else {}
+
+
+def web_env_call(we, cfg=None):
+    """The create_environment call the orchestrator makes once, on the owner's Like (never in chat)."""
+    cfg = cfg if cfg is not None else _kit_config()
+    return {"name": we.get("name") or _slug(cfg.get("project") or "project"), "scope": "personal",
+            "reason": "One environment holding every repo of %s, its hooks installed at user level."
+                      % (cfg.get("project") or "the project"),
+            "repositories": list(we.get("repos") or []), "setup_script": we.get("setup_script") or "",
+            "switch_session": "none"}
+
+
+def web_env_state(posts=None, comments=None, cfg=None):
+    """(state, text): 'off', 'ready' (an environment_id), 'unasked' (no post), 'asked' (no Like yet), 'liked'."""
+    we = web_env(cfg)
+    if not we:
+        return "off", ""
+    if we.get("environment_id"):
+        return "ready", ("Web environment %s holds %s: the hand-over and the clerk start the orchestrator there "
+                         "(`environment_id`), its setup script installs the hooks at user level; nobody calls add_repo."
+                         % (we["environment_id"], ", ".join(we.get("repos") or [])))
+    if posts is None:
+        posts, comments = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"))
+    if WEB_ENV_POST not in (posts or {}):
+        return "unasked", ("Web environment for %s not created yet: post the question once, `python3 -I .kit/kit.py "
+                           "web-env ask` (the owner's Like on it is the go; never ask in chat)."
+                           % ", ".join(we.get("repos") or []))
+    liked = any(c.get("like") and c.get("post_id") == WEB_ENV_POST and c.get("from") in ("owner", None)
+                for c in (comments or {}).values())
+    if not liked:
+        return "asked", ""          # an open question post: resume lists it with the others
+    return "liked", ("The owner liked %s: make the claude-code-remote `create_environment` call `python3 -I .kit/kit.py "
+                     "web-env` prints (once), then `python3 -I .kit/kit.py web-env --id <its env_ id>`." % WEB_ENV_POST)
+
+
+def web_env_cmd(action=None, env_id=None):
+    """`kit.py web-env [ask] [--id env_...]`. Returns (text, rc)."""
+    p = os.path.join(ROOT, ".kit", "config.json")
+    cfg = _read_json(p) or {}
+    we = web_env(cfg)
+    if not we:
+        return ("web-env: this project does not manage several repos on the web (kit.web_env is off): "
+                "install.py <project> --update --web-multi yes [--web-repos owner/a,owner/b]"), 1
+    if env_id:
+        if not re.match(r"^env_[A-Za-z0-9]+$", env_id):
+            return "web-env: --id takes the env_... id create_environment returned (got %r)" % env_id, 2
+        cfg["kit"]["web_env"]["environment_id"] = env_id
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=1, ensure_ascii=False)
+            fh.write("\n")
+        return ("web-env: environment %s recorded in .kit/config.json (commit it): the hand-over and the clerk now start "
+                "the orchestrator there." % env_id), 0
+    call = web_env_call(we, cfg)
+    if action == "ask":
+        body = ["Like this post to create it: the orchestrator then makes the call below once.", "",
+                "## Why",
+                "A web session started on one repo runs only that repo's hooks, and reaching another repo needs add_repo, "
+                "which a launched session cannot make. One environment holding every repo, with a setup script that "
+                "installs the project's hooks at user level (`.kit/user_hooks.py install`), gives every orchestrator "
+                "all the repos and the hooks from its first turn.", "",
+                "## The environment",
+                "- repositories: %s" % ", ".join(call["repositories"]),
+                "- setup script:", "", "```", call["setup_script"], "```", "",
+                "- scope: personal; this session stays where it is (`switch_session: none`)."]
+        doc = {"title": "Create the web environment holding %s?" % ", ".join(call["repositories"]),
+               "kind": "question", "column": "question", "status": "open", "from": "kit web-env",
+               "default": "Like: create it", "body": "\n".join(body), "posted_at": _now_z(), "created_at": _now_z()}
+        ok = _board_write("set", "posts", WEB_ENV_POST, doc)
+        return ("web-env: question posted as %s (with an Artifact board: `kit.py artifact push`); the owner's Like is the "
+                "go." % WEB_ENV_POST if ok else "web-env: could not write post %s (no board here?)" % WEB_ENV_POST), (0 if ok else 1)
+    state, text = web_env_state(cfg=cfg)
+    out = ["# Web environment (several repos, CL39): %s" % state]
+    if text:
+        out.append(text)
+    out += ["", "The claude-code-remote `create_environment` call (made once, after the owner's Like on %s):" % WEB_ENV_POST,
+            json.dumps(call, ensure_ascii=False, indent=1)]
+    return "\n".join(out), 0
+
+
 def attach_repo(spec, root=None, clone=True):
     """`kit.py attach <owner/repo>`: the add_repo call to make, a clone next to this project, the register_repo_root
     call, and the repo recorded in .kit/config.json portfolio. Returns (text, rc)."""
@@ -1943,6 +2030,64 @@ def attach_repo(spec, root=None, clone=True):
     return "\n".join(out), 0
 
 
+# ---------------------------------------------------------------- CL38: branches fully on the trunk, swept
+KEEP_BRANCHES = ("board-mirror", "kit-usage")
+
+
+def merged_branches(root=None, delete=False):
+    """`kit.py branches [--delete]`: origin's branches whose every commit is on origin/<trunk> (a part's `cl<N>`, an
+    old `part-<post>`), listed; with --delete, removed from origin in one push. The trunk, the board mirror, the usage
+    ledger and the branch checked out here are never touched; a branch with a commit not on the trunk is kept and
+    named. Returns (text, rc)."""
+    root = root or ROOT
+
+    def g(*a):
+        return subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=300)
+    cfg = _read_json(os.path.join(root, ".kit", "config.json")) or {}
+    trunk = str((cfg.get("kit") or {}).get("main_branch") or "main")
+    keep = {trunk, "HEAD", (cfg.get("mirror") or {}).get("branch") or "board-mirror"} | set(KEEP_BRANCHES)
+    keep.add(g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip())
+    try:              # a part still at work keeps its branch, even fully merged (it pushes there again)
+        busy = {str(p.get("branch")) for p in _all_posts().values() if isinstance(p, dict) and p.get("branch")
+                and str(p.get("status") or "").lower() not in ("done", "dropped")}
+        keep |= busy | {"part-" + _slug(pid, 60) for pid, p in _all_posts().items() if isinstance(p, dict)
+                        and str(p.get("status") or "").lower() not in ("done", "dropped") and p.get("branch")}
+    except Exception:
+        pass
+    if g("fetch", "-q", "--prune", "origin").returncode:
+        return "branches: cannot fetch origin", 1
+    names = [x[len("origin/"):] for x in g("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin").stdout.split()
+             if x.startswith("origin/")]
+    done_, kept = [], []
+    for b in sorted(names):
+        if b in keep:
+            continue
+        (done_ if g("merge-base", "--is-ancestor", "origin/" + b, "origin/" + trunk).returncode == 0 else kept).append(b)
+    out = ["# Branches on origin (%d): %d fully on %s, %d with work not on it" % (len(names), len(done_), trunk, len(kept)),
+           "fully on %s: %s" % (trunk, " ".join(done_) or "none"),
+           "kept (work not on %s): %s" % (trunk, " ".join(kept) or "none")]
+    if not delete:
+        out.append("Delete those fully on %s: `python3 -I .kit/kit.py branches --delete` (the owner's go)." % trunk)
+        return "\n".join(out), 0
+    if not done_:
+        return "\n".join(out + ["nothing to delete"]), 0
+    r = g("push", "origin", "--delete", *done_)
+    if r.returncode:
+        return "\n".join(out + ["delete failed: %s" % (r.stderr or r.stdout).strip()[-300:]]), 1
+    return "\n".join(out + ["deleted %d branch(es) from origin" % len(done_)]), 0
+
+
+def whoami(name=""):
+    """`kit.py whoami [name]`: the session id a post's session_id names. A Claude Code web session: `session_<id>`
+    (from CLAUDE_CODE_REMOTE_SESSION_ID `cse_<id>`, the id send_message and get_session take); else KIT_SESSION_ID;
+    else CLAUDE_CODE_SESSION_ID (a CLI session's real id); else the name given (`claude --bg -n <name>`, no id known);
+    else nothing (O55: never a made-up id)."""
+    rid = os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID") or ""
+    if rid:
+        return "session_" + rid.split("_", 1)[1] if rid.startswith("cse_") else rid
+    return os.environ.get("KIT_SESSION_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or name or ""
+
+
 def _is_kit_source_repo(root):
     return os.path.isfile(os.path.join(root, "install.py")) and os.path.isdir(os.path.join(root, "kit", "hooks"))
 
@@ -1970,27 +2115,36 @@ def _doctor_hook_parity(root, issues, lines, fix=False):
     if has_c and has_a:
         c_files = {f for f in os.listdir(c_dir) if f.endswith(".py") and f != "test_hooks.py"}
         a_files = {f for f in os.listdir(a_dir) if f.endswith(".py") and f != "test_hooks.py"}
-        drifted = []
+        drifted, fixed = [], []
+        manifest = _read_json_file(os.path.join(root, ".kit", "manifest.json"))
         for f in sorted(c_files | a_files):
             cp, ap = os.path.join(c_dir, f), os.path.join(a_dir, f)
             if not os.path.isfile(cp) or not os.path.isfile(ap):
-                drifted.append(f)
-                if fix:
-                    src, dst = (cp, ap) if os.path.isfile(cp) else (ap, cp)
-                    shutil.copy2(src, dst)
+                # a hook one runtime does not have is the project's choice (CL30), unless the kit installed it there
+                here = cp if not os.path.isfile(cp) else ap
+                if os.path.relpath(here, root).replace(os.sep, "/") not in manifest:
+                    continue
+            elif _read_bytes_file(cp) == _read_bytes_file(ap):
+                continue
+            # The kit's own copy is the one whose hash the manifest records, never the newest (a checkout sets any date):
+            # with exactly one such copy the other is restored from it, else nothing is touched.
+            good = [p for p in (cp, ap) if os.path.isfile(p) and hashlib.sha256(_read_bytes_file(p)).hexdigest()
+                    == manifest.get(os.path.relpath(p, root).replace(os.sep, "/"))]
+            if fix and len(good) == 1:
+                shutil.copy2(good[0], ap if good[0] == cp else cp)
+                fixed.append(f)
             else:
-                if _read_bytes_file(cp) != _read_bytes_file(ap):
-                    drifted.append(f)
-                    if fix:
-                        src, dst = (cp, ap) if os.path.getmtime(cp) >= os.path.getmtime(ap) else (ap, cp)
-                        shutil.copy2(src, dst)
+                drifted.append(f)
+        if fixed:
+            lines.append("hooks parity: FIXED %d drifted file(s) from the kit's recorded copy (%s)" % (len(fixed), ", ".join(fixed[:5])))
         if drifted:
             if fix:
-                lines.append("hooks parity: FIXED %d drifted file(s) (%s)" % (len(drifted), ", ".join(drifted[:5])))
+                lines.append("hooks parity: NOT FIXED %d file(s) (%s): no single copy is the kit's recorded one" % (len(drifted), ", ".join(drifted[:5])))
             else:
                 lines.append("hooks parity: DRIFT in %d file(s) (%s)" % (len(drifted), ", ".join(drifted[:5])))
-                issues.append("hook drift between .claude/hooks/kit and .agents/hooks/kit (%s); run `install.py . --update` or `kit.py doctor --fix`" % ", ".join(drifted[:5]))
-        else:
+            issues.append("hook drift between .claude/hooks/kit and .agents/hooks/kit (%s); run `install.py . --update`%s" % (
+                ", ".join(drifted[:5]), "" if fix else " or `kit.py doctor --fix`"))
+        elif not fixed:
             lines.append("hooks parity: ok (.claude and .agents match)")
     # Check Claude Code settings.json guard wiring when .claude/hooks/kit exists
     s_path = os.path.join(root, ".claude", "settings.json")
@@ -2002,22 +2156,23 @@ def _doctor_hook_parity(root, issues, lines, fix=False):
             for g in (groups or []):
                 for h in (g.get("hooks") or []):
                     all_cmds.append((str(g.get("matcher") or ""), str(h.get("command") or "")))
-        uses_unified = any("hook.py" in cmd for _, cmd in all_cmds)
-        if not uses_unified:
-            guards = ("kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py")
-            missing_g = [g for g in guards if os.path.isfile(os.path.join(c_dir, g))
-                         and not any(g in cmd for _, cmd in all_cmds)]
-            if missing_g:
-                lines.append("hooks wiring: MISSING in .claude/settings.json (%s)" % ", ".join(missing_g))
-                issues.append("unwired kit guard(s) in .claude/settings.json: %s (run `install.py . --update`)" % ", ".join(missing_g))
-            cfg = _read_json_file(os.path.join(root, ".kit", "config.json"))
-            is_art = any("claude.ai/" in str(u or "") for u in (
-                cfg.get("board_url"), (cfg.get("kit") or {}).get("artifact_url")))
-            if is_art:
-                brief_m = [m for m, cmd in all_cmds if "kit_brief_guard.py" in cmd]
-                if brief_m and not any((not m) or ("ArtifactData" in m) for m in brief_m):
-                    lines.append("hooks wiring: kit_brief_guard.py does not match ArtifactData")
-                    issues.append("kit_brief_guard.py in .claude/settings.json misses ArtifactData matcher")
+        cfg = _read_json_file(os.path.join(root, ".kit", "config.json"))
+        is_art = any("claude.ai/" in str(u or "") for u in (
+            cfg.get("board_url"), (cfg.get("kit") or {}).get("artifact_url"),
+            ((cfg.get("kit") or {}).get("artifact") or {}).get("url")))
+        # the installer wires the orchestrator guard for the web hooks only (never in --runtime local)
+        web = is_art and (cfg.get("kit") or {}).get("runtime") != "local"
+        guards = ("kit_brief_guard.py", "kit_board_guard.py") + (("kit_orchestrator_guard.py",) if web else ())
+        missing_g = [g for g in guards if os.path.isfile(os.path.join(c_dir, g))
+                     and not any(g in cmd for _, cmd in all_cmds)]
+        if missing_g:
+            lines.append("hooks wiring: MISSING in .claude/settings.json (%s)" % ", ".join(missing_g))
+            issues.append("unwired kit guard(s) in .claude/settings.json: %s (run `install.py . --update`)" % ", ".join(missing_g))
+        if is_art:
+            brief_m = [m for m, cmd in all_cmds if "kit_brief_guard.py" in cmd]
+            if brief_m and not any((not m) or ("ArtifactData" in m) for m in brief_m):
+                lines.append("hooks wiring: kit_brief_guard.py does not match ArtifactData")
+                issues.append("kit_brief_guard.py in .claude/settings.json misses ArtifactData matcher")
 
 
 def _doctor_conflicts(root, issues, lines):
@@ -2032,14 +2187,15 @@ def _doctor_conflicts(root, issues, lines):
         overlaps = []
         for ev, groups in (s.get("hooks") or {}).items():
             cmds = [str(h.get("command") or "") for g in (groups or []) for h in (g.get("hooks") or [])]
-            has_kit = any("/hooks/kit/" in c or "hook.py" in c for c in cmds)
+            has_kit = any("/hooks/kit/" in c for c in cmds)
             legacy = [c for c in cmds if has_kit and any(x in c for x in ("stop.sh", "session-start.sh", "end-session.sh"))]
             if legacy:
                 overlaps.append("%s (%s)" % (ev, ", ".join(os.path.basename(x.split()[-1].strip('"\'')) for x in legacy)))
         if overlaps:
             lines.append("conflicts: overlapping legacy hooks: %s" % "; ".join(overlaps))
             issues.append("overlapping legacy hooks alongside kit hooks: %s" % "; ".join(overlaps))
-    # Archived awaits file still referenced by custom hooks/skills
+    # Archived awaits file still referenced by custom hooks/skills (the kit's own files, in its manifest, are not)
+    manifest = _read_json_file(os.path.join(root, ".kit", "manifest.json"))
     for mrel in (".story", os.path.join(".board", "memory")):
         arch = glob.glob(os.path.join(root, mrel, "archive", "awaits*.md"))
         live = glob.glob(os.path.join(root, mrel, "awaits*.md"))
@@ -2047,6 +2203,8 @@ def _doctor_conflicts(root, issues, lines):
             stale_refs = []
             for pat in (".claude/hooks/*.sh", ".claude/skills/**/*.md"):
                 for fp in glob.glob(os.path.join(root, pat), recursive=True):
+                    if os.path.relpath(fp, root).replace(os.sep, "/") in manifest:
+                        continue
                     try:
                         with open(fp, encoding="utf-8", errors="ignore") as fh:
                             if "awaits" in fh.read().lower():
@@ -3451,6 +3609,30 @@ def pair(pid, answer=None, db_path=None, root=None, timeout=900):
     return 0, "\n".join(lines)
 
 
+def check_trunk_merged(root=ROOT):
+    """CL38: Done is judged by the kit as it is on the trunk now, not as it was when the part started (CL37 started
+    before CL36's rule and skipped it): the work must contain origin/<trunk>. Only a repo with no origin at all is
+    skipped (a local repo, a test); a fetch that fails or times out is refused (O55)."""
+    def g(*a, timeout=60):
+        return subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=timeout)
+    trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+    try:
+        if g("remote", "get-url", "origin").returncode:
+            return []
+        if g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == trunk:
+            return []
+        fetched = g("fetch", "-q", "origin", trunk, timeout=180).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        fetched = False
+    if not fetched:
+        return ["cannot fetch origin/%s to check that your work contains it: fix the network or the remote, then done "
+                "again (Done is never judged on an unknown trunk)" % trunk]
+    if g("merge-base", "--is-ancestor", "origin/" + trunk, "HEAD").returncode:
+        return ["the trunk moved since you started: merge it first (`git fetch origin %s && git merge --no-edit "
+                "origin/%s`), rerun the tests, then done again: Done is checked against the kit on %s now" % (trunk, trunk, trunk)]
+    return []
+
+
 def done(pid, db_path=None, root=None):
     p = _get_post(pid, db_path=db_path)
     if not p:
@@ -3461,7 +3643,8 @@ def done(pid, db_path=None, root=None):
     e_a, n_a = check_asked(p, db_path=db_path)
     err += e_a
     warn += n_a
-    err += check_real_project(p, root=root)          # CL32: compact/install/resume/hooks/artifact: a real project too
+    warn += check_real_project(p, root=root)         # CL32/CL38: a real project too, run by the orchestrator (pending)
+    err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
     if attached_board() and _read_json(_base_path("posts", pid)) != p:
         # CL28: a part updated its post on the local copy only and said "Done": the live board (the Artifact) still
         # showed it planned, with none of its results (the owner: "How come you said you posted when you didn't?")
@@ -3762,7 +3945,9 @@ def _write_step_prompt(pid, doc, sources, cli=None):
             "<AFTER>": (", after `%s`" % doc["parent"]) if doc.get("parent") else "",
             "<TASK>": (doc.get("body") or "").strip() or doc["title"], "<SOURCES>": src,
             "<ORCH_ID>": orch_id,
-            "<SESSION>": "%s-%s" % (_slug(c.get("project") or "project"), _slug(doc["part"], 24))}
+            # CL38: the session_id a part writes is its real session (a web part: `session_<id>`), worked out by the
+            # part's own shell at turn 1; the `<project>-<part>` name only where no session id exists (O54/O55)
+            "<SESSION>": "'\"$(python3 -I .kit/kit.py whoami %s-%s)\"'" % (_slug(c.get("project") or "project"), _slug(doc["part"], 24))}
     for kk, vv in vals.items():
         tpl = tpl.replace(kk, vv)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -3998,6 +4183,21 @@ def _find_attached_post(pid):
     return None, None
 
 
+def _prompt_branch(clone, pid, g):
+    """CL38: the prompt goes on the clone's trunk when its owner gave the standing permission to push it (no
+    `part-<post>` branch left behind, 40 of them on anlonlt/board by CL38); else on `part-<post>` as before. Never
+    when the clone's local trunk holds commits origin does not have (checkout -B would drop them)."""
+    k = (_read_json(os.path.join(clone, ".kit", "config.json")) or {}).get("kit") or {}
+    trunk = str(k.get("main_branch") or "main")
+    if k.get("trunk_push"):
+        g("fetch", "-q", "origin", trunk)
+        local = g("rev-parse", "--verify", "--quiet", "refs/heads/" + trunk).returncode == 0
+        if g("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + trunk).returncode == 0 and (
+                not local or g("merge-base", "--is-ancestor", trunk, "origin/" + trunk).returncode == 0):
+            return trunk
+    return "part-%s" % _slug(pid, 60)
+
+
 def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=False, cli=None):
     """Launch a step of an attached board from its own clone (the kit way, no hand step): the prompt this project
     wrote goes on a `part-<post>` branch of that clone (committed, pushed), then that clone's kit.py launch runs with
@@ -4007,14 +4207,14 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
     if not clone or not os.path.isfile(os.path.join(clone, ".kit", "kit.py")):
         gh = b.get("github") or "<owner>/%s" % b["id"]
         return dict(out, error="step %s is on board %s, which has no clone here with the kit: `git clone https://github.com/%s "
-                    "%s` (add_repo %s first on the web), then launch again" % (
-                        pid, b["id"], gh, os.path.join(os.path.dirname(ROOT), gh.split("/")[-1]), gh))
+                    "%s` (read-only is enough, nothing to attach: a launch whose push is refused carries the prompt in its start message, "
+                    "CL40), then launch again" % (pid, b["id"], gh, os.path.join(os.path.dirname(ROOT), gh.split("/")[-1])))
     rel = "docs/prompts/%s.md" % pid
     mine = os.path.join(ROOT, rel)
 
     def g(*a, **kw):
         return subprocess.run(["git", "-C", clone] + list(a), capture_output=True, text=True, timeout=kw.get("timeout", 120))
-    branch = "part-%s" % _slug(pid, 60)
+    branch = _prompt_branch(clone, pid, g)
     restore = []      # the branch the clone was on: it goes back there whatever happens
     try:
         return _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset)
@@ -4023,7 +4223,28 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
             g("checkout", "-q", restore[0])
 
 
+# CL40: a push refused for want of access (the session's repository set, GitHub 403, no credentials), not a network fault
+_PUSH_DENIED = re.compile(r"authorized repository set|permission to \S+ denied|permission denied|"
+                          r"(?:returned error|http|status)\W{0,3}403\b|\b403 forbidden|not authorized|"
+                          r"authentication failed|could not read username|access denied|write access", re.I)
+
+
+def _read_text(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def _inline_prompt(text, rel, body):
+    """CL40: the create_session prompt that carries the prompt's full text (the board could not be pushed): the new
+    session commits it to `rel` on its branch first, so the step still starts from git."""
+    head = "Your prompt is %s: read it and do it." % rel
+    rest = text[len(head):].strip() if text.startswith(head) else ""
+    return ("Your prompt follows; first commit it to %s on your branch (it could not be pushed to the board), then read "
+            "it and do it.%s\n\n<prompt path=\"%s\">\n%s\n</prompt>" % (rel, (" " + rest) if rest else "", rel, body.rstrip()))
+
+
 def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset):
+    inline = None
     if not session_id and not os.path.isfile(os.path.join(clone, rel)):
         if not os.path.isfile(mine):
             return dict(out, error="no prompt %s here or in %s: plan the step first (`kit.py step new --board %s`)" % (rel, clone, b["id"]))
@@ -4039,7 +4260,8 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         restore.append(orig)
         if r.returncode != 0:
             return dict(out, error="could not check out %s in %s: %s" % (branch, clone, (r.stderr or r.stdout).strip()[:300]))
-        if not os.path.isfile(os.path.join(clone, rel)):
+        made = not os.path.isfile(os.path.join(clone, rel))
+        if made:
             os.makedirs(os.path.dirname(os.path.join(clone, rel)), exist_ok=True)
             shutil.copyfile(mine, os.path.join(clone, rel))
             g("add", rel)
@@ -4048,8 +4270,16 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
                 return dict(out, error="could not commit the prompt in %s: %s" % (clone, (r.stderr or r.stdout).strip()[:300]))
         r = g("push", "-q", "-u", "origin", branch, timeout=180)
         if r.returncode != 0:
-            return dict(out, error="could not push %s of %s (the new session clones it): %s" % (
-                branch, b.get("github") or clone, (r.stderr or r.stdout).strip()[:300]))
+            why = (r.stderr or r.stdout).strip()
+            if not _PUSH_DENIED.search(why):
+                if made:          # O57: a failed push never leaves the clone's branch ahead of origin
+                    g("reset", "-q", "--hard", "HEAD~1")
+                return dict(out, error="could not push %s of %s (the new session clones it): %s" % (
+                    branch, b.get("github") or clone, why[:300]))
+            # CL40: a read-only clone (a public board, no push access): the prompt rides in the start message
+            inline = {"denied": why[:300], "made": made, "text": _read_text(mine),
+                      # O57: the session starts from origin/<branch> when it exists (it may hold earlier work), else the trunk
+                      "trunk": branch if has else (trunk.split("/", 1)[-1] if trunk.startswith("origin/") else "main")}
     pf = os.path.join(clone, ".kit", "run", "launch-post-%s.json" % _slug(pid, 60))
     os.makedirs(os.path.dirname(pf), exist_ok=True)
     me = _github_url().replace("https://github.com/", "")
@@ -4073,6 +4303,9 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         r = subprocess.run(cmd, cwd=clone, capture_output=True, text=True, timeout=600, env=env)
     except (OSError, subprocess.SubprocessError) as e:
         return dict(out, error="the launch in %s did not run: %s" % (clone, e))
+    finally:
+        if inline and inline["made"]:   # the prompt commit could not leave this clone: never keep it on a branch origin lacks
+            g("reset", "-q", "--hard", "HEAD~1")
     try:
         res = json.loads(r.stdout[r.stdout.index("{"):])
     except ValueError:
@@ -4082,6 +4315,13 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         res.pop(k, None)              # the clone's own copy was never loaded: its push text would only mislead
     if not res.get("ok"):
         return res
+    if inline:
+        res["prompt_inline"] = {"reason": inline["denied"]}
+        res.pop("warning", None)      # "branch not pushed": expected, the session starts from the trunk
+        cs = res.get("create_session")
+        if isinstance(cs, dict):
+            cs["source_revision"] = inline["trunk"]
+            cs["prompt"] = _inline_prompt(cs.get("prompt") or "", rel, inline["text"])
     # the post on the Artifact (repos/<id>/posts) and this copy of it: one ArtifactData update, pinned to the version
     # the last pull saw, so the board shows the launch (the orchestrator guard lets this file through)
     fields = {"status": "in progress", "session_id": res.get("session_id"), "branch": res.get("branch"),
@@ -4148,7 +4388,9 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     text = "Your prompt is %s: read it and do it." % rel
     cons = consumers(post.get("consumers"))
     if cons:     # CL32: a kit part tests on the projects that use it; its session must reach them from its first step
-        text += (" First: add_repo (read) %s, clone next to this repo, never push it: your real-project dry run."
+        # CL38: a launched session's classifier refuses add_repo unless the owner types it; parts never attach. The
+        # orchestrator's session holds both repos and runs the real-project check; files come from kit_docs.
+        text += (" Never attach a repo: the real-project run on %s is the orchestrator's (done says pending until then)."
                  % ", ".join(c["github"] or c["name"] for c in cons))
         out["consumers"] = [c["github"] or c["name"] for c in cons]
     if session_id:                                   # the second half of a web launch: create_session answered
@@ -4225,11 +4467,14 @@ def launch_text(r):
         lines.append("It is a step of board %s: launched from its clone %s (no seeded board, no board-mirror push there)."
                      % (r["attached"]["id"], r["attached"]["clone"]))
     if r.get("consumers"):
-        lines.append("Its session tests on: %s (add_repo read in its first step, named in its prompt)." % ", ".join(r["consumers"]))
+        lines.append("Its session tests on: %s; it never attaches them: their real-project run is yours (CL38)." % ", ".join(r["consumers"]))
     if r.get("worktree"):
         lines.append("claude --bg runs in %s (made from the current branch)." % r["worktree"])
     if r.get("warning"):
         lines.append("Warning: " + r["warning"])
+    if r.get("prompt_inline"):
+        lines.append("The prompt could not be pushed to the board (%s): the start message carries its full text and the "
+                     "session commits it on its branch (CL40)." % r["prompt_inline"]["reason"][:160])
     if r.get("create_session"):
         lines.append("Now start it: the claude-code-remote `create_session` tool with %s; then "
                      "`python3 -I .kit/kit.py launch %s --session-id <the session_id it returned>`."
@@ -4537,6 +4782,9 @@ COMMANDS = [
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor [--fix]", "the board's size, columns, oldest question, missing files / full install, hook parity, conflict & sync health"),
     ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
+    ("launch and finish", "kit.py whoami [name]", "this session's id for a post's session_id (web: session_<id>; else the name given)"),
+    ("launch and finish", "kit.py branches [--delete]", "origin's branches fully on the trunk (finished parts), and with --delete removes them"),
+    ("launch and finish", "kit.py web-env [ask] [--id env_...]", "several repos on the web (CL39): the create_environment call (every repo, hooks at user level), its question post, its id for the hand-over"),
     ("launch and finish", "kit.py attach <owner/repo>", "attach another repo (web: the add_repo call, clone next to this project, register, record in the portfolio)"),
     ("read the board", "board_cli.py get|list|query <coll> ...", "raw documents of the local board (prefer the lookups above)"),
     ("read the board", "board_cli.py inbox", "unread owner comments, Likes and option taps, compact"),
@@ -4801,7 +5049,10 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
         out.append("")
         out.append("## Attached board %s%s" % (b["id"], (" (%s)" % b["github"]) if b.get("github") else ""))
         out.append("Read from %s." % b["source"] + ("" if b.get("clone") else
-                   " No clone here: add_repo %s, git clone it next to this repo, run resume again." % (b.get("github") or b["id"])))
+                   (" No clone here: %s is not in this session's environment; the orchestrator starts in the one holding "
+                    "every repo (`kit.py web-env`)." % (b.get("github") or b["id"])) if web_env() else
+                   " No clone here: clone %s next to this repo (`kit.py web-env` on the web: one environment holding "
+                   "every repo), run resume again." % (b.get("github") or b["id"])))
         lines, n = _train_lines(b["posts"], alive, h="###", board=b)
         out.extend(lines)
         if not n:
@@ -5030,9 +5281,9 @@ def check_real_project(p, root=ROOT):
     if good:
         return []
     cons = ", ".join(c.get("github") or c.get("name") for c in consumers()) or "a project that uses the kit"
-    return ["real_project: your change touches %s; run it on a real project (%s: add_repo read, clone it next to this "
-            "repo, never push it) and put {\"project\", \"command\", \"output\"} in the post's real_project"
-            % (", ".join(areas), cons)]
+    return ["real_project: your change touches %s; the run on a real project (%s) is pending: the orchestrator runs it "
+            "from its session (it holds both repos) and writes {\"project\", \"command\", \"output\"} in the post's "
+            "real_project; a part never attaches a repo (CL38)" % (", ".join(areas), cons)]
 
 
 def consumers(extra=None):
@@ -5106,8 +5357,10 @@ def _launch_workflow():
                      "(the device cap refuses past it: the step waits planned).")
     lines.append("3. A step on an attached board (another repo's train, e.g. the kit's `cli`): the same command from here. "
                  "launch finds the post on that board and runs the launch in that repo's clone next to this one (missing: it "
-                 "says the `git clone`); that clone starts no seeded board and never auto-pushes a board-mirror. The session "
-                 "starts with the projects it must test on (kit.consumers + this one), each an add_repo read in its first step.")
+                 "says the `git clone`); that clone starts no seeded board and never auto-pushes a board-mirror. A public board is "
+                 "cloned read-only, nothing to attach: when its push is refused, the create_session call launch prints carries the "
+                 "prompt's text (CL40). The session never attaches a repo (CL38): the real-project run on the projects it "
+                 "tests on is yours.")
     lines.append("4. With an attached Artifact board, make the ArtifactData batch launch prints (the post and the Trains row).")
     lines.append("5. Done comes as a message: `kit.py done <post>` must say OK (a change to compact, install, resume, "
                  "hooks or artifact needs its real-project dry run); then TaskUpdate completed: its review starts by itself.")
@@ -5144,6 +5397,18 @@ def _load_ledger_mod():
     return None
 
 
+def _not_his_yes(m, cid, db_path=None):
+    """Why this comment is not the owner's yes to a principle (None: it is his, on the board's copy here)."""
+    if not cid:
+        return "confirm needs --by <id of the owner's comment or Like that says yes>"
+    c = _load_board_docs(m, db_path=db_path)[1].get(cid)
+    if not isinstance(c, dict):
+        return "no comment %s on the board's copy here (an Artifact board: pull it first)" % cid
+    if c.get("from") != answer_delay().owner:
+        return "comment %s is from %r, not the owner" % (cid, c.get("from"))
+    return None
+
+
 def _principle_lines(role, train=None, files=None):
     lines = []
     led = _load_ledger_mod()
@@ -5169,6 +5434,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
     out = []
     if role == "orchestrator":
         out.append(resume(m, db_path=db_path, alive=alive, cli=cli, session=session, now=now).rstrip("\n"))
+        st, txt = web_env_state(posts, comments)
+        if txt:                                       # CL39: several repos on the web
+            out += ["", "## Web environment (several repos)", txt]
         out += [""] + _launch_workflow()
         out += ["", "## Parts: their context and the save points",
                 "- A part reads only `kit.py resume --role part` (its post, prompt, lessons, tests, how to report); never "
@@ -5211,8 +5479,10 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         areas = real_project_areas()
         cons = consumers(p.get("consumers"))
         if areas or cons:
-            out.append("- Real project: %s. A change to %s needs a dry run in a clone of %s (add_repo read; never push "
-                       "it); its command and output go in the post's `real_project`, or `done` refuses." % (
+            out.append("- Real project: %s. A change to %s gets a dry run on %s, run by the orchestrator from its session "
+                       "(it holds both repos) and written in your post's `real_project`; you never attach a repo (CL38). "
+                       "A file of that project you need: the Artifact's `kit_docs` (`ArtifactData get`, doc_id = its "
+                       "path with `/` written `+2F~`), else ask under your post." % (
                            ("your change touches " + ", ".join(areas)) if areas else "nothing of compact/install/resume/hooks/artifact touched yet",
                            "/".join(REAL_PROJECT_AREAS), ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"))
         orch = (posts.get("_orchestrator") or {}).get("session_id") or "the orchestrator"
@@ -5252,7 +5522,8 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         rp = p.get("real_project")
         cons = consumers(p.get("consumers"))
         out += ["", "## The real-project check",
-                "- Rerun its `check`, then its claim on a real project: %s (add_repo read, clone, never push)." % (
+                "- Rerun its `check`, then its claim on a real project: %s, from the orchestrator's session (it holds both "
+                "repos; a launched session cannot attach one), by subagent; write the run in the post's real_project." % (
                     ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"),
                 "- Its post says: %s" % (json.dumps(rp, ensure_ascii=False)[:500] if rp else "NO real-project result")]
         out += ["", "## Lessons for a review"] + _lesson_lines(lessons_for("review"))
@@ -5488,7 +5759,28 @@ def commit(m, msg, branch=None):
     return (r.stdout + r.stderr).strip() or "committed"
 
 
+def _usage_self():
+    """CL37: a session whose project hooks do not run (started on two repos) still records its usage row: every kit
+    command offers it, detached and at most once a minute (.kit/usage.py self). No model call; never in the way."""
+    try:
+        if not os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_USAGE_SELF") == "0":
+            return
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = os.path.join(root, ".kit", "usage.py")
+        if not os.path.isfile(script):
+            return
+        stamp = os.path.join(root, ".kit", "run", "usage", ".self")
+        if os.path.exists(stamp) and time.time() - os.path.getmtime(stamp) < 60:
+            return
+        import subprocess as _sp
+        _sp.Popen([sys.executable, "-I", script, "--root", root, "self"], stdin=_sp.DEVNULL, stdout=_sp.DEVNULL,
+                  stderr=_sp.DEVNULL, start_new_session=True, cwd=root)
+    except Exception:
+        pass
+
+
 def main(argv=None):
+    _usage_self()
     _argv = sys.argv[1:] if argv is None else list(argv)
     if _argv and _argv[0] == "usage":  # CL37: the usage ledger lives in its own script (installed as .kit/usage.py)
         import subprocess as _sp
@@ -5524,12 +5816,17 @@ def main(argv=None):
     s.add_argument("action", choices=["show", "observe", "decide", "distil", "propose", "confirm", "check", "init"])
     s.add_argument("target", nargs="?", default=None, help="id for confirm/propose or summary for observe/decide")
     s.add_argument("--summary", default=""); s.add_argument("--quote", default=""); s.add_argument("--source", default="")
-    s.add_argument("--scope", default="project"); s.add_argument("--theme", default=""); s.add_argument("--kind", default="observation")
+    s.add_argument("--scope", default=None, help="all|project|role:<r>|train:<t>|files:<glob> (observe: project; propose: the rows' own)"); s.add_argument("--theme", default=""); s.add_argument("--kind", default="observation")
     s.add_argument("--enforced-by", dest="enforced_by", default="review"); s.add_argument("--because", default=""); s.add_argument("--rejected", default="")
     s.add_argument("--replaces", default=""); s.add_argument("--subsumes", default="", help="comma-separated observation/rule ids")
     s.add_argument("--min-cluster", dest="min_cluster", type=int, default=3); s.add_argument("--role", choices=list(ROLES), default=None)
+    s.add_argument("--widen", action="store_true", help="propose: a scope wider than the rows'")
+    s.add_argument("--by", default="", help="confirm: the id of the owner's comment or Like that says yes"); s.add_argument("--db", default=None)
     s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("attach"); s.add_argument("repo"); s.add_argument("--no-clone", action="store_true")
+    s = sp.add_parser("web-env"); s.add_argument("action", nargs="?", choices=["ask"]); s.add_argument("--id", dest="env_id")
+    s = sp.add_parser("branches"); s.add_argument("--delete", action="store_true")
+    s = sp.add_parser("whoami"); s.add_argument("name", nargs="?", default="")
     s = sp.add_parser("compact"); s.add_argument("--days", type=int, default=30); s.add_argument("--dry-run", action="store_true")
     s.add_argument("--no-board", action="store_true", help="post nothing: open awaits points and issues stay in memory")
     s = sp.add_parser("report"); s.add_argument("--db", default=None)
@@ -5625,6 +5922,17 @@ def main(argv=None):
             if a.commit:
                 print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
         return 0
+    if a.cmd == "whoami":
+        print(whoami(a.name))
+        return 0
+    if a.cmd == "branches":
+        out, rc = merged_branches(delete=a.delete)
+        print(out)
+        return rc
+    if a.cmd == "web-env":
+        out, rc = web_env_cmd(a.action, a.env_id)
+        print(out)
+        return rc
     if a.cmd == "attach":
         out, rc = attach_repo(a.repo, clone=not a.no_clone)
         print(out)
@@ -5655,16 +5963,17 @@ def main(argv=None):
         elif a.action in ("observe", "decide"):
             kind = "decision" if a.action == "decide" else a.kind
             summary = a.summary or a.target or ""
-            res = led.observe(mdir, summary, quote=a.quote, source=a.source, scope=a.scope, theme=a.theme,
+            res = led.observe(mdir, summary, quote=a.quote, source=a.source, scope=a.scope or "project", theme=a.theme,
                               kind=kind, enforced_by=a.enforced_by, because=a.because, rejected=a.rejected,
                               replaces=a.replaces)
         elif a.action == "distil":
             res = {"clusters": led.distil_candidates(mdir, min_cluster=a.min_cluster)}
         elif a.action == "propose":
             sub_ids = [x.strip() for x in a.subsumes.split(",") if x.strip()]
-            res = led.propose_principle(mdir, a.summary or a.target or "", sub_ids, scope=a.scope or "all", theme=a.theme)
+            res = led.propose_principle(mdir, a.summary or a.target or "", sub_ids, scope=a.scope, theme=a.theme, widen=a.widen)
         elif a.action == "confirm":
-            res = led.confirm_principle(mdir, a.target or "", summary=a.summary or None)
+            why = _not_his_yes(m, a.by, db_path=a.db)
+            res = {"error": why} if why else led.confirm_principle(mdir, a.target or "", a.by, summary=a.summary or None)
         else:   # check
             res = led.check_ledger(mdir, root=ROOT)
         print(json.dumps(res, indent=2, ensure_ascii=False))

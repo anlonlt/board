@@ -72,3 +72,23 @@ Post bodies take `**bold**`, `` `code` ``, `#` headings, `| tables |`, `>` quote
 - **A 👍 or a tapped answer** goes to the orchestrator only (the clerk sends it there), never to you: the orchestrator
   relays a go.
 - Never edit `.kit/board.html` directly (translations go in `.kit/strings.json`).
+
+## Attaching another repo on Claude Code on the web
+A web session sees only the repos it started with. To work on another one (an attached board, the kit repo, a real project to test on):
+1. `python3 -I .kit/kit.py attach <owner/repo>`: with no clone yet it prints the one call to make, `mcp__claude-code-remote__add_repo` `{"owner", "repo", "access": "read"}` (`"push"` only to push to it).
+2. Make that call, then run `kit.py attach <owner/repo>` again: it clones the repo next to this project (`../<repo>`), records it in `.kit/config.json` `portfolio` (commit that), and prints the `register_repo_root` call that loads its CLAUDE.md and skills.
+- The kit allows `add_repo` in `.claude/settings.json` `permissions.allow` (install and `install.py --update` add it; `kit.py doctor` warns when it is missing). Only a session started on ONE repo reads that file: start the session on the repo whose hooks and settings must run. A session already running never rereads it: a settings change counts from the next session.
+- A session the kit launches (a part, a review, the clerk) never attaches a repo: its classifier refuses `add_repo` ("Unauthorized Access") whatever the allow rule says, unless the owner types it, and the owner does not type in chat. The orchestrator's session holds the repos: it runs a part's real-project check (by subagent) and writes it in the part's `real_project` (`kit.py done` says it is pending until then). A file of another project a part needs is in the Artifact's `kit_docs` (`ArtifactData get`, doc_id = its path with `/` written `+2F~`); else ask under your post. `kit.py attach` is for a session where the owner is typing anyway.
+
+## Several repos on the web: one environment with every repo (CL39)
+A project that manages several repos from web sessions (install asked once, or `--web-multi yes [--web-repos owner/a,owner/b]`) never needs `add_repo` or a line typed in chat:
+- Install puts `.kit/user_hooks.py` in the project and records in `.kit/config.json` `kit.web_env` the environment to create: its repos and its setup script line, `python3 -I <repo>/.kit/user_hooks.py install`. That script copies every hook of the project's `.claude/settings.json` into `~/.claude/settings.json`, each wrapped to run only where the session's project has no settings of its own (the parent folder of a two-repo session), with `CLAUDE_PROJECT_DIR` set to the repo; inside the repo the project's own copy runs and the wrapped one is skipped. A rerun changes nothing.
+- The orchestrator proposes the environment once, on the owner's tap, never in chat: `kit.py web-env ask` posts the question (`KIT-web-env`); on his Like, `kit.py resume` says so; make the `create_environment` call `kit.py web-env` prints, then `kit.py web-env --id <env_...>` (commit the config).
+- From then on the hand-over (`handover.py`) and the clerk start the orchestrator with that `environment_id`: every repo and the hooks from its first turn.
+
+## Messages between sessions are pointers
+A message between sessions (`SendMessage`, `send_message`) is at most 200 characters and never holds a table, a quote or a code block (the hook refuses it): the detail is said once, in a post or a comment, and the message names where: "Done. Check post <id>.", "Gaps under your post.". Every message is paid twice, by the writer and by the reader. The clerk's forward of the owner's words is the one exception.
+
+## Branches
+- Before `kit.py done`, merge the trunk (`git fetch origin main && git merge --no-edit origin/main`) and rerun the tests: `done` refuses a branch that lacks the trunk, so a part that started on an older kit is judged by the kit as it is now.
+- `kit.py launch` puts an attached board's prompt on its trunk (no `part-<post>` branch) when the owner gave the trunk permission. `python3 -I .kit/kit.py branches` lists origin's branches fully on the trunk (`--delete` removes them, the owner's go); a branch with work not on the trunk, or of a part still at work, is kept.
