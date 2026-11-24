@@ -389,7 +389,7 @@ Each workstream's state file declares `Runs in:` so the orchestrator routes each
 | `kit/board/board_cli.py` | CLI for posts, comments, watch/wait/reply, inbox, batch writes, shares, and blob assets (`KIT_BOARD_REPO` supported) |
 | `kit/board/gh_sync.py` | Optional zero-dep GitHub PR & CI status badge sync (`badges: [{label, state, url}]`) via `gh` CLI |
 | `kit/board/mcp_stdio.py` | Zero-dependency stdio MCP server exposing board tools to any MCP client (`unblocked_only` supported) |
-| `scripts/kit.py` | Git mirror (`board-mirror`) + compact lookups (`post`, `open`, `since`, `session`, `search`, `queue --unblocked`, `train --zoom`, `report`, `compact`, `portfolio`, `receive`, `publish`) |
+| `scripts/kit.py` | Git mirror (`board-mirror`) + compact lookups (`post`, `open`, `since`, `session`, `search`, `queue --unblocked`, `train --brief/--sections/--full`, `report`, `compact`, `portfolio`, `receive`, `publish`) |
 | `kit/hook.py` | The one table of which hook runs when, on every runtime (`install.py` builds the settings from it). Opt-in `install.py <project> --update --unified-hooks`: one settings line per event and one copy of the hooks in `.kit/hooks`; a guard that hangs, crashes or is missing refuses the call; `--no-unified-hooks` goes back |
 | `kit/hooks/kit_guard.py` | `PreToolUse` safety guard (blocks `rm -rf` outside `/tmp`, `git reset --hard`, force pushes, staging secrets) |
 | `kit/hooks/kit_stop.py` + `kit/end_session.py` | Prevents exiting with uncommitted/unpushed work; merges cleanly without force |

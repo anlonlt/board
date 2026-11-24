@@ -3851,8 +3851,8 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
                 "source_revision": _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "main",
                 "prompt": text, "tags": ["review"]}      # CL30: the guard checks a tagged launch's prompt
         start = ("review %s NOT STARTED by the kit (a web session cannot start one): prompt %s written; start it "
-                 "now with the claude-code-remote `create_session` tool: %s" % (rid, os.path.relpath(out, ROOT),
-                                                                               json.dumps(call, ensure_ascii=False)))
+                 "now with the claude-code-remote `create_session` tool: %s then `python3 -I .kit/kit.py review %s --session-id <its id>`"
+                 % (rid, os.path.relpath(out, ROOT), json.dumps(call, ensure_ascii=False), pid or "--train %s" % train))
     elif run == "agy":
         cmd = ["agy", "--mode", "auto", "-p", text]
     elif run is None:
@@ -4075,6 +4075,17 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
     return res
 
 
+def step_find(part, train=None, db_path=None):
+    """The post of a step by its part (and train): how a task finds its step again without the session that made it."""
+    part = str(part or "").strip().lower()
+    hits = [x for x in [(pid, q) for pid, q in _all_posts(db_path).items() if not pid.startswith("_") and not q.get("removed")]
+            if part and str(x[1].get("train") or "").strip() and str(x[1].get("part") or "").strip().lower() == part
+            and (not train or _norm_train(x[1].get("train")) == _norm_train(train))]
+    if len(hits) != 1:
+        return {"error": "%d steps with part %s%s" % (len(hits), part, (" on train %s" % train) if train else "")}
+    return {"post": hits[0][0], "train": _norm_train(hits[0][1]["train"])}
+
+
 def step_start(pid):
     return {"post": pid, "ok": _board_write("update", "posts", pid, {"status": "in progress"})}
 
@@ -4255,6 +4266,10 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
     def g(*a, **kw):
         return subprocess.run(["git", "-C", clone] + list(a), capture_output=True, text=True, timeout=kw.get("timeout", 120))
     branch = _prompt_branch(clone, pid, g)
+    if not session_id:
+        why = circle_gate(b.get("posts") or {}, pid, post, mine if os.path.isfile(mine) else os.path.join(clone, rel))
+        if why:
+            return dict(out, error=why)
     restore = []      # the branch the clone was on: it goes back there whatever happens
     try:
         return _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset)
@@ -4388,6 +4403,14 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
     return res
 
 
+def _launch_posts(post):
+    """The posts the circle check reads: the board's copy here (none: nothing to show, the launch goes on)."""
+    try:
+        return _all_posts()
+    except Exception:
+        return {}
+
+
 def launch(pid, url=None, token=None, web=None, session_id=None, model=None, reset=False, gate=True, cli=None, post_file=None):
     """`kit.py launch <post>`: the one way a part starts (CL13). Writes status in progress, session_id, launched_at
     and branch on its post and marks its Trains row running (the local copy; with an attached Artifact board, the
@@ -4437,7 +4460,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         sess = session_id
         launch_mark(pid, None)
     else:
-        why = _prompt_problem(rel)
+        why = _prompt_problem(rel) or circle_gate(_launch_posts(post), pid, post, os.path.join(ROOT, rel))
         if why:
             return dict(out, ok=False, error=why)
         if web:
@@ -4538,9 +4561,11 @@ def step_complete(pid, db_path=None, cli=None):
         return out
     posts = _all_posts(db_path)
     p = posts.get(pid) or {}
-    if p.get("review_auto") is not False:
+    if p.get("review_auto") is not False and not (p.get("review") or p.get("review_id") or p.get("review_started")):
         rc, msg = review(pid, db_path=db_path, cli=cli)
         out["reviews"].append(msg)
+        if rc == 0 and "NOT STARTED" not in msg and "already started" not in msg and not os.environ.get("KIT_NO_LAUNCH"):
+            _board_write("update", "posts", pid, {"review_started": _now_z()})    # on the post: the next orchestrator sees it
     train, every = p.get("train"), int(rv.get("train_every", 4) or 0)
     if train and every > 0:
         n = sum(1 for q in posts.values() if not q.get("removed") and _norm_train(q.get("train")) == _norm_train(train)
@@ -4608,7 +4633,7 @@ def _train_lines(posts, alive, h="##", board=None):
     for t in sorted(trains):
         nat = lambda v: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", str(v).lower())]
         steps = sorted(trains[t], key=lambda x: (str(x[1].get("created_at") or ""), nat(x[1].get("part") or x[0])))
-        open_steps = [x for x in steps if step_state(x[1]) not in ("done", "closed")]
+        open_steps = [x for x in steps if step_state(x[1]) not in ("done", "closed") or review_due(x[1])]
         if not open_steps:
             continue
         n_active += 1
@@ -4617,13 +4642,13 @@ def _train_lines(posts, alive, h="##", board=None):
         for pid, p in steps:
             col = str(p.get("column") or "info").lower()
             st = str(p.get("status") or "").lower()
-            if step_state(p) in ("done", "closed"):
-                if (pid, p) not in steps[-2:]:
-                    continue
-                out.append("- [x] %s `%s` %s" % (p.get("part") or pid, pid, str(p.get("title") or "")[:80]))
+            if review_due(p):
+                out.append("- [r] %s `%s` %s · finished, its review never started: `python3 -I .kit/kit.py step complete %s`"
+                           " (it starts it), or its task completed" % (p.get("part") or pid, pid, str(p.get("title") or "")[:80], pid))
                 continue
-            box = ("[h]" if step_state(p) == "held" else "[?]" if col == "question" else
-                   ("[!]" if col == "todo" else ("[~]" if "progress" in st else "[ ]")))
+            if step_state(p) in ("done", "closed"):
+                continue                                 # what it found is under "Found so far"
+            box = step_box(p)
             sess = str(p.get("session_id") or "")
             if sess:
                 life = "unknown" if alive is None else ("running" if sess in alive else "not running")
@@ -4652,6 +4677,10 @@ def _train_lines(posts, alive, h="##", board=None):
                                                   (" · " + st) if st and st != "planned" else "", who, quiet))
             if board is not None:
                 out.extend(_attached_step_detail(board, pid, p, "running" not in who or "not running" in who))
+        got = found_so_far(posts, t)
+        if got:
+            out.append("%s# Found so far (do not repeat it; a new step near one says what it does differently)" % h)
+            out.extend(got)
     return out, n_active
 
 
@@ -4675,6 +4704,147 @@ def step_state(p):
     if col in ("question", "todo"):
         return "you"
     return "running" if "progress" in st.lower() else "idle"
+
+
+BOXES = {"done": "[x]", "closed": "[x]", "held": "[h]", "running": "[~]", "idle": "[ ]"}
+
+
+def step_box(p):
+    """The one tick of a step, in every view (the train view used to tick only the owner's Done column: the same train
+    showed 21 open steps there and 6 in resume)."""
+    col = str(p.get("column") or "").lower()
+    if step_state(p) == "you":
+        return "[?]" if col == "question" else "[!]"
+    return BOXES[step_state(p)]
+
+
+def review_due(p):
+    """A finished step whose review never started: its orchestrator was replaced before it ticked the task (its task
+    list dies with it) and the next one, shown open steps only, had nothing to tick. Only steps made since
+    kit.review.since (install.py stamps it): a project's past is not reviewed again."""
+    rv = (_kit_config().get("kit") or {}).get("review") or {}
+    since = str(rv.get("since") or "")
+    return bool(since and str(rv.get("auto", "all")) != "off" and str(p.get("created_at") or "") >= since
+                and step_state(p) == "done" and str(p.get("column") or "") not in ("done", "question", "todo")
+                and (p.get("session_id") or p.get("verdict")) and p.get("review_auto") is not False
+                and not (p.get("review") or p.get("review_id") or p.get("review_started")))
+
+
+def step_brief(pid, p, width=150):
+    """A step in two lines: what it is, what it found and what the next one must know."""
+    found = _short(p.get("verdict") or _first_summary_line(p.get("body")), width)
+    nxt = _short(p.get("handoff"), 110)
+    line = "- %s %s `%s` %s" % (step_box(p), p.get("part") or pid, pid, _short(p.get("title"), 60))
+    tail = " · next: ".join(x for x in (found, nxt) if x)
+    return line + (("\n  " + tail) if tail else "")
+
+
+def train_steps(posts, train):
+    """[(id, post)] of a train's steps, oldest first."""
+    rows = [(pid, q) for pid, q in posts.items() if not pid.startswith("_") and isinstance(q, dict) and not q.get("removed")
+            and str(q.get("train") or "").strip() and _norm_train(q.get("train")) == _norm_train(train)]
+    return sorted(rows, key=lambda x: (str(x[1].get("created_at") or ""), x[0]))
+
+
+def found_so_far(posts, train, skip=None, last=8):
+    """The last finished steps of a train, briefly, and how many came before them."""
+    rows = [(pid, q) for pid, q in train_steps(posts, train) if pid != skip and step_state(q) == "done"
+            and (q.get("verdict") or q.get("body"))]
+    if not rows:
+        return []
+    out = [step_brief(pid, q) for pid, q in rows[-last:]]
+    if len(rows) > last:
+        out.append("- (%d earlier: `python3 -I .kit/kit.py train %s --brief`)" % (len(rows) - last, _norm_train(train)))
+    return out
+
+
+# ---------------------------------------------------------------- the circle check: a step says what it does differently
+CIRCLE_HEAD = "## What this does differently"
+
+
+def _differs_of(post, rel):
+    """What a step says it does differently: on its post, else in its prompt."""
+    got = str(post.get("differs") or "").strip()
+    if not got:
+        try:
+            with open(rel, encoding="utf-8") as fh:
+                parts = fh.read().split(CIRCLE_HEAD, 1)
+            got = parts[1].strip() if len(parts) == 2 else ""
+        except OSError:
+            pass
+    return got
+
+
+def differs_problem(text, rows):
+    """None, or what is missing: a sentence that names at least one earlier step by its part, or says none of them bears on it."""
+    if len(text) < 30:
+        return "a sentence of at least 30 characters"
+    named = [q for q, d in rows if re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(str(d.get("part") or q)), text, re.I)]
+    if not named and not re.match(r"none of (them|these)\b", text, re.I):
+        return "the earlier step it builds on or departs from, by its part (or a text that starts \"None of them\")"
+    return None
+
+
+def circle_gate(posts, pid, post, path):
+    """None, or why a step is not launched yet: its train has finished steps, and it does not say which of them it
+    builds on and what it does differently. Every earlier conclusion is shown, not the ones a script finds alike: the
+    circle this is for (Harmonize's B14 left out what B9 and B12 had found, B16 found it again) shares no words with
+    them. A step already started (a relaunch, a continuation) is not asked again."""
+    rows = [(q, d) for q, d in train_steps(posts, post.get("train") or "") if q != pid and step_state(d) == "done"
+            and (d.get("verdict") or d.get("body"))]
+    if len(rows) < 2 or post.get("launched_at") or post.get("session_id"):
+        return None
+    why = differs_problem(_differs_of(post, path), rows)
+    if not why:
+        return None
+    return ("train %s has already found:\n%s\nBefore this step starts, say which of these it builds on and what it does differently "
+            "(missing: %s): `python3 -I .kit/kit.py step differs %s --task \"<PART>: ...\"`, commit the prompt, launch again. If it "
+            "repeats one of them, do not launch it." % (
+                _norm_train(post.get("train")), "\n".join("- %s: %s" % (d.get("part") or q, _short(
+                    d.get("verdict") or _first_summary_line(d.get("body")), 130)) for q, d in rows), why, pid))
+
+
+def step_differs(pid, text, db_path=None):
+    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(text) < 30:
+        return {"error": "step differs needs --task \"<PART it builds on>: what it does differently\" (a sentence at least)"}
+    rel = "docs/prompts/%s.md" % pid
+    path = os.path.join(ROOT, rel)
+    res = {"post": pid, "prompt": None}
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as fh:
+            cur = fh.read().split("\n" + CIRCLE_HEAD, 1)[0].rstrip()
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(cur + "\n\n" + CIRCLE_HEAD + "\n" + text + "\n")
+        res.update(prompt=rel, next="commit %s" % rel)
+    on_post = pid in _all_posts(db_path) and _board_write("update", "posts", pid, {"differs": text})
+    res["ok"] = bool(on_post or res["prompt"])
+    if not res["ok"]:
+        res["error"] = "no post %s the board here takes, and no prompt %s" % (pid, rel)
+    return res
+
+
+def step_open(db_path=None):
+    """Every step an orchestrator's task list holds, on this board and the attached ones: the open ones and the
+    finished ones whose review never started. [{post, part, train, board, state, title}]"""
+    out = []
+
+    def add(posts, board):
+        for pid, q in sorted(posts.items(), key=lambda x: (str(x[1].get("created_at") or "") if isinstance(x[1], dict) else "", x[0])):
+            if pid.startswith("_") or not isinstance(q, dict) or q.get("removed") or not str(q.get("train") or "").strip():
+                continue
+            due = review_due(q)
+            if step_state(q) in ("idle", "running") or due:
+                out.append({"post": pid, "part": str(q.get("part") or pid), "train": _norm_train(q["train"]), "board": board,
+                            "state": "review due" if due else str(q.get("status") or step_state(q)), "title": str(q.get("title") or "")[:80]})
+    add(_all_posts(db_path), "")
+    if not db_path:
+        try:
+            for b in _attached_boards():
+                add(b["posts"], b["id"])
+        except Exception:      # an attached board that cannot be read never hides this one's steps
+            pass
+    return out
 
 
 def _train_key(pid, p):
@@ -4812,7 +4982,7 @@ COMMANDS = [
     ("read the board", "kit.py resume --role orchestrator|part|clerk|review [--post P]", "what that role needs and nothing else: a session starts from it alone (lessons, launch workflow, tests, how to report)"),
     ("memory", "kit.py lessons [--role R] [--files F...] | lessons check", "the lessons a role needs / refuse untagged ones and ones only a project doc holds"),
     ("memory", "kit.py lesson add <id> --roles R,.. --title T --text X [--files G,..] [--from \"doc id\"]", "a lesson into the memory, tagged with its roles"),
-    ("read the board", "kit.py train <train> [--zoom <part>]", "a train's steps: verdict, bars, check, breaks, handoff of each"),
+    ("read the board", "kit.py train <train> [--zoom <part>] [--brief | --sections [PART..] | --full PART..]", "a train's steps at three depths: two lines each; their seven fields; a step whole"),
     ("read the board", "kit.py post <id> [--head N]", "one post and its comments"),
     ("read the board", "kit.py open [--since ISO]", "the owner's comments not answered yet"),
     ("read the board", "kit.py since <ISO>", "what changed on the board since a time"),
@@ -5124,14 +5294,14 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
                       "line), and a reply to the owner's comment there goes to repos/<id>/comments."
                       % _repo_id(_kit_config().get("project") or os.path.basename(ROOT)) if boards else ""))
     elif boards:
-        out.append("Rebuild your task list: one TaskCreate per open step above, subject \"<PART> <title>\", metadata "
+        out.append("Rebuild your task list: one TaskCreate per open step above ([r] too: its task completed starts its review), subject \"<PART> <title>\", metadata "
                    "{\"board\": \"<id>\", \"train\": \"<train>\", \"part\": \"<PART>\"} (board: this board's id \"%s\", or the "
                    "attached board's id from its heading; the existing post is adopted, not duplicated); TaskUpdate "
                    "in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it (an attached "
                    "board's step from its own clone, with its relaunch line) or ask the owner."
                    % (_repo_id(_kit_config().get("project") or os.path.basename(ROOT))))
     else:
-        out.append("Rebuild your task list: one TaskCreate per open step above, subject \"<PART> <title>\", metadata "
+        out.append("Rebuild your task list: one TaskCreate per open step above ([r] too: its task completed starts its review), subject \"<PART> <title>\", metadata "
                    "{\"train\": \"<train>\", \"part\": \"<PART>\"} (the existing post is adopted, not duplicated); "
                    "TaskUpdate in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it or "
                    "ask the owner.")
@@ -5515,6 +5685,12 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
             out.append("- (nothing yet: at turn 1 set session_id, status in progress and a one-line body)")
         out += ["", "## Lessons that touch your files (%d files changed)" % len(files)] + _lesson_lines(lessons_for("part", files))
         out += _principle_lines("part", p.get("train"), files=files)
+        got = found_so_far(posts, p.get("train") or "", skip=pid, last=12) if p.get("train") else []
+        if got:
+            out += ["", "## Found so far on train %s (build on it, never redo it; `kit.py train %s --sections <PART>` for one step's "
+                    "bars, check and scripts, `--full <PART>` for all of it)" % (_norm_train(p["train"]), _norm_train(p["train"]))] + got
+        if p.get("differs"):
+            out += ["", "## What this step does differently", str(p["differs"])]
         out += ["", "## Your tests", "- `%s` (0 failed before you commit)" % _test_command()]
         areas = real_project_areas()
         cons = consumers(p.get("consumers"))
@@ -5571,8 +5747,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
     return "\n".join(out) + "\n"
 
 
-def train_context(m, target, zoom=None, db_path=None, as_json=False):
-    """Build a low-token Train-as-Tasklist context pack: ancestor zoom-out + current-task zoom-in."""
+def train_context(m, target, zoom=None, db_path=None, as_json=False, level="brief", only=()):
+    """A train as a task list, at the depth asked for. `brief` (two lines a step) and the current step; `sections` (the
+    seven fields of each step, or of the steps in `only`); `full` (the steps in `only`, whole, with their comments)."""
     posts, comments = _load_board_docs(m, db_path=db_path)
     tq = (target or "").strip()
     tql = tq.lower()
@@ -5626,7 +5803,7 @@ def train_context(m, target, zoom=None, db_path=None, as_json=False):
             zoom_missing = zoom.strip()
     if not zoom_pid and not zoom_missing:
         for pid, p in reversed(matched):
-            if str(p.get("column") or "info").lower() != "done":
+            if step_state(p) not in ("done", "closed"):
                 zoom_pid = pid
                 break
     if not zoom_pid and not zoom_missing:
@@ -5636,7 +5813,7 @@ def train_context(m, target, zoom=None, db_path=None, as_json=False):
     for pid, p in matched:
         col = str(p.get("column") or "info").lower()
         st = str(p.get("status") or "").lower()
-        box = "[x]" if col == "done" else ("[?]" if col == "question" else ("[!]" if col == "todo" else ("[~]" if "progress" in st else "[ ]")))
+        box = step_box(p)
         verdict = str(p.get("verdict") or "").strip() or _first_summary_line(p.get("body"))
         bars = p.get("bars") or []
         artifacts = p.get("artifacts") or []
@@ -5694,8 +5871,38 @@ def train_context(m, target, zoom=None, db_path=None, as_json=False):
             },
         }, ensure_ascii=False, indent=2)
 
-    lines = ["# Train: %s (%d steps · zoom: %s)" % (tq, len(steps_out), zoom_pid), "", "## Tasklist (Zoom-out)"]
-    for s in steps_out:
+    want = {str(x).strip().lower() for x in only or () if str(x).strip()}
+    picked = [s for s in steps_out if not want or s["id"].lower() in want or s["part"].lower() in want]
+    if want and not picked:
+        return "train %r: no step %s (its steps: %s)\n" % (tq, ", ".join(sorted(want)), ", ".join(s["part"] for s in steps_out))
+    if level == "full":
+        if not want:
+            return "train --full needs the step: kit.py train %s --full <PART>\n" % tq
+        out = []
+        for s in picked:
+            q = posts[s["id"]]
+            out += ["# %s `%s` %s %s" % (s["part"], s["id"], s["box"], s["title"])]
+            for k in ("status", "verdict", "bars", "artifacts", "issues", "not_checked", "check", "breaks", "handoff", "differs",
+                      "parent", "branch", "session_id"):
+                v = [str(x) for x in _as_list(q.get(k)) if str(x).strip()]
+                if v:
+                    out.append("- %s: %s" % (k, "; ".join(v)))
+            out += ["", str(q.get("body") or "").strip(), ""]
+            for cid, c in by_post.get(s["id"], []):
+                out.append("- **%s%s** (%s, `%s`): %s" % (c.get("from") or "?", (" [%s]" % c["kind"]) if c.get("kind") else "",
+                                                          str(c.get("created_at") or "")[:16], cid, str(c.get("text") or "").strip()))
+            out.append("")
+        return "\n".join(out).rstrip() + "\n"
+    if level == "brief":
+        lines = ["# Train: %s (%d steps · zoom: %s)" % (tq, len(steps_out), zoom_pid), "",
+                 "## Tasklist (brief; `--sections <PART>` the seven fields, `--full <PART>` all of it)"]
+        for s in steps_out:
+            lines.append(step_brief(s["id"], posts[s["id"]]) .replace("\n", " **← CURRENT**\n", 1) if s["is_zoom"]
+                         and "\n" in step_brief(s["id"], posts[s["id"]]) else step_brief(s["id"], posts[s["id"]]) + (" **← CURRENT**" if s["is_zoom"] else ""))
+        picked = []
+    else:
+        lines = ["# Train: %s (%d of %d steps · zoom: %s)" % (tq, len(picked), len(steps_out), zoom_pid), "", "## Tasklist (sections)"]
+    for s in picked:
         mark = " **← CURRENT**" if s["is_zoom"] else ""
         line = "- %s **%s** (`%s`): %s%s" % (s["box"], s["part"], s["id"], s["title"], mark)
         if s["verdict"]:
@@ -5718,13 +5925,15 @@ def train_context(m, target, zoom=None, db_path=None, as_json=False):
 
         lines.append(line)
 
+    if level == "sections" and want:
+        return "\n".join(lines) + "\n"
     lines.extend(["", "## Current Focus (Zoom-in: `%s`)" % zoom_pid])
     if prompt_file:
         lines.append("- **Prompt:** `%s`" % prompt_file)
     lines.append("- **Column:** %s | **Title:** %s" % (zpost.get("column") or "info", zpost.get("title") or zoom_pid))
     body_txt = str(zpost.get("body") or "").strip()
     if body_txt:
-        lines.extend(["", body_txt[:4000] + ("\n...(truncated; full post via `kit.py post %s`)" % zoom_pid if len(body_txt) > 4000 else "")])
+        lines.extend(["", body_txt[:4000] + ("\n...(cut; all of it: `kit.py train %s --full %s`)" % (tq, zpart) if len(body_txt) > 4000 else "")])
     if z_cmts:
         lines.extend(["", "### Recent Comments & Reviews (%d)" % len(z_cmts)])
         for c in z_cmts:
@@ -5874,6 +6083,9 @@ def main(argv=None):
     s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None); s.add_argument("--unblocked", action="store_true", help="Exclude cards with unresolved blocked_by dependencies")
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
+    s.add_argument("--brief", action="store_true", help="two lines a step and the current one (the default)")
+    s.add_argument("--sections", nargs="*", default=None, metavar="PART", help="verdict, bars, artifacts, issues, check, breaks, handoff of these steps (none named: of all)")
+    s.add_argument("--full", nargs="+", default=None, metavar="PART", help="these steps whole, with their comments, uncut")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--session", default=None, help="your session id: resume flags an _orchestrator post naming another")
     s.add_argument("--role", choices=list(ROLES), default=None, help="what that role needs, nothing else (CL32)")
@@ -5910,7 +6122,7 @@ def main(argv=None):
     s = sp.add_parser("pair"); s.add_argument("post"); s.add_argument("--answer", default=None); s.add_argument("--db", default=None)
     s = sp.add_parser("sections"); s.add_argument("--db", default=None)
     s = sp.add_parser("step", help="the train is the task list: new | start | complete | drop")
-    s.add_argument("action", choices=["new", "start", "complete", "drop"]); s.add_argument("post", nargs="?")
+    s.add_argument("action", choices=["new", "start", "complete", "drop", "open", "differs", "find"]); s.add_argument("post", nargs="?")
     s.add_argument("--train"); s.add_argument("--part"); s.add_argument("--title", default="")
     s.add_argument("--task", default=""); s.add_argument("--task-file"); s.add_argument("--parent")
     s.add_argument("--source", action="append", default=[]); s.add_argument("--model")
@@ -5920,6 +6132,7 @@ def main(argv=None):
                    "on its train (default: this board, or the one attached board that holds the train)")
     s = sp.add_parser("review"); s.add_argument("post", nargs="?"); s.add_argument("--train", default=None)
     s.add_argument("--dry-run", action="store_true"); s.add_argument("--force", action="store_true"); s.add_argument("--db", default=None)
+    s.add_argument("--session-id", default=None, help="web: the review's session, once create_session answered")
     s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s = sp.add_parser("welcome")
     s.add_argument("--runtime", choices=WELCOME_RUNTIMES, default=None)
@@ -6044,8 +6257,14 @@ def main(argv=None):
                     task = fh.read()
             res = step_new(a.train, a.part, a.title or a.part, task=task, parent=a.parent, sources=a.source,
                            model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board)
+        elif a.action == "open":
+            res = {"steps": step_open(a.db)}
+        elif a.action == "find":
+            res = step_find(a.part or a.post, a.train, db_path=a.db)
         elif not a.post:
             res = {"error": "step %s needs a post id" % a.action}
+        elif a.action == "differs":
+            res = step_differs(a.post, a.task, db_path=a.db)
         elif a.action == "start":
             res = step_start(a.post)
         elif a.action == "drop":
@@ -6069,6 +6288,10 @@ def main(argv=None):
         if not a.post and not a.train:
             print("kit.py review <post> | --train <train>")
             return 2
+        if a.session_id and a.post:
+            ok = _board_write("update", "posts", a.post, {"review_started": _now_z(), "review_session": a.session_id})
+            print("review of %s: %s" % (a.post, "started (session %s)" % a.session_id if ok else "NOT RECORDED: the board did not take it"))
+            return 0 if ok else 1
         rc, msg = review(a.post, train=a.train, dry_run=a.dry_run, force=a.force, db_path=a.db, cli=a.cli)
         print(msg)
         return rc
@@ -6166,7 +6389,8 @@ def main(argv=None):
             return 2
         return d.main((["--gate"] if a.gate else []) + (["--json"] if a.json else []))
     if a.cmd == "train":
-        print(train_context(m, a.target, zoom=a.zoom, db_path=a.db, as_json=a.as_json), end="")
+        lv, only = ("full", a.full) if a.full else ("sections", a.sections) if a.sections is not None else ("brief", ())
+        print(train_context(m, a.target, zoom=a.zoom, db_path=a.db, as_json=a.as_json, level=lv, only=only), end="")
         return 0
     if a.cmd == "receive":
         try:

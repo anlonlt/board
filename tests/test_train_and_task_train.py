@@ -72,7 +72,7 @@ class TrainAndResume(unittest.TestCase):
     def test_check_and_handoff(self):
         steps = {s["part"]: s for s in self.ctx("planner")["steps"]}
         self.assertEqual(steps["PL1"]["check"], "python3 bench.py --n 50")
-        txt = self.kit.train_context(self.tmp, "planner", db_path=self.db)
+        txt = self.kit.train_context(self.tmp, "planner", db_path=self.db, level="sections")
         self.assertIn("check: `python3 bench.py --n 50`", txt)
         self.assertIn("*Handoff:* use out/model.bin", txt)
 
@@ -111,6 +111,90 @@ class TrainAndResume(unittest.TestCase):
         resp = srv.handle(call)
         self.assertFalse(resp["result"]["isError"])
         self.assertIn("Resume in agy", resp["result"]["content"][0]["text"])
+
+
+class TrainDepths(unittest.TestCase):
+    """The train at the depth a session needs, and the launch that shows what was already found."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.kit = load("kit_mod_depth", os.path.join(ROOT, "scripts", "kit.py"))
+        cls.tmp = tempfile.mkdtemp()
+        cls.db = os.path.join(cls.tmp, "board.db")
+        long = "line of the body. " * 400
+        cls.posts = {"b%d" % i: {"title": "step %d" % i, "part": "B%d" % i, "train": "b", "status": "complete", "column": "info",
+                                 "created_at": "2026-01-%02d" % i, "verdict": "found number %d" % i, "bars": ["bar%d of 9" % i],
+                                 "check": "check%d.py" % i, "breaks": "breaks%d" % i, "artifacts": ["out/a%d" % i], "handoff": "next%d" % i,
+                                 "issues": ["issue%d" % i], "body": long} for i in range(1, 15)}
+        cls.posts["b15"] = {"title": "a new one", "part": "B15", "train": "b", "status": "planned", "created_at": "2026-02-01", "body": "x"}
+        make_db(cls.db, cls.posts)
+        conn = sqlite3.connect(cls.db)
+        conn.execute("INSERT INTO docs VALUES ('comments', 'c1', 1, ?, 'x')", (json.dumps(
+            {"post_id": "b3", "from": "owner", "text": "his words " * 100, "created_at": "2026-01-04T00:00"}),))
+        conn.commit()
+        conn.close()
+
+    def view(self, **kw):
+        return self.kit.train_context(self.tmp, "b", db_path=self.db, **kw)
+
+    def test_brief_is_two_lines_a_step_and_far_smaller(self):
+        brief, sections = self.view(), self.view(level="sections")
+        self.assertIn("- [x] B3 `b3` step 3\n  found number 3 · next: next3\n", brief)
+        self.assertNotIn("bar3 of 9", brief)
+        self.assertLess(len(brief.split("## Current Focus")[0]), 0.62 * len(sections.split("## Current Focus")[0]))
+
+    def test_sections_are_the_seven_fields_of_the_steps_asked_for(self):
+        out = self.view(level="sections", only=["B3"])
+        for x in ("found number 3", "bar3 of 9", "out/a3", "issue3", "check3.py", "breaks3", "next3"):
+            self.assertIn(x, out)
+        self.assertNotIn("B4", out)
+        self.assertNotIn("Current Focus", out)
+        self.assertIn("no step ZZ", self.view(level="sections", only=["zz"]).replace("zz", "ZZ"))
+
+    def test_full_is_uncut(self):
+        out = self.view(level="full", only=["b3"])
+        self.assertIn(self.posts["b3"]["body"].strip(), out)
+        self.assertIn(("his words " * 100).strip(), out)
+        self.assertNotIn("found number 4", out)
+
+    def test_every_view_ticks_the_same_steps(self):
+        out = self.kit.resume(self.tmp, db_path=self.db, alive=set())
+        self.assertIn("## Train b (14/15 done)", out)
+        self.assertEqual(sum(x.startswith("- [x]") for x in self.view().splitlines()), 14)
+        steps = json.loads(self.view(as_json=True))["steps"]
+        self.assertEqual(sum(s["box"] == "[x]" for s in steps), 14)
+
+    def test_resume_carries_what_was_found(self):
+        out = self.kit.resume(self.tmp, db_path=self.db, alive=set())
+        self.assertIn("### Found so far", out)
+        self.assertIn("found number 14", out)
+        self.assertNotIn("found number 6", out)
+        self.assertIn("(6 earlier: `python3 -I .kit/kit.py train b --brief`)", out)
+        part = self.kit.resume_role(self.tmp, "part", post="b15", db_path=self.db)
+        self.assertIn("## Found so far on train b", part)
+        self.assertIn("found number 3", part)
+
+    def gate(self, text=None, **post):
+        path = os.path.join(self.tmp, "prompt.md")
+        with open(path, "w") as fh:
+            fh.write("the prompt\n" + (("\n" + self.kit.CIRCLE_HEAD + "\n" + text + "\n") if text else ""))
+        return self.kit.circle_gate(self.posts, "b15", dict(self.posts["b15"], **post), path)
+
+    def test_a_launch_shows_every_conclusion_and_asks_what_differs(self):
+        why = self.gate()
+        for i in range(1, 15):
+            self.assertIn("- B%d: found number %d" % (i, i), why)      # every one: the circle shares no words with what it repeats
+        for bad in ("short", "It is different from everything that was done before", "Builds on B99, which does not exist at all"):
+            self.assertIsNotNone(self.gate(bad), bad)
+        self.assertIsNone(self.gate("Builds on B9 and B12 (keeps the chord weight); adds the step from its own last note."))
+        self.assertIsNone(self.gate("None of them bears on this: it is the settings page only."))
+        self.assertIsNone(self.gate(None, differs="Departs from B4: the tune no longer decides the voice."))
+
+    def test_a_step_already_started_or_a_young_train_is_not_asked(self):
+        self.assertIsNone(self.gate(session_id="s"))
+        self.assertIsNone(self.gate(launched_at="x"))
+        few = {k: self.posts[k] for k in ("b1", "b15")}
+        self.assertIsNone(self.kit.circle_gate(few, "b15", self.posts["b15"], "/nowhere"))
 
 
 class PostFormat(unittest.TestCase):
@@ -248,15 +332,15 @@ class TaskTrainHook(unittest.TestCase):
             fh.write(json.dumps({"type": "user", "message": {"role": "user", "content": opener}}) + "\n")
 
     def call(self, sid, name, ti, tr=None):
-        st = os.path.join(tempfile.gettempdir(), "kit-task-train-%s.json" % sid)
-        payload = {"hook_event_name": "PostToolUse", "session_id": sid, "cwd": self.proj, "tool_name": name,
-                   "tool_input": ti, "tool_response": tr or {}, "transcript_path": self.tf}
+        return self.hook(sid, "PostToolUse", {"tool_name": name, "tool_input": ti, "tool_response": tr or {}})
+
+    def hook(self, sid, event, fields, **env):
+        payload = {"hook_event_name": event, "session_id": sid, "cwd": self.proj, "transcript_path": self.tf, **fields}
         r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "kit", "hooks", "kit_task_train.py")],
                            input=json.dumps(payload), capture_output=True, text=True, timeout=30,
-                           env=dict({k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_REMOTE"},  # a computer, even in a web session
-                                    CLAUDE_PROJECT_DIR=self.proj, KIT_NO_LAUNCH="1", KIT_BOARD_URL="http://127.0.0.1:9"))
+                           env=dict({k: v for k, v in os.environ.items() if k not in ("CLAUDE_CODE_REMOTE", "CLAUDE_CODE_TASK_LIST_ID")},  # a computer, even in a web session
+                                    CLAUDE_PROJECT_DIR=self.proj, KIT_NO_LAUNCH="1", KIT_BOARD_URL="http://127.0.0.1:9", **env))
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.addCleanup(lambda: [os.path.exists(p) and os.remove(p) for p in (st, st + ".lock")])
         return json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"] if r.stdout.strip() else ""
 
     def post(self, pid):
@@ -302,11 +386,98 @@ class TaskTrainHook(unittest.TestCase):
         msg = self.call(sid, "TaskUpdate", {"taskId": "1", "status": "completed"})
         run = os.path.join(self.proj, ".kit", "run")
         # each completed step's review prompt, and a cross review at 2 of the train complete (train_every 2)
-        self.assertEqual(sorted(os.listdir(run)), ["CR-PL2-b.md", "CR-pl4-fit-the-model.md", "CR-train-planner-2.md"])
+        self.assertEqual(sorted(f for f in os.listdir(run) if f.endswith(".md")), ["CR-PL2-b.md", "CR-pl4-fit-the-model.md", "CR-train-planner-2.md"])
         self.assertIn("CROSS REVIEW of the whole train `planner`", rd(os.path.join(run, "CR-train-planner-2.md")))
         self.assertIn("review CR-train-planner-2", msg)
         # a task without train metadata stays the orchestrator's own
         self.assertEqual(self.call(sid, "TaskCreate", {"subject": "tidy notes", "description": "x"}, {"task": {"id": "3"}}), "")
+
+    # ------------------------------------------------ a task list that outlives its orchestrator
+    ORCH = "Read .kit/claude-cli/orchestrator.md and start as the orchestrator for this repository."
+
+    def kit_json(self, *a):
+        r = subprocess.run([sys.executable, "-I", os.path.join(self.proj, ".kit", "kit.py")] + list(a), capture_output=True, text=True,
+                           timeout=30, cwd=self.proj, env=dict({k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_REMOTE"},
+                                                               KIT_NO_LAUNCH="1", KIT_BOARD_URL="http://127.0.0.1:9"))
+        return json.loads(r.stdout.strip().splitlines()[-1])
+
+    def since(self, day):
+        p = os.path.join(self.proj, ".kit", "config.json")
+        c = json.loads(rd(p))
+        c["kit"]["review"]["since"] = day
+        with open(p, "w") as fh:
+            json.dump(c, fh)
+
+    def test_hand_over_a_step_finished_while_the_orchestrator_is_replaced_is_still_reviewed(self):
+        """The owner: "why does a task list die with an orchestrator?" The first one plans and launches, the part
+        finishes, a new orchestrator with an empty list takes over: it is told the step, and its completion reviews it."""
+        self.since("2026-01-01")
+        self.transcript(self.ORCH)
+        self.call("orch-A", "TaskCreate", {"subject": "PL4 fit", "description": "x", "metadata": {"train": "planner", "part": "PL4"}},
+                  {"task": {"id": "1"}})
+        self.call("orch-A", "TaskUpdate", {"taskId": "1", "status": "in_progress"})
+        make_db(self.db, {"pl4-fit": dict(self.post("pl4-fit"), status="complete", session_id="demo-pl4", verdict="It fits.")})
+        # the new one: an empty list, another session
+        steps = {x["part"]: x for x in self.kit_json("step", "open")["steps"]}
+        self.assertEqual((steps["PL4"]["state"], steps["PL2"]["state"]), ("review due", "in progress"))
+        seen = subprocess.run([sys.executable, "-I", os.path.join(self.proj, ".kit", "kit.py"), "resume", "--db", self.db], cwd=self.proj,
+                              capture_output=True, text=True, timeout=60).stdout
+        self.assertIn("- [r] PL4 `pl4-fit`", seen)
+        self.assertIn("kit.py step complete pl4-fit", seen)
+        told = self.hook("orch-B", "UserPromptSubmit", {"prompt": "go on"})
+        self.assertIn("2 open steps", told)
+        self.assertIn("PL4 (planner, review due)", told)
+        self.call("orch-B", "TaskCreate", {"subject": "PL4 fit", "description": "", "metadata": {"train": "planner", "part": "PL4"}},
+                  {"task": {"id": "7"}})
+        self.call("orch-B", "TaskCreate", {"subject": "PL2 second", "description": "", "metadata": {"train": "planner", "part": "PL2"}},
+                  {"task": {"id": "8"}})
+        self.assertEqual(self.hook("orch-B", "UserPromptSubmit", {"prompt": "go on"}), "")      # nothing missing: silent
+        self.assertIn("CR-pl4-fit", self.call("orch-B", "TaskUpdate", {"taskId": "7", "status": "completed"}))
+        self.assertTrue(os.path.isfile(os.path.join(self.proj, ".kit", "run", "CR-pl4-fit.md")))
+        self.assertEqual(sum(1 for c in self.calls() if c[0] == "set"), 1)                       # no step made twice
+
+    def test_a_step_reviewed_or_older_than_the_setting_is_not_due_again(self):
+        base = {"train": "planner", "status": "complete", "column": "info", "session_id": "s", "verdict": "v"}
+        make_db(self.db, {"a1": dict(base, part="A1", created_at="2026-05-01"), "a2": dict(base, part="A2", created_at="2025-05-01"),
+                          "a3": dict(base, part="A3", created_at="2026-05-01", review="continue"),
+                          "a4": dict(base, part="A4", created_at="2026-05-01", review_started="x"),
+                          "a5": dict(base, part="A5", created_at="2026-05-01", review_auto=False),
+                          "a6": dict(base, part="A6", created_at="2026-05-01", column="done")})
+        due = lambda: [x["part"] for x in self.kit_json("step", "open")["steps"] if x["state"] == "review due"]   # noqa: E731
+        self.assertEqual(due(), [])                      # no setting: a project's past is left alone
+        self.since("2026-01-01")
+        self.assertEqual(due(), ["A1"])
+
+    def test_a_lost_record_is_found_by_the_tasks_subject(self):
+        self.transcript(self.ORCH)
+        self.hook("orch-C", "TaskCompleted", {"task_id": "5", "task_subject": "PL2 second"})
+        self.assertIn("PL2-b", self.call("orch-C", "TaskUpdate", {"taskId": "5", "status": "completed"}))
+        self.assertEqual(self.post("PL2-b")["status"], "complete")
+        self.hook("orch-C", "TaskCompleted", {"task_id": "6", "task_subject": "tidy my notes"})
+        self.assertEqual(self.call("orch-C", "TaskUpdate", {"taskId": "6", "status": "completed"}), "")
+
+    def test_the_record_outlives_tmp_and_a_shared_list_has_one(self):
+        self.transcript(self.ORCH)
+        ti = {"subject": "PL2 second", "description": "", "metadata": {"train": "planner", "part": "PL2"}}
+        self.hook("orch-D", "PostToolUse", {"tool_name": "TaskCreate", "tool_input": ti, "tool_response": {"task": {"id": "1"}}},
+                  CLAUDE_CODE_TASK_LIST_ID="demo-orchestrator", TMPDIR=tempfile.mkdtemp())
+        self.assertIn("PL2-b", self.hook("orch-E", "PostToolUse", {
+            "tool_name": "TaskUpdate", "tool_input": {"taskId": "1", "status": "completed"}, "tool_response": {}},
+            CLAUDE_CODE_TASK_LIST_ID="demo-orchestrator", TMPDIR=tempfile.mkdtemp()))
+
+    def test_the_reminder_is_for_the_orchestrator_and_at_most_twice(self):
+        self.transcript("Your prompt is docs/prompts/PL2.md: read it and do it.")
+        self.assertEqual(self.hook("part-F", "UserPromptSubmit", {"prompt": "x"}), "")
+        self.transcript(self.ORCH)
+        self.assertEqual([bool(self.hook("orch-G", "UserPromptSubmit", {"prompt": "x"})) for _ in range(4)], [True, True, False, False])
+
+    def test_a_web_review_is_recorded_once_its_session_exists(self):
+        self.since("2026-01-01")
+        make_db(self.db, {"w1": {"part": "W1", "train": "planner", "status": "complete", "created_at": "2026-05-01", "session_id": "s"}})
+        subprocess.run([sys.executable, "-I", os.path.join(self.proj, ".kit", "kit.py"), "review", "w1", "--session-id", "session_x"],
+                       check=True, capture_output=True, cwd=self.proj)
+        self.assertEqual(self.post("w1")["review_session"], "session_x")
+        self.assertNotIn("W1", [x["part"] for x in self.kit_json("step", "open")["steps"]])
 
     def test_deleting_removes_only_a_step_not_yet_started(self):
         self.transcript("Read .kit/claude-cli/orchestrator.md and start as the orchestrator for this repository.")

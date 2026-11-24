@@ -211,7 +211,8 @@ def main():
         os.kill(pid, signal.SIGTERM)
         return 0
 
-    launch = ["env", "KIT_ROLE=%s" % a.role, "claude", "--bg", "-n", name, "--permission-mode", mode]
+    launch = ["env", "KIT_ROLE=%s" % a.role] + (["CLAUDE_CODE_TASK_LIST_ID=%s-orchestrator" % os.path.basename(ROOT)]
+                                                  if a.role == "orchestrator" else []) + ["claude", "--bg", "-n", name, "--permission-mode", mode]
     limit_k = int((k.get(a.role) or {}).get("context_limit_k", 380 if a.role == "orchestrator" else 80))
     # Claude Code's own compaction only as a safety net just past the reset point.
     launch += ["--autocompact", str(max(100, limit_k + (70 if a.role == "orchestrator" else 40)) * 1000)]

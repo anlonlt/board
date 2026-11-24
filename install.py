@@ -241,6 +241,9 @@ def load_config(t, a):
     if first:
         k["setup"] = True
         k["main_branch"] = None
+    # a step made from now on whose review never started is listed by resume; a project's past is not reviewed again
+    import datetime
+    k.setdefault("review", dict(DEFAULT_KIT["review"])).setdefault("since", datetime.date.today().isoformat())
     k.setdefault("orchestrator", {}).setdefault("context_limit_k", DEFAULT_KIT["orchestrator"]["context_limit_k"])
     k.setdefault("clerk", {}).setdefault("context_limit_k", DEFAULT_KIT["clerk"]["context_limit_k"])
     for role, v in DEFAULT_KIT["roles"].items():

@@ -150,7 +150,7 @@ class TrainShowsBreaks(unittest.TestCase):
                          (json.dumps(dict(post(), created_at="2026-01-01")),))
             conn.commit()
             conn.close()
-            txt = kit.train_context(tmp, "demo", db_path=db)
+            txt = kit.train_context(tmp, "demo", db_path=db, level="sections")
             self.assertIn("*Breaks:* " + PLANT, txt)
             steps = json.loads(kit.train_context(tmp, "demo", db_path=db, as_json=True))["steps"]
             self.assertEqual(steps[0]["breaks"], PLANT)

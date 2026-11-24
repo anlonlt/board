@@ -11,6 +11,10 @@ A thin adapter over `kit.py step` (the same commands an agy orchestrator runs by
   TaskUpdate completed                    -> `kit.py step complete`: status complete (the owner moves it to Done), its
                                              review, and every kit.review.train_every steps a cross review of the train
   TaskUpdate deleted                      -> `kit.py step drop` (only while no part started it)
+  TaskCompleted (Claude Code's own event) -> a task this hook has no record of (its record died with a container, or
+                                             another session made it) finds its step again by its subject, "<PART> ..."
+  UserPromptSubmit                        -> the open steps that have no task here, named (at most twice a session)
+The record (task id -> post) is kept under .kit/run, per task list, not in /tmp.
 
 Metadata keys: train, part (required for a step), board (an attached board's id: the step goes on its train, CL25), parent, sources (the owner's or a review's comment ids the step
 answers), model, review (false: no review). A task without train and part stays the orchestrator's own. Other sessions
@@ -101,6 +105,32 @@ def on_create(root, st, ti, tr):
         tid, res["launch"])
 
 
+def on_completed_event(root, st, data):
+    """TaskCompleted fires before the TaskUpdate it belongs to lands: the step is found here, and on_update completes it."""
+    tid, subject = str(data.get("task_id") or ""), str(data.get("task_subject") or "").strip()
+    if tid and tid not in st["tasks"] and subject:
+        res = kit(root, ["find", "--part", re.split(r"[\s:·]+", subject, maxsplit=1)[0]])
+        if res.get("post"):
+            st["tasks"][tid] = res["post"]
+
+
+def on_prompt(root, st):
+    if st.get("asked", 0) >= 2:
+        return None
+    res = kit(root, ["open"])
+    have = set(st["tasks"].values())
+    miss = [x for x in res.get("steps") or [] if x["post"] not in have]
+    if not miss:
+        return None
+    st["asked"] = st.get("asked", 0) + 1
+    return ("%d open step%s of the trains %s no task in your list: %s. One TaskCreate each, subject \"<PART> <title>\", metadata "
+            "{train, part%s}: the existing post is adopted. Without it, its completion, review and status never reach the board." % (
+                len(miss), "" if len(miss) == 1 else "s", "has" if len(miss) == 1 else "have",
+                "; ".join("%s (%s%s%s)" % (x["part"], x["train"], (", board " + x["board"]) if x["board"] else "",
+                                           ", review due" if x["state"] == "review due" else "") for x in miss[:12])
+                + (" and %d more" % (len(miss) - 12) if len(miss) > 12 else ""), ", board" if any(x["board"] for x in miss) else ""))
+
+
 def on_update(root, st, ti):
     pid = st["tasks"].get(str(ti.get("taskId") or ""))
     if not pid:
@@ -147,10 +177,17 @@ def main():
     except (ValueError, OSError):
         return 0
     name = str(data.get("tool_name") or "")
-    if name not in ("TaskCreate", "TaskUpdate"):
+    event = str(data.get("hook_event_name") or "")
+    if name not in ("TaskCreate", "TaskUpdate") and event not in ("TaskCompleted", "UserPromptSubmit"):
         return 0
-    sid = re.sub(r"[^a-zA-Z0-9._-]", "_", str(data.get("session_id") or "session"))
-    path = os.path.join(tempfile.gettempdir(), "kit-task-train-%s.json" % sid)
+    # a list shared between sessions (CLAUDE_CODE_TASK_LIST_ID) has one record: its task ids are the same in each
+    sid = re.sub(r"[^a-zA-Z0-9._-]", "_", str(os.environ.get("CLAUDE_CODE_TASK_LIST_ID") or data.get("session_id") or "session"))
+    d = os.path.join(project_dir(data), ".kit", "run", "task-train")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        d = tempfile.gettempdir()
+    path = os.path.join(d, "kit-task-train-%s.json" % sid)
     # Parallel tool calls run their hooks at once: one lock per session keeps every change in order.
     with open(path + ".lock", "a") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
@@ -163,18 +200,23 @@ def main():
         if is_orchestrator(data, st):
             root = project_dir(data)
             ti = data.get("tool_input") or {}
-            msg = on_create(root, st, ti, data.get("tool_response")) if name == "TaskCreate" else on_update(root, st, ti)
+            if event == "TaskCompleted":
+                on_completed_event(root, st, data)
+            elif event == "UserPromptSubmit":
+                msg = on_prompt(root, st)
+            else:
+                msg = on_create(root, st, ti, data.get("tool_response")) if name == "TaskCreate" else on_update(root, st, ti)
         try:
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(st, fh)
         except OSError:
             pass
     if msg:
-        if artifact_board(config(data)):
+        if artifact_board(config(data)) and event != "UserPromptSubmit":
             # an Artifact board: the step is on the local copy; one batch carries it (and every other change) across
             msg += (" The board is an Artifact: send this to it with `python3 -I .kit/kit.py artifact push` (it prints one "
                     "ArtifactData batch per 50 changes); batch several steps before you push.")
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": msg}}))
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": event or "PostToolUse", "additionalContext": msg}}))
     return 0
 
 

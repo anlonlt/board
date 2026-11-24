@@ -42,6 +42,8 @@ TABLE = [
     ("UserPromptSubmit", "kit_say_it_once.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("UserPromptSubmit", "kit_board_typing.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("UserPromptSubmit", "kit_cards_reminder.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
+    ("UserPromptSubmit", "kit_task_train.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
+    ("TaskCompleted", "kit_task_train.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("PreInvocation", "kit_say_it_once.py", {"agy": ANY}, PLAIN, 50),
     ("PreInvocation", "kit_board_typing.py", {"agy": ANY}, PLAIN, 50),
     ("PostInvocation", "kit_say_it_once.py", {"agy": ANY}, PLAIN, 50),

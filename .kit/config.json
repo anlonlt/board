@@ -74,7 +74,8 @@
   },
   "review": {
    "auto": "all",
-   "train_every": 4
+   "train_every": 4,
+   "since": "2026-11-24"
   },
   "post_body_max": 1500,
   "clerk": {

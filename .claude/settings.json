@@ -78,6 +78,17 @@
           }
         ]
       }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.kit/hook.py\" cli TaskCompleted",
+            "timeout": 60
+          }
+        ]
+      }
     ]
   },
   "env": {

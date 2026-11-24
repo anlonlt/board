@@ -162,6 +162,8 @@ class ResumeReadsAttachedBoards(unittest.TestCase):
                 with self.cfg(), mock.patch.object(old, "_kit_config", return_value={"project": "Harmonize"}):
                     a = old.resume(self.tmp, db_path=db, alive={"s1"}, cli=cli)
                     b = self.kit.resume(self.tmp, db_path=db, alive={"s1"}, cli=cli)
+                # the import line names the review-due steps since the task list is rebuilt with them too
+                b = b.replace(" ([r] too: its task completed starts its review)", "")
                 self.assertEqual(a, b, cli)
 
 

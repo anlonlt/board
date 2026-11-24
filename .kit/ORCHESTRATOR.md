@@ -24,3 +24,5 @@ The local board server (`.kit/board_data/board.db`) is the live inbox; `.kit/kit
 
 ## 5. Limits (from `.kit/config.json`, enforced by `.agents/hooks.json`)
 A message via `send_message`: at most 200 characters (a Done pointer: 200); the result goes in the post. Destructive git and `rm -r` outside /tmp are refused by `kit_guard.py`.
+
+**A train is never walked in a circle.** `kit.py resume` carries what each active train found (`kit.py train <train> --brief` for all of it). Before a step of a train with finished steps is launched, say which of them it builds on and what it does differently: `kit.py step differs <post> --task "<PART>: ..."` (launch asks for it and shows every earlier conclusion). A step marked `[r]` in resume is finished and unreviewed: complete its task (or `kit.py step complete <post>`) and its review starts, whoever launched it.

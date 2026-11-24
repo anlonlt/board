@@ -163,6 +163,7 @@ fi
 export KIT_CLI="$CLI"
 if [ "$HAS_ORCH" -eq 1 ] && [ "$BOARD_ONLY" -eq 0 ]; then
   export KIT_ROLE=orchestrator
+  export CLAUDE_CODE_TASK_LIST_ID="${CLAUDE_CODE_TASK_LIST_ID:-$(basename "$ROOT")-orchestrator}"   # its successor opens the same task list
 fi
 
 if [ "$CLI" = "claude" ]; then

@@ -162,7 +162,7 @@ with tempfile.TemporaryDirectory() as d:
     check("generated part prompts, the post format and the feature recipe installed; reviews on by default",
           "{{" not in part_cli and "<POST_ID>" in part_cli and "kit.py done <POST_ID>" in part_cli
           and "## The post format" in board_md and "## Which feature for what" in board_md and "board_cli.py reply" in board_md
-          and cfg_loc.get("review") == {"auto": "all", "train_every": 4} and cfg_loc.get("post_body_max") == 1500)
+          and {k: v for k, v in cfg_loc.get("review", {}).items() if k != "since"} == {"auto": "all", "train_every": 4} and cfg_loc["review"].get("since") and cfg_loc.get("post_body_max") == 1500)
     orch_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "orchestrator.md"), encoding="utf-8").read()
     cards_cli = open(os.path.join(t_loc, ".claude", "agents", "kit-cards.md"), encoding="utf-8").read()
     clerk_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "clerk.md"), encoding="utf-8").read()
