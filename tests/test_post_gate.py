@@ -86,11 +86,13 @@ class Lanes(unittest.TestCase):
 class Threads(unittest.TestCase):
     def test_asking_in_a_thread(self):
         for t in ("A \U0001F44D here launches it too.", "Should I merge them?", "Do you want the pilot first?", "I can plan CL13; tell me which.",
-                  "Question: launch one part? Default: yes.", "On your yes I merge the parts.", "A thumbs up is yes", "Let me know if you want it."):
+                  "Question: launch one part? Default: yes.", "On your yes I merge the parts.", "A thumbs up is yes", "One \U0001F44D launches it all", "A Like here = go.", "A Like on this comment = go for it", "Like this to go.", "Like this and the next step builds it",
+                  "tap \U0001F44D if it looks good", "Let me know if you want it."):
             self.assertIsNotNone(g.check_comment("c", {"from": "orchestrator", "text": t}), t)
 
     def test_saying_is_not_asking(self):
         for t in ("Done: 4 of 4. The bar is full width now.", "He asked \"should I merge?\" and the answer is in the post.", "> Should I?\nYes: merged.",
+                  "\U0001F44D", "Relayed your Like on the first offer.", "The test catches the ghost \U0001F44D.", "It is now running on your go.", "Your Like is the go: the step launched.",
                   "Why it failed? The cache.", "`do you want` is the string that broke.", "It waits in your Decisions lane.", "Which is why it broke."):
             self.assertIsNone(g.check_comment("c", {"from": "orchestrator", "text": t}), t)
 
@@ -160,7 +162,7 @@ class Live(unittest.TestCase):
         self.assertEqual(self.cli("reply", "q", "--from", "orchestrator", "--text", "Should I add C?").returncode, 0)
 
     def test_ask_writes_the_question_whole(self):
-        base = ["ask", "--title", "Which snow", "--option", "A", "--option", "B", "--default", "A", "--deadline", "2027-01-01"]
+        base = ["ask", "--title", "Which one", "--option", "A", "--option", "B", "--default", "A", "--deadline", "2027-01-01"]
         self.assertIn("full_auto", self.run_("kit.py", *base).stdout)
         r = json.loads(self.run_("kit.py", *(base + ["--needs", "taste"])).stdout)
         p = self.get(r["post"])

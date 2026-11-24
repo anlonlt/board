@@ -16,10 +16,12 @@ NEEDS = {"senses": "his ears, eyes or phone", "taste": "a taste only he can judg
          "direction": "a change of direction", "delete": "deleting something of his", "access": "an account or access only he has"}
 PROVED = ("verdict", "bars", "check", "breaks", "asked", "not_checked", "artifacts", "body")
 ASK = re.compile("|".join((
-    "\U0001F44D", r"thumbs?[ -]?up", r"\b(?:a|your) like (?:here|on|below|means|launches)\b", r"\blike (?:this|it|here) (?:to|and|if)\b",
+    r"\b(?:an?|one|tap|your)\s+(?:\U0001F44D|thumbs?[ -]?up|like)\s*(?:here|below|if|to\b|=|means|launches|on (?:this|it|my)|on proposal)",
+    r"\b(?:an?|one)\s+(?:\U0001F44D|thumbs?[ -]?up|like)\s+is\b",
+    r"\btap\s+\U0001F44D", r"\U0001F44D\s*(?:if|=|here|means|launches)", r"\blike (?:this|it|here) (?:to|and|if)\b",
     r"\b(?:should|shall|may) I\b[^.?!\n]*\?", r"\b(?:do you|would you(?: like)?) want\b[^.?!\n]*\?", r"\bwant me to\b",
     r"\bis it ok(?:ay)? (?:if|to)\b", r"\btell me which\b", r"\blet me know (?:which|if you(?:'d| would)? (?:want|like)|whether)\b",
-    r"^\s*(?:\*\*)?question(?:\*\*)?\s*:", r"\bon your (?:yes|go)\b")), re.I | re.M)
+    r"^\s*(?:\*\*)?question(?:\*\*)?\s*:", r"\bon your (?:yes|go),?\s+(?:I|we|it)\b")), re.I | re.M)
 QUOTED = re.compile(r"^\s*>.*$|```.*?```|`[^`\n]*`|\"[^\"\n]*\"|\u201c[^\u201d\n]*\u201d", re.M | re.S)
 
 
@@ -100,7 +102,7 @@ def check_post(doc_id, new, old=None, cfg=None):
 
 def check_comment(doc_id, c, post=None):
     """Why this agent's comment is refused, or None."""
-    if not isinstance(c, dict) or str(c.get("from") or "owner") == "owner" or str(c.get("from")).startswith("kit"):
+    if not isinstance(c, dict) or str(c.get("from") or "owner") == "owner" or str(c.get("from")).startswith("kit") or c.get("like"):
         return None
     if str(doc_id).startswith("welcome-") or c.get("kind") == "review" or (post or {}).get("column") == "question":
         return None
