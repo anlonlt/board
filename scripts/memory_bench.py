@@ -1,14 +1,35 @@
 #!/usr/bin/env python3
-"""Memory benchmark & fresh-session simulator: `board` vs `gastownhall/beads` vs `Druthulu/ProjectArchitect`.
+"""Memory benchmark: what a fresh session of each memory tool is given, measured on a real project.
 
-Ingests a real project's sprawled state read-only (board.db, docs/RULES.md, .story/lessons,
-.story/state, docs/DESIGN-PRINCIPLES.md) into one canonical snapshot, adapts that exact snapshot
-into all three tools' native formats inside isolated temp directories, and measures what a fresh
-session receives at Turn 1 across concrete historical probes and scaling curves (20 / 100 / 300 rules).
+Every project item (rule, lesson, open question) is imported, unchanged and uncurated, into each tool
+with that tool's OWN commands, in a temporary directory; the tool's OWN resume command is then run and its
+output is measured:
+
+  board             kit.py resume --role R (a subprocess, as a session runs it) + the JIT hook on the probe's files
+  beads             bd remember / bd create / bd prime / bd ready, with a real `bd` (--bd PATH)
+  ProjectArchitect  tools/rules_add.py / tools/card.py from a real PA 3 checkout (--pa DIR)
+  flat              reference: every item in one file, read whole (the ceiling for recall, and for tokens)
+  none              reference: no memory (the floor: its recall must be 0)
+
+A tool that is not given is reported "not run": it is never imitated.
+
+Rules of the measure:
+- Nothing of the project is written here. Expected answers live in a probe file (--probes), as item ids, and are
+  written without seeing any packet.
+- Only an item's own text counts: an item is delivered when its full summary is in the packet. A probe's words in
+  the packet's header, an id alone, or a cut summary are not recall.
+- Memory tokens = the packet, minus the same tool's packet for the same probe with no items in it. Each tool's fixed
+  instructions are so counted apart ("total").
+- Nothing is distilled, confirmed, scoped or called hook-enforced on the owner's behalf ("carried by" in RULES.md
+  names the files that state a rule, not what enforces it). A project's own ledger (--ledger) or its curation
+  (--curation, {item id: {"scope": .., "enforced_by": ..}}) is used when given, and the report says so.
+- Coverage is printed next to tokens: a small packet that dropped the rules is not a good one.
+
+Limits: a human-written principle that paraphrases its rules earns no recall for them; ~4 chars/token is an estimate.
 
 Usage:
-    python3 -I scripts/memory_bench.py --project /home/anon/harmonize
-    python3 -I scripts/memory_bench.py --project /home/anon/harmonize --scale 20,100,300 --json
+    python3 -I scripts/memory_bench.py --project DIR --probes FILE [--bd PATH] [--pa DIR] [--curation FILE]
+                                       [--ledger FILE] [--json]
 """
 import argparse
 import glob
@@ -17,557 +38,435 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
-from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "scripts"))
-sys.path.insert(0, os.path.join(ROOT, "kit"))
-sys.path.insert(0, os.path.join(ROOT, "kit", "hooks"))
+CLOSED = ("done", "closed", "answered", "complete", "dropped")
+ROLES = ("orchestrator", "part", "clerk", "review")
+# what a running kit session exports: a bench run must not depend on who runs it (run_all_tests.py does the same)
+SESSION_PREFIXES = ("KIT_", "CLAUDE", "AGY_", "BD_", "BEADS_", "PA_", "GIT_")
 
-import kit  # noqa: E402
-import ledger  # noqa: E402
-import kit_memory_jit  # noqa: E402
+
+class ToolError(RuntimeError):
+    """A tool's command failed: the run stops, it never falls back to an imitation."""
 
 
 def est_tokens(text):
-    """Deterministic ~4 chars/token estimate (no external tokenizer dependency)."""
-    return max(1, (len(str(text or "")) + 3) // 4) if text else 0
+    return (len(text) + 3) // 4
 
 
-def _slug(s):
-    return re.sub(r"[^a-z0-9]+", "-", str(s or "").lower()).strip("-") or "general"
+def _norm(text):
+    return re.sub(r"\s+", " ", str(text or "")).strip().lower()
 
 
-# ---------------------------------------------------------------------------
-# 1. Canonical Ingestor (read-only on any existing project)
-# ---------------------------------------------------------------------------
+def _clean_env(**extra):
+    env = {k: v for k, v in os.environ.items() if not k.startswith(SESSION_PREFIXES)}
+    env.update(extra)
+    return env
 
-def ingest_rules_md(path):
-    """Parse Harmonize-style docs/RULES.md table into normalized rule dicts."""
+
+def _run(cmd, cwd, stdin=None, **env):
+    r = subprocess.run(cmd, cwd=cwd, env=_clean_env(**env), capture_output=True, text=True, timeout=120, input=stdin)
+    if r.returncode != 0:
+        raise ToolError("%s\n  exit %d: %s" % (" ".join(map(str, cmd[:6])), r.returncode, (r.stderr or r.stdout)[-600:]))
+    return r.stdout
+
+
+# ---------------------------------------------------------------- the project, read only
+
+def read_rules(path):
+    """[{id, kind, summary, quote, source, theme}] of a docs/RULES.md table; X rows are dropped rules."""
+    out, theme = [], ""
     if not os.path.isfile(path):
-        return []
-    out = []
-    theme = "general"
-    with open(path, encoding="utf-8", errors="ignore") as fh:
+        return out
+    with open(path, encoding="utf-8") as fh:
         for line in fh:
             s = line.strip()
             if s.startswith("## "):
-                theme = _slug(s[3:])
+                theme = s[3:].strip().lower()
+            if not s.startswith("|"):
                 continue
-            if not s.startswith("|") or s.startswith("|---") or s.lower().startswith("| id "):
+            cols = [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", s)[1:-1]]
+            if len(cols) < 6 or not re.match(r"^R\d+[a-z]?$", cols[0]):
                 continue
-            cols = [c.strip() for c in s.strip("|").split("|")]
-            if len(cols) < 6:
-                continue
-            rid, rule, quote, when, source, carried = cols[:6]
-            if not re.match(r"^[RX]\d+[a-z]?$", rid):
-                continue
-            if rid.startswith("X"):
-                continue  # dropped rule
-            carried_l = carried.lower()
-            hook_m = re.search(r"(kit_[a-z_]+\.py|say_it_once\.py|pre_tool_use\.py|pre_push_checks\.py|stop\.sh|board_typing\.py)", carried_l)
-            enforced_by = ("hook:" + hook_m.group(1)) if hook_m else "review"
-            scope = "project"
-            rule_l = rule.lower()
-            if "clerk" in rule_l and "orchestrator" not in rule_l:
-                scope = "role:clerk"
-            elif "orchestrator" in rule_l and "part" not in rule_l and "session" not in rule_l:
-                scope = "role:orchestrator"
-            elif "modal" in rule_l or "budget" in rule_l:
-                scope = "files:pipeline/modal*"
-            elif "picture" in rule_l or "phone" in rule_l or "width" in rule_l or "zoom" in rule_l:
-                scope = "files:kit/board/*.html"
-            out.append({
-                "id": rid,
-                "summary": rule,
-                "quote": quote,
-                "when": when,
-                "source": source,
-                "carried_by": carried,
-                "theme": theme,
-                "enforced_by": enforced_by,
-                "scope": scope,
-            })
+            out.append({"id": cols[0], "kind": "rule", "summary": cols[1], "quote": cols[2], "source": cols[4],
+                        "theme": theme})
     return out
 
 
-def ingest_lessons(project_dir):
+def read_lessons(project_dir):
     out = []
     for pat in (".story/lessons/*.md", ".board/memory/lessons/*.md"):
         for p in sorted(glob.glob(os.path.join(project_dir, pat))):
-            try:
-                with open(p, encoding="utf-8", errors="ignore") as fh:
-                    txt = fh.read().strip()
-            except OSError:
-                continue
-            first = next((l.lstrip("# ").strip() for l in txt.splitlines() if l.strip()), os.path.basename(p))
-            out.append({
-                "id": "L-" + _slug(os.path.splitext(os.path.basename(p))[0])[:24],
-                "title": first[:140],
-                "text": txt[:600],
-                "source": os.path.relpath(p, project_dir),
-            })
+            with open(p, encoding="utf-8", errors="replace") as fh:
+                txt = fh.read().strip()
+            head = next((ln.lstrip("# ").strip() for ln in txt.splitlines() if ln.strip()), "")
+            if head:
+                out.append({"id": "L:" + os.path.splitext(os.path.basename(p))[0], "kind": "lesson", "summary": head,
+                            "quote": "", "source": os.path.relpath(p, project_dir), "theme": ""})
     return out
 
 
-def ingest_board_db(project_dir):
-    db = os.path.join(project_dir, ".kit", "board_data", "board.db")
-    posts, questions, trains = {}, [], {}
-    if not os.path.isfile(db):
-        return posts, questions, trains
-    conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+def copy_db(project_dir, dest):
+    """A copy of the board database (with its -wal), or None. The project's own is never opened: in WAL mode even a
+    read-only open writes -shm and -wal files next to it."""
+    src = os.path.join(project_dir, ".kit", "board_data", "board.db")
+    if not os.path.isfile(src):
+        return None
+    for suf in ("", "-wal"):
+        if os.path.isfile(src + suf):
+            shutil.copyfile(src + suf, dest + suf)
+    return dest
+
+
+def read_questions(db):
+    out = []
+    if not db:
+        return out
+    conn = sqlite3.connect(db)
     try:
-        for did, raw in conn.execute("SELECT doc_id, data FROM docs WHERE collection='posts'"):
-            try:
-                d = json.loads(raw)
-            except ValueError:
-                continue
-            if not isinstance(d, dict):
-                continue
-            posts[did] = d
-            if d.get("column") == "question" and str(d.get("status") or "").lower() not in ("done", "closed", "answered"):
-                questions.append({"id": did, "title": d.get("title") or did, "train": d.get("train") or "",
-                                  "status": d.get("status") or "open"})
-            if did == "_trains":
-                trains = d
+        rows = conn.execute("SELECT doc_id, data FROM docs WHERE collection='posts' ORDER BY doc_id").fetchall()
     finally:
         conn.close()
-    return posts, questions, trains
-
-
-def ingest_states(project_dir):
-    out = []
-    for pat in (".story/state/*.md", ".board/memory/state/*.md"):
-        for p in sorted(glob.glob(os.path.join(project_dir, pat))):
-            try:
-                with open(p, encoding="utf-8", errors="ignore") as fh:
-                    txt = fh.read().strip()
-            except OSError:
-                continue
-            name = os.path.splitext(os.path.basename(p))[0]
-            first = next((l.strip() for l in txt.splitlines() if l.strip()), name)
-            out.append({"name": name, "head": first[:160], "chars": len(txt)})
+    for did, raw in rows:
+        d = json.loads(raw)
+        if isinstance(d, dict) and d.get("column") == "question" and str(d.get("status") or "").lower() not in CLOSED \
+                and not d.get("removed"):
+            out.append({"id": "Q:" + did, "kind": "question", "summary": str(d.get("title") or did), "quote": "",
+                        "source": did, "theme": ""})
     return out
 
 
-def ingest_project(project_dir):
-    """Read a real repo's sprawled artifacts into one normalized canonical snapshot."""
+def ingest(project_dir, tmp):
     project_dir = os.path.abspath(project_dir)
-    rules = ingest_rules_md(os.path.join(project_dir, "docs", "RULES.md"))
-    lessons = ingest_lessons(project_dir)
-    posts, questions, trains = ingest_board_db(project_dir)
-    states = ingest_states(project_dir)
-    # Canonical settled decisions (seeded from project history if not already in rules)
-    decisions = [
-        {
-            "id": "D1",
-            "summary": "Train VR2 on karaoke filter v3; do not skip training",
-            "scope": "project",
-            "because": "owner round kept 14/16 on v3; R2 approved training",
-            "rejected": "skipping VR2 training",
-            "source": "board:4o0u7mrhr79phpae9rc0",
-        },
-        {
-            "id": "D2",
-            "summary": "Keep app niche on phone speaker only — never require earphones",
-            "scope": "all",
-            "because": "core product differentiator",
-            "rejected": "requiring headphones or earphones for pitch/harmony",
-            "source": "board:q3bqybde38i449uge7il",
-        },
-    ]
-    return {
-        "project": os.path.basename(project_dir),
-        "project_dir": project_dir,
-        "rules": rules,
-        "lessons": lessons,
-        "decisions": decisions,
-        "posts": posts,
-        "questions": questions,
-        "trains": trains,
-        "states": states,
-    }
+    db = copy_db(project_dir, os.path.join(tmp, "project.db"))
+    items = read_rules(os.path.join(project_dir, "docs", "RULES.md")) + read_lessons(project_dir) + read_questions(db)
+    ids = [i["id"] for i in items]
+    dup = sorted({i for i in ids if ids.count(i) > 1})
+    if dup:
+        raise ToolError("duplicate item ids in the project: %s" % ", ".join(dup))
+    return {"project": os.path.basename(project_dir), "dir": project_dir, "db": db, "items": items}
 
 
-# ---------------------------------------------------------------------------
-# 2. Three Faithful Tool Adapters (isolated temp dirs, apples-to-apples)
-# ---------------------------------------------------------------------------
-
-def build_board_context(snap, probe, tmpdir):
-    """Adapter 1: `board` (3-layer distilled ledger + kit.py resume --role + JIT files: hook)."""
-    proj = Path(tmpdir) / "board-sim"
-    if not proj.exists():
-        (proj / ".kit").mkdir(parents=True)
-        (proj / ".kit" / "config.json").write_text(json.dumps({"project": snap["project"], "kit": {}}))
-        (proj / ".kit" / "ledger.py").write_text((Path(ROOT) / "kit" / "ledger.py").read_text())
-        mdir = proj / ".board" / "memory"
-        mdir.mkdir(parents=True)
-        # Copy real board.db if present so resume reads real posts/questions
-        src_db = Path(snap["project_dir"]) / ".kit" / "board_data" / "board.db"
-        if src_db.is_file():
-            (proj / ".kit" / "board_data").mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src_db, proj / ".kit" / "board_data" / "board.db")
-        # Populate 3-layer ledger
-        for r in snap["rules"]:
-            ledger.observe(str(mdir), r["summary"], quote=r["quote"], source=r["source"],
-                           scope=r["scope"], theme=r["theme"], kind="rule", enforced_by=r["enforced_by"])
-        for d in snap["decisions"]:
-            ledger.observe(str(mdir), d["summary"], source=d["source"], scope=d["scope"],
-                           kind="decision", because=d["because"], rejected=d["rejected"])
-        for les in snap["lessons"]:
-            ledger.observe(str(mdir), les["title"], source=les["source"], scope="role:orchestrator",
-                           theme="lessons", kind="lesson")
-        # Run automatic Rule -> Principle distillation on every theme cluster >= 3
-        for cl in ledger.distil_candidates(str(mdir), min_cluster=3):
-            # Compact theme principle summarizing the cluster while preserving all quotes
-            sample = "; ".join(it["summary"][:70] for it in cl["items"][:2])
-            pr = ledger.propose_principle(
-                str(mdir),
-                "Theme %s (%d rules consolidated): %s" % (cl["theme"], cl["count"], sample),
-                cl["ids"], scope="project", theme=cl["theme"],
-            )
-            if pr.get("ok"):
-                ledger.confirm_principle(str(mdir), pr["principle"]["id"])
-
-    mdir = proj / ".board" / "memory"
-    role = probe["role"]
-    files = probe.get("files") or []
-    # 1. Role-scoped resume from ledger (skipping files: scoped rows since JIT hook injects them!)
-    parts = []
-    if role == "orchestrator":
-        q_lines = ["## Open questions on the board"] + [
-            "- `%s`: %s (%s)" % (q["id"], q["title"], q["status"]) for q in snap["questions"][:20]
-        ]
-        parts.extend(q_lines)
-    elif role == "clerk":
-        parts.append("# Resume: clerk (routing & session ids only)")
-    else:
-        parts.append("# Resume: part %s (%s)" % (probe["id"], probe["prompt"]))
-    parts.extend(ledger.format_resume(str(mdir), role, train=probe.get("train"), files=files,
-                                      kit_root=str(proj), skip_file_scoped=True))
-    # 2. JIT PreToolUse hook injection for target files (if any)
-    if files:
-        for f in files:
-            out = kit_memory_jit.handle({
-                "cwd": str(proj),
-                "session_id": "bench-" + probe["id"],
-                "hook_event_name": "PreToolUse",
-                "tool_name": "Edit",
-                "tool_input": {"file_path": str(proj / f)},
-            })
-            if out and out.get("hookSpecificOutput", {}).get("additionalContext"):
-                parts.append("")
-                parts.append(out["hookSpecificOutput"]["additionalContext"])
-    return "\n".join(parts)
+def load_probes(path, snap):
+    """The probe file, refused when an expected id is not an item of the project (a probe that can never pass)."""
+    with open(path, encoding="utf-8") as fh:
+        probes = json.load(fh)["probes"]
+    known = {i["id"] for i in snap["items"]}
+    for p in probes:
+        if p.get("role") not in ROLES:
+            raise ToolError("probe %s: unknown role %r" % (p.get("id"), p.get("role")))
+        if not p.get("gold"):
+            raise ToolError("probe %s: no gold items" % p["id"])
+        bad = [g for g in p["gold"] if g not in known]
+        if bad:
+            raise ToolError("probe %s: not an item of %s: %s" % (p["id"], snap["project"], ", ".join(bad)))
+    return probes
 
 
-def build_beads_context(snap, probe, tmpdir):
-    """Adapter 2: `gastownhall/beads` (bd prime + bd ready + flat bd remember memories)."""
-    proj = Path(tmpdir) / "beads-sim"
-    bdir = proj / ".beads"
-    if not bdir.exists():
-        bdir.mkdir(parents=True)
-        # Issues graph (open questions + active workstreams)
-        issues = []
-        for q in snap["questions"]:
-            issues.append({"id": "bd-" + _slug(q["id"])[:12], "title": q["title"], "ref": q["id"],
-                           "status": "ready", "type": "question", "deps": []})
-        for st in snap["states"][:15]:
-            issues.append({"id": "bd-" + _slug(st["name"])[:12], "title": st["head"],
-                           "status": "open", "type": "workstream", "deps": []})
-        (bdir / "issues.jsonl").write_text("\n".join(json.dumps(x) for x in issues) + "\n")
-        # Flat `bd remember` memories (beads has no role-scoping, hook-stripping, or distillation)
-        mems = []
-        for r in snap["rules"]:
-            mems.append({"id": r["id"], "memory": r["summary"], "source": r["source"]})
-        for d in snap["decisions"]:
-            mems.append({"id": d["id"], "memory": "%s (rejected: %s)" % (d["summary"], d["rejected"])})
-        for les in snap["lessons"]:
-            mems.append({"id": les["id"], "memory": les["title"]})
-        (bdir / "memories.jsonl").write_text("\n".join(json.dumps(x) for x in mems) + "\n")
+# ---------------------------------------------------------------- the tools
+# Each: setup(snap, items, dir) once, with the items to hold (or none, for the empty control), then
+# turn1(probe) and lookup(probe): what a session is given at its start, and what its tool's search then adds.
 
-    # Fresh session runs: `bd prime` + `bd ready` + `bd memories`
-    lines = [
-        "# bd prime (gastownhall/beads)",
-        "Use `bd ready` to list unblocked beads, `bd update <id> --claim` to claim, `bd remember` to store insights.",
-        "",
-        "## bd ready",
-    ]
-    for raw in (bdir / "issues.jsonl").read_text().splitlines():
-        if not raw.strip():
-            continue
-        it = json.loads(raw)
-        if it.get("status") == "ready":
-            lines.append("- [%s] %s (%s)" % (it["id"], it["title"], it.get("ref", "")))
-    lines += ["", "## bd memories (flat durable facts)"]
-    for raw in (bdir / "memories.jsonl").read_text().splitlines():
-        if not raw.strip():
-            continue
-        m = json.loads(raw)
-        lines.append("- %s: %s" % (m["id"], m["memory"]))
-    return "\n".join(lines)
+class Board:
+    name = "board"
 
+    def __init__(self, curation=None, ledger=None):
+        self.curation, self.ledger = curation or {}, ledger
 
-def build_pa_context(snap, probe, tmpdir):
-    """Adapter 3: `Druthulu/ProjectArchitect` (ROADMAP + PHASE-PLAN + DECISIONS + RULES + HANDOFF)."""
-    proj = Path(tmpdir) / "pa-sim"
-    pdir = proj / ".project-architect"
-    if not pdir.exists():
-        pdir.mkdir(parents=True)
-        # ROADMAP.md (Generational Plan)
-        rm = ["# Generational Plan (Roadmap)", ""] + [
-            "- **%s**: %s" % (st["name"], st["head"]) for st in snap["states"]
-        ]
-        (pdir / "ROADMAP.md").write_text("\n".join(rm) + "\n")
-        # PHASE-PLAN.md (Active open items & gates)
-        pp = ["# Active Phase Plan & Gates", ""] + [
-            "- [ ] `%s`: %s" % (q["id"], q["title"]) for q in snap["questions"]
-        ]
-        (pdir / "PHASE-PLAN.md").write_text("\n".join(pp) + "\n")
-        # DECISIONS.md (Decision Ledger)
-        dl = ["# Decision Ledger", ""] + [
-            "- **%s**: %s (because: %s; rejected: %s)" % (d["id"], d["summary"], d["because"], d["rejected"])
-            for d in snap["decisions"]
-        ]
-        (pdir / "DECISIONS.md").write_text("\n".join(dl) + "\n")
-        # RULES.md (Rules & Techniques — full repo ledger)
-        rl = ["# Rules & Techniques", ""] + [
-            "- **%s** [%s]: %s%s" % (r["id"], r["theme"], r["summary"],
-                                     (' — "%s"' % r["quote"][:100]) if r["quote"] else "")
-            for r in snap["rules"]
-        ] + [
-            "- **%s**: %s" % (les["id"], les["title"]) for les in snap["lessons"]
-        ]
-        (pdir / "RULES.md").write_text("\n".join(rl) + "\n")
-        # HANDOFF.md (Subagent boot journal)
-        (pdir / "HANDOFF.md").write_text(
-            "# Fresh Subagent Handoff\n\n"
-            "Project: %s. Read PHASE-PLAN.md, DECISIONS.md, and RULES.md before starting.\n" % snap["project"]
-        )
+    def setup(self, snap, items, d):
+        self.d = d
+        kd = os.path.join(d, ".kit")
+        os.makedirs(os.path.join(kd, "board_data"))
+        for f in ("scripts/kit.py", "kit/ledger.py", "kit/lessons.md"):
+            shutil.copyfile(os.path.join(ROOT, f), os.path.join(kd, os.path.basename(f)))
+        with open(os.path.join(kd, "config.json"), "w", encoding="utf-8") as fh:
+            json.dump({"project": snap["project"], "kit": {"memory_dir": ".board/memory"}}, fh)
+        self.mem = os.path.join(d, ".board", "memory")
+        os.makedirs(self.mem)
+        self.db = os.path.join(kd, "board_data", "board.db")
+        keep = {i["source"] for i in items if i["kind"] == "question"}
+        drop = {i["source"] for i in snap["items"] if i["kind"] == "question"} - keep
+        self._db(snap["db"], drop)
+        _run(["git", "init", "-q", "."], d)
+        if self.ledger and items:
+            shutil.copyfile(self.ledger, os.path.join(self.mem, "ledger.md"))
+            return
+        led = self._ledger()
+        for i in items:
+            if i["kind"] == "question":
+                continue        # a question is a post: it is in the database
+            cur = self.curation.get(i["id"], {})
+            res = led.observe(self.mem, i["summary"], quote=i["quote"], source=i["source"], theme=i["theme"],
+                              scope=cur.get("scope", "project"), kind=i["kind"], enforced_by=cur.get("enforced_by", "review"))
+            if res.get("error"):
+                raise ToolError("ledger observe %s: %s" % (i["id"], res["error"]))
 
-    # Fresh subagent loads HANDOFF + PHASE-PLAN + DECISIONS + RULES (+ ROADMAP for orchestrator)
-    files = ["HANDOFF.md", "PHASE-PLAN.md", "DECISIONS.md", "RULES.md"]
-    if probe["role"] == "orchestrator":
-        files.insert(1, "ROADMAP.md")
-    return "\n\n".join((pdir / f).read_text().strip() for f in files)
+    def _ledger(self):
+        sys.path.insert(0, os.path.join(ROOT, "kit"))
+        import ledger
+        return ledger
+
+    def _db(self, src, drop):
+        if src:
+            for suf in ("", "-wal"):
+                if os.path.isfile(src + suf):
+                    shutil.copyfile(src + suf, self.db + suf)
+        conn = sqlite3.connect(self.db)
+        conn.execute("CREATE TABLE IF NOT EXISTS docs (collection TEXT, doc_id TEXT, data TEXT)")
+        conn.executemany("DELETE FROM docs WHERE collection='posts' AND doc_id=?", [(x,) for x in drop])
+        conn.commit()
+        conn.close()
+
+    def turn1(self, probe):
+        cmd = [sys.executable, "-I", os.path.join(self.d, ".kit", "kit.py"), "resume", "--role", probe["role"], "--db", self.db]
+        if probe["role"] in ("part", "review"):
+            if not probe.get("post"):
+                raise ToolError("probe %s: role %s needs a post" % (probe["id"], probe["role"]))
+            cmd += ["--post", probe["post"]]
+        out = _run(cmd, self.d)
+        if out.startswith(("No post found", "Review: name the step")):
+            raise ToolError("probe %s: kit.py resume: %s" % (probe["id"], out.strip()))
+        return out
+
+    def lookup(self, probe):
+        """The JIT hook on each file the probe edits, then a grep of the ledger (no kit command searches it)."""
+        out = []
+        for f in probe.get("files") or []:
+            # a TMPDIR of its own: the hook remembers there what a session has already seen
+            tmp = tempfile.mkdtemp(dir=self.d)
+            r = _run([sys.executable, "-I", os.path.join(ROOT, "kit", "hooks", "kit_memory_jit.py")], self.d, TMPDIR=tmp,
+                     CLAUDE_PROJECT_DIR=self.d, stdin=json.dumps({
+                         "cwd": self.d, "session_id": "bench", "hook_event_name": "PreToolUse", "tool_name": "Edit",
+                         "tool_input": {"file_path": os.path.join(self.d, f)}}))
+            if r.strip():
+                out.append(json.loads(r)["hookSpecificOutput"]["additionalContext"])
+        return "\n".join(out + [_grep(os.path.join(self.mem, "ledger.md"), probe)])
 
 
-# ---------------------------------------------------------------------------
-# 3. Real Harmonize Probes & Evaluation
-# ---------------------------------------------------------------------------
+class Beads:
+    name = "beads"
 
-DEFAULT_PROBES = [
-    {
-        "id": "S11c",
-        "role": "part",
-        "train": "audio",
-        "files": ["app/audio/feedback.kt"],
-        "prompt": "Implement audio feedback for pitch training",
-        "must_contain": ["speaker", "earphone"],
-        "must_not_leak": ["modal", "say_it_once", "git push"],
-    },
-    {
-        "id": "AC1",
-        "role": "part",
-        "train": "backing",
-        "files": ["pipeline/datasets.py"],
-        "prompt": "Check dataset licensing blockers for backing tracks",
-        "must_contain": ["licen"],
-        "must_not_leak": ["modal", "say_it_once"],
-    },
-    {
-        "id": "VR2",
-        "role": "part",
-        "train": "voice",
-        "files": ["pipeline/vr2.py"],
-        "prompt": "Should we skip training on VR2?",
-        "must_contain": ["vr2", "rejected"],
-        "must_not_leak": ["modal", "say_it_once"],
-    },
-    {
-        "id": "O51",
-        "role": "orchestrator",
-        "train": None,
-        "files": [],
-        "prompt": "What is currently waiting on the owner?",
-        "must_contain": ["vr5-second-run-question", "hl5-harmony-ai-question"],
-        "must_not_leak": ["say_it_once"],
-    },
-    {
-        "id": "UI-Phone",
-        "role": "part",
-        "train": "cli",
-        "files": ["kit/board/board.template.html"],
-        "prompt": "Add a delete action to a board post on mobile",
-        "must_contain": ["phone"],
-        "must_not_leak": ["modal", "say_it_once"],
-    },
-    {
-        "id": "Clerk",
-        "role": "clerk",
-        "train": None,
-        "files": [],
-        "prompt": "Forward an owner comment to a running part",
-        "must_contain": ["clerk"],
-        "must_not_leak": ["vr2", "modal", "earphone"],
-    },
-]
+    def __init__(self, bd):
+        self.bd = os.path.abspath(bd)
+
+    def setup(self, snap, items, d):
+        self.d = d
+        _run(["git", "init", "-q", "."], d)
+        self._bd("init", "--non-interactive", "--quiet", "--skip-hooks", "--skip-agents", "--prefix", "bench")
+        for i in items:
+            if i["kind"] == "question":
+                self._bd("create", i["summary"], "--type", "task")
+            else:
+                self._bd("remember", i["summary"], "--key", re.sub(r"[^a-z0-9]+", "-", i["id"].lower()).strip("-"))
+
+    def _bd(self, *args):
+        # no telemetry, and dolt's global config in the sandbox, not in the home directory
+        return _run([self.bd] + list(args), self.d, BD_DISABLE_METRICS="1", DO_NOT_TRACK="1",
+                    DOLT_ROOT_PATH=self.d)
+
+    def turn1(self, probe):
+        return self._bd("prime") + "\n" + self._bd("ready")
+
+    def lookup(self, probe):
+        return "\n".join(self._bd("memories", t) for t in probe.get("lookup") or [])
 
 
-def score_packet(text, probe):
-    low = str(text or "").lower()
-    req = probe.get("must_contain") or []
-    forb = probe.get("must_not_leak") or []
-    hits = [k for k in req if k.lower() in low]
-    leaks = [k for k in forb if k.lower() in low]
-    return {
-        "tokens": est_tokens(text),
-        "chars": len(text or ""),
-        "recall_hit": len(hits),
-        "recall_total": len(req),
-        "recall_pct": round(100.0 * len(hits) / len(req), 1) if req else 100.0,
-        "leaks": leaks,
-        "leak_count": len(leaks),
-    }
+class ProjectArchitect:
+    """The kit role -> the PA role with the same place. An expert starts from CLAUDE.md, the project-architect skill,
+    its agent file and its card slice; the rules are on disk (rules/INDEX.md), to be grepped. Open questions are not
+    imported: PA keeps none but its own plan's."""
+    name = "ProjectArchitect"
+    AGENT = {"part": ("expert", "pa-expert"), "orchestrator": ("claude", "pa-claude"), "clerk": ("coder", "pa-coder"),
+             "review": ("review", "auditor")}
+
+    def __init__(self, pa):
+        pa = os.path.abspath(pa)
+        inner = os.path.join(pa, "project-architect-3.0")
+        self.pa = inner if os.path.isdir(inner) else pa
+
+    def _read(self, *rel):
+        with open(os.path.join(self.pa, *rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    def _tool(self, name, *args):
+        return _run([sys.executable, os.path.join(self.pa, "tools", name)] + list(args), self.d, PA_PROJECT_ROOT=self.d,
+                    PYTHONDONTWRITEBYTECODE="1")
+
+    def setup(self, snap, items, d):
+        self.d = d
+        os.makedirs(os.path.join(d, ".claude"))
+        for name, text in ((".claude/pa.json", "{}"), ("HOW_WE_WORK.md", self._read("templates", "HOW_WE_WORK.template.md")),
+                           ("rules/INDEX.md", self._read("templates", "INDEX.rules.md"))):
+            p = os.path.join(d, name)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as fh:
+                fh.write(text)
+        self._tool("card.py", "interview", "--defaults", "--name", "owner")
+        n = 0
+        for i in items:
+            if i["kind"] == "question":
+                continue
+            n += 1
+            self._tool("rules_add.py", "add", "--id", "N%d" % n, "--title", i["summary"].replace("|", "/"), "--tags",
+                       re.sub(r"[^a-z0-9]+", "-", i["theme"]).strip("-") or i["kind"], "--origin", i["id"])
+
+    def turn1(self, probe):
+        role, agent = self.AGENT[probe["role"]]
+        return "\n\n".join((self._read("templates", "CLAUDE.template.md"),
+                            self._read("skills", "project-architect", "SKILL.template.md"),
+                            self._read("agents", agent + ".md"), self._tool("card.py", "slice", role)))
+
+    def lookup(self, probe):
+        return _grep(os.path.join(self.d, "rules", "INDEX.md"), probe)
 
 
-def run_benchmark(project_dir, probes=None, scales=()):
-    snap = ingest_project(project_dir)
-    probes = probes or DEFAULT_PROBES
-    adapters = (
-        ("board", build_board_context),
-        ("beads", build_beads_context),
-        ("ProjectArchitect", build_pa_context),
-    )
-    results = {name: [] for name, _ in adapters}
+class Flat:
+    name = "flat"
+
+    def setup(self, snap, items, d):
+        self.text = "\n".join("- %s: %s" % (i["id"], i["summary"]) for i in items)
+
+    def turn1(self, probe):
+        return self.text
+
+    def lookup(self, probe):
+        return ""
+
+
+class Nothing:
+    name = "none"
+
+    def setup(self, snap, items, d):
+        pass
+
+    def turn1(self, probe):
+        return "# Resume: %s %s\n%s\n" % (probe["role"], probe["id"], probe.get("question", ""))
+
+    def lookup(self, probe):
+        return ""
+
+
+def _grep(path, probe):
+    terms = [t.lower() for t in probe.get("lookup") or []]
+    if not terms or not os.path.isfile(path):
+        return ""
+    with open(path, encoding="utf-8") as fh:
+        return "\n".join(ln.rstrip("\n") for ln in fh if any(t in ln.lower() for t in terms))
+
+
+# ---------------------------------------------------------------- the measure
+
+def delivered(text, items):
+    """The ids whose full summary is in the text (whitespace and case aside; PA writes `|` as `/` in its index)."""
+    hay = _norm(text)
+    return {i["id"] for i in items if _norm(i["summary"]) in hay or _norm(i["summary"]).replace("|", "/") in hay}
+
+
+def measure(tool, snap, probes, tmp):
+    """One row per probe. The empty control is the same tool set up with no items."""
+    full_d, empty_d = (os.path.join(tmp, tool.name + s) for s in ("-full", "-empty"))
+    os.makedirs(full_d)
+    os.makedirs(empty_d)
+    tool.setup(snap, [], empty_d)
+    base = [tool.turn1(p) for p in probes]
+    # What a tool's packet holds with no items in it is not memory the bench can credit: a post's own words.
+    base_hits = [delivered(b, snap["items"]) for b in base]
+    tool.setup(snap, snap["items"], full_d)
+    rows = []
+    for p, b, bh in zip(probes, base, base_hits):
+        gold = set(p["gold"])
+        t1, lk = tool.turn1(p), tool.lookup(p)
+        hit1 = delivered(t1, snap["items"]) - bh
+        hit2 = hit1 | (delivered(lk, snap["items"]) - bh)
+        rows.append({"probe": p["id"], "role": p["role"], "tokens_total": est_tokens(t1),
+                     "tokens_memory": max(0, est_tokens(t1) - est_tokens(b)), "tokens_lookup": est_tokens(lk),
+                     "gold": len(gold), "hit_turn1": len(hit1 & gold), "hit_lookup": len(hit2 & gold),
+                     "delivered_turn1": len(hit1), "missed": sorted(gold - hit2),
+                     "control_hits": len(bh & gold)})
+    return rows
+
+
+def summarize(rows, n_items):
+    n, gold = len(rows), sum(r["gold"] for r in rows)
+    s = lambda k: sum(r[k] for r in rows)   # noqa: E731
+    return {"tokens_total": round(s("tokens_total") / n), "tokens_memory": round(s("tokens_memory") / n),
+            "tokens_lookup": round(s("tokens_lookup") / n), "gold": gold, "hit_turn1": s("hit_turn1"),
+            "hit_lookup": s("hit_lookup"), "items": n_items, "coverage": round(100.0 * s("delivered_turn1") / (n * n_items), 1),
+            "precision": round(100.0 * s("hit_turn1") / s("delivered_turn1"), 1) if s("delivered_turn1") else None,
+            "control_hits": s("control_hits")}
+
+
+def run_benchmark(project_dir, probes_path, tools, not_run=()):
     with tempfile.TemporaryDirectory(prefix="mem-bench-") as tmp:
-        for pr in probes:
-            for name, fn in adapters:
-                ctx = fn(snap, pr, tmp)
-                sc = score_packet(ctx, pr)
-                sc["probe"] = pr["id"]
-                sc["role"] = pr["role"]
-                results[name].append(sc)
-
-    summary = {}
-    for name, rows in results.items():
-        avg_tok = round(sum(r["tokens"] for r in rows) / max(1, len(rows)))
-        tot_hit = sum(r["recall_hit"] for r in rows)
-        tot_req = sum(r["recall_total"] for r in rows)
-        tot_leaks = sum(r["leak_count"] for r in rows)
-        summary[name] = {
-            "avg_tokens": avg_tok,
-            "recall": "%d/%d (%.0f%%)" % (tot_hit, tot_req, 100.0 * tot_hit / max(1, tot_req)),
-            "total_leaks": tot_leaks,
-            "probes": rows,
-        }
-
-    # Scaling curve: synthetic observations across 5 themes at N = scales
-    scale_rows = []
-    themes = ("ui", "reporting", "testing", "audio", "git")
-    for n in scales:
-        syn = {
-            "project": "scale-%d" % n,
-            "project_dir": project_dir,
-            "rules": [
-                {
-                    "id": "R%d" % i,
-                    "summary": "Rule %d on %s behavior for step quality check" % (i, themes[i % len(themes)]),
-                    "quote": "owner quote %d" % i,
-                    "when": "2026-11-23",
-                    "source": "board:c%d" % i,
-                    "carried_by": ".claude/hooks/kit_guard.py" if (i % 3 == 0) else "docs/BOARD.md",
-                    "theme": themes[i % len(themes)],
-                    "enforced_by": "hook:kit_guard.py" if (i % 3 == 0) else "review",
-                    "scope": "project",
-                }
-                for i in range(1, n + 1)
-            ],
-            "lessons": [],
-            "decisions": snap["decisions"],
-            "posts": {},
-            "questions": snap["questions"][:5],
-            "trains": {},
-            "states": snap["states"][:5],
-        }
-        row = {"n_rules": n}
-        with tempfile.TemporaryDirectory(prefix="mem-scale-") as tmp:
-            p0 = {"id": "Scale", "role": "part", "train": "cli", "files": [], "prompt": "Implement feature"}
-            for name, fn in adapters:
-                row[name] = est_tokens(fn(syn, p0, tmp))
-        scale_rows.append(row)
-
-    return {
-        "project": snap["project"],
-        "ingested": {
-            "rules": len(snap["rules"]),
-            "lessons": len(snap["lessons"]),
-            "decisions": len(snap["decisions"]),
-            "open_questions": len(snap["questions"]),
-            "states": len(snap["states"]),
-        },
-        "summary": summary,
-        "scaling": scale_rows,
-    }
+        snap = ingest(project_dir, tmp)
+        if not snap["items"]:
+            raise ToolError("no rules, lessons or open questions found in %s" % project_dir)
+        probes = load_probes(probes_path, snap)
+        kinds = [i["kind"] for i in snap["items"]]
+        rep = {"project": snap["project"], "items": {k: kinds.count(k) for k in ("rule", "lesson", "question")},
+               "probes": len(probes), "tools": {}, "not_run": list(not_run)}
+        for t in tools:
+            rows = measure(t, snap, probes, tmp)
+            rep["tools"][t.name] = dict(summarize(rows, len(snap["items"])), rows=rows)
+    return rep
 
 
 def format_report(rep):
-    ing = rep["ingested"]
-    lines = [
-        "# Memory Benchmark: %s (board vs beads vs ProjectArchitect)" % rep["project"],
-        "Ingested read-only: %d rules, %d lessons, %d decisions, %d open questions, %d states" % (
-            ing["rules"], ing["lessons"], ing["decisions"], ing["open_questions"], ing["states"]),
-        "",
-        "## Overall Scorecard (6 fresh-session probes)",
-        "| System | Avg Turn-1 Tokens | Signal Recall | Scope/Noise Leaks |",
-        "|---|---:|---:|---:|",
-    ]
-    for name in ("board", "beads", "ProjectArchitect"):
-        s = rep["summary"][name]
-        lines.append("| %s | ~%d | %s | %d |" % (name, s["avg_tokens"], s["recall"], s["total_leaks"]))
-
-    lines += [
-        "",
-        "## Per-Probe Breakdown (Tokens / Recall / Leaks)",
-        "| Probe (Role) | board | beads | ProjectArchitect |",
-        "|---|---|---|---|",
-    ]
-    n_probes = len(rep["summary"]["board"]["probes"])
-    for i in range(n_probes):
-        p = rep["summary"]["board"]["probes"][i]
-        cells = []
-        for name in ("board", "beads", "ProjectArchitect"):
-            r = rep["summary"][name]["probes"][i]
-            cells.append("~%dt · %d/%d · %dL" % (r["tokens"], r["recall_hit"], r["recall_total"], r["leak_count"]))
-        lines.append("| %s (%s) | %s | %s | %s |" % (p["probe"], p["role"], cells[0], cells[1], cells[2]))
-
-    if rep["scaling"]:
-        lines += [
-            "",
-            "## Scaling Curve (Turn-1 Part Context Tokens as Rules Grow)",
-            "| Rules Accumulated | board (distilled + hooks silent) | beads (flat memories) | ProjectArchitect (full RULES.md) |",
-            "|---:|---:|---:|---:|",
-        ]
-        for row in rep["scaling"]:
-            lines.append("| %d | ~%d | ~%d | ~%d |" % (
-                row["n_rules"], row["board"], row["beads"], row["ProjectArchitect"]))
-    return "\n".join(lines) + "\n"
+    pct = lambda a, b: "%d/%d (%.0f%%)" % (a, b, 100.0 * a / b)   # noqa: E731
+    out = ["# Memory benchmark: %s" % rep["project"],
+           "%d rules, %d lessons, %d open questions; %d probes" % (rep["items"]["rule"], rep["items"]["lesson"],
+                                                                    rep["items"]["question"], rep["probes"])]
+    out += list(rep.get("notes") or [])
+    out += ["", "| tool | recall, turn 1 | recall, after its lookup | items in packet (coverage) | precision | memory tokens | "
+            "lookup tokens | total tokens |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for name, s in rep["tools"].items():
+        out.append("| %s | %s | %s | %.0f%% | %s | %d | %d | %d |" % (
+            name, pct(s["hit_turn1"], s["gold"]), pct(s["hit_lookup"], s["gold"]), s["coverage"],
+            "-" if s["precision"] is None else "%.0f%%" % s["precision"], s["tokens_memory"], s["tokens_lookup"], s["tokens_total"]))
+    out += ["| %s | not run: %s | | | | | | |" % (n, why) for n, why in rep["not_run"]]
+    names = list(rep["tools"])
+    out += ["", "Per probe: gold found at turn 1 > after lookup / gold, memory tokens", "",
+            "| probe (role) | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
+    for k in range(rep["probes"]):
+        rows = [rep["tools"][n]["rows"][k] for n in names]
+        out.append("| %s (%s) | %s |" % (rows[0]["probe"], rows[0]["role"], " | ".join(
+            "%d>%d/%d %dt" % (r["hit_turn1"], r["hit_lookup"], r["gold"], r["tokens_memory"]) for r in rows)))
+    return "\n".join(out) + "\n"
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--project", required=True, help="Path to an existing project (e.g. /home/anon/harmonize)")
-    ap.add_argument("--scale", default="20,100,300", help="Comma-separated rule counts for scaling curve (or empty)")
+    ap.add_argument("--project", required=True)
+    ap.add_argument("--probes", required=True, help="JSON {probes: [{id, role, post, files, question, gold, lookup}]}")
+    ap.add_argument("--bd", default=None, help="a real beads `bd` binary (default: beads is not run)")
+    ap.add_argument("--pa", default=None, help="a real ProjectArchitect 3 checkout (default: not run)")
+    ap.add_argument("--curation", default=None, help="JSON {item id: {scope, enforced_by}} for the board (default: none)")
+    ap.add_argument("--ledger", default=None, help="the project's own, owner-confirmed ledger.md, for the board")
     ap.add_argument("--json", dest="as_json", action="store_true")
     a = ap.parse_args(argv)
-    scales = [int(x) for x in a.scale.split(",") if x.strip().isdigit()] if a.scale else []
-    rep = run_benchmark(a.project, scales=scales)
-    if a.as_json:
-        print(json.dumps(rep, indent=2, ensure_ascii=False))
-    else:
-        print(format_report(rep), end="")
+    curation, notes = None, []
+    if a.curation:
+        with open(a.curation, encoding="utf-8") as fh:
+            curation = json.load(fh)
+        notes.append("board curation: %s" % a.curation)
+    if a.ledger:
+        notes.append("board ledger: %s" % a.ledger)
+    tools, not_run = [Nothing(), Flat(), Board(curation, a.ledger)], []
+    for cls, val, flag in ((Beads, a.bd, "--bd"), (ProjectArchitect, a.pa, "--pa")):
+        if val:
+            tools.append(cls(val))
+        else:
+            not_run.append((cls.name, "no %s" % flag))
+    try:
+        rep = run_benchmark(a.project, a.probes, tools, not_run)
+    except ToolError as e:
+        print("memory_bench: %s" % e, file=sys.stderr)
+        return 1
+    rep["notes"] = notes
+    print(json.dumps(rep, indent=2, ensure_ascii=False) if a.as_json else format_report(rep), end="\n" if a.as_json else "")
     return 0
 
 
