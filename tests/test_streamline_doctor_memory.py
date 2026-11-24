@@ -78,8 +78,8 @@ class MemoryLedgerFlow(unittest.TestCase):
     def test_hook_enforced_invariants_not_dumped_in_resume_and_decisions_shown(self):
         ledger.observe(str(self.mdir), "Never force-push main", kind="rule", scope="all",
                        enforced_by="hook:kit_guard.py")
-        ledger.observe(str(self.mdir), "Train VR2 on karaoke filter v3", kind="decision", scope="project",
-                       because="kept 14/16 on owner round", rejected="skipping training")
+        ledger.observe(str(self.mdir), "Store dates in UTC", kind="decision", scope="project",
+                       because="two time zones", rejected="local time")
         res = ledger.for_resume(str(self.mdir), "part")
         self.assertEqual(res["hook_enforced_count"], 1)
         self.assertEqual(res["active"], [])
@@ -87,7 +87,7 @@ class MemoryLedgerFlow(unittest.TestCase):
         rendered = "\n".join(ledger.format_resume(str(self.mdir), "part"))
         self.assertNotIn("Never force-push main", rendered)
         self.assertIn("+ 1 hook/test-enforced invariants active silently", rendered)
-        self.assertIn("rejected: skipping training", rendered)
+        self.assertIn("rejected: local time", rendered)
 
     def test_conflict_detection_and_ledger_check(self):
         ledger.observe(str(self.mdir), "Keep board post body concise and structured", scope="project", theme="board")
