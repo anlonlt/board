@@ -522,6 +522,37 @@ def git_work(repo, started, ended, kit_cmds=None, tests_run=None):
     return out
 
 
+def work_by_trailer(repos, refs=("--all",)):
+    """{session_id: work} from the `Claude-Session: .../session_<id>` trailer of every commit (merges excluded), in
+    every repo given: the work measure for ccr rows, whose transcript is gone."""
+    out = {}
+    seen = set()
+    for repo in repos:
+        rc, log = git(repo, "log", *refs, "--no-merges", "--format=@%H %(trailers:key=Claude-Session,valueonly,separator=;)",
+                      "--numstat")
+        if rc:
+            continue
+        cur = None
+        for line in log.splitlines():
+            if line.startswith("@"):
+                sha, _, tr = line[1:].partition(" ")
+                m = re.search(r"(session_[A-Za-z0-9]+)", tr)
+                cur = None
+                if m and sha not in seen:
+                    seen.add(sha)
+                    cur = out.setdefault(m.group(1), {"commits": 0, "files": 0, "lines_added": 0, "lines_deleted": 0,
+                                                       "_files": set()})
+                    cur["commits"] += 1
+            elif cur is not None and "\t" in line:
+                a, d, f = (line.split("\t") + ["", ""])[:3]
+                cur["_files"].add(f)
+                cur["lines_added"] += int(a) if a.isdigit() else 0
+                cur["lines_deleted"] += int(d) if d.isdigit() else 0
+    for w in out.values():
+        w["files"] = len(w.pop("_files"))
+    return out
+
+
 def record(root, transcript, role=None, part=None, title=None, conf=None):
     conf = kit_conf(root) if conf is None else conf
     row = parse_transcript(transcript, conf)
@@ -850,6 +881,10 @@ def main(argv=None):
     s.add_argument("file")
     s.add_argument("--push", action="store_true")
     sp.add_parser("push")
+    s = sp.add_parser("work-from-git", help="add each ccr row's commits and lines, by the Claude-Session trailer")
+    s.add_argument("rows")
+    s.add_argument("--repo", action="append", required=True)
+    s.add_argument("--out", required=True)
     s = sp.add_parser("compare")
     s.add_argument("--before", required=True)
     s.add_argument("--after")
@@ -890,6 +925,20 @@ def main(argv=None):
         print("import-ccr: %d rows (roles %s)" % (len(rows), dict(Counter(r["role"] for r in rows))))
         if a.push:
             print(push(root, rows))
+        return 0
+    if a.cmd == "work-from-git":
+        work = work_by_trailer(a.repo)
+        rows = _read_rows([a.rows])
+        n = 0
+        for r in rows:
+            if r.get("source") == "ccr":
+                r["work"] = dict(work.get(r["session_id"]) or {"commits": 0, "files": 0, "lines_added": 0,
+                                                               "lines_deleted": 0})
+                n += bool(r["work"]["commits"])
+        with open(a.out, "w", encoding="utf-8") as fh:
+            fh.write("".join(json.dumps(r, sort_keys=True, ensure_ascii=False) + "\n" for r in rows))
+        print("work-from-git: %d of %d ccr rows have commits (%d sessions in the trailers)" % (
+            n, sum(r.get("source") == "ccr" for r in rows), len(work)))
         return 0
     if a.cmd == "push":
         print(push_locked(root))
