@@ -768,6 +768,10 @@
   "kind": "js"
  },
  {
+  "en": "Reconnecting to the board...",
+  "kind": "js"
+ },
+ {
   "en": "The board stopped updating (",
   "kind": "js"
  },

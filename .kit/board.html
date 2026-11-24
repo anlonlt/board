@@ -3546,6 +3546,50 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     submitComment({ text: $("c-text"), button: $("c-send"), note: $("c-note"), image: null, n: 0, anchorEl: $("p-title"), files: true });
   });
 
+  /* CL35 (the owner, 2026-11-24 01:2x: "Why did I have to close the artifact and open it again to see it?"): an
+     agent's write (ArtifactData from its session) reached his open page only when he reopened it. The page trusted
+     each onSnapshot to run for ever: a terminal error ended it in silence (comments, typing: `function () {}`), and
+     a write the platform's stream does not deliver never showed. Now each live query (1) opens again after a terminal
+     error (the db contract: "a fresh onSnapshot is the only recovery"), with a growing wait, and (2) is read again
+     with get() every LIVE_MS while the page is visible and at once when it comes back to the front; a read that
+     changes nothing draws nothing. */
+  var LIVE_MS = typeof window.__KIT_LIVE_REFRESH_MS__ === "number" ? window.__KIT_LIVE_REFRESH_MS__ : 15000;
+  var liveSubs = [];
+  function snapSig(snap) {
+    try { return JSON.stringify((snap.docs || []).map(function (d) { return [d.id, d.data()]; })); } catch (e) { return "?" + Date.now(); }
+  }
+  function liveQuery(make, apply, onError) {
+    var s = { sig: null, unsub: null, tries: 0 };
+    function deliver(snap, fromRead) {
+      var g = snapSig(snap);
+      if (fromRead && g === s.sig) return;
+      s.sig = g; apply(snap);
+    }
+    s.open = function () {
+      if (s.unsub) { try { s.unsub(); } catch (e) {} }
+      s.unsub = make().onSnapshot(function (snap) { s.tries = 0; deliver(snap, false); }, function (e) {
+        s.unsub = null;
+        var code = e && e.code, again = code !== "revoked" && code !== "invalid_argument";
+        if (onError) onError(e || { code: "unavailable" }, again);
+        if (again) setTimeout(s.open, Math.min(60000, 2000 * Math.pow(2, s.tries++)));
+      });
+    };
+    s.read = function () {
+      var r = make(); if (!r || typeof r.get !== "function") return;
+      r.get().then(function (snap) {
+        if (!snap || !snap.docs || (snap.metadata && snap.metadata.fromCache)) return;
+        deliver({ docs: snap.docs, metadata: { fromCache: false, hasPendingWrites: false } }, true);
+      }, function () {});
+    };
+    s.open(); liveSubs.push(s);
+    return s;
+  }
+  function readLive() { if (document.visibilityState === "hidden") return; liveSubs.forEach(function (s) { s.read(); }); }
+  if (LIVE_MS > 0) setInterval(readLive, LIVE_MS);
+  document.addEventListener("visibilitychange", readLive);
+  window.addEventListener("focus", readLive);
+  window.addEventListener("pageshow", readLive);
+
   /* Boot */
   renderBoard();
   var timer = setTimeout(function () {
@@ -3581,11 +3625,11 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
         }, function () {});
       } catch (e) { seenDoc = null; }
     }
-    db.collection("typing").onSnapshot(function (snap) {
+    liveQuery(function () { return db.collection("typing"); }, function (snap) {
       var t = {}; snap.docs.forEach(function (d) { var o = d.data(); if (o) t[d.id] = o; });
       state.typing = t; later("board"); later("typing");
-    }, function () {});
-    db.collection("posts").orderBy("created_at", "desc").onSnapshot(function (snap) {
+    });
+    liveQuery(function () { return db.collection("posts").orderBy("created_at", "desc"); }, function (snap) {
       var all = snap.docs.map(function (d) { var o = Object.assign({}, d.data()); o.id = d.id; return o; });
       state.special = {}; all.forEach(function (o) { if (o.id.charAt(0) === "_") state.special[o.id] = o; });
       state.posts = all.filter(function (o) { return o.id.charAt(0) !== "_" && !o.removed; });
@@ -3596,12 +3640,12 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
         if (firstLoad && !state.openId) { var back = ""; try { back = sessionStorage.getItem("board-open") || ""; } catch (e) {} if (back && postById(back)) setTimeout(function () { openPost(back); }, 0); }
       }
       later("board"); later("post");
-    }, function (e) { clearTimeout(timer); var s = $("status"); s.textContent = "The board stopped updating (" + e.code + "). Reload to reconnect."; s.className = "status bad"; });
-    db.collection("comments").onSnapshot(function (snap) {
+    }, function (e, again) { clearTimeout(timer); var s = $("status"); s.textContent = again ? "Reconnecting to the board..." : "The board stopped updating (" + e.code + "). Reload to reconnect."; s.className = "status bad"; });
+    liveQuery(function () { return db.collection("comments"); }, function (snap) {
       state.comments = snap.docs.map(function (d) { var o = Object.assign({}, d.data()); o.id = d.id; return o; }).filter(function (o) { return !o.removed; });
       stampArrivals();
       later("board"); later("cmts");
-    }, function () {});
+    });
   })();
 
   /* Padlet × Reddit × Facebook progressive UI enhancer (view switcher, synchronized horizontal train matrix, open feed with Show More & agent audit folding, ADHD focus triage view, floating orchestrator messenger popover) */
