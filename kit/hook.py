@@ -6,7 +6,7 @@ runs from it. With `install.py --unified-hooks` a project's settings hold one li
 kit runs in every project with no settings change (a hook installed but wired nowhere has been a real hole: CL30).
 
 What the runtime sees is what the separate hooks would have shown it: every block, denial, reason, context and plain
-text passes through (tests/test_unified_hooks.py compares the two). Beyond that, one rule: a guard (PreToolUse) that
+text passes through (tests/test_unified_hooks.py compares the two). Beyond that, one rule: a guard (PreToolUse, and a step's TaskCompleted) that
 hangs, crashes or is missing REFUSES the call and says why; any other hook that fails is reported and blocks nothing.
 A guard that is broken for good: fix .kit/hooks/<it>, or `install.py . --no-unified-hooks` goes back to separate lines.
 """
@@ -43,7 +43,7 @@ TABLE = [
     ("UserPromptSubmit", "kit_board_typing.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("UserPromptSubmit", "kit_cards_reminder.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("UserPromptSubmit", "kit_task_train.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
-    ("TaskCompleted", "kit_task_train.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
+    ("TaskCompleted", "kit_task_train.py", {"web": ANY, "cli": ANY}, GUARD, 50),
     ("PreInvocation", "kit_say_it_once.py", {"agy": ANY}, PLAIN, 50),
     ("PreInvocation", "kit_board_typing.py", {"agy": ANY}, PLAIN, 50),
     ("PostInvocation", "kit_say_it_once.py", {"agy": ANY}, PLAIN, 50),
@@ -57,6 +57,7 @@ TABLE = [
     ("PreCompact", "kit_pre_compact.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
 ]
 RUNTIMES = ("web", "cli", "agy")
+REFUSES = ("PreToolUse", "TaskCompleted")                    # the events a kit guard decides
 TEXT_IS_CONTEXT = ("SessionStart", "UserPromptSubmit")       # Claude Code reads plain stdout as context there
 
 
@@ -186,10 +187,20 @@ class _Hook:
         if self.p is not None:
             self.p.kill()
             return
-        try:
-            os.killpg(self.pid, signal.SIGKILL)             # and what it started
-        except OSError:
-            os.kill(self.pid, signal.SIGKILL)
+        for sig, wait in ((signal.SIGTERM, 2.0), (signal.SIGKILL, 0)):   # first asked: git drops its index.lock on SIGTERM
+            try:
+                os.killpg(self.pid, sig)                    # and what it started
+            except OSError:
+                try:
+                    os.kill(self.pid, sig)
+                except OSError:
+                    pass
+            end = time.monotonic() + wait
+            while sig == signal.SIGTERM and time.monotonic() < end:
+                if os.waitid(os.P_PID, self.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                    time.sleep(0.2)                         # the hook is gone; what it started finishes cleaning up
+                    break
+                time.sleep(0.02)
         os.waitpid(self.pid, 0)
 
     def result(self):
@@ -367,10 +378,10 @@ def main(argv=None):
         rc, out, err = (merge_agy if runtime == "agy" else merge_claude)(event, run(runtime, event, raw))
     except Exception as e:                        # the dispatcher itself: refuse a tool call, block nothing else
         msg = "kit hook.py failed on %s: %s: %s" % (event, type(e).__name__, e)
-        if event == "PreToolUse" and runtime == "agy":
+        if event in REFUSES and runtime == "agy":
             rc, out, err = 0, json.dumps({"decision": "deny", "reason": _refusal("hook.py", msg)}), ""
         else:
-            rc, out, err = (2 if event == "PreToolUse" else 1), "", (_refusal("hook.py", msg) if event == "PreToolUse" else msg)
+            rc, out, err = (2 if event in REFUSES else 1), "", (_refusal("hook.py", msg) if event in REFUSES else msg)
     if out:
         sys.stdout.write(out if out.endswith("\n") else out + "\n")
     if err:

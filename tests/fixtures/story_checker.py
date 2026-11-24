@@ -1,21 +1,5 @@
-"""Checks the shape of .story/ — the states, the issues' status lines, awaits-anlon.md, and their pointers.
-
-    python3 -I .claude/skills/story/scripts/check.py [repository root, default .]
-
-A rule written in words is read askew; this one is checked. Exit 0 and "STORY: OK", or the list of faults
-and exit 1. The rules are the story skill's (.claude/skills/story/SKILL.md):
-- a state: 60 lines at most; its title "# State — <file name>"; its four sections in order; "Where it stands"
-  in 10 lines at most; a "Next step" of ONE line; 5 decisions at most;
-- an issue: the title on line 1, `Status: open — YYYY-MM-DD, …` or `Status: closed — YYYY-MM-DD, …` on line 2;
-- awaits-anlon.md: each point starts with `- [workstream] ` naming an existing state, carries `Default: ` and
-  ends with ` · deadline YYYY-MM-DD`, in 320 characters at most (continuation lines included); a paused
-  workstream (its Next step starts with "Paused") has one point at most; a point past its deadline is NAMED
-  (a warning, exit 0) so that the next session applies the default and records it;
-- everywhere: a cited path (in backticks, with a slash) and a cited issue exist.
-
-Adapted on 2026-11-08 from the verifier of the owner's Aplomb project (.claude/skills/story/scripts/verifier.py).
-Its self-test, which plants each fault and checks that it is caught: test_check.py, next to this file.
-"""
+"""A project's own memory checker, for the compact tests: the shape of .story/ (states, issues, awaits, their pointers).
+Exit 0 and "STORY: OK", or the list of faults and exit 1."""
 import datetime
 import re
 import sys

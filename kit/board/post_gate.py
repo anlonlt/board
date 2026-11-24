@@ -19,8 +19,9 @@ ASK = re.compile("|".join((
     r"\b(?:an?|one|tap|your)\s+(?:\U0001F44D|thumbs?[ -]?up|like)\s*(?:here|below|if|to\b|=|means|launches|on (?:this|it|my)|on proposal)",
     r"\b(?:an?|one)\s+(?:\U0001F44D|thumbs?[ -]?up|like)\s+is\b",
     r"\btap\s+\U0001F44D", r"\U0001F44D\s*(?:if|=|here|means|launches)", r"\blike (?:this|it|here) (?:to|and|if)\b",
-    r"\b(?:should|shall|may) I\b[^.?!\n]*\?", r"\b(?:do you|would you(?: like)?) want\b[^.?!\n]*\?", r"\bwant me to\b",
-    r"\bis it ok(?:ay)? (?:if|to)\b", r"\btell me which\b", r"\blet me know (?:which|if you(?:'d| would)? (?:want|like)|whether)\b",
+    r"\b(?:should|shall|may) I\b[^.?!\n]*\?", r"\b(?:do you|would you(?: like)?) want\b[^.?!\n]*\?", r"(?:^|[.!?:]\s+|\byou\s+)want me to\b",
+    r"\bis it ok(?:ay)? (?:if|to)\b", r"\bconfirm (?:before|and) (?:I|we)\b", r"\bgive me (?:the|a|your) (?:go|green light|ok|okay|yes)\b",
+    r"^\s*(?:please )?(?:pick|choose) (?:between |one\b|[A-Z1-9]\b)", r"\btell me which\b", r"\blet me know (?:which|if you(?:'d| would)? (?:want|like)|whether)\b",
     r"^\s*(?:\*\*)?question(?:\*\*)?\s*:", r"\bon your (?:yes|go),?\s+(?:I|we|it)\b")), re.I | re.M)
 QUOTED = re.compile(r"^\s*>.*$|```.*?```|`[^`\n]*`|\"[^\"\n]*\"|\u201c[^\u201d\n]*\u201d", re.M | re.S)
 
@@ -54,7 +55,15 @@ def proof_key(p):
 
 def proved(p):
     pr = p.get("proof")
-    return isinstance(pr, dict) and pr.get("key") == proof_key(p)
+    return isinstance(pr, dict) and pr.get("key") == proof_key(p) and not (pr.get("needs_real") and not real_runs(p))
+
+
+def real_runs(p):
+    """The real-project runs a post names whole: the orchestrator writes them after its part's `done`, so they are not in
+    the key; a proof that waits for one (`needs_real`) is no proof without it."""
+    rp = p.get("real_project")
+    return [r for r in (rp if isinstance(rp, list) else [rp]) if isinstance(r, dict)
+            and all(str(r.get(k) or "").strip() for k in ("project", "command", "output"))]
 
 
 def is_step(p):
@@ -65,14 +74,19 @@ def is_complete(p):
     return str(p.get("status") or "").strip().lower() in ("complete", "completed", "done")
 
 
-def check_post(doc_id, new, old=None, cfg=None):
+KIT_FROM = ("kit compact", "kit web-env")
+
+
+def check_post(doc_id, new, old=None, cfg=None, may_prove=False):
     """(data to write, notes, error or None). `new`: the fields written; `old`: the post as it is (None: new)."""
     notes = []
     if str(doc_id).startswith("_") or not isinstance(new, dict):
         return new, notes, None
     old = old or {}
     new, p = dict(new), dict(old, **new)
-    kit = str(p.get("from") or "").startswith("kit ")            # the kit's own posts (an import, the web environment)
+    kit = p.get("from") in KIT_FROM                              # the kit's own posts (an import, the web environment)
+    if "proof" in new and new["proof"] != old.get("proof") and not may_prove:
+        return new, notes, "`proof` is what `python3 -I .kit/kit.py done %s` leaves when it says OK, never written by hand" % doc_id
     fresh = lambda k: bool(p.get(k)) and not old.get(k)          # noqa: E731 - given by this write
     want = None
     if fresh("options") or (p.get("kind") == "question" and not old):
@@ -94,7 +108,7 @@ def check_post(doc_id, new, old=None, cfg=None):
         if autonomy(cfg) == "full_auto" and p.get("needs") not in NEEDS:
             return new, notes, ("full_auto: apply the default and go on. A question is only for %s: name which (`needs`: %s)"
                                 % ("; ".join(NEEDS.values()), ", ".join(NEEDS)))
-    if is_step(p) and is_complete(p) and not is_complete(old) and not proved(p):
+    if (is_step(p) or is_step(old)) and is_complete(p) and not is_complete(old) and not proved(p):
         return new, notes, ("a step is complete only after `python3 -I .kit/kit.py done %s` says OK on the post as it is now "
                             "(its check passes, its break makes it fail, his comments are answered)" % doc_id)
     return new, notes, None
@@ -102,7 +116,7 @@ def check_post(doc_id, new, old=None, cfg=None):
 
 def check_comment(doc_id, c, post=None):
     """Why this agent's comment is refused, or None."""
-    if not isinstance(c, dict) or str(c.get("from") or "owner") == "owner" or str(c.get("from")).startswith("kit") or c.get("like"):
+    if not isinstance(c, dict) or c.get("from") == "owner" or c.get("like"):          # no `from`: an agent that left it out
         return None
     if str(doc_id).startswith("welcome-") or c.get("kind") == "review" or (post or {}).get("column") == "question":
         return None

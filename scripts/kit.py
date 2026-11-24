@@ -1292,7 +1292,7 @@ def artifact_unsent(url=None, token=None):
     return {"changed": n, "batches": sorted(glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")))}
 
 
-def launch_mark(pid, prompt):
+def launch_mark(pid, prompt, inline=None):
     """CL30: the mark `kit.py launch --web` leaves for the orchestrator guard (this part's create_session may go out);
     prompt None removes it (the second half, --session-id, ran)."""
     p = os.path.join(ROOT, ".kit", "run", "launch", pid + ".json")
@@ -1303,7 +1303,7 @@ def launch_mark(pid, prompt):
             pass
         return
     os.makedirs(os.path.dirname(p), exist_ok=True)
-    write_doc(p, {"prompt": prompt, "at": time.time()})
+    write_doc(p, dict({"prompt": prompt, "at": time.time()}, **({"inline": inline} if inline else {})))
 
 
 def artifact_push(url=None, token=None, out_dir=None):
@@ -3770,7 +3770,8 @@ def done(pid, db_path=None, root=None):
     e_h, n_h = check_his_words(pid, p, db_path=db_path)
     err += e_h
     warn += n_h
-    warn += check_real_project(p, root=root)         # CL32/CL38: a real project too, run by the orchestrator (pending)
+    pending_real = check_real_project(p, root=root)
+    warn += pending_real         # CL32/CL38: a real project too, run by the orchestrator (pending)
     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
     strip = lambda d: {k: v for k, v in (d or {}).items() if k not in ("proof", "updated_at")}  # noqa: E731
     if attached_board() and strip(_read_json(_base_path("posts", pid))) != strip(p):
@@ -3784,9 +3785,10 @@ def done(pid, db_path=None, root=None):
         err += e2
         warn += notes
     g = _post_gate()
-    if not err and g and not (g.proved(p)):
+    if not err and g and not (g.proved(p) and (p.get("proof") or {}).get("needs_real") == bool(pending_real)):
         head = _git_run("rev-parse", "--short", "HEAD").stdout.strip()
-        if not _board_write("update", "posts", pid, {"proof": {"key": g.proof_key(p), "at": _now_z(), "commit": head}}):
+        if not _board_write("update", "posts", pid, {"proof": {"key": g.proof_key(p), "at": _now_z(), "commit": head,
+                                                           "needs_real": bool(pending_real)}}, env={"KIT_GATE": "done"}):
             warn.append("proof: the board did not take it (is the board server running?): the step cannot be completed without it")
         elif attached_board():
             warn.append("proof: written here; send it: `python3 -I .kit/kit.py artifact push`")
@@ -3990,13 +3992,13 @@ def _norm_train(t):
     return t[2:] if t.startswith("p-") else t
 
 
-def _board_write(cmd, coll, doc_id, data):
+def _board_write(cmd, coll, doc_id, data, env=None):
     cli = os.path.join(ROOT, ".kit", "board_cli.py")
     if not os.path.isfile(cli):
         return False
     try:
         r = subprocess.run([sys.executable, "-I", cli, cmd, coll, doc_id, "--data", json.dumps(data, ensure_ascii=False)],
-                           capture_output=True, text=True, timeout=20, cwd=ROOT)
+                           capture_output=True, text=True, timeout=20, cwd=ROOT, env=dict(os.environ, **(env or {})))
         return r.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
@@ -4472,6 +4474,7 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         if isinstance(cs, dict):
             cs["source_revision"] = inline["trunk"]
             cs["prompt"] = _inline_prompt(cs.get("prompt") or "", rel, inline["text"])
+            launch_mark(pid, cs["prompt"], inline=rel)      # the orchestrator guard lets out this very text and no other
     # the post on the Artifact (repos/<id>/posts) and this copy of it: one ArtifactData update, pinned to the version
     # the last pull saw, so the board shows the launch (the orchestrator guard lets this file through)
     fields = {"status": "in progress", "session_id": res.get("session_id"), "branch": res.get("branch"),
@@ -4658,6 +4661,8 @@ def step_gate(pid, db_path=None):
         return ".kit/post_gate.py is missing, so nothing can say this step is proved: `install.py . --update`"
     if not g.is_step(p) or g.is_complete(p):                 # complete already (an older step): its review may still be due
         return ""
+    if (p.get("proof") or {}).get("key") == g.proof_key(p) and not g.proved(p):
+        return ("%s: its run on a real project is pending: run it and write {\"project\", \"command\", \"output\"} in its `real_project`" % pid)
     if not g.proved(p):
         return ("%s: `python3 -I .kit/kit.py done %s` must say OK first, where the work is (its part runs it); %s" % (
             pid, pid, "the post changed since it did" if p.get("proof") else "it never did"))

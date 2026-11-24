@@ -113,8 +113,10 @@ def on_completed_event(root, st, data):
         if res.get("post"):
             st["tasks"][tid] = res["post"]
     pid = st["tasks"].get(tid)
-    res = kit(root, ["gate", pid]) if pid else {}
-    return res.get("why") if res.get("ok") is False else None
+    if not pid:
+        return None
+    res = kit(root, ["gate", pid])
+    return None if res.get("ok") is True else res.get("why") or "%s: nothing could say it is proved (`python3 -I .kit/kit.py step gate %s` gave no answer)" % (pid, pid)
 
 
 def on_prompt(root, st):

@@ -2,8 +2,8 @@
 """CL29: `kit.py compact` keeps a project's memory checker green and moves only what is settled.
 
 On Harmonize, compact archived 23 state files, awaits.md and 38 closed issues but left `.story/awaits-anlon.md`
-tagging the archived workstreams: its story checker (.claude/skills/story/scripts/check.py, a copy is in
-compare/harmonize/) gave 31 faults and the push gate refused. O53's review of the first fix: a dry run on Harmonize
+tagging the archived workstreams: its story checker (.claude/skills/story/scripts/check.py)
+gave 31 faults and the push gate refused. O53's review of the first fix: a dry run on Harmonize
 archived all 31 open awaits points (one OVERDUE) and left 0 states; the SessionStart STATES section listed nothing; a
 dry run moved files and undid them. Compact now
   1. never moves an open awaits point (`awaits*.md` in the memory dir, plus `kit.awaits_files` in .kit/config.json):
@@ -23,7 +23,7 @@ import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHECKER = os.path.join(ROOT, "compare", "harmonize", "skills", "story", "scripts", "check.py")
+CHECKER = os.path.join(ROOT, "tests", "fixtures", "story_checker.py")
 
 
 def load_kit():

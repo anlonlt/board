@@ -207,7 +207,7 @@ class Parity(unittest.TestCase):
         self.assertEqual(count, {"web": 25, "cli": 22, "agy": 14})          # web: + the board saved to git and the hand-over at Stop; 53f23c4's 21, 20, 15 (agy: guard's two tools on one row) + the task list's two
         self.assertEqual([r[2] for r in hook.rows("cli", "Stop")].count("kit_web_save.py"), 1)
         self.assertEqual([r[2] for r in hook.rows("cli", "Stop")].count("kit_pre_compact.py"), 1)
-        self.assertTrue(all(g == (ev == "PreToolUse") or f == "kit_memory_jit.py" for ev, f, _, g, _ in hook.TABLE))
+        self.assertTrue(all(g == (ev in ("PreToolUse", "TaskCompleted")) or f == "kit_memory_jit.py" for ev, f, _, g, _ in hook.TABLE))
         files = {f.name for f in (ROOT / "kit" / "hooks").glob("kit_*.py")} - {"kit_config.py"}
         self.assertEqual({f for _, f, _, _, _ in hook.TABLE}, files)         # a hook installed is a hook wired
 

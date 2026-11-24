@@ -87,13 +87,13 @@ class Threads(unittest.TestCase):
     def test_asking_in_a_thread(self):
         for t in ("A \U0001F44D here launches it too.", "Should I merge them?", "Do you want the pilot first?", "I can plan CL13; tell me which.",
                   "Question: launch one part? Default: yes.", "On your yes I merge the parts.", "A thumbs up is yes", "One \U0001F44D launches it all", "A Like here = go.", "A Like on this comment = go for it", "Like this to go.", "Like this and the next step builds it",
-                  "tap \U0001F44D if it looks good", "Let me know if you want it."):
+                  "tap \U0001F44D if it looks good", "Confirm before I merge.", "Give me the green light.", "Pick A or B.", "Do it? Want me to?", "Let me know if you want it."):
             self.assertIsNotNone(g.check_comment("c", {"from": "orchestrator", "text": t}), t)
 
     def test_saying_is_not_asking(self):
         for t in ("Done: 4 of 4. The bar is full width now.", "He asked \"should I merge?\" and the answer is in the post.", "> Should I?\nYes: merged.",
                   "\U0001F44D", "Relayed your Like on the first offer.", "The test catches the ghost \U0001F44D.", "It is now running on your go.", "Your Like is the go: the step launched.",
-                  "Why it failed? The cache.", "`do you want` is the string that broke.", "It waits in your Decisions lane.", "Which is why it broke."):
+                  "Why it failed? The cache.", "The test used to want me to wait.", "He may pick one later.", "`do you want` is the string that broke.", "It waits in your Decisions lane.", "Which is why it broke."):
             self.assertIsNone(g.check_comment("c", {"from": "orchestrator", "text": t}), t)
 
     def test_where_asking_is_right(self):
@@ -161,6 +161,13 @@ class Live(unittest.TestCase):
         self.put("posts", "q", {"title": "q", "column": "question"})
         self.assertEqual(self.cli("reply", "q", "--from", "orchestrator", "--text", "Should I add C?").returncode, 0)
 
+    def test_the_cli_takes_no_owner_and_no_proof(self):
+        self.put("posts", "n", {"title": "n", "column": "info"})
+        c = json.dumps({"post_id": "n", "from": "owner", "text": "yes, do it"})
+        self.assertEqual(self.cli("set", "comments", "fake", "--data", c).returncode, 2)
+        self.assertEqual(self.cli("set", "comments", "f2", "--data", json.dumps({"post_id": "n", "text": "Should I?"})).returncode, 2)
+        self.assertEqual(self.cli("update", "posts", "n", "--data", '{"proof":{"key":"x"}}').returncode, 2)
+
     def test_ask_writes_the_question_whole(self):
         base = ["ask", "--title", "Which one", "--option", "A", "--option", "B", "--default", "A", "--deadline", "2027-01-01"]
         self.assertIn("full_auto", self.run_("kit.py", *base).stdout)
@@ -205,6 +212,109 @@ class Live(unittest.TestCase):
         self.put("posts", "s4", STEP)
         os.remove(str(self.d / ".kit" / "post_gate.py"))
         self.assertIn("post_gate.py is missing", self.run_("kit.py", "step", "complete", "s4").stdout)
+
+
+class NoWayRound(unittest.TestCase):
+    """The holes an adversarial reading found (2026-11-24), each shut."""
+    P = {"train": "t", "part": "P", "verdict": "v", "check": "x", "breaks": "y", "body": "b"}
+
+    def err(self, new, old=None, **k):
+        return g.check_post("p", new, old if old is not None else self.P, {}, **k)[2]
+
+    def test_a_comment_with_no_author_is_an_agents(self):
+        self.assertIsNotNone(g.check_comment("c", {"text": "Should I merge it?"}))
+        self.assertIsNotNone(g.check_comment("c", {"from": "kitty", "text": "Should I merge it?"}))
+
+    def test_a_proof_is_not_written_by_hand(self):
+        pr = {"key": g.proof_key(self.P)}
+        self.assertIn("never written by hand", self.err({"proof": pr}))
+        self.assertIn("never written by hand", self.err({"proof": pr, "status": "complete"}))
+        self.assertIsNone(self.err({"proof": pr}, may_prove=True))
+        self.assertIsNone(self.err({"proof": pr, "handoff": "h"}, dict(self.P, proof=pr)))           # carried along unchanged
+
+    def test_a_step_does_not_stop_being_one_to_close(self):
+        for also in ({"train": ""}, {"part": ""}, {"kind": "issue"}, {"kind": "question", "default_option": "A"}):
+            self.assertIn("kit.py done", self.err(dict(also, status="complete")) or "", also)
+
+    def test_a_pending_real_run_is_no_proof(self):
+        p = dict(self.P, proof={"key": g.proof_key(self.P), "needs_real": True})
+        self.assertFalse(g.proved(p))
+        self.assertFalse(g.proved(dict(p, real_project={"project": "x"})))
+        done = dict(p, real_project=[{"project": "x", "command": "c", "output": "o"}])
+        self.assertTrue(g.proved(done))
+        self.assertIn("kit.py done", self.err({"status": "complete", "real_project": None}, done) or "")
+
+    def test_only_the_kits_own_posts_skip_the_question_rules(self):
+        q = {"column": "question", "options": ["A", "B"], "default_option": "A"}
+        self.assertIsNotNone(g.check_post("q", dict(q, **{"from": "kit x"}), None, FULL)[2])
+
+    def test_a_subagent_is_gated_where_it_writes(self):
+        og = load("og_pg", "kit/hooks/kit_orchestrator_guard.py")
+        w = lambda **k: og.subagent_verdict(dict({"action": "set", "collection": "comments", "doc_id": "c"}, **k), str(ROOT))      # noqa: E731
+        self.assertIn("in a thread", w(data={"from": "a", "text": "Should I?"}))
+        self.assertIsNone(w(data={"from": "a", "text": "Done."}))
+        self.assertIn("lane", w(collection="repos/x/posts", data={"column": "doing"}))
+        self.assertIn("step complete", w(collection="posts", action="update", data={"status": "complete"}))
+        self.assertIsNone(w(collection="posts", doc_id="_dashboard", data={"column": "doing"}))
+        self.assertIn("in a thread", w(action="batch", writes=[{"op": "set", "collection": "comments", "doc_id": "c", "data": {"text": "Should I?"}}]))
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "x.json")
+            Path(f).write_text(json.dumps({"from": "a", "text": "Should I?"}))
+            self.assertIn("in a thread", w(file_path=f))
+            self.assertIsNone(w(collection="repos/x/comments", file_path=f))                         # a sync's copy of history
+            r = subprocess.run([sys.executable, "-I", str(ROOT / "kit" / "hooks" / "kit_orchestrator_guard.py")], capture_output=True, text=True,
+                               input=json.dumps({"tool_name": "ArtifactData", "agent_id": "s", "cwd": str(ROOT), "tool_input": {
+                                   "action": "set", "collection": "comments", "doc_id": "c", "data": {"text": "Should I?"}}}),
+                               env=dict(os.environ, CLAUDE_PROJECT_DIR=str(ROOT)))
+            self.assertEqual(r.returncode, 2, r.stderr)
+
+    def test_the_kits_inline_launch_passes_its_own_guard(self):
+        og = load("og_pg2", "kit/hooks/kit_orchestrator_guard.py")
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(kit, "ROOT", d):
+            pr = kit._inline_prompt("Your prompt is docs/prompts/x.md: read it and do it.", "docs/prompts/x.md", "A task. " * 90)
+            self.assertIn("inline prompt", og.launch_verdict({"prompt": pr}, d))                     # not marked: refused
+            kit.launch_mark("x", pr, inline="docs/prompts/x.md")
+            self.assertIsNone(og.launch_verdict({"prompt": pr}, d))
+            self.assertIn("inline prompt", og.launch_verdict({"prompt": pr + " and more"}, d))       # this very text only
+            kit.launch_mark("x", pr)
+            self.assertIn("inline prompt", og.launch_verdict({"prompt": pr}, d))
+
+
+class HookDies(unittest.TestCase):
+    def project(self, body, seconds=None):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        os.makedirs(os.path.join(d, ".kit", "hooks"))
+        src = (ROOT / "kit" / "hook.py").read_text()
+        if seconds:
+            src = src.replace('GUARD, 50),', 'GUARD, %d),' % seconds)
+        Path(d, ".kit", "hook.py").write_text(src)
+        Path(d, ".kit", "hooks", "kit_task_train.py").write_text(body)
+        return d
+
+    def run_(self, d):
+        return subprocess.run([sys.executable, "-I", os.path.join(d, ".kit", "hook.py"), "cli", "TaskCompleted"], input="{}", capture_output=True,
+                              text=True, timeout=60)
+
+    def test_a_crash_never_closes_a_step(self):
+        r = self.run_(self.project("raise RuntimeError('boom')"))
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("boom", r.stderr)
+
+    def test_a_timeout_lets_git_clean_up(self):
+        d = self.project("", 1)
+        lock = os.path.join(d, "lock")
+        Path(d, ".kit", "hooks", "kit_task_train.py").write_text(
+            "import signal, sys, time, os\np = %r\nopen(p, 'w').close()\nsignal.signal(signal.SIGTERM, lambda *a: (os.remove(p), sys.exit(1)))\ntime.sleep(30)\n" % lock)
+        r = self.run_(d)
+        self.assertEqual(r.returncode, 2)
+        self.assertFalse(os.path.exists(lock))
+
+    def test_one_that_ignores_it_is_killed(self):
+        d = self.project("import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\ntime.sleep(30)\n", 1)
+        t = __import__("time").monotonic()
+        self.assertEqual(self.run_(d).returncode, 2)
+        self.assertLess(__import__("time").monotonic() - t, 10)
 
 
 class Words(unittest.TestCase):

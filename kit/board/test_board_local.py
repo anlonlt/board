@@ -28,7 +28,7 @@ def check(name, ok):
 def cli(url, *args):
     r = subprocess.run(
         [sys.executable, "-I", os.path.join(HERE, "board_cli.py"), "--url", url] + list(args),
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=dict(os.environ, KIT_ROLE="owner"),      # it writes his comments too
     )
     return r.returncode, r.stdout.strip(), r.stderr.strip()
 

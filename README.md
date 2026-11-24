@@ -303,12 +303,6 @@ For **LMArena (Agent Mode)**, **E2B / Codespaces preview iframes**, **Codex**, *
 
 A board with no kit install at all (its own page, hooks and guides): `kit/claude/update_board.py --board-url <url> --project <name> --guide <its guide> --out <its page source>` rebuilds only the page; `--scripts-into <repo>` also copies the kit's scripts (no hooks) for the Artifact mode.
 
-### Harmonize's hooks, for comparison
-
-The kit was generalized from Harmonize's setup; some of Harmonize's hooks are still stronger (say-it-once's link and request rules, session start's branch scan, stop's main-contains-branch check, pre-push checks, relaunching runs after a restart, the story skill's checker). `compare/harmonize/` holds them with their tests and a README saying, hook by hook, which is better and why, so the kit can take them in.
-
----
-
 ## Deeper Reference
 
 <details>

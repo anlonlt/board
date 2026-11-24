@@ -63,12 +63,15 @@ def gated(call, coll, doc_id, data, replace=False):
         except (OSError, ValueError):
             cfg = {}
         old = get(coll, doc_id)
-        data, notes, err = g.check_post(doc_id, data, old, cfg)
+        data, notes, err = g.check_post(doc_id, data, old, cfg, may_prove=os.environ.get("KIT_GATE") == "done")
         if replace and not err and old.get("proof") and "proof" not in data and g.proof_key(data) == (old.get("proof") or {}).get("key"):
             data["proof"] = old["proof"]
     else:
         old = {} if "text" in data and "post_id" in data else get(coll, doc_id)
         c = dict(old, **data)
+        if c.get("from") == "owner" and not old and (os.environ.get("KIT_ROLE") or "") != "owner":
+            print("board: REFUSED: a comment from the owner is his to write (the page); quote his words in a comment of yours", file=sys.stderr)
+            raise SystemExit(2)
         err = g.check_comment(doc_id, c, get("posts", c["post_id"]) if c.get("post_id") and "text" in data else {}) if "text" in data else None
     for n in notes:
         print("board: " + n, file=sys.stderr)

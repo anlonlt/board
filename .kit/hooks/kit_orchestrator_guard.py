@@ -32,6 +32,7 @@ to keep a dump (a full list, a card rebuild) out of the orchestrator's context, 
 the board raw. Exit 2 with the reason on stderr.
 """
 import glob
+import importlib.util
 import json
 import os
 import re
@@ -282,7 +283,10 @@ def board_verdict(ti, root, orch):
     return None
 
 
-def launch_marked(pid, prompt, root):
+INLINE = re.compile(r"^Your prompt follows; first commit it to docs/prompts/([\w.-]+)\.md on your branch")
+
+
+def launch_marked(pid, prompt, root, inline=False):
     """CL30: `kit.py launch <post>` ran for this part (its mark in .kit/run/launch/ of this repo or the step's clone)."""
     _, repos, _ = known_repos(root)
     for r in [root] + [c for c in repos.values() if c and c != root]:
@@ -293,7 +297,7 @@ def launch_marked(pid, prompt, root):
             fresh = time.time() - float(d.get("at") or 0) <= LAUNCH_MAX_AGE_S
         except (TypeError, ValueError):
             fresh = False
-        if fresh and str(d.get("prompt") or "").strip() == prompt:
+        if fresh and str(d.get("prompt") or "").strip() == prompt and bool(d.get("inline")) == inline:
             return True
     return False
 
@@ -318,7 +322,43 @@ def launch_verdict(ti, root):
                     "post in progress and its Trains row running, and prints this create_session call), then `kit.py "
                     "launch %s --session-id <the id create_session returns>`." % (pid, pid))
         return None
+    m = INLINE.match(prompt)          # CL40: the board could not be pushed, `kit.py launch` wrote this text and marked it
+    if m and launch_marked(m.group(1), prompt, root, inline=True):
+        return None
     return "a part launched with an inline prompt: %s." % LAUNCH_WAY
+
+
+def subagent_verdict(ti, root):
+    """A subagent reads and writes the board raw (it keeps a dump out of the orchestrator's context), but what it writes
+    by hand under the owner's eyes is gated like anyone's: a question in a thread, an unknown lane, a step completed
+    without proof. A sync's files of an attached board (history, copied as it is) pass."""
+    p = next((x for x in (os.path.join(root, ".kit", "post_gate.py"), os.path.join(root, "kit", "board", "post_gate.py")) if os.path.isfile(x)), None)
+    if not p:
+        return None
+    spec = importlib.util.spec_from_file_location("kit_post_gate", p)
+    g = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(g)
+    act = str(ti.get("action") or "")
+    for w in (ti.get("writes") if act == "batch" else [dict(ti, op=act)]) or []:
+        m = isinstance(w, dict) and BOARD_COLL.match(str(w.get("collection") or ""))
+        if not m or str(w.get("op") or w.get("action") or "") not in ("set", "update"):
+            continue
+        fp = str(w.get("file_path") or "")
+        if fp and (m.group(1) or any(under(fp, r, ".kit", "run", "artifact", "out") for r in kit_roots(root))):
+            continue
+        d = w.get("data") if isinstance(w.get("data"), dict) else _read(fp) if fp else None
+        if not isinstance(d, dict):
+            continue
+        did = str(w.get("doc_id") or "")
+        if m.group(2) == "comments":
+            why = g.check_comment(did, d) if "text" in d else None
+        else:
+            why = None if did.startswith("_") else "lane %r does not exist: %s" % (d["column"], ", ".join(g.LANES)) if d.get("column") and d["column"] not in g.LANES \
+                else "a step is completed by `kit.py step complete`, after `kit.py done`" if g.is_complete(d) and not g.proved(d) and d.get("column") != "done" \
+                else "`proof` is what `kit.py done` leaves, never written by hand" if "proof" in d and act != "batch" else None
+        if why:
+            return "%s/%s: %s" % (w.get("collection"), did, why)
+    return None
 
 
 def verdict(data, root, orch=True):
@@ -338,7 +378,10 @@ def main():
         return 0
     # a subagent of the orchestrator (board-cards, board-publish, a check) exists to keep a dump out of its context
     if data.get("agent_id") or data.get("agent_type") or "/subagents/" in str(data.get("transcript_path") or ""):
-        return 0
+        why = subagent_verdict(data.get("tool_input") or {}, project_dir(data)) if data.get("tool_name") == "ArtifactData" else None
+        if why:
+            print("REFUSED: " + why, file=sys.stderr)
+        return 2 if why else 0
     if (os.environ.get("KIT_ROLE") or "") == "owner":
         return 0
     orch = is_orchestrator(data)
