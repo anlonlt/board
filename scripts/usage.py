@@ -16,16 +16,19 @@ Sources, measured, never estimated:
   * the Claude Code transcript (`~/.claude/projects/<dir>/<session>.jsonl`, the hook payload's transcript_path) and
     its subagents (`<session>/subagents/agent-*.jsonl` + `.meta.json`): every API call's usage (deduplicated by
     message id), tool calls by name, ArtifactData calls and bytes, messages sent and received, owner turns;
-  * a claude-code-remote record (`get_session`: external_metadata.usage, context_usage), saved to a file by
-    whatever fetched it, for cloud sessions whose transcript is gone.
+  * a claude-code-remote record (`get_session`: external_metadata.usage, context_usage), for sessions that ran
+    before the hook existed. No script can fetch these: claude-code-remote is a tool of the model's harness, with no
+    HTTP API a container reaches, so the records are saved to a file by one cheap subagent (CL37: a Haiku agent,
+    list_sessions + get_session per session) and `import-ccr` reads that file. Cloud sessions from now on need none
+    of this: their transcript is on their own container, where the hook reads it.
 Cost: the API list prices below per model (cache writes 1.25x input for 5 minutes, 2x for 1 hour; `usage.prices`
 in .kit/config.json overrides them); a ccr record's own cost_usd is kept as it is.
 
 Where the rows live: `.kit/run/usage/<session>.json` (local, current at every Stop), and the committed ledger, the
 branch `kit-usage` (file `usage/<YYYY-MM-DD>.jsonl`, the session's start date), written with git plumbing so the
 working tree never changes (a Stop hook that dirtied it would make kit_stop and end_session refuse every turn).
-`compare` reads both. Push: at SessionEnd, from end_session.py and web_takeover save, and at a Stop at most every
-`usage.push_minutes` (15); `usage.push: false` in .kit/config.json, or KIT_USAGE_PUSH=0, keeps it local.
+`compare` reads both. Push: at SessionEnd, from end_session.py, and at every Stop, detached
+(`usage.push_minutes` to space them); `usage.push: false` in .kit/config.json, or KIT_USAGE_PUSH=0, keeps it local.
 """
 import argparse
 import glob
@@ -54,6 +57,8 @@ PRICES = {
     "claude-sonnet-4-6": (3.0, 15.0, 0.30), "claude-haiku-5-5": (0.10, 0.50, 0.01),
     "claude-haiku-4-5": (1.0, 5.0, 0.10),
 }
+# Long-prompt tiers: above this many prompt tokens (input + cache read + cache write) a call bills at these prices.
+TIERS = {"claude-haiku-5-5": (100000, (0.50, 2.50, 0.05))}
 WRITE_5M, WRITE_1H = 1.25, 2.0
 SEND_TOOLS = re.compile(r"(^SendMessage$|send_message$)")
 AGENT_TOOLS = ("Agent", "Task")
@@ -233,6 +238,9 @@ def parse_transcript(path, conf=None, depth=0):
         tok["cache_write_1h"] += w1
         peak = max(peak, i + cr + cw)
         p = price(model, conf)
+        for k, (limit, tp) in TIERS.items():
+            if str(model or "").startswith(k) and i + cr + cw > limit:
+                p = tp
         if p:
             cost += (i * p[0] + o * p[1] + cr * p[2] + w5 * p[0] * WRITE_5M + w1 * p[0] * WRITE_1H) / 1e6
         else:
@@ -291,7 +299,11 @@ def classify(row, title=None):
     """(role, part) from the branch, the title, the first prompt: orchestrator, clerk, review, part, other.
     A title that starts with a step id ("CL28 orchestrator answers...") is that part, whatever words follow."""
     br = str(row.get("branch") or "")
+    if br == "HEAD":
+        br = ""
     first = str(row.get("first_prompt") or "")
+    if row.get("is_orchestrator"):
+        return "orchestrator", None
     tl = re.sub(r"^(harmonize|board)\s+", "", str(title or row.get("title") or "").strip(), flags=re.I)
     words = (tl + " " + first[:300]).lower()
     m = PART_PROMPT.search(first)
@@ -305,6 +317,14 @@ def classify(row, title=None):
             return role, part
     if re.match(r"(CR[- ]|review\b)", tl, re.I):
         return "review", part
+    if m:  # the prompt file says the role: docs/prompts/O54-orchestrator.md, BC32-clerk.md, CR-x.md
+        name = m.group(1).lower()
+        for word, role in (("orchestrator", "orchestrator"), ("clerk", "clerk"), ("review", "review"),
+                           ("consultant", "review")):
+            if word in name:
+                return role, None if role == "orchestrator" else part
+        if name.startswith("cr-"):
+            return "review", part
     if m or br.startswith("part-"):
         if part is None and br.startswith("part-"):
             p = PART_ID.match(br[5:])
@@ -450,9 +470,29 @@ def push_allowed(root, conf):
     return conf.get("push", True) is not False
 
 
+def orchestrator_session(root):
+    """The session id the board's `_orchestrator` post names (the local board's store), or None."""
+    try:
+        import sqlite3
+        db = os.path.join(root, ".kit", "board_data", "board.db")
+        if not os.path.isfile(db):
+            return None
+        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=2)
+        try:
+            got = con.execute("select data from docs where collection='posts' and doc_id='_orchestrator'").fetchone()
+        finally:
+            con.close()
+        return (json.loads(got[0]) or {}).get("session_id") if got else None
+    except Exception:
+        return None
+
+
 def record(root, transcript, role=None, part=None, title=None, conf=None):
     conf = kit_conf(root) if conf is None else conf
     row = parse_transcript(transcript, conf)
+    osid = orchestrator_session(root)
+    if osid and osid in (row.get("session_id"), os.environ.get("KIT_SESSION_NAME")):
+        row["is_orchestrator"] = True
     r, p = classify(row, title)
     row["role"], row["part"] = role or r, part or p
     row["kit_commit"], row["kit_date"] = kit_version(root)
@@ -547,12 +587,30 @@ def all_rows(root, extra=()):
 
 # ---------------------------------------------------------------- compare
 
-def cut_time(root, spec, kit_repo=None):
-    """A kit commit (its commit time, looked up in the kit's repo, then the project) or a date/datetime."""
-    for repo in [r for r in (kit_repo, os.path.dirname(HERE), root) if r]:
+def cut_time(root, spec, kit_repo=None, rows=()):
+    """A kit commit or a date/datetime. A commit's time: from git (the kit's repo, then the project); in a shallow
+    clone that lacks it, from the rows that ran under it (their kit_date) or the project's manifest; last, one
+    bounded fetch of that commit."""
+    repos = [r for r in (kit_repo, os.path.dirname(HERE), root) if r]
+    for repo in repos:
         rc, out = git(repo, "log", "-1", "--format=%cI", spec, "--")
         if rc == 0 and out:
             return _ts(out), "commit %s (%s)" % (spec, out)
+    if re.fullmatch(r"[0-9a-f]{6,40}", spec):
+        for r in rows:
+            kc, kd = str(r.get("kit_commit") or ""), r.get("kit_date")
+            if kd and kc and (kc.startswith(spec) or spec.startswith(kc)):
+                return _ts(kd), "commit %s (%s, from the ledger's rows)" % (spec, kd)
+        kc, kd = kit_version(root)
+        if kd and kc and (kc.startswith(spec) or spec.startswith(kc)):
+            return _ts(kd), "commit %s (%s, from .kit/manifest.json)" % (spec, kd)
+        for repo in repos:
+            if git(repo, "fetch", "-q", "--depth=1", "origin", spec)[0] == 0:
+                rc, out = git(repo, "log", "-1", "--format=%cI", "FETCH_HEAD", "--")
+                if rc == 0 and out:
+                    return _ts(out), "commit %s (%s, fetched)" % (spec, out)
+        raise SystemExit("usage compare: commit %s is not in this clone, the ledger or the manifest, and could not "
+                         "be fetched; give its date instead (--before 2026-11-23T01:25:19+00:00)" % spec)
     t = _ts(spec if "T" in spec or len(spec) > 10 else spec + "T00:00:00+00:00")
     if t is None:
         raise SystemExit("usage compare: %r is neither a commit nor a date" % spec)
@@ -689,12 +747,40 @@ def hook(stdin_text, root=None):
             last = os.path.getmtime(stamp)
         except OSError:
             last = 0
-        every = float(conf.get("push_minutes", 15)) * 60
+        every = float(conf.get("push_minutes", 0)) * 60
         if event == "SessionEnd" or time.time() - last >= every:
             open(stamp, "a").close()
             os.utime(stamp, None)
-            push(root)
+            if event == "SessionEnd" or os.environ.get("KIT_USAGE_PUSH_WAIT") == "1":
+                push_locked(root)
+            else:  # every Stop: the push runs on, detached, so the turn never waits for the network
+                subprocess.Popen([sys.executable, "-I", os.path.abspath(__file__), "--root", root, "push"],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True, cwd=root)
     return row
+
+
+def push_locked(root):
+    """push() unless another push of this project is running (a lock file younger than 2 minutes)."""
+    os.makedirs(run_dir(root), exist_ok=True)
+    lock = os.path.join(run_dir(root), ".push.lock")
+    try:
+        if time.time() - os.path.getmtime(lock) > 120:
+            os.unlink(lock)
+    except OSError:
+        pass
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except OSError:
+        return "another push is running"
+    try:
+        os.close(fd)
+        return push(root)
+    finally:
+        try:
+            os.unlink(lock)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------- CLI
@@ -757,12 +843,12 @@ def main(argv=None):
             print(push(root, rows))
         return 0
     if a.cmd == "push":
-        print(push(root, local_rows(root)))
+        print(push_locked(root))
         return 0
     if a.cmd == "compare":
-        tb, lb = cut_time(root, a.before, a.kit_repo)
-        ta, la = cut_time(root, a.after or a.before, a.kit_repo)
         rows = merge_rows(all_rows(root, a.rows) if not a.only else [], _read_rows(a.rows))
+        tb, lb = cut_time(root, a.before, a.kit_repo, rows)
+        ta, la = cut_time(root, a.after or a.before, a.kit_repo, rows)
         res = compare(rows, tb, ta, a.role, a.project, a.part_prefix)
         print(json.dumps(res, indent=1) if a.json else render(res, lb, la))
         return 0
