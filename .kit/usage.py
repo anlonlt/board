@@ -65,6 +65,8 @@ AGENT_TOOLS = ("Agent", "Task")
 RECEIVED = ("<cross-session-message", "<other-session", "<teammate-message")
 NOTICE = ("[SYSTEM NOTIFICATION", "<task-notification", "[Request interrupted", "<system-reminder>",
           "Caveat: The messages below", "<local-command")
+TEST_CMD = re.compile(r"unittest|pytest|run_all_tests|test[-_]changed|gradlew\S*\s+\S*[tT]est|npm (?:run )?test|"
+                      r"node \S*test_\S*\.js|python3? (?:-I )?\S*test_\S*\.py")
 KIT_CMD = re.compile(r"\.kit/([a-z_]+\.py)(?:\s+(?:-I\s+)?([a-z][a-z-]*))?")
 
 
@@ -192,6 +194,8 @@ def parse_transcript(path, conf=None, depth=0):
                             sent += 1
                             sent_chars += len(str(inp.get("message") or ""))
                         elif name == "Bash":
+                            if TEST_CMD.search(str(inp.get("command") or "")):
+                                board["tests_run"] += 1
                             for script, sub in KIT_CMD.findall(str(inp.get("command") or "")):
                                 kit_cmds[(script[:-3] + (" " + sub if sub else ""))] += 1
                                 if script == "board_cli.py":
@@ -262,7 +266,8 @@ def parse_transcript(path, conf=None, depth=0):
         "cost_usd": round(cost, 6) if priced else None,
         "owner_turns": owner_turns, "received": received, "notices": notices, "sent": sent, "sent_chars": sent_chars,
         "tool_calls": sum(tools.values()), "tools": dict(tools.most_common()), "kit_cmds": dict(kit_cmds.most_common()),
-        "board": dict(board), "compactions": compactions, "first_prompt": prompts[0] if prompts else "",
+        "board": {k: v for k, v in board.items() if k != "tests_run"}, "tests_run": board.get("tests_run", 0),
+        "compactions": compactions, "first_prompt": prompts[0] if prompts else "",
     }
     subs = []
     if depth == 0:
@@ -292,6 +297,9 @@ def parse_transcript(path, conf=None, depth=0):
 # ---------------------------------------------------------------- role and part
 
 PART_PROMPT = re.compile(r"docs/prompts/([A-Za-z0-9._-]+)\.md")
+ROLE_FILE = re.compile(r"^[a-z]{1,3}\d+[a-z]?-(?:board-)?(orchestrator|clerk)$")
+ROLE_POINTER = re.compile(r"--role (orchestrator|clerk|review)\b|\.kit/(?:claude-cli/)?(orchestrator|clerk|consultant)\.md|"
+                          r"\.kit/claude-cli/takeover\.md|\byou are (?:the )?orchestrator\b", re.I)
 PART_ID = re.compile(r"^([A-Za-z]{1,4}\d+[a-z]?(?:-[A-Z]\d?)?)\b")
 
 
@@ -317,14 +325,17 @@ def classify(row, title=None):
             return role, part
     if re.match(r"(CR[- ]|review\b)", tl, re.I):
         return "review", part
-    if m:  # the prompt file says the role: docs/prompts/O54-orchestrator.md, BC32-clerk.md, CR-x.md
+    if m:  # a role's own prompt file: O54-orchestrator.md, BC32-board-clerk.md, CR-x.md (not cl24-orchestrator-guard)
         name = m.group(1).lower()
-        for word, role in (("orchestrator", "orchestrator"), ("clerk", "clerk"), ("review", "review"),
-                           ("consultant", "review")):
-            if word in name:
-                return role, None if role == "orchestrator" else part
+        rm = ROLE_FILE.match(name)
+        if rm:
+            return rm.group(1), None if rm.group(1) == "orchestrator" else part
         if name.startswith("cr-"):
             return "review", part
+    rp = ROLE_POINTER.search(first)
+    if rp and not m:  # a hand-over line: `kit.py resume --role orchestrator`, .kit/claude-cli/clerk.md, takeover.md
+        role = rp.group(1) or rp.group(2) or "orchestrator"
+        return ("review" if role in ("review", "consultant") else role), part
     if m or br.startswith("part-"):
         if part is None and br.startswith("part-"):
             p = PART_ID.match(br[5:])
@@ -487,6 +498,61 @@ def orchestrator_session(root):
         return None
 
 
+def git_work(repo, started, ended, kit_cmds=None, tests_run=None):
+    """What the session made, the denominator for cost: its commits on this branch's first-parent line between its
+    first and last event (merges and the commits they bring excluded), their files and lines, tests run, Done checks."""
+    out = {"commits": 0, "files": 0, "lines_added": 0, "lines_deleted": 0, "tests_run": int(tests_run or 0),
+           "done_checks": int((kit_cmds or {}).get("kit done", 0))}
+    if not (started and ended):
+        return out
+    rc, log = git(repo, "log", "--first-parent", "--no-merges", "--since=" + str(started), "--until=" + str(ended),
+                  "--format=@%H", "--numstat", "HEAD")
+    if rc:
+        return out
+    files = set()
+    for line in log.splitlines():
+        if line.startswith("@"):
+            out["commits"] += 1
+        elif "\t" in line:
+            a, d, f = (line.split("\t") + ["", ""])[:3]
+            files.add(f)
+            out["lines_added"] += int(a) if a.isdigit() else 0
+            out["lines_deleted"] += int(d) if d.isdigit() else 0
+    out["files"] = len(files)
+    return out
+
+
+def work_by_trailer(repos, refs=("--all",)):
+    """{session_id: work} from the `Claude-Session: .../session_<id>` trailer of every commit (merges excluded), in
+    every repo given: the work measure for ccr rows, whose transcript is gone."""
+    out = {}
+    seen = set()
+    for repo in repos:
+        rc, log = git(repo, "log", *refs, "--no-merges", "--format=@%H %(trailers:key=Claude-Session,valueonly,separator=;)",
+                      "--numstat")
+        if rc:
+            continue
+        cur = None
+        for line in log.splitlines():
+            if line.startswith("@"):
+                sha, _, tr = line[1:].partition(" ")
+                m = re.search(r"(session_[A-Za-z0-9]+)", tr)
+                cur = None
+                if m and sha not in seen:
+                    seen.add(sha)
+                    cur = out.setdefault(m.group(1), {"commits": 0, "files": 0, "lines_added": 0, "lines_deleted": 0,
+                                                       "_files": set()})
+                    cur["commits"] += 1
+            elif cur is not None and "\t" in line:
+                a, d, f = (line.split("\t") + ["", ""])[:3]
+                cur["_files"].add(f)
+                cur["lines_added"] += int(a) if a.isdigit() else 0
+                cur["lines_deleted"] += int(d) if d.isdigit() else 0
+    for w in out.values():
+        w["files"] = len(w.pop("_files"))
+    return out
+
+
 def record(root, transcript, role=None, part=None, title=None, conf=None):
     conf = kit_conf(root) if conf is None else conf
     row = parse_transcript(transcript, conf)
@@ -494,7 +560,10 @@ def record(root, transcript, role=None, part=None, title=None, conf=None):
     if osid and osid in (row.get("session_id"), os.environ.get("KIT_SESSION_NAME")):
         row["is_orchestrator"] = True
     r, p = classify(row, title)
-    row["role"], row["part"] = role or r, part or p
+    env_role = os.environ.get("KIT_ROLE") if os.environ.get("KIT_ROLE") in ("orchestrator", "clerk", "review", "part") else None
+    row["role"], row["part"] = role or env_role or r, part or p
+    row["work"] = git_work(row.get("cwd") if row.get("cwd") and os.path.isdir(str(row.get("cwd"))) else root,
+                           row.get("started"), row.get("ended"), row.get("kit_cmds"), row.get("tests_run"))
     row["kit_commit"], row["kit_date"] = kit_version(root)
     row["recorded_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     row["recorded_by"] = "usage.py"
@@ -623,6 +692,10 @@ def _when(row):
     return _ts(row.get("kit_date") or "") or _ts(row.get("started") or "")
 
 
+def _cost(r):
+    return float(r.get("cost_usd_all") if r.get("cost_usd_all") is not None else (r.get("cost_usd") or 0))
+
+
 def _tot(d):
     d = d or {}
     return sum(int(d.get(k) or 0) for k in ("input", "output", "cache_read", "cache_write"))
@@ -637,6 +710,13 @@ METRICS = [
      if r.get("owner_turns") else None),
     ("cost $ per hour", lambda r: (r.get("cost_usd_all") if r.get("cost_usd_all") is not None else r.get("cost_usd"))
      / (r["wall_s"] / 3600.0) if (r.get("wall_s") or 0) >= 600 else None),
+    ("commits", lambda r: (r.get("work") or {}).get("commits") if r.get("work") else None),
+    ("lines changed", lambda r: ((r["work"].get("lines_added", 0) + r["work"].get("lines_deleted", 0))
+                                 if r.get("work") else None)),
+    ("cost $ per commit", lambda r: _cost(r) / r["work"]["commits"] if (r.get("work") or {}).get("commits") else None),
+    ("cost $ per 100 lines changed", lambda r: 100.0 * _cost(r) / (r["work"]["lines_added"] + r["work"]["lines_deleted"])
+     if r.get("work") and (r["work"].get("lines_added", 0) + r["work"].get("lines_deleted", 0)) else None),
+    ("tests run", lambda r: r.get("tests_run")),
     ("API calls", lambda r: r.get("api_calls")),
     ("tool calls", lambda r: r.get("tool_calls")),
     ("board bytes (read+write)", lambda r: ((r.get("board") or {}).get("read_bytes", 0)
@@ -801,6 +881,10 @@ def main(argv=None):
     s.add_argument("file")
     s.add_argument("--push", action="store_true")
     sp.add_parser("push")
+    s = sp.add_parser("work-from-git", help="add each ccr row's commits and lines, by the Claude-Session trailer")
+    s.add_argument("rows")
+    s.add_argument("--repo", action="append", required=True)
+    s.add_argument("--out", required=True)
     s = sp.add_parser("compare")
     s.add_argument("--before", required=True)
     s.add_argument("--after")
@@ -841,6 +925,20 @@ def main(argv=None):
         print("import-ccr: %d rows (roles %s)" % (len(rows), dict(Counter(r["role"] for r in rows))))
         if a.push:
             print(push(root, rows))
+        return 0
+    if a.cmd == "work-from-git":
+        work = work_by_trailer(a.repo)
+        rows = _read_rows([a.rows])
+        n = 0
+        for r in rows:
+            if r.get("source") == "ccr":
+                r["work"] = dict(work.get(r["session_id"]) or {"commits": 0, "files": 0, "lines_added": 0,
+                                                               "lines_deleted": 0})
+                n += bool(r["work"]["commits"])
+        with open(a.out, "w", encoding="utf-8") as fh:
+            fh.write("".join(json.dumps(r, sort_keys=True, ensure_ascii=False) + "\n" for r in rows))
+        print("work-from-git: %d of %d ccr rows have commits (%d sessions in the trailers)" % (
+            n, sum(r.get("source") == "ccr" for r in rows), len(work)))
         return 0
     if a.cmd == "push":
         print(push_locked(root))

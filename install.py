@@ -187,13 +187,24 @@ def _in_kit_at(commit, hook):
         return None
 
 
-def new_since_install(hook, prev_kit):
+# CL37: when each later hook entered the kit. A shallow kit clone has no history for _in_kit_at to read; the target's
+# manifest still records the date of the kit it was last installed from, and a hook added after that date is new.
+HOOKS_ADDED = {"kit_usage.py": "2026-11-24T01:55:00+00:00"}
+
+
+def new_since_install(hook, prev_kit, prev_date=None):
     """True when kit/hooks/<hook> is a hook the kit added since the target's runtime was set up (CL28): absent at the
-    kit commit the target was last installed from, or at HOOKS_BASELINE. Unknown (not a git clone, no recorded
-    commit): False, nothing is added (CL22)."""
+    kit commit the target was last installed from, or at HOOKS_BASELINE. When this kit clone cannot tell (shallow:
+    those commits are not here), the manifest's install date against HOOKS_ADDED decides (CL37). Unknown (no recorded
+    commit, no date): False, nothing is added (CL22)."""
     if not prev_kit or prev_kit == "unknown":
         return False
-    return any(_in_kit_at(c, hook) is False for c in (prev_kit, HOOKS_BASELINE))
+    seen = [_in_kit_at(c, hook) for c in (prev_kit, HOOKS_BASELINE)]
+    if any(x is False for x in seen):
+        return True
+    if all(x is None for x in seen) and prev_date and hook in HOOKS_ADDED:
+        return str(prev_date) < HOOKS_ADDED[hook]
+    return False
 
 
 def present_runtimes(t):
@@ -986,6 +997,7 @@ def main(argv=None):
     present = present_runtimes(t)
     new_hooks = {}
     prev_kit = str(ins.manifest.get("_kit_commit") or "").split(" ")[0]
+    prev_date = (str(ins.manifest.get("_kit_commit") or "").split(" ") + ["", ""])[1]
     also_agy = "agy" in present and not want_agy
     also_claude = "claude" in present and not want_claude
     for h in HOOKS:
@@ -999,7 +1011,7 @@ def main(argv=None):
             if on and os.path.isfile(os.path.join(t, d + h)):
                 ins.put(d + h, rd("kit", "hooks", h), past_kit_blobs("kit/hooks/" + h))
             elif (on and (parts["board"] or h in MEMORY_HOOKS) and h != "test_hooks.py"
-                  and (d + h) not in ins.manifest and new_since_install(h, prev_kit)):
+                  and (d + h) not in ins.manifest and new_since_install(h, prev_kit, prev_date)):
                 # CL28: a hook the kit added since this runtime was installed (kit_brief_guard.py on Harmonize, whose
                 # config names agy while its Claude Code hooks live in .claude/hooks/kit/) goes in too, with its own
                 # settings.json lines; a kit hook the project removed (it is in the manifest) is never put back.
