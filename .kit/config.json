@@ -105,10 +105,10 @@
    }
   },
   "autonomy": {
-   "level": "balanced",
+   "level": "full_auto",
    "auto_consultant": true,
-   "auto_defaults": false,
-   "carry_on": false,
+   "auto_defaults": true,
+   "carry_on": true,
    "park_tangents": true
   },
   "scope": "single",

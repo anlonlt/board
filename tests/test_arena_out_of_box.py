@@ -2,6 +2,7 @@
 
 Run via: python3 -m unittest discover -s tests -v
 """
+import importlib.util
 import json
 import os
 import subprocess
@@ -429,8 +430,11 @@ class TestArenaOutOfBox(unittest.TestCase):
 
             with open(os.path.join(proj_a, ".kit", "orchestrator.md"), encoding="utf-8") as fh:
                 orch_md = fh.read()
-            self.assertIn("full_auto", orch_md)
-            self.assertIn("default_option", orch_md)
+            self.assertIn("resume --role orchestrator", orch_md)                  # one place says the level: resume
+            spec = importlib.util.spec_from_file_location("pg", os.path.join(proj_a, ".kit", "post_gate.py"))
+            pg = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(pg)
+            self.assertIn("full_auto", pg.autonomy_lines(cfg)[0])
 
     def test_auto_links_table_and_dashboard_trains_materialization(self):
         srv, store = board_server.start_server(self.root, "127.0.0.1", 0, preview=True)

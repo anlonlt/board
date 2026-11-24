@@ -112,6 +112,9 @@ def on_completed_event(root, st, data):
         res = kit(root, ["find", "--part", re.split(r"[\s:·]+", subject, maxsplit=1)[0]])
         if res.get("post"):
             st["tasks"][tid] = res["post"]
+    pid = st["tasks"].get(tid)
+    res = kit(root, ["gate", pid]) if pid else {}
+    return res.get("why") if res.get("ok") is False else None
 
 
 def on_prompt(root, st):
@@ -146,7 +149,7 @@ def on_update(root, st, ti):
     if status == "completed":
         res = kit(root, ["complete", pid])
         if not res.get("ok"):
-            return None
+            return ("Post %s NOT complete: %s. TaskUpdate it back to in_progress." % (pid, res["why"])) if res.get("why") else None
         rv = " ".join(res.get("reviews") or [])
         return "Post %s: status complete (the owner moves it to Done).%s" % (
             pid, (" " + rv + " Its verdict comes to you as \"Review of %s: ...\"." % pid) if rv else "")
@@ -196,12 +199,12 @@ def main():
                 st = json.load(fh)
         except (OSError, ValueError):
             st = {"tasks": {}}
-        msg = None
+        msg = refuse = None
         if is_orchestrator(data, st):
             root = project_dir(data)
             ti = data.get("tool_input") or {}
             if event == "TaskCompleted":
-                on_completed_event(root, st, data)
+                refuse = on_completed_event(root, st, data)
             elif event == "UserPromptSubmit":
                 msg = on_prompt(root, st)
             else:
@@ -211,6 +214,9 @@ def main():
                 json.dump(st, fh)
         except OSError:
             pass
+    if refuse:                                               # exit 2: Claude Code keeps the task open and says why
+        print("NOT complete: %s." % refuse, file=sys.stderr)
+        return 2
     if msg:
         if artifact_board(config(data)) and event != "UserPromptSubmit":
             # an Artifact board: the step is on the local copy; one batch carries it (and every other change) across

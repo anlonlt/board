@@ -23,6 +23,12 @@ KIT_PY = str(ROOT / "scripts" / "kit.py")
 INSTALL_PY = str(ROOT / "install.py")
 
 
+def kit_is_full_auto():
+    """This repository's own setting, which the render reads."""
+    cfg = json.loads((Path(__file__).resolve().parent.parent / ".kit" / "config.json").read_text())
+    return cfg["kit"]["autonomy"]["level"] == "full_auto"
+
+
 class TestWelcomeRender(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -88,7 +94,7 @@ class TestWelcomeRender(unittest.TestCase):
                 self.assertIn("`done`", text)
                 self.assertIn("Where we are", text)
                 self.assertIn("_orchestrator", text)
-                self.assertIn("A Like on this message launches them all; or tell me which.", text)
+                self.assertIn("These start now; say which to hold." if kit_is_full_auto() else "A Like on this message launches them all; or tell me which.", text)
                 # Memory items pulled in priority order (P1 Alpha before P2 Beta before P3 Gamma)
                 self.assertIn("Alpha Stability", text)
                 self.assertIn("Fix critical crash", text)

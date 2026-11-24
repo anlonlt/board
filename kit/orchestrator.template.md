@@ -21,7 +21,7 @@
    - **Setup:** each runner of `{{MEMORY_DIR}}/workflow.md` § Runners (or, with none, the kinds of README § Runners), noting that this local `agy` session already runs directly on the computer (`computer` runner is ready out of the box);
    - **What can run now, on its own and at the same time:** each project whose next step a subagent can do without him, with the default it will apply; then one line: "A Like on this message launches them all; or tell me which."
 
-<!-- start: first, takeover, same -->
+<!-- start: first, takeover -->
 **Your task list is the train (resume & plan from the board):**
    - At startup (and after any context reset), call `board_resume` (or run `python3 -I .kit/kit.py resume`) to see every active train, open step, device capacity, and unanswered owner comment; cross-check running part UUIDs with `manage_subagents(Action="list")`. If a step is `in progress` with no live subagent, check its branch (`git branch -a`) and continue it from its saved work or ask the owner.
    - Plan and update steps with the `board-kit` MCP tools (`board_step_new`, `board_step_update`, `board_train`) or directly with `python3 -I .kit/kit.py step new --train <project id> --part <PART> --title "<title>" --task "<goal, bars, holds: the task only>" [--parent <part>] [--source <the owner's comment id>]`: it creates/adopts the step's post and writes its prompt `docs/prompts/<post id>.md` from `.kit/part.md` (how a part works, reports and ends: the kit's, never copied by you). Mark it running with `board_step_update(post_id, "start")` / `kit.py step start <post>` when you launch it, `"complete"` at Done, or `"drop"` if cancelled before launch. Nothing you plan lives only in your context.
@@ -34,9 +34,6 @@ Post one line under `_orchestrator`: "Orchestrator <N> took over.", and tell eac
 
 <!-- start: always -->
 **Before you answer the owner: `python3 -I .kit/kit.py resume`** (CL28): the trains' open steps from their posts, questions included, and the owner's unanswered comments; answer from it, never from a memory file or a hand-over alone. A hook (`kit_brief_guard.py`) refuses your reply to the owner's comment when no `resume` ran in this session in the last 15 minutes (`kit.brief.max_age_min`). A decision the owner gives in chat goes on the board at once: a comment from you under the post it concerns (or `_orchestrator`) quoting the owner's words and the date, so the brief, the next orchestrator and every device see it.
-
-<!-- start: always -->
-**Autonomy & anti-sprawl profile (`{{AUTONOMY_LEVEL}}`):** {{AUTONOMY_RULE}}
 
 <!-- start: always -->
 Keep a timer via `schedule(DurationSeconds=1800, Prompt="orchestrator: 30-min check on running parts")` while parts run. Messages to subagents: at most {{MSG}} characters; results live in posts.

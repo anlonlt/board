@@ -36,6 +36,48 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _gate():
+    """post_gate.py next to this file (an older install has none: nothing is checked)."""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "post_gate.py")
+    if not os.path.isfile(p):
+        return None
+    spec = importlib.util.spec_from_file_location("kit_post_gate", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def gated(call, coll, doc_id, data, replace=False):
+    """The data to write, its lane made right; a refused one ends the command (exit 2), the reason on stderr."""
+    g = _gate()
+    if g is None or coll not in ("posts", "comments") or not isinstance(data, dict):
+        return data
+    get = lambda c, i: (call("GET", "/_api/db/%s/%s" % (c, urllib.parse.quote(str(i)))).get("data") or {})  # noqa: E731
+    notes = []
+    if coll == "posts":
+        if str(doc_id).startswith("_"):
+            return data
+        try:
+            with open(os.path.join(ROOT, ".kit", "config.json"), encoding="utf-8") as fh:
+                cfg = json.load(fh)
+        except (OSError, ValueError):
+            cfg = {}
+        old = get(coll, doc_id)
+        data, notes, err = g.check_post(doc_id, data, old, cfg)
+        if replace and not err and old.get("proof") and "proof" not in data and g.proof_key(data) == (old.get("proof") or {}).get("key"):
+            data["proof"] = old["proof"]
+    else:
+        old = {} if "text" in data and "post_id" in data else get(coll, doc_id)
+        c = dict(old, **data)
+        err = g.check_comment(doc_id, c, get("posts", c["post_id"]) if c.get("post_id") and "text" in data else {}) if "text" in data else None
+    for n in notes:
+        print("board: " + n, file=sys.stderr)
+    if err:
+        print("board: REFUSED: %s" % err, file=sys.stderr)
+        raise SystemExit(2)
+    return data
+
+
 def default_url():
     if os.environ.get("KIT_BOARD_URL"):
         return os.environ["KIT_BOARD_URL"].rstrip("/")
@@ -464,7 +506,7 @@ def main(argv=None):
         return 0
 
     if a.cmd == "set":
-        payload = {"data": load_json_arg(a.data, a.file)}
+        payload = {"data": gated(call, a.collection, a.doc_id, load_json_arg(a.data, a.file), replace=True)}
         if a.if_version is not None:
             payload["if_version"] = a.if_version
         res = call("PUT", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
@@ -472,7 +514,7 @@ def main(argv=None):
         return 0
 
     if a.cmd == "update":
-        payload = {"data": load_json_arg(a.data, a.file)}
+        payload = {"data": gated(call, a.collection, a.doc_id, load_json_arg(a.data, a.file))}
         if a.if_version is not None:
             payload["if_version"] = a.if_version
         res = call("PATCH", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
@@ -491,6 +533,9 @@ def main(argv=None):
         writes = load_json_arg(a.data, a.file)
         if isinstance(writes, list):
             writes = {"writes": writes}
+        for w in writes.get("writes") or []:
+            if isinstance(w, dict) and (w.get("op") or "set") in ("set", "update") and isinstance(w.get("data"), dict):
+                w["data"] = gated(call, w.get("collection"), w.get("doc_id"), w["data"], replace=(w.get("op") or "set") == "set")
         res = call("POST", "/_api/db/batch", writes)
         print(json.dumps(res, ensure_ascii=False))
         return 0
@@ -577,6 +622,11 @@ def main(argv=None):
             print(json.dumps(res, ensure_ascii=False))
             return 0
         if a.ccmd == "reply":
+            g = _gate()
+            why = g.check_comment("", {"from": "agent", "text": a.text}) if g else None
+            if why:
+                print("board: REFUSED: %s" % why, file=sys.stderr)
+                return 2
             res = call("POST", "/_api/comments/threads/%s/reply" % urllib.parse.quote(a.thread_id), {"text": a.text})
             print(json.dumps(res, ensure_ascii=False))
             return 0
@@ -752,6 +802,7 @@ def main(argv=None):
 
     if a.cmd == "reply":
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        gated(call, "comments", "", {"post_id": a.post_id, "from": a.sender, "text": a.text})     # before anything is marked read
         marked_read = False
         acked_thread = None
         reply_to = a.reply_to

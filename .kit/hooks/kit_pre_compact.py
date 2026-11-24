@@ -118,9 +118,9 @@ def inspect_claude_transcript(path):
                     low = _claude_text(m.get("content")).lower()
                     if not low or low.startswith("<"):
                         continue
-                    if "claude-cli/clerk.md" in low or "you are the board clerk" in low:
+                    if re.search(r"\.kit/(?:claude-cli/)?clerk\.md", low) or "you are the board clerk" in low:
                         role = "clerk"
-                    elif "start as the orchestrator" in low or "claude-cli/orchestrator.md" in low:
+                    elif re.search(r"start as the orchestrator|\.kit/(?:claude-cli/|claude-web/)?(?:orchestrator|takeover)\.md", low):
                         role = "orchestrator"
                     else:
                         role = "other"
@@ -160,9 +160,10 @@ def claude_handover(data, root):
             "only in this conversation goes on the board now (a step, or a line under its post). 2. Only what the board "
             "cannot hold goes in %s/state/orchestrator.md (open timers); commit and push. 3. Post one line under "
             "_orchestrator: \"Hand-over: context reset at %dk; the next orchestrator takes over in a moment.\" 4. As your "
-            "LAST action run `python3 -I .kit/handover.py --role orchestrator`: it ends this session and `up` opens your "
-            "successor, same name, in this terminal."
-        ) % (used_k, limit_k, rel_mem, used_k)
+            "LAST action run `python3 -I .kit/handover.py --role orchestrator`: %s"
+        ) % (used_k, limit_k, rel_mem, used_k, "it prints the `create_session` call that starts your successor: make it, then "
+             "end your turn." if os.environ.get("CLAUDE_CODE_REMOTE") else "it ends this session and `up` opens your successor, "
+             "same name, in this terminal.")
     else:
         reason = (
             "HANDOVER REQUIRED (context at %dk >= %dk): do NOT re-arm the listener. Run `python3 -I .kit/handover.py "

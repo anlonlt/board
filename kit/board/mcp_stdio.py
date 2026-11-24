@@ -56,7 +56,12 @@ TOOLS = [
                 "id": {"type": "string"},
                 "title": {"type": "string"},
                 "body": {"type": "string"},
-                "column": {"type": "string", "enum": ["todo", "question", "info", "done"], "default": "info"},
+                "column": {"type": "string", "enum": ["todo", "question", "info", "done"]},
+                "options": {"type": "array", "items": {"type": "string"}},
+                "default_option": {"type": "string"},
+                "deadline": {"type": "string"},
+                "needs": {"type": "string"},
+                "minutes": {"type": "integer"},
                 "part": {"type": "string"},
                 "runner": {"type": "string"},
                 "for_owner": {"type": "string"},
@@ -291,10 +296,12 @@ class MCPServer:
             doc = {
                 "title": str(args["title"]),
                 "body": str(args["body"]),
-                "column": str(args.get("column") or "info"),
                 "priority": int(args.get("priority") or 2),
                 "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             }
+            for k in ("column", "options", "default_option", "deadline", "needs", "minutes"):      # no column: the gate picks the lane
+                if args.get(k):
+                    doc[k] = args[k]
             if args.get("part"):
                 doc["part"] = str(args["part"])
             if args.get("runner"):

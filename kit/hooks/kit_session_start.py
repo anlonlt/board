@@ -14,6 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_config import config, is_claude_payload, memory_dir, project_dir  # noqa: E402
+from kit_pre_compact import inspect_claude_transcript  # noqa: E402
 
 
 def main():
@@ -25,6 +26,15 @@ def main():
     claude = is_claude_payload(data)
     k = c.get("kit", {})
     out = []
+    if claude and str((data or {}).get("source") or "") == "compact":
+        # a compaction is the safety net past the kit's limit, never how a role goes on: its context is now a summary
+        role = os.environ.get("KIT_ROLE") or inspect_claude_transcript(str(data.get("transcript_path") or ""))[1]
+        if role in ("orchestrator", "clerk"):
+            out.append("COMPACTED: this session should have handed over before. Do it now, before anything else: commit and push, then "
+                       "`python3 -I .kit/handover.py --role %s`; your successor starts from `kit.py resume --role %s`." % (role, role))
+        else:
+            out.append("COMPACTED: your context is a summary. Start again from `python3 -I .kit/kit.py resume --role %s`, not from it." % (
+                role if role in ("part", "review") else "part"))
     if k.get("setup"):
         out.append("SETUP: the kit's install is in progress (README § Install); the stop hooks are quiet until step 8 runs "
                    "`install.py . --setup-done`.")

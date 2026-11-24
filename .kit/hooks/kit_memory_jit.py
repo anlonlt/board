@@ -97,7 +97,11 @@ def handle(data):
     ledger = _load_ledger_module(root)
     if ledger is None:
         return None
-    hits = ledger.for_files(_memory_dir(root, data), rel_paths, kit_root=root, role=role)
+    mdir = _memory_dir(root, data)
+    hits = ledger.for_files(mdir, rel_paths, kit_root=root, role=role)
+    have = {h["id"] for h in hits}
+    for _, rows in ledger.open_fields(mdir, role or "part", files=rel_paths, kit_root=root):      # the fields these files open
+        hits += [r for r in rows if r["id"] not in have and not have.add(r["id"])]
     if not hits:
         return None
     sf = _seen_file(root, data)

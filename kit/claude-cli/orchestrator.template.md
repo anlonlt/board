@@ -6,13 +6,13 @@
 <!-- start: first, takeover -->
 1. `python3 -I .kit/board_cli.py get posts _orchestrator --out-dir /tmp/orch-{{SLUG}}`, then `python3 -I .kit/board_cli.py update posts _orchestrator --if-version <V> --data '{"session_id":"{{SLUG}}-orchestrator"}'`.
 
-<!-- start: first, takeover, same -->
+<!-- start: first, takeover -->
 2. **The clerk** (if `claude agents --json` shows no running `{{SLUG}}-clerk`): `KIT_ROLE=clerk claude --bg -n {{SLUG}}-clerk --model {{CLI_CLERK_MODEL}} --autocompact {{CLERK_AUTOCOMPACT}} --permission-mode {{CLAUDE_MODE}} "Your prompt is .kit/claude-cli/clerk.md: read it and follow it."`. It answers "board clerk ready, watching".
 
 <!-- start: first, takeover -->
 3. The cards "Where we are" and its trains: `Agent` with `subagent_type: "kit-cards"`, prompt `"rebuild the cards"`; its report is one line. Never list the posts yourself. Re-run at each launch and each Done.
 
-<!-- start: first, takeover, same -->
+<!-- start: first, takeover -->
 3b. **Your task list, from the board:** `python3 -I .kit/kit.py resume`; `TaskCreate` each open step it lists with its `metadata: {"train", "part"}` (the post is adopted, never duplicated), `TaskUpdate` `in_progress` the running ones. Then carry on with the next planned step (rule 8) as far as the autonomy profile allows.
 
 <!-- start: first -->
@@ -47,9 +47,6 @@ What reaches you (from the clerk, the parts, the consultant): the owner's words 
 <!-- case: launch | a step is a go -->
 **On a go:** the step is a task already (else `TaskCreate` it now). Commit and push its generated prompt, `TaskUpdate` it `in_progress`, and run the launch command the hook gave you: `python3 -I .kit/kit.py launch <post id>` (CL13). It refuses a prompt that is not committed, writes status in progress, `session_id`, `launched_at` and `branch` on the post and marks its Trains row running (with an attached Artifact board, `kit.artifact` in the config, it prints the ArtifactData batch that carries both there: make that call), then starts the part: `claude --bg -n {{SLUG}}-<part>` inside a worktree made from the current branch (never `claude -w`, which starts from main without .kit or the hooks). On the web it prints the claude-code-remote `create_session` call to make instead; then `python3 -I .kit/kit.py launch <post id> --session-id <the id it returned>`. Never edit a post or `_trains` by hand to show a launch. `kit.py resume` flags a part "launched, died" (branch, worktree or transcript, no live session) with what is uncommitted in its worktree. To change what a part is told, edit the task description before the first launch, or the prompt file (the kit never overwrites it). **The device's cap (CL15):** this computer holds only so many sessions (`python3 -I .kit/device.py`; the clerk and you count). Past it the launch command's gate and the guard refuse, and the hook leaves the step planned: launch it when a part ends, never kill one to make room. A cloud session has no cap.
    Launch several at once when they do not touch the same files.
-
-<!-- start: always -->
-**Autonomy & anti-sprawl profile (`{{AUTONOMY_LEVEL}}`):** {{AUTONOMY_RULE}}
 
 <!-- case: reviews | a review's verdict came -->
 **Reviews are automatic:** completing a step's task starts its review (a background session from `.kit/claude-cli/consultant.md`, model {{CLI_CONS_MODEL}}), and every `kit.review.train_every` completed steps a cross review of the whole train. Each review is ONE complete comment `kind: "review"` under the step (its fields `verdict`: `continue` / `redirect` / `stop`, and one `suggestion`, are what you read first), the step's `review` state, and a pointer message to you; the owner's replies to a review come to you. Act on it yourself: `redirect` = a new task whose `parent` is the reviewed step and whose `sources` include the review's comment id (so the part reads the review itself); `stop` goes to the owner as a `question` post. Start one by hand with `python3 -I .kit/kit.py review <post>` or `--train <id>`; when its message has come, `claude stop` its session.

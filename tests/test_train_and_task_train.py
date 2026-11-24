@@ -237,8 +237,8 @@ class PostFormat(unittest.TestCase):
         err, warn = self.kit.check_done(self.good(bars=["it works", "41 takes"], check=""), root=self.root)
         self.assertIn("has no number", " ".join(err))
         self.assertIn("no denominator", " ".join(warn))
-        self.assertIn("check: missing", " ".join(warn))
-        self.assertEqual(self.kit.check_done(self.good(bars=["none: a design step, nothing measured"], check=""),
+        self.assertIn("check: missing", " ".join(err))
+        self.assertEqual(self.kit.check_done(self.good(bars=["none: a design step, nothing measured"], check="manual: read it against his words", breaks="manual: drop one"),
                                              root=self.root)[0], [])
         self.assertIn("240", " ".join(self.kit.check_done(self.good(verdict="v" * 300), root=self.root)[0]))
 
@@ -336,6 +336,19 @@ class TaskTrainHook(unittest.TestCase):
         shutil.copy(os.path.join(ROOT, "scripts", "kit.py"), os.path.join(self.proj, ".kit", "kit.py"))
         shutil.copy(os.path.join(ROOT, "kit", "claude-cli", "consultant.template.md"),
                     os.path.join(self.proj, ".kit", "claude-cli", "consultant.md"))
+        shutil.copy(os.path.join(ROOT, "kit", "board", "post_gate.py"), os.path.join(self.proj, ".kit", "post_gate.py"))
+
+    def prove(self, pid):
+        """What a part's `kit.py done` leaves on its post when it says OK."""
+        spec = importlib.util.spec_from_file_location("pg", os.path.join(ROOT, "kit", "board", "post_gate.py"))
+        pg = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pg)
+        p = self.post(pid)
+        p["proof"] = {"key": pg.proof_key(p)}
+        c = sqlite3.connect(self.db)
+        c.execute("UPDATE docs SET data=? WHERE collection='posts' AND doc_id=?", (json.dumps(p), pid))
+        c.commit()
+        c.close()
 
     def transcript(self, opener):
         with open(self.tf, "w") as fh:
@@ -344,13 +357,13 @@ class TaskTrainHook(unittest.TestCase):
     def call(self, sid, name, ti, tr=None):
         return self.hook(sid, "PostToolUse", {"tool_name": name, "tool_input": ti, "tool_response": tr or {}})
 
-    def hook(self, sid, event, fields, **env):
+    def hook(self, sid, event, fields, rc=0, **env):
         payload = {"hook_event_name": event, "session_id": sid, "cwd": self.proj, "transcript_path": self.tf, **fields}
         r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "kit", "hooks", "kit_task_train.py")],
                            input=json.dumps(payload), capture_output=True, text=True, timeout=30,
                            env=dict({k: v for k, v in os.environ.items() if k not in ("CLAUDE_CODE_REMOTE", "CLAUDE_CODE_TASK_LIST_ID")},  # a computer, even in a web session
                                     CLAUDE_PROJECT_DIR=self.proj, KIT_NO_LAUNCH="1", KIT_BOARD_URL="http://127.0.0.1:9", **env))
-        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.returncode, rc, r.stderr)
         return json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"] if r.stdout.strip() else ""
 
     def post(self, pid):
@@ -390,6 +403,12 @@ class TaskTrainHook(unittest.TestCase):
         self.assertEqual(sum(1 for c in self.calls() if c[0] == "set"), 1)
         self.call(sid, "TaskUpdate", {"taskId": "1", "status": "in_progress"})
         self.assertEqual(self.post("pl4-fit-the-model")["status"], "in progress")
+        msg = self.call(sid, "TaskUpdate", {"taskId": "2", "status": "completed"})      # nothing proved it: it stays open
+        self.assertIn("NOT complete", msg)
+        self.assertIn("kit.py done PL2-b", msg)
+        self.assertNotEqual(self.post("PL2-b")["status"], "complete")
+        for pid in ("PL2-b", "pl4-fit-the-model"):
+            self.prove(pid)
         self.call(sid, "TaskUpdate", {"taskId": "2", "status": "completed"})
         p2 = self.post("PL2-b")
         self.assertEqual((p2["status"], p2["column"]), ("complete", "info"))  # the owner moves it to Done
@@ -460,6 +479,8 @@ class TaskTrainHook(unittest.TestCase):
 
     def test_a_lost_record_is_found_by_the_tasks_subject(self):
         self.transcript(self.ORCH)
+        self.hook("orch-C", "TaskCompleted", {"task_id": "5", "task_subject": "PL2 second"}, rc=2)      # kept open by Claude Code
+        self.prove("PL2-b")
         self.hook("orch-C", "TaskCompleted", {"task_id": "5", "task_subject": "PL2 second"})
         self.assertIn("PL2-b", self.call("orch-C", "TaskUpdate", {"taskId": "5", "status": "completed"}))
         self.assertEqual(self.post("PL2-b")["status"], "complete")

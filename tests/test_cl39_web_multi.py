@@ -87,20 +87,20 @@ class InstallMultiRepo(unittest.TestCase):
         self.assertFalse((t / ".kit" / "user_hooks.py").exists())
         self.assertNotIn("web_env", json.loads((t / ".kit" / "config.json").read_text())["kit"])
 
-    def test_user_hooks_27_idempotent_user_lines_kept(self):
+    def test_user_hooks_28_idempotent_user_lines_kept(self):
         r = self.uh("install")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("27 hooks", r.stdout)
+        self.assertIn("28 hooks", r.stdout)
         first = self.user.read_bytes()
         s = json.loads(first)
-        self.assertEqual(n_hooks(s), 27 + 1)
+        self.assertEqual(n_hooks(s), 28 + 1)
         self.assertEqual(s["model"], "opus")
         self.assertIn("echo mine", json.dumps(s))
         r = self.uh("install")
         self.assertIn("0 changed", r.stdout)
         self.assertEqual(self.user.read_bytes(), first)
         r = self.uh("remove")
-        self.assertIn("27 lines", r.stdout)
+        self.assertIn("28 lines", r.stdout)
         s = json.loads(self.user.read_text())
         self.assertEqual(n_hooks(s), 1)
 

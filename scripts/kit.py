@@ -1784,7 +1784,9 @@ def render_welcome(runtime=None, project=None, board_url=None, memory_dir=None, 
     dl = device_line()
     if dl:
         lines.append("- " + dl + " Past that, steps wait their turn instead of crashing the computer.")
-    lines.extend(["", "A Like on this message launches them all; or tell me which."])
+    g = _post_gate()
+    lines.extend(["", "These start now; say which to hold." if g and g.autonomy(_kit_config()) == "full_auto" else
+                  "A Like on this message launches them all; or tell me which."])
     return "\n".join(lines) + "\n"
 
 
@@ -2359,6 +2361,12 @@ def doctor(m, db_path=None, fix=False, root=None):
     _doctor_conflicts(root, issues, lines)
     _doctor_portfolio_and_sync(root, issues, lines, fix=fix)
     lines += git_copy_lines(m, db_path, root)
+    g = _post_gate()
+    if g and root == os.path.abspath(ROOT):
+        k = _kit_config().get("kit") or {}
+        skipped = str(k.get("survey") or "").startswith("skipped")
+        lines.append("autonomy: %s%s" % (g.autonomy(_kit_config()), " (the default: step 0 was skipped, nobody chose it; `install.py . --update "
+                     "--autonomy full_auto|balanced|gated`)" if skipped and g.autonomy(_kit_config()) == "balanced" else ""))
     lines.append("doctor: %s" % ("OK" if not issues else ("%d issue(s): %s" % (len(issues), "; ".join(issues)))))
     return "\n".join(lines), (1 if issues else 0)
 
@@ -3252,6 +3260,78 @@ def _get_comment(cid, db_path=None):
     return comments.get(cid)
 
 
+def field_text(moment, role="part", train=None):
+    """The fields this moment opens, as text ("" when none)."""
+    led = _load_ledger_mod()
+    if led is None or not hasattr(led, "open_fields"):
+        return ""
+    try:
+        lines = led.field_lines(led.open_fields(_resolve_memory_dir(), role, moment=moment, kit_root=ROOT, train=train))
+    except (OSError, ValueError, KeyError):
+        return ""
+    return "\n".join(lines).strip()
+
+
+def _post_gate():
+    for d in (os.path.join(ROOT, ".kit"), os.path.join(ROOT, "kit", "board")):
+        p = os.path.join(d, "post_gate.py")
+        if os.path.isfile(p):
+            spec = importlib.util.spec_from_file_location("kit_post_gate", p)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    return None
+
+
+def _post_comments(pid, db_path=None):
+    """{id: comment} under a post: from the board server (a part's worktree has no database), else the local database."""
+    try:
+        r = _board_request(_resolve_board_url(_kit_config().get("board_url")),
+                           "db/comments?" + urllib.parse.urlencode({"where": json.dumps([["post_id", "==", pid]]), "limit": "500"}),
+                           token=_resolve_board_token(None))
+        if isinstance(r.get("docs"), list):
+            return {d["id"]: d.get("data") or {} for d in r["docs"]}
+    except Exception:
+        pass
+    try:
+        _, comments = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=db_path)
+    except Exception:
+        return {}
+    return {i: c for i, c in comments.items() if c.get("post_id") == pid}
+
+
+def unanswered_under(comments):
+    """His words under a post with no later word of anyone else in their thread: [(id, text)]."""
+    out = []
+    for i, c in comments.items():
+        if c.get("from") != "owner" or c.get("like") or c.get("answer") or c.get("removed") or not str(c.get("text") or "").strip() or \
+                str(c["text"]).startswith("Answer:") or str(c["text"]).strip() == "\U0001F44D":
+            continue
+        ids = {i, str(c.get("thread_id") or ""), str(c.get("reply_to") or "")} - {""}
+        if not any(o.get("from") != "owner" and not o.get("like") and str(o.get("created_at") or "") >= str(c.get("created_at") or "") and
+                   ids & {str(o.get("reply_to") or ""), str(o.get("thread_id") or "")} - {""} for o in comments.values()):
+            out.append((i, re.sub(r"\s+", " ", str(c["text"])).strip()))
+    return out
+
+
+def check_his_words(pid, p, db_path=None):
+    """(errors, notes): each comment of his that started the step (`sources`) is in `asked`, so a bar answers it; each one
+    under the post has an answer. A step that proves its own test and misses what he asked is what this refuses."""
+    err, notes = [], []
+    asked = {str(a.get("id")) for a in _as_list(p.get("asked")) if isinstance(a, dict)}
+    for s in [str(x) for x in _as_list(p.get("sources"))]:
+        c = _get_comment(s, db_path=db_path)
+        if c is None:
+            notes.append("source %s: not on this board, not checked" % s)
+        elif c.get("from") == "owner" and s not in asked and not c.get("like"):
+            err.append("asked: his comment %s started this step and nothing answers it: add {\"id\": \"%s\", \"quote\": \"<his words>\"} to "
+                       "`asked` and name it in the bar that shows it done (\"... (asked %s)\"): %r" % (s, s, s, str(c.get("text") or "")[:80]))
+    for i, t in unanswered_under(_post_comments(pid, db_path=db_path)):
+        err.append("his comment %s has no answer: `python3 -I .kit/board_cli.py reply %s --comment-id %s --from %s --text ...`: %r" % (
+            i, pid, i, p.get("part") or "agent", t[:80]))
+    return err, notes
+
+
 def check_asked(p, db_path=None):
     """(errors, notes) of a post's `asked`: his words that started the step, [{"id": <comment id>, "quote": ...}].
     Each must be answered by a bar or a not_checked item that names `asked <id>`, and each quote must be in that
@@ -3395,7 +3475,10 @@ def check_done(p, root=ROOT, body_max=1500):
         warn.append("body: %d characters and no ## sections: put what he must know first (the lead always shows), "
                     "the rest under ## headings (they fold; see `kit.py sections`)" % len(body))
     if any(re.search(r"\d", b) for b in bars if not b.lower().startswith("none")) and not str(p.get("check") or "").strip():
-        warn.append("check: missing (the one command that reproduces the main number; the orchestrator and the review rerun it)")
+        pass                                             # said below: a step has a check
+    if not str(p.get("check") or "").strip():
+        err.append("check: missing (the one command that shows the task is done, or `manual: <what the review does and must see>`): "
+                   "a step with no check proves nothing")
     if str(p.get("check") or "").strip() and not str(p.get("breaks") or "").strip():
         err.append("breaks: missing (how to make `check` fail: a command that plants a fault or feeds a bad input, e.g. "
                    "`sed -i 's/a + b/a - b/' calc.py`, or `manual: <what the review does>` for a browser step); "
@@ -3684,9 +3767,13 @@ def done(pid, db_path=None, root=None):
     e_a, n_a = check_asked(p, db_path=db_path)
     err += e_a
     warn += n_a
+    e_h, n_h = check_his_words(pid, p, db_path=db_path)
+    err += e_h
+    warn += n_h
     warn += check_real_project(p, root=root)         # CL32/CL38: a real project too, run by the orchestrator (pending)
     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
-    if attached_board() and _read_json(_base_path("posts", pid)) != p:
+    strip = lambda d: {k: v for k, v in (d or {}).items() if k not in ("proof", "updated_at")}  # noqa: E731
+    if attached_board() and strip(_read_json(_base_path("posts", pid))) != strip(p):
         # CL28: a part updated its post on the local copy only and said "Done": the live board (the Artifact) still
         # showed it planned, with none of its results (the owner: "How come you said you posted when you didn't?")
         err.append("the post is not on the board yet (%s): its local copy differs from what the Artifact last had. Run "
@@ -3696,6 +3783,13 @@ def done(pid, db_path=None, root=None):
         e2, notes = prove_check(p, root=root, timeout=int(k.get("check_timeout_s", 900)))
         err += e2
         warn += notes
+    g = _post_gate()
+    if not err and g and not (g.proved(p)):
+        head = _git_run("rev-parse", "--short", "HEAD").stdout.strip()
+        if not _board_write("update", "posts", pid, {"proof": {"key": g.proof_key(p), "at": _now_z(), "commit": head}}):
+            warn.append("proof: the board did not take it (is the board server running?): the step cannot be completed without it")
+        elif attached_board():
+            warn.append("proof: written here; send it: `python3 -I .kit/kit.py artifact push`")
     lines = (["NOT READY: %s" % pid] if err else ["OK: %s follows the post format" % pid])
     lines += ["  fix: " + e for e in err] + ["  note: " + w for w in warn]
     if not err:
@@ -4552,9 +4646,57 @@ def launch_text(r):
     return "\n".join(lines) + "\n"
 
 
+def step_gate(pid, db_path=None):
+    """Why this step cannot be completed yet, or "": the proof `kit.py done` left is for the post as it is, and no word of
+    his under it waits. Cheap: nothing is rerun (the part's own machine ran the check and its break)."""
+    p = _all_posts(db_path).get(pid) or _get_post(pid, db_path=db_path)
+    if not p:
+        return ("no post %s on this board (a step of an attached board is completed in its own clone, or by its part's `done` and the "
+                "ArtifactData update of its post)" % pid)
+    g = _post_gate()
+    if g is None:
+        return ".kit/post_gate.py is missing, so nothing can say this step is proved: `install.py . --update`"
+    if not g.is_step(p) or g.is_complete(p):                 # complete already (an older step): its review may still be due
+        return ""
+    if not g.proved(p):
+        return ("%s: `python3 -I .kit/kit.py done %s` must say OK first, where the work is (its part runs it); %s" % (
+            pid, pid, "the post changed since it did" if p.get("proof") else "it never did"))
+    left = unanswered_under(_post_comments(pid, db_path=db_path))
+    if left:
+        return "%s: %d comment(s) of his under it have no answer: %s" % (pid, len(left), "; ".join("%s %r" % (i, t[:60]) for i, t in left[:3]))
+    return ""
+
+
+def ask(title, body="", options=(), default="", deadline="", needs="", about="", train="", priority=1, db_path=None):
+    """One question post, in his lane, whole: what he chooses between, what happens if he does not answer, and by when."""
+    g = _post_gate()
+    if len(options) < 2 or default not in options:
+        return {"error": "a question has at least two --option, and a --default that is one of them"}
+    if not deadline:
+        return {"error": "a question has a --deadline (a date or time): then its default applies"}
+    doc = {"title": title, "body": (body or title) + ("\n\nAbout `%s`." % about if about else ""), "kind": "question", "column": "question",
+           "options": list(options), "default_option": default, "deadline": deadline, "status": "open", "priority": int(priority),
+           "from": "orchestrator", "created_at": _now_z()}
+    if train:
+        doc["train"] = train
+    if needs:
+        doc["needs"] = needs
+    err = g.check_post("q", doc, None, _kit_config())[2] if g else None
+    if err:
+        return {"error": err}
+    posts, n = _all_posts(db_path), 2
+    pid = base = "q-" + _slug(title, 40)
+    while pid in posts:
+        pid, n = "%s-%d" % (base, n), n + 1
+    return {"post": pid, "ok": True} if _board_write("set", "posts", pid, doc) else {"error": "the board did not take it (is the board server running?)"}
+
+
 def step_complete(pid, db_path=None, cli=None):
     """Status complete (the owner moves it to Done), then its review and, every kit.review.train_every completed
     steps of its train, a cross review. Reviews are idempotent (one per step, one per count)."""
+    why = step_gate(pid, db_path=db_path)
+    if why:
+        return {"post": pid, "ok": False, "why": why, "reviews": []}
     out = {"post": pid, "ok": _board_write("update", "posts", pid, {"status": "complete", "completed_at": _now_z()}),
            "reviews": []}
     rv = (_kit_config().get("kit") or {}).get("review") or {}
@@ -4999,6 +5141,7 @@ COMMANDS = [
     # (need, command, what it does)
     ("read the board", "kit.py resume", "every train's open steps (the task list), live sessions, open questions (age, default, what each blocks), the owner's decisions of the last 3 days, the owner's unanswered comments, attached boards; run it before answering the owner"),
     ("read the board", "kit.py guide [case]", "one case of the orchestrator's guide, when it comes up (resume lists them)"),
+    ("ask him", "kit.py ask --title T --option A --option B --default A --deadline D [--needs N]", "one question post in his lane, whole; never a question in a thread"),
     ("save the board", "kit.py keep", "the board here into git, committed and pushed (git is the record)"),
     ("read the board", "kit.py resume --role orchestrator|part|clerk|review [--post P]", "what that role needs and nothing else: a session starts from it alone (lessons, launch workflow, tests, how to report)"),
     ("memory", "kit.py lessons [--role R] [--files F...] | lessons check", "the lessons a role needs / refuse untagged ones and ones only a project doc holds"),
@@ -5039,7 +5182,7 @@ COMMANDS = [
     ("Artifact and web", "update_board.py", "the Artifact's page to the kit's current page"),
     ("git copy", "kit.py init|sync|sync-db|reads|receive|publish|diff|push", "the board's git copy (board-mirror): make it, fill it, compare it, send it"),
     ("memory", "kit.py compact", "post every open awaits point (a question post) and open issue (an issue post, never doubled) on the board, then archive the awaits file, the states and issues the board now holds, and old lessons; on an Artifact board nothing leaves memory until `artifact push` sent the posts; refused if the project's memory checker goes red (--dry-run lists the posts)"),
-    ("memory", "kit.py ledger show|observe|decide|distil|propose|confirm|check|init", "3-layer memory ledger: silent scoped observations -> mechanical invariants (hooks) -> owner-confirmed distilled principles"),
+    ("memory", "kit.py ledger show|observe|decide|distil|propose|field|broke|moves|open|confirm|check|init", "3-layer memory ledger: silent scoped observations -> mechanical invariants (hooks) -> owner-confirmed distilled principles"),
     ("setup", "kit.py welcome [--post]", "the welcome post: what the board does and what can run now"),
     ("setup", "install.py <project> [--update]", "install or update the kit in a project (every present runtime)"),
     ("setup", "kit_import.py / step0_scan.py", "a person's state from their chats / a project's step 0 profile"),
@@ -5637,6 +5780,9 @@ def _not_his_yes(m, cid, db_path=None):
         return "no comment %s on the board's copy here (an Artifact board: pull it first)" % cid
     if c.get("from") != answer_delay().owner:
         return "comment %s is from %r, not the owner" % (cid, c.get("from"))
+    said = re.sub(r"^\s*answer\s*:\s*", "", str(c.get("answer") or c.get("text") or ""), flags=re.I).strip()
+    if re.match(r"(?:leave them|no|not yet|don't|stop)\b", said, re.I):           # `ledger moves --ask` offers "Leave them"
+        return "comment %s is his no: %r" % (cid, said[:60])
     return None
 
 
@@ -5704,7 +5850,7 @@ def guide(case=None):
 def situation(posts, comments, session=None, platform=None):
     """What this orchestrator session is: `first` (no welcome of this platform on the board), `takeover` (another session
     holds the board: a successor after a context limit, or the first here of a project running elsewhere), `same` (it
-    holds it already: after a compaction). A platform has one first and any number of takeovers."""
+    started already and runs resume again; a compaction never makes one: the hooks hand over before it, kit_pre_compact.py). A platform has one first and any number of takeovers."""
     pl = platform or _platform()
     rt = {"web": "claude", "cli": "claude-cli"}.get(pl, pl)
     named = str((posts.get("_orchestrator") or {}).get("session_id") or "")
@@ -5726,7 +5872,7 @@ def start_lines(posts, comments, session=None):
         return ["", "## Your start", "Read `%s` (this platform's guide has no sections)." % os.path.relpath(p, ROOT)]
     sit = situation(posts, comments, session)
     say = {"first": "the first session on this platform here", "takeover": "taking over from another session",
-           "same": "you already hold this board"}
+           "same": "you already started: only what always holds"}
     out = ["", "## Your start (%s)" % ", ".join(say[x] for x in sit)]
     out += [t for when, t in start if "always" in when or set(when) & set(sit)]
     if cases:
@@ -5757,6 +5903,11 @@ def owner_lines(platform=None):
     if cannot:
         out.append("- He cannot: " + "; ".join(cannot) + ". Never ask him to.")
     return out + (["- " + how] if how else [])
+
+
+def autonomy_lines():
+    g = _post_gate()
+    return ["", "## How much you decide alone (kit.autonomy)"] + g.autonomy_lines(_kit_config()) if g else []
 
 
 def git_copy_lines(m, db_path=None, root=None):
@@ -5857,7 +6008,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         if gl:
             out += ["", "## The record is git, and it is behind"] + ["- " + x for x in gl]
         out += start_lines(posts, comments, session or whoami())
-        out += owner_lines()
+        out += owner_lines() + autonomy_lines()
         out += [""] + _launch_workflow()
         out += ["", "## Parts: their context and the save points",
                 "- A part reads only `kit.py resume --role part` (its post, prompt, lessons, tests, how to report); never "
@@ -5895,7 +6046,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         if len(out) and out[-1] == "## Your post now":
             out.append("- (nothing yet: at turn 1 set session_id, status in progress and a one-line body)")
         out += continues_lines(p, session or whoami())
-        out += owner_lines()
+        out += owner_lines() + autonomy_lines()
         out += ["", "## Lessons that touch your files (%d files changed)" % len(files)] + _lesson_lines(lessons_for("part", files))
         out += _principle_lines("part", p.get("train"), files=files)
         got = found_so_far(posts, p.get("train") or "", skip=pid, last=12) if p.get("train") else []
@@ -5958,6 +6109,8 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "repos; a launched session cannot attach one), by subagent; write the run in the post's real_project." % (
                     ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"),
                 "- Its post says: %s" % (json.dumps(rp, ensure_ascii=False)[:500] if rp else "NO real-project result")]
+        ft = field_text("review", "review", p.get("train"))
+        out += ["", ft] if ft else []
         out += owner_lines()
         out += ["", "## Lessons for a review"] + _lesson_lines(lessons_for("review"))
         out += _principle_lines("review", p.get("train"))
@@ -6279,7 +6432,10 @@ def main(argv=None):
     s = sp.add_parser("reads"); s.add_argument("--at")
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None); s.add_argument("--fix", action="store_true", help="repair missing add_repo, hook drift, and stale sibling portfolio paths")
     s = sp.add_parser("ledger", help="3-layer memory ledger: show|observe|decide|distil|propose|confirm|check|init")
-    s.add_argument("action", choices=["show", "observe", "decide", "distil", "propose", "confirm", "check", "init"])
+    s.add_argument("action", choices=["show", "observe", "decide", "distil", "propose", "field", "broke", "moves", "open", "confirm", "check", "init"])
+    s.add_argument("--keeps", default="", help="propose: exact rows that stay, under the principle"); s.add_argument("--not-for", dest="not_for", default="")
+    s.add_argument("--refines", default="", help="the principle or field this one hardens"); s.add_argument("--opens", default="", help="field: start, files:<glob>, moment:<m>")
+    s.add_argument("--moment", default=""); s.add_argument("--ask", action="store_true", help="moves: one question post for all that is proposed"); s.add_argument("--deadline", default="")
     s.add_argument("target", nargs="?", default=None, help="id for confirm/propose or summary for observe/decide")
     s.add_argument("--summary", default=""); s.add_argument("--quote", default=""); s.add_argument("--source", default="")
     s.add_argument("--scope", default=None, help="all|project|role:<r>|train:<t>|files:<glob> (observe: project; propose: the rows' own)"); s.add_argument("--theme", default=""); s.add_argument("--kind", default="observation")
@@ -6303,6 +6459,10 @@ def main(argv=None):
     s.add_argument("--brief", action="store_true", help="two lines a step and the current one (the default)")
     s.add_argument("--sections", nargs="*", default=None, metavar="PART", help="verdict, bars, artifacts, issues, check, breaks, handoff of these steps (none named: of all)")
     s.add_argument("--full", nargs="+", default=None, metavar="PART", help="these steps whole, with their comments, uncut")
+    s = sp.add_parser("ask", help="one question post in his lane: options, default, deadline")
+    s.add_argument("--title", required=True); s.add_argument("--body", default=""); s.add_argument("--option", action="append", default=[])
+    s.add_argument("--default", default=""); s.add_argument("--deadline", default=""); s.add_argument("--needs", default="")
+    s.add_argument("--about", default=""); s.add_argument("--train", default=""); s.add_argument("--priority", type=int, default=1)
     sp.add_parser("keep", help="the board here into git: committed and pushed")
     s = sp.add_parser("guide", help="a case of the orchestrator's guide (no case: their list)"); s.add_argument("case", nargs="?", default=None)
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
@@ -6341,7 +6501,7 @@ def main(argv=None):
     s = sp.add_parser("pair"); s.add_argument("post"); s.add_argument("--answer", default=None); s.add_argument("--db", default=None)
     s = sp.add_parser("sections"); s.add_argument("--db", default=None)
     s = sp.add_parser("step", help="the train is the task list: new | start | complete | drop")
-    s.add_argument("action", choices=["new", "start", "complete", "drop", "open", "differs", "find"]); s.add_argument("post", nargs="?")
+    s.add_argument("action", choices=["new", "start", "complete", "gate", "drop", "open", "differs", "find"]); s.add_argument("post", nargs="?")
     s.add_argument("--train"); s.add_argument("--part"); s.add_argument("--title", default="")
     s.add_argument("--task", default=""); s.add_argument("--task-file"); s.add_argument("--parent")
     s.add_argument("--source", action="append", default=[]); s.add_argument("--model")
@@ -6442,7 +6602,27 @@ def main(argv=None):
             res = {"clusters": led.distil_candidates(mdir, min_cluster=a.min_cluster)}
         elif a.action == "propose":
             sub_ids = [x.strip() for x in a.subsumes.split(",") if x.strip()]
-            res = led.propose_principle(mdir, a.summary or a.target or "", sub_ids, scope=a.scope, theme=a.theme, widen=a.widen)
+            res = led.propose_principle(mdir, a.summary or a.target or "", sub_ids, scope=a.scope, theme=a.theme, widen=a.widen,
+                                        keeps=[x.strip() for x in a.keeps.split(",") if x.strip()], not_for=a.not_for, refines=a.refines)
+        elif a.action == "field":
+            res = led.propose_field(mdir, a.summary or a.target or "", [x.strip() for x in a.subsumes.split(",") if x.strip()], a.theme, a.opens,
+                                    not_for=a.not_for, refines=a.refines)
+        elif a.action == "broke":
+            res = led.broke(mdir, a.target or "", a.source)
+        elif a.action == "open":
+            print(field_text(a.moment or a.target or "", a.role or "part") or "(no field opens then)")
+            return 0
+        elif a.action == "moves" and a.ask:
+            prop = [e for e in led.load_entries(mdir) if e["status"] == "proposed" and e["kind"] in ("principle", "field")]
+            if not prop:
+                res = {"error": "nothing is proposed: `kit.py ledger moves`, then propose or field"}
+            else:
+                body = "\n".join("- **%s** (%s, from %s%s%s): %s" % (e["id"], e["kind"], ", ".join(e["subsumes"]), ("; keeps exactly " + ", ".join(e["keeps"])) if e.get("keeps") else "",
+                                  ("; opens at " + e["opens"]) if e.get("opens") else "", e["summary"]) for e in prop)
+                res = ask("Your rules: %d proposed move(s)" % len(prop), "Nothing loads differently until you say yes.\n\n" + body,
+                          ["Leave them", "Yes to all"], "Leave them", a.deadline, needs="direction", priority=3)
+        elif a.action == "moves":
+            res = {"moves": led.moves(mdir, min_cluster=a.min_cluster)}
         elif a.action == "confirm":
             why = _not_his_yes(m, a.by, db_path=a.db)
             res = {"error": why} if why else led.confirm_principle(mdir, a.target or "", a.by, summary=a.summary or None)
@@ -6488,6 +6668,9 @@ def main(argv=None):
             res = step_start(a.post)
         elif a.action == "drop":
             res = step_drop(a.post, db_path=a.db)
+        elif a.action == "gate":
+            why = step_gate(a.post, db_path=a.db)
+            res = {"post": a.post, "ok": not why, "why": why}
         else:
             res = step_complete(a.post, db_path=a.db, cli=a.cli)
         print(json.dumps(res, ensure_ascii=False))
@@ -6496,6 +6679,9 @@ def main(argv=None):
         print(sections(db_path=a.db))
         return 0
     if a.cmd == "done":
+        ft = field_text("report")                         # before its verdict: what a report must be, while it can change
+        if ft:
+            print(ft + "\n")
         rc, msg = done(a.post, db_path=a.db)
         print(msg)
         return rc
@@ -6566,6 +6752,11 @@ def main(argv=None):
         print("Board vs git: %s; %d from git (newer there), %d new from git, %d kept from here (newer here); %s."
               % (r["status"], r["from_git"], r["added"], r["kept_here"], r.get("git", "")))
         return 0
+    if a.cmd == "ask":
+        res = ask(a.title, a.body, a.option, a.default, a.deadline, a.needs, a.about, a.train, a.priority)
+        print(json.dumps(res, ensure_ascii=False))
+        print(field_text("ask", "orchestrator"), file=sys.stderr)
+        return 1 if res.get("error") else 0
     if a.cmd == "guide":
         print(guide(a.case), end="")
         return 0
@@ -6608,6 +6799,7 @@ def main(argv=None):
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset,
                    post_file=a.post_file)
+        print(field_text("launch", "orchestrator"), file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
         return 0 if r.get("ok") else 1
     if a.cmd == "capacity":
