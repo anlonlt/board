@@ -2107,11 +2107,10 @@ def _await_point(lines, mem_rel, fname, today, since=None):
     deadline = dl.group(1) if dl else ""
     if not md and dl:
         text = rest[:dl.start()].strip()
-    default = re.sub(r"\s+[\u2014\u2013-]\s+`[^`]+`.*$", "", default).strip()   # its trailing `docs/...` § ref
-    if not since:
-        dm = re.search(r"\b(\d{4}-\d\d-\d\d)\b", text)
-        if dm:
-            since = dm.group(1) + "T00:00:00Z"
+    ref = ""
+    mref = re.search(r"\s+[\u2014\u2013]\s+(.*)$", default)   # its trailing reference: "— board E11-window", "— `docs/..` §"
+    if mref:
+        default, ref = default[:mref.start()].strip(), mref.group(1).strip()
     overdue = bool(deadline and deadline < today)
     where = "%s/state/%s.md" % (mem_rel, ws) if ws else "%s/%s" % (mem_rel, fname)
     body = [text, "", "Default: %s · deadline %s%s" % (default or "(none written)", deadline or "(none)",
@@ -2119,7 +2118,12 @@ def _await_point(lines, mem_rel, fname, today, since=None):
     if overdue:
         body += ["", "**OVERDUE** (deadline %s passed): the default applies (%s); record it where it acts: `%s`."
                  % (deadline, default or "none written", where)]
-    body += ["", "From `%s/%s`, archived by `kit.py compact`: answer here." % (mem_rel, fname)]
+    if ref:
+        body += ["", "Reference: %s" % ref]
+    if not since:
+        body += ["", "Written: date unknown (no commit dates this line in this clone)."]
+    body += ["", "The point as written in `%s/%s` (archived by `kit.py compact`; answer here):" % (mem_rel, fname),
+             "", "> " + s]
     now = _now_z()
     title = text or s
     if len(title) > 200:
@@ -2131,6 +2135,8 @@ def _await_point(lines, mem_rel, fname, today, since=None):
            "workstream": ws, "default": default, "deadline": deadline, "body": "\n".join(body),
            "source": "%s/%s" % (mem_rel, fname), "source_key": hashlib.sha1(_norm_text(s).encode()).hexdigest()[:12],
            "from": "kit compact", "created_at": since or now, "posted_at": now}
+    if not since:
+        doc["date_unknown"] = True     # never now, never a date guessed from the text (O54)
     if default:
         doc["default_option"] = default
         doc["options"] = [default, "Something else (reply under this post)"]
@@ -2141,7 +2147,8 @@ def _await_point(lines, mem_rel, fname, today, since=None):
 
 
 _STOP = set("the a an of in on at to for and or is are be it its this that with by from as do does did not no yes "
-            "which what when how who why should can will we he she they them his her our your my me i".split())
+            "which what when how who why should can will we he she they them his her our your my me i you yours it's "
+            "there here then than but so if into onto out up down over under about also just only".split())
 
 
 def _sig_words(s):
@@ -2185,7 +2192,13 @@ def _issue_post(fn, text, mem_rel):
     rest = "\n".join(lines[1:]).strip()
     doc = {"title": title, "kind": "issue", "column": "todo", "status": "open",
            "body": rest + "\n\nFrom `%s/issues/%s`, archived by `kit.py compact`." % (mem_rel, fn),
-           "source": "%s/issues/%s" % (mem_rel, fn), "from": "kit compact", "created_at": _now_z()}
+           "source": "%s/issues/%s" % (mem_rel, fn), "from": "kit compact", "created_at": _now_z(),
+           "posted_at": _now_z()}
+    m = re.search(r"^status:\s*open\W+(\d{4}-\d\d-\d\d)", text, re.I | re.M)   # the date the issue was opened
+    if m:
+        doc["created_at"] = m.group(1) + "T00:00:00Z"
+    else:
+        doc["date_unknown"] = True
     return "issue-%s" % _slug(fn[:-3], 48), doc
 
 
@@ -2199,7 +2212,8 @@ def _is_open_question(pid, p):
     return p.get("column") != "done" and step_state(p) not in ("done", "closed")
 
 
-_NAMED_ID = re.compile(r"`([A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+)`|(?<![\w/.-])([A-Za-z]+\d+[a-z]?(?:-[a-z0-9]+)+)(?![\w/.-])")
+_NAMED_ID = re.compile(r"`([A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+)`|(?<![\w/.-])([A-Za-z]+\d+[a-z]?(?:-[a-z0-9]+)+|"
+                       r"[a-z][a-z0-9]*(?:-[a-z0-9]+){2,})(?![\w/-])")
 
 
 def _id_words(pid):
@@ -4077,7 +4091,8 @@ def _resume_extras(posts, comments, now=None, days=3, limit=12, session=None):
             if str(q.get("parent") or "") in (pt, k) or wr.search(text):
                 blocks.append("%s (%s)" % (part[j], _short(q.get("status"), 40) if q.get("status") else st[j]))
         dflt = p.get("default_option") or ""
-        out.append("- %s `%s` %s old: %s%s%s" % (pt, k, _age(str(p.get("created_at") or ""), now), _short(p.get("title"), 90),
+        age = "date unknown" if p.get("date_unknown") else _age(str(p.get("created_at") or ""), now) + " old"
+        out.append("- %s `%s` %s: %s%s%s" % (pt, k, age, _short(p.get("title"), 90),
                                                (" · default: " + _short(dflt, 60)) if dflt else "",
                                                (" · blocks " + ", ".join(list(dict.fromkeys(blocks))[:4])) if blocks else ""))
     if not qs:
