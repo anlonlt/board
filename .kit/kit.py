@@ -1990,6 +1990,16 @@ def merged_branches(root=None, delete=False):
         return "\n".join(out + ["delete failed: %s" % (r.stderr or r.stdout).strip()[-300:]]), 1
     return "\n".join(out + ["deleted %d branch(es) from origin" % len(done_)]), 0
 
+
+def whoami(name=""):
+    """`kit.py whoami [name]`: the session id a post's session_id names. A Claude Code web session: `session_<id>`
+    (from CLAUDE_CODE_REMOTE_SESSION_ID `cse_<id>`, the id send_message and get_session take); else KIT_SESSION_ID;
+    else the name given (a CLI part launched with `claude --bg -n <name>`); else CLAUDE_CODE_SESSION_ID."""
+    rid = os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID") or ""
+    if rid:
+        return "session_" + rid.split("_", 1)[1] if rid.startswith("cse_") else rid
+    return os.environ.get("KIT_SESSION_ID") or name or os.environ.get("CLAUDE_CODE_SESSION_ID") or "unknown-session"
+
 def doctor(m, db_path=None):
     """Verify SQLite integrity, mirror worktree health, sync freshness, and referenced blobs."""
     issues = []
@@ -3329,15 +3339,18 @@ def pair(pid, answer=None, db_path=None, root=None, timeout=900):
 def check_trunk_merged(root=ROOT):
     """CL38: Done is judged by the kit as it is on the trunk now, not as it was when the part started (CL37 started
     before CL36's rule and skipped it): the work must contain origin/<trunk>. No origin, or a fetch that fails: no
-    refusal (a local repo, a test)."""
+    refusal (a local repo, a test); an origin that cannot be fetched: refused (O55)."""
     def g(*a):
         return subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=120)
     try:
         if g("remote", "get-url", "origin").returncode:
             return []
         trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
-        if g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == trunk or g("fetch", "-q", "origin", trunk).returncode:
+        if g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == trunk:
             return []
+        if g("fetch", "-q", "origin", trunk).returncode:
+            return ["cannot fetch origin/%s to check that your work contains it: fix the network or the remote, then "
+                    "done again (Done is never judged on an unknown trunk)" % trunk]
         if g("merge-base", "--is-ancestor", "origin/" + trunk, "HEAD").returncode:
             return ["the trunk moved since you started: merge it first (`git fetch origin %s && git merge --no-edit "
                     "origin/%s`), rerun the tests, then done again: Done is checked against the kit on %s now" % (trunk, trunk, trunk)]
@@ -3658,7 +3671,9 @@ def _write_step_prompt(pid, doc, sources, cli=None):
             "<AFTER>": (", after `%s`" % doc["parent"]) if doc.get("parent") else "",
             "<TASK>": (doc.get("body") or "").strip() or doc["title"], "<SOURCES>": src,
             "<ORCH_ID>": orch_id,
-            "<SESSION>": "%s-%s" % (_slug(c.get("project") or "project"), _slug(doc["part"], 24))}
+            # CL38: the session_id a part writes is its real session (a web part: `session_<id>`), worked out by the
+            # part's own shell at turn 1; the `<project>-<part>` name only where no session id exists (O54/O55)
+            "<SESSION>": "'\"$(python3 -I .kit/kit.py whoami %s-%s)\"'" % (_slug(c.get("project") or "project"), _slug(doc["part"], 24))}
     for kk, vv in vals.items():
         tpl = tpl.replace(kk, vv)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -4450,6 +4465,7 @@ COMMANDS = [
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor", "the board's size, columns, oldest question, missing files / its health"),
     ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
+    ("launch and finish", "kit.py whoami [name]", "this session's id for a post's session_id (web: session_<id>; else the name given)"),
     ("launch and finish", "kit.py branches [--delete]", "origin's branches fully on the trunk (finished parts), and with --delete removes them"),
     ("launch and finish", "kit.py attach <owner/repo>", "attach another repo (web: the add_repo call, clone next to this project, register, record in the portfolio)"),
     ("read the board", "board_cli.py get|list|query <coll> ...", "raw documents of the local board (prefer the lookups above)"),
@@ -5420,6 +5436,7 @@ def main(argv=None):
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
     s = sp.add_parser("attach"); s.add_argument("repo"); s.add_argument("--no-clone", action="store_true")
     s = sp.add_parser("branches"); s.add_argument("--delete", action="store_true")
+    s = sp.add_parser("whoami"); s.add_argument("name", nargs="?", default="")
     s = sp.add_parser("compact"); s.add_argument("--days", type=int, default=30); s.add_argument("--dry-run", action="store_true")
     s.add_argument("--no-board", action="store_true", help="post nothing: open awaits points and issues stay in memory")
     s = sp.add_parser("report"); s.add_argument("--db", default=None)
@@ -5514,6 +5531,9 @@ def main(argv=None):
             print("sync-db %s: posts %d written, %d removed; comments %d new, %d changed, %d removed" % ((at_val,) + r))
             if a.commit:
                 print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
+        return 0
+    if a.cmd == "whoami":
+        print(whoami(a.name))
         return 0
     if a.cmd == "branches":
         out, rc = merged_branches(delete=a.delete)
