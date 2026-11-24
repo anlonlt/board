@@ -137,6 +137,8 @@ class Record(unittest.TestCase):
         self.assertEqual(usage.classify({"branch": "x"}, "CR-B13 review"), ("review", None))
         self.assertEqual(usage.classify({"branch": "x"}, "Harmonize CR-HL1 review"), ("review", None))
         self.assertEqual(usage.classify({"branch": "x"}, "CL28 orchestrator answers from a fresh brief"), ("part", "CL28"))
+        self.assertEqual(usage.classify({"branch": "x"}, "Harmonize BC29 board clerk"), ("clerk", "BC29"))
+        self.assertEqual(usage.classify({"branch": "x"}, "Harmonize BC5 \u2014 the board clerk (small context)"), ("clerk", "BC5"))
 
 
 class Ledger(unittest.TestCase):

@@ -312,6 +312,8 @@ def classify(row, title=None):
         return "part", part
     p = PART_ID.match(tl)
     if p:
+        if re.match(r"[\s\W]*(the\s+)?(board\s+)?clerk\b", tl[p.end():], re.I):  # "BC29 board clerk": a clerk
+            return "clerk", p.group(1).upper()
         return "part", p.group(1).upper()
     for word, role in (("orchestrator", "orchestrator"), ("clerk", "clerk"), ("review", "review"),
                        ("reviewer", "review")):
@@ -582,7 +584,7 @@ METRICS = [
     ("board bytes (read+write)", lambda r: ((r.get("board") or {}).get("read_bytes", 0)
                                             + (r.get("board") or {}).get("write_bytes", 0)
                                             + (r.get("board") or {}).get("cli_bytes", 0)) if r.get("board") is not None else None),
-    ("context peak", lambda r: r.get("context_peak") or r.get("context_now")),
+    ("context (peak; ccr: last)", lambda r: r.get("context_peak") or r.get("context_now")),
     ("wall minutes", lambda r: r["wall_s"] / 60 if r.get("wall_s") is not None else None),
     ("subagents", lambda r: r.get("agents_spawned")),
 ]
