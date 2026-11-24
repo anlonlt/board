@@ -4211,6 +4211,8 @@ COMMANDS = [
     ("setup", "kit.py welcome [--post]", "the welcome post: what the board does and what can run now"),
     ("setup", "install.py <project> [--update]", "install or update the kit in a project (every present runtime)"),
     ("setup", "kit_import.py / step0_scan.py", "a person's state from their chats / a project's step 0 profile"),
+    ("measure", "kit.py usage compare --before <kit commit|date> --after <...> [--role part|orchestrator|clerk|review]", "tokens, cost, turns, tool calls, board bytes per role, median and total with n, before vs after a kit change (CL37)"),
+    ("measure", "kit.py usage record|show|push|import-ccr", "one session's usage row from its transcript (the Stop/SessionEnd hook does it, no model call) / the rows / onto the ledger branch kit-usage / rows from saved get_session records"),
     ("index", "kit.py commands [word]", "this list"),
 ]
 
@@ -5113,6 +5115,16 @@ def commit(m, msg, branch=None):
 
 
 def main(argv=None):
+    _argv = sys.argv[1:] if argv is None else list(argv)
+    if _argv and _argv[0] == "usage":  # CL37: the usage ledger lives in its own script (installed as .kit/usage.py)
+        import subprocess as _sp
+        here = os.path.dirname(os.path.abspath(__file__))
+        script = next((p for p in (os.path.join(here, "usage.py"), os.path.join(here, "..", "scripts", "usage.py"))
+                       if os.path.isfile(p)), None)
+        if not script:
+            print("kit.py usage: .kit/usage.py is missing (install.py --update puts it there)")
+            return 1
+        return _sp.call([sys.executable, "-I", script] + _argv[1:])
     ap = argparse.ArgumentParser(description="kit: the board's git copy and its lookups")
     ap.add_argument("--mirror", help="the copy's worktree (default $KIT_MIRROR, the config's mirror.path, or ../board-mirror)")
     ap.add_argument("--config", help="config/<project>.json (branch, stamps, owner and clerk names)")
