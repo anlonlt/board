@@ -436,7 +436,7 @@ with tempfile.TemporaryDirectory() as d:
     run_claude("kit_notify.py", {"hook_event_name": "PostToolUse", "tool_name": "ArtifactData", "tool_input": {"action": "batch", "writes": [
         {"op": "set", "collection": "posts", "doc_id": "P-1", "data": {"column": "question", "title": "Secret title", "body": "school data"}},
         {"op": "set", "collection": "posts", "doc_id": "P-2", "data": {"column": "info", "title": "news"}},
-        {"op": "set", "collection": "comments", "doc_id": "c1", "data": {"post_id": "P-1", "from": "soutien-ti", "text": "done"}},
+        {"op": "set", "collection": "comments", "doc_id": "c1", "data": {"post_id": "P-1", "from": "soutien-ti", "text": "done", "reply_to": "c0"}},
         {"op": "set", "collection": "comments", "doc_id": "c2", "data": {"post_id": "P-1", "from": "owner", "text": "mine"}}]}})
     check("notify: a question post and a session's answer are pushed, news and the owner's own words are not", len(_got) == 2)
     check("notify: no post text by default, a link to the post", bool(_got) and "Secret" not in _got[0][1] and "school" not in _got[0][1] and _got[0][2].endswith("#/post/P-1"))

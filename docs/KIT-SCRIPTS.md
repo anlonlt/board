@@ -38,7 +38,7 @@ reminder and the task-tools variable then change in its `.claude/settings.json` 
 | Plan a step: `TaskCreate {train, part}` / `kit.py step new` | `kit.py step new` | after pull + load, then push | `kit_task_train.py` (**CL30 in the web set; push hint reads `kit.artifact.url`**) |
 | `kit.py step start/complete/drop` | same | then push | `kit_task_train.py` |
 | `board_cli.py set/update/batch/str-replace/reply` | same | on the local copy, then push (**CL30: a hand `ArtifactData` write is refused for every session**) | `kit_orchestrator_guard.py`; `kit_board_guard.py` names the push after it |
-| `kit.py launch <post>` | `claude --bg` in a worktree | `--web` prints the call and leaves `.kit/run/launch/<post>.json`; then `--session-id <id>` | **CL30: required by `kit_orchestrator_guard.py`; its second half named and held at Stop by `kit_board_guard.py`** |
+| `kit.py launch <post>` | `claude --bg` in a worktree; refuses a step that a live session, another person (`for`, `working_by`) or another runner holds, and names them (`--take` once that session ended) | `--web` prints the call and leaves `.kit/run/launch/<post>.json`; then `--session-id <id>` | **CL30: required by `kit_orchestrator_guard.py`; its second half named and held at Stop by `kit_board_guard.py`** |
 | `kit.py review <post>` | `claude --bg` / agy | prints the `create_session` call, **CL30 tagged `review`** | tagged launch checked |
 | `handover.py --role R` | terminal | web: prints the call, **CL30 tagged** | tagged launch checked |
 | `kit.py artifact pull` / `load` | n/a | the `ArtifactData` calls, then load | named by every refusal above |

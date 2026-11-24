@@ -5085,6 +5085,8 @@
       if (el) { el.id = "kit-post-ext-badges"; metaEl.insertAdjacentElement("afterend", el); }
     }, function () {});
   }
+  /* The person a post is for: `for`, which the agents' queue reads too; the other two are its old names. */
+  function postPerson(d) { return String((d && (d.for || d.assignee || d.assigned_to)) || "").trim(); }
   function applyCollabCardBadges() {
     var hasCollab = document.documentElement.dataset.collab === "1";
     var uid = curUserId();
@@ -5111,7 +5113,7 @@
           if (extEl) c.appendChild(extEl);
         }
         if (!hasCollab) continue;
-        var assigned = String(doc.assigned_to || "").trim();
+        var assigned = postPerson(doc);
         var working = String(doc.working_by || "").trim();
         var meta = c.querySelector(".meta");
         if (meta) {
@@ -5252,19 +5254,42 @@
     });
     var claimB = document.createElement("button"); claimB.type = "button"; claimB.className = "btn small kit-icon-btn";
     claimB.title = "Mark as actively working on this"; claimB.setAttribute("aria-label", claimB.title);
-    claimB.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
-    api("GET", "/_api/db/posts/" + encodeURIComponent(postId)).then(function (r) {
-      var d = (r && r.data) || {};
-      sel.value = String(d.assigned_to || "");
-      claimB.classList.toggle("ember", d.working_by === curUserId());
+    var claimSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
+    claimB.innerHTML = claimSvg;
+    var postUrl = "/_api/db/posts/" + encodeURIComponent(postId), armed = 0;
+    function showClaim(d) {
+      var w = String(d.working_by || "").trim(), mine = w === curUserId();
+      claimB.classList.toggle("ember", mine);
+      claimB.title = mine ? "You are working on this: tap to let it go" : w ? "@" + w + " is working on this" : "Mark as actively working on this";
+      claimB.setAttribute("aria-label", claimB.title);
+    }
+    api("GET", postUrl).then(function (r) {
+      var d = (r && r.data) || {}, who = postPerson(d);
+      if (who && !Array.prototype.some.call(sel.options, function (o) { return o.value === who; })) {
+        var o = document.createElement("option"); o.value = who; o.textContent = who; sel.appendChild(o);   /* a role, or a name from before */
+      }
+      sel.value = who;
+      showClaim(d);
     }, function () {});
     sel.addEventListener("change", function () {
-      api("PATCH", "/_api/db/posts/" + encodeURIComponent(postId), { data: { assigned_to: sel.value } }).then(applyCollabCardBadges, function () {});
+      api("PATCH", postUrl, { data: { for: sel.value, assignee: "", assigned_to: "" } }).then(applyCollabCardBadges, function () {});
     });
     claimB.addEventListener("click", function () {
-      var on = !claimB.classList.contains("ember");
-      claimB.classList.toggle("ember", on);
-      api("PATCH", "/_api/db/posts/" + encodeURIComponent(postId), { data: { working_by: on ? curUserId() : "" } }).then(applyCollabCardBadges, function () {});
+      /* read again first: someone else may have taken it since this post was opened */
+      api("GET", postUrl).then(function (r) {
+        var d = (r && r.data) || {}, w = String(d.working_by || "").trim(), id = curUserId();
+        if (w && w !== id && Date.now() - armed > 6000) {
+          armed = Date.now();
+          showClaim(d);
+          claimB.textContent = "@" + w + ": take over?";
+          setTimeout(function () { claimB.innerHTML = claimSvg; }, 6000);
+          return;
+        }
+        armed = 0;
+        claimB.innerHTML = claimSvg;
+        var next = w === id ? "" : id;
+        api("PATCH", postUrl, { data: { working_by: next } }).then(function () { showClaim({ working_by: next }); applyCollabCardBadges(); }, function () {});
+      }, function () {});
     });
     wrap.appendChild(sel); wrap.appendChild(claimB);
     barRow.insertBefore(wrap, barRow.firstChild);

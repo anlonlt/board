@@ -641,7 +641,7 @@ def receive(m, url=None, branch=None, token=None):
     writes.append({"op": "set", "collection": "kit-receipts", "doc_id": receipt_key,
                    "data": {"sha": head}, "if_version": receipt["version"]})
     try:
-        _board_request(url, "db/batch", {"writes": writes}, token=token)
+        _board_request(url, "db/batch", {"writes": writes, "sync": True}, token=token)
     except urllib.error.HTTPError as e:
         if e.code == 409:
             raise Conflict("Board changed during receive; batch rolled back. Retry.") from e
@@ -782,7 +782,7 @@ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
     for w in writes:
         for attempt in (1, 2):
             try:
-                _board_request(url, "db/batch", {"writes": [w]}, token=token)
+                _board_request(url, "db/batch", {"writes": [w], "sync": True}, token=token)
                 break
             except urllib.error.HTTPError as e:
                 if e.code != 409 or attempt == 2:
@@ -1110,7 +1110,7 @@ def artifact_load(url=None, token=None, in_dir=None):
                 taken += local != remote
             if new != local:
                 _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": new,
-                                                             "if_version": d.get("version", 0)}]}, token=token)
+                                                             "if_version": d.get("version", 0)}], "sync": True}, token=token)
             os.makedirs(os.path.dirname(_base_path(coll, did)), exist_ok=True)
             write_doc(_base_path(coll, did), remote)
             # CL30: a pulled file is loaded once; left there, a later load without a pull took that OLD copy over
@@ -1332,7 +1332,7 @@ def artifact_push(url=None, token=None, out_dir=None):
             if _is_card(did) and base is not None and _card_older(data, base):
                 # CL31: an older card here (a seed, a stale rebuild): put the copy the Artifact had back, never send it
                 _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did,
-                                                             "data": base, "if_version": row.get("version", 0)}]}, token=token)
+                                                             "data": base, "if_version": row.get("version", 0)}], "sync": True}, token=token)
                 dropped.append(key)
                 every[-1] = base
                 continue
@@ -1575,7 +1575,7 @@ def artifact_pin(pairs, url=None, token=None, report=None):
                     continue
                 if new != here:
                     _board_request(u, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": new,
-                                                               "if_version": d.get("version", 0)}]}, token=tok)
+                                                               "if_version": d.get("version", 0)}], "sync": True}, token=tok)
                 os.makedirs(os.path.dirname(_base_path(coll, did)), exist_ok=True)
                 write_doc(_base_path(coll, did), live)
                 report.append("%s: the live copy was newer: this copy's changes merged into it" % k)
@@ -2391,6 +2391,11 @@ def _is_card_blocked(doc, posts):
     return False
 
 
+def post_person(d):
+    """The person a post is for: `for` (the menu on the page, the queue, MCP); `assignee` and `assigned_to` are its old names."""
+    return str(d.get("for") or d.get("assignee") or d.get("assigned_to") or "").strip()
+
+
 def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=False):
     """List open cards attributed to a runner (e.g. lmarena, claude-chrome) or person/role from SQLite or mirror."""
     rf = (runner or "").strip().lower()
@@ -2420,7 +2425,7 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
         if unblocked_only and _is_card_blocked(d, posts):
             continue
         pr = str(d.get("runner") or "").strip()
-        pf = str(d.get("for") or d.get("assignee") or "").strip()
+        pf = post_person(d)
         if rf and pr.lower() != rf:
             continue
         if ff and pf.lower() != ff:
@@ -4389,7 +4394,7 @@ def _prompt_branch(clone, pid, g):
     return "part-%s" % _slug(pid, 60)
 
 
-def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=False, cli=None):
+def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=False, cli=None, take=False):
     """Launch a step of an attached board from its own clone (the kit way, no hand step): the prompt this project
     wrote goes on a `part-<post>` branch of that clone (committed, pushed), then that clone's kit.py launch runs with
     the post, no seeded board and no board-mirror push (KIT_ATTACHED_CLONE), and the consuming projects to test on."""
@@ -4412,7 +4417,7 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
             return dict(out, error=why)
     restore = []      # the branch the clone was on: it goes back there whatever happens
     try:
-        return _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset)
+        return _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset, take)
     finally:
         if restore:
             g("checkout", "-q", restore[0])
@@ -4438,7 +4443,7 @@ def _inline_prompt(text, rel, body):
             "it and do it.%s\n\n<prompt path=\"%s\">\n%s\n</prompt>" % (rel, (" " + rest) if rest else "", rel, body.rstrip()))
 
 
-def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset):
+def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset, take=False):
     inline = None
     if not session_id and not os.path.isfile(os.path.join(clone, rel)):
         if not os.path.isfile(mine):
@@ -4487,6 +4492,8 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         cmd += ["--model", model]
     if reset:
         cmd.append("--reset")
+    if take:
+        cmd.append("--take")
     if web is True:
         cmd.append("--web")
     elif web is False:
@@ -4552,7 +4559,78 @@ def _launch_posts(post):
         return {}
 
 
-def launch(pid, url=None, token=None, web=None, session_id=None, model=None, reset=False, gate=True, cli=None, post_file=None):
+# The runners `kit.py launch` starts itself; any other (lmarena, claude-chrome, owner...) takes the step as its card.
+LAUNCH_RUNNERS = ("", "agy", "claude", "claude-cli", "claude-web", "cli", "web", "local", "computer", "cloud", "scheduled")
+CLAIM_MIN = 30           # a session that gave no sign of life for this long is quiet (as in resume)
+
+
+def _my_person(url=None, token=None):
+    """(the person this session works for, the people of this board): the board's own answer to this token, else
+    $KIT_PERSON, else the owner."""
+    me = {}
+    try:
+        me = _board_request(url or local_board_url(), "me", token=_resolve_board_token(token)) or {}
+    except Exception:
+        pass
+    people = {"owner"} | {str(c.get("id")) for c in me.get("collaborators") or [] if isinstance(c, dict) and c.get("id")}
+    return str(os.environ.get("KIT_PERSON") or me.get("id") or "owner"), people
+
+
+def _mins_since(stamp):
+    last = _utc(str(stamp or ""))
+    if not last:
+        return None
+    return max(0, int((datetime.now(timezone.utc) - datetime.strptime(last, "%Y-%m-%dT%H:%M:%SZ")
+                       .replace(tzinfo=timezone.utc)).total_seconds() // 60))
+
+
+def _saved_mins(branch):
+    """Minutes since a session last saved its work on wip/<branch> at GitHub (None: never, or not reachable): the sign
+    of life every platform shares, newer than this copy of the board."""
+    ref = "refs/remotes/origin/wip/" + branch
+    try:
+        _git_run("fetch", "-q", "--no-tags", "origin", "+refs/heads/wip/%s:%s" % (branch, ref), timeout=20)
+        t = _git_run("log", "-1", "--format=%ct", ref, timeout=10)
+        return max(0, int((time.time() - int(t.stdout.strip())) // 60)) if t.returncode == 0 and t.stdout.strip() else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def step_holder(pid, p, me=None, people=(), alive=None, saved=None, session=None):
+    """Who holds this step besides the one asking, as text ('' : nobody). From what the post already carries: `for` and
+    `working_by` (people), `runner` (who executes it), `session_id` (the session on it)."""
+    runner = str(p.get("runner") or "").strip().lower()
+    if runner not in LAUNCH_RUNNERS:
+        return "it is %s's: its card, not a session to launch (`runner`)" % runner
+    person, busy = post_person(p), str(p.get("working_by") or "").strip()
+    if me:
+        if busy and busy != me:
+            return "@%s is working on it (`working_by`)" % busy
+        if person and person != me and person in people:          # a role (designer, reviewer) holds nothing
+            return "it is @%s's (`for`)" % person
+    sess = str(p.get("session_id") or "").strip()
+    if session and sess == session:
+        return ""
+    quiet = [m for m in (_mins_since(p.get("updated_at")), _mins_since(p.get("launched_at")), saved) if m is not None]
+    quiet = min(quiet) if quiet else None
+    if step_state(p) != "running" or not sess:
+        return ("a session saved work on its branch %d min ago, though this copy of the board shows none on it: "
+                "update the board first" % saved) if saved is not None and saved < CLAIM_MIN and step_state(p) == "idle" else ""
+    if sess.startswith("pending"):
+        m = _mins_since(p.get("launched_at"))
+        return ("its launch was prepared %d min ago: finish it with `launch %s --session-id <the id create_session returned>`"
+                % (m, pid)) if m is not None and m < 10 else ""
+    if alive is not None and sess in alive:
+        return "session %s is running on this computer" % sess
+    if saved is None or saved >= CLAIM_MIN:
+        if alive is not None and not sess.startswith("session_") and _launch_traces(pid, p):
+            return ""                        # it started on this computer and no longer runs: continue or start again
+    seen = "no sign of life dated" if quiet is None else "last sign of life %d min ago" % quiet
+    return "session %s is on it (%s)%s" % (sess, seen, ": check it with get_session" if sess.startswith("session_") else "")
+
+
+def launch(pid, url=None, token=None, web=None, session_id=None, model=None, reset=False, gate=True, cli=None, post_file=None,
+           take=False):
     """`kit.py launch <post>`: the one way a part starts (CL13). Writes status in progress, session_id, launched_at
     and branch on its post and marks its Trains row running (the local copy; with an attached Artifact board, the
     batch that carries both there), then starts it: CLI, `claude --bg` inside a worktree made from the current branch;
@@ -4576,7 +4654,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     if not isinstance(post, dict):
         b, ap = _find_attached_post(pid)                  # a step of another repo's train (the kit's cli from Harmonize)
         if b:
-            return _launch_attached(pid, b, ap, session_id=session_id, model=model, web=web, reset=reset, cli=cli)
+            return _launch_attached(pid, b, ap, session_id=session_id, model=model, web=web, reset=reset, cli=cli, take=take)
         return {"ok": False, "post": pid, "error": "no post %s on this board%s, nor on an attached board (%s), nor in the "
                 "Artifact pull (.kit/run/artifact/in/repos/<id>/posts): run `python3 -I .kit/kit.py artifact pull`, make its "
                 "calls, then launch again" % (pid, (" (no local board at %s)" % url) if d.get("_error") else "",
@@ -4590,6 +4668,12 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     out = {"ok": True, "post": pid, "part": part, "branch": branch, "web": web, "prompt": rel}
     base = _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "HEAD"
     text = "Your prompt is %s: read it and do it." % rel
+    me, people = _my_person(url, token)
+    if not session_id and not take:
+        held = step_holder(pid, post, me=me, people=people, alive=_alive_sessions(), saved=_saved_mins(branch))
+        if held:
+            return dict(out, ok=False, error="%s is taken: %s. If that session ended or its person agrees, "
+                        "`kit.py launch %s --take`" % (pid, held, pid))
     cons = consumers(post.get("consumers"))
     if cons:     # CL32: a kit part tests on the projects that use it; its session must reach them from its first step
         # CL38: a launched session's classifier refuses add_repo unless the owner types it; parts never attach. The
@@ -4597,6 +4681,8 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         text += (" Never attach a repo: the real-project run on %s is the orchestrator's (done says pending until then)."
                  % ", ".join(c["github"] or c["name"] for c in cons))
         out["consumers"] = [c["github"] or c["name"] for c in cons]
+    mark = os.path.join(ROOT, ".kit", "run", "launch", pid + ".json")
+    marked = os.path.isfile(mark)
     if session_id:                                   # the second half of a web launch: create_session answered
         sess = session_id
         launch_mark(pid, None)
@@ -4642,7 +4728,10 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                 return dict(out, ok=False, error="claude --bg failed: %s" % (r.stderr or r.stdout).strip()[:300])
             sess = name
     now = _now_z()
-    fields = {"status": "in progress", "session_id": sess, "branch": branch, "updated_at": now}
+    fields = {"status": "in progress", "session_id": sess, "branch": branch, "working_by": me, "updated_at": now}
+    had = str(post.get("session_id") or "")
+    if session_id and not take and had and had != session_id and not had.startswith("pending") and not marked:
+        out["warning"] = "%s already named session %s: if it still runs, two are on this step; stop one" % (pid, had)
     if not session_id or not post.get("launched_at"):
         fields["launched_at"] = now
     out["session_id"] = sess
@@ -6109,6 +6198,26 @@ def continues_lines(p, session=None):
         "- its post's body says where it stopped; put your own session id on the post first"]
 
 
+def held_lines(pid, p, session=None):
+    """A part about to work on a step that a session of ANOTHER platform still holds (a web session and one on the
+    owner's computer): every platform reads this, agy too, which starts its parts without `kit.py launch`. On one
+    platform a new session under a step is a hand-over, and its id may be a name here and an id there: never compared."""
+    sess = str(p.get("session_id") or "")
+    if not sess or sess.startswith("pending") or step_state(p) != "running":
+        return []
+    web = bool(os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID")) or str(session or "").startswith("session_")
+    if sess.startswith("session_") == web:
+        return []
+    mins = [m for m in (_mins_since(p.get("updated_at")), _saved_mins(str(p.get("branch") or "") or _slug(p.get("part") or pid, 24)))
+            if m is not None]
+    if not mins or min(mins) >= CLAIM_MIN:
+        return []
+    return ["", "## First: session %s (%s) gave a sign of life %d min ago" % (
+        sess, "on the web" if sess.startswith("session_") else "on a computer", min(mins)),
+            "- It ended (a usage limit, closed, replaced on purpose): go on. It still runs: stop here and tell the "
+            "orchestrator; two sessions never work on one step."]
+
+
 def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=None, now=None):
     """`kit.py resume --role R`: what that role needs and nothing else (CL32), so a session starts from this alone."""
     if role not in ROLES:
@@ -6171,6 +6280,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 out.append("- %s: %s" % (k, "; ".join(map(str, _as_list(p[k])))[:400]))
         if len(out) and out[-1] == "## Your post now":
             out.append("- (nothing yet: at turn 1 set session_id, status in progress and a one-line body)")
+        out += held_lines(pid, p, session or whoami())
         out += continues_lines(p, session or whoami())
         out += owner_lines() + autonomy_lines()
         out += ["", "## Lessons that touch your files (%d files changed)" % len(files)] + _lesson_lines(lessons_for("part", files))
@@ -6628,6 +6738,7 @@ def main(argv=None):
     s.add_argument("post"); s.add_argument("--session-id", default=None, help="web: the id create_session returned")
     s.add_argument("--web", action="store_true", default=None); s.add_argument("--cli-run", dest="web", action="store_false")
     s.add_argument("--model", default=None); s.add_argument("--reset", action="store_true")
+    s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s.add_argument("--post-file", default=None, help=argparse.SUPPRESS)
     s = sp.add_parser("done"); s.add_argument("post"); s.add_argument("--db", default=None)
@@ -6947,7 +7058,7 @@ def main(argv=None):
         return 0
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset,
-                   post_file=a.post_file)
+                   post_file=a.post_file, take=a.take)
         print(field_text("launch", "orchestrator"), file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
         return 0 if r.get("ok") else 1

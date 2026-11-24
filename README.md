@@ -141,7 +141,7 @@ https://github.com/anlonlt/board/blob/agy-local/README.md
 - **Treat invite links as credentials:** `/_invite/<token>.md` and `/?token=` grant board access. Never paste them into public GitHub issues or chats. In Claude Code Web, store the token once as an environment secret (`request_credential`, header `X-Kit-Token`) and use the `proxy` placeholder.
 - **Artifact mirror visibility:** `kit_artifact_sync.py docs` copies your project's docs and memory into the Artifact DB, so anyone you share that Artifact with can read them.
 - **Per-viewer MCP permissions:** the MCP Link Reader always calls connectors using **each viewer's own account** — viewers only see SharePoint files, Gmail threads, or Drive docs they already have access to.
-- **Privacy-safe pocket pushes:** `ntfy.sh` notifications omit post titles and body text by default (`"A post needs you"` + deep link); opt in with `kit.notify_detail: true` only on private topics.
+- **Privacy-safe pocket pushes:** `ntfy.sh` notifications omit post titles and body text by default (`"A post needs you"` + deep link); opt in with `kit.notify_detail: true` only on private topics. The local board and the Artifact notify the same topic by one rule (`.kit/notify.py`): a post that enters To do or Waiting on you, once; a tap opens the board it was written on, a button the other one. The topic is as good as a password: the Share panel keeps it in `.kit/board_data/` (git-ignored); for web sessions use `kit.notify_url` in a private repo, the environment variable `KIT_NOTIFY_URL` in a public one (`KIT_FUNNEL_URL` or `kit.funnel_url` adds the local board's button there).
 
 ---
 

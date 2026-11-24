@@ -123,6 +123,9 @@ if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
   if [ -f ".kit/config.json" ]; then
     USE_FUNNEL="$(python3 -I -c 'import json; print("0" if json.load(open(".kit/config.json")).get("kit",{}).get("funnel") is False else "1")' 2>/dev/null || echo 1)"
   fi
+  # A test run or a project under the temp folder never moves this computer's funnel (install.py and board_server.py too)
+  case "$ROOT/" in "${TMPDIR:-/tmp}"/*|/tmp/*) USE_FUNNEL=0 ;; esac
+  [ "${KIT_NO_FUNNEL:-}" = "1" ] && USE_FUNNEL=0
   if command -v tailscale >/dev/null 2>&1; then
     TS_IP="$(tailscale ip -4 2>/dev/null | head -n 1 || true)"
     [ -n "$TS_IP" ] && echo "Board (LAN/TS): http://${TS_IP}:${PORT}/"

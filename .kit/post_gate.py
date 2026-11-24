@@ -111,6 +111,8 @@ def check_post(doc_id, new, old=None, cfg=None, may_prove=False):
     if (is_step(p) or is_step(old)) and is_complete(p) and not is_complete(old) and not proved(p):
         return new, notes, ("a step is complete only after `python3 -I .kit/kit.py done %s` says OK on the post as it is now "
                             "(its check passes, its break makes it fail, his comments are answered)" % doc_id)
+    if (is_complete(p) or p.get("column") == "done") and p.get("working_by"):
+        new["working_by"] = ""                                   # finished: nobody is on it any more
     return new, notes, None
 
 

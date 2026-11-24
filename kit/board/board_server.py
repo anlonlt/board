@@ -18,6 +18,7 @@ import os
 import queue
 import re
 import secrets
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -1249,29 +1250,20 @@ class BoardStore:
         return {"thread_id": thread_id, "replies": replies, "status": "replied"}
 
 
-def send_push(notify_url, title, body, click_url=None, sync=False):
-    """Phone push notification (works with free ntfy.sh or any HTTP webhook; includes Click deep link)."""
-    if not notify_url:
-        return False
-    hdrs = {"Title": str(title or "Board")[:120], "Content-Type": "text/plain; charset=utf-8"}
-    if click_url and str(click_url).startswith(("http://", "https://")):
-        hdrs["Click"] = str(click_url)
-    def _go():
-        try:
-            r = urllib.request.Request(
-                notify_url,
-                data=str(body or "").encode("utf-8"),
-                headers=hdrs,
-                method="POST",
-            )
-            with urllib.request.urlopen(r, timeout=5):
-                return True
-        except Exception:
-            return False
-    if sync:
-        return _go()
-    threading.Thread(target=_go, daemon=True).start()
-    return True
+def _notify_module():
+    """.kit/notify.py: the one rule for phone notifications (its source sits beside this folder in the kit's repo)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for p in (os.path.join(here, "notify.py"), os.path.join(os.path.dirname(here), "notify.py")):
+        if os.path.isfile(p):
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("kit_notify_rules", p)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    return None
+
+
+NOTIFY = _notify_module()
 
 
 def read_git_diff(root_dir, ref):
@@ -1635,13 +1627,11 @@ class PayloadTooLarge(Exception):
 def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False, extra_stores=None):
     html_path = os.path.join(root_dir, ".kit", "board.html")
     project_name = "Board"
-    board_base_url = ""
     notify_detail_init = False
     tailscale_users = {}
     try:
         _cfg_root = json.load(open(os.path.join(root_dir, ".kit", "config.json"), encoding="utf-8"))
         project_name = _cfg_root.get("project") or "Board"
-        board_base_url = str(_cfg_root.get("board_url") or "").rstrip("/")
         notify_detail_init = bool((_cfg_root.get("kit") or {}).get("notify_detail", False))
         raw_tsu = (_cfg_root.get("kit") or {}).get("tailscale_users") or {}
         if isinstance(raw_tsu, dict):
@@ -1661,26 +1651,24 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         pass
     notify_cfg = {"url": str(notify_url or "").strip(), "detail": notify_detail_init}
 
-    def _maybe_push(coll, doc_id, d, prev_col=None):
-        nurl = notify_cfg.get("url") or ""
-        if not nurl or not isinstance(d, dict):
+    def _notify_settings():
+        cfg = NOTIFY.settings(root_dir) if NOTIFY else {}
+        cfg.update(url=notify_cfg.get("url") or "", detail=bool(notify_cfg.get("detail")))
+        return cfg
+
+    def _lane(tstore, coll, doc_id):
+        """(a post's lane now, whether it exists): what a notification compares with."""
+        if coll != "posts" or not notify_cfg.get("url"):
+            return None, False
+        cur = tstore.get_doc("posts", doc_id)
+        return ((cur.get("data") or {}).get("column"), True) if cur.get("exists") else (None, False)
+
+    def _maybe_push(coll, doc_id, d, before=(None, False), repo="", port=None):
+        if not NOTIFY or not notify_cfg.get("url") or coll not in ("posts", "comments") or not isinstance(d, dict):
             return
-        detail = bool(notify_cfg.get("detail"))
-        if coll == "posts" and d.get("column") in ("todo", "question") and not str(doc_id or "").startswith("_"):
-            if prev_col is not None and prev_col == d.get("column"):
-                return
-            click = (board_base_url + "/#/post/" + urllib.parse.quote(str(doc_id))) if board_base_url.startswith(("http://", "https://")) else None
-            if detail:
-                send_push(nurl, "%s (%s): %s" % (project_name, d.get("column"), d.get("title") or doc_id), str(d.get("body") or "")[:240], click_url=click)
-            else:
-                send_push(nurl, project_name, "A post needs you (%s)." % d.get("column"), click_url=click)
-        elif coll == "comments" and d.get("from") not in (None, "", "owner", "viewer") and not d.get("removed") and not d.get("like"):
-            pid_c = str(d.get("post_id") or "")
-            click = (board_base_url + "/#/post/" + urllib.parse.quote(pid_c)) if (pid_c and board_base_url.startswith(("http://", "https://"))) else None
-            if detail:
-                send_push(nurl, "%s replied on %s" % (d.get("from"), pid_c or project_name), str(d.get("text") or "")[:240], click_url=click)
-            else:
-                send_push(nurl, project_name, "%s replied on your board." % d.get("from"), click_url=click)
+        rid = "" if repo in ("", primary_repo_id) else repo
+        threading.Thread(target=NOTIFY.announce, args=(root_dir, _notify_settings(), coll, doc_id, dict(d)), daemon=True,
+                         kwargs={"prev": before[0], "known": before[1], "port": port, "repo": rid}).start()
     primary_repo_id = re.sub(r"[^a-z0-9_-]+", "-", project_name.lower()).strip("-") or "primary"
     stores_map = {primary_repo_id: store}
     roots_map = {primary_repo_id: root_dir}
@@ -2979,18 +2967,19 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if not coll:
                 self._send_json(404, {"error": "not found"})
                 return
-            tstore, _ = self._store_for_doc(parsed, coll, doc_id)
+            tstore, nrepo = self._store_for_doc(parsed, coll, doc_id)
             if coll == "comments" and self._is_all_repos(parsed) and (body.get("data") or {}).get("post_id"):
-                tstore, _ = self._store_for_doc(parsed, "posts", str(body["data"]["post_id"]))
+                tstore, nrepo = self._store_for_doc(parsed, "posts", str(body["data"]["post_id"]))
             doc_id, put_data, sc_err = self._scope_write_target(coll, doc_id, body.get("data", {}))
             if sc_err:
                 self._send_json(403, {"error": sc_err})
                 return
+            before = _lane(tstore, coll, doc_id)
             res, err = tstore.set_doc(coll, doc_id, put_data, if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
-            _maybe_push(coll, doc_id, body.get("data") or {})
+            _maybe_push(coll, doc_id, put_data, before, nrepo, self.server.server_address[1])
             self._send_json(200, res)
 
         def do_PATCH(self):
@@ -3017,23 +3006,19 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if not coll:
                 self._send_json(404, {"error": "not found"})
                 return
-            tstore, _ = self._store_for_doc(parsed, coll, doc_id)
+            tstore, nrepo = self._store_for_doc(parsed, coll, doc_id)
             doc_id, patch_data, sc_err = self._scope_write_target(coll, doc_id, body.get("data", {}))
             if sc_err:
                 self._send_json(403, {"error": sc_err})
                 return
-            prev_col = None
-            if coll == "posts":
-                prev_doc = tstore.get_doc("posts", doc_id)
-                if prev_doc.get("exists"):
-                    prev_col = (prev_doc.get("data") or {}).get("column")
+            before = _lane(tstore, coll, doc_id)
             res, err = tstore.update_doc(coll, doc_id, patch_data, if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
             if coll == "posts" and isinstance(patch_data, dict) and patch_data.get("column") in ("todo", "question"):
                 cur_doc = tstore.get_doc("posts", doc_id)
-                _maybe_push(coll, doc_id, cur_doc.get("data") or patch_data, prev_col=prev_col)
+                _maybe_push(coll, doc_id, cur_doc.get("data") or patch_data, before, nrepo, self.server.server_address[1])
             self._send_json(200, res)
 
         def do_DELETE(self):
@@ -3360,27 +3345,37 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 notify_cfg["url"] = new_url
                 if "notify_detail" in body:
                     notify_cfg["detail"] = bool(body.get("notify_detail"))
-                cfg_p = os.path.join(root_dir, ".kit", "config.json")
+                # the topic is as good as a password: kept out of the committed config (kit.notify_url is the web sessions'
+                # way to it in a private repo; $KIT_NOTIFY_URL in a public one)
                 try:
-                    if os.path.isfile(cfg_p):
-                        with open(cfg_p, encoding="utf-8") as fh:
-                            cfg_obj = json.load(fh)
-                        cfg_obj.setdefault("kit", {})["notify_url"] = new_url
-                        cfg_obj["kit"]["notify_detail"] = bool(notify_cfg.get("detail"))
+                    tf = NOTIFY.topic_file(root_dir) if NOTIFY else os.path.join(root_dir, ".kit", "board_data", "notify_url")
+                    os.makedirs(os.path.dirname(tf), exist_ok=True)
+                    with open(tf, "w", encoding="utf-8") as fh:
+                        fh.write(new_url + "\n")
+                    os.chmod(tf, 0o600)
+                    cfg_p = os.path.join(root_dir, ".kit", "config.json")
+                    with open(cfg_p, encoding="utf-8") as fh:
+                        cfg_obj = json.load(fh)
+                    if bool((cfg_obj.get("kit") or {}).get("notify_detail")) != bool(notify_cfg.get("detail")):
+                        cfg_obj.setdefault("kit", {})["notify_detail"] = bool(notify_cfg.get("detail"))
                         with open(cfg_p, "w", encoding="utf-8") as fh:
                             json.dump(cfg_obj, fh, indent=1, ensure_ascii=False)
                             fh.write("\n")
                 except (OSError, ValueError):
                     pass
                 sent = False
-                if body.get("test") and new_url:
-                    click = (board_base_url + "/") if board_base_url.startswith(("http://", "https://")) else None
-                    sent = send_push(new_url, "%s: test push" % project_name, "Pocket push notifications are active.", click_url=click, sync=True)
+                if body.get("test") and new_url and NOTIFY:
+                    tap, buttons = NOTIFY.links(_notify_settings(), "", port=self.server.server_address[1])
+                    sent = NOTIFY.send(new_url, "%s: test" % project_name, "Phone notifications are on.", tap, buttons) is None
                 self._send_json(200, {"ok": True, "notify_url": new_url, "notify_detail": bool(notify_cfg.get("detail")), "sent": sent})
                 return
 
             if path == "/_api/db/batch":
                 ops = body.get("writes") if isinstance(body, dict) else body
+                # `sync`: a copy from git or the Artifact, whose own writer notified already
+                synced = bool(isinstance(body, dict) and body.get("sync"))
+                lanes = {} if synced else {str(op.get("doc_id")): _lane(store, "posts", op.get("doc_id")) for op in (ops or [])
+                                           if isinstance(op, dict) and op.get("collection") == "posts" and op.get("doc_id")}
                 results, err = store.batch_ops(ops or [])
                 if err is not None:
                     kind, doc_id, detail = err
@@ -3389,9 +3384,12 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     else:
                         self._send_json(409, {"error": "batch_conflict", "doc_id": doc_id, "detail": detail})
                     return
-                for op in (ops or []):
+                for op in () if synced else (ops or []):
                     if isinstance(op, dict) and op.get("op") in ("set", "update") and op.get("collection") in ("posts", "comments"):
-                        _maybe_push(op.get("collection"), op.get("doc_id"), op.get("data") or {})
+                        coll_, did_ = op.get("collection"), str(op.get("doc_id"))
+                        now_ = (store.get_doc(coll_, did_).get("data") if op.get("op") == "update" else None) or op.get("data") or {}
+                        _maybe_push(coll_, did_, now_, lanes.get(did_, (None, False)) if coll_ == "posts" else (None, False), "",
+                                    self.server.server_address[1])
                 self._send_json(200, {"ok": True, "results": results})
                 return
 
@@ -3754,7 +3752,7 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
     if default_watcher:
         store.set_watch(default_watcher, True)
     if notify_url is None:
-        notify_url = cfg_data.get("kit", {}).get("notify_url") or None
+        notify_url = (NOTIFY.topic(root_dir, cfg_data.get("kit") or {}) if NOTIFY else cfg_data.get("kit", {}).get("notify_url")) or None
     srv = BoardHTTPServer((host, port), make_handler(root_dir, store, token=token, notify_url=notify_url, embed_mode=embed_mode, extra_stores=extra_stores))
     srv._extra_stores = extra_stores
     return srv, store
@@ -3768,31 +3766,57 @@ def _file_sig(path):
         return None
 
 
-def _ensure_funnel_async(port, root_dir):
-    """Best-effort, non-blocking Tailscale Funnel refresh on startup/reload."""
+def _funnel_allowed(root_dir):
     import shutil
     import tempfile
-    if os.environ.get("KIT_NO_FUNNEL") == "1":
-        return
+    if os.environ.get("KIT_NO_FUNNEL") == "1" or not shutil.which("tailscale"):
+        return False
     if os.path.abspath(root_dir).startswith(os.path.abspath(tempfile.gettempdir()) + os.sep):
-        return
-    if not shutil.which("tailscale"):
-        return
-    cfg_path = os.path.join(root_dir, ".kit", "config.json")
+        return False
     try:
-        if json.load(open(cfg_path, encoding="utf-8")).get("kit", {}).get("funnel") is False:
-            return
+        with open(os.path.join(root_dir, ".kit", "config.json"), encoding="utf-8") as fh:
+            return json.load(fh).get("kit", {}).get("funnel") is not False
     except (OSError, ValueError):
+        return True
+
+
+def _take_funnel(port):
+    try:
+        subprocess.run(["tailscale", "funnel", "--bg", str(port)], capture_output=True, text=True, timeout=15)
+    except Exception:
         pass
 
+
+def _answers(port):
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=2):
+            return True
+    except OSError:
+        return False
+
+
+def _funnel_lost(port):
+    """True when the funnel exists and its root points at a port of this computer where nothing answers (the newest
+    board stopped): a board that runs takes it back. A live port, someone else's use of it, or no funnel: left alone."""
+    got = NOTIFY.funnel_target(NOTIFY.funnel_status(max_age=0)) if NOTIFY else None
+    return bool(got and got[1] != int(port) and not _answers(got[1]))
+
+
+def _ensure_funnel_async(port, root_dir, every=60):
+    """The funnel follows the newest board: taken at startup and reload, then taken back when the board it points at
+    is gone. Best effort, never blocks."""
+    if not _funnel_allowed(root_dir):
+        return
+
     def _run():
-        try:
-            subprocess.run(
-                ["tailscale", "funnel", "--bg", str(port)],
-                capture_output=True, text=True, timeout=15,
-            )
-        except Exception:
-            pass
+        _take_funnel(port)
+        while True:
+            time.sleep(every)
+            try:
+                if _funnel_lost(port):
+                    _take_funnel(port)
+            except Exception:
+                pass
 
     threading.Thread(target=_run, daemon=True).start()
 

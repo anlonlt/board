@@ -1219,6 +1219,7 @@ def main(argv=None):
         ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
         ins.put(".kit/post_gate.py", rd("kit", "board", "post_gate.py"))
         ins.put(".kit/landing.py", rd("kit", "landing.py"))
+        ins.put(".kit/notify.py", rd("kit", "notify.py"))       # board_server.py and the Artifact hook: one notification rule
         ins.put(".kit/board_token.py", rd("kit", "board", "board_token.py"))
         if not claude_only:
             for _vf in ("pdf.min.js", "pdf.worker.min.js"):

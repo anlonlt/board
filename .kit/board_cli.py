@@ -773,7 +773,7 @@ def main(argv=None):
                 if pd.get("removed") or pd.get("column") == "done":
                     continue
                 pr = str(pd.get("runner") or "").strip().lower()
-                pf = str(pd.get("for") or pd.get("assignee") or "").strip().lower()
+                pf = str(pd.get("for") or pd.get("assignee") or pd.get("assigned_to") or "").strip().lower()
                 if rf and pr != rf:
                     continue
                 if ff and pf != ff:
@@ -784,7 +784,7 @@ def main(argv=None):
                     "column": pd.get("column") or "todo",
                     "priority": pd.get("priority") or 3,
                     "runner": pd.get("runner") or "",
-                    "for": pd.get("for") or pd.get("assignee") or "",
+                    "for": pd.get("for") or pd.get("assignee") or pd.get("assigned_to") or "",
                     "status": pd.get("status") or "",
                     "body": str(pd.get("body") or "")[:300],
                 })

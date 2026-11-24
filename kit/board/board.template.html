@@ -1382,7 +1382,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       if (!isNaN(st) && st > Date.now()) return false;
     }
     if (state.runnerFilter) {
-      var pr = str(p.runner).trim(), pf = str(p.for || p.assignee).trim();
+      var pr = str(p.runner).trim(), pf = str(p.for || p.assignee || p.assigned_to).trim();
       if (state.runnerFilter.indexOf("for:") === 0) {
         if (pf.toLowerCase() !== state.runnerFilter.slice(4).toLowerCase()) return false;
       } else if (pr.toLowerCase() !== state.runnerFilter.toLowerCase()) {
@@ -1390,7 +1390,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       }
     }
     if (!q) return true;
-    return (str(p.title) + "\n" + str(p.body) + "\n" + str(p.part) + "\n" + str(p.runner) + "\n" + str(p.for || p.assignee) + "\n" + p.id).toLowerCase().indexOf(q) >= 0;
+    return (str(p.title) + "\n" + str(p.body) + "\n" + str(p.part) + "\n" + str(p.runner) + "\n" + str(p.for || p.assignee || p.assigned_to) + "\n" + p.id).toLowerCase().indexOf(q) >= 0;
   }
 
   function el(tag, cls, text) {
@@ -1708,7 +1708,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     var runners = {}, owners = {};
     (state.posts || []).forEach(function (p) {
       if (p.removed) return;
-      var r = str(p.runner).trim(), f = str(p.for || p.assignee).trim();
+      var r = str(p.runner).trim(), f = str(p.for || p.assignee || p.assigned_to).trim();
       if (r) runners[r] = true;
       if (f) owners[f] = true;
     });
@@ -2308,7 +2308,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     var m = el("span", "meta");
     if (p.part) m.appendChild(el("span", "part", str(p.part)));
     if (p.runner) m.appendChild(el("span", "badge runner", "@" + str(p.runner)));
-    if (p.for || p.assignee) m.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
+    if (p.for || p.assignee || p.assigned_to) m.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee || p.assigned_to)));
     if (Number(p.minutes) > 0) m.appendChild(el("span", "badge", Number(p.minutes) + " min"));
     m.appendChild(el("span", null, postWhen(p)));
     var cs = commentsFor(p.id);
@@ -2374,7 +2374,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     var meta = el("div", "meta"); meta.appendChild(el("span", "badge", col.name));
     if (p.part) meta.appendChild(el("span", "part", str(p.part)));
     if (p.runner) meta.appendChild(el("span", "badge runner", "@" + str(p.runner)));
-    if (p.for || p.assignee) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
+    if (p.for || p.assignee || p.assigned_to) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee || p.assigned_to)));
     meta.appendChild(el("span", null, postWhen(p)));
     k.appendChild(meta);
     k.appendChild(el("h3", null, str(p.title) || "(untitled)"));
@@ -2612,7 +2612,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     var tag = el("span", "badge", col.name); meta.appendChild(tag);
     if (p.part) meta.appendChild(el("span", "part", str(p.part)));
     if (p.runner) meta.appendChild(el("span", "badge runner", "@" + str(p.runner)));
-    if (p.for || p.assignee) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
+    if (p.for || p.assignee || p.assigned_to) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee || p.assigned_to)));
     if (p.session_id) { var s = el("span", null, "session " + shortSession(p.session_id)); s.title = str(p.session_id); meta.appendChild(s); }
     meta.appendChild(el("span", null, postWhen(p)));
     if (p.status) meta.appendChild(el("span", "badge", str(p.status)));
@@ -4486,7 +4486,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       meta.appendChild(el("span", "badge", colObj.name));
       if (p.part) meta.appendChild(el("span", "part", str(p.part)));
     if (p.runner) meta.appendChild(el("span", "badge runner", "@" + str(p.runner)));
-    if (p.for || p.assignee) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
+    if (p.for || p.assignee || p.assigned_to) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee || p.assigned_to)));
       if (Number(p.minutes) > 0) meta.appendChild(el("span", "badge", Number(p.minutes) + " min"));
       var trLabel = humanTrainName(familyOf(p, tMap), tMap, [p]);
       if (trLabel && trLabel !== "General") meta.appendChild(el("span", "badge", trLabel));
