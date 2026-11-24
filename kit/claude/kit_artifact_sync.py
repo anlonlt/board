@@ -502,7 +502,7 @@ def plan_text(plan, board, out, into):
     for row in plan["links"]:
         ref, why = row[0], row[1]
         ids = row[2] if len(row) > 2 else []
-        lines.append("- `%s` (%s)%s" % (ref, why, ", named by post " + ", ".join(ids) if ids else ""))
+        lines.append("- `%s` stays a repo link (%s)%s" % (ref, why, ", named by post " + ", ".join(ids) if ids else ""))
     return "\n".join(lines) + ("\n" if lines else "")
 
 
