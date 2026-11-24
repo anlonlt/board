@@ -30,10 +30,11 @@ sys.path.insert(0, os.path.join(KIT, "kit", "board"))
 import strings as page_strings  # noqa: E402
 
 PARTS = ("memory", "board", "clerk", "orchestrator")
-MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "test_hooks.py"}
+MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "kit_usage.py",
+                "test_hooks.py"}
 HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
          "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "kit_task_train.py",
-         "kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "test_hooks.py"]
+         "kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "kit_usage.py", "test_hooks.py"]
 # CL30: the kit's guards. One whose file is in a present Claude Code runtime but that has no settings.json line (or a
 # narrower matcher than the kit's) is a hole, not a choice (Harmonize: kit_cards_reminder.py wired nowhere, the brief
 # guard on Bash only): --update wires it. Other kit hooks (a project's own hand-over, its Stop) are left as they are.
@@ -60,6 +61,8 @@ CLAUDE_SETTINGS = [
     ("Stop", None, "kit_board_guard.py"),
     ("Stop", None, "kit_stop.py"),
     ("Stop", None, "kit_say_it_once.py"),
+    ("Stop", None, "kit_usage.py"),          # CL37: the usage ledger, recorded by a script (no model call)
+    ("SessionEnd", None, "kit_usage.py"),
     ("PreCompact", None, "kit_pre_compact.py"),
 ]
 # The Claude Code CLI on a computer with the local board server (--runtime local): the agy hook set,
@@ -81,6 +84,8 @@ CLAUDE_CLI_SETTINGS = [
     ("Stop", None, "kit_say_it_once.py"),
     ("Stop", None, "kit_pre_compact.py"),
     ("Stop", None, "kit_web_save.py"),
+    ("Stop", None, "kit_usage.py"),
+    ("SessionEnd", None, "kit_usage.py"),
     ("PreCompact", None, "kit_pre_compact.py"),
 ]
 # Runtimes served by the local board server; `local` = agy + the Claude Code CLI in one install.
@@ -951,6 +956,7 @@ def main(argv=None):
     claude_cli = rt in ("local", "agy", "both")
     claude_cli_hooks = rt == "local"
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
+    ins.put(".kit/usage.py", rd("scripts", "usage.py"))       # CL37: the usage ledger (kit.py usage)
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     # the Artifact board's tools, whatever runs the sessions: its docs mirror and (Artifact mode) the local copy's server
     ins.put(".kit/kit_artifact_sync.py", rd("kit", "claude", "kit_artifact_sync.py"))
