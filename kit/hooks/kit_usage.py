@@ -2,7 +2,7 @@
 """Stop / SessionEnd (CL37): records this session's usage row with .kit/usage.py (no model call, no output to the
 model, never blocks). The row: tokens, cost, turns, tool calls by name, subagents and their tokens, messages,
 board reads/writes and bytes, context peak, wall time, model, the kit commit, role and part. It lands in
-.kit/run/usage/ at once and on the ledger branch `kit-usage` at SessionEnd or every usage.push_minutes."""
+.kit/run/usage/ at once and on the ledger branch `kit-usage` at every Stop (a detached push) and at SessionEnd."""
 import json
 import os
 import subprocess

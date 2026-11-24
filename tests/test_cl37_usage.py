@@ -116,6 +116,14 @@ class Record(unittest.TestCase):
             self.assertEqual(row["tokens_all"]["output"], 390)
             self.assertGreater(row["cost_usd_all"], row["cost_usd"])
 
+    def test_haiku_long_prompt_tier(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "h.jsonl")
+            Path(p).write_text(json.dumps({"type": "assistant", "sessionId": "h", "timestamp": "2026-11-20T10:00:00Z",
+                                           "message": {"id": "m", "model": "claude-haiku-5-5",
+                                                       "usage": _u(0, 1000, 200000)}}) + "\n")
+            self.assertAlmostEqual(usage.parse_transcript(p)["cost_usd"], (1000 * 2.5 + 200000 * 0.05) / 1e6, places=6)
+
     def test_unknown_model_has_no_cost(self):
         with tempfile.TemporaryDirectory() as d:
             row = usage.parse_transcript(fixture(d, model="mystery-1", sub=False))
@@ -141,6 +149,30 @@ class Record(unittest.TestCase):
         self.assertEqual(usage.classify({"branch": "x"}, "Harmonize BC5 \u2014 the board clerk (small context)"), ("clerk", "BC5"))
 
 
+class Roles(unittest.TestCase):
+    def test_orchestrator_from_its_prompt_file_head_branch_and_the_board(self):
+        row = {"branch": "HEAD", "first_prompt": "Your prompt is docs/prompts/O54-orchestrator.md: take over."}
+        self.assertEqual(usage.classify(row), ("orchestrator", None))
+        self.assertEqual(usage.classify({"branch": "HEAD", "first_prompt": "docs/prompts/BC33-clerk.md"}),
+                         ("clerk", "BC33"))
+        self.assertEqual(usage.classify({"branch": "HEAD", "first_prompt": "docs/prompts/CR-CL30.md"}), ("review", "CR-CL30"))
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            os.makedirs(os.path.join(root, ".kit", "board_data"))
+            import sqlite3
+            con = sqlite3.connect(os.path.join(root, ".kit", "board_data", "board.db"))
+            con.execute("CREATE TABLE docs (collection TEXT, doc_id TEXT, version INTEGER, data TEXT, updated_at TEXT)")
+            con.execute("INSERT INTO docs VALUES ('posts', '_orchestrator', 1, ?, '')", (json.dumps({"session_id": "s-orch"}),))
+            con.commit()
+            con.close()
+            # its first prompt names a part's prompt (a launch it made), its branch is HEAD: still the orchestrator
+            row = usage.record(root, fixture(d, sid="s-orch", branch="HEAD"))
+            self.assertEqual((row["role"], row["part"]), ("orchestrator", None))
+            os.makedirs(os.path.join(d, "o2"))
+            other = usage.record(root, fixture(os.path.join(d, "o2"), sid="s-part"))
+            self.assertEqual(other["role"], "part")
+
+
 class Ledger(unittest.TestCase):
     def test_hook_records_silently_and_tree_stays_clean(self):
         with tempfile.TemporaryDirectory() as d:
@@ -162,6 +194,28 @@ class Ledger(unittest.TestCase):
             st = subprocess.run(["git", "-C", root, "status", "--porcelain", "--untracked-files=no"],
                                 capture_output=True, text=True).stdout
             self.assertEqual(st.strip(), "")
+
+    def test_every_stop_pushes_detached_and_the_turn_does_not_wait(self):
+        import time as _t
+        with tempfile.TemporaryDirectory() as d:
+            bare = os.path.join(d, "origin.git")
+            subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+            root = project(d)
+            subprocess.run(["git", "-C", root, "remote", "add", "origin", bare], check=True)
+            Path(root, ".kit", "usage.py").write_text(SCRIPT.read_text())
+            payload = json.dumps({"transcript_path": fixture(d), "cwd": root, "hook_event_name": "Stop"})
+            env = {k: v for k, v in os.environ.items() if not k.startswith("KIT_USAGE")}
+            t0 = _t.time()
+            r = subprocess.run([sys.executable, "-I", os.path.join(root, ".kit", "usage.py"), "--root", root, "hook"],
+                               input=payload, capture_output=True, text=True, env=env, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            for _ in range(100):
+                ls = subprocess.run(["git", "-C", bare, "ls-tree", "--name-only", "kit-usage", "usage/"],
+                                    capture_output=True, text=True)
+                if ls.returncode == 0 and ls.stdout.strip():
+                    break
+                _t.sleep(0.1)
+            self.assertEqual(ls.stdout.split(), ["usage/2026-11-20.jsonl"])
 
     def test_hook_never_breaks_on_garbage(self):
         r = subprocess.run([sys.executable, "-I", str(SCRIPT), "hook"], input="{not json", capture_output=True,
@@ -243,6 +297,19 @@ class Compare(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             res = json.loads(r.stdout)
             self.assertEqual((res["before"]["part"]["n"], res["after"]["part"]["n"]), (3, 2))
+
+    def test_a_commit_missing_from_a_shallow_clone_falls_back_to_the_ledger(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            rows = [{"kit_commit": "abc1234", "kit_date": "2026-11-23T01:25:19+00:00"}]
+            t, label = usage.cut_time(root, "abc1234", kit_repo=root, rows=rows)
+            self.assertEqual(t.isoformat(), "2026-11-23T01:25:19+00:00")
+            self.assertIn("ledger", label)
+            t, label = usage.cut_time(root, "abc1234ffff", kit_repo=root, rows=[])   # the manifest's commit
+            self.assertEqual(t.isoformat(), "2026-11-19T08:00:00+00:00")
+            with self.assertRaises(SystemExit) as e:
+                usage.cut_time(root, "dead999", kit_repo=root, rows=rows)
+            self.assertIn("give its date", str(e.exception))
 
     def test_bad_cut_is_refused(self):
         with tempfile.TemporaryDirectory() as d:
