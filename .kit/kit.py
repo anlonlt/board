@@ -1882,6 +1882,92 @@ def add_repo_allowed(root=None):
     return True, ADD_REPO_RULE in allow
 
 
+WEB_ENV_POST = "KIT-web-env"
+
+
+def web_env(cfg=None):
+    """CL39: kit.web_env from .kit/config.json ({} when the project does not manage several repos on the web)."""
+    we = ((cfg if cfg is not None else _kit_config()).get("kit") or {}).get("web_env") or {}
+    return we if we.get("on", True) and we else {}
+
+
+def web_env_call(we, cfg=None):
+    """The create_environment call the orchestrator makes once, on the owner's Like (never in chat)."""
+    cfg = cfg if cfg is not None else _kit_config()
+    return {"name": we.get("name") or _slug(cfg.get("project") or "project"), "scope": "personal",
+            "reason": "One environment holding every repo of %s, its hooks installed at user level."
+                      % (cfg.get("project") or "the project"),
+            "repositories": list(we.get("repos") or []), "setup_script": we.get("setup_script") or "",
+            "switch_session": "none"}
+
+
+def web_env_state(posts=None, comments=None, cfg=None):
+    """(state, text): 'off', 'ready' (an environment_id), 'unasked' (no post), 'asked' (no Like yet), 'liked'."""
+    we = web_env(cfg)
+    if not we:
+        return "off", ""
+    if we.get("environment_id"):
+        return "ready", ("Web environment %s holds %s: the hand-over and the clerk start the orchestrator there "
+                         "(`environment_id`), its setup script installs the hooks at user level; nobody calls add_repo."
+                         % (we["environment_id"], ", ".join(we.get("repos") or [])))
+    if posts is None:
+        posts, comments = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"))
+    if WEB_ENV_POST not in (posts or {}):
+        return "unasked", ("Web environment for %s not created yet: post the question once, `python3 -I .kit/kit.py "
+                           "web-env ask` (the owner's Like on it is the go; never ask in chat)."
+                           % ", ".join(we.get("repos") or []))
+    liked = any(c.get("like") and c.get("post_id") == WEB_ENV_POST and c.get("from") in ("owner", None)
+                for c in (comments or {}).values())
+    if not liked:
+        return "asked", ""          # an open question post: resume lists it with the others
+    return "liked", ("The owner liked %s: make the claude-code-remote `create_environment` call `python3 -I .kit/kit.py "
+                     "web-env` prints (once), then `python3 -I .kit/kit.py web-env --id <its env_ id>`." % WEB_ENV_POST)
+
+
+def web_env_cmd(action=None, env_id=None):
+    """`kit.py web-env [ask] [--id env_...]`. Returns (text, rc)."""
+    p = os.path.join(ROOT, ".kit", "config.json")
+    cfg = _read_json(p) or {}
+    we = web_env(cfg)
+    if not we:
+        return ("web-env: this project does not manage several repos on the web (kit.web_env is off): "
+                "install.py <project> --update --web-multi yes [--web-repos owner/a,owner/b]"), 1
+    if env_id:
+        if not re.match(r"^env_[A-Za-z0-9]+$", env_id):
+            return "web-env: --id takes the env_... id create_environment returned (got %r)" % env_id, 2
+        cfg["kit"]["web_env"]["environment_id"] = env_id
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=1, ensure_ascii=False)
+            fh.write("\n")
+        return ("web-env: environment %s recorded in .kit/config.json (commit it): the hand-over and the clerk now start "
+                "the orchestrator there." % env_id), 0
+    call = web_env_call(we, cfg)
+    if action == "ask":
+        body = ["Like this post to create it: the orchestrator then makes the call below once.", "",
+                "## Why",
+                "A web session started on one repo runs only that repo's hooks, and reaching another repo needs add_repo, "
+                "which a launched session cannot make. One environment holding every repo, with a setup script that "
+                "installs the project's hooks at user level (`.kit/user_hooks.py install`), gives every orchestrator "
+                "all the repos and the hooks from its first turn.", "",
+                "## The environment",
+                "- repositories: %s" % ", ".join(call["repositories"]),
+                "- setup script:", "", "```", call["setup_script"], "```", "",
+                "- scope: personal; this session stays where it is (`switch_session: none`)."]
+        doc = {"title": "Create the web environment holding %s?" % ", ".join(call["repositories"]),
+               "kind": "question", "column": "question", "status": "open", "from": "kit web-env",
+               "default": "Like: create it", "body": "\n".join(body), "posted_at": _now_z(), "created_at": _now_z()}
+        ok = _board_write("set", "posts", WEB_ENV_POST, doc)
+        return ("web-env: question posted as %s (with an Artifact board: `kit.py artifact push`); the owner's Like is the "
+                "go." % WEB_ENV_POST if ok else "web-env: could not write post %s (no board here?)" % WEB_ENV_POST), (0 if ok else 1)
+    state, text = web_env_state(cfg=cfg)
+    out = ["# Web environment (several repos, CL39): %s" % state]
+    if text:
+        out.append(text)
+    out += ["", "The claude-code-remote `create_environment` call (made once, after the owner's Like on %s):" % WEB_ENV_POST,
+            json.dumps(call, ensure_ascii=False, indent=1)]
+    return "\n".join(out), 0
+
+
 def attach_repo(spec, root=None, clone=True):
     """`kit.py attach <owner/repo>`: the add_repo call to make, a clone next to this project, the register_repo_root
     call, and the repo recorded in .kit/config.json portfolio. Returns (text, rc)."""
@@ -3935,7 +4021,7 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
     if not clone or not os.path.isfile(os.path.join(clone, ".kit", "kit.py")):
         gh = b.get("github") or "<owner>/%s" % b["id"]
         return dict(out, error="step %s is on board %s, which has no clone here with the kit: `git clone https://github.com/%s "
-                    "%s` (add_repo %s first on the web), then launch again" % (
+                    "%s` (on the web: the orchestrator's environment holds every repo, `kit.py web-env`; repo %s), then launch again" % (
                         pid, b["id"], gh, os.path.join(os.path.dirname(ROOT), gh.split("/")[-1]), gh))
     rel = "docs/prompts/%s.md" % pid
     mine = os.path.join(ROOT, rel)
@@ -4155,7 +4241,7 @@ def launch_text(r):
         lines.append("It is a step of board %s: launched from its clone %s (no seeded board, no board-mirror push there)."
                      % (r["attached"]["id"], r["attached"]["clone"]))
     if r.get("consumers"):
-        lines.append("Its session tests on: %s (add_repo read in its first step, named in its prompt)." % ", ".join(r["consumers"]))
+        lines.append("Its session tests on: %s; it never attaches them: their real-project run is yours (CL38)." % ", ".join(r["consumers"]))
     if r.get("worktree"):
         lines.append("claude --bg runs in %s (made from the current branch)." % r["worktree"])
     if r.get("warning"):
@@ -4469,6 +4555,7 @@ COMMANDS = [
     ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
     ("launch and finish", "kit.py whoami [name]", "this session's id for a post's session_id (web: session_<id>; else the name given)"),
     ("launch and finish", "kit.py branches [--delete]", "origin's branches fully on the trunk (finished parts), and with --delete removes them"),
+    ("launch and finish", "kit.py web-env [ask] [--id env_...]", "several repos on the web (CL39): the create_environment call (every repo, hooks at user level), its question post, its id for the hand-over"),
     ("launch and finish", "kit.py attach <owner/repo>", "attach another repo (web: the add_repo call, clone next to this project, register, record in the portfolio)"),
     ("read the board", "board_cli.py get|list|query <coll> ...", "raw documents of the local board (prefer the lookups above)"),
     ("read the board", "board_cli.py inbox", "unread owner comments, Likes and option taps, compact"),
@@ -4732,7 +4819,10 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
         out.append("")
         out.append("## Attached board %s%s" % (b["id"], (" (%s)" % b["github"]) if b.get("github") else ""))
         out.append("Read from %s." % b["source"] + ("" if b.get("clone") else
-                   " No clone here: add_repo %s, git clone it next to this repo, run resume again." % (b.get("github") or b["id"])))
+                   (" No clone here: %s is not in this session's environment; the orchestrator starts in the one holding "
+                    "every repo (`kit.py web-env`)." % (b.get("github") or b["id"])) if web_env() else
+                   " No clone here: clone %s next to this repo (`kit.py web-env` on the web: one environment holding "
+                   "every repo), run resume again." % (b.get("github") or b["id"])))
         lines, n = _train_lines(b["posts"], alive, h="###", board=b)
         out.extend(lines)
         if not n:
@@ -5038,7 +5128,7 @@ def _launch_workflow():
     lines.append("3. A step on an attached board (another repo's train, e.g. the kit's `cli`): the same command from here. "
                  "launch finds the post on that board and runs the launch in that repo's clone next to this one (missing: it "
                  "says the `git clone`); that clone starts no seeded board and never auto-pushes a board-mirror. The session "
-                 "starts with the projects it must test on (kit.consumers + this one), each an add_repo read in its first step.")
+                 "never attaches a repo (CL38): the real-project run on the projects it tests on is yours.")
     lines.append("4. With an attached Artifact board, make the ArtifactData batch launch prints (the post and the Trains row).")
     lines.append("5. Done comes as a message: `kit.py done <post>` must say OK (a change to compact, install, resume, "
                  "hooks or artifact needs its real-project dry run); then TaskUpdate completed: its review starts by itself.")
@@ -5082,6 +5172,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
     out = []
     if role == "orchestrator":
         out.append(resume(m, db_path=db_path, alive=alive, cli=cli, session=session, now=now).rstrip("\n"))
+        st, txt = web_env_state(posts, comments)
+        if txt:                                       # CL39: several repos on the web
+            out += ["", "## Web environment (several repos)", txt]
         out += [""] + _launch_workflow()
         out += ["", "## Parts: their context and the save points",
                 "- A part reads only `kit.py resume --role part` (its post, prompt, lessons, tests, how to report); never "
@@ -5458,6 +5551,7 @@ def main(argv=None):
     s = sp.add_parser("reads"); s.add_argument("--at")
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
     s = sp.add_parser("attach"); s.add_argument("repo"); s.add_argument("--no-clone", action="store_true")
+    s = sp.add_parser("web-env"); s.add_argument("action", nargs="?", choices=["ask"]); s.add_argument("--id", dest="env_id")
     s = sp.add_parser("branches"); s.add_argument("--delete", action="store_true")
     s = sp.add_parser("whoami"); s.add_argument("name", nargs="?", default="")
     s = sp.add_parser("compact"); s.add_argument("--days", type=int, default=30); s.add_argument("--dry-run", action="store_true")
@@ -5560,6 +5654,10 @@ def main(argv=None):
         return 0
     if a.cmd == "branches":
         out, rc = merged_branches(delete=a.delete)
+        print(out)
+        return rc
+    if a.cmd == "web-env":
+        out, rc = web_env_cmd(a.action, a.env_id)
         print(out)
         return rc
     if a.cmd == "attach":

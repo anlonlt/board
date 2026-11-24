@@ -451,6 +451,52 @@ def permissions(t, k, old_k, a, first, log):
         log.append("KEPT kit.claude_permission_mode: %s (already set in .kit/config.json)" % k["claude_permission_mode"])
 
 
+def web_setup_line(name):
+    """The environment's setup script: THIS project's hooks at user level (one project's: two sets would both run in
+    the parent folder). It starts in the folder holding the checkouts; a missing repo is skipped, never a failure."""
+    return "if [ -f %s/.kit/user_hooks.py ]; then python3 -I %s/.kit/user_hooks.py install; fi" % (name, name)
+
+
+def web_multi(c, a, first, log):
+    """CL39: several repos on the web. Asked once (or --web-multi), kept after; the environment to create goes in
+    kit.web_env, which the orchestrator proposes with create_environment once, on the owner's Like on the board."""
+    k = c["kit"]
+    cur = k.get("web_env")
+    on = None
+    if a.web_multi:
+        on = a.web_multi == "yes"
+    elif isinstance(cur, dict):
+        on = bool(cur.get("on", True))
+    elif first:
+        on = ask_yes_no("Does this project manage several repos from Claude Code web sessions (one environment "
+                        "holding every repo, its hooks installed at user level)?")
+        if on is None:
+            log.append("web, several repos: not asked (no terminal); ask the owner once, then rerun with "
+                       "--web-multi yes|no")
+            return False
+    if not on:
+        if isinstance(cur, dict) and cur.get("on", True):
+            cur["on"] = False
+            log.append("web, several repos: off (--web-multi no)")
+        return False
+    repos = [x.strip() for x in (a.web_repos or "").split(",") if x.strip()]
+    if not repos:
+        repos = list((cur or {}).get("repos") or [])
+    if not repos:
+        repos = [k.get("github")] + [x.get("github") for x in c.get("portfolio") or [] if isinstance(x, dict)]
+        repos = [r for r in dict.fromkeys(repos) if r]
+    env = dict(cur or {}, on=True, repos=repos, name=(cur or {}).get("name") or slug(c.get("project") or "project"),
+               setup_script=web_setup_line((k.get("github") or (repos[0] if repos else "") or "").split("/")[-1]
+                                           or os.path.basename(os.path.abspath(a.target))))
+    env.setdefault("environment_id", None)
+    if env != cur:
+        k["web_env"] = env
+        log.append("web, several repos: on; the environment to create (kit.web_env): repos %s, setup script `%s`; "
+                   "the orchestrator proposes it once, on the owner's Like (`kit.py web-env ask`)"
+                   % (", ".join(repos) or "(none: pass --web-repos)", env["setup_script"].replace("\n", "; ")))
+    return True
+
+
 def slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "project"
 
@@ -531,8 +577,11 @@ def render(text, c):
             "TALK": c["language"]["talk"], "MAIN_BRANCH": k["main_branch"],
             "WAIT": str(k["clerk"]["wait_minutes"]),
             "ORCH_IDLE": str(k["clerk"].get("orchestrator_idle_minutes", 30)),
-            "REPO_LINE": (", `source_url: \"https://github.com/%s\"`" % k["github"]) if k.get("github")
-                         else " (no `source_url`: it gets this session's environment and repositories)",
+            "REPO_LINE": ((", `environment_id: \"%s\"` (CL39: the environment holding every repo; never add_repo)"
+                           % (k.get("web_env") or {})["environment_id"]) if (k.get("web_env") or {}).get("on")
+                          and (k.get("web_env") or {}).get("environment_id")
+                          else (", `source_url: \"https://github.com/%s\"`" % k["github"]) if k.get("github")
+                          else " (no `source_url`: it gets this session's environment and repositories)"),
             "CONTEXT_K": clerk_limit_k,
             "CLERK_LIMIT_K": clerk_limit_k,
             # Claude Code's own compaction only as a safety net just past the reset point, if a hand-over ever fails.
@@ -801,6 +850,10 @@ def main(argv=None):
                     "the project's own settings in .kit/config.json are reused; nothing else is asked")
     ap.add_argument("--verify", action="store_true", help="Verify installed kit files against SHA-256 hashes in .kit/manifest.json")
     ap.add_argument("--uninstall", action="store_true", help="Remove unmodified kit files recorded in .kit/manifest.json")
+    ap.add_argument("--web-multi", choices=["yes", "no"], help="CL39: the project manages several repos from Claude Code "
+                    "web sessions (one environment with every repo; the project's hooks at user level)")
+    ap.add_argument("--web-repos", help="CL39: the environment's repos, owner/name comma list (default: this repo and "
+                    "the portfolio's GitHub repos)")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     if a.quick:
@@ -955,6 +1008,7 @@ def main(argv=None):
     ins = Installer(t, a.dry_run)
     trunk(t, c["kit"], a.main_branch, ins.log if (first or a.main_branch) else None) if (first or a.main_branch) else None
     permissions(t, c["kit"], old_k, a, first, perm_log)
+    multi_web = web_multi(c, a, first, perm_log)
     ins.log.extend(perm_log)
     parts = c["kit"]["parts"]
     notes = []
@@ -980,6 +1034,9 @@ def main(argv=None):
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     # the Artifact board's tools, whatever runs the sessions: its docs mirror and (Artifact mode) the local copy's server
     ins.put(".kit/kit_artifact_sync.py", rd("kit", "claude", "kit_artifact_sync.py"))
+    if multi_web:      # CL39: the environment's setup script runs it: the project's hooks at user level
+        ins.put(".kit/user_hooks.py", rd("kit", "user_hooks.py"))
+        ins.put(".kit/handover.py", rd("kit", "handover.py"))   # its web successor starts in the environment
     if claude_only:
         ins.put(".kit/web_takeover.py", rd("kit", "web_takeover.py"))
         ins.put(".kit/device.py", rd("scripts", "device.py"))
