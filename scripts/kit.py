@@ -1943,11 +1943,167 @@ def attach_repo(spec, root=None, clone=True):
     return "\n".join(out), 0
 
 
-def doctor(m, db_path=None):
-    """Verify SQLite integrity, mirror worktree health, sync freshness, and referenced blobs."""
+def _is_kit_source_repo(root):
+    return os.path.isfile(os.path.join(root, "install.py")) and os.path.isdir(os.path.join(root, "kit", "hooks"))
+
+
+def _read_json_file(path):
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _read_bytes_file(path):
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def _doctor_hook_parity(root, issues, lines, fix=False):
+    """Check cross-runtime hook parity (.claude/hooks/kit vs .agents/hooks/kit) and guard registration."""
+    c_dir = os.path.join(root, ".claude", "hooks", "kit")
+    a_dir = os.path.join(root, ".agents", "hooks", "kit")
+    has_c, has_a = os.path.isdir(c_dir), os.path.isdir(a_dir)
+    if has_c and has_a:
+        c_files = {f for f in os.listdir(c_dir) if f.endswith(".py") and f != "test_hooks.py"}
+        a_files = {f for f in os.listdir(a_dir) if f.endswith(".py") and f != "test_hooks.py"}
+        drifted = []
+        for f in sorted(c_files | a_files):
+            cp, ap = os.path.join(c_dir, f), os.path.join(a_dir, f)
+            if not os.path.isfile(cp) or not os.path.isfile(ap):
+                drifted.append(f)
+                if fix:
+                    src, dst = (cp, ap) if os.path.isfile(cp) else (ap, cp)
+                    shutil.copy2(src, dst)
+            else:
+                if _read_bytes_file(cp) != _read_bytes_file(ap):
+                    drifted.append(f)
+                    if fix:
+                        src, dst = (cp, ap) if os.path.getmtime(cp) >= os.path.getmtime(ap) else (ap, cp)
+                        shutil.copy2(src, dst)
+        if drifted:
+            if fix:
+                lines.append("hooks parity: FIXED %d drifted file(s) (%s)" % (len(drifted), ", ".join(drifted[:5])))
+            else:
+                lines.append("hooks parity: DRIFT in %d file(s) (%s)" % (len(drifted), ", ".join(drifted[:5])))
+                issues.append("hook drift between .claude/hooks/kit and .agents/hooks/kit (%s); run `install.py . --update` or `kit.py doctor --fix`" % ", ".join(drifted[:5]))
+        else:
+            lines.append("hooks parity: ok (.claude and .agents match)")
+    # Check Claude Code settings.json guard wiring when .claude/hooks/kit exists
+    s_path = os.path.join(root, ".claude", "settings.json")
+    if has_c and os.path.isfile(s_path):
+        s = _read_json_file(s_path)
+        hooks = s.get("hooks") or {}
+        all_cmds = []
+        for groups in hooks.values():
+            for g in (groups or []):
+                for h in (g.get("hooks") or []):
+                    all_cmds.append((str(g.get("matcher") or ""), str(h.get("command") or "")))
+        uses_unified = any("hook.py" in cmd for _, cmd in all_cmds)
+        if not uses_unified:
+            guards = ("kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py")
+            missing_g = [g for g in guards if os.path.isfile(os.path.join(c_dir, g))
+                         and not any(g in cmd for _, cmd in all_cmds)]
+            if missing_g:
+                lines.append("hooks wiring: MISSING in .claude/settings.json (%s)" % ", ".join(missing_g))
+                issues.append("unwired kit guard(s) in .claude/settings.json: %s (run `install.py . --update`)" % ", ".join(missing_g))
+            cfg = _read_json_file(os.path.join(root, ".kit", "config.json"))
+            is_art = any("claude.ai/" in str(u or "") for u in (
+                cfg.get("board_url"), (cfg.get("kit") or {}).get("artifact_url")))
+            if is_art:
+                brief_m = [m for m, cmd in all_cmds if "kit_brief_guard.py" in cmd]
+                if brief_m and not any((not m) or ("ArtifactData" in m) for m in brief_m):
+                    lines.append("hooks wiring: kit_brief_guard.py does not match ArtifactData")
+                    issues.append("kit_brief_guard.py in .claude/settings.json misses ArtifactData matcher")
+
+
+def _doctor_conflicts(root, issues, lines):
+    """Detect legacy/shadow scripts and hooks when installed onto an existing project."""
+    if not _is_kit_source_repo(root):
+        if os.path.isfile(os.path.join(root, ".kit", "kit.py")) and os.path.isfile(os.path.join(root, "scripts", "kit.py")):
+            lines.append("conflicts: legacy scripts/kit.py alongside .kit/kit.py")
+            issues.append("legacy scripts/kit.py shadows .kit/kit.py (remove or archive scripts/kit.py)")
+    s_path = os.path.join(root, ".claude", "settings.json")
+    if os.path.isfile(s_path):
+        s = _read_json_file(s_path)
+        overlaps = []
+        for ev, groups in (s.get("hooks") or {}).items():
+            cmds = [str(h.get("command") or "") for g in (groups or []) for h in (g.get("hooks") or [])]
+            has_kit = any("/hooks/kit/" in c or "hook.py" in c for c in cmds)
+            legacy = [c for c in cmds if has_kit and any(x in c for x in ("stop.sh", "session-start.sh", "end-session.sh"))]
+            if legacy:
+                overlaps.append("%s (%s)" % (ev, ", ".join(os.path.basename(x.split()[-1].strip('"\'')) for x in legacy)))
+        if overlaps:
+            lines.append("conflicts: overlapping legacy hooks: %s" % "; ".join(overlaps))
+            issues.append("overlapping legacy hooks alongside kit hooks: %s" % "; ".join(overlaps))
+    # Archived awaits file still referenced by custom hooks/skills
+    for mrel in (".story", os.path.join(".board", "memory")):
+        arch = glob.glob(os.path.join(root, mrel, "archive", "awaits*.md"))
+        live = glob.glob(os.path.join(root, mrel, "awaits*.md"))
+        if arch and not live:
+            stale_refs = []
+            for pat in (".claude/hooks/*.sh", ".claude/skills/**/*.md"):
+                for fp in glob.glob(os.path.join(root, pat), recursive=True):
+                    try:
+                        with open(fp, encoding="utf-8", errors="ignore") as fh:
+                            if "awaits" in fh.read().lower():
+                                stale_refs.append(os.path.relpath(fp, root))
+                    except OSError:
+                        pass
+            if stale_refs:
+                lines.append("conflicts: archived awaits still referenced in %s" % ", ".join(stale_refs[:4]))
+                issues.append("archived awaits file still referenced by %s" % ", ".join(stale_refs[:4]))
+
+
+def _doctor_portfolio_and_sync(root, issues, lines, fix=False):
+    """Check portfolio portability (hardcoded local paths) and unsent Artifact batches."""
+    cfg_p = os.path.join(root, ".kit", "config.json")
+    if os.path.isfile(cfg_p):
+        cfg = _read_json_file(cfg_p)
+        port = cfg.get("portfolio") or []
+        changed = False
+        bad_paths = []
+        for item in port:
+            if not isinstance(item, dict) or not item.get("path"):
+                continue
+            p = str(item["path"])
+            if os.path.isdir(p):
+                continue
+            name = str(item.get("name") or os.path.basename(p.rstrip("/")))
+            sib = os.path.join(os.path.dirname(os.path.abspath(root)), name)
+            att = os.path.join(root, ".kit", "attached", name)
+            if os.path.isdir(sib):
+                if fix:
+                    item["path"] = sib
+                    changed = True
+                else:
+                    bad_paths.append("%s (%s -> sibling %s)" % (name, p, sib))
+            elif not os.path.isdir(att):
+                bad_paths.append("%s (%s)" % (name, p))
+        if changed and fix:
+            with open(cfg_p, "w", encoding="utf-8") as fh:
+                json.dump(cfg, fh, indent=1, ensure_ascii=False)
+                fh.write("\n")
+            lines.append("portfolio: FIXED stale local path(s) to sibling clone(s)")
+        elif bad_paths:
+            lines.append("portfolio: stale local path(s): %s" % ", ".join(bad_paths))
+            issues.append("hardcoded/stale portfolio path(s): %s (run `kit.py doctor --fix` or `kit.py attach`)" % ", ".join(bad_paths))
+    art_out = os.path.join(os.environ.get("KIT_ARTIFACT_DIR") or os.path.join(root, ".kit", "run", "artifact"), "out")
+    batches = sorted(glob.glob(os.path.join(art_out, "batch-*.json")))
+    if batches:
+        lines.append("artifact sync: %d unsent batch file(s) in %s" % (len(batches), os.path.relpath(art_out, root)))
+        issues.append("%d unsent Artifact batch(es): send them and run `kit.py artifact sent <batch>`" % len(batches))
+
+
+def doctor(m, db_path=None, fix=False, root=None):
+    """Verify SQLite integrity, mirror worktree health, blobs, hook parity, legacy conflicts, and sync health."""
+    root = os.path.abspath(root or ROOT)
     issues = []
     lines = []
-    db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    db = db_path or os.path.join(root, ".kit", "board_data", "board.db")
     blob_dir = os.path.join(os.path.dirname(db), "blobs")
     if os.path.isfile(db):
         conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
@@ -1982,12 +2138,28 @@ def doctor(m, db_path=None):
             issues.append("mirror branch is %r, expected %r" % (br, BRANCH))
     else:
         lines.append("mirror: not initialized at %s (run: python3 -I .kit/kit.py init)" % m)
-    need, has = add_repo_allowed()
+    need, has = add_repo_allowed(root)
     if need:
-        lines.append("add_repo: %s" % ("allowed" if has else "NOT allowed in .claude/settings.json permissions.allow"))
+        if not has and fix:
+            s_path = os.path.join(root, ".claude", "settings.json")
+            s = _read_json_file(s_path)
+            allow = s.setdefault("permissions", {}).setdefault("allow", [])
+            if ADD_REPO_RULE not in allow:
+                allow.append(ADD_REPO_RULE)
+            os.makedirs(os.path.dirname(s_path), exist_ok=True)
+            with open(s_path, "w", encoding="utf-8") as fh:
+                json.dump(s, fh, indent=2, ensure_ascii=False)
+                fh.write("\n")
+            has = True
+            lines.append("add_repo: FIXED (added %s to .claude/settings.json)" % ADD_REPO_RULE)
+        else:
+            lines.append("add_repo: %s" % ("allowed" if has else "NOT allowed in .claude/settings.json permissions.allow"))
         if not has:
             issues.append("%s missing from .claude/settings.json permissions.allow: web sessions cannot attach repos "
-                          "(install.py --update adds it; start a new session after)" % ADD_REPO_RULE)
+                          "(install.py --update or `kit.py doctor --fix` adds it; start a new session after)" % ADD_REPO_RULE)
+    _doctor_hook_parity(root, issues, lines, fix=fix)
+    _doctor_conflicts(root, issues, lines)
+    _doctor_portfolio_and_sync(root, issues, lines, fix=fix)
     lines.append("doctor: %s" % ("OK" if not issues else ("%d issue(s): %s" % (len(issues), "; ".join(issues)))))
     return "\n".join(lines), (1 if issues else 0)
 
@@ -4363,7 +4535,7 @@ COMMANDS = [
     ("read the board", "kit.py search <words>", "find posts and comments by words"),
     ("read the board", "kit.py queue [--runner R]", "the steps waiting for a runner"),
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
-    ("read the board", "kit.py report / doctor", "the board's size, columns, oldest question, missing files / its health"),
+    ("read the board", "kit.py report / doctor [--fix]", "the board's size, columns, oldest question, missing files / full install, hook parity, conflict & sync health"),
     ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
     ("launch and finish", "kit.py attach <owner/repo>", "attach another repo (web: the add_repo call, clone next to this project, register, record in the portfolio)"),
     ("read the board", "board_cli.py get|list|query <coll> ...", "raw documents of the local board (prefer the lookups above)"),
@@ -4388,6 +4560,7 @@ COMMANDS = [
     ("Artifact and web", "update_board.py", "the Artifact's page to the kit's current page"),
     ("git copy", "kit.py init|sync|sync-db|reads|receive|publish|diff|push", "the board's git copy (board-mirror): make it, fill it, compare it, send it"),
     ("memory", "kit.py compact", "post every open awaits point (a question post) and open issue (an issue post, never doubled) on the board, then archive the awaits file, the states and issues the board now holds, and old lessons; on an Artifact board nothing leaves memory until `artifact push` sent the posts; refused if the project's memory checker goes red (--dry-run lists the posts)"),
+    ("memory", "kit.py ledger show|observe|decide|distil|propose|confirm|check|init", "3-layer memory ledger: silent scoped observations -> mechanical invariants (hooks) -> owner-confirmed distilled principles"),
     ("setup", "kit.py welcome [--post]", "the welcome post: what the board does and what can run now"),
     ("setup", "install.py <project> [--update]", "install or update the kit in a project (every present runtime)"),
     ("setup", "kit_import.py / step0_scan.py", "a person's state from their chats / a project's step 0 profile"),
@@ -4959,9 +5132,27 @@ def principles_for(role, train=None):
     return out
 
 
-def _principle_lines(role, train=None):
+def _load_ledger_mod():
+    for d in (os.path.join(ROOT, ".kit"), os.path.join(ROOT, "kit"),
+              os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kit")):
+        p = os.path.join(d, "ledger.py")
+        if os.path.isfile(p):
+            if d not in sys.path:
+                sys.path.insert(0, d)
+            import ledger as _ledger  # noqa: E402
+            return _ledger
+    return None
+
+
+def _principle_lines(role, train=None, files=None):
+    lines = []
+    led = _load_ledger_mod()
+    if led is not None:
+        lines.extend(led.format_resume(_resolve_memory_dir(), role, train=train, files=files, kit_root=ROOT))
     pr = principles_for(role, train)
-    return (["", "## Principles (scope: all, %s%s)" % (role, (", " + train) if train else "")] + pr) if pr else []
+    if pr:
+        lines += ["", "## Principles (scope: all, %s%s)" % (role, (", " + train) if train else "")] + pr
+    return lines
 
 
 def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=None, now=None):
@@ -5015,7 +5206,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         if len(out) and out[-1] == "## Your post now":
             out.append("- (nothing yet: at turn 1 set session_id, status in progress and a one-line body)")
         out += ["", "## Lessons that touch your files (%d files changed)" % len(files)] + _lesson_lines(lessons_for("part", files))
-        out += _principle_lines("part", p.get("train"))
+        out += _principle_lines("part", p.get("train"), files=files)
         out += ["", "## Your tests", "- `%s` (0 failed before you commit)" % _test_command()]
         areas = real_project_areas()
         cons = consumers(p.get("consumers"))
@@ -5328,7 +5519,16 @@ def main(argv=None):
     s = sp.add_parser("since"); s.add_argument("t")
     s = sp.add_parser("session"); s.add_argument("post")
     s = sp.add_parser("reads"); s.add_argument("--at")
-    s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
+    s = sp.add_parser("doctor"); s.add_argument("--db", default=None); s.add_argument("--fix", action="store_true", help="repair missing add_repo, hook drift, and stale sibling portfolio paths")
+    s = sp.add_parser("ledger", help="3-layer memory ledger: show|observe|decide|distil|propose|confirm|check|init")
+    s.add_argument("action", choices=["show", "observe", "decide", "distil", "propose", "confirm", "check", "init"])
+    s.add_argument("target", nargs="?", default=None, help="id for confirm/propose or summary for observe/decide")
+    s.add_argument("--summary", default=""); s.add_argument("--quote", default=""); s.add_argument("--source", default="")
+    s.add_argument("--scope", default="project"); s.add_argument("--theme", default=""); s.add_argument("--kind", default="observation")
+    s.add_argument("--enforced-by", dest="enforced_by", default="review"); s.add_argument("--because", default=""); s.add_argument("--rejected", default="")
+    s.add_argument("--replaces", default=""); s.add_argument("--subsumes", default="", help="comma-separated observation/rule ids")
+    s.add_argument("--min-cluster", dest="min_cluster", type=int, default=3); s.add_argument("--role", choices=list(ROLES), default=None)
+    s.add_argument("--json", dest="as_json", action="store_true")
     s = sp.add_parser("attach"); s.add_argument("repo"); s.add_argument("--no-clone", action="store_true")
     s = sp.add_parser("compact"); s.add_argument("--days", type=int, default=30); s.add_argument("--dry-run", action="store_true")
     s.add_argument("--no-board", action="store_true", help="post nothing: open awaits points and issues stay in memory")
@@ -5430,9 +5630,45 @@ def main(argv=None):
         print(out)
         return rc
     if a.cmd == "doctor":
-        out, rc = doctor(m, db_path=a.db)
+        out, rc = doctor(m, db_path=a.db, fix=a.fix)
         print(out)
         return rc
+    if a.cmd == "ledger":
+        led = _load_ledger_mod()
+        if led is None:
+            print(json.dumps({"error": "ledger.py not found in .kit/ or kit/"}))
+            return 1
+        mdir = _resolve_memory_dir()
+        if a.action == "init":
+            res = led.init_ledger(mdir)
+        elif a.action == "show":
+            if a.role:
+                lines = led.format_resume(mdir, a.role, kit_root=ROOT)
+                print("\n".join(lines).strip() or "(empty ledger for role %s)" % a.role)
+                return 0
+            entries = led.load_entries(mdir, kit_root=ROOT)
+            if a.as_json:
+                print(json.dumps(entries, indent=2, ensure_ascii=False))
+            else:
+                print(led.render_ledger(entries) if entries else "(empty ledger)")
+            return 0
+        elif a.action in ("observe", "decide"):
+            kind = "decision" if a.action == "decide" else a.kind
+            summary = a.summary or a.target or ""
+            res = led.observe(mdir, summary, quote=a.quote, source=a.source, scope=a.scope, theme=a.theme,
+                              kind=kind, enforced_by=a.enforced_by, because=a.because, rejected=a.rejected,
+                              replaces=a.replaces)
+        elif a.action == "distil":
+            res = {"clusters": led.distil_candidates(mdir, min_cluster=a.min_cluster)}
+        elif a.action == "propose":
+            sub_ids = [x.strip() for x in a.subsumes.split(",") if x.strip()]
+            res = led.propose_principle(mdir, a.summary or a.target or "", sub_ids, scope=a.scope or "all", theme=a.theme)
+        elif a.action == "confirm":
+            res = led.confirm_principle(mdir, a.target or "", summary=a.summary or None)
+        else:   # check
+            res = led.check_ledger(mdir, root=ROOT)
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        return 1 if res.get("error") or res.get("ok") is False else 0
     if a.cmd == "compact":
         print(compact_memory(days=a.days, dry_run=a.dry_run, board=False if a.no_board else None))
         return 0

@@ -25,15 +25,25 @@ REMINDER = ("CARDS: %s. Rebuild \"Where we are\" and the trains now: Agent tool,
             "\"rebuild the cards\" (.kit/orchestrator.md step 2); never list the posts yourself.")
 
 
-def is_orchestrator():
-    if os.environ.get("KIT_ROLE") == "orchestrator":
-        return True
+def is_orchestrator(data=None):
+    role = os.environ.get("KIT_ROLE") or ""
+    if role:
+        return role == "orchestrator"
     try:
         mine = open(MARK, encoding="utf-8").read().strip()
     except OSError:
-        return False
+        mine = ""
     cur = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
-    return bool(mine) and (not cur or mine == cur or mine.endswith(cur) or cur.endswith(mine))
+    if mine and (not cur or mine == cur or mine.endswith(cur) or cur.endswith(mine)):
+        return True
+    # CL30: the orchestrator guard's own test (HARMONIZE_ROLE, branch prefix, the first prompt): an orchestrator that
+    # never wrote the mark (every web one) was never reminded
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import kit_orchestrator_guard
+        return bool(data) and kit_orchestrator_guard.is_orchestrator(data)
+    except Exception:  # noqa: BLE001 - a missing guard never breaks the reminder
+        return False
 
 
 def post_writes(tool_input):
@@ -86,18 +96,20 @@ def main():
         print("{}")
         return 0
     event = str(data.get("hook_event_name") or "")
-    reason = why(event, data) if is_orchestrator() else ""
+    reason = why(event, data) if is_orchestrator(data) else ""
+    sid = re.sub(r"[^A-Za-z0-9._-]", "_", str(data.get("session_id") or ""))
+    last = "%s-%s" % (LAST, sid) if sid else LAST          # CL30: one quiet time per session
     if not reason:
         print("{}")
         return 0
     try:
-        if time.time() - os.path.getmtime(LAST) < QUIET_S:
+        if time.time() - os.path.getmtime(last) < QUIET_S:
             print("{}")
             return 0
     except OSError:
         pass
     try:
-        open(LAST, "w").write(reason)
+        open(last, "w").write(reason)
     except OSError:
         pass
     print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": REMINDER % reason}}))

@@ -66,6 +66,15 @@
             "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_brief_guard.py\""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_board_guard.py\""
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -90,6 +99,14 @@
           {
             "type": "command",
             "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_brief_guard.py\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_cards_reminder.py\""
           }
         ]
       }
@@ -126,6 +143,22 @@
             "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_web_save.py\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_board_guard.py\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_usage.py\""
+          }
+        ]
       }
     ],
     "PreCompact": [
@@ -134,6 +167,16 @@
           {
             "type": "command",
             "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_pre_compact.py\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/kit/kit_usage.py\""
           }
         ]
       }

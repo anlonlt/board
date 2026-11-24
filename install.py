@@ -34,7 +34,8 @@ MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_st
                 "test_hooks.py"}
 HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
          "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "kit_task_train.py",
-         "kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "kit_usage.py", "test_hooks.py"]
+         "kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "kit_memory_jit.py", "kit_usage.py",
+         "test_hooks.py"]
 # CL30: the kit's guards. One whose file is in a present Claude Code runtime but that has no settings.json line (or a
 # narrower matcher than the kit's) is a hole, not a choice (Harmonize: kit_cards_reminder.py wired nowhere, the brief
 # guard on Bash only): --update wires it. Other kit hooks (a project's own hand-over, its Stop) are left as they are.
@@ -627,6 +628,57 @@ def merge_agy_mcp(t, dry, log):
 ALLOW_RULES = ("mcp__claude-code-remote__add_repo",)
 
 
+def merge_unified_claude_settings(t, dry, log, board=True):
+    """Wire 1 entry per lifecycle event pointing to `.kit/hook.py <Event>` (preserves existing user hooks & perms)."""
+    p = os.path.join(t, ".claude", "settings.json")
+    s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    hooks = s.setdefault("hooks", {})
+    added = 0
+    if board:
+        env = s.setdefault("env", {})
+        if env.get("CLAUDE_CODE_ENABLE_TODO_TOOLS") != "1":
+            env["CLAUDE_CODE_ENABLE_TODO_TOOLS"] = "1"
+            added += 1
+    allow = s.setdefault("permissions", {}).setdefault("allow", [])
+    for rule in ALLOW_RULES:
+        if rule not in allow:
+            allow.append(rule)
+            added += 1
+    for ev in ("SessionStart", "PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "SessionEnd", "PreCompact"):
+        cmd = 'python3 -I "$CLAUDE_PROJECT_DIR/.kit/hook.py" %s' % ev
+        groups = hooks.setdefault(ev, [])
+        if any(h.get("command") == cmd for g in groups for h in g.get("hooks", [])):
+            continue
+        groups.append({"hooks": [{"type": "command", "command": cmd}]})
+        added += 1
+    if added:
+        log.append(".claude/settings.json: %d unified hook/permission lines merged in (.kit/hook.py)" % added)
+        if not dry:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as fh:
+                json.dump(s, fh, indent=2, ensure_ascii=False)
+                fh.write("\n")
+
+
+def merge_unified_agy_hooks(t, dry, log):
+    """Wire 1 entry per lifecycle event pointing to `../.kit/hook.py <Event>` in .agents/hooks.json."""
+    p = os.path.join(t, ".agents", "hooks.json")
+    s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    kb = {}
+    for ev in ("SessionStart", "PreInvocation", "PostInvocation", "Stop"):
+        kb[ev] = [{"type": "command", "command": "python3 -I ../.kit/hook.py %s" % ev}]
+    for ev in ("PreToolUse", "PostToolUse"):
+        kb[ev] = [{"matcher": ".*", "hooks": [{"type": "command", "command": "python3 -I ../.kit/hook.py %s" % ev}]}]
+    if s.get("kit-board") != kb:
+        s["kit-board"] = kb
+        log.append(".agents/hooks.json: unified kit-board dispatcher merged in (.kit/hook.py)")
+        if not dry:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as fh:
+                json.dump(s, fh, indent=2, ensure_ascii=False)
+                fh.write("\n")
+
+
 def merge_claude_settings(t, dry, log, board=True, spec=None):
     p = os.path.join(t, ".claude", "settings.json")
     s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
@@ -778,6 +830,8 @@ def main(argv=None):
     ap.add_argument("--no-survey", metavar="WHY", help="install without step 0 (the reason is recorded)")
     ap.add_argument("--quick", action="store_true", help="<60s trial install: skips Step 0 ceremony, defaults project/language, and bootstraps local DB")
     ap.add_argument("--parts", help="comma list among memory,board,clerk,orchestrator (memory always)")
+    ap.add_argument("--unified-hooks", action="store_true",
+                    help="wire a single .kit/hook.py <Event> dispatcher per lifecycle event instead of per-hook entries")
     ap.add_argument("--no-board", action="store_true", help="memory and its hooks only (no page, clerk, orchestrator)")
     ap.add_argument("--no-clerk", action="store_true")
     ap.add_argument("--no-orchestrator", action="store_true")
@@ -957,6 +1011,8 @@ def main(argv=None):
     claude_cli_hooks = rt == "local"
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
     ins.put(".kit/usage.py", rd("scripts", "usage.py"))       # CL37: the usage ledger (kit.py usage)
+    ins.put(".kit/ledger.py", rd("kit", "ledger.py"))        # 3-layer memory ledger (observations -> principles)
+    ins.put(".kit/hook.py", rd("kit", "hook.py"))            # unified lifecycle hook dispatcher
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     # the Artifact board's tools, whatever runs the sessions: its docs mirror and (Artifact mode) the local copy's server
     ins.put(".kit/kit_artifact_sync.py", rd("kit", "claude", "kit_artifact_sync.py"))
@@ -1081,7 +1137,10 @@ def main(argv=None):
             prefix = "" if cur.endswith("\n") or not cur else "\n"
             open(gi, "a", encoding="utf-8").write(prefix + "\n".join(gi_add) + "\n")
     if want_agy:
-        merge_hooks(t, a.dry_run, ins.log, parts["board"])
+        if getattr(a, "unified_hooks", False):
+            merge_unified_agy_hooks(t, a.dry_run, ins.log)
+        else:
+            merge_hooks(t, a.dry_run, ins.log, parts["board"])
         if parts["board"] and not claude_only:
             merge_agy_mcp(t, a.dry_run, ins.log)
         if c["kit"].get("cmd"):
@@ -1349,7 +1408,10 @@ def main(argv=None):
         finally:
             store.close()
     if want_claude:
-        merge_claude_settings(t, a.dry_run, ins.log, parts["board"], CLAUDE_CLI_SETTINGS if claude_cli_hooks else CLAUDE_SETTINGS)
+        if getattr(a, "unified_hooks", False):
+            merge_unified_claude_settings(t, a.dry_run, ins.log, parts["board"])
+        else:
+            merge_claude_settings(t, a.dry_run, ins.log, parts["board"], CLAUDE_CLI_SETTINGS if claude_cli_hooks else CLAUDE_SETTINGS)
     elif "claude" in present:
         added_h = set(new_hooks.get(RUNTIME_HOOK_DIRS["claude"]) or [])
         # CL30: the kit's guards whose files are there are wired too (and their matchers widened)

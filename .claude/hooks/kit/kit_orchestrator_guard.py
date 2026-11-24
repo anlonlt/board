@@ -16,9 +16,20 @@ the orchestrator only, the three gestures that bypass the kit, and says the kit'
     is never read for this (CL24); and its `source_url` is the step's repo (CL26: its post on an attached board in
     the local copy names it; else a known clone holding the prompt file), so the part can push its work.
 A targeted lookup pages no further: a `where` query with limit <= 5 that carries a `cursor` is a broad read.
-Everyone else (parts, the clerk, the owner's own sessions) is never touched. The orchestrator's subagents are exempt
-by design: they exist to keep a dump (a full list, a card rebuild) out of the orchestrator's context, so the hook
-lets them read and write the board raw. Exit 2 with the reason on stderr.
+CL30 (Harmonize docs/KIT-SCRIPTS.md § Gaps, the owner's yes on o52-q-close-gaps-1022): the board rules hold EVERY
+session, parts, the clerk and reviews too, not only the orchestrator:
+  - a raw `list` / broad `query` of posts or comments: as above, for everyone;
+  - a hand write of a post or a comment (`set`, `update`, `str_replace`, `delete`, or in a `batch`) where the kit
+    has the command: `board_cli.py update/set/reply` on the local copy, then `kit.py artifact push` and its batch
+    (a batch whose writes come from .kit/run/artifact/out passes). What has no kit form passes: other collections
+    (`typing`, `kit_artifacts`...), the clerk's marks on a comment (`read`, `read_at`, `waiting_note`...) and the
+    orchestrator's new session on `_orchestrator` (`session_id`, `started_by`, `started_at`).
+and the orchestrator's launches are checked whatever their tag: a successor (`orchestrator`) names the kit's
+orchestrator guide, a clerk (`board-clerk`) and a review (`review`) start `Your prompt is <the kit's file>`; a part
+starts only after `kit.py launch <post>` (it leaves .kit/run/launch/<post>.json, the post in progress and its Trains
+row running). The owner's own sessions: KIT_ROLE=owner. The orchestrator's subagents are exempt by design: they exist
+to keep a dump (a full list, a card rebuild) out of the orchestrator's context, so the hook lets them read and write
+the board raw. Exit 2 with the reason on stderr.
 """
 import glob
 import json
@@ -27,6 +38,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_config import config, project_dir  # noqa: E402
@@ -35,6 +47,23 @@ BOARD_COLL = re.compile(r"^(repos/[^/]+/)?(posts|comments)$")
 PART_PROMPT = re.compile(r"^Your prompt is docs/prompts/[\w.-]+\.md\b")
 PROMPT_MAX = 400
 PASS_TAGS = ("orchestrator", "board-clerk", "review")
+# CL30: what each tag's prompt must be (a tag alone used to let any prompt through)
+TAG_PROMPTS = {
+    "orchestrator": (re.compile(r"\.kit/(?:claude-cli/|claude/)?(?:orchestrator|takeover)\.md\b"), 1200,
+                     "names the kit's guide (.kit/claude-cli/orchestrator.md, .kit/orchestrator.md or takeover.md): "
+                     "`python3 -I .kit/handover.py --role orchestrator` prints the call"),
+    "board-clerk": (re.compile(r"^Your prompt is \.kit/(?:claude-cli/|claude/)?clerk\.md\b"), PROMPT_MAX,
+                    "starts `Your prompt is .kit/claude-cli/clerk.md` (or .kit/clerk.md): `python3 -I .kit/handover.py "
+                    "--role clerk` prints the call"),
+    "review": (re.compile(r"^Your prompt is (?:\.kit/run|docs/prompts)/[\w.-]+\.md\b"), PROMPT_MAX,
+               "starts `Your prompt is .kit/run/<review id>.md`: `python3 -I .kit/kit.py review <post>` writes it and "
+               "prints the call"),
+}
+WRITE_OPS = ("set", "update", "str_replace", "delete")
+# fields with no kit command on the Artifact: the clerk's marks on a comment, a new session on _orchestrator
+MARK_FIELDS = {"read", "read_at", "seen", "seen_at", "waiting_note", "acked", "acked_at"}
+ORCH_FIELDS = {"session_id", "started_by", "started_at"}
+LAUNCH_MAX_AGE_S = 6 * 3600
 ORCH_TEXT = re.compile(r"start as the orchestrator|claude-cli/orchestrator\.md|\.kit/orchestrator\.md|"
                        r"you are the [\w-]+ orchestrator|you are the orchestrator", re.I)
 
@@ -106,9 +135,16 @@ STEP_WAY = ("plan the step with TaskCreate, metadata {\"train\": ..., \"part\": 
             "and its prompt docs/prompts/<id>.md and answers with the launch line; local changes go to the Artifact "
             "with `python3 -I .kit/kit.py artifact push`")
 LAUNCH_WAY = ("launch a part from its prompt file: TaskCreate {train, part} first (the hook writes "
-              "docs/prompts/<id>.md), then create_session with the prompt \"Your prompt is docs/prompts/<id>.md: read "
+              "docs/prompts/<id>.md), `python3 -I .kit/kit.py launch <id>` (it prints the call), then create_session with the prompt \"Your prompt is docs/prompts/<id>.md: read "
               "it and do it.\" (at most %d characters, starting so; a successor orchestrator: tag `orchestrator`; a clerk: "
               "tag `board-clerk`; a review: tag `review`; the title is not read)" % PROMPT_MAX)
+
+
+WRITE_WAY = ("write the board through the kit: on the local copy (`python3 -I .kit/kit.py artifact pull`, the calls, "
+             "`kit.py artifact load` first), `python3 -I .kit/board_cli.py update posts <id> --data '{...}'` (your "
+             "post), `board_cli.py reply <post> --text ...` (an answer), `board_cli.py set comments <id> --data ...`; "
+             "then `python3 -I .kit/kit.py artifact push`, the ArtifactData batch it prints, and `kit.py artifact sent "
+             "<batch>`")
 
 
 def gh_repo(u):
@@ -189,42 +225,99 @@ def launch_repo(prompt, src, root):
     return None
 
 
-def verdict(data, root):
+def _hand_write(w, root):
+    """None, or what this one write is when it is a hand write of the board that the kit's scripts make."""
+    op = str(w.get("op") or w.get("action") or "")
+    m = BOARD_COLL.match(str(w.get("collection") or ""))
+    if op not in WRITE_OPS or not m:
+        return None
+    if under(str(w.get("file_path") or ""), root, ".kit", "run", "artifact", "out"):
+        return None                                   # a batch from `kit.py artifact push`
+    keys = set((w.get("data") or {}).keys()) if isinstance(w.get("data"), dict) else None
+    did = str(w.get("doc_id") or "")
+    if op == "update" and keys:
+        if m.group(2) == "comments" and keys <= MARK_FIELDS:
+            return None                               # the clerk's mark on the owner's comment
+        if m.group(2) == "posts" and did == "_orchestrator" and keys <= ORCH_FIELDS:
+            return None                               # the orchestrator's new session
+    return (m.group(2), "%s/%s" % (w.get("collection"), did))
+
+
+def board_verdict(ti, root, orch):
+    """CL30: the board rules for every session (the orchestrator, parts, the clerk, reviews)."""
+    act = str(ti.get("action") or "")
+    if act in ("list", "query") and BOARD_COLL.match(str(ti.get("collection") or "")):
+        if under(str(ti.get("out_dir") or ""), root, ".kit", "run", "artifact"):
+            return None
+        q = ti.get("query") or {}
+        try:
+            lim = int(q.get("limit") or 100)
+        except (TypeError, ValueError):
+            lim = 100
+        if act == "query" and q.get("where") and lim <= 5 and not q.get("cursor"):
+            return None
+        return "a raw %s of %s: %s." % (act, ti.get("collection"), READ_WAY)
+    writes = ti.get("writes") if act == "batch" else [dict(ti, op=act)]
+    for w in writes or []:
+        if not isinstance(w, dict):
+            continue
+        hw = _hand_write(w, root)
+        if not hw:
+            continue
+        kind, where = hw
+        if orch and kind == "posts" and not str(w.get("doc_id") or "").startswith("_"):
+            return "a step post written by hand (%s): %s; any other change: %s." % (where, STEP_WAY, WRITE_WAY)
+        return "a %s written by hand (%s, `%s`): %s." % ("post" if kind == "posts" else "comment", where,
+                                                        w.get("op") or w.get("action"), WRITE_WAY)
+    return None
+
+
+def launch_marked(pid, prompt, root):
+    """CL30: `kit.py launch <post>` ran for this part (its mark in .kit/run/launch/ of this repo or the step's clone)."""
+    _, repos, _ = known_repos(root)
+    for r in [root] + [c for c in repos.values() if c and c != root]:
+        d = _read(os.path.join(r, ".kit", "run", "launch", pid + ".json"))
+        if not isinstance(d, dict):
+            continue
+        try:
+            fresh = time.time() - float(d.get("at") or 0) <= LAUNCH_MAX_AGE_S
+        except (TypeError, ValueError):
+            fresh = False
+        if fresh and str(d.get("prompt") or "").strip() == prompt:
+            return True
+    return False
+
+
+def launch_verdict(ti, root):
+    prompt = str(ti.get("prompt") or "").strip()
+    tags = [str(t) for t in (ti.get("tags") or [])]
+    for t in tags:
+        if t in TAG_PROMPTS:
+            rx, cap, way = TAG_PROMPTS[t]
+            if rx.search(prompt) and len(prompt) <= cap:
+                return None
+            return "a launch tagged `%s` whose prompt is not the kit's (the tag no longer lets any prompt through): it " \
+                   "%s, at most %d characters." % (t, way, cap)
+    if PART_PROMPT.match(prompt) and len(prompt) <= PROMPT_MAX:
+        why = launch_repo(prompt, ti.get("source_url"), root)
+        if why:
+            return "a part launched from the wrong repo: %s." % why
+        pid = os.path.basename(prompt[len("Your prompt is "):PART_PROMPT.match(prompt).end()])[:-3]
+        if not launch_marked(pid, prompt, root):
+            return ("a part started without the kit's launch: run `python3 -I .kit/kit.py launch %s` first (it puts the "
+                    "post in progress and its Trains row running, and prints this create_session call), then `kit.py "
+                    "launch %s --session-id <the id create_session returns>`." % (pid, pid))
+        return None
+    return "a part launched with an inline prompt: %s." % LAUNCH_WAY
+
+
+def verdict(data, root, orch=True):
     name = str(data.get("tool_name") or "")
     ti = data.get("tool_input") or {}
     if name == "ArtifactData":
-        act = str(ti.get("action") or "")
-        writes = ti.get("writes") if act == "batch" else [dict(ti, op=act)]
-        if act in ("list", "query") and BOARD_COLL.match(str(ti.get("collection") or "")):
-            if under(str(ti.get("out_dir") or ""), root, ".kit", "run", "artifact"):
-                return None
-            q = ti.get("query") or {}
-            try:
-                lim = int(q.get("limit") or 100)
-            except (TypeError, ValueError):
-                lim = 100
-            if act == "query" and q.get("where") and lim <= 5 and not q.get("cursor"):
-                return None
-            return "a raw %s of %s: %s." % (act, ti.get("collection"), READ_WAY)
-        for w in writes or []:
-            if not isinstance(w, dict) or w.get("op") != "set":
-                continue
-            m = BOARD_COLL.match(str(w.get("collection") or ""))
-            if not m or m.group(2) != "posts" or str(w.get("doc_id") or "").startswith("_"):
-                continue
-            if under(str(w.get("file_path") or ""), root, ".kit", "run", "artifact", "out"):
-                continue
-            return "a step post written by hand (%s/%s): %s." % (w.get("collection"), w.get("doc_id"), STEP_WAY)
-        return None
-    if name.endswith("create_session"):
-        prompt = str(ti.get("prompt") or "").strip()
-        tags = [str(t) for t in (ti.get("tags") or [])]
-        if any(t in PASS_TAGS for t in tags):
-            return None
-        if PART_PROMPT.match(prompt) and len(prompt) <= PROMPT_MAX:
-            why = launch_repo(prompt, ti.get("source_url"), root)
-            return ("a part launched from the wrong repo: %s." % why) if why else None
-        return "a part launched with an inline prompt: %s." % LAUNCH_WAY
+        return board_verdict(ti, root, orch)
+    if name.endswith("create_session") and orch:
+        return launch_verdict(ti, root)
     return None
 
 
@@ -236,12 +329,13 @@ def main():
     # a subagent of the orchestrator (board-cards, board-publish, a check) exists to keep a dump out of its context
     if data.get("agent_id") or data.get("agent_type") or "/subagents/" in str(data.get("transcript_path") or ""):
         return 0
-    if not is_orchestrator(data):
+    if (os.environ.get("KIT_ROLE") or "") == "owner":
         return 0
-    why = verdict(data, project_dir(data))
+    orch = is_orchestrator(data)
+    why = verdict(data, project_dir(data), orch)
     if not why:
         return 0
-    print("REFUSED for the orchestrator: " + why + " The kit does this for a fraction of the tokens (README "
+    print("REFUSED%s: " % (" for the orchestrator" if orch else " (the kit's way holds every session, CL30)") + why + " The kit does this for a fraction of the tokens (README "
           "§ Artifact mode).", file=sys.stderr)
     return 2
 

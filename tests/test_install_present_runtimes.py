@@ -80,8 +80,8 @@ class PresentRuntimes(unittest.TestCase):
         # (CL30: kit_board_guard.py is such a hook too; and the kit's guards present there are wired, kit_task_train.py
         # here, while its other hooks, kit_pre_compact.py, stay as the project has them)
         self.assertEqual(sorted(p.name for p in self.cl.iterdir()),
-                         ["kit_board_guard.py", "kit_brief_guard.py", "kit_config.py", "kit_pre_compact.py",
-                          "kit_task_train.py", "kit_usage.py"])                     # CL37's usage hook arrives too
+                         ["kit_board_guard.py", "kit_brief_guard.py", "kit_config.py", "kit_memory_jit.py",
+                          "kit_pre_compact.py", "kit_task_train.py", "kit_usage.py"])  # CL37's usage + JIT memory hooks arrive too
         st = json.loads((self.t / ".claude" / "settings.json").read_text())
         cmds = [h["command"] for ev in st["hooks"].values() for g in ev for h in g["hooks"]]
         self.assertTrue(cmds and all(any(g in c for g in ("kit_brief_guard.py", "kit_board_guard.py", "kit_task_train.py",
@@ -116,7 +116,7 @@ class PresentRuntimes(unittest.TestCase):
         self.assertEqual(r.returncode, 0, out)
         self.assertEqual((self.cl / "kit_brief_guard.py").read_bytes(), (HOOKS / "kit_brief_guard.py").read_bytes(), out)
         self.assertEqual(sorted(p.name for p in self.cl.iterdir()), ["kit_board_guard.py", "kit_brief_guard.py",
-                                                                      "kit_config.py", "kit_usage.py"])  # CL30's, CL37's
+                                                                      "kit_config.py", "kit_memory_jit.py", "kit_usage.py"])  # CL30's, CL37's, JIT memory
         s = json.loads(st.read_text())
         # the project's own rules kept, first; CL38 adds the add_repo rule once
         self.assertEqual(s["permissions"], {"allow": ["Bash(git status)", "mcp__claude-code-remote__add_repo"]})

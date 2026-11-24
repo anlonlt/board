@@ -55,6 +55,14 @@ def main(argv=None):
         print("end-session: changes are not committed; commit them by name, then run again:\n" + "\n".join(
             "    " + l for l in dirty.splitlines()[:20]))
         return 1
+    usage = os.path.join(ROOT, ".kit", "usage.py")
+    if os.path.isfile(usage):  # CL37: this session's usage rows onto the ledger branch (the working tree is untouched)
+        try:
+            u = subprocess.run([sys.executable, "-I", usage, "--root", ROOT, "push"], capture_output=True, text=True,
+                               timeout=120)
+            print("end-session: usage ledger: " + (u.stdout.strip() or u.stderr.strip()[-200:] or "?"))
+        except (OSError, subprocess.SubprocessError):
+            pass
     if branch == trunk and branch_only:
         print("end-session: refusing to push directly to trunk '%s' (--branch-only, or no standing permission: kit.trunk_push is false). Commit on a feature branch instead." % trunk)
         return 1
