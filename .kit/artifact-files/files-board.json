@@ -15,8 +15,8 @@
    "version": 2
   },
   ".kit+2F~board.html": {
-   "sha": "14a132b2a803fc47d074d04f88de7757f3332fdc86a43aa159f443a344acb3c8",
-   "version": 1
+   "sha": "fe3a556371a9f86d30c7bdb20cd5c8e92c5a85f335c7ddcd0ae28c97d21f294e",
+   "version": 2
   },
   ".kit+2F~claude-cli+2F~part.md": {
    "sha": "118c7285ff107a4736ea0e0f012a5a4afcd020ade9b14ba3634a037715970360",
@@ -28,6 +28,10 @@
   },
   ".kit+2F~lessons.md": {
    "sha": "7d6d4d66afb120b9189fc1ffe2fd4058e30f814a536a79f7d900796d0beaad5b",
+   "version": 1
+  },
+  ".kit+2F~part.md": {
+   "sha": "93954541ae68ab57c777a2007b554d1002ed60b2e7bd7960b9d1e2d390e90ee8",
    "version": 1
   },
   "AGENTS.md": {
@@ -71,8 +75,8 @@
    "version": 2
   },
   "kit+2F~board+2F~board.template.html": {
-   "sha": "9f37270b8fe6f9eda4236f66d8dc6b95b1b57cc747f80d5b78a4790136db4ce2",
-   "version": 2
+   "sha": "fa732ce8318e61369b43b124f2be0eabc863da38d76e31243b22eaafb14bf9dd",
+   "version": 3
   },
   "kit+2F~claude+2F~SKILL.board.md": {
    "sha": "47ea8d795f83947e8011652983e43557bb4f724d7d28485bebf2e62e73315582",

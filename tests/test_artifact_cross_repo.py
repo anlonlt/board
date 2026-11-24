@@ -176,7 +176,7 @@ class PageSwitcher(unittest.TestCase):
             page = os.path.join(tmp, ".kit", "board.html")
             subprocess.run([sys.executable, str(ROOT / "kit" / "claude" / "build_artifact_page.py"), "--kit", str(ROOT), "--page", page,
                             "--board-url", "https://claude.ai/artifact/test", "--project", "Harmonize"], capture_output=True, check=True)
-            for test in ("test_artifact_repos.js", "test_artifact_page.js"):
+            for test in ("test_artifact_repos.js", "test_artifact_page.js", "test_artifact_live.js"):
                 r = subprocess.run(["node", str(ROOT / "kit" / "claude" / test)], capture_output=True, text=True, timeout=240,
                                    env=dict(env, KIT_PAGE=page), cwd=str(ROOT))
                 self.assertEqual(r.returncode, 0, test + "\n" + r.stdout[-2000:] + r.stderr[-2000:])
