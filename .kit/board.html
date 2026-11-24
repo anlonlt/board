@@ -3613,8 +3613,8 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     s.poll = function () {
       var qs = recent ? recent(s.since) : null, at = Date.now();
       if (!qs) { s.full(); return; }
-      Promise.all(qs.map(function (q) { return q.get(); })).then(function (snaps) {
-        var changed = false; s.readAt = at;
+      Promise.all(qs.map(readPages)).then(function (lists) {
+        var changed = false, snaps = [].concat.apply([], lists); s.readAt = at;
         snaps.forEach(function (snap) {
           if (!snap || !snap.docs || (snap.metadata && snap.metadata.fromCache)) return;
           snap.docs.forEach(function (d) { var o = d.data(), j; try { j = JSON.stringify(o); } catch (e) { j = "?"; }
@@ -3623,6 +3623,22 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
         if (changed) apply(snapOf());
       }, function () {});
     };
+    /* a query, or {pageBy, limit, make(after)}: pages in pageBy order until a page comes back short, so a burst of
+       more than `limit` new documents is read whole (O54's review); at most 20 pages, the rest waits for a full read */
+    function readPages(e) {
+      if (!e.pageBy) return e.get().then(function (snap) { return [snap]; });
+      var out = [];
+      function step(after, n) {
+        return e.make(after).get().then(function (snap) {
+          out.push(snap);
+          var docs = (snap && snap.docs) || [];
+          if (docs.length < e.limit || n >= 19) return out;
+          var last = str((docs[docs.length - 1].data() || {})[e.pageBy]);
+          return last && last !== after ? step(last, n + 1) : out;
+        });
+      }
+      return step("", 0);
+    }
     s.open = function () {
       if (s.unsub) { try { s.unsub(); } catch (e) {} }
       s.unsub = make().onSnapshot(function (snap) { s.tries = 0; whole(snap, false); }, function (e) {
@@ -3700,7 +3716,12 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       state.comments = snap.docs.map(function (d) { var o = Object.assign({}, d.data()); o.id = d.id; return o; }).filter(function (o) { return !o.removed; });
       stampArrivals();
       later("board"); later("cmts");
-    }, null, function (since) { return [db.collection("comments").where("created_at", ">", since("created_at")).limit(100)]; });
+    }, null, function (since) {
+      var from = since("created_at");
+      return [{ pageBy: "created_at", limit: 100, make: function (after) {
+        return db.collection("comments").where("created_at", after ? ">=" : ">", after || from).orderBy("created_at", "asc").limit(100);
+      } }];
+    });
   })();
 
   /* Padlet × Reddit × Facebook progressive UI enhancer (view switcher, synchronized horizontal train matrix, open feed with Show More & agent audit folding, ADHD focus triage view, floating orchestrator messenger popover) */

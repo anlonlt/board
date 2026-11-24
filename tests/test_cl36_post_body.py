@@ -76,10 +76,10 @@ class BodyInPost(unittest.TestCase):
 class OldRuleGone(unittest.TestCase):
     OLD = ("no images inline", "no diagrams", "what a post body cannot show", "a report to keep, with pictures",
            "reads better as docs/<part>.md", "only for a report to keep", "only for what is a document to keep",
-           "a long report as a linked doc")
+           "a long report as a linked doc", "a repo doc only for", "linked doc sections", "pictures or diagrams, embedded by section")
 
     def test_no_copy_of_the_old_wording(self):
-        files = [f for pat in ("kit/**/*.md", ".claude/skills/**/*.md", ".agents/skills/**/*.md", "kit/**/*.py", "kit/**/*.json", "scripts/*.py", ".kit/**/*.md", "install.py",
+        files = [f for pat in ("kit/**/*.md", ".claude/skills/**/*.md", ".agents/skills/**/*.md", "README.md", "kit/**/*.py", "kit/**/*.json", "scripts/*.py", ".kit/**/*.md", "install.py",
                                "docs/DESIGN-PRINCIPLES.md")
                  for f in glob.glob(os.path.join(ROOT, pat), recursive=True) if "/.kit/run/" not in f]
         left = []

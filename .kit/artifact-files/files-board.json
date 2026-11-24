@@ -19,8 +19,8 @@
    "version": 3
   },
   ".kit+2F~board.html": {
-   "sha": "",
-   "version": 4
+   "sha": "0aa52605f0a5c681b7b46339dd687ffce89f6b73fa73e3c51b5efdd771e6a794",
+   "version": 5
   },
   ".kit+2F~claude-cli+2F~part.md": {
    "sha": "1c9e1823d772b816b6a0e8732257cb8b48f1d54d4bb642c9ac8e78f65f9ed36d",
@@ -36,11 +36,7 @@
   },
   ".kit+2F~part.md": {
    "sha": "caed20d0897f4e22fe5437a611ca56c99447b974611dcecebc2562d3fb2b54ef",
-   "version": 1
-  },
-  ".kit+2F~part.md": {
-   "sha": "93954541ae68ab57c777a2007b554d1002ed60b2e7bd7960b9d1e2d390e90ee8",
-   "version": 1
+   "version": 2
   },
   "AGENTS.md": {
    "sha": "1757e14f76d3910d05a9e9e4b6d0e40db91467125fcf70416d257e6c0a0adc66",
@@ -87,8 +83,8 @@
    "version": 4
   },
   "kit+2F~board+2F~board.template.html": {
-   "sha": "",
-   "version": 4
+   "sha": "62260cf438de66a368ea05db66b36adce507233c17a3f0af6c64424cf5702a96",
+   "version": 5
   },
   "kit+2F~claude+2F~SKILL.board.md": {
    "sha": "47ea8d795f83947e8011652983e43557bb4f724d7d28485bebf2e62e73315582",
