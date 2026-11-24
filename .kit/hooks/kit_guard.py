@@ -204,7 +204,11 @@ def verdict(words: list[str], never_add=(), allow_add=(), cwd: str | None = None
             return "git clean"
         if sub == "reset" and "--hard" in rest:
             return "git reset --hard"
+        if any(a.lower().startswith("core.hookspath") for a in words) and (sub != "config" or len(rest) > 1):
+            return "turning git's own hooks off (core.hooksPath): the pre-push hook keeps unreviewed work off the trunk"
         if sub == "push":
+            if "--no-verify" in rest:
+                return "a push around git's pre-push hook (--no-verify): it keeps unreviewed work off the trunk"
             if any(a in ("--force", "-f", "--force-with-lease", "--force-if-includes") or a.startswith("--force-with-lease=")
                    or (a.startswith("-") and not a.startswith("--") and "f" in a[1:]) for a in rest):
                 return "a force push"

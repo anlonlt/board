@@ -3787,7 +3787,8 @@ def done(pid, db_path=None, root=None):
     g = _post_gate()
     if not err and g and not (g.proved(p) and (p.get("proof") or {}).get("needs_real") == bool(pending_real)):
         head = _git_run("rev-parse", "--short", "HEAD").stdout.strip()
-        if not _board_write("update", "posts", pid, {"proof": {"key": g.proof_key(p), "at": _now_z(), "commit": head,
+        if not _board_write("update", "posts", pid, {"proof": {"key": g.proof_key(p), "at": _now_z(), "commit": head, "sha": _git_run("rev-parse", "HEAD").stdout.strip(),
+                                                           "branch": _git_run("symbolic-ref", "--short", "-q", "HEAD").stdout.strip(),
                                                            "needs_real": bool(pending_real)}}, env={"KIT_GATE": "done"}):
             warn.append("proof: the board did not take it (is the board server running?): the step cannot be completed without it")
         elif attached_board():
@@ -3885,6 +3886,27 @@ def review_brief(p, seed=None):
     return "\n" + "\n".join(lines) if lines else ""
 
 
+def _review_branch(name, rel, text, bases):
+    """A branch of origin holding one more file on top of the first base that is here, made without touching the working
+    tree, the index or any branch. Its name, or "" when origin did not take it."""
+    base = next((b for b in bases if b and _git_run("rev-parse", "-q", "--verify", b + "^{commit}").returncode == 0), "")
+    if not base:
+        return ""
+    with tempfile.TemporaryDirectory() as d:
+        env = dict(os.environ, GIT_INDEX_FILE=os.path.join(d, "i"))
+        run = lambda *a, **k: subprocess.run(["git", "-C", ROOT, "-c", "user.name=board kit", "-c", "user.email=kit@localhost"] + list(a),   # noqa: E731
+                                             capture_output=True, text=True, timeout=180, env=env, **k)
+        blob = run("hash-object", "-w", "--stdin", input=text).stdout.strip()
+        if not blob or run("read-tree", base).returncode or run("update-index", "--add", "--cacheinfo", "100644,%s,%s" % (blob, rel)).returncode:
+            return ""
+        c = run("commit-tree", run("write-tree").stdout.strip(), "-p", base, "-m", "review prompt").stdout.strip()
+        old = run("ls-remote", "origin", "refs/heads/" + name).stdout.split()
+        if old and c:                                        # a second review: on top of the first, never forced
+            run("fetch", "-q", "origin", "refs/heads/" + name)
+            c = run("commit-tree", c + "^{tree}", "-p", c, "-p", old[0], "-m", "review prompt").stdout.strip() or c
+        return name if c and run("push", "-q", "origin", "%s:refs/heads/%s" % (c, name)).returncode == 0 else ""
+
+
 def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=None):
     """Write a review prompt and start it as a background session (Claude Code CLI or agy): a step review
     (pid) or a whole-train review (train). Idempotent: a review already started is not started again."""
@@ -3909,6 +3931,10 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
         scope = ("The step `%s` (part %s, train `%s`) is complete: review it AND the question its train serves, not only "
                  "this step." % (pid, part, project))
         scope = scope + review_brief(dict(p, _id=pid))
+        br = str((p.get("proof") or {}).get("branch") or p.get("branch") or "")
+        if br and lands_after_review():
+            scope += (" Its work is on branch `%s`%s, not on the trunk: read and run it there (`git fetch origin %s && git worktree add "
+                      "/tmp/review-%s origin/%s`)." % (br, (" at %s" % str(p["review_commit"])[:9]) if p.get("review_commit") else "", br, _slug(pid, 30), br))
     if force:
         # a second review of the same step is a new review: its own id and comment, the first one kept
         base, n = rid, 2
@@ -3944,8 +3970,18 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
     text = "Your prompt is %s: read it and do it." % os.path.relpath(out, ROOT)
     # CL26: `run` is the runtime this runs in, never kit.cli's binary when it is absent
     if run == "web":
+        # .kit/run is not in git: a cloud session never had this prompt (no web review ever read one). It goes on a branch
+        # of its own, on top of the work it reviews.
+        rel, rev = "docs/prompts/%s.md" % rid, ""
+        if not dry_run:
+            rev = _review_branch("review-" + re.sub(r"[^A-Za-z0-9_.-]+", "-", pid if pid and not train else rid)[:60], rel, tpl,
+                                 [str((_get_post(pid, db_path=db_path) or {}).get("review_commit") or ""), "HEAD"])
+            if not rev and not os.environ.get("KIT_NO_LAUNCH"):
+                return 1, ("review %s NOT STARTED: its prompt could not be pushed to a branch of origin, and a web session reads only what "
+                           "is there (push access?): `kit.py review %s --force` again" % (rid, pid or "--train %s" % train))
+            text = "Your prompt is %s: read it and do it." % rel
         call = {"title": "Review %s" % rid, "source_url": _github_url(),
-                "source_revision": _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "main",
+                "source_revision": rev or _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "main",
                 "prompt": text, "tags": ["review"]}      # CL30: the guard checks a tagged launch's prompt
         start = ("review %s NOT STARTED by the kit (a web session cannot start one): prompt %s written; start it "
                  "now with the claude-code-remote `create_session` tool: %s then `python3 -I .kit/kit.py review %s --session-id <its id>`"
@@ -4006,6 +4042,13 @@ def _board_write(cmd, coll, doc_id, data, env=None):
 
 def _all_posts(db_path=None):
     posts, _ = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=db_path)
+    if not posts and not db_path and os.path.isfile(os.path.join(ROOT, ".kit", "config.json")) and \
+            not os.path.isfile(os.path.join(ROOT, ".kit", "board_data", "board.db")):
+        try:                                      # a part's worktree has no database: the board server holds it
+            r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
+            posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or []}
+        except Exception:
+            pass
     return posts
 
 
@@ -4649,6 +4692,66 @@ def launch_text(r):
     return "\n".join(lines) + "\n"
 
 
+def lands_after_review():
+    """Work reaches the trunk after its review (kit.land), where the kit may push the trunk and reviews run."""
+    k = _kit_config().get("kit") or {}
+    if k.get("land"):
+        return k["land"] == "after_review"
+    return bool(k.get("trunk_push")) and str((k.get("review") or {}).get("auto", "all")) != "off"
+
+
+def landing_steps(posts):
+    """[{post, part, branch, commit, seen, check, review, landed, held, why}] of the steps that have work of their own on a
+    branch: which may reach the trunk, and why one may not yet."""
+    g, hold, out = _post_gate(), lands_after_review(), []
+    for pid, p in sorted(posts.items()):
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("removed") or g is None or not g.is_step(p):
+            continue
+        pr = p.get("proof") if isinstance(p.get("proof"), dict) else {}
+        br = str(pr.get("branch") or p.get("branch") or "")
+        st, rv = str(p.get("status") or "").lower(), str(p.get("review") or "").lower()
+        if not br or p.get("landed") or str(p.get("column") or "") == "done" or st in ("done", "dropped", "planned"):
+            if not (br and p.get("landed")):
+                continue
+        why = ""
+        if hold and not p.get("landed"):
+            if not g.is_complete(p):
+                # a step from before the proofs is nobody's to hold: only one under way, or one `done` proved
+                why = "it is not complete yet (status %s)" % (p.get("status") or "?") if pr or "progress" in st else ""
+            elif not pr:
+                why = ""                                     # complete before this rule: its work landed the old way
+            elif p.get("review_auto") is False:
+                why = ""
+            elif rv != "continue":
+                why = "its review has not said `continue` (%s)" % (("it said " + rv) if rv else "no verdict yet")
+        out.append({"post": pid, "part": p.get("part"), "branch": br, "commit": pr.get("sha") or "", "seen": p.get("review_commit") or "",
+                    "check": p.get("check") or "", "review": rv, "landed": p.get("landed") or "", "held": bool(why), "why": why,
+                    "ready": bool(hold and pr and g.is_complete(p) and not why and not p.get("landed"))})
+    return out
+
+
+def land_lines(posts, train=None, skip=None):
+    """The steps whose work is not on the trunk yet, for a session that would build on it or has to land it."""
+    out = []
+    for s in landing_steps(posts):
+        if s["landed"] or s["post"] == skip or not (s["held"] or s["ready"]) or (train and _norm_train(posts[s["post"]].get("train")) != _norm_train(train)):
+            continue
+        out.append("- %s (`%s`) on branch `%s`: %s" % (s["part"], s["post"], s["branch"], s["why"] if s["held"] else
+                                                      "reviewed: `python3 -I .kit/kit.py land %s`" % s["post"]))
+    return out
+
+
+def _landing(*args):
+    p = os.path.join(ROOT, ".kit", "landing.py")
+    if not os.path.isfile(p):
+        return 1, ".kit/landing.py is missing: `install.py . --update`"
+    try:
+        r = subprocess.run([sys.executable, "-I", p] + list(args), capture_output=True, text=True, timeout=2400, cwd=ROOT)
+    except (OSError, subprocess.SubprocessError) as e:
+        return 1, "landing: %s" % e
+    return r.returncode, (r.stdout + r.stderr).strip()
+
+
 def step_gate(pid, db_path=None):
     """Why this step cannot be completed yet, or "": the proof `kit.py done` left is for the post as it is, and no word of
     his under it waits. Cheap: nothing is rerun (the part's own machine ran the check and its break)."""
@@ -4702,8 +4805,17 @@ def step_complete(pid, db_path=None, cli=None):
     why = step_gate(pid, db_path=db_path)
     if why:
         return {"post": pid, "ok": False, "why": why, "reviews": []}
-    out = {"post": pid, "ok": _board_write("update", "posts", pid, {"status": "complete", "completed_at": _now_z()}),
-           "reviews": []}
+    fields = {"status": "complete", "completed_at": _now_z()}
+    before = _all_posts(db_path).get(pid) or {}
+    br = str((before.get("proof") or {}).get("branch") or before.get("branch") or "")
+    if br and lands_after_review():                          # what the review reads, so nothing after it lands unread
+        _git_run("fetch", "-q", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (br, br))
+        tip = _git_run("rev-parse", "-q", "--verify", "refs/remotes/origin/" + br).stdout.strip()
+        if tip:
+            fields["review_commit"] = tip
+    out = {"post": pid, "ok": _board_write("update", "posts", pid, fields), "reviews": []}
+    if out["ok"] and lands_after_review() and before.get("review_auto") is False:
+        out["landed"] = _landing("land", pid)[1]
     rv = (_kit_config().get("kit") or {}).get("review") or {}
     if str(rv.get("auto", "all")) == "off":
         return out
@@ -5147,6 +5259,8 @@ COMMANDS = [
     ("read the board", "kit.py resume", "every train's open steps (the task list), live sessions, open questions (age, default, what each blocks), the owner's decisions of the last 3 days, the owner's unanswered comments, attached boards; run it before answering the owner"),
     ("read the board", "kit.py guide [case]", "one case of the orchestrator's guide, when it comes up (resume lists them)"),
     ("ask him", "kit.py ask --title T --option A --option B --default A --deadline D [--needs N]", "one question post in his lane, whole; never a question in a thread"),
+    ("launch and finish", "kit.py land <post>", "a reviewed step's branch onto the trunk, its check run on the two together; never forced"),
+    ("git copy", "kit.py landing | save", "which steps may reach the trunk; the work in progress to wip/<branch> now (a hook does it every few minutes)"),
     ("save the board", "kit.py keep", "the board here into git, committed and pushed (git is the record)"),
     ("read the board", "kit.py resume --role orchestrator|part|clerk|review [--post P]", "what that role needs and nothing else: a session starts from it alone (lessons, launch workflow, tests, how to report)"),
     ("memory", "kit.py lessons [--role R] [--files F...] | lessons check", "the lessons a role needs / refuse untagged ones and ones only a project doc holds"),
@@ -5988,6 +6102,9 @@ def continues_lines(p, session=None):
             "- its branch `%s` holds no commit of its own yet" % br]
     elif "progress" not in str(p.get("status") or ""):
         return []
+    if br:
+        rc, w = _landing("wip", br)
+        out += [x for x in w.splitlines() if x.startswith("- ")] if rc == 0 else []
     return ["", "## This step names another session (%s): if that is not you, continue its work, never restart it" % prev] + out + [
         "- its post's body says where it stopped; put your own session id on the post first"]
 
@@ -5997,6 +6114,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
     if role not in ROLES:
         return "Unknown role %r: one of %s.\n" % (role, ", ".join(ROLES))
     posts, comments = _load_board_docs(m, db_path=db_path)
+    posts = posts or _all_posts(db_path)
     try:
         for b in _attached_boards()[0]:
             for pid, p in (b.get("posts") or {}).items():
@@ -6009,6 +6127,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         st, txt = web_env_state(posts, comments)
         if txt:                                       # CL39: several repos on the web
             out += ["", "## Web environment (several repos)", txt]
+        nl = land_lines(posts)
+        if nl:
+            out += ["", "## Work not on the trunk yet (it lands after its review)"] + nl
         gl = git_copy_lines(m, db_path)
         if gl:
             out += ["", "## The record is git, and it is behind"] + ["- " + x for x in gl]
@@ -6061,6 +6182,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         qs = train_questions(posts, pid, p) if p.get("train") else []
         if qs:
             out += ["", "## Waiting on the owner, on this train (never decide one, never work past it)"] + qs
+        nl = land_lines(posts, train=p.get("train"), skip=pid) if p.get("train") else []
+        if nl:
+            out += ["", "## Not on the trunk yet (if you build on one: `git fetch origin <branch> && git merge --no-edit origin/<branch>`)"] + nl
         if p.get("differs"):
             out += ["", "## What this step does differently", str(p["differs"])]
         out += ["", "## Your tests", "- `%s` (0 failed before you commit)" % _test_command()]
@@ -6079,7 +6203,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "diagrams as ```mermaid or ```svg blocks (the page draws them); never a `docs/*.md` file for your text "
                 "(`done` refuses a body made of its section embeds; CL36).",
                 "1. The post in the kit's format (`.kit/BOARD.md` § The post format); `python3 -I .kit/kit.py done %s` says OK." % pid,
-                "2. Commit, push your branch; `python3 -I .kit/end_session.py`.",
+                "2. Commit, push your branch; `python3 -I .kit/end_session.py`%s." % (" (the trunk takes it after its review)" if lands_after_review() else ""),
                 "3. SendMessage %s: `Done. Check post %s.`" % (orch, pid)]
     elif role == "clerk":
         orch = (posts.get("_orchestrator") or {}).get("session_id") or "(none on _orchestrator)"
@@ -6468,6 +6592,10 @@ def main(argv=None):
     s.add_argument("--title", required=True); s.add_argument("--body", default=""); s.add_argument("--option", action="append", default=[])
     s.add_argument("--default", default=""); s.add_argument("--deadline", default=""); s.add_argument("--needs", default="")
     s.add_argument("--about", default=""); s.add_argument("--train", default=""); s.add_argument("--priority", type=int, default=1)
+    s = sp.add_parser("land", help="a reviewed step's branch onto the trunk"); s.add_argument("post")
+    s = sp.add_parser("landing", help="JSON: which steps may reach the trunk"); s.add_argument("--post", default=None)
+    s.add_argument("--branch", default=None); s.add_argument("--mark", default=None, help="landed at this commit"); s.add_argument("--db", default=None)
+    sp.add_parser("save", help="the work in progress to wip/<branch> now")
     sp.add_parser("keep", help="the board here into git: committed and pushed")
     s = sp.add_parser("guide", help="a case of the orchestrator's guide (no case: their list)"); s.add_argument("case", nargs="?", default=None)
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
@@ -6762,6 +6890,22 @@ def main(argv=None):
         print(json.dumps(res, ensure_ascii=False))
         print(field_text("ask", "orchestrator"), file=sys.stderr)
         return 1 if res.get("error") else 0
+    if a.cmd == "land":
+        rc, txt = _landing("land", a.post)
+        print(txt)
+        return rc
+    if a.cmd == "save":
+        rc, txt = _landing("save")
+        print(txt)
+        return rc
+    if a.cmd == "landing":
+        if a.mark and a.post:
+            ok = _board_write("update", "posts", a.post, {"landed": a.mark, "landed_at": _now_z()})
+            print(json.dumps({"ok": ok, "steps": []}))
+            return 0 if ok else 1
+        got = landing_steps(_all_posts(a.db))
+        print(json.dumps({"steps": [s for s in got if (not a.post or s["post"] == a.post) and (not a.branch or s["branch"] == a.branch)]}, ensure_ascii=False))
+        return 0
     if a.cmd == "guide":
         print(guide(a.case), end="")
         return 0

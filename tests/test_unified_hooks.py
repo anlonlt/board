@@ -204,7 +204,7 @@ class Parity(unittest.TestCase):
     def test_the_table_is_what_each_runtime_had(self):
         """The lines as they were written by hand before the table (53f23c4): no hook gained, lost or narrowed."""
         count = {rt: len(hook.rows(rt)) for rt in hook.RUNTIMES}
-        self.assertEqual(count, {"web": 25, "cli": 22, "agy": 14})          # web: + the board saved to git and the hand-over at Stop; 53f23c4's 21, 20, 15 (agy: guard's two tools on one row) + the task list's two
+        self.assertEqual(count, {"web": 27, "cli": 24, "agy": 16})          # each: + the work saved (2); web: + the board saved and the hand-over at Stop; 53f23c4's 21, 20, 15 (agy: guard's two tools on one row) + the task list's two
         self.assertEqual([r[2] for r in hook.rows("cli", "Stop")].count("kit_web_save.py"), 1)
         self.assertEqual([r[2] for r in hook.rows("cli", "Stop")].count("kit_pre_compact.py"), 1)
         self.assertTrue(all(g == (ev in ("PreToolUse", "TaskCompleted")) or f == "kit_memory_jit.py" for ev, f, _, g, _ in hook.TABLE))

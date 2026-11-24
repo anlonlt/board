@@ -84,21 +84,21 @@ class O54Gaps(unittest.TestCase):
             fh.write(text)
 
     def test_point_naming_a_post_id_is_matched(self):
-        self.write_awaits("- [app] The harmony AI: answer on the board `HL5-harmony-ai-question`. Default: wait "
+        self.write_awaits("- [app] The harmony AI: answer on the board `MX5-soil-mix-question`. Default: wait "
                           "· deadline 2099-12-31\n")
-        b = FakeBoard({"HL5-harmony-ai-question": {"column": "question", "title": "Which model for harmony?"}})
+        b = FakeBoard({"MX5-soil-mix-question": {"column": "question", "title": "Which model for harmony?"}})
         out = self.kit.compact_memory(root_dir=self.d, board=b)
         self.assertEqual([w for w in b.writes if w.startswith("aw-")], [], out)
 
     def test_point_with_a_close_title_is_matched(self):
         self.write_awaits("- [app] The aids in the night: keep them on? Default: on · deadline 2099-12-31\n")
-        b = FakeBoard({"F5-aids-in-the-night": {"column": "question", "part": "F5", "title": "Aids in the night"}})
+        b = FakeBoard({"F5-aids-at-night": {"column": "question", "part": "F5", "title": "Aids in the night"}})
         out = self.kit.compact_memory(root_dir=self.d, board=b)
         self.assertEqual([w for w in b.writes if w.startswith("aw-")], [], out)
 
     def test_unrelated_question_is_not_matched(self):
         self.write_awaits("- [app] Pick the colour of the play button. Default: blue · deadline 2099-12-31\n")
-        b = FakeBoard({"F5-aids-in-the-night": {"column": "question", "part": "F5", "title": "Aids in the night"}})
+        b = FakeBoard({"F5-aids-at-night": {"column": "question", "part": "F5", "title": "Aids in the night"}})
         self.kit.compact_memory(root_dir=self.d, board=b)
         self.assertEqual(len([w for w in b.writes if w.startswith("aw-")]), 1)
 
@@ -137,7 +137,7 @@ class O54Gaps(unittest.TestCase):
         self.write_awaits("- [docs] Look: the aids in the night, do they stay on the docs screen while the score "
                           "plays and the owner scrolls back (asked under `q-look-aids-in-the-night`)? Default: they "
                           "stay · deadline 2099-12-31\n")
-        b = FakeBoard({"F5-aids-in-the-night": {"column": "question", "part": "F5",
+        b = FakeBoard({"F5-aids-at-night": {"column": "question", "part": "F5",
                                                 "title": "Aids in the night: keep them?"}})
         out = self.kit.compact_memory(root_dir=self.d, board=b)
         self.assertEqual([w for w in b.writes if w.startswith("aw-")], [], out)
@@ -200,7 +200,7 @@ class O54Gaps(unittest.TestCase):
         # O54, third check: the real point names q-look-aids-in-the-night bare, no backticks, no digit
         self.write_awaits("- [docs] Look at the aids in the night on the docs screen, then say if they stay; asked "
                           "on the board as q-look-aids-in-the-night. Default: they stay · deadline 2099-12-31\n")
-        b = FakeBoard({"F5-aids-in-the-night": {"column": "question", "part": "F5",
+        b = FakeBoard({"F5-aids-at-night": {"column": "question", "part": "F5",
                                                 "title": "Aids in the night: keep them?"}})
         out = self.kit.compact_memory(root_dir=self.d, board=b)
         self.assertEqual([w for w in b.writes if w.startswith("aw-")], [], out)
@@ -208,7 +208,7 @@ class O54Gaps(unittest.TestCase):
     def test_words_like_you_and_keep_alone_are_no_double(self):
         self.write_awaits("- [app] The heard card: do you keep it under the score? Default: keep · "
                           "deadline 2099-12-31\n")
-        b = FakeBoard({"F5-aids-in-the-night": {"column": "question", "part": "F5",
+        b = FakeBoard({"F5-aids-at-night": {"column": "question", "part": "F5",
                                                 "title": "Aids in the night: do you keep them?"}})
         out = self.kit.compact_memory(root_dir=self.d, board=b, dry_run=True)
         self.assertIn("0 possible double(s)", out)
@@ -354,37 +354,37 @@ class CompactPostsOpenWork(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(self.mem, "awaits-anlon.md")))
 
 
-REAL_AWAITS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "cl33_harmonize_awaits.md")
-# Harmonize's board on 2026-11-24 (O54): its 5 question posts verbatim (kind unset), and the step posts points name
-REAL_QUESTIONS = {
-    "F5-aids-in-the-night": {"title": "The aids in the night: which do you keep?", "column": "question",
-                             "status": "open", "created_at": "2026-11-12T08:05:00Z"},
-    "HL5-harmony-ai-question": {"title": "The harmony AI: the app's line with the record's key?", "column": "question",
-                                "status": None, "default_option": "Yes: the app's line, the model stays stored",
-                                "created_at": "2026-11-19T16:33:43Z"},
-    "R2-training-plan": {"title": "R2 · The training plan: harmony, chords, a two-voice reader, Modal, and who does "
+LONG_AWAITS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "cl33_awaits.md")
+# invented, with the shapes of a real list and board: question posts (kind unset) and the step posts its points name
+LONG_QUESTIONS = {
+    "F5-aids-at-night": {"title": "The greenhouse at night: which do you keep?", "column": "question",
+                         "status": "open", "created_at": "2026-11-12T08:05:00Z"},
+    "MX5-soil-mix-question": {"title": "The soil mix: the app's recipe with the bed's acidity?", "column": "question",
+                              "status": None, "default_option": "Yes: the app's recipe, the model stays stored",
+                              "created_at": "2026-11-19T16:33:43Z"},
+    "R2-training-plan": {"title": "R2 · The training plan: mix, roots, a two-row reader, rented time, and who does "
                                   "what", "column": "question", "status": "done", "created_at": "2026-11-17T03:25:00Z"},
-    "VR2-two-voice-reader-train": {"title": "VR2 · Train the two-voice reader on Modal: about $5.8, at most $8?",
-                                   "column": "question", "status": "done step A; priced, waiting your tap",
-                                   "created_at": "2026-11-17T19:01:25Z"},
-    "VR5-second-run-question": {"title": "The second reader run: buy nothing now, and HL6 runs now?",
+    "VQ2-two-row-reader-train": {"title": "VQ2 · Train the two-row reader on rented time: about $5.8, at most $8?",
+                                 "column": "question", "status": "done step A; priced, waiting your tap",
+                                 "created_at": "2026-11-17T19:01:25Z"},
+    "VQ5-second-run-question": {"title": "The second reader run: buy nothing now, and MX6 runs now?",
                                 "column": "question", "status": None, "created_at": "2026-11-19T23:53:03Z"},
 }
-REAL_STEPS = ["V6b-vocoder-bank-fixes", "Z4-speaker", "E11-window", "S18c-doubt-marks", "ED7-gesture-map-built",
-              "PA2-pads-on-songs", "T4-s1-write-gate", "PA1-find-the-line", "B9-ear-three-lines"]
+LONG_STEPS = ["N6b-nozzle-fixes", "Q4-bench", "E31-window", "S38c-doubt-marks", "EX7-gesture-map-built",
+              "PQ2-plots-on-beds", "T4-s1-plant-gate", "PQ1-find-the-row", "B29-eye-three-edges"]
 
 
-class RealHarmonizeAwaits(unittest.TestCase):
-    """O54's third check: test on the REAL awaits-anlon.md (31 points) and the real board's question posts."""
+class LongAwaits(unittest.TestCase):
+    """A long list (31 points) against a board that holds two of them as questions already."""
 
     def setUp(self):
         self.kit = load_kit()
         self.d = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.d)
         self.mem = tree(self.d, checker=False)   # its cited docs/ paths are not in this fixture
-        shutil.copy(REAL_AWAITS, os.path.join(self.mem, "awaits-anlon.md"))
-        posts = {k: dict(v) for k, v in REAL_QUESTIONS.items()}
-        for i, k in enumerate(REAL_STEPS):
+        shutil.copy(LONG_AWAITS, os.path.join(self.mem, "awaits-anlon.md"))
+        posts = {k: dict(v) for k, v in LONG_QUESTIONS.items()}
+        for i, k in enumerate(LONG_STEPS):
             posts[k] = {"title": k, "part": k.split("-")[0], "column": "done" if i % 2 else "info",
                         "status": "done" if i % 2 else "in progress"}
         self.board = FakeBoard(posts)
@@ -393,8 +393,8 @@ class RealHarmonizeAwaits(unittest.TestCase):
         out = self.kit.compact_memory(root_dir=self.d, board=self.board, dry_run=True)
         self.assertIn("29 question post(s) planned", out)
         self.assertIn("2 already on the board (matched, not posted again: ", out)
-        self.assertIn("F5-aids-in-the-night", out)
-        self.assertIn("HL5-harmony-ai-question", out)
+        self.assertIn("F5-aids-at-night", out)
+        self.assertIn("MX5-soil-mix-question", out)
         self.assertIn("0 possible double(s)", out)
 
     def test_defaults_clean_and_every_reference_in_the_body(self):
@@ -406,8 +406,8 @@ class RealHarmonizeAwaits(unittest.TestCase):
             self.assertIn("Reference: ", v["body"], v["title"])
             self.assertTrue(v.get("date_unknown"))
         refs = " ".join(v["body"] for v in q.values())
-        for r in ("`docs/WORKPLAN.md` § C1 item 5", "board E11-window", "step `s1-held-vibrato`, board Z4-speaker",
-                  "board T4-s1-write-gate", "board B9-ear-three-lines"):
+        for r in ("`docs/PLAN.md` § C1 item 5", "board E31-window", "step `s1-held-pulse`, board Q4-bench",
+                  "board T4-s1-plant-gate", "board B29-eye-three-edges"):
             self.assertIn(r, refs)
 
 
@@ -420,24 +420,24 @@ class O54FourthCheck(unittest.TestCase):
         self.d = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.d)
         self.mem = tree(self.d, checker=False)
-        shutil.copy(REAL_AWAITS, os.path.join(self.mem, "awaits-anlon.md"))
-        self.board = FakeBoard({k: dict(v) for k, v in REAL_QUESTIONS.items()})
+        shutil.copy(LONG_AWAITS, os.path.join(self.mem, "awaits-anlon.md"))
+        self.board = FakeBoard({k: dict(v) for k, v in LONG_QUESTIONS.items()})
 
     def test_matched_point_leaves_one_comment_under_its_post(self):
         self.kit.compact_memory(root_dir=self.d, board=self.board)
         on = {c["post_id"]: c for c in self.board.comments.values()}
-        self.assertEqual(sorted(on), ["F5-aids-in-the-night", "HL5-harmony-ai-question"])
-        f5 = on["F5-aids-in-the-night"]["text"]
-        for x in ("`SkyLooks`, q-look-aids-in-the-night", "your fallbacks, the needle and the columns", "2026-11-30"):
+        self.assertEqual(sorted(on), ["F5-aids-at-night", "MX5-soil-mix-question"])
+        f5 = on["F5-aids-at-night"]["text"]
+        for x in ("`NightLooks`, q-look-aids-at-night", "your fallbacks, the needle and the columns", "2026-11-30"):
             self.assertIn(x, f5)
-        self.assertEqual(self.board.docs["F5-aids-in-the-night"], REAL_QUESTIONS["F5-aids-in-the-night"])  # body untouched
+        self.assertEqual(self.board.docs["F5-aids-at-night"], LONG_QUESTIONS["F5-aids-at-night"])  # body untouched
         n = len(self.board.comments)
-        shutil.copy(REAL_AWAITS, os.path.join(self.mem, "awaits-anlon.md"))
+        shutil.copy(LONG_AWAITS, os.path.join(self.mem, "awaits-anlon.md"))
         self.kit.compact_memory(root_dir=self.d, board=self.board)
         self.assertEqual(len(self.board.comments), n)
 
     def test_unsent_comment_holds_the_archive(self):
-        b = FakeBoard({k: dict(v) for k, v in REAL_QUESTIONS.items()}, artifact=True)
+        b = FakeBoard({k: dict(v) for k, v in LONG_QUESTIONS.items()}, artifact=True)
         self.kit.compact_memory(root_dir=self.d, board=b)
         b.pending = {x for x in b.pending if x in b.comments}   # posts sent, comments not
         self.kit.compact_memory(root_dir=self.d, board=b)

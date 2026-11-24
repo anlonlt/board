@@ -39,6 +39,8 @@ TABLE = [
     ("PostToolUse", "kit_notify.py", {"web": "ArtifactData"}, PLAIN, 50),
     ("PostToolUse", "kit_task_train.py", {"web": "TaskCreate|TaskUpdate", "cli": "TaskCreate|TaskUpdate"}, PLAIN, 130),
     ("PostToolUse", "kit_board_guard.py", {"web": "Bash|" + SESSION, "cli": "Bash"}, PLAIN, 50),
+    ("PostToolUse", "kit_wip.py", {"web": "Bash|Edit|Write|MultiEdit", "cli": "Bash|Edit|Write|MultiEdit",
+                                   "agy": "run_command|edit_file|write_file"}, PLAIN, 25),
     ("UserPromptSubmit", "kit_say_it_once.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("UserPromptSubmit", "kit_board_typing.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("UserPromptSubmit", "kit_cards_reminder.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
@@ -50,6 +52,7 @@ TABLE = [
     ("Stop", "kit_board_guard.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("Stop", "kit_stop.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
     ("Stop", "kit_pre_compact.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
+    ("Stop", "kit_wip.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 25),
     ("Stop", "kit_web_save.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 130),
     ("Stop", "kit_say_it_once.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
     ("Stop", "kit_usage.py", {"web": ANY, "cli": ANY}, PLAIN, 100),      # CL37: the usage ledger (no model call)

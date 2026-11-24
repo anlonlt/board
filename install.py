@@ -37,10 +37,10 @@ _spec.loader.exec_module(hook_table)
 
 PARTS = ("memory", "board", "clerk", "orchestrator")
 MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "kit_usage.py",
-                "kit_memory_jit.py", "test_hooks.py"}
+                "kit_memory_jit.py", "kit_wip.py", "test_hooks.py"}
 HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
          "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "kit_task_train.py",
-         "kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "kit_memory_jit.py", "kit_usage.py",
+         "kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "kit_memory_jit.py", "kit_usage.py", "kit_wip.py",
          "test_hooks.py"]
 # CL30: the kit's guards. One whose file is in a present Claude Code runtime but that has no settings.json line (or a
 # narrower matcher than the kit's) is a hole, not a choice (Harmonize: kit_cards_reminder.py wired nowhere, the brief
@@ -166,7 +166,8 @@ def _in_kit_at(commit, hook):
 
 # CL37: when each later hook entered the kit. A shallow kit clone has no history for _in_kit_at to read; the target's
 # manifest still records the date of the kit it was last installed from, and a hook added after that date is new.
-HOOKS_ADDED = {"kit_usage.py": "2026-11-24T01:55:00+00:00", "kit_memory_jit.py": "2026-11-24T06:00:00+00:00"}
+HOOKS_ADDED = {"kit_usage.py": "2026-11-24T01:55:00+00:00", "kit_memory_jit.py": "2026-11-24T06:00:00+00:00",
+               "kit_wip.py": "2026-11-24T11:48:41+00:00"}
 
 
 def new_since_install(hook, prev_kit, prev_date=None):
@@ -1217,6 +1218,7 @@ def main(argv=None):
         ins.put(".kit/shim.js", rd("kit", "board", "shim.js"))
         ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
         ins.put(".kit/post_gate.py", rd("kit", "board", "post_gate.py"))
+        ins.put(".kit/landing.py", rd("kit", "landing.py"))
         ins.put(".kit/board_token.py", rd("kit", "board", "board_token.py"))
         if not claude_only:
             for _vf in ("pdf.min.js", "pdf.worker.min.js"):

@@ -9,7 +9,7 @@ orchestrator's own tokens instead of characters per query.
     python3 -I scripts/what_fills.py PAGES_DIR [--config config/<project>.json]
 
 Kit version (anlonlt/board, BD9, 2026-11-20): the shell-call kinds come from the config's `shell_buckets`
-(Harmonize's in config/harmonize.json); everything else is generic Claude Code. Origin: anlonlt/harmonize
+(an example: config/example.json); everything else is generic Claude Code. Origin: anlonlt/harmonize
 scripts/review/WF1-workflow-inventory-what-fills-an-orchestrator.py (review CR-WF1).
 
 PAGES_DIR: every page of `list_events` (kinds assistant + user, limit 100, paged back with before_id) for one

@@ -68,6 +68,14 @@ def main():
                    "`python3 -I .kit/web_takeover.py` (the board from git + the steps to continue). To take over the "
                    "orchestrator: `.kit/claude-cli/takeover.md` (or `.kit/orchestrator.md` in agy). A part continues on its "
                    "branch; the board goes back to git with `python3 -I .kit/web_takeover.py save` (the Stop hook runs it too).")
+    landing = os.path.join(root, ".kit", "landing.py")
+    if os.path.isfile(landing):
+        try:                                       # a hook of git's own lives in each clone: this one gets it here
+            r = subprocess.run([sys.executable, "-I", landing, "setup"], capture_output=True, text=True, timeout=15, cwd=root)
+            if "NOT SET" in r.stdout:
+                out.append("PRE-PUSH: " + r.stdout.strip())
+        except (OSError, subprocess.SubprocessError):
+            pass
     talk = c.get("language", {}).get("talk")
     if talk:
         out.append("LANGUAGE: talk to the owner in %s." % talk)

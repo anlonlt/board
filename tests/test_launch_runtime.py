@@ -79,13 +79,23 @@ class Runtime(Base):
     # ---- review
     def test_review_on_the_web_hands_over_the_create_session_call_even_with_cli_agy(self):
         os.environ["CLAUDE_CODE_REMOTE"] = "true"
-        rc, msg = self.review(tool_dir(self.tmp))                 # no agy, no claude on PATH
+        k = self.kit_in(self.repo())
+        repo, bare = str(self.tmp / "repo"), str(self.tmp / "o.git")
+        subprocess.run(["git", "-C", repo, "remote", "remove", "origin"], capture_output=True)
+        os.environ["PATH"] = tool_dir(self.tmp)                   # no agy, no claude on PATH
+        rc, msg = k.review("cl99-launch-me")                      # nowhere to push its prompt: said, never a call that starts blind
+        self.assertEqual(rc, 1, msg)
+        self.assertIn("could not be pushed", msg)
+        self.assertNotIn("create_session", msg)
+        subprocess.run(["git", "init", "-q", "--bare", bare], capture_output=True)
+        subprocess.run(["git", "-C", repo, "remote", "add", "origin", bare], capture_output=True)
+        rc, msg = k.review("cl99-launch-me")
         self.assertEqual(rc, 0, msg)
         self.assertNotIn("Errno", msg)
         self.assertIn("create_session", msg)
         self.assertIn("NOT STARTED", msg)                         # the orchestrator must make the call: said loudly
-        self.assertIn(".kit/run/CR-cl99-launch-me.md", msg)
-        self.assertTrue((self.tmp / "repo" / ".kit" / "run" / "CR-cl99-launch-me.md").exists())
+        self.assertIn("docs/prompts/CR-cl99-launch-me.md", msg)
+        self.assertEqual(subprocess.run(["git", "-C", bare, "cat-file", "-e", "review-cl99-launch-me:docs/prompts/CR-cl99-launch-me.md"]).returncode, 0)
 
     def test_review_in_the_claude_cli_runs_claude_bg_when_agy_is_absent(self):
         rc, msg = self.review(tool_dir(self.tmp, "claude"))

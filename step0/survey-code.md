@@ -84,5 +84,4 @@ Begin with the go-ahead.
 
 ---
 
-Not tested yet on a project other than Harmonize: the scripts' Harmonize numbers are reproduced exactly with
-`config/harmonize.json` (2026-11-20); a second project is the real test.
+Tested on one project so far (2026-11-20); `config/example.json` shows a config's shape. A second project is the real test.

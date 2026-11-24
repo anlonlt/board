@@ -41,6 +41,20 @@ def push(*a):
     return False
 
 
+def waits_for_review(branch):
+    """The step whose work this branch is, when it lands only after its review; None: land now. A board that cannot be
+    read holds the branch of a part (its work is on origin either way), never anyone else's."""
+    kit = os.path.join(ROOT, ".kit", "kit.py")
+    if not os.path.isfile(kit) or not os.path.isfile(os.path.join(ROOT, ".kit", "landing.py")):
+        return None
+    try:
+        r = subprocess.run([sys.executable, "-I", kit, "landing", "--branch", branch], capture_output=True, text=True, timeout=60, cwd=ROOT)
+        got = json.loads(r.stdout)["steps"]
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+        return "its step" if os.environ.get("KIT_ROLE") == "part" else None
+    return next((s["post"] for s in got if s["held"]), None)
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     try:
@@ -75,6 +89,10 @@ def main(argv=None):
             print("end-session: pushing %s failed; nothing else done" % branch)
             return 1
         print("end-session: %s pushed (%s)" % (branch, git("rev-parse", "--short", "HEAD").stdout.strip()))
+        held = None if branch_only else waits_for_review(branch)
+        if held:
+            print("end-session: %s waits for the review of %s: it lands on %s by itself after it (`kit.py land %s`)" % (branch, held, trunk, held))
+            return 0
         if branch_only:
             print("end-session: the trunk is not moved (--branch-only, or no standing permission: kit.trunk_push)")
             return 0

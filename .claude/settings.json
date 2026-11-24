@@ -23,18 +23,6 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "SendMessage|Bash|TaskCreate|TaskUpdate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.kit/hook.py\" cli PostToolUse",
-            "timeout": 140
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "hooks": [
@@ -86,6 +74,18 @@
             "type": "command",
             "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.kit/hook.py\" cli TaskCompleted",
             "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "SendMessage|Bash|TaskCreate|TaskUpdate|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.kit/hook.py\" cli PostToolUse",
+            "timeout": 140
           }
         ]
       }
