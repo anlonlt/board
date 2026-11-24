@@ -288,6 +288,47 @@ class O55Gaps2(unittest.TestCase):
                                          "_handover."})[0], "orchestrator")
 
 
+class TwoRepoSessions(unittest.TestCase):
+    """CR-cl37 item 2: a session started on two repos reads neither repo's settings, so no project hook runs. kit.py
+    (every command), end_session.py and web_takeover save record the session's row themselves."""
+
+    def test_usage_self_finds_its_own_transcript_and_records(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            home = os.path.join(d, "home")
+            pdir = os.path.join(home, ".claude", "projects", "-w-proj")
+            os.makedirs(pdir)
+            fixture(pdir, sid="s-two", sub=False)
+            Path(root, ".kit", "usage.py").write_text(SCRIPT.read_text())
+            env = {k: v for k, v in os.environ.items() if not k.startswith(("KIT_USAGE", "CLAUDE_CODE"))}
+            env.update(HOME=home, CLAUDE_CODE_SESSION_ID="s-two", KIT_USAGE_PUSH="0")
+            r = subprocess.run([sys.executable, "-I", os.path.join(root, ".kit", "usage.py"), "--root", root, "self"],
+                               capture_output=True, text=True, env=env, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("part", r.stdout)
+            self.assertTrue(Path(root, ".kit", "run", "usage", "s-two.json").is_file())
+
+    def test_every_kit_command_offers_it_detached(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            home = os.path.join(d, "home")
+            pdir = os.path.join(home, ".claude", "projects", "-w-proj")
+            os.makedirs(pdir)
+            fixture(pdir, sid="s-kit", sub=False)
+            Path(root, ".kit", "usage.py").write_text(SCRIPT.read_text())
+            Path(root, ".kit", "kit.py").write_text((ROOT / "scripts" / "kit.py").read_text())
+            env = {k: v for k, v in os.environ.items() if not k.startswith(("KIT_USAGE", "CLAUDE_CODE", "KIT_"))}
+            env.update(HOME=home, CLAUDE_CODE_SESSION_ID="s-kit", KIT_USAGE_PUSH="0")
+            subprocess.run([sys.executable, "-I", os.path.join(root, ".kit", "kit.py"), "commands", "usage"],
+                           capture_output=True, text=True, env=env, cwd=root, timeout=60)
+            import time as _t
+            for _ in range(100):
+                if Path(root, ".kit", "run", "usage", "s-kit.json").is_file():
+                    break
+                _t.sleep(0.1)
+            self.assertTrue(Path(root, ".kit", "run", "usage", "s-kit.json").is_file())
+
+
 class InstallShallow(unittest.TestCase):
     def test_a_hook_new_after_the_manifest_date_is_new_without_kit_history(self):
         spec2 = importlib.util.spec_from_file_location("kit_install_mod", ROOT / "install.py")

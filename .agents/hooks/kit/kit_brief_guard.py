@@ -7,7 +7,8 @@ supposed to keep you up to date on stuff, no matter who or where you are as an o
 you check before answering?" This hook is that check:
 
   - PreToolUse, for the orchestrator only: a reply to the owner (ArtifactData set/update/batch of a comment with
-    `reply_to` in comments or repos/<id>/comments; `board_cli.py reply` in Bash / run_command) is refused unless
+    `reply_to` in comments or repos/<id>/comments; `board_cli.py reply`, or any board_cli write naming `reply_to`
+    (CL30), in Bash / run_command; agy's MCP `board_reply` checks the same stamp, .kit/mcp_stdio.py) is refused unless
     `kit.py resume` ran in this session in the last `kit.brief.max_age_min` minutes (15); the refusal names the command.
   - PostToolUse on Bash / run_command: a `kit.py resume` that ran stamps the session (.kit/run/brief/<session>).
 Everyone else (parts, the clerk, the owner's own sessions) is never refused. Exit 2 with the reason on stderr (Claude
@@ -24,6 +25,8 @@ from kit_config import config, is_claude_payload, project_dir  # noqa: E402
 
 COMMENTS = re.compile(r"^(repos/[^/]+/)?comments$")
 REPLY_CMD = re.compile(r"board_cli\.py\b[^\n;&|]*\breply\b")
+# CL30: a reply written by any board_cli write (set / update / str-replace / batch of a comment naming reply_to)
+REPLY_WRITE = re.compile(r"board_cli\.py\b[^\n;&|]*\b(?:set|update|str-replace|batch)\b[^\n;&|]*reply[_-]to")
 BRIEF_CMD = re.compile(r"\bkit\.py\b[^\n;&|]*\bresume\b")
 DEFAULT_MAX_AGE_MIN = 15
 WAY = "python3 -I .kit/kit.py resume"
@@ -97,7 +100,7 @@ def is_reply(data):
             return any(_write_has_reply(w, root) for w in (ti.get("writes") or []) if isinstance(w, dict))
         return _write_has_reply(dict(ti, op=act), root)
     cmd = str(ti.get("CommandLine") or ti.get("command") or "")
-    return bool(REPLY_CMD.search(cmd))
+    return bool(REPLY_CMD.search(cmd) or REPLY_WRITE.search(cmd))
 
 
 def refuse(claude, msg):

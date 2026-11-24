@@ -5402,7 +5402,28 @@ def commit(m, msg, branch=None):
     return (r.stdout + r.stderr).strip() or "committed"
 
 
+def _usage_self():
+    """CL37: a session whose project hooks do not run (started on two repos) still records its usage row: every kit
+    command offers it, detached and at most once a minute (.kit/usage.py self). No model call; never in the way."""
+    try:
+        if not os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_USAGE_SELF") == "0":
+            return
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = os.path.join(root, ".kit", "usage.py")
+        if not os.path.isfile(script):
+            return
+        stamp = os.path.join(root, ".kit", "run", "usage", ".self")
+        if os.path.exists(stamp) and time.time() - os.path.getmtime(stamp) < 60:
+            return
+        import subprocess as _sp
+        _sp.Popen([sys.executable, "-I", script, "--root", root, "self"], stdin=_sp.DEVNULL, stdout=_sp.DEVNULL,
+                  stderr=_sp.DEVNULL, start_new_session=True, cwd=root)
+    except Exception:
+        pass
+
+
 def main(argv=None):
+    _usage_self()
     _argv = sys.argv[1:] if argv is None else list(argv)
     if _argv and _argv[0] == "usage":  # CL37: the usage ledger lives in its own script (installed as .kit/usage.py)
         import subprocess as _sp

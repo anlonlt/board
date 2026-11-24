@@ -24,4 +24,4 @@ The local board server (`.kit/board_data/board.db`) is the live inbox; `.kit/kit
 - **Context reset, not compaction:** at 380k (`kit.orchestrator.context_limit_k`) the Stop hook (`kit_pre_compact.py`) asks for the hand-over; `.kit/handover.py --role orchestrator` ends the session and `up` reopens a fresh one under the same name, which resumes from `kit.py resume` (active trains, live part sessions, the owner's unanswered comments). The clerk resets itself the same way at 80k. Claude Code's own compaction is set just past each limit, only as a safety net.
 
 ## 5. Limits (from `.kit/config.json`, enforced by `.claude/settings.json` hooks)
-A `SendMessage`: at most 600 characters (a Done pointer: 240); the result goes in the post. Destructive git and `rm -r` outside /tmp are refused by `kit_guard.py` (it guards every `Bash` call).
+A `SendMessage`: at most 200 characters (a Done pointer: 200); the result goes in the post. Destructive git and `rm -r` outside /tmp are refused by `kit_guard.py` (it guards every `Bash` call).

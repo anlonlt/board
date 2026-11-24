@@ -23,4 +23,4 @@ The local board server (`.kit/board_data/board.db`) is the live inbox; `.kit/kit
 - **Clerk rotation (at `80`k context):** when the clerk reports `"clerk context at <N>k (>= 80k): ready for replacement"`, spawn a fresh clerk via `invoke_subagent(TypeName="self", Role="Board Clerk", Model="flash_lite", Workspace="inherit", Prompt="Your prompt is .kit/clerk.md: read it and follow it.")`, wait for `"board clerk ready, watching"`, and kill the old clerk with `manage_subagents(Action="kill", ...)`.
 
 ## 5. Limits (from `.kit/config.json`, enforced by `.agents/hooks.json`)
-A message via `send_message`: at most 600 characters (a Done pointer: 240); the result goes in the post. Destructive git and `rm -r` outside /tmp are refused by `kit_guard.py`.
+A message via `send_message`: at most 200 characters (a Done pointer: 200); the result goes in the post. Destructive git and `rm -r` outside /tmp are refused by `kit_guard.py`.

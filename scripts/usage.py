@@ -884,6 +884,48 @@ def push_locked(root):
             pass
 
 
+# ---------------------------------------------------------------- a session records itself, whatever its settings
+
+def own_transcript(session_id=None):
+    """This session's transcript: ~/.claude/projects/*/<CLAUDE_CODE_SESSION_ID>.jsonl (the newest if several)."""
+    sid = session_id or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not sid or not re.fullmatch(r"[A-Za-z0-9._-]+", sid):
+        return None
+    base = os.path.join(os.path.expanduser("~"), ".claude", "projects")
+    found = glob.glob(os.path.join(base, "*", sid + ".jsonl"))
+    return max(found, key=os.path.getmtime) if found else None
+
+
+def record_self(root, push_too=True, every=60):
+    """For a session whose project hooks do not run (one started on two repos reads neither repo's
+    .claude/settings.json): kit.py, end_session.py and web_takeover save call this; it records this session's row
+    from its own transcript (at most every `every` seconds) and pushes it detached. Silent; never raises."""
+    try:
+        tp = own_transcript()
+        if not tp:
+            return None
+        conf = kit_conf(root)
+        if conf.get("record", True) is False:
+            return None
+        stamp = os.path.join(run_dir(root), ".self")
+        try:
+            if time.time() - os.path.getmtime(stamp) < every:
+                return None
+        except OSError:
+            pass
+        os.makedirs(run_dir(root), exist_ok=True)
+        open(stamp, "a").close()
+        os.utime(stamp, None)
+        row = record(root, tp, conf=conf)
+        if push_too and push_allowed(root, conf):
+            subprocess.Popen([sys.executable, "-I", os.path.abspath(__file__), "--root", root, "push"],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True, cwd=root)
+        return row
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------- CLI
 
 def main(argv=None):
@@ -898,6 +940,8 @@ def main(argv=None):
     s.add_argument("--push", action="store_true")
     s.add_argument("--json", action="store_true")
     sp.add_parser("hook")
+    s = sp.add_parser("self", help="record this session's row from its own transcript (no hook needed)")
+    s.add_argument("--no-push", action="store_true")
     s = sp.add_parser("import-ccr")
     s.add_argument("file")
     s.add_argument("--push", action="store_true")
@@ -931,6 +975,10 @@ def main(argv=None):
                     fh.write("%s %r\n" % (datetime.now(timezone.utc).isoformat(), exc))
             except OSError:
                 pass
+        return 0
+    if a.cmd == "self":
+        row = record_self(root, push_too=not a.no_push, every=0)
+        print(one_line(row) if row else "usage self: no transcript for CLAUDE_CODE_SESSION_ID here")
         return 0
     if a.cmd == "record":
         row = record(root, a.transcript, a.role, a.part, a.title)

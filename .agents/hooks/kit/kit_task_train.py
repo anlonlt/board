@@ -47,6 +47,14 @@ def kit(root, args, raw=False):
         return {"error": str(e)}
 
 
+def artifact_board(cfg):
+    """CL30: the board is an Artifact when board_url is one, or kit.artifact_url / kit.artifact.url names one (the kit
+    repo's board, attached to Harmonize's: board_url stays the local copy). The push reminder used to read board_url only."""
+    k = (cfg or {}).get("kit") or {}
+    a = k.get("artifact") if isinstance(k.get("artifact"), dict) else {}
+    return any("claude.ai/" in str(u or "") for u in (cfg.get("board_url"), k.get("artifact_url"), a.get("url")))
+
+
 def on_create(root, st, ti, tr):
     task = (tr or {}).get("task") if isinstance(tr, dict) else None
     tid = str((task or {}).get("id") or "")
@@ -74,7 +82,7 @@ def on_create(root, st, ti, tr):
             cfg = json.load(open(os.path.join(root, ".kit", "config.json"), encoding="utf-8"))
         except (OSError, ValueError):
             pass
-        if "claude.ai/" in str(cfg.get("board_url") or "") or (cfg.get("kit") or {}).get("artifact_url"):
+        if artifact_board(cfg):
             hint = (" The board is an Artifact: start its local copy first (`python3 -I .kit/kit.py artifact pull`, the "
                     "calls it prints, `python3 -I .kit/kit.py artifact load`), then TaskUpdate this task or create it again.")
         return "Task %s (train %s step %s): %s; it is only in your task list.%s" % (tid, train, part, res["error"], hint)
@@ -162,7 +170,7 @@ def main():
         except OSError:
             pass
     if msg:
-        if "claude.ai/" in str(config(data).get("board_url") or ""):
+        if artifact_board(config(data)):
             # an Artifact board: the step is on the local copy; one batch carries it (and every other change) across
             msg += (" The board is an Artifact: send this to it with `python3 -I .kit/kit.py artifact push` (it prints one "
                     "ArtifactData batch per 50 changes); batch several steps before you push.")

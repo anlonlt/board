@@ -59,7 +59,9 @@ def main(argv=None):
         return 1
     usage = os.path.join(ROOT, ".kit", "usage.py")
     if os.path.isfile(usage):  # CL37: this session's usage rows onto the ledger branch (the working tree is untouched)
-        try:
+        try:  # this session's own row first (a two-repo session runs no project hook), then the ledger push
+            subprocess.run([sys.executable, "-I", usage, "--root", ROOT, "self", "--no-push"], capture_output=True,
+                           text=True, timeout=60)
             u = subprocess.run([sys.executable, "-I", usage, "--root", ROOT, "push"], capture_output=True, text=True,
                                timeout=120)
             print("end-session: usage ledger: " + (u.stdout.strip() or u.stderr.strip()[-200:] or "?"))
