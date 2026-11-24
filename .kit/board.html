@@ -3554,7 +3554,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
      with get() every LIVE_MS while the page is visible and at once when it comes back to the front; a read that
      changes nothing draws nothing. */
   var LIVE_MS = typeof window.__KIT_LIVE_REFRESH_MS__ === "number" ? window.__KIT_LIVE_REFRESH_MS__ : 15000;
-  /* O54's review of CL35: a full read of Harmonize's ~1,400 comments every 15 s is ~0.7 MB a read. So the timer reads
+  /* O54's review of CL35: a full read of a busy board's comments (~1,400) every 15 s is ~1.4 MB a read. So the timer reads
      only what is newer than what the page holds (recent(since): filtered queries) and merges it in; the full read is
      kept for a return to the page (visibility, focus, pageshow) and for a feed that died. */
   var liveSubs = [];
