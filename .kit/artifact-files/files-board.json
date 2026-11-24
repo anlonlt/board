@@ -15,8 +15,8 @@
  },
  "docs": {
   ".kit+2F~BOARD.md": {
-   "sha": "06a88b950e611edc9964112dd90dd86806227bd47bf7cdc4caf0b02d77933d74",
-   "version": 3
+   "sha": "9f07175d58216150af027983cf1b7ec95f95aa82f7b55bfb00322cab7fb13850",
+   "version": 4
   },
   ".kit+2F~board.html": {
    "sha": "0aa52605f0a5c681b7b46339dd687ffce89f6b73fa73e3c51b5efdd771e6a794",
@@ -31,8 +31,8 @@
    "version": 2
   },
   ".kit+2F~lessons.md": {
-   "sha": "45d7fb7820c8f303e8341624a11e419a9f1644e20abe1601fd9a757bc98c890c",
-   "version": 2
+   "sha": "848a531ec14c8a60d1bf9f12cdfd45ba8ef0d30d5e67cf07893cafc3435710fd",
+   "version": 3
   },
   ".kit+2F~part.md": {
    "sha": "caed20d0897f4e22fe5437a611ca56c99447b974611dcecebc2562d3fb2b54ef",
@@ -79,8 +79,8 @@
    "version": 1
   },
   "kit+2F~board+2F~BOARD.template.md": {
-   "sha": "6e0d98a082db5b284771513444af30ab21139488057264a6a5652823c4476eec",
-   "version": 5
+   "sha": "71f752745dbef1b930a1d9a55f2349cd97ce6c6a909a281a04e3e6775f3e3db1",
+   "version": 6
   },
   "kit+2F~board+2F~board.template.html": {
    "sha": "62260cf438de66a368ea05db66b36adce507233c17a3f0af6c64424cf5702a96",
@@ -123,8 +123,8 @@
    "version": 2
   },
   "kit+2F~lessons.md": {
-   "sha": "45d7fb7820c8f303e8341624a11e419a9f1644e20abe1601fd9a757bc98c890c",
-   "version": 2
+   "sha": "848a531ec14c8a60d1bf9f12cdfd45ba8ef0d30d5e67cf07893cafc3435710fd",
+   "version": 3
   },
   "kit+2F~part.template.md": {
    "sha": "dd42a47cbc30480f640f2dd3a7c5b0f7ce975451228d472114a88faaa00c85f5",
