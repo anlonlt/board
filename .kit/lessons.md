@@ -46,3 +46,8 @@ roles: part, orchestrator
 files: kit/board/board_server.py
 from: CL32
 `--repo board` in Harmonize's cloud clone used to read Harmonize's own posts (the portfolio path named a folder on the owner's computer). An attached board resolves from its clone next to the repo, or from what `artifact load` put in `.kit/attached/<id>`; else a 404 naming what to do.
+
+## K9: A part's result lives in its post body, pictures and diagrams included
+roles: part, review, orchestrator
+from: CL36 2026-11-24
+CL34 wrote its text into `docs/CL34.md` and its post was 8 headings each embedding a section; the owner: "What was wrong with the SVG that they included in the post then?". Write the result in the body under `##` sections, pictures as `![what](path.png)`, diagrams as ```` ```mermaid ```` or ```` ```svg ```` blocks; never a `docs/*.md` file for your text (`kit.py done` refuses a body made of its section embeds).

@@ -1490,10 +1490,26 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
 
   /* Simple markdown: escaped first, then **bold**, `code`, and | tables |. */
   function esc(s) { return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  /* CL36 (the owner, 2026-11-24: "the board posts can show inline pictures and diagrams, no ... ?"): a post body draws
+     what the document viewer draws, with its functions (shim.js): ![alt](repo/path.png) inline, ```mermaid and ```svg
+     blocks as diagrams. Without the shim (a bare page) a picture falls back to its path as given. */
+  function picUrl(src) {
+    if (/^(?:https?:\/\/|\/_blob\/|data:image\/)/i.test(src)) return src;
+    return typeof window._kitAssetUrl === "function" ? window._kitAssetUrl(src) : src;
+  }
   function inline(s) {
+    var pics = [];
+    s = str(s).split(/(`[^`]+`)/).map(function (part, k) {   /* a picture written in a code span stays text */
+      return k % 2 ? part : part.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, function (all, alt, src) {
+        if (/^\s*javascript:/i.test(src)) return all;
+        pics.push('<img class="md-img" src="' + esc(picUrl(src)) + '" alt="' + esc(alt) + '" loading="lazy">');
+        return "\u0001" + (pics.length - 1) + "\u0001";
+      });
+    }).join("");
     return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
       .replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/_blob\/)[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:])/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:])/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+      .replace(/\u0001(\d+)\u0001/g, function (_, n) { return pics[Number(n)] || ""; });
   }
   /* Collapsible sections. Each ##/###/#### heading folds what follows it, up to the next heading of its level or
      higher; the text above the first heading (the lead: what he must know) always shows. Open or folded, in order:
@@ -1545,11 +1561,14 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       var l = lines[i];
       if (/^\s*```/.test(l)) {
         flush();
+        var lang = (/^\s*```\s*([A-Za-z0-9_-]*)/.exec(l)[1] || "").toLowerCase();
         i++;
         var code = [];
         while (i < lines.length && !/^\s*```/.test(lines[i])) { code.push(lines[i]); i++; }
         if (i < lines.length) i++;
-        html += "<pre><code>" + esc(code.join("\n")) + "</code></pre>";
+        if (lang === "mermaid" && typeof window._kitRenderMermaid === "function") html += window._kitRenderMermaid(code.join("\n"));
+        else if (lang === "svg" && typeof window._kitRenderSvg === "function") html += window._kitRenderSvg(code.join("\n"));
+        else html += "<pre><code>" + esc(code.join("\n")) + "</code></pre>";
         continue;
       }
       if (/^\s*(?:---+|___+|\*\*\*+)\s*$/.test(l)) {
@@ -1611,6 +1630,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
         /* folded, the section still shows its first line, fading out: enough to decide whether to open it */
         var peek = "";
         for (var pk = i + 1; pk < lines.length && !/^#{1,4}\s/.test(lines[pk]); pk++) {
+          if (/^\s*```\s*(?:mermaid|svg)\s*$/i.test(lines[pk])) { pk++; while (pk < lines.length && !/^\s*```/.test(lines[pk])) pk++; continue; }  /* a diagram is no peek */
           var pl = lines[pk].replace(/^\s*(?:[-*>]|\d+\.|\|)\s*/, "").replace(/\|/g, " ").replace(/[*`]/g, "").replace(/\s+/g, " ").trim();
           if (pl && !/^[-:\s]+$/.test(pl) && !/^```/.test(lines[pk].trim())) { peek = pl.slice(0, 160); break; }
         }

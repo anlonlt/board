@@ -2795,6 +2795,65 @@ def _as_list(v):
     return v if isinstance(v, list) else [v]
 
 
+EMBED_RE = re.compile(r"`((?:\./)?docs/[^`\s]+\.md)\s*\u00a7[^`]*`")
+
+
+def part_docs(root, part):
+    """The repo docs/*.md files a part wrote: docs/<PART>.md (any case), and every docs/*.md added on this branch since
+    it left main (committed or not yet), docs/prompts/ aside (the kit writes those)."""
+    out = set()
+    part = str(part or "").strip().lower()
+    base = ""
+    for ref in ("origin/main", "main"):
+        r = _git(root, "merge-base", "HEAD", ref, text=True)
+        if r.returncode == 0 and r.stdout.strip():
+            base = r.stdout.strip()
+            break
+    names = []
+    if base:
+        names += _git(root, "diff", "--name-only", "--diff-filter=A", base, "HEAD", "--", "docs", text=True).stdout.split()
+    names += _git(root, "ls-files", "--others", "--exclude-standard", "--", "docs", text=True).stdout.split()
+    for n in names:
+        if n.endswith(".md") and not n.startswith("docs/prompts/"):
+            out.add(n)
+    for n in glob.glob(os.path.join(root, "docs", "*.md")):
+        if part and os.path.splitext(os.path.basename(n))[0].lower() == part:
+            out.add("docs/" + os.path.basename(n))
+    return out
+
+
+def check_body_in_post(p, root=ROOT):
+    """CL36 (the owner, 2026-11-24: "why sessions are writing out documents and linking them inside posts section by
+    section instead of keeping everything in a post?"): a part's result lives in its post body; a body that is mostly
+    `docs/X.md \u00a7 Section` embeds of a docs file the part wrote is refused. Embeds of files it did not write (the
+    kit's guides, an earlier part's report) stay allowed, and so do posts written before this rule (done is not rerun)."""
+    body = str(p.get("body") or "")
+    hits = EMBED_RE.findall(body)
+    if not hits:
+        return []
+    mine = part_docs(root, p.get("part"))
+    own = [h for h in hits if h.lstrip("./") in mine]
+    if not own:
+        return []
+    lines, infence = [], False
+    for l in body.splitlines():
+        t = l.strip()
+        if t.startswith("```"):
+            infence = not infence
+            lines.append("fence")
+            continue
+        if infence or not t or re.match(r"#{1,6}\s", t):
+            continue
+        lines.append(t)
+    embed_lines = [l for l in lines if any(o in l for o in own) and len(EMBED_RE.sub("", l).strip(" -*:.,;")) < 40]
+    if len(own) >= 2 and len(embed_lines) * 2 >= len(lines):
+        files = sorted({o.lstrip("./") for o in own})
+        return ["body: %d of its %d lines only embed sections of %s, a docs file this step wrote: the result lives in "
+                "the post body (CL36). Put the text in the body under ## sections, pictures as ![what](path.png), "
+                "diagrams as ```mermaid or ```svg blocks; then drop the file" % (len(embed_lines), len(lines), ", ".join(files))]
+    return []
+
+
 def check_done(p, root=ROOT, body_max=1500):
     """(errors, warnings) of a post against the kit's post format (.kit/BOARD.md § The post format)."""
     err, warn = [], []
@@ -2825,8 +2884,9 @@ def check_done(p, root=ROOT, body_max=1500):
     body = str(p.get("body") or "")
     if len(body) > body_max:
         # Not an error: the post is where the detail goes. Only a nudge to keep the answer first and the sections clear.
-        warn.append("body: %d characters (over %d): fine if it is the result itself, with ## sections; a report to keep "
-                    "or one with pictures or diagrams reads better as docs/<part>.md embedded by section" % (len(body), body_max))
+        warn.append("body: %d characters (over %d): fine if it is the result itself, with ## sections (they fold); "
+                    "pictures and diagrams go in it too" % (len(body), body_max))
+    err += check_body_in_post(p, root=root)
     # Say it once: a body that embeds a repo doc points to its sections; it does not repeat them.
     docs = set(re.findall(r"`([^`\s]+\.md)(?:\s*\u00a7[^`]*)?`", body)) | {
         str(a).split(" \u00a7")[0].strip("` ") for a in _as_list(p.get("artifacts")) if str(a).split(" \u00a7")[0].strip("` ").endswith(".md")}
@@ -4844,6 +4904,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                            "/".join(REAL_PROJECT_AREAS), ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"))
         orch = (posts.get("_orchestrator") or {}).get("session_id") or "the orchestrator"
         out += ["", "## How you report Done",
+                "0. Your result lives in your post body: the text under `##` sections, pictures as `![what](path.png)`, "
+                "diagrams as ```mermaid or ```svg blocks (the page draws them); never a `docs/*.md` file for your text "
+                "(`done` refuses a body made of its section embeds; CL36).",
                 "1. The post in the kit's format (`.kit/BOARD.md` § The post format); `python3 -I .kit/kit.py done %s` says OK." % pid,
                 "2. Commit, push your branch; `python3 -I .kit/end_session.py`.",
                 "3. SendMessage %s: `Done. Check post %s.`" % (orch, pid)]
