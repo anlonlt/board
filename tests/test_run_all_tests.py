@@ -1,0 +1,159 @@
+"""The test runner: only what a change affects, stopped at the first failure, that failure first the next time.
+
+Run via: python3 -m unittest tests.test_run_all_tests -v
+"""
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import textwrap
+import time
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+class Runner(unittest.TestCase):
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.d, True)
+        (self.d / ".gitignore").write_text(".kit/run/\n")
+        for f in ("run_all_tests.py", "test_trace.py"):
+            self.write("scripts/" + f, (ROOT / "scripts" / f).read_text(encoding="utf-8"))
+        self.write("kit/mod.py", """\
+            LIMIT = 3
+
+
+            def one():
+                return 1
+
+
+            def two():
+                return 2
+
+
+            class C:
+                def m(self):
+                    return 3
+
+                def n(self):
+                    return 4
+            """)
+        self.write("kit/cli.py", """\
+            import os, sys
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import mod
+            print(getattr(mod, sys.argv[1])())
+            """)
+        self.write("kit/note.md", "words\n")
+        self.suite("one", "import mod; self.assertEqual(mod.one(), 1)")
+        self.suite("m", "import mod; self.assertEqual(mod.C().m(), 3)")
+        # a child, isolated, with a clean environment
+        self.suite("child", "r = subprocess.run([sys.executable, '-I', K + '/cli.py', 'two'], capture_output=True, text=True, env={}); "
+                            "self.assertEqual(r.stdout.strip(), '2', r.stderr)")
+        self.suite("note", "self.assertTrue(open(K + '/note.md').read())")
+        # a copy in a project of the test's own
+        self.suite("copy", "import tempfile, shutil; d = tempfile.mkdtemp(); os.makedirs(d + '/.kit'); shutil.copy(K + '/mod.py', d + '/.kit/mod.py'); "
+                           "r = subprocess.run([sys.executable, '-I', '-c', \"import sys; sys.path.insert(0, %r); import mod; print(mod.one())\" % (d + '/.kit')], "
+                           "capture_output=True, text=True); shutil.rmtree(d); self.assertEqual(r.stdout.strip(), '1', r.stderr)")
+        subprocess.run(["git", "init", "-q", str(self.d)], check=True)
+
+    def write(self, rel, text):
+        p = self.d / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(textwrap.dedent(text), encoding="utf-8")
+
+    def suite(self, name, line):
+        self.write("tests/test_%s.py" % name, "import os, subprocess, sys, time, unittest\nK = os.path.join(os.path.dirname(os.path.dirname("
+                   "os.path.abspath(__file__))), 'kit')\nsys.path.insert(0, K)\n\n\nclass T(unittest.TestCase):\n    def test(self):\n        %s\n" % line)
+
+    def edit(self, rel, a, b):
+        p = self.d / rel
+        s = p.read_text(encoding="utf-8")
+        self.assertEqual(s.count(a), 1, a)
+        p.write_text(s.replace(a, b), encoding="utf-8")
+
+    def run_(self, *a):
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        r = subprocess.run([sys.executable, str(self.d / "scripts" / "run_all_tests.py"), *a], capture_output=True, text=True, env=env, timeout=120)
+        self.assertEqual(r.stderr, "")
+        return r
+
+    def names(self, *a):
+        r = self.run_("--list", *a)
+        return {x.split()[0].replace("tests/test_", "").replace(".py", "") for x in r.stdout.splitlines()[:-1]}
+
+    def green(self):
+        r = self.run_()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(self.names(), set(), r.stdout + self.run_("--list").stdout)
+
+    def test_only_what_a_change_affects(self):
+        self.assertEqual(self.names(), {"one", "m", "child", "note", "copy"})
+        self.green()
+        for rel, a, b, want in (("kit/mod.py", "return 1", "return 2 - 1", {"one", "copy"}), ("kit/mod.py", "return 2\n", "return 1 + 1\n", {"child"}),
+                                ("kit/mod.py", "return 3", "return 2 + 1", {"m"}), ("kit/mod.py", "return 4", "return 5", set()),
+                                ("kit/mod.py", "class C:", "def new():\n    return 0\n\n\n# words\nclass C:", set()),
+                                ("kit/mod.py", "LIMIT = 3", "LIMIT = 4", {"one", "m", "child", "copy"}),
+                                ("kit/cli.py", "print(", "print( ", {"child"}), ("kit/note.md", "words", "other words", {"note"}),
+                                ("tests/test_m.py", "3)", "4 - 1)", {"m"}), ("kit/mod.py", "def two():", "def zwei():", {"child"}),
+                                ("kit/mod.py", "class C:", "class C(:", {"one", "m", "child", "copy"})):
+            p = self.d / rel
+            was = p.read_text(encoding="utf-8")
+            self.edit(rel, a, b)
+            self.assertEqual(self.names(), want, (rel, a, b))
+            p.write_text(was, encoding="utf-8")
+            self.assertEqual(self.names(), set(), "put back")
+        r = self.run_()
+        self.assertIn("0 passed, 0 failed, 5 unchanged", r.stdout)
+        self.assertEqual(self.names("--all"), {"one", "m", "child", "note", "copy"})
+        self.assertEqual(self.names("chil"), {"child"})
+        for a in (["add", "-A"], ["-c", "user.name=a", "-c", "user.email=a@b", "commit", "-qm", "x"]):
+            subprocess.run(["git", "-C", str(self.d)] + a, check=True)
+        self.assertEqual(self.names(), set(), "a commit changes no file")
+
+    def test_it_stops_at_the_first_failure_and_starts_there_next_time(self):
+        self.green()
+        self.suite("zz_slow", "time.sleep(60)")
+        self.suite("a_bad", "self.assertEqual(1, 2, 'WHY')")
+        t0 = time.monotonic()
+        r = self.run_("-j", "2")
+        self.assertEqual(r.returncode, 1)
+        self.assertLess(time.monotonic() - t0, 40)
+        self.assertIn("[FAIL] tests/test_a_bad.py", r.stdout)
+        self.assertIn("WHY", r.stdout)
+        self.assertIn("stopped at the first failure", r.stdout)
+        self.assertFalse(subprocess.run(["pgrep", "-f", str(self.d)], capture_output=True).stdout, "nothing is left running")
+        (self.d / "tests/test_zz_slow.py").unlink()
+        self.suite("a_new", "pass")
+        self.assertIn("test_a_bad.py", self.run_("--list").stdout.splitlines()[0])
+        self.assertIn("failed last time", self.run_("--list").stdout.splitlines()[0])
+        self.suite("a_bad", "pass")
+        self.assertEqual(self.run_().returncode, 0)
+        self.assertEqual(self.names(), set())
+
+    def test_keep_going_and_a_failure_is_never_remembered_as_a_pass(self):
+        self.suite("a_bad", "self.fail('x')")
+        r = self.run_("--keep-going", "-j", "1")
+        self.assertIn("5 passed, 1 failed", r.stdout)
+        self.assertEqual(self.names(), {"a_bad"})
+        self.assertEqual(self.run_().returncode, 1)
+        self.assertEqual(self.names(), {"a_bad"})
+
+    def test_a_file_changed_while_its_suite_ran_counts_as_changed(self):
+        self.suite("self_edit", "open(K + '/note.md').read(); open(K + '/note.md', 'a').write('x')")
+        self.run_("self_edit")
+        self.assertIn("self_edit", self.names())
+
+    def test_all_is_not_listened_to_and_remembers_failures(self):
+        self.assertEqual(self.run_("--all").returncode, 0)
+        self.assertEqual(self.names(), {"one", "m", "child", "note", "copy"})
+        self.suite("a_bad", "self.fail('x')")
+        self.assertEqual(self.run_("--all").returncode, 1)
+        self.assertIn("test_a_bad.py", self.run_("--list").stdout.splitlines()[0])
+
+
+if __name__ == "__main__":
+    unittest.main()

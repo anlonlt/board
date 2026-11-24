@@ -393,9 +393,10 @@ Each workstream's state file declares `Runs in:` so the orchestrator routes each
 | `kit/claude/kit_artifact_sync.py` | Mirrors repo docs (256 KiB cap), images, and commit diffs into `kit_docs/*` and `kit_git/*` for Artifacts |
 | `scripts/step0_scan.py` | Cross-platform Step 0 profiler (autonomy metrics, palettes, projects, and MCP Link Reader detection) |
 
-Run the unified regression suite (`python3 scripts/run_all_tests.py`):
+Run the tests a change affects (stopped at the first failure), or all of them:
 ```bash
 python3 scripts/run_all_tests.py
+python3 scripts/run_all_tests.py --all
 ```
 
 </details>
