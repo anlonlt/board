@@ -3,72 +3,18 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "python3 -I hooks/kit/kit_session_start.py"
+        "command": "python3 -I ../.kit/hook.py agy SessionStart"
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "run_command",
+        "matcher": "run_command|invoke_subagent|edit_file|write_file|send_message",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I hooks/kit/kit_guard.py"
+            "command": "python3 -I ../.kit/hook.py agy PreToolUse"
           }
         ]
-      },
-      {
-        "matcher": "invoke_subagent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -I hooks/kit/kit_guard.py"
-          }
-        ]
-      },
-      {
-        "matcher": "edit_file|write_file",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -I hooks/kit/kit_memory_jit.py"
-          }
-        ]
-      },
-      {
-        "matcher": "send_message",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -I hooks/kit/kit_say_it_once.py"
-          }
-        ]
-      },
-      {
-        "matcher": "run_command",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -I hooks/kit/kit_brief_guard.py"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "type": "command",
-        "command": "python3 -I hooks/kit/kit_stop.py"
-      },
-      {
-        "type": "command",
-        "command": "python3 -I hooks/kit/kit_pre_compact.py"
-      },
-      {
-        "type": "command",
-        "command": "python3 -I hooks/kit/kit_web_save.py"
-      },
-      {
-        "type": "command",
-        "command": "python3 -I hooks/kit/kit_say_it_once.py"
       }
     ],
     "PostToolUse": [
@@ -77,16 +23,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -I hooks/kit/kit_say_it_once.py"
-          }
-        ]
-      },
-      {
-        "matcher": "run_command",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -I hooks/kit/kit_brief_guard.py"
+            "command": "python3 -I ../.kit/hook.py agy PostToolUse"
           }
         ]
       }
@@ -94,17 +31,19 @@
     "PreInvocation": [
       {
         "type": "command",
-        "command": "python3 -I hooks/kit/kit_say_it_once.py"
-      },
-      {
-        "type": "command",
-        "command": "python3 -I hooks/kit/kit_board_typing.py"
+        "command": "python3 -I ../.kit/hook.py agy PreInvocation"
       }
     ],
     "PostInvocation": [
       {
         "type": "command",
-        "command": "python3 -I hooks/kit/kit_say_it_once.py"
+        "command": "python3 -I ../.kit/hook.py agy PostInvocation"
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 -I ../.kit/hook.py agy Stop"
       }
     ]
   }

@@ -346,7 +346,7 @@ def main() -> int:
         if not claude:
             print(json.dumps({"decision": "allow"}))
         return 0
-    hook_path = ".claude/hooks/kit/kit_guard.py" if claude else ".agents/hooks/kit/kit_guard.py"
+    hook_path = os.path.relpath(os.path.abspath(__file__), project_dir(data))
     msg = (
         f"REFUSED: {reason}.\n\n"
         f"The kit's guard ({hook_path}): work lost to a deletion cannot be recovered. The ways out:\n"

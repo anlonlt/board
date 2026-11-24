@@ -521,8 +521,11 @@ class Install(unittest.TestCase):
     def test_install_wires_the_hook_and_puts_usage(self):
         src = (ROOT / "install.py").read_text()
         self.assertIn('ins.put(".kit/usage.py", rd("scripts", "usage.py"))', src)
-        self.assertIn('("SessionEnd", None, "kit_usage.py")', src)
-        self.assertEqual(src.count('("Stop", None, "kit_usage.py")'), 2)
+        out = subprocess.run([sys.executable, "-c", "import install as i, json; print(json.dumps([i.CLAUDE_SETTINGS, i.CLAUDE_CLI_SETTINGS]))"],
+                             cwd=str(ROOT), capture_output=True, text=True, check=True).stdout
+        for spec in json.loads(out):                       # the web's lines and the CLI's
+            for ev in ("Stop", "SessionEnd"):
+                self.assertIn([ev, None, "kit_usage.py"], spec)
         self.assertIn("usage.py", (ROOT / "kit" / "end_session.py").read_text())
         self.assertTrue(HOOK.is_file())
 

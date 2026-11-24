@@ -2107,8 +2107,48 @@ def _read_bytes_file(path):
         return fh.read()
 
 
+def _doctor_unified(root, issues, lines):
+    """--unified-hooks: the settings hold exactly one dispatcher line per event of the table, and no per-hook line."""
+    spec = importlib.util.spec_from_file_location("kit_hook_table", os.path.join(root, ".kit", "hook.py"))
+    try:
+        table = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(table)
+    except (OSError, SyntaxError) as e:
+        lines.append("hooks: .kit/hook.py cannot be read (%s)" % e)
+        issues.append("unified hooks without a working .kit/hook.py: run `install.py . --update`")
+        return
+    bad = []
+    for rel, runtimes in ((os.path.join(".claude", "settings.json"), ("web", "cli")), (os.path.join(".agents", "hooks.json"), ("agy",))):
+        s = _read_json_file(os.path.join(root, rel))
+        groups = (s.get("kit-board") if runtimes == ("agy",) else s.get("hooks")) or {}
+        if not groups and not os.path.isfile(os.path.join(root, rel)):
+            continue
+        cmds = [(ev, str(h.get("command") or "")) for ev, gs in groups.items() for g in gs for h in (g.get("hooks") or [g])]
+        rt = next((r for r in runtimes if any(".kit/hook.py" in c and (" %s " % r) in c for _, c in cmds)), None)
+        if rt is None:
+            bad.append("%s runs no .kit/hook.py" % rel)
+            continue
+        for ev in table.events(rt):
+            n = sum(e == ev and c.rstrip().endswith(".kit/hook.py\" %s %s" % (rt, ev) if rt != "agy" else ".kit/hook.py agy %s" % ev) for e, c in cmds)
+            # without the board an event whose hooks are all the board's has no line: nothing of it is installed
+            if n != 1 and (n or any(os.path.isfile(os.path.join(root, ".kit", "hooks", r[2])) for r in table.rows(rt, ev))):
+                bad.append("%s: %d lines for %s" % (rel, n, ev))
+        for ev, gs in groups.items():                        # a tool missing from the line is a hook that never runs
+            for g in gs:
+                if any(".kit/hook.py" in str(h.get("command") or "") for h in (g.get("hooks") or [g])):
+                    miss = set((table.tools(rt, ev) or "").split("|")) - set(str(g.get("matcher") or "").split("|"))
+                    if g.get("matcher") and miss:
+                        bad.append("%s %s misses %s" % (rel, ev, ", ".join(sorted(miss))))
+        bad += ["%s %s still runs %s" % (rel, e, c) for e, c in cmds if "hooks/kit/kit_" in c]
+    lines.append("hooks: one line per event (.kit/hook.py)%s" % ("" if not bad else ": " + "; ".join(bad[:5])))
+    if bad:
+        issues.append("unified hooks miswired: %s (run `install.py . --update`)" % "; ".join(bad[:5]))
+
+
 def _doctor_hook_parity(root, issues, lines, fix=False):
     """Check cross-runtime hook parity (.claude/hooks/kit vs .agents/hooks/kit) and guard registration."""
+    if (_read_json_file(os.path.join(root, ".kit", "config.json")).get("kit") or {}).get("unified_hooks"):
+        return _doctor_unified(root, issues, lines)
     c_dir = os.path.join(root, ".claude", "hooks", "kit")
     a_dir = os.path.join(root, ".agents", "hooks", "kit")
     has_c, has_a = os.path.isdir(c_dir), os.path.isdir(a_dir)
@@ -2187,7 +2227,7 @@ def _doctor_conflicts(root, issues, lines):
         overlaps = []
         for ev, groups in (s.get("hooks") or {}).items():
             cmds = [str(h.get("command") or "") for g in (groups or []) for h in (g.get("hooks") or [])]
-            has_kit = any("/hooks/kit/" in c for c in cmds)
+            has_kit = any("/hooks/kit/" in c or "/.kit/hook.py" in c for c in cmds)
             legacy = [c for c in cmds if has_kit and any(x in c for x in ("stop.sh", "session-start.sh", "end-session.sh"))]
             if legacy:
                 overlaps.append("%s (%s)" % (ev, ", ".join(os.path.basename(x.split()[-1].strip('"\'')) for x in legacy)))

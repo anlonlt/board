@@ -666,7 +666,7 @@ def check_ledger(memory_dir, root=None, comments=None):
     warnings = []
     hook_dirs = []
     if root:
-        for rel in (".claude/hooks/kit", ".agents/hooks/kit", "kit/hooks", ".kit"):
+        for rel in (".kit/hooks", ".claude/hooks/kit", ".agents/hooks/kit", "kit/hooks", ".kit"):
             d = os.path.join(root, rel)
             if os.path.isdir(d):
                 hook_dirs.append(d)

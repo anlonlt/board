@@ -151,6 +151,7 @@
     "github": "anlonlt/harmonize",
     "check": "python3 -I .kit/kit.py resume --role orchestrator"
    }
-  ]
+  ],
+  "unified_hooks": "2026-11-24"
  }
 }

@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import subprocess
 
@@ -29,9 +30,14 @@ KIT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(KIT, "kit", "board"))
 import strings as page_strings  # noqa: E402
 
+import importlib.util  # noqa: E402
+_spec = importlib.util.spec_from_file_location("kit_hook_table", os.path.join(KIT, "kit", "hook.py"))
+hook_table = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(hook_table)
+
 PARTS = ("memory", "board", "clerk", "orchestrator")
 MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "kit_usage.py",
-                "test_hooks.py"}
+                "kit_memory_jit.py", "test_hooks.py"}
 HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
          "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "kit_task_train.py",
          "kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "kit_memory_jit.py", "kit_usage.py",
@@ -47,53 +53,21 @@ GUARD_HOOKS = ("kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_gua
 # agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
 CMD = "python3 -I hooks/kit/%s"
 CLAUDE_CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.claude/hooks/kit/%s"'
-CLAUDE_SETTINGS = [
-    ("SessionStart", None, "kit_session_start.py"),
-    ("PreToolUse", "Bash", "kit_guard.py"),
-    ("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage", "kit_say_it_once.py"),
-    ("PreToolUse", "ArtifactData|mcp__claude-code-remote__create_session", "kit_orchestrator_guard.py"),
-    ("PreToolUse", "ArtifactData|Bash", "kit_brief_guard.py"),
-    ("PreToolUse", "Edit|Write|MultiEdit", "kit_memory_jit.py"),      # a files: rule of the ledger, at the edit
-    ("PostToolUse", "Bash", "kit_brief_guard.py"),
-    ("PostToolUse", "ArtifactData|mcp__claude-code-remote__send_message", "kit_say_it_once.py"),
-    ("UserPromptSubmit", None, "kit_say_it_once.py"),
-    ("UserPromptSubmit", None, "kit_board_typing.py"),
-    ("UserPromptSubmit", None, "kit_cards_reminder.py"),
-    ("PostToolUse", "ArtifactData|mcp__claude-code-remote__create_session", "kit_cards_reminder.py"),
-    ("PostToolUse", "ArtifactData", "kit_notify.py"),
-    ("PostToolUse", "TaskCreate|TaskUpdate", "kit_task_train.py"),
-    ("PostToolUse", "Bash|mcp__claude-code-remote__create_session", "kit_board_guard.py"),
-    ("Stop", None, "kit_board_guard.py"),
-    ("Stop", None, "kit_stop.py"),
-    ("Stop", None, "kit_say_it_once.py"),
-    ("Stop", None, "kit_usage.py"),          # CL37: the usage ledger, recorded by a script (no model call)
-    ("SessionEnd", None, "kit_usage.py"),
-    ("PreCompact", None, "kit_pre_compact.py"),
-]
-# The Claude Code CLI on a computer with the local board server (--runtime local): the agy hook set,
+# Every runtime's lines come from one table, kit/hook.py's (the same one the unified dispatcher runs from).
+# CLAUDE_CLI_SETTINGS: the Claude Code CLI on a computer with the local board server (--runtime local): the agy hook set,
 # mapped onto Claude Code's events and tool names (run_command -> Bash, send_message -> SendMessage).
-CLAUDE_CLI_SETTINGS = [
-    ("SessionStart", None, "kit_session_start.py"),
-    ("PreToolUse", "Bash", "kit_guard.py"),
-    ("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage", "kit_say_it_once.py"),
-    ("PostToolUse", "SendMessage|Bash", "kit_say_it_once.py"),
-    ("PostToolUse", "TaskCreate|TaskUpdate", "kit_task_train.py"),
-    ("PreToolUse", "Bash", "kit_brief_guard.py"),
-    ("PreToolUse", "Edit|Write|MultiEdit", "kit_memory_jit.py"),
-    ("PostToolUse", "Bash", "kit_brief_guard.py"),
-    ("UserPromptSubmit", None, "kit_say_it_once.py"),
-    ("UserPromptSubmit", None, "kit_board_typing.py"),
-    ("UserPromptSubmit", None, "kit_cards_reminder.py"),
-    ("PostToolUse", "Bash", "kit_board_guard.py"),
-    ("Stop", None, "kit_board_guard.py"),
-    ("Stop", None, "kit_stop.py"),
-    ("Stop", None, "kit_say_it_once.py"),
-    ("Stop", None, "kit_pre_compact.py"),
-    ("Stop", None, "kit_web_save.py"),
-    ("Stop", None, "kit_usage.py"),
-    ("SessionEnd", None, "kit_usage.py"),
-    ("PreCompact", None, "kit_pre_compact.py"),
-]
+CLAUDE_SETTINGS = [r[:3] for r in hook_table.rows("web")]
+CLAUDE_CLI_SETTINGS = [r[:3] for r in hook_table.rows("cli")]
+DISPATCH = {"claude": 'python3 -I "$CLAUDE_PROJECT_DIR/.kit/hook.py" %s %s', "agy": "python3 -I ../.kit/hook.py %s %s"}
+SHIM_DAYS = 14     # a session started before the move still runs the old paths: they forward to .kit/hooks meanwhile
+SHIM = '''#!/usr/bin/env python3
+"""Moved to .kit/hooks/ (install.py --unified-hooks): this forwards, for sessions started before the move."""
+import os, runpy
+p = os.path.abspath(__file__)
+root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(p))))
+runpy.run_path(os.path.join(root, ".kit", "hooks", os.path.basename(p)), run_name="__main__")
+'''
+
 # Runtimes served by the local board server; `local` = agy + the Claude Code CLI in one install.
 LOCAL_RUNTIMES = ("local", "agy", "both", "arena", "generic")
 
@@ -615,47 +589,27 @@ def render(text, c):
     return text
 
 
-def build_agy_hooks(board=True):
-    """Build the agy `.agents/hooks.json` spec for the kit-board named hook."""
-    spec = {
-        "SessionStart": [{"type": "command", "command": CMD % "kit_session_start.py"}],
-        "PreToolUse": [
-            {"matcher": "run_command", "hooks": [{"type": "command", "command": CMD % "kit_guard.py"}]},
-            {"matcher": "invoke_subagent", "hooks": [{"type": "command", "command": CMD % "kit_guard.py"}]},
-            {"matcher": "edit_file|write_file", "hooks": [{"type": "command", "command": CMD % "kit_memory_jit.py"}]},
-        ],
-        "Stop": [
-            {"type": "command", "command": CMD % "kit_stop.py"},
-            {"type": "command", "command": CMD % "kit_pre_compact.py"},
-            {"type": "command", "command": CMD % "kit_web_save.py"},
-        ],
-    }
-    if board:
-        spec["PreToolUse"].append(
-            {"matcher": "send_message", "hooks": [{"type": "command", "command": CMD % "kit_say_it_once.py"}]}
-        )
-        spec["PreToolUse"].append(
-            {"matcher": "run_command", "hooks": [{"type": "command", "command": CMD % "kit_brief_guard.py"}]}
-        )
-        spec["PostToolUse"] = [
-            {"matcher": "send_message|run_command", "hooks": [{"type": "command", "command": CMD % "kit_say_it_once.py"}]},
-            {"matcher": "run_command", "hooks": [{"type": "command", "command": CMD % "kit_brief_guard.py"}]},
-        ]
-        spec["PreInvocation"] = [
-            {"type": "command", "command": CMD % "kit_say_it_once.py"},
-            {"type": "command", "command": CMD % "kit_board_typing.py"},
-        ]
-        spec["PostInvocation"] = [
-            {"type": "command", "command": CMD % "kit_say_it_once.py"},
-        ]
-        spec["Stop"].append({"type": "command", "command": CMD % "kit_say_it_once.py"})
+def build_agy_hooks(board=True, unified=False):
+    """Build the agy `.agents/hooks.json` spec for the kit-board named hook, from the table. Without the board only the
+    hooks that are installed (MEMORY_HOOKS): a line to a missing file would refuse every call."""
+    table = [r for r in hook_table.rows("agy") if board or r[2] in MEMORY_HOOKS]
+    spec = {}
+    for ev in dict.fromkeys(r[0] for r in table):
+        mine = [r for r in table if r[0] == ev]
+        if unified:
+            tools = "|".join(dict.fromkeys(t for r in mine if r[1] for t in r[1].split("|")))
+            lines = [(tools or None, DISPATCH["agy"] % ("agy", ev))]
+        else:
+            lines = [(r[1], CMD % r[2]) for r in mine]
+        spec[ev] = [{"matcher": m, "hooks": [{"type": "command", "command": c}]} if m else {"type": "command", "command": c}
+                    for m, c in lines]
     return spec
 
 
-def merge_hooks(t, dry, log, board=True):
+def merge_hooks(t, dry, log, board=True, unified=False):
     p = os.path.join(t, ".agents", "hooks.json")
     s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
-    desired = build_agy_hooks(board=board)
+    desired = build_agy_hooks(board=board, unified=unified)
     if s.get("kit-board") == desired:
         return
     s["kit-board"] = desired
@@ -694,12 +648,141 @@ def merge_agy_mcp(t, dry, log):
 ALLOW_RULES = ("mcp__claude-code-remote__add_repo",)
 
 
-def merge_claude_settings(t, dry, log, board=True, spec=None):
+def kit_hook_files(board):
+    return [h for h in HOOKS if board or h in MEMORY_HOOKS]
+
+
+def unify_refusals(t, manifest):
+    """Why this target cannot move to one line per event yet: a kit hook it changed, or a line of its own that runs a
+    kit hook another way. Both are its work: nothing is moved over them."""
+    out = []
+    for d in RUNTIME_HOOK_DIRS.values():
+        for h in HOOKS:
+            p = os.path.join(t, d + h)
+            if not os.path.isfile(p):
+                continue
+            cur = open(p, "rb").read()
+            src = open(os.path.join(KIT, "kit", "hooks", h), "rb").read()
+            if cur not in (src, SHIM.encode("utf-8")) and manifest.get(d + h) != sha(cur) \
+                    and git_blob(cur) not in past_kit_blobs("kit/hooks/" + h):
+                out.append("%s is not the kit's (changed here)" % (d + h))
+    try:
+        s = json.load(open(os.path.join(t, ".claude", "settings.json"), encoding="utf-8"))
+    except OSError:
+        return out
+    except ValueError:
+        return out + [".claude/settings.json is not valid JSON"]
+    kit = {CLAUDE_CMD % h for h in HOOKS}
+    for ev, groups in (s.get("hooks") or {}).items():
+        for c in (str(x.get("command") or "") for g in groups for x in g.get("hooks", [])):
+            if c not in kit and any(d + h in c for d in RUNTIME_HOOK_DIRS.values() for h in HOOKS):
+                out.append(".claude/settings.json %s runs a kit hook its own way: %s" % (ev, c))
+    return out
+
+
+def strip_claude_lines(hooks, ours):
+    """Drop the command lines `ours` accepts (and the groups and events left empty); returns how many."""
+    n = 0
+    for ev in list(hooks):
+        keep = []
+        for g in hooks[ev]:
+            hs = [h for h in g.get("hooks", []) if not ours(str(h.get("command") or ""))]
+            n += len(g.get("hooks", [])) - len(hs)
+            if hs or not g.get("hooks"):
+                keep.append(dict(g, hooks=hs) if g.get("hooks") else g)
+        if keep:
+            hooks[ev] = keep
+        else:
+            del hooks[ev]
+    return n
+
+
+def merge_dispatch_settings(t, dry, log, board, runtime):
+    """One line per event in .claude/settings.json; the kit's per-hook lines go, every other line stays."""
     p = os.path.join(t, ".claude", "settings.json")
     s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    before = json.dumps(s)
     hooks = s.setdefault("hooks", {})
+    kit = {CLAUDE_CMD % h for h in HOOKS}
+    evs = list(dict.fromkeys(r[0] for r in hook_table.rows(runtime) if board or r[2] in MEMORY_HOOKS))
+    want = {ev: DISPATCH["claude"] % (runtime, ev) for ev in evs}
+    gone = strip_claude_lines(hooks, lambda c: c in kit)
+    strip_claude_lines(hooks, lambda c: "/.kit/hook.py" in c and c not in want.values())
+    for ev, cmd in want.items():
+        groups = hooks.setdefault(ev, [])
+        line = {"type": "command", "command": cmd,
+                "timeout": 10 + max(r[4] for r in hook_table.rows(runtime, ev))}
+        on = hook_table.tools(runtime, ev)
+        want_g = {"matcher": on, "hooks": [line]} if on else {"hooks": [line]}
+        if want_g not in groups:                             # the kit's line is written whole: its tools may have grown
+            strip_claude_lines(hooks, lambda c: c == cmd)
+            hooks.setdefault(ev, []).append(want_g)
+    _claude_extras(s, board and any(r[2] == "kit_task_train.py" for r in hook_table.rows(runtime)))
+    if json.dumps(s) == before:
+        return
+    log.append(".claude/settings.json: one kit line per event (%d; %d per-hook lines replaced; other lines kept)" % (len(want), gone))
+    if not dry:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(s, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+
+
+def retire_old_hooks(ins, since, today):
+    """After the move: the old copies forward to .kit/hooks for SHIM_DAYS, then go."""
+    import datetime
+    keep = (datetime.date.fromisoformat(today) - datetime.date.fromisoformat(since)).days < SHIM_DAYS
+    n = 0
+    for d in RUNTIME_HOOK_DIRS.values():
+        for h in HOOKS:
+            p = os.path.join(ins.t, d + h)
+            if not os.path.isfile(p):
+                continue
+            if keep and h not in ("kit_config.py", "test_hooks.py"):
+                if open(p, encoding="utf-8").read() != SHIM and not ins.dry:
+                    with open(p, "w", encoding="utf-8") as fh:
+                        fh.write(SHIM)
+                ins.manifest[d + h] = sha(SHIM.encode("utf-8"))
+                n += 1
+                continue
+            ins.log.append("removed " + d + h)
+            ins.manifest.pop(d + h, None)
+            if not ins.dry:
+                os.remove(p)
+        full = os.path.join(ins.t, d)
+        if not ins.dry and os.path.isdir(full) and set(os.listdir(full)) <= {"__pycache__"}:
+            shutil.rmtree(full)
+    if n:
+        ins.log.append("%d old hook paths forward to .kit/hooks until %d days after %s (sessions already running)" % (n, SHIM_DAYS, since))
+
+
+def back_to_separate(ins):
+    """--no-unified-hooks: the dispatcher's lines, its files and the forwarders go; the caller then installs as before."""
+    p = os.path.join(ins.t, ".claude", "settings.json")
+    if os.path.isfile(p):
+        s = json.load(open(p, encoding="utf-8"))
+        if strip_claude_lines(s.get("hooks") or {}, lambda c: "/.kit/hook.py" in c) and not ins.dry:
+            with open(p, "w", encoding="utf-8") as fh:
+                json.dump(s, fh, indent=2, ensure_ascii=False)
+                fh.write("\n")
+    for rel in [".kit/hooks/" + h for h in HOOKS] + [".kit/hook.py"]:
+        f = os.path.join(ins.t, rel)
+        if os.path.isfile(f) and ins.manifest.get(rel) == sha(open(f, "rb").read()):
+            ins.manifest.pop(rel)
+            if not ins.dry:
+                os.remove(f)
+    for d in RUNTIME_HOOK_DIRS.values():                   # a forwarder has nothing left to forward to
+        for h in HOOKS:
+            f = os.path.join(ins.t, d + h)
+            if os.path.isfile(f) and open(f, encoding="utf-8").read() == SHIM and not ins.dry:
+                os.remove(f)
+    ins.log.append("unified hooks off: back to one line per hook")
+
+
+def _claude_extras(s, tasks):
+    """The settings beside the hooks; returns how many were added."""
     added = 0
-    if any(f == "kit_task_train.py" for _, _, f in (spec or [])) and board:
+    if tasks:
         # Claude Code's task tools (TaskCreate / TaskUpdate) are off unless this is set; the orchestrator plans with
         # them and kit_task_train.py puts each step on its train.
         env = s.setdefault("env", {})
@@ -709,12 +792,19 @@ def merge_claude_settings(t, dry, log, board=True, spec=None):
     # CL38: a Claude Code web session attaches another repo (an attached board, the kit repo, a real project to test
     # on) with add_repo; auto mode's classifier refuses it ("Unauthorized Access") unless the project allows it.
     # Merged into the project's own rules (never one dropped, never doubled).
-    perms = s.setdefault("permissions", {})
-    allow = perms.setdefault("allow", [])
+    allow = s.setdefault("permissions", {}).setdefault("allow", [])
     for rule in ALLOW_RULES:
         if rule not in allow:
             allow.append(rule)
             added += 1
+    return added
+
+
+def merge_claude_settings(t, dry, log, board=True, spec=None):
+    p = os.path.join(t, ".claude", "settings.json")
+    s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    hooks = s.setdefault("hooks", {})
+    added = _claude_extras(s, board and any(f == "kit_task_train.py" for _, _, f in (spec or [])))
     for ev, matcher, f in (spec or CLAUDE_SETTINGS):
         if not board and f not in MEMORY_HOOKS:
             continue
@@ -845,6 +935,9 @@ def main(argv=None):
     ap.add_argument("--no-survey", metavar="WHY", help="install without step 0 (the reason is recorded)")
     ap.add_argument("--quick", action="store_true", help="<60s trial install: skips Step 0 ceremony, defaults project/language, and bootstraps local DB")
     ap.add_argument("--parts", help="comma list among memory,board,clerk,orchestrator (memory always)")
+    ap.add_argument("--unified-hooks", action="store_true", help="one settings line per event (.kit/hook.py) and one copy "
+                    "of the hooks (.kit/hooks), kept by later --update runs; refused over hooks the project changed")
+    ap.add_argument("--no-unified-hooks", action="store_true", help="back to one settings line per hook")
     ap.add_argument("--no-board", action="store_true", help="memory and its hooks only (no page, clerk, orchestrator)")
     ap.add_argument("--no-clerk", action="store_true")
     ap.add_argument("--no-orchestrator", action="store_true")
@@ -1010,6 +1103,20 @@ def main(argv=None):
         if detected_mr:
             c["kit"]["mcp_readers"] = detected_mr
     ins = Installer(t, a.dry_run)
+    if a.unified_hooks and not c["kit"].get("unified_hooks"):
+        import datetime
+        c["kit"]["unified_hooks"] = datetime.date.today().isoformat()      # since when: the forwarders' age
+    unified = bool(c["kit"].get("unified_hooks")) and not a.no_unified_hooks
+    if unified:
+        rt0, here = c["kit"].get("runtime", "local"), present_runtimes(t)
+        why = ["its %s hooks are the project's own choice (kit.runtime %s does not name that runtime)" % (n, rt0)
+               for n, key, rts in (("agy", "agy", ("agy", "both", "local")), ("Claude Code", "claude", ("claude", "both", "local")))
+               if key in here and rt0 not in rts]
+        why += unify_refusals(t, ins.manifest)
+        if why:
+            raise SystemExit("install: --unified-hooks refused, nothing was changed:\n  " + "\n  ".join(why))
+    elif c["kit"].pop("unified_hooks", None):
+        back_to_separate(ins)
     trunk(t, c["kit"], a.main_branch, ins.log if (first or a.main_branch) else None) if (first or a.main_branch) else None
     permissions(t, c["kit"], old_k, a, first, perm_log)
     multi_web = web_multi(c, a, first, perm_log)
@@ -1062,9 +1169,14 @@ def main(argv=None):
     prev_date = (str(ins.manifest.get("_kit_commit") or "").split(" ") + ["", ""])[1]
     also_agy = "agy" in present and not want_agy
     also_claude = "claude" in present and not want_claude
+    if unified:
+        ins.put(".kit/hook.py", rd("kit", "hook.py"))
     for h in HOOKS:
         if parts["board"] or h in MEMORY_HOOKS:
             past = past_kit_blobs("kit/hooks/" + h)
+            if unified:
+                ins.put(".kit/hooks/" + h, rd("kit", "hooks", h), past)
+                continue
             if want_agy:
                 ins.put(".agents/hooks/kit/" + h, rd("kit", "hooks", h), past)
             if want_claude:
@@ -1176,7 +1288,7 @@ def main(argv=None):
             prefix = "" if cur.endswith("\n") or not cur else "\n"
             open(gi, "a", encoding="utf-8").write(prefix + "\n".join(gi_add) + "\n")
     if want_agy:
-        merge_hooks(t, a.dry_run, ins.log, parts["board"])
+        merge_hooks(t, a.dry_run, ins.log, parts["board"], unified)
         if parts["board"] and not claude_only:
             merge_agy_mcp(t, a.dry_run, ins.log)
         if c["kit"].get("cmd"):
@@ -1443,7 +1555,12 @@ def main(argv=None):
             ins.log.append("bootstrap: seeded _orchestrator and KIT-installed in .kit/board_data/board.db")
         finally:
             store.close()
-    if want_claude:
+    if unified:
+        if want_claude:
+            merge_dispatch_settings(t, a.dry_run, ins.log, parts["board"], "cli" if claude_cli_hooks else "web")
+        import datetime as _dt
+        retire_old_hooks(ins, c["kit"]["unified_hooks"], _dt.date.today().isoformat())
+    elif want_claude:
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], CLAUDE_CLI_SETTINGS if claude_cli_hooks else CLAUDE_SETTINGS)
     elif "claude" in present:
         added_h = set(new_hooks.get(RUNTIME_HOOK_DIRS["claude"]) or [])
