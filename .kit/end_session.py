@@ -97,9 +97,13 @@ def main(argv=None):
             if branch != trunk and branch not in KEEP and not k.get("keep_branches"):
                 # CL38 (the owner's Like, o54-branches-0225): the branch is on the trunk now, every commit of it;
                 # origin drops it (a later push of this session makes it again). 40 such branches piled up by CL38.
-                if git("push", "-q", "origin", "--delete", branch).returncode == 0:
+                dr = git("push", "-q", "origin", "--delete", branch)
+                if dr.returncode == 0:
                     git("branch", "--unset-upstream")
                     print("end-session: origin/%s deleted (all of it is on %s)" % (branch, trunk))
+                else:   # a Claude Code web session's git proxy may refuse it: said, never silent
+                    print("end-session: origin/%s NOT deleted (%s); `kit.py branches --delete` from a session that may"
+                          % (branch, (dr.stderr or dr.stdout).strip().splitlines()[-1:] or "?"))
             return 0
         time.sleep(3)
     print("end-session: the trunk kept moving; run again")
