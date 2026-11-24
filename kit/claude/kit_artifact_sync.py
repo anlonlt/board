@@ -497,8 +497,12 @@ def plan_text(plan, board, out, into):
                      "batch that merges them into the map (kit_docs) for the page%s." % (
                          board, ("repos/%s/" % repo_id(into)) if into else "", os.path.join(out, "index"), out,
                          " --into %s" % into if into else "", " and mirrors %d document(s)" % len(plan["mirror"]) if plan["mirror"] else ""))
-    for ref, why in plan["links"]:
-        lines.append("- `%s` stays a repo link (%s): say so in the post." % (ref, why))
+    if plan["links"]:
+        lines.append("Files a post names that the board will not open (each stays a repo link; say so in that post):")
+    for row in plan["links"]:
+        ref, why = row[0], row[1]
+        ids = row[2] if len(row) > 2 else []
+        lines.append("- `%s` (%s)%s" % (ref, why, ", named by post " + ", ".join(ids) if ids else ""))
     return "\n".join(lines) + ("\n" if lines else "")
 
 
