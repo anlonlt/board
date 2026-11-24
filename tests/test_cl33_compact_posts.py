@@ -171,7 +171,7 @@ class CompactPostsOpenWork(unittest.TestCase):
                                         "body": "seen twice"}})
         out = self.kit.compact_memory(root_dir=self.d, board=b)
         self.assertEqual(list(issues(b)), ["iss-open-one"], out)
-        self.assertIn("0 doubled", out)
+        self.assertIn("0 possible double(s)", out)
         text = open(os.path.join(self.mem, "archive", "issues", "2026-11-05-open.md"), encoding="utf-8").read()
         self.assertIn("posted as board post iss-open-one", text)
 
@@ -226,7 +226,8 @@ class CompactPostsOpenWork(unittest.TestCase):
         self.assertEqual(b.writes, [])
         self.assertEqual(snapshot(self.d), before)
         self.assertIn("4 question post(s) planned", out)
-        self.assertIn("1 issue post(s) planned, 0 doubled", out)
+        self.assertIn("1 issue post(s) planned", out)
+        self.assertIn("0 possible double(s)", out)
         self.assertIn("[sync] Keep the cloud copy?", out)
         self.assertIn("OVERDUE", out)
         self.assertIn("STORY: OK", out)

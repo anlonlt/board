@@ -2091,8 +2091,10 @@ class _LocalBoard:
                 "<batch>`") if self.artifact else ""
 
 
-def _await_point(lines, mem_rel, fname, today):
-    """One awaits point -> its question post (CL33): text, workstream as part and train, default, deadline, OVERDUE."""
+def _await_point(lines, mem_rel, fname, today, since=None):
+    """One awaits point -> its question post (CL33): its text, default (the one-tap answer), deadline, workstream,
+    the date the point was written (`since`), and for an OVERDUE point that the default applies and where.
+    The workstream is a field, never the part or train: as a part it made pseudo-trains and false 'blocks' (O54)."""
     import hashlib
     s = " ".join(x.strip() for x in lines)
     m = _AWAIT_POINT.match(s)
@@ -2107,19 +2109,51 @@ def _await_point(lines, mem_rel, fname, today):
         text = rest[:dl.start()].strip()
     overdue = bool(deadline and deadline < today)
     where = "%s/state/%s.md" % (mem_rel, ws) if ws else "%s/%s" % (mem_rel, fname)
-    body = [text, "", "Default: %s · deadline %s" % (default or "(none written)", deadline or "(none)")]
+    body = [text, "", "Default: %s · deadline %s%s" % (default or "(none written)", deadline or "(none)",
+                                                      " · workstream %s" % ws if ws else "")]
     if overdue:
         body += ["", "**OVERDUE** (deadline %s passed): the default applies (%s); record it where it acts: `%s`."
                  % (deadline, default or "none written", where)]
     body += ["", "From `%s/%s`, archived by `kit.py compact`: answer here." % (mem_rel, fname)]
+    now = _now_z()
     doc = {"title": text[:160] or s[:160], "kind": "question", "column": "question", "status": "open",
-           "part": ws, "train": ws, "default": default, "deadline": deadline, "body": "\n".join(body),
+           "workstream": ws, "default": default, "deadline": deadline, "body": "\n".join(body),
            "source": "%s/%s" % (mem_rel, fname), "source_key": hashlib.sha1(_norm_text(s).encode()).hexdigest()[:12],
-           "from": "kit compact", "created_at": _now_z()}
+           "from": "kit compact", "created_at": since or now, "posted_at": now}
+    if default:
+        doc["default_option"] = default
+        doc["options"] = [default, "Something else (reply under this post)"]
     if overdue:
         doc["overdue"] = True
     pid = "aw-%s-%s" % (_slug(ws or "point", 16), _slug(text, 32))
     return pid, doc, s
+
+
+_STOP = set("the a an of in on at to for and or is are be it its this that with by from as do does did not no yes "
+            "which what when how who why should can will we he she they them his her our your my me i".split())
+
+
+def _sig_words(s):
+    return {w for w in _norm_text(s).split() if len(w) >= 3 and w not in _STOP}
+
+
+def _point_dates(base, path):
+    """Each line of an awaits file -> the ISO date its last change was committed (git blame); {} outside git."""
+    try:
+        r = subprocess.run(["git", "-C", base, "blame", "--line-porcelain", "--", os.path.relpath(path, base)],
+                           capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if r.returncode != 0:
+        return {}
+    out, t = {}, None
+    for ln in r.stdout.split("\n"):
+        if ln.startswith("author-time "):
+            t = int(ln.split()[1])
+        elif ln.startswith("\t") and t is not None:
+            out.setdefault(ln[1:], datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+            t = None
+    return out
 
 
 def _issue_post(fn, text, mem_rel):
@@ -2132,15 +2166,22 @@ def _issue_post(fn, text, mem_rel):
     return "issue-%s" % _slug(fn[:-3], 48), doc
 
 
-def _match_post(posts, doc, kind, stem=None):
-    """A post already on the board for this point or issue: same source_key, or an issue post naming the file, or the
-    same title (normalized) in a post of that kind. Never doubled (CL33)."""
+def _match_post(posts, doc, kind, stem=None, text=""):
+    """A post already on the board for this point or issue (CL33, never doubled): the same source_key; a post id the
+    point names (`HL5-harmony-ai-question`); an issue post naming the file; or, in a post of that kind, the same
+    title or a title whose significant words (2 or more) all appear in the point's."""
     nt = _norm_text(doc.get("title"))
+    words = _sig_words(text or doc.get("title"))
     for pid, p in posts.items():
         if pid.startswith("_") or not isinstance(p, dict) or p.get("removed"):
             continue
         if doc.get("source_key") and p.get("source_key") == doc["source_key"]:
             return pid
+        if text and len(pid) >= 4 and pid in text and re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(pid), text):
+            return pid
+    for pid, p in posts.items():
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("removed"):
+            continue
         is_kind = p.get("kind") == kind or (kind == "question" and p.get("column") == "question") or \
             (kind == "issue" and re.match(r"^(issue|iss)[-_]", pid))
         if not is_kind:
@@ -2149,7 +2190,28 @@ def _match_post(posts, doc, kind, stem=None):
             return pid
         if nt and _norm_text(p.get("title")) == nt:
             return pid
+        tw = _sig_words(p.get("title"))
+        if len(tw) >= 2 and tw <= words:
+            return pid
     return None
+
+
+def _possible_doubles(posts, planned):
+    """Planned posts that look like a post already there by a looser test (half their significant words shared):
+    listed for a look by hand, never posted silently twice."""
+    out = []
+    for pid, d in planned:
+        w = _sig_words(d.get("title"))
+        for k, p in posts.items():
+            if k.startswith("_") or not isinstance(p, dict) or p.get("removed"):
+                continue
+            if p.get("kind") not in ("question", "issue") and p.get("column") != "question":
+                continue
+            tw = _sig_words(p.get("title"))
+            if w and tw and len(w & tw) * 2 >= max(len(w), len(tw)) and len(w & tw) >= 2:
+                out.append("%s ~ %s" % (pid, k))
+                break
+    return out
 
 
 def compact_memory(days=30, dry_run=False, root_dir=None, board=None):
@@ -2223,9 +2285,12 @@ def compact_memory(days=30, dry_run=False, root_dir=None, board=None):
         existing = board.posts()
         taken = set(existing)
         today = datetime.now(timezone.utc).date().isoformat()
+        dates = {}
         for n, lines in points:
-            pid, doc, s = _await_point(lines, rel_m.replace(os.sep, "/"), n, today)
-            hit = _match_post(existing, doc, "question")
+            if n not in dates:
+                dates[n] = _point_dates(base, os.path.join(mdir, n))
+            pid, doc, s = _await_point(lines, rel_m.replace(os.sep, "/"), n, today, since=dates[n].get(lines[0]))
+            hit = _match_post(existing, doc, "question", text=s)
             if hit:
                 matched.append(hit)
                 continue
@@ -2252,15 +2317,12 @@ def compact_memory(days=30, dry_run=False, root_dir=None, board=None):
             issue_post[fn] = pid
             post_lines.append("  - %s: issue %s" % (pid, doc["title"][:150]))
         n_i = len(planned) - n_q
-        titles = {}
-        for pid, p in existing.items():
-            if isinstance(p, dict) and not p.get("removed") and p.get("kind") in ("issue", "question"):
-                titles.setdefault((p.get("kind"), _norm_text(p.get("title"))), pid)
-        doubled = sum(1 for _, d in planned if (d["kind"], _norm_text(d["title"])) in titles)
-        posts_head = ("\n%d question post(s) %s (one per open awaits point), %d issue post(s) %s, %d doubled, "
-                      "%d already on the board (matched, not posted again)" % (
+        doubles = _possible_doubles(existing, planned)
+        posts_head = ("\n%d question post(s) %s (one per open awaits point), %d issue post(s) %s, %d already on the "
+                      "board (matched, not posted again: %s), %d possible double(s) to check by hand%s" % (
                           n_q, "planned" if dry_run else "posted", n_i, "planned" if dry_run else "posted",
-                          doubled, len(matched)))
+                          len(matched), ", ".join(matched) or "none", len(doubles),
+                          (": " + "; ".join(doubles)) if doubles else ""))
         on_board = True
         for n in names:
             if any(pn == n for pn, _ in points):
