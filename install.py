@@ -618,6 +618,10 @@ def merge_agy_mcp(t, dry, log):
             fh.write("\n")
 
 
+# CL38: the permission rules every Claude Code project of the kit gets in .claude/settings.json permissions.allow.
+ALLOW_RULES = ("mcp__claude-code-remote__add_repo",)
+
+
 def merge_claude_settings(t, dry, log, board=True, spec=None):
     p = os.path.join(t, ".claude", "settings.json")
     s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
@@ -629,6 +633,15 @@ def merge_claude_settings(t, dry, log, board=True, spec=None):
         env = s.setdefault("env", {})
         if env.get("CLAUDE_CODE_ENABLE_TODO_TOOLS") != "1":
             env["CLAUDE_CODE_ENABLE_TODO_TOOLS"] = "1"
+            added += 1
+    # CL38: a Claude Code web session attaches another repo (an attached board, the kit repo, a real project to test
+    # on) with add_repo; auto mode's classifier refuses it ("Unauthorized Access") unless the project allows it.
+    # Merged into the project's own rules (never one dropped, never doubled).
+    perms = s.setdefault("permissions", {})
+    allow = perms.setdefault("allow", [])
+    for rule in ALLOW_RULES:
+        if rule not in allow:
+            allow.append(rule)
             added += 1
     for ev, matcher, f in (spec or CLAUDE_SETTINGS):
         if not board and f not in MEMORY_HOOKS:
@@ -654,7 +667,7 @@ def merge_claude_settings(t, dry, log, board=True, spec=None):
         groups.append(g)
         added += 1
     if added:
-        log.append(".claude/settings.json: %d kit hook lines merged in (existing lines kept)" % added)
+        log.append(".claude/settings.json: %d kit hook/permission lines merged in (existing lines kept)" % added)
         if not dry:
             os.makedirs(os.path.dirname(p), exist_ok=True)
             with open(p, "w", encoding="utf-8") as fh:

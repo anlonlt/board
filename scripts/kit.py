@@ -1856,6 +1856,88 @@ def init(m):
     return "init: created worktree %s from %s. Next: python3 -I .kit/kit.py sync-db --commit" % (m, src)
 
 
+
+# ---------------------------------------------------------------- CL38: attaching another repo on Claude Code on the web
+ADD_REPO_RULE = "mcp__claude-code-remote__add_repo"
+
+
+def add_repo_allowed(root=None):
+    """(needs it, has it): a project with Claude Code settings and an attached board (portfolio, an Artifact board, or
+    a kit repo) needs mcp__claude-code-remote__add_repo in .claude/settings.json permissions.allow, else auto mode's
+    classifier refuses add_repo ("Unauthorized Access") in every web session it starts."""
+    root = root or ROOT
+    st = _read_json(os.path.join(root, ".claude", "settings.json"))
+    cfg = _read_json(os.path.join(root, ".kit", "config.json")) or {}
+    kit = cfg.get("kit") or {}
+    attached = bool(cfg.get("portfolio") or (kit.get("artifact") or {}).get("url")
+                    or os.path.isfile(os.path.join(root, "install.py")))
+    if st is None or not attached:
+        return False, False
+    allow = ((st.get("permissions") or {}).get("allow") or [])
+    return True, ADD_REPO_RULE in allow
+
+
+def attach_repo(spec, root=None, clone=True):
+    """`kit.py attach <owner/repo>`: the add_repo call to make, a clone next to this project, the register_repo_root
+    call, and the repo recorded in .kit/config.json portfolio. Returns (text, rc)."""
+    root = root or ROOT
+    m_ = re.match(r"^(?:https?://github\.com/)?([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$", spec.strip())
+    if not m_:
+        return "attach: name the repo as owner/repo (got %r)" % spec, 2
+    owner, repo = m_.group(1), m_.group(2)
+    gh = "%s/%s" % (owner, repo)
+    dest = os.path.join(os.path.dirname(os.path.abspath(root)), repo)
+    out = ["# Attach %s to this board" % gh]
+    need, has = add_repo_allowed(root)
+    if need and not has:
+        out.append("WARNING: .claude/settings.json does not allow %s: run `python3 -I install.py <this project> --update` "
+                   "from the kit, commit it, and start a NEW session (a running one never rereads its settings)" % ADD_REPO_RULE)
+    if not os.path.isdir(os.path.join(dest, ".git")):
+        if clone:
+            r = subprocess.run(["git", "clone", "-q", "https://github.com/%s.git" % gh, dest],
+                               capture_output=True, text=True, timeout=600)
+            ok = r.returncode == 0
+        else:
+            ok = False
+        if not ok:
+            out += ["1. Make this call (Claude Code on the web; on a computer, clone it yourself):",
+                    "   `mcp__claude-code-remote__add_repo` {\"owner\": \"%s\", \"repo\": \"%s\", \"access\": \"read\"}"
+                    % (owner, repo),
+                    "   (\"push\" only if this session must push to it).",
+                    "2. Then run this command again: it clones %s into %s and records it." % (gh, dest)]
+            return "\n".join(out), 1
+        out.append("cloned: %s -> %s" % (gh, dest))
+    else:
+        out.append("clone: %s (already there)" % dest)
+    p = os.path.join(root, ".kit", "config.json")
+    cfg = _read_json(p)
+    if cfg is None:
+        return "\n".join(out + ["attach: no .kit/config.json in %s (install the kit first)" % root]), 2
+    port = cfg.setdefault("portfolio", [])
+    row = next((x for x in port if isinstance(x, dict) and (x.get("github") == gh or
+                                                             os.path.abspath(x.get("path") or "/-") == dest)), None)
+    if row is None:
+        port.append({"name": repo, "path": dest, "github": gh})
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=1, ensure_ascii=False)
+            fh.write("\n")
+        out.append("recorded: .kit/config.json portfolio += %s (commit it)" % gh)
+    else:
+        changed = False
+        for k_, v_ in (("github", gh), ("path", dest)):
+            if not row.get(k_):
+                row[k_] = v_
+                changed = True
+        if changed:
+            with open(p, "w", encoding="utf-8") as fh:
+                json.dump(cfg, fh, indent=1, ensure_ascii=False)
+                fh.write("\n")
+        out.append("recorded: already in .kit/config.json portfolio%s" % (" (filled in)" if changed else ""))
+    out.append("Last (on the web): `mcp__claude-code-remote__register_repo_root` {\"owner\": \"%s\", \"repo\": \"%s\", "
+               "\"directory\": \"%s\"} so its CLAUDE.md and skills load." % (owner, repo, dest))
+    return "\n".join(out), 0
+
+
 def doctor(m, db_path=None):
     """Verify SQLite integrity, mirror worktree health, sync freshness, and referenced blobs."""
     issues = []
@@ -1895,6 +1977,12 @@ def doctor(m, db_path=None):
             issues.append("mirror branch is %r, expected %r" % (br, BRANCH))
     else:
         lines.append("mirror: not initialized at %s (run: python3 -I .kit/kit.py init)" % m)
+    need, has = add_repo_allowed()
+    if need:
+        lines.append("add_repo: %s" % ("allowed" if has else "NOT allowed in .claude/settings.json permissions.allow"))
+        if not has:
+            issues.append("%s missing from .claude/settings.json permissions.allow: web sessions cannot attach repos "
+                          "(install.py --update adds it; start a new session after)" % ADD_REPO_RULE)
     lines.append("doctor: %s" % ("OK" if not issues else ("%d issue(s): %s" % (len(issues), "; ".join(issues)))))
     return "\n".join(lines), (1 if issues else 0)
 
@@ -4186,6 +4274,7 @@ COMMANDS = [
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor", "the board's size, columns, oldest question, missing files / its health"),
     ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
+    ("launch and finish", "kit.py attach <owner/repo>", "attach another repo (web: the add_repo call, clone next to this project, register, record in the portfolio)"),
     ("read the board", "board_cli.py get|list|query <coll> ...", "raw documents of the local board (prefer the lookups above)"),
     ("read the board", "board_cli.py inbox", "unread owner comments, Likes and option taps, compact"),
     ("write the board", "TaskCreate {train, part} (Claude Code) / kit.py step new", "plan a step: its post and its prompt docs/prompts/<id>.md, never by hand"),
@@ -5134,6 +5223,7 @@ def main(argv=None):
     s = sp.add_parser("session"); s.add_argument("post")
     s = sp.add_parser("reads"); s.add_argument("--at")
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
+    s = sp.add_parser("attach"); s.add_argument("repo"); s.add_argument("--no-clone", action="store_true")
     s = sp.add_parser("compact"); s.add_argument("--days", type=int, default=30); s.add_argument("--dry-run", action="store_true")
     s.add_argument("--no-board", action="store_true", help="post nothing: open awaits points and issues stay in memory")
     s = sp.add_parser("report"); s.add_argument("--db", default=None)
@@ -5229,6 +5319,10 @@ def main(argv=None):
             if a.commit:
                 print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
         return 0
+    if a.cmd == "attach":
+        out, rc = attach_repo(a.repo, clone=not a.no_clone)
+        print(out)
+        return rc
     if a.cmd == "doctor":
         out, rc = doctor(m, db_path=a.db)
         print(out)
