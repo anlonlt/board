@@ -38,6 +38,9 @@ HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.
 # CL30: the kit's guards. One whose file is in a present Claude Code runtime but that has no settings.json line (or a
 # narrower matcher than the kit's) is a hole, not a choice (Harmonize: kit_cards_reminder.py wired nowhere, the brief
 # guard on Bash only): --update wires it. Other kit hooks (a project's own hand-over, its Stop) are left as they are.
+MESSAGE_GUARD = "kit_say_it_once.py"
+SEND_TOOLS = "mcp__claude-code-remote__send_message|SendMessage"
+MESSAGE_CEILING = 200   # CL38: kit_say_it_once.py's ceiling; a config limit above it is lowered at install/--update
 GUARD_HOOKS = ("kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "kit_task_train.py",
                "kit_cards_reminder.py")
 # agy runs hook commands with working directory = .agents/ (the directory containing hooks.json)
@@ -891,6 +894,12 @@ def main(argv=None):
     old_k = json.load(open(old_p, encoding="utf-8")).get("kit") if os.path.exists(old_p) else None
     c = load_config(t, a)
     perm_log = []
+    lim = c["kit"].setdefault("limits", {})
+    for key in ("message_chars", "done_message_chars"):
+        if not isinstance(lim.get(key), int) or lim[key] > MESSAGE_CEILING:
+            if key in lim:
+                perm_log.append("kit.limits.%s: %s -> %d (CL38: messages between sessions are pointers)" % (key, lim[key], MESSAGE_CEILING))
+            lim[key] = MESSAGE_CEILING
     if a.no_funnel:
         c["kit"]["funnel"] = False
     elif "funnel" not in c["kit"]:
@@ -1013,6 +1022,13 @@ def main(argv=None):
                 # settings.json lines; a kit hook the project removed (it is in the manifest) is never put back.
                 ins.put(d + h, rd("kit", "hooks", h))
                 new_hooks.setdefault(d, []).append(h)
+    # CL38: messages between sessions are pointers (200 characters, no table or quote). A project with its own
+    # say-it-once hook (Harmonize's, at 600) still gets the kit's message guard, wired on PreToolUse only: its own
+    # hook keeps every other event.
+    message_guard = False
+    if also_claude and parts["board"]:
+        ins.put(RUNTIME_HOOK_DIRS["claude"] + MESSAGE_GUARD, rd("kit", "hooks", MESSAGE_GUARD), past_kit_blobs("kit/hooks/" + MESSAGE_GUARD))
+        message_guard = True
     if want_agy:
         ins.put(".agents/skills/memory/SKILL.md", rd("kit", "skills", "memory", "SKILL.md"))
     if want_claude:
@@ -1380,6 +1396,8 @@ def main(argv=None):
         web = ("claude.ai/" in str(c.get("board_url") or "") or bool((c["kit"].get("artifact") or {}).get("url"))
                or "ArtifactData" in cur_st or "kit_orchestrator_guard.py" in cur_st)
         spec = [x for x in (CLAUDE_SETTINGS if web else CLAUDE_CLI_SETTINGS) if x[2] in added_h]
+        if message_guard and not any(x[2] == MESSAGE_GUARD and x[0] == "PreToolUse" for x in spec):
+            spec.append(("PreToolUse", SEND_TOOLS, MESSAGE_GUARD))
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], spec)
     if new_hooks.get(RUNTIME_HOOK_DIRS["agy"]):
         ins.log.append(".agents/hooks/kit/: new kit hook(s) %s copied; run --update with --runtime agy to wire them in "

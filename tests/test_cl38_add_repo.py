@@ -233,5 +233,53 @@ class Branches(unittest.TestCase):
         self.assertIn("main", heads)
 
 
+class O55Gaps(unittest.TestCase):
+    """O55's check of 99f6ccf: session_id, Harmonize's 600, a trunk that cannot be fetched."""
+
+    def test_whoami_names_the_web_session(self):
+        with unittest.mock.patch.dict(os.environ, {"CLAUDE_CODE_REMOTE_SESSION_ID": "cse_01ABC"}):
+            self.assertEqual(kit.whoami("harmonize-cl38"), "session_01ABC")
+        env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CODE_REMOTE_SESSION_ID", "KIT_SESSION_ID")}
+        with unittest.mock.patch.dict(os.environ, env, clear=True):
+            self.assertEqual(kit.whoami("harmonize-cl38"), "harmonize-cl38")
+
+    def test_trunk_that_cannot_be_fetched_refuses(self):
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["git", "init", "-q", "-b", "cl99", d], check=True)
+            subprocess.run(["git", "-C", d, "remote", "add", "origin", os.path.join(d, "no-such-remote.git")], check=True)
+            err = kit.check_trunk_merged(d)
+            self.assertEqual(len(err), 1)
+            self.assertIn("cannot fetch", err[0])
+
+    def test_own_say_it_once_project_gets_the_message_guard(self):
+        with tempfile.TemporaryDirectory() as d:
+            t = Path(d) / "proj"
+            t.mkdir()
+            subprocess.run(["git", "init", "-q", str(t)], check=True)
+            r = install(t, "--quick", "--project", "Proj", "--runtime", "agy", "--no-survey", "test")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            hk = t / ".claude" / "hooks" / "kit"
+            hk.mkdir(parents=True)
+            (hk / "kit_config.py").write_text((ROOT / "kit" / "hooks" / "kit_config.py").read_text())
+            own = 'python3 -I "$CLAUDE_PROJECT_DIR/.claude/hooks/say_it_once.py"'
+            (t / ".claude" / "settings.json").write_text(json.dumps({"hooks": {
+                "PreToolUse": [{"matcher": "mcp__claude-code-remote__send_message", "hooks": [{"type": "command", "command": own}]}],
+                "Stop": [{"hooks": [{"type": "command", "command": own}]}]}}))
+            cp = t / ".kit" / "config.json"
+            c = json.loads(cp.read_text())
+            c["kit"]["limits"] = {"message_chars": 600, "done_message_chars": 240, "chat_answer_chars": 600}
+            cp.write_text(json.dumps(c))
+            r = install(t, "--update")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertTrue((hk / "kit_say_it_once.py").is_file())
+            s = settings(t)
+            kit_evs = [(ev, g.get("matcher")) for ev, gs in s["hooks"].items() for g in gs
+                       for h in g["hooks"] if "kit/kit_say_it_once.py" in h["command"]]
+            self.assertEqual(kit_evs, [("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage")])
+            self.assertEqual(s["hooks"]["Stop"][0]["hooks"][0]["command"], own)     # its own hook kept
+            lim = json.loads(cp.read_text())["kit"]["limits"]
+            self.assertEqual((lim["message_chars"], lim["done_message_chars"]), (200, 200))
+
+
 if __name__ == "__main__":
     unittest.main()

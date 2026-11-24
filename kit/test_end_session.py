@@ -27,6 +27,8 @@ with tempfile.TemporaryDirectory() as t:
     a = os.path.join(t, "a"); clone(origin, a); g(a, "checkout", "-q", "-b", "work"); write(a, "b.txt", "b\n")
     r = run(a)
     check("a branch lands on the trunk", r.returncode == 0 and g(seed, "ls-remote", "origin", "main").stdout.split()[0] == g(a, "rev-parse", "HEAD").stdout.strip())
+    check("CL38: the merged branch is deleted from origin", "work" not in g(seed, "ls-remote", "--heads", "origin").stdout
+          and "deleted" in r.stdout)
     c = os.path.join(t, "c"); clone(origin, c); write(c, "c.txt", "c\n"); g(c, "push", "-q", "origin", "main")
     write(a, "d.txt", "d\n"); r = run(a)
     files = g(seed, "fetch", "-q") and g(seed, "ls-tree", "--name-only", "origin/main").stdout.split()
