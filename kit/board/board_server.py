@@ -168,6 +168,9 @@ def match_where(doc, clauses):
     return True
 
 
+ACTOR = threading.local()        # who this thread writes for: set per request, kept in the change log
+
+
 class BoardStore:
     MAX_CHANGES_LOG = 10000
     COMMENT_LEASE_SEC = 60.0
@@ -245,10 +248,12 @@ class BoardStore:
             "  replies TEXT NOT NULL DEFAULT '[]'"
             ")"
         )
-        try:
-            self.conn.execute("ALTER TABLE threads ADD COLUMN dispatched_at REAL NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
+        for col in ("threads ADD COLUMN dispatched_at REAL NOT NULL DEFAULT 0", "threads ADD COLUMN by_user TEXT NOT NULL DEFAULT ''",
+                    "shares ADD COLUMN created_by TEXT NOT NULL DEFAULT ''"):
+            try:
+                self.conn.execute("ALTER TABLE " + col)
+            except sqlite3.OperationalError:
+                pass
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS changes ("
             "  seq INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -256,9 +261,14 @@ class BoardStore:
             "  doc_id TEXT NOT NULL,"
             "  op TEXT NOT NULL,"
             "  version INTEGER NOT NULL,"
-            "  at TEXT NOT NULL"
+            "  at TEXT NOT NULL,"
+            "  actor TEXT NOT NULL DEFAULT ''"
             ")"
         )
+        try:
+            self.conn.execute("ALTER TABLE changes ADD COLUMN actor TEXT NOT NULL DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS links ("
             "  post_id TEXT PRIMARY KEY,"
@@ -508,8 +518,8 @@ class BoardStore:
             r = "member"
         rp = str(repo or "").strip()[:64]
         base = re.sub(r"[^a-z0-9_-]+", "-", nm.lower()).strip("-")[:24] or "user"
-        if base in ("owner", "all", "system"):
-            base = base + "-" + secrets.token_hex(2)
+        if base in (ACCESS.RESERVED if ACCESS else ("owner", "all", "system")) or base.startswith(("orchestrator", "owner", "session")):
+            base = "u-" + base[:17] + "-" + secrets.token_hex(2)
         now = utc_now()
         tok = secrets.token_hex(16)
         with self.lock:
@@ -544,6 +554,7 @@ class BoardStore:
                     if d.get("working_by") == uid:
                         d["working_by"] = ""
                         self.set_doc("posts", did, d)
+                self.conn.execute("UPDATE shares SET revoked=1 WHERE created_by=?", (uid,))     # the links they gave out go too
             self.conn.commit()
             return cur.rowcount > 0
 
@@ -558,7 +569,7 @@ class BoardStore:
                 return {"id": r[0], "name": r[1], "role": r[2], "token": r[3], "repo": r[4] or ""}
         return None
 
-    def create_share(self, post_id, ttl_hours=24.0, allow_write=True, files=None, max_submissions=5, repo=""):
+    def create_share(self, post_id, ttl_hours=24.0, allow_write=True, files=None, max_submissions=5, repo="", created_by=""):
         tok = secrets.token_urlsafe(24)
         now_dt = datetime.now(timezone.utc)
         now = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -569,9 +580,10 @@ class BoardStore:
                 safe_files.append({"name": str(f["name"])[:120], "content": str(f.get("content") or "")[:200000]})
         with self.lock:
             self.conn.execute(
-                "INSERT INTO shares(token, post_id, repo, allow_write, files_json, expires_at, created_at, revoked, submissions, max_submissions) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, 0, 0, ?)",
-                (tok, post_id, str(repo or ""), 1 if allow_write else 0, json.dumps(safe_files, ensure_ascii=False), exp, now, max(1, int(max_submissions or 5))),
+                "INSERT INTO shares(token, post_id, repo, allow_write, files_json, expires_at, created_at, revoked, submissions, max_submissions, created_by) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)",
+                (tok, post_id, str(repo or ""), 1 if allow_write else 0, json.dumps(safe_files, ensure_ascii=False), exp, now,
+                 max(1, min(int(max_submissions or 5), 100)), str(created_by or "")),
             )
             self.conn.commit()
         return {"token": tok, "post_id": post_id, "repo": str(repo or ""), "path": "/_share/" + tok, "allow_write": bool(allow_write), "expires_at": exp, "created_at": now}
@@ -579,7 +591,7 @@ class BoardStore:
     def get_share(self, tok):
         with self.lock:
             row = self.conn.execute(
-                "SELECT token, post_id, repo, allow_write, files_json, expires_at, created_at, revoked, submissions, max_submissions FROM shares WHERE token=?",
+                "SELECT token, post_id, repo, allow_write, files_json, expires_at, created_at, revoked, submissions, max_submissions, created_by FROM shares WHERE token=?",
                 (tok,),
             ).fetchone()
         if not row:
@@ -587,23 +599,23 @@ class BoardStore:
         return {
             "token": row[0], "post_id": row[1], "repo": row[2] or "", "allow_write": bool(row[3]),
             "files": json.loads(row[4] or "[]"), "expires_at": row[5], "created_at": row[6],
-            "revoked": bool(row[7]), "submissions": int(row[8]), "max_submissions": int(row[9]),
+            "revoked": bool(row[7]), "submissions": int(row[8]), "max_submissions": int(row[9]), "created_by": row[10] or "",
         }
 
     def list_shares(self, post_id=None):
         with self.lock:
             if post_id:
                 rows = self.conn.execute(
-                    "SELECT token, post_id, allow_write, expires_at, created_at, revoked, submissions, max_submissions FROM shares WHERE post_id=? ORDER BY created_at DESC",
+                    "SELECT token, post_id, allow_write, expires_at, created_at, revoked, submissions, max_submissions, created_by FROM shares WHERE post_id=? ORDER BY created_at DESC",
                     (post_id,),
                 ).fetchall()
             else:
                 rows = self.conn.execute(
-                    "SELECT token, post_id, allow_write, expires_at, created_at, revoked, submissions, max_submissions FROM shares ORDER BY created_at DESC LIMIT 100"
+                    "SELECT token, post_id, allow_write, expires_at, created_at, revoked, submissions, max_submissions, created_by FROM shares ORDER BY created_at DESC LIMIT 100"
                 ).fetchall()
         return [
             {"token": r[0], "post_id": r[1], "path": "/_share/" + r[0], "allow_write": bool(r[2]),
-             "expires_at": r[3], "created_at": r[4], "revoked": bool(r[5]), "submissions": int(r[6]), "max_submissions": int(r[7])}
+             "expires_at": r[3], "created_at": r[4], "revoked": bool(r[5]), "submissions": int(r[6]), "max_submissions": int(r[7]), "created_by": r[8] or ""}
             for r in rows
         ]
 
@@ -714,8 +726,8 @@ class BoardStore:
 
     def _record_change(self, collection, doc_id, op, version, now):
         cur = self.conn.execute(
-            "INSERT INTO changes(collection, doc_id, op, version, at) VALUES (?, ?, ?, ?, ?)",
-            (collection, doc_id, op, version, now),
+            "INSERT INTO changes(collection, doc_id, op, version, at, actor) VALUES (?, ?, ?, ?, ?, ?)",
+            (collection, doc_id, op, version, now, str(getattr(ACTOR, "name", "") or "")[:80]),
         )
         seq = cur.lastrowid or 0
         if self.MAX_CHANGES_LOG and seq > self.MAX_CHANGES_LOG and (seq % 100 == 0 or self.MAX_CHANGES_LOG < 200):
@@ -724,11 +736,11 @@ class BoardStore:
     def list_changes(self, since=0, limit=1000):
         with self.lock:
             rows = self.conn.execute(
-                "SELECT seq, collection, doc_id, op, version, at FROM changes WHERE seq>? ORDER BY seq ASC LIMIT ?",
+                "SELECT seq, collection, doc_id, op, version, at, actor FROM changes WHERE seq>? ORDER BY seq ASC LIMIT ?",
                 (int(since or 0), max(1, int(limit or 1000))),
             ).fetchall()
             latest = self.conn.execute("SELECT COALESCE(MAX(seq), 0) FROM changes").fetchone()[0]
-        items = [{"seq": r[0], "collection": r[1], "doc_id": r[2], "op": r[3], "version": r[4], "at": r[5]} for r in rows]
+        items = [{"seq": r[0], "collection": r[1], "doc_id": r[2], "op": r[3], "version": r[4], "at": r[5], "actor": r[6]} for r in rows]
         return {"changes": items, "latest_seq": latest}
 
     def comment_counts(self):
@@ -1162,13 +1174,14 @@ class BoardStore:
                 self.watchers.discard(watcher_id)
             return sorted(self.watchers)
 
-    def send_comment(self, anchor, text):
+    def send_comment(self, anchor, text, by="owner", quiet=False):
+        """A wake for the board's agents. `by`: the person it comes from; `quiet`: kept, never handed to the clerk."""
         tid = "thr_" + uuid.uuid4().hex[:12]
         now = utc_now()
         with self.lock:
             self.conn.execute(
-                "INSERT INTO threads(thread_id, anchor, text, status, created_at, dispatched, replies) VALUES (?, ?, ?, ?, ?, 0, '[]')",
-                (tid, json.dumps(anchor or {}), text, "sent to you — awaiting reply", now),
+                "INSERT INTO threads(thread_id, anchor, text, status, created_at, dispatched, replies, by_user) VALUES (?, ?, ?, ?, ?, ?, '[]', ?)",
+                (tid, json.dumps(anchor or {}), text, "sent to you — awaiting reply", now, 1 if quiet else 0, by),
             )
             self.conn.commit()
         with self.comment_cond:
@@ -1182,7 +1195,7 @@ class BoardStore:
             now_ts = time.time()
             with self.lock:
                 row = self.conn.execute(
-                    "SELECT thread_id, anchor, text, status, created_at, replies FROM threads "
+                    "SELECT thread_id, anchor, text, status, created_at, replies, by_user FROM threads "
                     "WHERE status=? AND (dispatched=0 OR (dispatched=2 AND dispatched_at > 0 AND (? - dispatched_at) >= ?)) "
                     "ORDER BY created_at ASC LIMIT 1",
                     ("sent to you — awaiting reply", now_ts, lease),
@@ -1201,6 +1214,7 @@ class BoardStore:
                         "status": row[3],
                         "created_at": row[4],
                         "replies": json.loads(row[5]),
+                        "by": row[6] or "owner",
                     }
             rem = deadline - time.monotonic()
             if rem <= 0:
@@ -1220,7 +1234,7 @@ class BoardStore:
     def get_thread(self, thread_id):
         with self.lock:
             row = self.conn.execute(
-                "SELECT thread_id, anchor, text, status, created_at, replies FROM threads WHERE thread_id=?",
+                "SELECT thread_id, anchor, text, status, created_at, replies, by_user FROM threads WHERE thread_id=?",
                 (thread_id,),
             ).fetchone()
         if not row:
@@ -1232,6 +1246,7 @@ class BoardStore:
             "status": row[3],
             "created_at": row[4],
             "replies": json.loads(row[5]),
+            "by": row[6] or "owner",
         }
 
     def reply_thread(self, thread_id, text):
@@ -1250,20 +1265,23 @@ class BoardStore:
         return {"thread_id": thread_id, "replies": replies, "status": "replied"}
 
 
-def _notify_module():
-    """.kit/notify.py: the one rule for phone notifications (its source sits beside this folder in the kit's repo)."""
+def _sibling(*names):
+    """A module of the kit installed beside this file (its source sits beside this folder in the kit's repo)."""
     here = os.path.dirname(os.path.abspath(__file__))
-    for p in (os.path.join(here, "notify.py"), os.path.join(os.path.dirname(here), "notify.py")):
-        if os.path.isfile(p):
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("kit_notify_rules", p)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            return mod
+    for n in names:
+        for p in (os.path.join(here, n), os.path.join(os.path.dirname(here), n)):
+            if os.path.isfile(p):
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("kit_" + n[:-3] + "_rules", p)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
     return None
 
 
-NOTIFY = _notify_module()
+NOTIFY = _sibling("notify.py")          # the one rule for phone notifications
+ACCESS = _sibling("access.py")          # who may do what; without it, only the owner's token opens anything
+GATE = _sibling("post_gate.py")
 
 
 def read_git_diff(root_dir, ref):
@@ -1318,6 +1336,8 @@ REPO_ASSET_CTYPES = {
     ".woff": "font/woff",
     ".woff2": "font/woff2",
 }
+# what a shared HTML page may load from its own folder
+PAGE_PARTS = {".css", ".js", ".mjs", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".svg", ".ico", ".woff", ".woff2"}
 REPO_AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".opus"}
 REPO_VIDEO_EXTS = {".mp4", ".webm", ".mov", ".m4v"}
 
@@ -1782,9 +1802,20 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 rp = fm.group(1).strip().replace("\\", "/").lstrip("/")
                 if rp and ".." not in rp.split("/") and not rp.startswith("http"):
                     repo_paths.add(rp)
-                    if rp.lower().endswith((".html", ".htm")):
-                        html_dirs.add(os.path.dirname(rp))
+                    if rp.lower().endswith((".html", ".htm")) and os.path.dirname(rp):
+                        html_dirs.add(os.path.dirname(rp))      # a page's own pictures and styles; never the repo's root
 
+        # What the card shows its guest is what the owner's side put there: never a file a guest names in a comment, nor
+        # one a collaborator names (their own words are in the brief; the repo's files are the owner's to hand out).
+        theirs = lambda d: bool(d.get("by"))  # noqa: E731
+        if theirs(p) or sh.get("created_by"):
+            for f in (p.get("files") or []):
+                if isinstance(f, dict) and re.match(r"^[0-9a-f]{32}$", str(f.get("id") or "")):
+                    blob_ids.add(str(f["id"]))
+            for im in [x for x in (p.get("images") or []) if isinstance(x, str)] + [str(p.get("body") or "")]:
+                blob_ids.update(re.findall(r"/_blob/([0-9a-f]{32})", im))
+            return blob_ids, set(), set()
+        cmts = [c for c in cmts if not theirs(c["data"] or {}) and not str(c.get("id") or "").startswith("ext-")]
         for im in (p.get("images") or []):
             if isinstance(im, str):
                 _scan_text(im)
@@ -1890,42 +1921,61 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
+        def _full(self):
+            u = getattr(self, "_auth_user", None) or {"role": "owner"}
+            return u.get("role") == "owner"
+
+        def _boards(self):
+            """{board: its store} as this person may open them: the stores themselves for the owner, a View of each for
+            anyone else (access.py). The first one is theirs by default."""
+            if self._full():
+                return stores_map
+            u = getattr(self, "_auth_user", None) or {}
+            if not ACCESS:
+                return {}
+            return {rid: ACCESS.View(stores_map[rid], u, gate=GATE, now=utc_now) for rid in ACCESS.boards(u, stores_map, primary_repo_id)}
+
         def _scoped_user_repo(self):
-            u = getattr(self, "_auth_user", None)
-            if u and u.get("role") != "owner":
-                ur = str(u.get("repo") or "").strip()
-                if ur and ur in stores_map:
-                    return ur
-            return ""
+            """The one board this person is held to, or ""."""
+            if self._full():
+                return ""
+            mine = list(self._boards())
+            return mine[0] if len(mine) == 1 else ""
 
         def _is_all_repos(self, parsed):
-            if self._scoped_user_repo():
-                return False
             qs = urllib.parse.parse_qs(parsed.query)
             rid = (self.headers.get("X-Kit-Repo") or (qs.get("repo") or [""])[0] or "").strip().lower()
-            return rid == "all" and len(stores_map) > 1
+            return rid == "all" and len(self._boards()) > 1
 
         def _store_for_doc(self, parsed, coll, doc_id):
-            if _is_seen_doc(coll, doc_id) and not self._scoped_user_repo():
+            mine = self._boards()
+            if _is_seen_doc(coll, doc_id) and self._full():
                 return store, primary_repo_id   # CL21: one read doc for every board (keys say the board)
             if self._is_all_repos(parsed):
-                for rid, st in stores_map.items():
-                    if st.get_doc(coll, doc_id).get("exists"):
-                        return st, rid
-                return store, primary_repo_id
+                for rid, st in mine.items():
+                    try:
+                        if st.get_doc(coll, doc_id).get("exists"):
+                            return st, rid
+                    except Exception as e:
+                        if not (ACCESS and isinstance(e, ACCESS.Denied)):
+                            raise
+                rid = next(iter(mine))
+                return mine[rid], rid
             rid = self._repo_id(parsed)
-            return (stores_map.get(rid) or store), rid
+            return mine[rid], rid
 
         def _repo_id(self, parsed):
-            scoped = self._scoped_user_repo()
-            if scoped:
-                return scoped
+            mine = self._boards()
             qs = urllib.parse.parse_qs(parsed.query)
             rid = (self.headers.get("X-Kit-Repo") or (qs.get("repo") or [""])[0] or "").strip()
-            return rid if rid in stores_map else primary_repo_id
+            return rid if rid in mine else next(iter(mine))
 
         def _store(self, parsed):
-            return stores_map.get(self._repo_id(parsed)) or store
+            return self._boards()[self._repo_id(parsed)]
+
+        def _main_store(self, parsed):
+            """The server's own board for the owner; for anyone else, the board they opened, as they may see it."""
+            return store if self._full() else self._store(parsed)
 
         def _repo_root(self, parsed):
             return roots_map.get(self._repo_id(parsed)) or root_dir
@@ -2081,81 +2131,22 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             u = getattr(self, "_auth_user", None) or {}
             return str(u.get("id") or "owner")
 
-        def _ensure_user_orch(self, st, uid):
-            oid = "_orchestrator_" + uid
-            if not st.get_doc("posts", oid).get("exists"):
-                st.set_doc("posts", oid, {
-                    "title": "Ask the orchestrator (@" + uid + ")",
-                    "column": "info",
-                    "part": "orchestrator",
-                    "priority": 3,
-                    "owner_user": uid,
-                    "created_at": utc_now(),
-                    "body": "Private orchestrator channel for @" + uid + ".",
-                })
-            return st.get_doc("posts", oid)
-
-        def _scope_list_docs(self, st, coll, res):
-            uid = self._cur_uid()
-            if uid == "owner":
-                if coll == "posts":
-                    res["docs"] = [d for d in (res.get("docs") or []) if not str(d.get("id") or "").startswith("_orchestrator_")]
-                elif coll == "comments":
-                    res["docs"] = [d for d in (res.get("docs") or []) if not str((d.get("data") or {}).get("post_id") or "").startswith("_orchestrator_")]
+        def _scope_list_docs(self, coll, res):
+            """The owner's lists leave out the collaborators' private channels (a View has its own rule)."""
+            if not self._full():
                 return res
-            my_oid = "_orchestrator_" + uid
             if coll == "posts":
-                self._ensure_user_orch(st, uid)
-                out = []
-                for d in (res.get("docs") or []):
-                    did = str(d.get("id") or "")
-                    if did == "_orchestrator":
-                        continue
-                    if did == my_oid:
-                        out.append({**d, "id": "_orchestrator"})
-                    elif did.startswith("_orchestrator_"):
-                        continue
-                    else:
-                        out.append(d)
-                res["docs"] = out
+                res["docs"] = [d for d in (res.get("docs") or []) if not str(d.get("id") or "").startswith("_orchestrator_")]
             elif coll == "comments":
-                out = []
-                for d in (res.get("docs") or []):
-                    pid = str((d.get("data") or {}).get("post_id") or "")
-                    if pid == "_orchestrator":
-                        continue
-                    if pid == my_oid:
-                        dd = dict(d.get("data") or {})
-                        dd["post_id"] = "_orchestrator"
-                        out.append({**d, "data": dd})
-                    elif pid.startswith("_orchestrator_"):
-                        continue
-                    else:
-                        out.append(d)
-                res["docs"] = out
+                res["docs"] = [d for d in (res.get("docs") or []) if not str((d.get("data") or {}).get("post_id") or "").startswith("_orchestrator_")]
             return res
 
-        def _scope_write_target(self, coll, doc_id, data):
+        def _signed(self, data, new):
+            """A co-owner's own write says who made it; the owner's token (the owner and every agent of theirs) says nothing."""
             uid = self._cur_uid()
-            if uid == "owner":
-                return doc_id, data, None
-            my_oid = "_orchestrator_" + uid
-            if coll == "posts":
-                if doc_id == "_orchestrator":
-                    return my_oid, data, None
-                if doc_id.startswith("_orchestrator_") and doc_id != my_oid:
-                    return doc_id, data, "forbidden"
-            elif coll == "comments" and isinstance(data, dict):
-                nd = dict(data)
-                pid = str(nd.get("post_id") or "")
-                if pid == "_orchestrator":
-                    nd["post_id"] = my_oid
-                elif pid.startswith("_orchestrator_") and pid != my_oid:
-                    return doc_id, data, "forbidden"
-                if nd.get("from") in (None, "", "owner"):
-                    nd["from"] = uid
-                return doc_id, nd, None
-            return doc_id, data, None
+            if self._full() and uid != "owner" and new and isinstance(data, dict):
+                return dict(data, by=uid)
+            return data
 
         def _match_token(self, candidate):
             c = str(candidate or "").strip()
@@ -2203,7 +2194,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if tailscale_users:
                 peer_ip = self.client_address[0] if self.client_address else ""
                 ts_login = (self.headers.get("Tailscale-User-Login") or "").strip().lower()
-                if peer_ip in ("127.0.0.1", "::1", "::ffff:127.0.0.1") and ts_login and ts_login in tailscale_users:
+                if peer_ip in ("127.0.0.1", "::1", "::ffff:127.0.0.1") and not self.headers.get("Tailscale-Funnel-Request") and ts_login in tailscale_users:
                     cfg_u = tailscale_users[ts_login]
                     role_ts = cfg_u["role"] if cfg_u["role"] in ("viewer", "member", "owner") else "member"
                     uid_ts = cfg_u["id"] or re.sub(r"[^a-z0-9_-]+", "-", ts_login.split("@")[0]).strip("-")[:24] or "user"
@@ -2217,15 +2208,24 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             ok, set_cookie = self._check_auth(parsed)
             if ok:
                 ranks = {"viewer": 1, "member": 2, "owner": 3}
-                u = getattr(self, "_auth_user", None) or {"role": "owner"}
+                u = getattr(self, "_auth_user", None) or {"id": "owner", "role": "owner"}
+                label = re.sub(r"[^A-Za-z0-9._:-]", "", self.headers.get("X-Kit-Actor") or "")[:48] if self._full() else ""
+                ACTOR.name = str(u.get("id") or "owner") + ((" (" + label + ")") if label else "")
+                if not self._full() and not (ACCESS and ACCESS.may_call(u, self.command, parsed.path)):
+                    need = (ACCESS.route_role(self.command, parsed.path) if ACCESS else None) or "owner"
+                    self._send_json(403, {"error": "forbidden", "required_role": need})
+                    return None
+                if not self._full() and not self._boards():
+                    self._send_json(403, {"error": "forbidden", "why": "the board you were invited to is not open here"})
+                    return None
                 if ranks.get(u.get("role", "viewer"), 1) < ranks.get(min_role, 1):
                     self._send_json(403, {"error": "forbidden", "required_role": min_role})
                     return None
                 # CL32: a read or write for a board this server does not hold is refused; it used to fall back to the
                 # primary board, so `--repo board` in Harmonize's cloud clone read Harmonize's own posts
                 rq = (self.headers.get("X-Kit-Repo") or (urllib.parse.parse_qs(parsed.query).get("repo") or [""])[0] or "").strip()
-                if rq and parsed.path.startswith("/_api/") and rq not in stores_map and rq.lower() != "all":
-                    self._send_json(404, {"error": "unknown_repo", "repo": rq, "boards": sorted(stores_map),
+                if rq and parsed.path.startswith("/_api/") and rq not in self._boards() and rq.lower() != "all":
+                    self._send_json(404, {"error": "unknown_repo", "repo": rq, "boards": sorted(self._boards()),
                                           "hint": "this board server holds no board %r: put its clone next to this repo "
                                                   "(or run `kit.py artifact load` after a pull of repos/%s), then restart it" % (rq, rq)})
                     return None
@@ -2341,10 +2341,10 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     "",
                     "## 3. Your Private Orchestrator Channel & Shared Board Rules",
                     "- **Private Ask-the-Orchestrator (`@o`):** `%s` (isolated from the owner's `_orchestrator`)." % orch_id,
-                    "- **Shared project posts:** read/list all posts with `python3 /tmp/board_cli.py list posts`.",
-                    "- **Attribution & AI metadata:** set `\"from\": \"%s\"`, `\"working_by\": \"%s\"`, and `\"agent_meta\": {\"harness\": \"<cli>\", \"model\": \"<model>\", \"effort\": \"<low|medium|high>\"}` on posts/comments." % (uid, uid),
+                    "- **Shared project posts:** read/list all posts with `python3 /tmp/board_cli.py list posts`. You write your own posts and comments, and the state of a post that is `for` you; everything else is refused (403 says why).",
+                    "- **Attribution & AI metadata:** the board signs what you write (`from` and `by`: `%s`; an agent may add its name: `\"from\": \"%s/codex\"`). Take a post with `\"working_by\": \"%s\"`, and set `\"agent_meta\": {\"harness\": \"<cli>\", \"model\": \"<model>\", \"effort\": \"<low|medium|high>\"}` on posts/comments." % (uid, uid, uid),
                     "- **Submit scripts, improved docs & HTML (no GitHub write access needed):** `POST $KIT_BOARD_URL/_api/posts/<post_id>/artifacts` with JSON `{\"path\": \"docs/foo.md\", \"base_path\": \"docs/foo.md\", \"summary\": \"1-line summary\", \"content\": \"...\", \"agent_meta\": {\"harness\": \"...\", \"model\": \"...\", \"effort\": \"...\"}}`. Your deliverables are stored safely in the board, diffed against `base_path`, previewable in the Document/HTML Viewer, and queryable in compact manifests (`GET /_api/posts/<post_id>/artifacts`).",
-                    "- **Permissions (`%s`):** %s" % (role, "read-only" if role == "viewer" else ("read + post/comment/upload blobs" if role == "member" else "full admin")),
+                    "- **Permissions (`%s`):** %s" % (role, "read-only" if role == "viewer" else ("read, post and comment as yourself, change your own posts and the state of posts for you" if role == "member" else "full admin")),
                     "",
                     "## 4. Browser / Phone Link",
                     "Open `%s` on desktop or phone to view the board as `@%s`." % (browser_link, uid),
@@ -2394,7 +2394,10 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     rrel = urllib.parse.unquote(sh_parts[2]).strip().replace("\\", "/").lstrip("/")
                     _, allowed_repo, html_dirs = _share_allowed_assets(sh)
                     rdir = os.path.dirname(rrel)
-                    if rrel not in allowed_repo and rdir not in html_dirs:
+                    if rrel not in allowed_repo and not (rdir in html_dirs and os.path.splitext(rrel)[1].lower() in PAGE_PARTS):
+                        self._send_json(403, {"error": "asset_not_in_share"})
+                        return
+                    if not (ACCESS and ACCESS.file_ok(rrel)):
                         self._send_json(403, {"error": "asset_not_in_share"})
                         return
                     rroot = roots_map.get(sh.get("repo") or "") or root_dir
@@ -2514,7 +2517,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 return
             if set_cookie and path in ("/", "/index.html"):
                 proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
-                cookie = "kit_token=%s; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax" % token
+                own_tok = str((getattr(self, "_auth_user", None) or {}).get("token") or "")     # the link's own rights, never the owner's
+                cookie = "kit_token=%s; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax" % own_tok
                 if proto == "https":
                     cookie += "; Secure"
                 accept = (self.headers.get("Accept") or "").lower()
@@ -2524,7 +2528,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                         "<!doctype html><html><head><meta charset=utf-8><meta name=theme-color content=#0b111e></head>"
                         "<body style='background:#0b111e;color:#e6ebf2;font-family:system-ui;padding:24px'>"
                         "<script>try{localStorage.setItem('kit_board_token',%s);}catch(e){}location.replace('/');</script>"
-                        "</body></html>" % json.dumps(token)
+                        "</body></html>" % json.dumps(own_tok)
                     ).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Set-Cookie", cookie)
@@ -2632,7 +2636,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 aid_req = urllib.parse.unquote(path[len("/_api/artifacts/"):]).strip("/")
                 art = self._store(parsed).get_artifact(aid_req)
                 if not art:
-                    for st_a in stores_map.values():
+                    for st_a in self._boards().values():
                         art = st_a.get_artifact(aid_req)
                         if art:
                             break
@@ -2646,6 +2650,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     self.send_response(200)
                     self.send_header("Content-Type", ct)
                     self.send_header("X-Content-Type-Options", "nosniff")
+                    self.send_header("Content-Security-Policy", "sandbox allow-scripts")      # someone else's page: never this board's origin
                     self.send_header("Content-Length", str(len(raw_a)))
                     self.send_header("Cache-Control", "no-store")
                     self.end_headers()
@@ -2666,7 +2671,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if path == "/_api/repos":
                 scoped = self._scoped_user_repo()
                 if scoped:
-                    only = [dict(rm, primary=True) for rm in repo_meta if rm.get("id") == scoped]
+                    only = [dict({k: v for k, v in rm.items() if k != "github_slugs"}, primary=True) for rm in repo_meta if rm.get("id") == scoped]
                     self._send_json(200, {"primary": scoped, "repos": only or [{"id": scoped, "name": scoped, "primary": True}]})
                     return
                 self._send_json(200, {"primary": primary_repo_id, "repos": repo_meta})
@@ -2680,9 +2685,12 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if path == "/_api/repo-doc":
                 rpath = (qs.get("path") or [""])[0]
                 sec = (qs.get("section") or [""])[0]
+                if not self._full() and not ACCESS.file_ok(rpath):
+                    self._send_json(403, {"error": "forbidden"})
+                    return
                 rid = (qs.get("repo") or [primary_repo_id])[0]
-                if rid == "all" or rid not in roots_map:
-                    rid = primary_repo_id
+                if rid == "all" or rid not in roots_map or rid not in self._boards():
+                    rid = self._repo_id(parsed)
                 doc_res, derr = read_repo_doc(self._repo_root(parsed), rpath, section=sec, repo_id=rid)
                 if derr:
                     code = 404 if derr == "not_found" else (413 if derr == "too_large" else 400)
@@ -2699,6 +2707,14 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     return
                 rid_req = urllib.parse.unquote(parts_r[0])
                 rrel = urllib.parse.unquote(parts_r[1])
+                if not self._full() and not ACCESS.file_ok(rrel):
+                    self._send_json(403, {"error": "forbidden"})
+                    return
+                if rid_req not in self._boards():
+                    if not self._full():
+                        self._send_json(403, {"error": "forbidden"})
+                        return
+                    rid_req = primary_repo_id
                 rroot = roots_map.get(rid_req) or root_dir
                 adata, actype, aerr = read_repo_asset(rroot, rrel)
                 if aerr:
@@ -2708,8 +2724,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 self.send_response(200)
                 self.send_header("Content-Type", actype)
                 self.send_header("X-Content-Type-Options", "nosniff")
-                if token and (qs.get("token") or [""])[0]:
-                    self.send_header("Set-Cookie", "kit_token=%s; Path=/; HttpOnly; SameSite=Lax" % token)
+                if token and set_cookie:
+                    self.send_header("Set-Cookie", "kit_token=%s; Path=/; HttpOnly; SameSite=Lax" % str(self._auth_user.get("token") or ""))
                 self.send_header("Content-Length", str(len(adata)))
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
@@ -2718,9 +2734,12 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
             if path == "/_api/repo-asset":
                 rpath = (qs.get("path") or [""])[0]
+                if not self._full() and not ACCESS.file_ok(rpath):
+                    self._send_json(403, {"error": "forbidden"})
+                    return
                 adata, actype, aerr = read_repo_asset(self._repo_root(parsed), rpath)
                 if aerr == "not_found" and len(roots_map) > 1 and not self._scoped_user_repo():
-                    for r_root in roots_map.values():
+                    for r_root in [roots_map[r] for r in self._boards() if r in roots_map]:
                         adata2, actype2, aerr2 = read_repo_asset(r_root, rpath)
                         if not aerr2:
                             adata, actype, aerr = adata2, actype2, aerr2
@@ -2740,7 +2759,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
             if path == "/_api/git/diff":
                 ref = (qs.get("ref") or [""])[0].strip()
-                res, err = read_git_diff(root_dir, ref)
+                res, err = read_git_diff(root_dir if self._full() else self._repo_root(parsed), ref)
                 if err:
                     self._send_json(400 if err == "invalid_ref" else 404, {"error": err})
                     return
@@ -2748,17 +2767,18 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 return
 
             if path == "/_api/db/comments/counts":
-                self._send_json(200, store.comment_counts())
+                self._send_json(200, self._main_store(parsed).comment_counts())
                 return
 
             if path == "/_api/links":
                 tr = (qs.get("train") or [None])[0]
-                self._send_json(200, store.list_links(train=tr))
+                self._send_json(200, self._main_store(parsed).list_links(train=tr))
                 return
 
             if path == "/_api/shares":
                 pid = (qs.get("post") or [None])[0]
-                self._send_json(200, {"shares": store.list_shares(post_id=pid)})
+                rows_sh = store.list_shares(post_id=pid)
+                self._send_json(200, {"shares": rows_sh if self._full() else [r for r in rows_sh if r["created_by"] == self._cur_uid()]})
                 return
 
             if path == "/_api/export":
@@ -2766,18 +2786,18 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 fmt = (qs.get("format") or ["md"])[0].strip().lower()
                 raw_view = (qs.get("raw") or ["0"])[0].strip().lower() in ("1", "true", "yes")
                 if fmt == "json":
-                    data_obj, fname = export_json_bundle(store, post_id=pid or None)
+                    data_obj, fname = export_json_bundle(self._main_store(parsed), post_id=pid or None)
                     if data_obj is None:
                         self._send_json(404, {"error": "not_found"})
                         return
                     body = json.dumps(data_obj, ensure_ascii=False, indent=2).encode("utf-8")
                     ctype = "application/json; charset=utf-8"
                 elif fmt == "rss":
-                    rss_text, fname = export_rss(store, project_name=project_name)
+                    rss_text, fname = export_rss(self._main_store(parsed), project_name=project_name)
                     body = rss_text.encode("utf-8")
                     ctype = "application/rss+xml; charset=utf-8"
                 else:
-                    md_text, fname = export_markdown(store, post_id=pid or None)
+                    md_text, fname = export_markdown(self._main_store(parsed), post_id=pid or None)
                     if md_text is None:
                         self._send_json(404, {"error": "not_found"})
                         return
@@ -2801,14 +2821,20 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 self.send_header("Connection", "keep-alive")
                 self.end_headers()
                 q = queue.Queue(maxsize=100)
-                with store.sse_lock:
-                    store.sse_clients.add(q)
+                view = None if self._full() else self._store(parsed)
+                feed = view.store if view else store
+                with feed.sse_lock:
+                    feed.sse_clients.add(q)
                 try:
                     self.wfile.write(("event: boot\ndata: " + json.dumps({"boot_id": SERVER_BOOT_ID}) + "\n\n").encode("utf-8"))
                     self.wfile.flush()
                     while True:
                         try:
                             msg = q.get(timeout=20)
+                            if view:
+                                ch = json.loads(msg)
+                                if "collection" in ch and not view.sees_event(str(ch["collection"]), str(ch["doc_id"])):
+                                    continue
                             self.wfile.write(("event: change\ndata: " + msg + "\n\n").encode("utf-8"))
                             self.wfile.flush()
                         except queue.Empty:
@@ -2817,8 +2843,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 except (BrokenPipeError, ConnectionResetError, OSError):
                     pass
                 finally:
-                    with store.sse_lock:
-                        store.sse_clients.discard(q)
+                    with feed.sse_lock:
+                        feed.sse_clients.discard(q)
                 return
 
             if path.startswith("/_blob/"):
@@ -2855,7 +2881,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
             if path.startswith("/_api/comments/threads/"):
                 tid = urllib.parse.unquote(path[len("/_api/comments/threads/"):].strip("/"))
-                t = store.get_thread(tid)
+                t = self._main_store(parsed).get_thread(tid)
                 if not t:
                     self._send_json(404, {"error": "thread not found"})
                     return
@@ -2869,7 +2895,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 except ValueError as e:
                     self._send_json(400, {"error": str(e)})
                     return
-                if _is_seen_doc(coll, doc_id) and not self._scoped_user_repo():
+                if _is_seen_doc(coll, doc_id) and self._full():
                     self._send_json(200, _seen_doc_all_boards(store, stores_map, primary_repo_id, coll, doc_id))
                     return
                 self._send_json(200, self._store(parsed).get_doc(coll, doc_id))
@@ -2885,8 +2911,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     seen_ids = set()
                     dash_rows, train_rows = [], []
                     dash_doc, train_doc = None, None
-                    for rid, st in stores_map.items():
-                        res = st.list_docs(rest[0], where=where, order_by=order_by, direction=direction)
+                    for rid, st in self._boards().items():
+                        res = self._scope_list_docs(rest[0], st.list_docs(rest[0], where=where, order_by=order_by, direction=direction))
                         for d in res.get("docs") or []:
                             did = d.get("id") or ""
                             if rest[0] == "posts" and did == "_dashboard":
@@ -2924,21 +2950,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     limit = int(qs["limit"][0]) if "limit" in qs and qs["limit"][0] else None
                     cursor = int((qs.get("cursor") or ["0"])[0])
                     res_list = cur_store.list_docs(rest[0], where=where, order_by=order_by, direction=direction, limit=limit, cursor=cursor)
-                    self._send_json(200, self._scope_list_docs(cur_store, rest[0], res_list))
+                    self._send_json(200, self._scope_list_docs(rest[0], res_list))
                     return
                 if len(rest) == 2:
                     tstore, _ = self._store_for_doc(parsed, rest[0], rest[1])
-                    did_req = rest[1]
-                    uid_cur = self._cur_uid()
-                    if rest[0] == "posts" and uid_cur != "owner":
-                        if did_req == "_orchestrator":
-                            doc_o = self._ensure_user_orch(tstore, uid_cur)
-                            self._send_json(200, {**doc_o, "id": "_orchestrator"})
-                            return
-                        if did_req.startswith("_orchestrator_") and did_req != ("_orchestrator_" + uid_cur):
-                            self._send_json(403, {"error": "forbidden"})
-                            return
-                    self._send_json(200, tstore.get_doc(rest[0], did_req))
+                    self._send_json(200, tstore.get_doc(rest[0], rest[1]))
                     return
 
             self._send_json(404, {"error": "not found"})
@@ -2970,16 +2986,13 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             tstore, nrepo = self._store_for_doc(parsed, coll, doc_id)
             if coll == "comments" and self._is_all_repos(parsed) and (body.get("data") or {}).get("post_id"):
                 tstore, nrepo = self._store_for_doc(parsed, "posts", str(body["data"]["post_id"]))
-            doc_id, put_data, sc_err = self._scope_write_target(coll, doc_id, body.get("data", {}))
-            if sc_err:
-                self._send_json(403, {"error": sc_err})
-                return
             before = _lane(tstore, coll, doc_id)
+            put_data = self._signed(body.get("data", {}), not before[1])
             res, err = tstore.set_doc(coll, doc_id, put_data, if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
-            _maybe_push(coll, doc_id, put_data, before, nrepo, self.server.server_address[1])
+            _maybe_push(coll, res["id"], res["data"], before, nrepo, self.server.server_address[1])
             self._send_json(200, res)
 
         def do_PATCH(self):
@@ -3007,23 +3020,19 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 self._send_json(404, {"error": "not found"})
                 return
             tstore, nrepo = self._store_for_doc(parsed, coll, doc_id)
-            doc_id, patch_data, sc_err = self._scope_write_target(coll, doc_id, body.get("data", {}))
-            if sc_err:
-                self._send_json(403, {"error": sc_err})
-                return
+            patch_data = body.get("data", {})
             before = _lane(tstore, coll, doc_id)
             res, err = tstore.update_doc(coll, doc_id, patch_data, if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
                 return
             if coll == "posts" and isinstance(patch_data, dict) and patch_data.get("column") in ("todo", "question"):
-                cur_doc = tstore.get_doc("posts", doc_id)
-                _maybe_push(coll, doc_id, cur_doc.get("data") or patch_data, before, nrepo, self.server.server_address[1])
+                _maybe_push(coll, res["id"], res["data"], before, nrepo, self.server.server_address[1])
             self._send_json(200, res)
 
         def do_DELETE(self):
             parsed = urllib.parse.urlsplit(self.path)
-            if self._require_auth(parsed, min_role="owner") is None:
+            if self._require_auth(parsed) is None:
                 return
             path = parsed.path
             if path.startswith("/_api/artifacts/"):
@@ -3038,6 +3047,9 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 return
             if path.startswith("/_api/shares/"):
                 stok = urllib.parse.unquote(path[len("/_api/shares/"):]).strip("/")
+                if not self._full() and (store.get_share(stok) or {}).get("created_by") != self._cur_uid():
+                    self._send_json(403, {"error": "forbidden", "required_role": "owner"})
+                    return
                 ok = store.revoke_share(stok)
                 self._send_json(200 if ok else 404, {"revoked": ok, "token": stok})
                 return
@@ -3073,13 +3085,21 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 if len(text) > 500000:
                     self._send_json(413, {"error": "text exceeds 500 KB"})
                     return
-                sender = re.sub(r"[^A-Za-z0-9._-]", "", str(body.get("from") or "external-ai"))[:32] or "external-ai"
                 mode = str(body.get("mode") or "comment").strip().lower()
                 now = utc_now()
                 target_repo = sh.get("repo") or primary_repo_id
                 tstore = stores_map.get(target_repo) or store
                 parent_doc = tstore.get_doc("posts", sh["post_id"])
                 pdata = parent_doc.get("data") or {}
+                taken = {u["user_id"] for u in store.list_users()}
+                for pd_ in tstore.list_docs("posts")["docs"]:
+                    taken.update(str((pd_["data"] or {}).get(k) or "") for k in ("part", "session_id"))
+                taken.discard("")
+                if not ACCESS:
+                    self._send_json(403, {"error": "forbidden"})
+                    return
+                sender = ACCESS.guest_name(body.get("from"), taken - {str(pdata.get("runner") or "")})
+                ACTOR.name = "guest:" + sender
                 if mode == "child_post":
                     idem_raw = str(body.get("idempotency_key") or "").strip()[:64]
                     if idem_raw:
@@ -3097,6 +3117,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                         "column": "info",
                         "part": sender,
                         "runner": sender,
+                        "by": "guest",
                         "parent": sh["post_id"],
                         "train": pdata.get("train") or "",
                         "priority": 2,
@@ -3110,6 +3131,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 res, _ = tstore.set_doc("comments", cid, {
                     "post_id": sh["post_id"],
                     "from": sender,
+                    "by": "guest",
                     "text": text,
                     "created_at": now,
                 })
@@ -3182,10 +3204,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 ctype = self.headers.get("Content-Type") or "application/octet-stream"
                 fname = urllib.parse.unquote(self.headers.get("X-Filename") or "file")
                 want = (self.headers.get("X-Blob-Id") or "").strip().lower()
-                if want and (self._require_auth(parsed, min_role="admin") is None):
+                if want and not self._full():
+                    self._send_json(403, {"error": "forbidden", "required_role": "owner"})
                     return
                 try:
-                    meta = store.save_blob(raw, content_type=ctype, filename=fname, blob_id=want or None)
+                    meta = self._main_store(parsed).save_blob(raw, content_type=ctype, filename=fname, blob_id=want or None)
                 except ValueError as e:
                     self._send_json(413, {"error": str(e), "code": "too_large"})
                     return
@@ -3262,8 +3285,12 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     cand = self._repo_id(parsed)
                     if cand != primary_repo_id:
                         req_repo = cand
-                if req_repo and (req_repo == "all" or req_repo not in stores_map):
-                    req_repo = ""
+                # the board they are invited to, said in full: the one open here, or every one when asked from "all"
+                if not req_repo:
+                    req_repo = "all" if self._is_all_repos(parsed) else primary_repo_id
+                if req_repo != "all" and req_repo not in stores_map:
+                    self._send_json(400, {"error": "unknown_repo", "repo": req_repo, "boards": sorted(stores_map)})
+                    return
                 created = store.create_user(body.get("name"), role=body.get("role", "member"), repo=req_repo)
                 if not created:
                     self._send_json(400, {"error": "name_required"})
@@ -3271,7 +3298,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 proto = (self.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip()
                 host_hdr = self.headers.get("Host") or ""
                 origin = ("%s://%s" % (proto, host_hdr)) if host_hdr else ""
-                is_np = bool(req_repo and req_repo != primary_repo_id)
+                is_np = req_repo not in ("all", primary_repo_id)
                 created["link"] = origin + "/?token=" + created["token"] + (("&repo=" + urllib.parse.quote(req_repo)) if is_np else "")
                 created["ai_env"] = 'export KIT_BOARD_URL="%s" KIT_BOARD_TOKEN="%s"%s' % (
                     origin, created["token"], (' KIT_BOARD_REPO="%s"' % req_repo) if is_np else ""
@@ -3282,17 +3309,21 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if path == "/_api/shares":
                 pid = str(body.get("post_id") or "").strip()
                 target_repo = str(body.get("repo") or "").strip()
-                if target_repo and target_repo in stores_map:
-                    tstore = stores_map[target_repo]
+                mine = self._boards()
+                if target_repo and target_repo in mine:
+                    tstore = mine[target_repo]
                 else:
                     tstore, target_repo = self._store_for_doc(parsed, "posts", pid)
                 if pid and not tstore.get_doc("posts", pid).get("exists"):
-                    for rid_k, st_k in stores_map.items():
+                    for rid_k, st_k in mine.items():
                         if st_k.get_doc("posts", pid).get("exists"):
                             tstore, target_repo = st_k, rid_k
                             break
                 if not pid or not tstore.get_doc("posts", pid).get("exists"):
                     self._send_json(404, {"error": "post_not_found"})
+                    return
+                if not self._full() and pid.startswith("_"):
+                    self._send_json(403, {"error": "forbidden", "required_role": "owner"})
                     return
                 res = store.create_share(
                     pid,
@@ -3301,6 +3332,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     files=body.get("files") or [],
                     max_submissions=body.get("max_submissions", 5),
                     repo=target_repo,
+                    created_by="" if self._full() else self._cur_uid(),
                 )
                 self._send_json(200, res)
                 return
@@ -3311,7 +3343,10 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 return
 
             if path == "/_api/comments/send":
-                res = store.send_comment(body.get("anchor"), str(body.get("text") or ""))
+                if self._full():
+                    res = store.send_comment(body.get("anchor"), str(body.get("text") or ""), by=self._cur_uid())
+                else:
+                    res = self._main_store(parsed).send_comment(body.get("anchor"), str(body.get("text") or ""))
                 self._send_json(200, res)
                 return
 
@@ -3372,11 +3407,12 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
             if path == "/_api/db/batch":
                 ops = body.get("writes") if isinstance(body, dict) else body
+                bstore = self._main_store(parsed)
                 # `sync`: a copy from git or the Artifact, whose own writer notified already
-                synced = bool(isinstance(body, dict) and body.get("sync"))
-                lanes = {} if synced else {str(op.get("doc_id")): _lane(store, "posts", op.get("doc_id")) for op in (ops or [])
+                synced = bool(isinstance(body, dict) and body.get("sync") and self._full())
+                lanes = {} if synced else {str(op.get("doc_id")): _lane(bstore, "posts", op.get("doc_id")) for op in (ops or [])
                                            if isinstance(op, dict) and op.get("collection") == "posts" and op.get("doc_id")}
-                results, err = store.batch_ops(ops or [])
+                results, err = bstore.batch_ops(ops or [])
                 if err is not None:
                     kind, doc_id, detail = err
                     if kind == "unknown_op":
@@ -3387,7 +3423,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 for op in () if synced else (ops or []):
                     if isinstance(op, dict) and op.get("op") in ("set", "update") and op.get("collection") in ("posts", "comments"):
                         coll_, did_ = op.get("collection"), str(op.get("doc_id"))
-                        now_ = (store.get_doc(coll_, did_).get("data") if op.get("op") == "update" else None) or op.get("data") or {}
+                        now_ = (bstore.get_doc(coll_, did_).get("data") if op.get("op") == "update" else None) or op.get("data") or {}
                         _maybe_push(coll_, did_, now_, lanes.get(did_, (None, False)) if coll_ == "posts" else (None, False), "",
                                     self.server.server_address[1])
                 self._send_json(200, {"ok": True, "results": results})
@@ -3396,7 +3432,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if path.startswith("/_api/db/") and path.endswith("/str_replace"):
                 rest = [urllib.parse.unquote(x) for x in path[len("/_api/db/"):-len("/str_replace")].strip("/").split("/") if x]
                 if len(rest) == 2:
-                    res, err = store.str_replace(
+                    res, err = self._main_store(parsed).str_replace(
                         rest[0], rest[1], body.get("field", "body"),
                         body.get("old_str", ""), body.get("new_str", ""),
                         if_version=body.get("if_version"),
@@ -3410,6 +3446,20 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
             self._send_json(404, {"error": "not found"})
 
+    def guarded(fn):
+        def run(self):
+            ACTOR.name = ""
+            try:
+                return fn(self)
+            except Exception as e:
+                if ACCESS and isinstance(e, ACCESS.Denied):
+                    self._send_json(e.code, {"error": "taken" if e.code == 409 else "forbidden", "why": e.why})
+                    return None
+                raise
+        return run
+
+    for verb in ("do_GET", "do_PUT", "do_PATCH", "do_DELETE", "do_POST"):
+        setattr(Handler, verb, guarded(getattr(Handler, verb)))
     return Handler
 
 

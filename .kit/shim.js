@@ -527,9 +527,16 @@
     }
   };
 
+  /* The local board knows its reader by the token they opened it with. */
+  var meP = null;
+  function whoAmI() {
+    if (!meP) meP = api("GET", "/_api/me").then(function (m) { if (m && m.id) { window.__KIT_USER__ = m; return m; } throw 0; })
+      .catch(function () { meP = null; return { id: "", role: "viewer" }; });
+    return meP;
+  }
   var user = {
-    isOwner: function () { return Promise.resolve(true); },
-    id: function () { return Promise.resolve("owner"); }
+    isOwner: function () { return whoAmI().then(function (m) { return m.role === "owner"; }); },
+    id: function () { return whoAmI().then(function (m) { return m.id; }); }
   };
 
   window.claude = {
@@ -1631,7 +1638,7 @@
         } else if (ak === "src" && t === "img") {
           outAttrs.push('src="' + escH(resolveAssetUrl(av, baseDocPath, repoOverride)) + '"');
         } else if (ak === "href" && t === "a") {
-          if (!/^\s*javascript:/i.test(av)) outAttrs.push('href="' + escH(av) + '"');
+          if (!/^(?:javascript|vbscript|data):/i.test(av.replace(/[\u0000-\u0020]/g, ""))) outAttrs.push('href="' + escH(av) + '"');
         } else if (ak === "alt" || ak === "title" || ak === "width" || ak === "height" || ak === "id") {
           outAttrs.push(ak + '="' + escH(av) + '"');
         }
@@ -1658,6 +1665,7 @@
         return '<img src="' + escH(rSrc) + '" alt="' + alt + '">';
       });
       out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (_, lbl, href) {
+        if (/^(?:javascript|vbscript|data):/i.test(href.replace(/&#?[a-z0-9]+;?/gi, "").replace(/[\u0000-\u0020]/g, ""))) return lbl;
         var parsed = parseAssociatedDocLink(href, baseDocPath);
         if (parsed) {
           return '<a href="' + href + '" class="kit-doc-link">' + lbl + '</a>';
@@ -5207,7 +5215,7 @@
             if (/\.html?$/i.test(full.path)) {
               var ifr = document.createElement("iframe");
               ifr.style.cssText = "width:100%;height:420px;border:1px solid var(--line);border-radius:10px;background:#fff;";
-              ifr.setAttribute("sandbox", "allow-scripts allow-forms allow-popups allow-same-origin");
+              ifr.setAttribute("sandbox", "allow-scripts allow-popups");   /* never this board's origin: it is a collaborator's page */
               ifr.srcdoc = full.content || "";
               mBody.appendChild(ifr);
             } else if (/\.md$/i.test(full.path)) {
@@ -5291,7 +5299,8 @@
         api("PATCH", postUrl, { data: { working_by: next } }).then(function () { showClaim({ working_by: next }); applyCollabCardBadges(); }, function () {});
       }, function () {});
     });
-    wrap.appendChild(sel); wrap.appendChild(claimB);
+    if (me.role === "owner") wrap.appendChild(sel);          /* the owner assigns; anyone takes a free one */
+    wrap.appendChild(claimB);
     barRow.insertBefore(wrap, barRow.firstChild);
   }
   function refreshCollabUiState(cb) {

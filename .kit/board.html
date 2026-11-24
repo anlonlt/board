@@ -1264,7 +1264,13 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     if (v.sig) return v.sig !== sigOf(p);
     var u = str(p.updated_at); return !!u && u > (v.bt && v.bt > v.at ? v.bt : v.at);
   }
-  function agentFrom(c) { return c.from && c.from !== "owner" && c.from !== "viewer"; }
+  /* A person wrote it: the owner, someone the board signs (`by`; a guest link is an AI's), or on an Artifact a viewer. */
+  function isPerson(c) { return c.from === "owner" || c.from === "viewer" || (!!c.by && c.by !== "guest"); }
+  function isYou(c) { return c.from === "owner" ? state.isOwner : !!c.by && c.by === state.uid; }
+  function personName(c) { return isYou(c) ? "You" : c.from === "owner" ? "Owner" : c.by ? "@" + str(c.by) : state.isOwner ? "Viewer" : "You"; }
+  /* Signed as the one who reads the page: the local board checks it and signs it itself. */
+  function signed(row) { if (!state.isOwner && state.uid) row.by = state.uid; return row; }
+  function agentFrom(c) { return c.from && !isPerson(c); }
   /* BD4. A comment may carry became_post: "<post id>" (or a list): the thread from it down continued as that post.
      Its old place shows one line "→ continued in …"; the new post shows the thread folded at its top. Those comments
      no longer light the old post's dot (they are read where they now show). */
@@ -1427,7 +1433,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
   function reopened(p) {
     if (str(p.column) !== "done" || !p.done_at) return false;
     var t = Date.parse(p.done_at);
-    return postCmts(p.id).some(function (c) { return c.post_id === p.id && c.from !== "owner" && c.from !== "viewer" && tOf(c) > t; });
+    return postCmts(p.id).some(function (c) { return c.post_id === p.id && !isPerson(c) && tOf(c) > t; });
   }
   function colOf(p) { var k = reopened(p) ? (str(p.column_before) || "info") : str(p.column); return COLUMNS.some(function (c) { return c.key === k; }) ? k : "info"; }
   /* CL33: a post compact made from an awaits point no commit dates says so; it is never dated by its posting time. */
@@ -2242,10 +2248,10 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       var now = new Date().toISOString(), failed = 0;
       await Promise.all(targets.map(function (p) {
         var ref = db.collection("comments").doc();
-        return ref.set({
+        return ref.set(signed({
           post_id: p.id, from: state.isOwner ? "owner" : "viewer", like: true,
           text: "", created_at: now, delivered: false, delivery_error: "", read: false
-        }).catch(function () { failed++; });
+        })).catch(function () { failed++; });
       }));
       if (failed) { $("sel-note").textContent = failed + " could not be approved; try again."; btn.disabled = false; return; }
       setPicking(false);
@@ -2314,14 +2320,14 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     var cs = commentsFor(p.id);
     if ((c.key === "question" || c.key === "todo") && !p.date_unknown && p.created_at) {
       var ageH = (Date.now() - Date.parse(p.created_at)) / 3600000;
-      var hasOwnerAct = cs.some(function (x) { return x.from === "owner" || x.from === "viewer"; });
+      var hasOwnerAct = cs.some(isPerson);
       if (ageH >= 24 && !hasOwnerAct) {
         var ageLbl = Math.floor(ageH / 24) + "d waiting";
         var ag = el("span", "badge aging", ageLbl); ag.title = "Unanswered for more than 24 hours";
         m.appendChild(ag);
       }
     }
-    var fromAgent = cs.filter(function (x) { return x.from && x.from !== "owner" && x.from !== "viewer"; }).length;
+    var fromAgent = cs.filter(function (x) { return x.from && !isPerson(x); }).length;
     if (cs.length) m.appendChild(el("span", "badge", cs.length + (cs.length === 1 ? " comment" : " comments")));
     if (cs.some(function (x) { return x.kind === "review"; })) m.appendChild(iconEl("span", "badge rev", "check", "reviewed"));
     if (fromAgent) m.appendChild(el("span", "badge new", fromAgent + " from a session"));
@@ -2415,7 +2421,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
      comments, posts and comments in time order, replies nested under the comment they answer. */
   var downloads = null;
   function utc(ms) { return ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : ""; }
-  function whoMd(c) { return c.from === "owner" || c.from === "viewer" ? "You" : c.from === "orchestrator" ? (c.kind === "review" ? "Orchestrator (review)" : "Orchestrator") : str(c.from) || "?"; }
+  function whoMd(c) { return isPerson(c) ? personName(c) : c.from === "orchestrator" ? (c.kind === "review" ? "Orchestrator (review)" : "Orchestrator") : str(c.from) || "?"; }
   function indent(text, pad) { return str(text).replace(/\r/g, "").split("\n").map(function (l) { return l ? pad + l : ""; }).join("\n"); }
   function postMd(p) {
     var col = COLUMNS.filter(function (c) { return c.key === colOf(p); })[0], out = [];
@@ -2480,7 +2486,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
   /* Like: one tap approves a post or a picture without words. It is kept as a comment (like: true) and sent to
      Claude as one, so the post's session hears it. */
   function likedBy(p, u) {
-    return postCmts(p.id).some(function (c) { return c.post_id === p.id && c.like === true && !c.comment_id && (c.from === "owner" || c.from === "viewer") && str(c.image) === str(u || ""); });
+    return postCmts(p.id).some(function (c) { return c.post_id === p.id && c.like === true && !c.comment_id && isYou(c) && str(c.image) === str(u || ""); });
   }
   function likeButton(p, u, n, anchorOf) {
     var on = likedBy(p, u);
@@ -2491,7 +2497,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       if (b.classList.contains("on") || !db) return;
       paintLike(b, true); b.title = "You approved this";
       var ref = db.collection("comments").doc();
-      var row = { post_id: p.id, text: "\uD83D\uDC4D", like: true, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+      var row = signed({ post_id: p.id, text: "\uD83D\uDC4D", like: true, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false });
       if (u) row.image = u;
       sending[ref.id] = true;
       var sendP = sendToClaude(p, n, anchorOf(), "\uD83D\uDC4D Like: he approves this" + (n ? " picture" : " post") + ", no words.");
@@ -2880,7 +2886,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
   function answeredBy(c) {
     var all = ix().byId, th = str(c.thread_id);
     return (state.comments || []).some(function (x) {
-      if (x.like || x.removed || x.from === "owner" || x.from === "viewer" || x.id === c.id) return false;
+      if (x.like || x.removed || isPerson(x) || x.id === c.id) return false;
       var r = str(x.reply_to); if (!r) return false;
       if (r === c.id || (th && r === th)) return true;
       return parentOf(x, all) === c.id;
@@ -2897,7 +2903,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     if (state.unseen && state.unseen[c.id]) m.appendChild(el("span", "badge fresh", "new"));
     /* The clerk marks his comment when nobody answered in time (a state, not a comment): a muted clock until an answer lands. */
     if (str(c.waiting_note) && !(state.comments || []).some(function (x) {
-      return x.from !== "owner" && x.from !== "viewer" && !x.like && x.reply_to && (x.reply_to === c.id || (c.thread_id && x.reply_to === c.thread_id));
+      return !isPerson(x) && !x.like && x.reply_to && (x.reply_to === c.id || (c.thread_id && x.reply_to === c.thread_id));
     })) {
       var wn = el("span", "cmt-wait"); wn.title = str(c.waiting_note); wn.setAttribute("aria-label", wn.title);
       wn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>';
@@ -2905,18 +2911,18 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     }
     d.appendChild(m);
     // a session's or the orchestrator's comment is written like a post (bold, code, tables); his own words stay as typed
-    if (c.from === "owner" || c.from === "viewer") d.appendChild(el("div", "txt", str(c.text)));
+    if (isPerson(c)) d.appendChild(el("div", "txt", str(c.text)));
     else { var tx = el("div", "txt md"); tx.innerHTML = renderBody(c.text); d.appendChild(tx); }
     if (Array.isArray(c.files) && c.files.length) d.appendChild(filesNode(c.files));
     var actsRow = el("div", "row cmt-acts");
-    if (c.from !== "owner" && c.from !== "viewer") {
+    if (!isPerson(c)) {
       actsRow.appendChild(commentLike(c));
       /* The owner, 2026-11-13 04:12: the orchestrator Likes a review whose suggestion it takes care of. */
       if (likesOn(c.id).some(function (x) { return x.comment_id === c.id && x.like === true && x.from === "orchestrator"; }))
         actsRow.appendChild(iconEl("span", "taking", "like", "orchestrator: taking care of it"));
     }
     d.appendChild(actsRow);
-    if (c.from === "owner" || c.from === "viewer") {
+    if (isYou(c) || c.from === "viewer") {
       var info = el("div", "deliv");
       if (sending[c.id]) { info.textContent = "\u2026"; info.title = "Sending to Claude..."; }
       /* CL12 (his 22:18): "passed on" and "seen" could not be told apart; main's icons are kept (icon-first chrome)
@@ -2986,14 +2992,14 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
   }
   /* Like on a session's comment: a row with comment_id, sent to Claude with the comment's first words. */
   function commentLike(c) {
-    var on = likesOn(c.id).some(function (x) { return x.comment_id === c.id && x.like === true && (x.from === "owner" || x.from === "viewer"); });
+    var on = likesOn(c.id).some(function (x) { return x.comment_id === c.id && x.like === true && isYou(x); });
     var b = el("button", "like icon-only"); b.type = "button"; paintLike(b, on);
     b.title = on ? "You agreed with this comment" : "Agree without writing";
     b.addEventListener("click", function () {
       var p = current(); if (b.classList.contains("on") || !db || !p) return;
       paintLike(b, true); b.title = "You agreed with this comment";
       var ref = db.collection("comments").doc();
-      var row = { post_id: p.id, comment_id: c.id, text: "\uD83D\uDC4D", like: true, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+      var row = signed({ post_id: p.id, comment_id: c.id, text: "\uD83D\uDC4D", like: true, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false });
       var sendP = sendToClaude(p, 0, $("p-title"), "\uD83D\uDC4D Like on the comment of " + str(c.from) + " (\u00ab" + str(c.text).slice(0, 80) + "\u00bb): he agrees, no words.");
       ref.set(row).then(function () { return sendP; }, function () { return sendP; }).then(function (res) { checkCanSend(); return ref.update(deliveryFields(res)); }).catch(function () {});
     });
@@ -3066,7 +3072,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       l1.appendChild(el("span", "dt", discTitle(k)));
       l1.appendChild(el("span", "dw", when(isoOf(m))));
       b.appendChild(l1);
-      var who = m.from === "owner" || m.from === "viewer" ? "You" : m.from === "orchestrator" ? "Orchestrator" : str(m.from) || "?";
+      var who = isPerson(m) ? personName(m) : m.from === "orchestrator" ? "Orchestrator" : str(m.from) || "?";
       b.appendChild(el("div", "d2", who + ": " + firstLine(m.text)));
       b.addEventListener("click", function () {
         if (orchEdit) { orchSel[k] = !orchSel[k]; renderDiscList(); }
@@ -3351,7 +3357,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
   function renderOpts(p, cs) {
     var box = $("p-opts"), opts = Array.isArray(p.options) ? p.options.map(str).filter(Boolean) : [];
     box.textContent = ""; box.hidden = !opts.length; if (!opts.length) return;
-    var last = cs.filter(function (c) { return c.answer && (c.from === "owner" || c.from === "viewer"); }).pop();
+    var last = cs.filter(function (c) { return c.answer && isPerson(c); }).pop();
     box.appendChild(el("span", "lab", last ? "Your answer (tap another to change it):" : "Answer with one tap:"));
     opts.forEach(function (o) {
       var on = last && str(last.answer) === o;
@@ -3360,7 +3366,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       b.addEventListener("click", function () {
         if (on || !db) return;
         var ref = db.collection("comments").doc();
-        var row = { post_id: p.id, text: "Answer: " + o, answer: o, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+        var row = signed({ post_id: p.id, text: "Answer: " + o, answer: o, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false });
         sending[ref.id] = true;
         var sendP = sendToClaude(p, 0, $("p-title"), "Answer: " + o);
         ref.set(row).then(function () { return sendP; }, function () { return sendP; }).then(function (res) {
@@ -3505,7 +3511,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     if (!db) { f.note.textContent = "The board's storage is not available in this view."; return; }
     f.button.disabled = true; f.note.textContent = "Sending...";
     var ref = db.collection("comments").doc();
-    var row = { post_id: p.id, text: text, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+    var row = signed({ post_id: p.id, text: text, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false });
     if (f.image) row.image = f.image;
     /* BD7: a message under _orchestrator names its discussion; a new one is its own */
     var dk = p.id === ORCH ? (state.disc && state.disc !== "new" ? state.disc : ref.id) : "";
@@ -3673,6 +3679,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     w.use("downloads").then(function (d) { downloads = d; $("share").hidden = !d; $("sel-export").hidden = !d; }, function () {});
     user = await w.use("user");
     if (user) { try { state.isOwner = await user.isOwner(); } catch (e) {} }
+    if (user && typeof user.id === "function") { try { state.uid = str(await user.id()); } catch (e) {} }
     db = await w.use("db");
     if (db && window.__KIT_WRAP_DB__) db = window.__KIT_WRAP_DB__(db);   /* cross-repo boards in an Artifact (kit/claude/artifact_repos.js) */
     if (!db) { clearTimeout(timer); var s = $("status"); s.textContent = "Sign in on claude.ai to see the board."; s.className = "status bad"; return; }
@@ -4439,13 +4446,13 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       var def = defaultOptionFor(p);
       if (def && db) {
         var ref = db.collection("comments").doc();
-        var row = { post_id: p.id, text: "Answer: " + def, answer: def, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+        var row = signed({ post_id: p.id, text: "Answer: " + def, answer: def, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false });
         var sendP = sendToClaude(p, 0, cardEl || document.body, "Answer: " + def);
         return ref.set(row).then(function () { return sendP; }, function () { return sendP; }).then(function (res) { checkCanSend(); return ref.update(deliveryFields(res)); }).catch(function () {});
       }
       if (colOf(p) === "question" && db) {
         var lref = db.collection("comments").doc();
-        var lrow = { post_id: p.id, text: "\uD83D\uDC4D", like: true, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+        var lrow = signed({ post_id: p.id, text: "\uD83D\uDC4D", like: true, from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false });
         var lsendP = sendToClaude(p, 0, cardEl || document.body, "\uD83D\uDC4D Like: he approves this post, no words.");
         return lref.set(lrow).then(function () { return lsendP; }, function () { return lsendP; }).then(function (res) { checkCanSend(); return lref.update(deliveryFields(res)); }).catch(function () {});
       }
@@ -4568,7 +4575,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
           ob.addEventListener("click", function () {
             if (!db) return;
             var ref = db.collection("comments").doc();
-            var row = { post_id: p.id, text: "Answer: " + str(opt), answer: str(opt), from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+            var row = signed({ post_id: p.id, text: "Answer: " + str(opt), answer: str(opt), from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false });
             var sendP = sendToClaude(p, 0, box, "Answer: " + str(opt));
             ref.set(row).then(function () { return sendP; }, function () { return sendP; }).then(function (res) {
               checkCanSend(); return ref.update(deliveryFields(res));
@@ -4630,7 +4637,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
           var txt = (fTa.value || "").trim();
           if ((!txt && !fPending.length) || !db) return;
           var ref = db.collection("comments").doc();
-          var row = { post_id: p.id, text: txt || "(see the attached file)", from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false };
+          var row = signed({ post_id: p.id, text: txt || "(see the attached file)", from: state.isOwner ? "owner" : "viewer", created_at: new Date().toISOString(), delivered: false, delivery_error: "", read: false });
           if (fPending.length) row.files = fPending.slice();
           var told = txt + fPending.map(function (x) { return "\n[attached: " + x.name + " (" + x.type + ") at /_blob/" + x.id + "]"; }).join("");
           fTa.value = ""; saveDraft(p.id, 0, "", ""); fPending = []; fFiles.textContent = ""; focusCmtBar.classList.remove("has-text");
