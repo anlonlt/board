@@ -240,8 +240,27 @@ class O55Gaps(unittest.TestCase):
         with unittest.mock.patch.dict(os.environ, {"CLAUDE_CODE_REMOTE_SESSION_ID": "cse_01ABC"}):
             self.assertEqual(kit.whoami("harmonize-cl38"), "session_01ABC")
         env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_CODE_REMOTE_SESSION_ID", "KIT_SESSION_ID")}
+        with unittest.mock.patch.dict(os.environ, dict(env, CLAUDE_CODE_SESSION_ID="3fc98f1b"), clear=True):
+            self.assertEqual(kit.whoami("harmonize-cl38"), "3fc98f1b")          # a real id before the name (O55)
+        env.pop("CLAUDE_CODE_SESSION_ID", None)
         with unittest.mock.patch.dict(os.environ, env, clear=True):
             self.assertEqual(kit.whoami("harmonize-cl38"), "harmonize-cl38")
+            self.assertEqual(kit.whoami(), "")                                  # never a made-up id
+
+    def test_fetch_timeout_refuses(self):
+        real = subprocess.run
+
+        def slow(cmd, *a, **kw):
+            if "fetch" in cmd:
+                raise subprocess.TimeoutExpired(cmd, 180)
+            return real(cmd, *a, **kw)
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["git", "init", "-q", "-b", "cl99", d], check=True)
+            subprocess.run(["git", "-C", d, "remote", "add", "origin", "https://example.invalid/x.git"], check=True)
+            with unittest.mock.patch.object(kit.subprocess, "run", side_effect=slow):
+                err = kit.check_trunk_merged(d)
+        self.assertEqual(len(err), 1)
+        self.assertIn("cannot fetch", err[0])
 
     def test_trunk_that_cannot_be_fetched_refuses(self):
         with tempfile.TemporaryDirectory() as d:

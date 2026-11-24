@@ -1994,11 +1994,12 @@ def merged_branches(root=None, delete=False):
 def whoami(name=""):
     """`kit.py whoami [name]`: the session id a post's session_id names. A Claude Code web session: `session_<id>`
     (from CLAUDE_CODE_REMOTE_SESSION_ID `cse_<id>`, the id send_message and get_session take); else KIT_SESSION_ID;
-    else the name given (a CLI part launched with `claude --bg -n <name>`); else CLAUDE_CODE_SESSION_ID."""
+    else CLAUDE_CODE_SESSION_ID (a CLI session's real id); else the name given (`claude --bg -n <name>`, no id known);
+    else nothing (O55: never a made-up id)."""
     rid = os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID") or ""
     if rid:
         return "session_" + rid.split("_", 1)[1] if rid.startswith("cse_") else rid
-    return os.environ.get("KIT_SESSION_ID") or name or os.environ.get("CLAUDE_CODE_SESSION_ID") or "unknown-session"
+    return os.environ.get("KIT_SESSION_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or name or ""
 
 def doctor(m, db_path=None):
     """Verify SQLite integrity, mirror worktree health, sync freshness, and referenced blobs."""
@@ -3338,24 +3339,25 @@ def pair(pid, answer=None, db_path=None, root=None, timeout=900):
 
 def check_trunk_merged(root=ROOT):
     """CL38: Done is judged by the kit as it is on the trunk now, not as it was when the part started (CL37 started
-    before CL36's rule and skipped it): the work must contain origin/<trunk>. No origin, or a fetch that fails: no
-    refusal (a local repo, a test); an origin that cannot be fetched: refused (O55)."""
-    def g(*a):
-        return subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=120)
+    before CL36's rule and skipped it): the work must contain origin/<trunk>. Only a repo with no origin at all is
+    skipped (a local repo, a test); a fetch that fails or times out is refused (O55)."""
+    def g(*a, timeout=60):
+        return subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=timeout)
+    trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
     try:
         if g("remote", "get-url", "origin").returncode:
             return []
-        trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
         if g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == trunk:
             return []
-        if g("fetch", "-q", "origin", trunk).returncode:
-            return ["cannot fetch origin/%s to check that your work contains it: fix the network or the remote, then "
-                    "done again (Done is never judged on an unknown trunk)" % trunk]
-        if g("merge-base", "--is-ancestor", "origin/" + trunk, "HEAD").returncode:
-            return ["the trunk moved since you started: merge it first (`git fetch origin %s && git merge --no-edit "
-                    "origin/%s`), rerun the tests, then done again: Done is checked against the kit on %s now" % (trunk, trunk, trunk)]
+        fetched = g("fetch", "-q", "origin", trunk, timeout=180).returncode == 0
     except (OSError, subprocess.SubprocessError):
-        return []
+        fetched = False
+    if not fetched:
+        return ["cannot fetch origin/%s to check that your work contains it: fix the network or the remote, then done "
+                "again (Done is never judged on an unknown trunk)" % trunk]
+    if g("merge-base", "--is-ancestor", "origin/" + trunk, "HEAD").returncode:
+        return ["the trunk moved since you started: merge it first (`git fetch origin %s && git merge --no-edit "
+                "origin/%s`), rerun the tests, then done again: Done is checked against the kit on %s now" % (trunk, trunk, trunk)]
     return []
 
 
