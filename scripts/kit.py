@@ -2107,6 +2107,11 @@ def _await_point(lines, mem_rel, fname, today, since=None):
     deadline = dl.group(1) if dl else ""
     if not md and dl:
         text = rest[:dl.start()].strip()
+    default = re.sub(r"\s+[\u2014\u2013-]\s+`[^`]+`.*$", "", default).strip()   # its trailing `docs/...` § ref
+    if not since:
+        dm = re.search(r"\b(\d{4}-\d\d-\d\d)\b", text)
+        if dm:
+            since = dm.group(1) + "T00:00:00Z"
     overdue = bool(deadline and deadline < today)
     where = "%s/state/%s.md" % (mem_rel, ws) if ws else "%s/%s" % (mem_rel, fname)
     body = [text, "", "Default: %s · deadline %s%s" % (default or "(none written)", deadline or "(none)",
@@ -2116,7 +2121,13 @@ def _await_point(lines, mem_rel, fname, today, since=None):
                  % (deadline, default or "none written", where)]
     body += ["", "From `%s/%s`, archived by `kit.py compact`: answer here." % (mem_rel, fname)]
     now = _now_z()
-    doc = {"title": text[:160] or s[:160], "kind": "question", "column": "question", "status": "open",
+    title = text or s
+    if len(title) > 200:
+        title = title[:200].rsplit(" ", 1)[0]
+        if title.count("(") > title.count(")"):
+            title = title[:title.rfind("(")].rstrip()
+        title += "\u2026"
+    doc = {"title": title, "kind": "question", "column": "question", "status": "open",
            "workstream": ws, "default": default, "deadline": deadline, "body": "\n".join(body),
            "source": "%s/%s" % (mem_rel, fname), "source_key": hashlib.sha1(_norm_text(s).encode()).hexdigest()[:12],
            "from": "kit compact", "created_at": since or now, "posted_at": now}
@@ -2146,13 +2157,25 @@ def _point_dates(base, path):
         return {}
     if r.returncode != 0:
         return {}
-    out, t = {}, None
+    # a shallow clone's cut is not when a line was written (O54: every point "17h old"); nor is an uncommitted line
+    cut = set()
+    try:
+        sp = subprocess.run(["git", "-C", base, "rev-parse", "--git-path", "shallow"], capture_output=True, text=True,
+                            timeout=10).stdout.strip()
+        sp = sp if os.path.isabs(sp) else os.path.join(base, sp)
+        if os.path.isfile(sp):
+            cut = {x.strip() for x in open(sp, encoding="utf-8") if x.strip()}
+    except (OSError, subprocess.SubprocessError):
+        pass
+    out, t, sha = {}, None, ""
     for ln in r.stdout.split("\n"):
-        if ln.startswith("author-time "):
+        if re.match(r"^[0-9a-f]{40} \d+ \d+", ln):
+            sha, t = ln.split()[0], None
+        elif ln.startswith("author-time "):
             t = int(ln.split()[1])
-        elif ln.startswith("\t") and t is not None:
-            out.setdefault(ln[1:], datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-            t = None
+        elif ln.startswith("\t"):
+            if t is not None and sha not in cut and sha.strip("0"):
+                out.setdefault(ln[1:], datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
     return out
 
 
@@ -2166,10 +2189,28 @@ def _issue_post(fn, text, mem_rel):
     return "issue-%s" % _slug(fn[:-3], 48), doc
 
 
+def _is_open_question(pid, p):
+    """An open question post: kind question or the question column, not done, closed or removed. A step or report
+    post a point names is never its match (O54: 9 points matched step posts and were archived with no question)."""
+    if pid.startswith("_") or not isinstance(p, dict) or p.get("removed"):
+        return False
+    if not (p.get("kind") == "question" or p.get("column") == "question"):
+        return False
+    return p.get("column") != "done" and step_state(p) not in ("done", "closed")
+
+
+_NAMED_ID = re.compile(r"`([A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+)`|(?<![\w/.-])([A-Za-z]+\d+[a-z]?(?:-[a-z0-9]+)+)(?![\w/.-])")
+
+
+def _id_words(pid):
+    return _sig_words(pid.replace("-", " ").replace("_", " "))
+
+
 def _match_post(posts, doc, kind, stem=None, text=""):
-    """A post already on the board for this point or issue (CL33, never doubled): the same source_key; a post id the
-    point names (`HL5-harmony-ai-question`); an issue post naming the file; or, in a post of that kind, the same
-    title or a title whose significant words (2 or more) all appear in the point's."""
+    """A post already on the board for this point or issue (CL33, never doubled). A point: the same source_key; an
+    open question post it names; one whose id or title words (2 or more) are all in a post id the point names
+    (`q-look-aids-in-the-night` -> F5-aids-in-the-night); or one whose title words are all in the point. An issue:
+    an issue post naming the file or with the same title."""
     nt = _norm_text(doc.get("title"))
     words = _sig_words(text or doc.get("title"))
     for pid, p in posts.items():
@@ -2177,21 +2218,33 @@ def _match_post(posts, doc, kind, stem=None, text=""):
             continue
         if doc.get("source_key") and p.get("source_key") == doc["source_key"]:
             return pid
-        if text and len(pid) >= 4 and pid in text and re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(pid), text):
-            return pid
+    if kind == "question":
+        named = [a or b for a, b in _NAMED_ID.findall(text or "")]
+        opens = {k: p for k, p in posts.items() if _is_open_question(k, p)}
+        for n in named:
+            if n in opens:
+                return n
+        for n in named:
+            nw = _id_words(n)
+            for k, p in opens.items():
+                for cand in (_id_words(k), _sig_words(p.get("title"))):
+                    if len(cand & nw) >= 2 and (cand <= nw or nw <= cand):
+                        return k
+        for k, p in opens.items():
+            if nt and _norm_text(p.get("title")) == nt:
+                return k
+            tw = _sig_words(p.get("title"))
+            if len(tw) >= 2 and tw <= words:
+                return k
+        return None
     for pid, p in posts.items():
         if pid.startswith("_") or not isinstance(p, dict) or p.get("removed"):
             continue
-        is_kind = p.get("kind") == kind or (kind == "question" and p.get("column") == "question") or \
-            (kind == "issue" and re.match(r"^(issue|iss)[-_]", pid))
-        if not is_kind:
+        if not (p.get("kind") == "issue" or re.match(r"^(issue|iss)[-_]", pid)):
             continue
         if stem and (stem in str(p.get("source") or "") or stem in pid or stem in str(p.get("body") or "")):
             return pid
         if nt and _norm_text(p.get("title")) == nt:
-            return pid
-        tw = _sig_words(p.get("title"))
-        if len(tw) >= 2 and tw <= words:
             return pid
     return None
 
@@ -2207,8 +2260,12 @@ def _possible_doubles(posts, planned):
                 continue
             if p.get("kind") not in ("question", "issue") and p.get("column") != "question":
                 continue
-            tw = _sig_words(p.get("title"))
-            if w and tw and len(w & tw) * 2 >= max(len(w), len(tw)) and len(w & tw) >= 2:
+            for tw in (_sig_words(p.get("title")), _id_words(k)):
+                if w and tw and len(w & tw) >= 2 and len(w & tw) * 2 >= min(len(w), len(tw)):
+                    break
+            else:
+                continue
+            if True:
                 out.append("%s ~ %s" % (pid, k))
                 break
     return out
