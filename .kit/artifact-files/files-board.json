@@ -121,6 +121,10 @@
   "step0+2F~survey-chat.md": {
    "sha": "a7b0536722f02018016f41a439b34dcdd25da8868b50002d14d1528d8624a6cf",
    "version": 1
+  },
+  "tests+2F~fixtures+2F~cl33_harmonize_awaits.md": {
+   "sha": "c58b8c2259d4a2dd9a1ff0b02aea4ff37570feb6f5a764c42226506885f2157b",
+   "version": 1
   }
  }
 }
