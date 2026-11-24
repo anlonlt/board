@@ -2058,7 +2058,101 @@ def _apply_compaction(mdir, ops):
                 fh.write(op[2])
 
 
-def compact_memory(days=30, dry_run=False, root_dir=None):
+# ---------------------------------------------------------------- CL33: open work goes to the board before it leaves memory
+_DEFAULT = re.compile(r"\bDefault:\s*(.*?)(?:\s+·\s+deadline\s+(\d{4}-\d\d-\d\d))?\s*$", re.S)
+_DEADLINE = re.compile(r"·\s*deadline\s+(\d{4}-\d\d-\d\d)\s*$")
+
+
+def _norm_text(s):
+    return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
+
+
+class _LocalBoard:
+    """The board compact posts to: this repo's board through board_cli (the local copy on an Artifact board, sent
+    by `kit.py artifact push`)."""
+
+    def __init__(self, db_path=None):
+        self.db_path = db_path
+        self.artifact = bool(attached_board())
+
+    def posts(self):
+        return _all_posts(self.db_path)
+
+    def write(self, pid, doc):
+        return _board_write("set", "posts", pid, doc)
+
+    def sent(self, pid):
+        if not self.artifact:
+            return True
+        return _read_json(_base_path("posts", pid)) == self.posts().get(pid)
+
+    def push_hint(self):
+        return ("`python3 -I .kit/kit.py artifact push`, the ArtifactData batches it prints, `kit.py artifact sent "
+                "<batch>`") if self.artifact else ""
+
+
+def _await_point(lines, mem_rel, fname, today):
+    """One awaits point -> its question post (CL33): text, workstream as part and train, default, deadline, OVERDUE."""
+    import hashlib
+    s = " ".join(x.strip() for x in lines)
+    m = _AWAIT_POINT.match(s)
+    ws = m.group(1).strip() if m else ""
+    rest = s[m.end():].strip() if m else s[2:].strip()
+    md = _DEFAULT.search(rest)
+    text = rest[:md.start()].strip() if md else rest
+    default = (md.group(1).strip() if md else "")
+    dl = _DEADLINE.search(rest)
+    deadline = dl.group(1) if dl else ""
+    if not md and dl:
+        text = rest[:dl.start()].strip()
+    overdue = bool(deadline and deadline < today)
+    where = "%s/state/%s.md" % (mem_rel, ws) if ws else "%s/%s" % (mem_rel, fname)
+    body = [text, "", "Default: %s · deadline %s" % (default or "(none written)", deadline or "(none)")]
+    if overdue:
+        body += ["", "**OVERDUE** (deadline %s passed): the default applies (%s); record it where it acts: `%s`."
+                 % (deadline, default or "none written", where)]
+    body += ["", "From `%s/%s`, archived by `kit.py compact`: answer here." % (mem_rel, fname)]
+    doc = {"title": text[:160] or s[:160], "kind": "question", "column": "question", "status": "open",
+           "part": ws, "train": ws, "default": default, "deadline": deadline, "body": "\n".join(body),
+           "source": "%s/%s" % (mem_rel, fname), "source_key": hashlib.sha1(_norm_text(s).encode()).hexdigest()[:12],
+           "from": "kit compact", "created_at": _now_z()}
+    if overdue:
+        doc["overdue"] = True
+    pid = "aw-%s-%s" % (_slug(ws or "point", 16), _slug(text, 32))
+    return pid, doc, s
+
+
+def _issue_post(fn, text, mem_rel):
+    lines = text.split("\n")
+    title = (lines[0] if lines else fn).lstrip("# ").strip()[:160] or fn
+    rest = "\n".join(lines[1:]).strip()
+    doc = {"title": title, "kind": "issue", "column": "todo", "status": "open",
+           "body": rest + "\n\nFrom `%s/issues/%s`, archived by `kit.py compact`." % (mem_rel, fn),
+           "source": "%s/issues/%s" % (mem_rel, fn), "from": "kit compact", "created_at": _now_z()}
+    return "issue-%s" % _slug(fn[:-3], 48), doc
+
+
+def _match_post(posts, doc, kind, stem=None):
+    """A post already on the board for this point or issue: same source_key, or an issue post naming the file, or the
+    same title (normalized) in a post of that kind. Never doubled (CL33)."""
+    nt = _norm_text(doc.get("title"))
+    for pid, p in posts.items():
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("removed"):
+            continue
+        if doc.get("source_key") and p.get("source_key") == doc["source_key"]:
+            return pid
+        is_kind = p.get("kind") == kind or (kind == "question" and p.get("column") == "question") or \
+            (kind == "issue" and re.match(r"^(issue|iss)[-_]", pid))
+        if not is_kind:
+            continue
+        if stem and (stem in str(p.get("source") or "") or stem in pid or stem in str(p.get("body") or "")):
+            return pid
+        if nt and _norm_text(p.get("title")) == nt:
+            return pid
+    return None
+
+
+def compact_memory(days=30, dry_run=False, root_dir=None, board=None):
     """Archive into <memory_dir>/archive/ (+ digest.md) only what is settled (CL28, CL29):
     - a workstream state file, but state/orchestrator.md, a state whose next step is not settled (done, closed...), and a
       state whose workstream still has an open point in an awaits file (`awaits*.md`, config `kit.awaits_files`);
@@ -2079,6 +2173,10 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
         with open(p, encoding="utf-8", errors="ignore") as fh:
             return fh.read()
 
+    if board is None and root_dir is None:
+        board = _LocalBoard()
+    elif board is False:
+        board = None
     rel_m = cfg_kit.get("memory_dir")
     if not rel_m:
         rel_m = ".story" if os.path.isdir(os.path.join(base, ".story")) else ".board/memory"
@@ -2099,15 +2197,78 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
     open_points = {}  # workstream -> count
     n_points = 0
     to_move = []  # (kind, file name, summary)
+    points = []  # (awaits file, point lines)
     for n in names:
         blocks = _awaits_points(read(os.path.join(mdir, n)))
         pts = [b for b in blocks if b[0] is not False]
         n_points += len(pts)
         for b in pts:
+            points.append((n, b[1]))
             if b[0]:
                 open_points[b[0]] = open_points.get(b[0], 0) + 1
         if not pts:
             to_move.append((".", n, "an awaits file with no open point"))
+    issues_dir = os.path.join(mdir, "issues")
+    open_issue_files = []  # (file name, text)
+    if os.path.isdir(issues_dir):
+        for fn in sorted(os.listdir(issues_dir)):
+            if fn.endswith(".md"):
+                t = read(os.path.join(issues_dir, fn))
+                if not re.search(r"^status:\s*closed", t, re.I | re.M):
+                    open_issue_files.append((fn, t))
+    # CL33: every open awaits point and open issue becomes a board post first; then it no longer holds memory
+    on_board = False
+    planned, matched, post_lines, issue_post = [], [], [], {}
+    if board is not None and (points or open_issue_files):
+        existing = board.posts()
+        taken = set(existing)
+        today = datetime.now(timezone.utc).date().isoformat()
+        for n, lines in points:
+            pid, doc, s = _await_point(lines, rel_m.replace(os.sep, "/"), n, today)
+            hit = _match_post(existing, doc, "question")
+            if hit:
+                matched.append(hit)
+                continue
+            base_id, k = pid, 2
+            while pid in taken:
+                pid, k = "%s-%d" % (base_id, k), k + 1
+            taken.add(pid)
+            planned.append((pid, doc))
+            post_lines.append("  - %s: %s%s" % (pid, s[2:][:150], "  [OVERDUE: the default applies]"
+                                                 if doc.get("overdue") else ""))
+        n_q = len(planned)
+        for fn, t in open_issue_files:
+            pid, doc = _issue_post(fn, t, rel_m.replace(os.sep, "/"))
+            hit = _match_post(existing, doc, "issue", stem=fn[:-3])
+            if hit:
+                matched.append(hit)
+                issue_post[fn] = hit
+                continue
+            base_id, k = pid, 2
+            while pid in taken:
+                pid, k = "%s-%d" % (base_id, k), k + 1
+            taken.add(pid)
+            planned.append((pid, doc))
+            issue_post[fn] = pid
+            post_lines.append("  - %s: issue %s" % (pid, doc["title"][:150]))
+        n_i = len(planned) - n_q
+        titles = {}
+        for pid, p in existing.items():
+            if isinstance(p, dict) and not p.get("removed") and p.get("kind") in ("issue", "question"):
+                titles.setdefault((p.get("kind"), _norm_text(p.get("title"))), pid)
+        doubled = sum(1 for _, d in planned if (d["kind"], _norm_text(d["title"])) in titles)
+        posts_head = ("\n%d question post(s) %s (one per open awaits point), %d issue post(s) %s, %d doubled, "
+                      "%d already on the board (matched, not posted again)" % (
+                          n_q, "planned" if dry_run else "posted", n_i, "planned" if dry_run else "posted",
+                          doubled, len(matched)))
+        on_board = True
+        for n in names:
+            if any(pn == n for pn, _ in points):
+                k = sum(1 for pn, _ in points if pn == n)
+                to_move.append((".", n, "%d open point(s), each now a board question post" % k))
+        open_points = {}
+    else:
+        posts_head = ""
     # 1. State files
     kept_states = []
     if os.path.isdir(state_dir):
@@ -2132,7 +2293,8 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
                 to_move.append(("lessons", os.path.basename(fp), first or os.path.basename(fp)))
     # 3. Issues: closed ones go, unless a file that stays cites it
     open_issues, closed = [], []
-    issues_dir = os.path.join(mdir, "issues")
+    issue_writes = []  # CL33: an open issue now on the board is marked closed, then archived like a closed one
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if os.path.isdir(issues_dir):
         for fn in sorted(os.listdir(issues_dir)):
             if not fn.endswith(".md"):
@@ -2140,6 +2302,14 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
             text = read(os.path.join(issues_dir, fn))
             title = (text.splitlines() or [fn])[0].lstrip("# ").strip()[:120]
             if re.search(r"^status:\s*closed", text, re.I | re.M):
+                closed.append((fn, title))
+            elif on_board and fn in issue_post:
+                line = "Status: closed — %s, posted as board post %s" % (stamp, issue_post[fn])
+                new, k = re.subn(r"^status:.*$", line, text, count=1, flags=re.I | re.M)
+                if not k:
+                    ls = text.split("\n")
+                    new = "\n".join(ls[:1] + [line] + ls[1:])
+                issue_writes.append(("write", os.path.join("issues", fn), new))
                 closed.append((fn, title))
             else:
                 open_issues.append("  - issues/%s: %s" % (fn, title))
@@ -2167,10 +2337,12 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
             kept_cited.append("  - issues/%s: cited by a file that stays" % fn)
         else:
             to_move.append(("issues", fn, title))
-    tail = ""
+    tail = posts_head
+    if post_lines:
+        tail += ":\n" + "\n".join(post_lines)
     if kept_states:
         tail += "\n%d state(s) stay (open work):\n" % len(kept_states) + "\n".join(kept_states)
-    if n_points:
+    if n_points and not on_board:
         tail += "\n%d open awaits point(s) stay in %s" % (n_points, ", ".join(names))
     if open_issues:
         tail += ("\n%d open issue(s) stay: post each on the board (`kind: \"issue\"`, `status: \"open\"`), then mark the "
@@ -2179,8 +2351,7 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
         tail += "\n%d closed issue(s) stay, cited by a file that stays:\n" % len(kept_cited) + "\n".join(kept_cited)
     if not to_move:
         return "compact: nothing settled to archive" + tail
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    ops = [("move", os.path.join(k, fn), os.path.join("archive", k, fn)) for k, fn, _ in to_move]
+    ops = issue_writes + [("move", os.path.join(k, fn), os.path.join("archive", k, fn)) for k, fn, _ in to_move]
     added = ["- `%s` (%s): %s" % (os.path.normpath(os.path.join(k, fn)), stamp, s) for k, fn, s in to_move
              if os.path.normpath(os.path.join(k, fn)) not in existing_digest]
     if added:
@@ -2211,6 +2382,17 @@ def compact_memory(days=30, dry_run=False, root_dir=None):
                                             check, plan)) + tail
     if dry_run:
         return "compact (dry-run): would archive %d file(s):\n%s\n%s" % (len(to_move), plan, check) + tail
+    if on_board:
+        # the posts first: nothing leaves memory until every point and issue is on the board (and sent there)
+        failed = [pid for pid, doc in planned if not board.write(pid, doc)]
+        if failed:
+            return ("compact: the board did not take %d post(s) (%s); nothing archived: is the board server running?"
+                    % (len(failed), ", ".join(failed[:5]))) + tail
+        unsent = [pid for pid in [p for p, _ in planned] + matched if not board.sent(pid)]
+        if unsent:
+            return ("compact: %d post(s) are in the board's local copy, not yet on the Artifact; nothing archived. Send "
+                    "them: %s; then `kit.py compact` again." % (len(unsent), board.push_hint() or "kit.py artifact push")
+                    ) + tail
     _apply_compaction(mdir, ops)
     return "compact: archived %d file(s) into %s (updated archive/digest.md)\n%s" % (
         len(to_move), os.path.relpath(os.path.join(mdir, "archive"), base), check) + tail
@@ -3891,7 +4073,7 @@ COMMANDS = [
     ("Artifact and web", "kit_artifact_sync.py", "the repo's documents and files into the Artifact for its viewers"),
     ("Artifact and web", "update_board.py", "the Artifact's page to the kit's current page"),
     ("git copy", "kit.py init|sync|sync-db|reads|receive|publish|diff|push", "the board's git copy (board-mirror): make it, fill it, compare it, send it"),
-    ("memory", "kit.py compact", "archive memory the board now holds (state files, awaits points with their workstream, closed issues) and old lessons; refused if the project's memory checker goes red (--dry-run shows it)"),
+    ("memory", "kit.py compact", "post every open awaits point (a question post) and open issue (an issue post, never doubled) on the board, then archive the awaits file, the states and issues the board now holds, and old lessons; on an Artifact board nothing leaves memory until `artifact push` sent the posts; refused if the project's memory checker goes red (--dry-run lists the posts)"),
     ("setup", "kit.py welcome [--post]", "the welcome post: what the board does and what can run now"),
     ("setup", "install.py <project> [--update]", "install or update the kit in a project (every present runtime)"),
     ("setup", "kit_import.py / step0_scan.py", "a person's state from their chats / a project's step 0 profile"),
@@ -4819,6 +5001,7 @@ def main(argv=None):
     s = sp.add_parser("reads"); s.add_argument("--at")
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None)
     s = sp.add_parser("compact"); s.add_argument("--days", type=int, default=30); s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--no-board", action="store_true", help="post nothing: open awaits points and issues stay in memory")
     s = sp.add_parser("report"); s.add_argument("--db", default=None)
     s = sp.add_parser("portfolio"); s.add_argument("--config", dest="portfolio_config", default=None); s.add_argument("--roots", nargs="*", default=[])
     s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None); s.add_argument("--unblocked", action="store_true", help="Exclude cards with unresolved blocked_by dependencies")
@@ -4917,7 +5100,7 @@ def main(argv=None):
         print(out)
         return rc
     if a.cmd == "compact":
-        print(compact_memory(days=a.days, dry_run=a.dry_run))
+        print(compact_memory(days=a.days, dry_run=a.dry_run, board=False if a.no_board else None))
         return 0
     if a.cmd == "report":
         print(report_metrics(m, db_path=a.db), end="")
