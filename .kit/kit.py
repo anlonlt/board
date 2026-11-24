@@ -4021,8 +4021,8 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
     if not clone or not os.path.isfile(os.path.join(clone, ".kit", "kit.py")):
         gh = b.get("github") or "<owner>/%s" % b["id"]
         return dict(out, error="step %s is on board %s, which has no clone here with the kit: `git clone https://github.com/%s "
-                    "%s` (on the web: the orchestrator's environment holds every repo, `kit.py web-env`; repo %s), then launch again" % (
-                        pid, b["id"], gh, os.path.join(os.path.dirname(ROOT), gh.split("/")[-1]), gh))
+                    "%s` (read-only is enough, nothing to attach: a launch whose push is refused carries the prompt in its start message, "
+                    "CL40), then launch again" % (pid, b["id"], gh, os.path.join(os.path.dirname(ROOT), gh.split("/")[-1])))
     rel = "docs/prompts/%s.md" % pid
     mine = os.path.join(ROOT, rel)
 
@@ -4037,7 +4037,27 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
             g("checkout", "-q", restore[0])
 
 
+# CL40: a push refused for want of access (the session's repository set, GitHub 403, no credentials), not a network fault
+_PUSH_DENIED = re.compile(r"authorized repository set|permission to \S+ denied|permission denied|403|not authorized|"
+                          r"authentication failed|could not read username|access denied|write access", re.I)
+
+
+def _read_text(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def _inline_prompt(text, rel, body):
+    """CL40: the create_session prompt that carries the prompt's full text (the board could not be pushed): the new
+    session commits it to `rel` on its branch first, so the step still starts from git."""
+    head = "Your prompt is %s: read it and do it." % rel
+    rest = text[len(head):].strip() if text.startswith(head) else ""
+    return ("Your prompt follows; first commit it to %s on your branch (it could not be pushed to the board), then read "
+            "it and do it.%s\n\n<prompt path=\"%s\">\n%s\n</prompt>" % (rel, (" " + rest) if rest else "", rel, body.rstrip()))
+
+
 def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset):
+    inline = None
     if not session_id and not os.path.isfile(os.path.join(clone, rel)):
         if not os.path.isfile(mine):
             return dict(out, error="no prompt %s here or in %s: plan the step first (`kit.py step new --board %s`)" % (rel, clone, b["id"]))
@@ -4053,7 +4073,8 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         restore.append(orig)
         if r.returncode != 0:
             return dict(out, error="could not check out %s in %s: %s" % (branch, clone, (r.stderr or r.stdout).strip()[:300]))
-        if not os.path.isfile(os.path.join(clone, rel)):
+        made = not os.path.isfile(os.path.join(clone, rel))
+        if made:
             os.makedirs(os.path.dirname(os.path.join(clone, rel)), exist_ok=True)
             shutil.copyfile(mine, os.path.join(clone, rel))
             g("add", rel)
@@ -4062,8 +4083,13 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
                 return dict(out, error="could not commit the prompt in %s: %s" % (clone, (r.stderr or r.stdout).strip()[:300]))
         r = g("push", "-q", "-u", "origin", branch, timeout=180)
         if r.returncode != 0:
-            return dict(out, error="could not push %s of %s (the new session clones it): %s" % (
-                branch, b.get("github") or clone, (r.stderr or r.stdout).strip()[:300]))
+            why = (r.stderr or r.stdout).strip()
+            if not _PUSH_DENIED.search(why):
+                return dict(out, error="could not push %s of %s (the new session clones it): %s" % (
+                    branch, b.get("github") or clone, why[:300]))
+            # CL40: a read-only clone (a public board, no push access): the prompt rides in the start message
+            inline = {"denied": why[:300], "made": made, "text": _read_text(mine),
+                      "trunk": trunk.split("/", 1)[-1] if trunk.startswith("origin/") else "main"}
     pf = os.path.join(clone, ".kit", "run", "launch-post-%s.json" % _slug(pid, 60))
     os.makedirs(os.path.dirname(pf), exist_ok=True)
     me = _github_url().replace("https://github.com/", "")
@@ -4087,6 +4113,9 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         r = subprocess.run(cmd, cwd=clone, capture_output=True, text=True, timeout=600, env=env)
     except (OSError, subprocess.SubprocessError) as e:
         return dict(out, error="the launch in %s did not run: %s" % (clone, e))
+    finally:
+        if inline and inline["made"]:   # the prompt commit could not leave this clone: never keep it on a branch origin lacks
+            g("reset", "-q", "--hard", "HEAD~1")
     try:
         res = json.loads(r.stdout[r.stdout.index("{"):])
     except ValueError:
@@ -4096,6 +4125,13 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         res.pop(k, None)              # the clone's own copy was never loaded: its push text would only mislead
     if not res.get("ok"):
         return res
+    if inline:
+        res["prompt_inline"] = {"reason": inline["denied"]}
+        res.pop("warning", None)      # "branch not pushed": expected, the session starts from the trunk
+        cs = res.get("create_session")
+        if isinstance(cs, dict):
+            cs["source_revision"] = inline["trunk"]
+            cs["prompt"] = _inline_prompt(cs.get("prompt") or "", rel, inline["text"])
     # the post on the Artifact (repos/<id>/posts) and this copy of it: one ArtifactData update, pinned to the version
     # the last pull saw, so the board shows the launch (the orchestrator guard lets this file through)
     fields = {"status": "in progress", "session_id": res.get("session_id"), "branch": res.get("branch"),
@@ -4246,6 +4282,9 @@ def launch_text(r):
         lines.append("claude --bg runs in %s (made from the current branch)." % r["worktree"])
     if r.get("warning"):
         lines.append("Warning: " + r["warning"])
+    if r.get("prompt_inline"):
+        lines.append("The prompt could not be pushed to the board (%s): the start message carries its full text and the "
+                     "session commits it on its branch (CL40)." % r["prompt_inline"]["reason"][:160])
     if r.get("create_session"):
         lines.append("Now start it: the claude-code-remote `create_session` tool with %s; then "
                      "`python3 -I .kit/kit.py launch %s --session-id <the session_id it returned>`."
@@ -5127,8 +5166,10 @@ def _launch_workflow():
                      "(the device cap refuses past it: the step waits planned).")
     lines.append("3. A step on an attached board (another repo's train, e.g. the kit's `cli`): the same command from here. "
                  "launch finds the post on that board and runs the launch in that repo's clone next to this one (missing: it "
-                 "says the `git clone`); that clone starts no seeded board and never auto-pushes a board-mirror. The session "
-                 "never attaches a repo (CL38): the real-project run on the projects it tests on is yours.")
+                 "says the `git clone`); that clone starts no seeded board and never auto-pushes a board-mirror. A public board is "
+                 "cloned read-only, nothing to attach: when its push is refused, the create_session call launch prints carries the "
+                 "prompt's text (CL40). The session never attaches a repo (CL38): the real-project run on the projects it "
+                 "tests on is yours.")
     lines.append("4. With an attached Artifact board, make the ArtifactData batch launch prints (the post and the Trains row).")
     lines.append("5. Done comes as a message: `kit.py done <post>` must say OK (a change to compact, install, resume, "
                  "hooks or artifact needs its real-project dry run); then TaskUpdate completed: its review starts by itself.")

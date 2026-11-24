@@ -7,7 +7,7 @@ format, `kit.py lesson add`); a lesson only a project doc holds is refused (`kit
 ## K1: A step on another repo's board launches from that repo's clone
 roles: orchestrator
 from: O53 2026-11-23 22:04
-`kit.py launch <post>` from your project finds the post on the attached board and runs the launch in that board's clone next to yours. That clone starts no seeded board and never auto-pushes a board-mirror: an orchestrator's clone of anlonlt/board pushed seeded posts to its board-mirror.
+`kit.py launch <post>` from your project finds the post on the attached board and runs the launch in that board's clone next to yours. That clone starts no seeded board and never auto-pushes a board-mirror: an orchestrator's clone of anlonlt/board pushed seeded posts to its board-mirror. The clone may be read-only (a public board, nothing to attach): a push of the prompt refused for access makes launch put the prompt's full text in the create_session prompt (CL40).
 
 ## K2: A change to compact, install, resume, hooks or artifact is tried on a real project
 roles: part, review, orchestrator
