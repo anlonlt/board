@@ -173,6 +173,78 @@ class Roles(unittest.TestCase):
             self.assertEqual(other["role"], "part")
 
 
+class O55Gaps(unittest.TestCase):
+    def test_a_role_word_inside_a_part_prompt_name_is_a_part(self):
+        for name, part in (("cl24-orchestrator-guard-gaps", "CL24"), ("cl28-the-orchestrator-answers-only", "CL28"),
+                           ("cl5-automatic-reviews-said-once", "CL5")):
+            row = {"branch": "cl24", "first_prompt": "Your prompt is docs/prompts/%s.md: read it." % name}
+            self.assertEqual(usage.classify(row), ("part", part), name)
+        self.assertEqual(usage.classify({"branch": "x", "first_prompt": "docs/prompts/BC32-board-clerk.md"}),
+                         ("clerk", "BC32"))
+
+    def test_a_one_line_hand_over_on_a_claude_branch(self):
+        for prompt, role in (("You are orchestrator 56 of this repository (.kit/claude-cli/orchestrator.md), after a "
+                              "context reset", "orchestrator"),
+                             ("Take over: python3 -I .kit/kit.py resume --role orchestrator", "orchestrator"),
+                             ("Read .kit/claude-cli/takeover.md and take over.", "orchestrator"),
+                             ("Your prompt is .kit/claude-cli/clerk.md: read it and follow it.", "clerk")):
+            self.assertEqual(usage.classify({"branch": "claude/x-y", "first_prompt": prompt})[0], role, prompt)
+
+    def test_kit_role_env_wins(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            os.environ["KIT_ROLE"] = "clerk"
+            try:
+                row = usage.record(root, fixture(d))
+            finally:
+                del os.environ["KIT_ROLE"]
+            self.assertEqual(row["role"], "clerk")
+
+    def test_work_measure_and_cost_per_unit(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            g = ["git", "-C", root, "-c", "user.name=t", "-c", "user.email=t@t"]
+            env = dict(os.environ, GIT_COMMITTER_DATE="2026-11-20T10:03:00+00:00", GIT_AUTHOR_DATE="2026-11-20T10:03:00+00:00")
+            Path(root, "a.py").write_text("1\n2\n3\n")
+            subprocess.run(g + ["add", "a.py"], check=True)
+            subprocess.run(g + ["commit", "-qm", "a"], check=True, env=env)
+            env2 = dict(env, GIT_COMMITTER_DATE="2026-11-21T10:00:00+00:00", GIT_AUTHOR_DATE="2026-11-21T10:00:00+00:00")
+            Path(root, "b.py").write_text("x\n")
+            subprocess.run(g + ["add", "b.py"], check=True)
+            subprocess.run(g + ["commit", "-qm", "later: outside the session"], check=True, env=env2)
+            tp = fixture(d)
+            lines = Path(tp).read_text().splitlines()
+            e = json.loads(lines[2])
+            e["message"]["content"].append({"type": "tool_use", "id": "t9", "name": "Bash",
+                                            "input": {"command": "python3 -m unittest tests.test_x"}})
+            lines[2] = json.dumps(e)
+            Path(tp).write_text("\n".join(lines) + "\n")
+            row = usage.record(root, tp)
+            row["cwd"] = root
+            self.assertEqual(row["work"]["commits"], 1)
+            self.assertEqual((row["work"]["lines_added"], row["work"]["files"]), (3, 1))
+            self.assertEqual(row["tests_run"], 1)
+            res = usage.summarize([row])
+            self.assertAlmostEqual(res["cost $ per commit"]["median"], row["cost_usd_all"])
+            self.assertAlmostEqual(res["cost $ per 100 lines changed"]["median"], 100 * row["cost_usd_all"] / 3)
+
+
+class InstallShallow(unittest.TestCase):
+    def test_a_hook_new_after_the_manifest_date_is_new_without_kit_history(self):
+        spec2 = importlib.util.spec_from_file_location("kit_install_mod", ROOT / "install.py")
+        ins = importlib.util.module_from_spec(spec2)
+        spec2.loader.exec_module(ins)
+        orig = ins._in_kit_at
+        ins._in_kit_at = lambda c, h: None                  # a shallow kit clone: neither commit is here
+        try:
+            self.assertTrue(ins.new_since_install("kit_usage.py", "219f713", "2026-11-23T23:32:43+00:00"))
+            self.assertFalse(ins.new_since_install("kit_usage.py", "abc", "2026-11-25T00:00:00+00:00"))
+            self.assertFalse(ins.new_since_install("kit_stop.py", "219f713", "2026-11-23T23:32:43+00:00"))
+            self.assertFalse(ins.new_since_install("kit_usage.py", "", "2026-11-23T23:32:43+00:00"))
+        finally:
+            ins._in_kit_at = orig
+
+
 class Ledger(unittest.TestCase):
     def test_hook_records_silently_and_tree_stays_clean(self):
         with tempfile.TemporaryDirectory() as d:
