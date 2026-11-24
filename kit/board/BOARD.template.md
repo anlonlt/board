@@ -72,3 +72,10 @@ Post bodies take `**bold**`, `` `code` ``, `#` headings, `| tables |`, `>` quote
 - **A 👍 or a tapped answer** goes to the orchestrator only (the clerk sends it there), never to you: the orchestrator
   relays a go.
 - Never edit `.kit/board.html` directly (translations go in `.kit/strings.json`).
+
+## Attaching another repo on Claude Code on the web
+A web session sees only the repos it started with. To work on another one (an attached board, the kit repo, a real project to test on):
+1. `python3 -I .kit/kit.py attach <owner/repo>`: with no clone yet it prints the one call to make, `mcp__claude-code-remote__add_repo` `{"owner", "repo", "access": "read"}` (`"push"` only to push to it).
+2. Make that call, then run `kit.py attach <owner/repo>` again: it clones the repo next to this project (`../<repo>`), records it in `.kit/config.json` `portfolio` (commit that), and prints the `register_repo_root` call that loads its CLAUDE.md and skills.
+- The kit allows `add_repo` in `.claude/settings.json` `permissions.allow` (install and `install.py --update` add it; `kit.py doctor` warns when it is missing). Only a session started on ONE repo reads that file: start the session on the repo whose hooks and settings must run. A session already running never rereads it: a settings change counts from the next session.
+- In auto mode the classifier can still refuse `add_repo` ("Unauthorized Access") when the attach came from an automated notice, not the owner: CL38's part was refused at turn 1 with the rule in place, and allowed once the owner typed "attach harmonize" in its chat. If refused, ask the owner to say it in the chat; never work around it.
