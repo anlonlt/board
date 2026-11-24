@@ -121,6 +121,69 @@ class O54Gaps(unittest.TestCase):
         for v in questions(b).values():
             self.assertTrue(v["created_at"].startswith("2026-11-02"), v["created_at"])
 
+    def test_named_id_of_a_missing_post_matches_the_question_by_its_words(self):
+        # O54 rerun: the point names `q-look-aids-in-the-night` (no such post); F5's question is that one
+        self.write_awaits("- [docs] Look: the aids in the night, do they stay on the docs screen while the score "
+                          "plays and the owner scrolls back (asked under `q-look-aids-in-the-night`)? Default: they "
+                          "stay · deadline 2099-12-31\n")
+        b = FakeBoard({"F5-aids-in-the-night": {"column": "question", "part": "F5",
+                                                "title": "Aids in the night: keep them?"}})
+        out = self.kit.compact_memory(root_dir=self.d, board=b)
+        self.assertEqual([w for w in b.writes if w.startswith("aw-")], [], out)
+
+    def test_named_step_or_report_post_is_never_the_match(self):
+        # O54 rerun: 9 points named step posts (done/info) and were archived with no question post: lost
+        self.write_awaits("- [app] Ship V6b's screen to the phone? See `V6b-phone-screen`. Default: yes "
+                          "· deadline 2099-12-31\n"
+                          "- [app] Report Z4: keep the sampler? Default: keep · deadline 2099-12-31\n")
+        b = FakeBoard({"V6b-phone-screen": {"column": "done", "part": "V6b", "title": "Phone screen", "status": "done"},
+                       "Z4-sampler": {"column": "info", "part": "Z4", "title": "Report Z4: keep the sampler?",
+                                      "kind": "report"}})
+        out = self.kit.compact_memory(root_dir=self.d, board=b)
+        self.assertEqual(len([w for w in b.writes if w.startswith("aw-")]), 2, out)
+
+    def test_answered_question_named_by_the_point_is_not_the_match(self):
+        self.write_awaits("- [app] Colour, see `Q1-colour`. Default: blue · deadline 2099-12-31\n")
+        b = FakeBoard({"Q1-colour": {"column": "done", "kind": "question", "title": "Colour"}})
+        self.kit.compact_memory(root_dir=self.d, board=b)
+        self.assertEqual(len([w for w in b.writes if w.startswith("aw-")]), 1)
+
+    def test_shallow_clone_never_dates_a_point_at_its_cut(self):
+        import subprocess
+        src = os.path.join(self.d, "src")
+        os.makedirs(src)
+        shutil.move(self.mem, os.path.join(src, ".story"))
+        shutil.move(os.path.join(self.d, ".claude"), os.path.join(src, ".claude"))
+        def commit(date, msg):
+            env = dict(os.environ, GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date)
+            subprocess.run(["git", "-C", src, "add", "-A"], check=True)
+            subprocess.run(["git", "-C", src, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", msg],
+                           check=True, env=env)
+        subprocess.run(["git", "-C", src, "init", "-q"], check=True)
+        commit("2026-11-02T10:00:00Z", "points")
+        with open(os.path.join(src, "README.md"), "w") as fh:
+            fh.write("x\n")
+        commit("2026-11-23T08:04:00Z", "later")
+        clone = os.path.join(self.d, "clone")
+        subprocess.run(["git", "clone", "-q", "--depth", "1", "file://" + src, clone], check=True)
+        with open(os.path.join(clone, ".story", "awaits-anlon.md"), "a", encoding="utf-8") as fh:
+            fh.write("- [app] Since 2026-11-10, the tempo. Default: 90 · deadline 2099-12-31\n")
+        b = FakeBoard()
+        self.kit.compact_memory(root_dir=clone, board=b)
+        dates = {v["title"]: v["created_at"] for v in questions(b).values()}
+        self.assertFalse([t for t, c in dates.items() if c.startswith("2026-11-23")], dates)
+        self.assertTrue(dates["Since 2026-11-10, the tempo."].startswith("2026-11-10"), dates)
+
+    def test_default_without_its_trailing_reference_and_title_not_cut_mid_parenthesis(self):
+        long = "Choose the night layout " + "with many words " * 9 + "(the one in the docs screen, long note)"
+        self.write_awaits("- [app] %s. Default: the dark one — `docs/WORKPLAN.md` § C1 item 5 · deadline 2099-12-31\n"
+                          % long)
+        b = FakeBoard()
+        self.kit.compact_memory(root_dir=self.d, board=b)
+        (v,) = questions(b).values()
+        self.assertEqual(v["default_option"], "the dark one")
+        self.assertEqual(v["title"].count("("), v["title"].count(")"), v["title"])
+
 
 class CompactPostsOpenWork(unittest.TestCase):
     def setUp(self):
