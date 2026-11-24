@@ -43,22 +43,15 @@ def slug_of(c):
 
 
 def successor_prompt(role, gen, cli="claude"):
-    if cli == "agy":
-        if role == "orchestrator":
-            return ("You are orchestrator %d of this repository (.kit/orchestrator.md), after a context reset; the welcome "
-                    "is already posted. Start from one command: `python3 -I .kit/kit.py resume --role orchestrator` (the "
-                    "trains, open questions, the owner's unanswered comments, attached boards, how you launch, your "
-                    "lessons, the save points) and do what it says: update _orchestrator.session_id to your "
-                    "conversationId, launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md, rebuild the "
-                    "task list. Post one line under _orchestrator: \"Orchestrator %d took over.\" and continue." % (gen, gen))
+    if role == "orchestrator":
+        # one prompt for every orchestrator: resume says whether this one is the first here, or takes over, and prints
+        # that start; a summary here would be a second copy of it
+        return ("You are orchestrator %d of this repository (%s). Your prompt is one command: `python3 -I .kit/kit.py "
+                "resume --role orchestrator`: run it and do what it says." % (
+                    gen, ".kit/claude-cli/orchestrator.md" if cli == "claude" else ".kit/orchestrator.md"))
+    if cli != "claude":
         return ("Your prompt is .kit/clerk.md: read it and follow it. You are clerk %d, replacing the previous clerk "
                 "after its context hand-over." % gen)
-    if role == "orchestrator":
-        return ("You are orchestrator %d of this repository (.kit/claude-cli/orchestrator.md), after a context reset; "
-                "the welcome is already posted. Start from one command: `python3 -I .kit/kit.py resume --role "
-                "orchestrator` (the trains, open questions, the owner's unanswered comments, attached boards, how you "
-                "launch, your lessons, the save points) and rebuild your task list from it as it says. Post one line "
-                "under _orchestrator: \"Orchestrator %d took over.\" and continue." % (gen, gen))
     return ("Your prompt is .kit/claude-cli/clerk.md: read it and follow it. You are clerk %d, replacing the previous "
             "clerk after its context hand-over." % gen)
 
@@ -149,7 +142,7 @@ def main():
     mode = os.environ.get("KIT_CLAUDE_PERMISSION_MODE") or k.get("claude_permission_mode") or "auto"
     model = ((k.get("claude_cli_roles") or {}).get(a.role) or {}).get("model") or ("haiku" if a.role == "clerk" else "inherit")
     gen = 2 if a.dry_run else next_gen(a.role)
-    prompt = successor_prompt(a.role, gen, cli="claude" if cli == "web" else cli)
+    prompt = successor_prompt(a.role, gen, cli=cli)
 
     if cli == "web":
         # CL26: a script cannot start a cloud session, and killing CLAUDE_PID would end this one with no successor.

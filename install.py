@@ -1268,6 +1268,10 @@ def main(argv=None):
         else:
             orch_tpl = rd("kit", "arena", "orchestrator.template.md") if rt == "arena" else rd("kit", "orchestrator.template.md")
             ins.put(".kit/orchestrator.md", render(orch_tpl, c))
+            art = c["kit"].get("artifact") if isinstance(c["kit"].get("artifact"), dict) else {}
+            if "claude.ai/" in str(c.get("board_url") or "") + str(art.get("url") or ""):
+                # an Artifact board is worked from the web, whatever runtime the config names
+                ins.put(".kit/claude-web/orchestrator.md", render(rd("kit", "claude", "orchestrator.template.md"), c))
             ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
             ins.put(".kit/part.md", render(rd("kit", "part.template.md"), c))
             ins.put(".kit/runner.md", render(rd("kit", "runner.template.md"), c))

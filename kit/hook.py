@@ -50,7 +50,7 @@ TABLE = [
     ("Stop", "kit_board_guard.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("Stop", "kit_stop.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
     ("Stop", "kit_pre_compact.py", {"cli": ANY, "agy": ANY}, PLAIN, 50),
-    ("Stop", "kit_web_save.py", {"cli": ANY, "agy": ANY}, PLAIN, 130),
+    ("Stop", "kit_web_save.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 130),
     ("Stop", "kit_say_it_once.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
     ("Stop", "kit_usage.py", {"web": ANY, "cli": ANY}, PLAIN, 100),      # CL37: the usage ledger (no model call)
     ("SessionEnd", "kit_usage.py", {"web": ANY, "cli": ANY}, PLAIN, 100),

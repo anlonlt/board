@@ -144,11 +144,11 @@ if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
     echo "Board-only mode: launching ${CLI} for board work (no orchestrator/clerk workflow)."
     PROMPT="Board-only mode: the board server is running on port ${PORT}. Do NOT start the orchestrator or board clerk workflow. You are working directly on the board itself (UI, server, CLI, kit, and synced board repo if attached). Follow docs/DESIGN-PRINCIPLES.md in the board repo (zero emojis, icon-first chrome, pointer-aware drawers, scroll containment, OS-style movable/resizable/snappable windows). Wait for the owner's instruction."
   elif [ "$CLI" = "claude" ] && [ "$HAS_ORCH" -eq 1 ]; then
-    PROMPT="Read ${ORCH_FILE} and start as the orchestrator for this repository (it starts the board clerk session if none runs)."
+    PROMPT="Read ${ORCH_FILE} and start as the orchestrator for this repository (it starts the board clerk session if none runs). Your prompt is one command, run it and do what it says: python3 -I .kit/kit.py resume --role orchestrator."
   elif [ "$HAS_ORCH" -eq 1 ] && [ "$HAS_CLERK" -eq 1 ]; then
-    PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Also launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md if not already running. First rebuild your task list from the board: python3 -I .kit/kit.py resume."
+    PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Also launch the board clerk subagent (Model: flash_lite) from .kit/clerk.md if not already running. Your prompt is one command, run it and do what it says: python3 -I .kit/kit.py resume --role orchestrator."
   elif [ "$HAS_ORCH" -eq 1 ]; then
-    PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. First rebuild your task list from the board: python3 -I .kit/kit.py resume."
+    PROMPT="Read .kit/orchestrator.md and start as the orchestrator for this repository. Your prompt is one command, run it and do what it says: python3 -I .kit/kit.py resume --role orchestrator."
   else
     PROMPT="Check the project memory and board posts (.kit/BOARD.md) and continue from the next step."
   fi

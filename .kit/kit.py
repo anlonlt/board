@@ -2358,6 +2358,7 @@ def doctor(m, db_path=None, fix=False, root=None):
     _doctor_hook_parity(root, issues, lines, fix=fix)
     _doctor_conflicts(root, issues, lines)
     _doctor_portfolio_and_sync(root, issues, lines, fix=fix)
+    lines += git_copy_lines(m, db_path, root)
     lines.append("doctor: %s" % ("OK" if not issues else ("%d issue(s): %s" % (len(issues), "; ".join(issues)))))
     return "\n".join(lines), (1 if issues else 0)
 
@@ -4997,6 +4998,8 @@ def adopt_text(r):
 COMMANDS = [
     # (need, command, what it does)
     ("read the board", "kit.py resume", "every train's open steps (the task list), live sessions, open questions (age, default, what each blocks), the owner's decisions of the last 3 days, the owner's unanswered comments, attached boards; run it before answering the owner"),
+    ("read the board", "kit.py guide [case]", "one case of the orchestrator's guide, when it comes up (resume lists them)"),
+    ("save the board", "kit.py keep", "the board here into git, committed and pushed (git is the record)"),
     ("read the board", "kit.py resume --role orchestrator|part|clerk|review [--post P]", "what that role needs and nothing else: a session starts from it alone (lessons, launch workflow, tests, how to report)"),
     ("memory", "kit.py lessons [--role R] [--files F...] | lessons check", "the lessons a role needs / refuse untagged ones and ones only a project doc holds"),
     ("memory", "kit.py lesson add <id> --roles R,.. --title T --text X [--files G,..] [--from \"doc id\"]", "a lesson into the memory, tagged with its roles"),
@@ -5648,6 +5651,191 @@ def _principle_lines(role, train=None, files=None):
     return lines
 
 
+# ---------------------------------------------------------------- one prompt: resume prints what this session needs
+_MARK = re.compile(r"^<!--\s*(start|case)\s*:\s*(.+?)\s*-->\s*$", re.M)
+
+
+def _platform():
+    """web | cli | agy | arena | generic: where this session runs, not what the config was installed for (a project
+    whose config names agy can be worked from the web: its sessions need the web's guide)."""
+    run = _launcher()
+    if run in ("web", "agy"):
+        return run
+    rt = str((_kit_config().get("kit") or {}).get("runtime") or "")
+    return rt if rt in ("arena", "generic") else "cli" if run else "generic"
+
+
+def orchestrator_guide(platform=None):
+    """The orchestrator's guide of this platform, or None."""
+    for rel in {"web": ("claude-web/orchestrator.md", "orchestrator.md"), "cli": ("claude-cli/orchestrator.md", "orchestrator.md")}.get(
+            platform or _platform(), ("orchestrator.md",)):
+        p = os.path.join(ROOT, ".kit", rel)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def guide_parts(text):
+    """(start [(situations, text)], cases [(id, title, text)]) of a guide: its blocks, each under its marker."""
+    marks = list(_MARK.finditer(text))
+    start, cases = [], []
+    for k, mk in enumerate(marks):
+        body = text[mk.end():marks[k + 1].start() if k + 1 < len(marks) else len(text)].strip("\n")
+        if mk.group(1) == "start":
+            start.append(([x.strip() for x in mk.group(2).split(",")], body))
+        else:
+            cid, _, title = mk.group(2).partition("|")
+            cases.append((cid.strip(), title.strip(), body))
+    return start, cases
+
+
+def guide(case=None):
+    p = orchestrator_guide()
+    if not p:
+        return "no orchestrator guide for this platform (%s): install.py --update\n" % _platform()
+    with open(p, encoding="utf-8") as fh:
+        _, cases = guide_parts(fh.read())
+    hit = [c for c in cases if c[0] == str(case or "").strip().lower()]
+    if hit:
+        return "# %s\n%s\n" % (hit[0][1], hit[0][2])
+    return "\n".join(["%s: %s" % (c, t) for c, t, _ in cases] or ["(this guide has no cases: read %s)" % os.path.relpath(p, ROOT)]) + "\n"
+
+
+def situation(posts, comments, session=None, platform=None):
+    """What this orchestrator session is: `first` (no welcome of this platform on the board), `takeover` (another session
+    holds the board: a successor after a context limit, or the first here of a project running elsewhere), `same` (it
+    holds it already: after a compaction). A platform has one first and any number of takeovers."""
+    pl = platform or _platform()
+    rt = {"web": "claude", "cli": "claude-cli"}.get(pl, pl)
+    named = str((posts.get("_orchestrator") or {}).get("session_id") or "")
+    # a board older than the welcome has none: the session it names says a session of this platform was here
+    was_here = {"web": named.startswith(("session_", "cse_")), "cli": named.endswith("-orchestrator")}.get(pl, False)
+    out = [] if was_here or any(re.match(r"welcome-%s-\d+$" % re.escape(rt), str(k)) for k in comments) else ["first"]
+    if named and session and named == session:
+        return out + ["same"]
+    return out + (["takeover"] if named or not out else [])
+
+
+def start_lines(posts, comments, session=None):
+    p = orchestrator_guide()
+    if not p:
+        return []
+    with open(p, encoding="utf-8") as fh:
+        start, cases = guide_parts(fh.read())
+    if not start:
+        return ["", "## Your start", "Read `%s` (this platform's guide has no sections)." % os.path.relpath(p, ROOT)]
+    sit = situation(posts, comments, session)
+    say = {"first": "the first session on this platform here", "takeover": "taking over from another session",
+           "same": "you already hold this board"}
+    out = ["", "## Your start (%s)" % ", ".join(say[x] for x in sit)]
+    out += [t for when, t in start if "always" in when or set(when) & set(sit)]
+    if cases:
+        out += ["", "## When a case comes up: `python3 -I .kit/kit.py guide <case>`"] + ["- %s: %s" % (c, t) for c, t, _ in cases]
+    return out
+
+
+def owner_lines(platform=None):
+    """What the owner can do where he is, so that no session asks him for what he cannot: one short list a platform, then
+    the project's own (kit.owner_can, kit.owner_cannot)."""
+    pl = platform or _platform()
+    k = _kit_config().get("kit") or {}
+    page = "read, look at pictures and documents, play audio, Like, tap an answer, comment under a post"
+    ask = "A question for him is a question post with its options, a default and a deadline: one tap answers it and reaches you."
+    can, cannot, how = {
+        "web": (["on the board page, usually from his phone: " + page],
+                ["run a command, open a file of this container, attach a repository or approve a tool for you"], ask),
+        "cli": (["on the board page (this computer, or his phone over his private network): " + page,
+                 "type in the orchestrator's terminal, only when he is at the computer"],
+                ["see a path under /tmp or in a part's worktree, or answer in a part's chat"], ask),
+        "agy": (["on the board page (this computer, or his phone over his private network): " + page,
+                 "type in the agy terminal, only when he is at the computer"],
+                ["see a path under /tmp or in a subagent's worktree, or answer in a subagent's chat"], ask),
+        "arena": (["type in this chat while a turn runs; use the embedded board"], [], "")}.get(pl, (["use the board page"], [], ""))
+    can = can + [str(x) for x in _as_list(k.get("owner_can"))]
+    cannot = cannot + [str(x) for x in _as_list(k.get("owner_cannot"))]
+    out = ["", "## What the owner can do here", "- He can: " + "; ".join(can) + "."]
+    if cannot:
+        out.append("- He cannot: " + "; ".join(cannot) + ". Never ask him to.")
+    return out + (["- " + how] if how else [])
+
+
+def git_copy_lines(m, db_path=None, root=None):
+    """How far git's copy of the board is behind what is here: git is the record, the Artifact and the local server are
+    two ways to use it. Nothing is fetched; it reads this clone. A board attached to another project's Artifact is
+    that project's session to save (web_takeover.owns_board): nothing here."""
+    root = root or ROOT
+    a = attached_board()
+    if a and a.get("prefix"):
+        return []
+    db = db_path or os.path.join(root, ".kit", "board_data", "board.db")
+    if not os.path.isfile(db):
+        return []
+    if not os.path.isdir(os.path.join(m, "board")):
+        return ["git copy: none in this clone (`python3 -I .kit/kit.py init`): what is written here is not in git yet"]
+    out, here = [], {}
+    conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+    try:
+        for coll, did, raw in conn.execute("SELECT collection, doc_id, data FROM docs WHERE collection IN ('posts','comments')"):
+            here[(coll, did)] = json.loads(raw)
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    there = {(c, i): d for c in ("posts", "comments") for i, d in load_dir(os.path.join(m, "board"), c).items()}
+    behind = sum(1 for k, d in here.items() if there.get(k) != d)
+    if behind:
+        out.append("git copy: %d document(s) here are not in git (last copy %s): `python3 -I .kit/kit.py keep`" % (
+            behind, read_state(m).get("cursor") or "never"))
+    n = _unpushed(m)
+    if n:
+        out.append("git copy: %d commit(s) of the board not on the remote: `python3 -I .kit/kit.py keep`" % n)
+    return out
+
+
+def _unpushed(m):
+    """Commits of the mirror its remote does not have, by this clone's remote-tracking ref (written by each push). No
+    ref: 0, not a guess (a clone that fetches only main keeps an old one, or none)."""
+    r = git(m, "rev-list", "--count", "refs/remotes/origin/%s..HEAD" % BRANCH)
+    return int(r.stdout.strip() or 0) if r.returncode == 0 else 0
+
+
+def keep(m, db_path=None):
+    """`kit.py keep`: the board here into git, committed and pushed, the same way the web's save does it (never for a
+    board that is not this session's: web_takeover.owns_board). -> (text, ok)"""
+    if not os.path.isfile(db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")):
+        return "git copy: nothing to keep (no local copy of the board here)", True
+    w = os.path.join(ROOT, ".kit", "web_takeover.py")
+    if not os.path.isfile(w):
+        return "git copy: NOT KEPT (.kit/web_takeover.py is missing: install.py --update)", False
+    try:
+        r = subprocess.run([sys.executable, "-I", w, "save"], capture_output=True, text=True, timeout=330, cwd=ROOT)
+    except (OSError, subprocess.SubprocessError) as e:
+        return "git copy: NOT KEPT (%s)" % e, False
+    txt = (r.stdout + r.stderr).strip()
+    return txt or "git copy: kept", r.returncode == 0
+
+
+def continues_lines(p, session=None):
+    """A part that continues a step another session started (a context limit, a crash): what is already there."""
+    prev = str(p.get("session_id") or "")
+    if not prev or (session and prev == session) or prev.startswith("pending"):
+        return []
+    br = str(p.get("branch") or "")
+    have = lambda x: _git_run("rev-parse", "--verify", "--quiet", x).returncode == 0  # noqa: E731
+    ref = next((x for x in ("origin/" + br, br) if br and have(x)), "")
+    out = []
+    if ref:
+        trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+        base = next((x for x in ("origin/" + trunk, trunk) if have(x)), None)
+        log = _git_run("log", "--format=%h %s", "-6", ref, *(["^" + base] if base else [])).stdout.strip().splitlines()
+        out += (["- its branch `%s` holds:" % br] + ["  - " + _short(x, 110) for x in log]) if log else [
+            "- its branch `%s` holds no commit of its own yet" % br]
+    elif "progress" not in str(p.get("status") or ""):
+        return []
+    return ["", "## This step names another session (%s): if that is not you, continue its work, never restart it" % prev] + out + [
+        "- its post's body says where it stopped; put your own session id on the post first"]
+
+
 def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=None, now=None):
     """`kit.py resume --role R`: what that role needs and nothing else (CL32), so a session starts from this alone."""
     if role not in ROLES:
@@ -5665,6 +5853,11 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         st, txt = web_env_state(posts, comments)
         if txt:                                       # CL39: several repos on the web
             out += ["", "## Web environment (several repos)", txt]
+        gl = git_copy_lines(m, db_path)
+        if gl:
+            out += ["", "## The record is git, and it is behind"] + ["- " + x for x in gl]
+        out += start_lines(posts, comments, session or whoami())
+        out += owner_lines()
         out += [""] + _launch_workflow()
         out += ["", "## Parts: their context and the save points",
                 "- A part reads only `kit.py resume --role part` (its post, prompt, lessons, tests, how to report); never "
@@ -5701,6 +5894,8 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 out.append("- %s: %s" % (k, "; ".join(map(str, _as_list(p[k])))[:400]))
         if len(out) and out[-1] == "## Your post now":
             out.append("- (nothing yet: at turn 1 set session_id, status in progress and a one-line body)")
+        out += continues_lines(p, session or whoami())
+        out += owner_lines()
         out += ["", "## Lessons that touch your files (%d files changed)" % len(files)] + _lesson_lines(lessons_for("part", files))
         out += _principle_lines("part", p.get("train"), files=files)
         got = found_so_far(posts, p.get("train") or "", skip=pid, last=12) if p.get("train") else []
@@ -5763,6 +5958,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "repos; a launched session cannot attach one), by subagent; write the run in the post's real_project." % (
                     ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"),
                 "- Its post says: %s" % (json.dumps(rp, ensure_ascii=False)[:500] if rp else "NO real-project result")]
+        out += owner_lines()
         out += ["", "## Lessons for a review"] + _lesson_lines(lessons_for("review"))
         out += _principle_lines("review", p.get("train"))
     return "\n".join(out) + "\n"
@@ -6107,6 +6303,8 @@ def main(argv=None):
     s.add_argument("--brief", action="store_true", help="two lines a step and the current one (the default)")
     s.add_argument("--sections", nargs="*", default=None, metavar="PART", help="verdict, bars, artifacts, issues, check, breaks, handoff of these steps (none named: of all)")
     s.add_argument("--full", nargs="+", default=None, metavar="PART", help="these steps whole, with their comments, uncut")
+    sp.add_parser("keep", help="the board here into git: committed and pushed")
+    s = sp.add_parser("guide", help="a case of the orchestrator's guide (no case: their list)"); s.add_argument("case", nargs="?", default=None)
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--session", default=None, help="your session id: resume flags an _orchestrator post naming another")
     s.add_argument("--role", choices=list(ROLES), default=None, help="what that role needs, nothing else (CL32)")
@@ -6337,6 +6535,8 @@ def main(argv=None):
                 print(artifact_push_text(artifact_push(url=a.board_url, token=a.token)), end="")
             elif a.action == "sent":
                 print("recorded: %d writes" % sum(artifact_sent(p) for p in a.args))
+                if not glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")):      # the last batch: git, the record
+                    print(keep(m)[0])
             elif a.action == "pin":
                 rep = []
                 print("pinned: %d" % artifact_pin(a.args, report=rep))
@@ -6366,6 +6566,13 @@ def main(argv=None):
         print("Board vs git: %s; %d from git (newer there), %d new from git, %d kept from here (newer here); %s."
               % (r["status"], r["from_git"], r["added"], r["kept_here"], r.get("git", "")))
         return 0
+    if a.cmd == "guide":
+        print(guide(a.case), end="")
+        return 0
+    if a.cmd == "keep":
+        txt, ok = keep(m)
+        print(txt)
+        return 0 if ok else 1
     if a.cmd == "resume":
         # the _orchestrator check is the orchestrator's (a part's own session is never named there)
         sess = a.session or (os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")

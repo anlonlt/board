@@ -20,7 +20,7 @@ The board's database is the live inbox; `.kit/kit.py` keeps a git copy of it on 
 
 ## 4. Memory and hand-over
 - **Where things stand is on the board, never in memory** (the owner, 2026-11-23: "everything is on the board"): each step's state is its post (its train is the task list), what waits on the owner is a `question` post, a defect is a post (`kind: "issue"`, status open/closed). `python3 -I .kit/kit.py resume` reads it. `{{MEMORY_DIR}}/` holds only what no post holds: `lessons/` (one file per lesson: symptom, cause, the change that stops it recurring), `workflow.md` (runners, tools, accounts), `preferences.md`, and `state/orchestrator.md` (open timers only). `kit.py compact` archives an older project's state files, awaits.md and issues/. Skill `story` says how.
-- Hand over at about 75 % of your context: write `{{MEMORY_DIR}}/state/orchestrator.md` (what runs, each part's session id, scheduled tasks, the next step), push, launch the successor with "Your prompt is `{{MEMORY_DIR}}/state/orchestrator.md`", and it rewrites `_orchestrator.session_id` and tells each running session and the clerk its id.
+- Hand over at about 75 % of your context: `python3 -I .kit/kit.py guide hand-over`. Your successor's prompt is `kit.py resume --role orchestrator`: what it needs is on the board and in git, or it is lost.
 
 ## 5. Limits (from `.kit/config.json`, enforced by the hooks)
 A message to another session: at most {{MSG}} characters (a Done pointer: {{DONE}}); the result goes in the post. Destructive git and `rm -r` outside /tmp are refused by `kit_guard.py`.
