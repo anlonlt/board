@@ -1430,6 +1430,8 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     return postCmts(p.id).some(function (c) { return c.post_id === p.id && c.from !== "owner" && c.from !== "viewer" && tOf(c) > t; });
   }
   function colOf(p) { var k = reopened(p) ? (str(p.column_before) || "info") : str(p.column); return COLUMNS.some(function (c) { return c.key === k; }) ? k : "info"; }
+  /* CL33: a post compact made from an awaits point no commit dates says so; it is never dated by its posting time. */
+  function postWhen(p) { return p && p.date_unknown ? "date unknown" : when(p.created_at || ""); }
   function when(iso) {
     var d = new Date(str(iso));
     if (isNaN(d)) return "";
@@ -2288,9 +2290,9 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     if (p.runner) m.appendChild(el("span", "badge runner", "@" + str(p.runner)));
     if (p.for || p.assignee) m.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
     if (Number(p.minutes) > 0) m.appendChild(el("span", "badge", Number(p.minutes) + " min"));
-    m.appendChild(el("span", null, when(p.created_at)));
+    m.appendChild(el("span", null, postWhen(p)));
     var cs = commentsFor(p.id);
-    if ((c.key === "question" || c.key === "todo") && p.created_at) {
+    if ((c.key === "question" || c.key === "todo") && !p.date_unknown && p.created_at) {
       var ageH = (Date.now() - Date.parse(p.created_at)) / 3600000;
       var hasOwnerAct = cs.some(function (x) { return x.from === "owner" || x.from === "viewer"; });
       if (ageH >= 24 && !hasOwnerAct) {
@@ -2353,7 +2355,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     if (p.part) meta.appendChild(el("span", "part", str(p.part)));
     if (p.runner) meta.appendChild(el("span", "badge runner", "@" + str(p.runner)));
     if (p.for || p.assignee) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
-    meta.appendChild(el("span", null, when(p.created_at)));
+    meta.appendChild(el("span", null, postWhen(p)));
     k.appendChild(meta);
     k.appendChild(el("h3", null, str(p.title) || "(untitled)"));
     var body = el("div", "body"); body.innerHTML = renderBody(p.body); k.appendChild(body);
@@ -2592,7 +2594,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     if (p.runner) meta.appendChild(el("span", "badge runner", "@" + str(p.runner)));
     if (p.for || p.assignee) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
     if (p.session_id) { var s = el("span", null, "session " + shortSession(p.session_id)); s.title = str(p.session_id); meta.appendChild(s); }
-    meta.appendChild(el("span", null, when(p.created_at)));
+    meta.appendChild(el("span", null, postWhen(p)));
     if (p.status) meta.appendChild(el("span", "badge", str(p.status)));
     var pd = el("span", "newdot"); pd.id = "p-dot"; pd.hidden = true; pd.title = "Something here has not been on your screen yet"; meta.insertBefore(pd, meta.firstChild);
     /* BD7: the orchestrator's sheet: its list of discussions, or one discussion's thread */
@@ -4197,7 +4199,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
               s.appendChild(k); s.appendChild(v); foldIn.appendChild(s);
             }
             /* 1. Status */
-            var stTxt = (stateLabels[stK] || c) + (p.parent ? " · after " + p.parent : "") + (p.created_at ? " · " + when(p.created_at) : "");
+            var stTxt = (stateLabels[stK] || c) + (p.parent ? " · after " + p.parent : "") + (p.created_at ? " · " + postWhen(p) : "");
             if (str(p.review)) {
               var stBox = document.createElement("span"); stBox.textContent = stTxt + " ";
               var rvC = (state.comments || []).filter(function (x) { return x.kind === "review" && x.post_id === p.id && !x.removed; })
@@ -4447,7 +4449,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       if (Number(p.minutes) > 0) meta.appendChild(el("span", "badge", Number(p.minutes) + " min"));
       var trLabel = humanTrainName(familyOf(p, tMap), tMap, [p]);
       if (trLabel && trLabel !== "General") meta.appendChild(el("span", "badge", trLabel));
-      meta.appendChild(el("span", null, when(p.created_at)));
+      meta.appendChild(el("span", null, postWhen(p)));
       box.appendChild(meta);
 
       var h3 = el("h3", null, str(p.title) || "(untitled)");

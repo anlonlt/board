@@ -1350,7 +1350,7 @@ def artifact_push(url=None, token=None, out_dir=None):
     # CL30 (the owner, 10:3x: "push must also send every file a post references"): the files of EVERY post and comment
     # here, not only of those sent now; the documents are mirrored by this push itself (no second command)
     files_text, mirror = _artifact_files(every, os.path.join(out_dir, "files"),
-                                         changed=[_read_json(e["file_path"]) for e in entries])
+                                         changed=[(e["doc_id"], _read_json(e["file_path"])) for e in entries])
     pending = {}
     for did, ref, sha, data, ver in mirror:
         fp = os.path.join(os.path.abspath(out_dir), "docs", "%04d.json" % len(entries))
@@ -1422,7 +1422,12 @@ def _artifact_files(docs, out, changed=None):
             mirror.append((did, ref, kas.sha256_of(os.path.join(ROOT, ref)), data, (st["docs"].get(did) or {}).get("version")))
     plan["mirror"] = []                                 # in the push's batches, not a second step
     if changed is not None:                             # "stays a repo link": said for the posts sent now only
-        plan["links"] = kas.plan_files(ROOT, [x for x in changed if isinstance(x, dict)], st)["links"]
+        by = {}                                         # CL33 (O54): each link names the post that cites it
+        for did, d in changed:
+            if isinstance(d, dict):
+                for ref, why in kas.plan_files(ROOT, [d], st)["links"]:
+                    by.setdefault((ref, why), []).append(str(d.get("post_id") or did))
+        plan["links"] = [[ref, why, ids] for (ref, why), ids in by.items()]
     if not (plan["upload"] or plan["links"]):
         return "", mirror
     os.makedirs(out, exist_ok=True)
@@ -2081,10 +2086,19 @@ class _LocalBoard:
     def write(self, pid, doc):
         return _board_write("set", "posts", pid, doc)
 
+    def comment(self, cid, doc):
+        return _board_write("set", "comments", cid, doc)
+
+    def has_comment(self, cid):
+        return cid in _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=self.db_path)[1]
+
     def sent(self, pid):
         if not self.artifact:
             return True
-        return _read_json(_base_path("posts", pid)) == self.posts().get(pid)
+        posts, comments = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=self.db_path)
+        if pid in comments:
+            return _read_json(_base_path("comments", pid)) == comments.get(pid)
+        return _read_json(_base_path("posts", pid)) == posts.get(pid)
 
     def push_hint(self):
         return ("`python3 -I .kit/kit.py artifact push`, the ArtifactData batches it prints, `kit.py artifact sent "
@@ -2351,7 +2365,7 @@ def compact_memory(days=30, dry_run=False, root_dir=None, board=None):
                     open_issue_files.append((fn, t))
     # CL33: every open awaits point and open issue becomes a board post first; then it no longer holds memory
     on_board = False
-    planned, matched, post_lines, issue_post = [], [], [], {}
+    planned, matched, post_lines, issue_post, notes = [], [], [], {}, []
     if board is not None and (points or open_issue_files):
         existing = board.posts()
         taken = set(existing)
@@ -2364,6 +2378,21 @@ def compact_memory(days=30, dry_run=False, root_dir=None, board=None):
             hit = _match_post(existing, doc, "question", text=s)
             if hit:
                 matched.append(hit)
+                if existing[hit].get("from") == "kit compact" or existing[hit].get("source_key") == doc["source_key"]:
+                    continue                    # its own post from an earlier run: nothing to add
+                # what the point adds (its reference, default, deadline) goes under that post as one comment, never
+                # into its body (O54: F5's matched point left its refs and deadline on no post)
+                ref = re.search(r"^Reference: (.*)$", doc["body"], re.M)
+                note = ["From `%s/%s` (archived by `kit.py compact`), the open point this post answers:" % (
+                    rel_m.replace(os.sep, "/"), n), "", "> " + s, "",
+                    "Default: %s · deadline %s%s" % (doc.get("default") or "(none written)",
+                                                     doc.get("deadline") or "(none)",
+                                                     " · reference: " + ref.group(1) if ref else "")]
+                if doc.get("overdue"):
+                    note += ["", "**OVERDUE**: the default applies."]
+                notes.append(("cmt-%s" % doc["source_key"], {"post_id": hit, "text": "\n".join(note),
+                                                             "from": "kit compact", "created_at": _now_z(),
+                                                             "delivered": False, "read": False}))
                 continue
             base_id, k = pid, 2
             while pid in taken:
@@ -2518,12 +2547,14 @@ def compact_memory(days=30, dry_run=False, root_dir=None, board=None):
     if on_board:
         # the posts first: nothing leaves memory until every point and issue is on the board (and sent there)
         failed = [pid for pid, doc in planned if not board.write(pid, doc)]
+        has = getattr(board, "has_comment", None)
+        failed += [cid for cid, c in notes if not (has and has(cid)) and not board.comment(cid, c)]
         if failed:
             return ("compact: the board did not take %d post(s) (%s); nothing archived: is the board server running?"
                     % (len(failed), ", ".join(failed[:5]))) + tail
-        unsent = [pid for pid in [p for p, _ in planned] + matched if not board.sent(pid)]
+        unsent = [pid for pid in [p for p, _ in planned] + matched + [c for c, _ in notes] if not board.sent(pid)]
         if unsent:
-            return ("compact: %d post(s) are in the board's local copy, not yet on the Artifact; nothing archived. Send "
+            return ("compact: %d post(s) or comment(s) are in the board's local copy, not yet on the Artifact; nothing archived. Send "
                     "them: %s; then `kit.py compact` again." % (len(unsent), board.push_hint() or "kit.py artifact push")
                     ) + tail
     _apply_compaction(mdir, ops)
@@ -4092,7 +4123,7 @@ def _resume_extras(posts, comments, now=None, days=3, limit=12, session=None):
                 blocks.append("%s (%s)" % (part[j], _short(q.get("status"), 40) if q.get("status") else st[j]))
         dflt = p.get("default_option") or ""
         age = "date unknown" if p.get("date_unknown") else _age(str(p.get("created_at") or ""), now) + " old"
-        out.append("- %s `%s` %s: %s%s%s" % (pt, k, age, _short(p.get("title"), 90),
+        out.append("- %s %s: %s%s%s" % ("`%s`" % k if pt == k else "%s `%s`" % (pt, k), age, _short(p.get("title"), 90),
                                                (" · default: " + _short(dflt, 60)) if dflt else "",
                                                (" · blocks " + ", ".join(list(dict.fromkeys(blocks))[:4])) if blocks else ""))
     if not qs:
