@@ -19,8 +19,8 @@
    "version": 3
   },
   ".kit+2F~board.html": {
-   "sha": "37b9bf87d05192fa344c2b8c3e576e92be60f1b5c0cc3a8560e76db806faed82",
-   "version": 2
+   "sha": "",
+   "version": 4
   },
   ".kit+2F~claude-cli+2F~part.md": {
    "sha": "1c9e1823d772b816b6a0e8732257cb8b48f1d54d4bb642c9ac8e78f65f9ed36d",
@@ -36,6 +36,10 @@
   },
   ".kit+2F~part.md": {
    "sha": "caed20d0897f4e22fe5437a611ca56c99447b974611dcecebc2562d3fb2b54ef",
+   "version": 1
+  },
+  ".kit+2F~part.md": {
+   "sha": "93954541ae68ab57c777a2007b554d1002ed60b2e7bd7960b9d1e2d390e90ee8",
    "version": 1
   },
   "AGENTS.md": {
@@ -83,12 +87,8 @@
    "version": 3
   },
   "kit+2F~board+2F~board.template.html": {
-   "sha": "cc32fd168423433f9326f9c9d4f4afe1632b25284fe21158dec6edbddd5c3120",
-   "version": 3
-  },
-  "kit+2F~claude+2F~BOARD.template.md": {
-   "sha": "693c0c6b11fae4c985b5b2d2f8369dfb3287b2ffd969833814f3e7f8a87a5171",
-   "version": 1
+   "sha": "",
+   "version": 4
   },
   "kit+2F~claude+2F~SKILL.board.md": {
    "sha": "47ea8d795f83947e8011652983e43557bb4f724d7d28485bebf2e62e73315582",

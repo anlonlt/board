@@ -141,5 +141,10 @@
   },
   "env": {
     "CLAUDE_CODE_ENABLE_TODO_TOOLS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "mcp__claude-code-remote__add_repo"
+    ]
   }
 }

@@ -1430,6 +1430,8 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     return postCmts(p.id).some(function (c) { return c.post_id === p.id && c.from !== "owner" && c.from !== "viewer" && tOf(c) > t; });
   }
   function colOf(p) { var k = reopened(p) ? (str(p.column_before) || "info") : str(p.column); return COLUMNS.some(function (c) { return c.key === k; }) ? k : "info"; }
+  /* CL33: a post compact made from an awaits point no commit dates says so; it is never dated by its posting time. */
+  function postWhen(p) { return p && p.date_unknown ? "date unknown" : when(p.created_at || ""); }
   function when(iso) {
     var d = new Date(str(iso));
     if (isNaN(d)) return "";
@@ -2308,9 +2310,9 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     if (p.runner) m.appendChild(el("span", "badge runner", "@" + str(p.runner)));
     if (p.for || p.assignee) m.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
     if (Number(p.minutes) > 0) m.appendChild(el("span", "badge", Number(p.minutes) + " min"));
-    m.appendChild(el("span", null, when(p.created_at)));
+    m.appendChild(el("span", null, postWhen(p)));
     var cs = commentsFor(p.id);
-    if ((c.key === "question" || c.key === "todo") && p.created_at) {
+    if ((c.key === "question" || c.key === "todo") && !p.date_unknown && p.created_at) {
       var ageH = (Date.now() - Date.parse(p.created_at)) / 3600000;
       var hasOwnerAct = cs.some(function (x) { return x.from === "owner" || x.from === "viewer"; });
       if (ageH >= 24 && !hasOwnerAct) {
@@ -2373,7 +2375,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     if (p.part) meta.appendChild(el("span", "part", str(p.part)));
     if (p.runner) meta.appendChild(el("span", "badge runner", "@" + str(p.runner)));
     if (p.for || p.assignee) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
-    meta.appendChild(el("span", null, when(p.created_at)));
+    meta.appendChild(el("span", null, postWhen(p)));
     k.appendChild(meta);
     k.appendChild(el("h3", null, str(p.title) || "(untitled)"));
     var body = el("div", "body"); body.innerHTML = renderBody(p.body); k.appendChild(body);
@@ -2612,7 +2614,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     if (p.runner) meta.appendChild(el("span", "badge runner", "@" + str(p.runner)));
     if (p.for || p.assignee) meta.appendChild(el("span", "badge for-owner", "\u2192 " + str(p.for || p.assignee)));
     if (p.session_id) { var s = el("span", null, "session " + shortSession(p.session_id)); s.title = str(p.session_id); meta.appendChild(s); }
-    meta.appendChild(el("span", null, when(p.created_at)));
+    meta.appendChild(el("span", null, postWhen(p)));
     if (p.status) meta.appendChild(el("span", "badge", str(p.status)));
     var pd = el("span", "newdot"); pd.id = "p-dot"; pd.hidden = true; pd.title = "Something here has not been on your screen yet"; meta.insertBefore(pd, meta.firstChild);
     /* BD7: the orchestrator's sheet: its list of discussions, or one discussion's thread */
@@ -3566,6 +3568,81 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     submitComment({ text: $("c-text"), button: $("c-send"), note: $("c-note"), image: null, n: 0, anchorEl: $("p-title"), files: true });
   });
 
+  /* CL35 (the owner, 2026-11-24 01:2x: "Why did I have to close the artifact and open it again to see it?"): an
+     agent's write (ArtifactData from its session) reached his open page only when he reopened it. The page trusted
+     each onSnapshot to run for ever: a terminal error ended it in silence (comments, typing: `function () {}`), and
+     a write the platform's stream does not deliver never showed. Now each live query (1) opens again after a terminal
+     error (the db contract: "a fresh onSnapshot is the only recovery"), with a growing wait, and (2) is read again
+     with get() every LIVE_MS while the page is visible and at once when it comes back to the front; a read that
+     changes nothing draws nothing. */
+  var LIVE_MS = typeof window.__KIT_LIVE_REFRESH_MS__ === "number" ? window.__KIT_LIVE_REFRESH_MS__ : 15000;
+  /* O54's review of CL35: a full read of a busy board's comments (~1,400) every 15 s is ~1.4 MB a read. So the timer reads
+     only what is newer than what the page holds (recent(since): filtered queries) and merges it in; the full read is
+     kept for a return to the page (visibility, focus, pageshow) and for a feed that died. */
+  var liveSubs = [];
+  function liveQuery(make, apply, onError, recent, order) {
+    var s = { json: {}, data: {}, unsub: null, tries: 0 };
+    function snapOf() {
+      var ids = Object.keys(s.data);
+      if (order) ids.sort(function (x, y) {
+        var a = s.data[x][order[0]], b = s.data[y][order[0]];
+        var c = a === b ? 0 : (a === undefined ? 1 : b === undefined ? -1 : a < b ? -1 : 1);
+        return order[1] === "desc" && a !== undefined && b !== undefined ? -c : c;
+      }); else ids.sort();
+      return { docs: ids.map(function (id) { var d = s.data[id]; return { id: id, exists: true, data: function () { return d; } }; }),
+               metadata: { fromCache: false, hasPendingWrites: false } };
+    }
+    /* a whole set (the feed, or a full read): replaces what the page holds; a read that changes nothing draws nothing */
+    function whole(snap, fromRead, at) {
+      s.readAt = at || Date.now();
+      var json = {}, data = {}, same = true;
+      (snap.docs || []).forEach(function (d) { var o = d.data(); var j; try { j = JSON.stringify(o); } catch (e) { j = "?"; } json[d.id] = j; data[d.id] = o; if (s.json[d.id] !== j) same = false; });
+      if (Object.keys(json).length !== Object.keys(s.json).length) same = false;
+      s.json = json; s.data = data;
+      if (fromRead && same) return;
+      apply(fromRead ? snapOf() : snap);
+    }
+    s.full = function () {
+      var r = make(), at = Date.now(); if (!r || typeof r.get !== "function") return;
+      r.get().then(function (snap) { if (snap && snap.docs && !(snap.metadata && snap.metadata.fromCache)) whole(snap, true, at); }, function () {});
+    };
+    /* only what was written since the page last read the set: stamped after that read's start, less a margin for
+       clocks (10 minutes for comments, whose times agents may write by hand, ahead or behind; 1 minute for posts,
+       whose updated_at the kit's tools stamp); merged by id; deletions and older edits wait for the next full read */
+    s.since = function (field, margin) { return new Date(Math.max(0, (s.readAt || Date.now()) - (margin || 600000))).toISOString(); };
+    s.poll = function () {
+      var qs = recent ? recent(s.since) : null, at = Date.now();
+      if (!qs) { s.full(); return; }
+      Promise.all(qs.map(function (q) { return q.get(); })).then(function (snaps) {
+        var changed = false; s.readAt = at;
+        snaps.forEach(function (snap) {
+          if (!snap || !snap.docs || (snap.metadata && snap.metadata.fromCache)) return;
+          snap.docs.forEach(function (d) { var o = d.data(), j; try { j = JSON.stringify(o); } catch (e) { j = "?"; }
+            if (s.json[d.id] !== j) { s.json[d.id] = j; s.data[d.id] = o; changed = true; } });
+        });
+        if (changed) apply(snapOf());
+      }, function () {});
+    };
+    s.open = function () {
+      if (s.unsub) { try { s.unsub(); } catch (e) {} }
+      s.unsub = make().onSnapshot(function (snap) { s.tries = 0; whole(snap, false); }, function (e) {
+        s.unsub = null;
+        var code = e && e.code, again = code !== "revoked" && code !== "invalid_argument";
+        if (onError) onError(e || { code: "unavailable" }, again);
+        s.full();
+        if (again) setTimeout(s.open, Math.min(60000, 2000 * Math.pow(2, s.tries++)));
+      });
+    };
+    s.open(); liveSubs.push(s);
+    return s;
+  }
+  function liveVisible() { return document.visibilityState !== "hidden"; }
+  if (LIVE_MS > 0) setInterval(function () { if (liveVisible()) liveSubs.forEach(function (s) { s.poll(); }); }, LIVE_MS);
+  function readLive() { if (liveVisible()) liveSubs.forEach(function (s) { s.full(); }); }
+  document.addEventListener("visibilitychange", readLive);
+  window.addEventListener("focus", readLive);
+  window.addEventListener("pageshow", readLive);
+
   /* Boot */
   renderBoard();
   var timer = setTimeout(function () {
@@ -3601,11 +3678,11 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
         }, function () {});
       } catch (e) { seenDoc = null; }
     }
-    db.collection("typing").onSnapshot(function (snap) {
+    liveQuery(function () { return db.collection("typing"); }, function (snap) {
       var t = {}; snap.docs.forEach(function (d) { var o = d.data(); if (o) t[d.id] = o; });
       state.typing = t; later("board"); later("typing");
-    }, function () {});
-    db.collection("posts").orderBy("created_at", "desc").onSnapshot(function (snap) {
+    });
+    liveQuery(function () { return db.collection("posts").orderBy("created_at", "desc"); }, function (snap) {
       var all = snap.docs.map(function (d) { var o = Object.assign({}, d.data()); o.id = d.id; return o; });
       state.special = {}; all.forEach(function (o) { if (o.id.charAt(0) === "_") state.special[o.id] = o; });
       state.posts = all.filter(function (o) { return o.id.charAt(0) !== "_" && !o.removed; });
@@ -3616,12 +3693,14 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
         if (firstLoad && !state.openId) { var back = ""; try { back = sessionStorage.getItem("board-open") || ""; } catch (e) {} if (back && postById(back)) setTimeout(function () { openPost(back); }, 0); }
       }
       later("board"); later("post");
-    }, function (e) { clearTimeout(timer); var s = $("status"); s.textContent = "The board stopped updating (" + e.code + "). Reload to reconnect."; s.className = "status bad"; });
-    db.collection("comments").onSnapshot(function (snap) {
+    }, function (e, again) { clearTimeout(timer); var s = $("status"); s.textContent = again ? "Reconnecting to the board..." : "The board stopped updating (" + e.code + "). Reload to reconnect."; s.className = "status bad"; },
+    function (since) { return [db.collection("posts").where("updated_at", ">", since("updated_at", 60000)).limit(50), db.collection("posts").where("created_at", ">", since("created_at", 60000)).limit(50)]; },
+    ["created_at", "desc"]);
+    liveQuery(function () { return db.collection("comments"); }, function (snap) {
       state.comments = snap.docs.map(function (d) { var o = Object.assign({}, d.data()); o.id = d.id; return o; }).filter(function (o) { return !o.removed; });
       stampArrivals();
       later("board"); later("cmts");
-    }, function () {});
+    }, null, function (since) { return [db.collection("comments").where("created_at", ">", since("created_at")).limit(100)]; });
   })();
 
   /* Padlet × Reddit × Facebook progressive UI enhancer (view switcher, synchronized horizontal train matrix, open feed with Show More & agent audit folding, ADHD focus triage view, floating orchestrator messenger popover) */
@@ -4140,7 +4219,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
               s.appendChild(k); s.appendChild(v); foldIn.appendChild(s);
             }
             /* 1. Status */
-            var stTxt = (stateLabels[stK] || c) + (p.parent ? " · after " + p.parent : "") + (p.created_at ? " · " + when(p.created_at) : "");
+            var stTxt = (stateLabels[stK] || c) + (p.parent ? " · after " + p.parent : "") + (p.created_at ? " · " + postWhen(p) : "");
             if (str(p.review)) {
               var stBox = document.createElement("span"); stBox.textContent = stTxt + " ";
               var rvC = (state.comments || []).filter(function (x) { return x.kind === "review" && x.post_id === p.id && !x.removed; })
@@ -4390,7 +4469,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
       if (Number(p.minutes) > 0) meta.appendChild(el("span", "badge", Number(p.minutes) + " min"));
       var trLabel = humanTrainName(familyOf(p, tMap), tMap, [p]);
       if (trLabel && trLabel !== "General") meta.appendChild(el("span", "badge", trLabel));
-      meta.appendChild(el("span", null, when(p.created_at)));
+      meta.appendChild(el("span", null, postWhen(p)));
       box.appendChild(meta);
 
       var h3 = el("h3", null, str(p.title) || "(untitled)");
