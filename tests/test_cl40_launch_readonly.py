@@ -102,6 +102,39 @@ class ReadOnlyLaunch(unittest.TestCase):
         self.assertFalse(r.get("ok"))
         self.assertIn("could not push", r["error"])
 
+    def test_failed_push_leaves_the_trunk_as_origin_has_it(self):
+        """O57: with trunk_push the prompt goes on main; a push that fails must not leave main one commit ahead."""
+        (self.clone / ".kit" / "config.json").write_text(json.dumps({"kit": {"trunk_push": True}}))
+        self.git(self.clone, "add", ".kit/config.json")
+        self.git(self.clone, "commit", "-qm", "trunk_push")
+        self.git(self.clone, "push", "-q", "origin", "main")
+        self.base = self.git(self.clone, "rev-parse", "HEAD").strip()
+        for hook in (NETWORK, DENIED):
+            self.refuse(hook)
+            self.launch()
+            self.assertEqual(self.git(self.clone, "rev-parse", "main").strip(), self.base, hook)
+            self.assertEqual(self.git(self.clone, "status", "--porcelain", "--untracked-files=no").strip(), "")
+
+    def test_existing_remote_branch_is_the_source_revision(self):
+        """O57: a step branch already on origin (earlier work) is where the session starts, not the trunk."""
+        self.git(self.clone, "checkout", "-q", "-b", "part-cl40-x")
+        (self.clone / "earlier.txt").write_text("earlier work")
+        self.git(self.clone, "add", "earlier.txt")
+        self.git(self.clone, "commit", "-qm", "earlier")
+        self.git(self.clone, "push", "-q", "origin", "part-cl40-x")
+        self.git(self.clone, "checkout", "-q", "main")
+        self.refuse(DENIED)
+        r = self.launch()
+        self.assertTrue(r.get("ok"), r)
+        self.assertEqual(r["create_session"]["source_revision"], "part-cl40-x")
+
+    def test_denial_match_is_not_any_403(self):
+        self.assertIsNone(kit._PUSH_DENIED.search("fatal: unable to access: connection to 10.4.0.3:4403 timed out"))
+        self.assertIsNone(kit._PUSH_DENIED.search("error: object 4038a403 is corrupt"))
+        for m in ("The requested URL returned error: 403", "remote: HTTP 403", "403 Forbidden",
+                  "remote: Permission to anlonlt/board.git denied to bot.", "is not in this session's authorized repository set"):
+            self.assertIsNotNone(kit._PUSH_DENIED.search(m), m)
+
     def test_push_that_works_keeps_the_path(self):
         r = self.launch()
         self.assertTrue(r.get("ok"), r)

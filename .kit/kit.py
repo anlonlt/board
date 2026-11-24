@@ -4038,7 +4038,8 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
 
 
 # CL40: a push refused for want of access (the session's repository set, GitHub 403, no credentials), not a network fault
-_PUSH_DENIED = re.compile(r"authorized repository set|permission to \S+ denied|permission denied|403|not authorized|"
+_PUSH_DENIED = re.compile(r"authorized repository set|permission to \S+ denied|permission denied|"
+                          r"(?:returned error|http|status)\W{0,3}403\b|\b403 forbidden|not authorized|"
                           r"authentication failed|could not read username|access denied|write access", re.I)
 
 
@@ -4085,11 +4086,14 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         if r.returncode != 0:
             why = (r.stderr or r.stdout).strip()
             if not _PUSH_DENIED.search(why):
+                if made:          # O57: a failed push never leaves the clone's branch ahead of origin
+                    g("reset", "-q", "--hard", "HEAD~1")
                 return dict(out, error="could not push %s of %s (the new session clones it): %s" % (
                     branch, b.get("github") or clone, why[:300]))
             # CL40: a read-only clone (a public board, no push access): the prompt rides in the start message
             inline = {"denied": why[:300], "made": made, "text": _read_text(mine),
-                      "trunk": trunk.split("/", 1)[-1] if trunk.startswith("origin/") else "main"}
+                      # O57: the session starts from origin/<branch> when it exists (it may hold earlier work), else the trunk
+                      "trunk": branch if has else (trunk.split("/", 1)[-1] if trunk.startswith("origin/") else "main")}
     pf = os.path.join(clone, ".kit", "run", "launch-post-%s.json" % _slug(pid, 60))
     os.makedirs(os.path.dirname(pf), exist_ok=True)
     me = _github_url().replace("https://github.com/", "")
