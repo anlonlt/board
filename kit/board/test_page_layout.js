@@ -18,7 +18,7 @@ const STUB = `(function () {
       "cl1-done": { title: "CL1 done step " + LONG, part: "CL1", train: "cli", column: "done", status: "complete", created_at: at(200), done_at: at(190), verdict: "Done " + LONG, body: body },
       "cl2-done": { title: "CL2 second done step", part: "CL2", parent: "CL1", train: "cli", column: "done", status: "complete", created_at: at(180), done_at: at(170), body: "done" },
       "cl3-open": { title: WORDS + " " + LONG, part: "CL3", parent: "CL2", train: "cli", column: "info", status: "in progress", created_at: at(60), body: body,
-        subtasks: [{ title: "Read the rules", status: "done" }, { title: "Build " + LONG, status: "doing" }, { title: "Check it", status: "open" }] },
+        subtasks: [{ title: "Read the rules", status: "done" }, { title: "Build " + LONG, status: "doing" }, { title: "Check it", status: "open" }, { title: "Draw it", status: "dropped", why: "no page" }] },
       "other-1": { title: LONG, column: "question", created_at: at(30), body: body, options: [LONG, "No"] }
     },
     _dashboard: null,

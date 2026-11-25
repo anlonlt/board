@@ -102,6 +102,8 @@ def on_create(root, st, ti, tr):
         return "Task %s is train %s step %s: post %s created (planned); no prompt template (.kit/claude-cli/part.md)." % (
             tid, train, part, res["post"])
     sent = (" It is on the attached board %s: first %s." % (res["board"], res["next"])) if res.get("artifact_write") else ""
+    n = res.get("pieces") or 0
+    sent = (" Its %d numbered lines are its pieces: he sees them, and the part cannot end while one is open." % n if n else "") + sent
     return ("Task %s is train %s step %s: post %s created (planned), prompt %s written from your description%s.%s "
             "To launch: commit and push it, TaskUpdate %s in_progress, then: %s") % (
         tid, train, part, res["post"], res["prompt"], "" if res.get("prompt_written") else " (it existed: kept)", sent,
@@ -216,7 +218,7 @@ def on_piece(root, st, name, ti, tr, post):
             return
         subs[tid] = title or was
         args = [subs[tid]] + (["--status", status] if status else []) + (["--was", was] if title and title != was else [])
-    kit(root, ["sub", post] + args, raw=True)
+    kit(root, ["sub", post] + args + ["--known"], raw=True)
 
 
 def is_orchestrator(data, st):
@@ -270,7 +272,7 @@ def main():
                 on_piece(project_dir(data), st, name, data.get("tool_input") or {}, data.get("tool_response"), piece)
             elif event == "TaskCompleted" and str(data.get("task_id") or "") not in st.get("subs", {}) and str(data.get("task_subject") or "").strip():
                 # a list opened by a session that replaces another: its record of the titles is not here
-                kit(project_dir(data), ["sub", piece, str(data["task_subject"]).strip(), "--status", "done"], raw=True)
+                kit(project_dir(data), ["sub", piece, str(data["task_subject"]).strip(), "--status", "done", "--known"], raw=True)
         elif is_orchestrator(data, st):
             root = project_dir(data)
             ti = data.get("tool_input") or {}

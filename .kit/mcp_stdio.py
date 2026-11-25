@@ -105,7 +105,7 @@ TOOLS = [
                 "train": {"type": "string", "description": "Project/train id (e.g. planner)"},
                 "part": {"type": "string", "description": "Step/part code (e.g. PL4)"},
                 "title": {"type": "string", "description": "Short step title"},
-                "task": {"type": "string", "description": "Goal, bars, and holds (the task only; kit adds how a part works)"},
+                "task": {"type": "string", "description": "Goal, bars, and holds (the task only; kit adds how a part works). Several pieces of work: number them 1. 2. 3., a line each (the board tracks them)"},
                 "parent": {"type": "string", "description": "Optional preceding part code"},
                 "sources": {"type": "array", "items": {"type": "string"}, "description": "Owner or review comment ids this step answers"},
                 "model": {"type": "string", "description": "Optional model override"},

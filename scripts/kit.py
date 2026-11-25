@@ -3499,9 +3499,6 @@ def check_done(p, root=ROOT, body_max=1500):
                    "a check that cannot fail proves nothing")
     if not str(p.get("handoff") or "").strip():
         warn.append("handoff: missing (what the next step needs from yours)")
-    left = [str(x.get("title")) for x in _as_list(p.get("subtasks")) if isinstance(x, dict) and x.get("status") != "done"]
-    if left:
-        warn.append("pieces not done: %s: finish them, drop them, or say why in not_checked" % "; ".join(left)[:160])
     return err, warn
 
 
@@ -3806,7 +3803,7 @@ def form(pid, doing="", db_path=None):
     ids = " ".join("(asked %s)" % a[2:].split(":")[0] for a in asked)
     test = _test_command()
     say = {
-        "lead": "<fill: what he must know or do, 1 to 3 sentences in his words: what changed for him, no path, hash or command>",
+        "lead": "<fill: what he must know or do, 1 to 3 sentences in his words: what changed for him; done refuses a file name, hash, command or `code` here and in the verdict>",
         "verdict": "<fill: ONE plain sentence that answers the task, at most 240 characters>",
         "bars": "- <fill: one measured number a line, with its denominator or reference: 41 of 50 takes> %s" % ids,
         "asked": "\n".join(asked) or "(nothing of his named as this step's source)",
@@ -3878,14 +3875,23 @@ def send_form(pid):
     return []
 
 
+_TECH = re.compile(r"`[^`\n]+`|\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b|[\w./-]*\w\.(?:py|js|cjs|mjs|ts|tsx|jsx|css|html|md|sh|json|yml|yaml|toml|kt)\b")
+_MEDIA = re.compile(r"`[^`\n]+\.(?:wav|mp3|ogg|m4a|flac|mp4|webm|png|jpe?g|gif|svg|webp)`", re.I)
+
+
 def plain_notes(p):
-    """What in a post's first words is for agents, not for him (design principles 9): notes, never a refusal."""
+    """What in a post's first words is for agents, not for him (design principles 9): errors. A name he used himself (his quoted words, the
+    title), a link's target, and a picture or a sound to open are not."""
     out = []
     lead = re.split(r"(?m)^#{1,4} ", str(p.get("body") or ""), maxsplit=1)[0]
+    lead = re.sub(r"(?ms)^\s*```mermaid.*?^\s*```\s*$", "", lead)
+    his = " ".join([str(p.get("title") or "")] + [str(a.get("quote") or "") for a in _as_list(p.get("asked")) if isinstance(a, dict)]).lower()
     for k, t in (("verdict", str(p.get("verdict") or "")), ("lead", lead)):
-        hit = re.findall(r"`[^`\n]+`|\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b|\b[\w/-]+\.(?:py|js|cjs|mjs|ts|tsx|css|html|md|sh|json|kt)\b", t)
-        if len(hit) > 1:
-            out.append("%s: he reads this first; it names %s: say what changed for him, those go under a heading" % (k, ", ".join(dict.fromkeys(hit))[:90]))
+        t = re.sub(r"!\[[^\]]*\]\([^)]*\)|\]\([^)]*\)|https?://\S+", " ", _MEDIA.sub(" ", t))
+        hit = [h for h in dict.fromkeys(_TECH.findall(t)) if h.strip("`").strip().lower() not in his]
+        if hit:
+            out.append("%s: he reads this first, and it names %s: say what that does for him in plain words, the name goes under a heading of the body"
+                       % (k, ", ".join(hit)[:120]))
     return out
 
 
@@ -3904,8 +3910,12 @@ def done(pid, db_path=None, root=None):
     err += e_a
     warn += n_a
     e_h, n_h = check_his_words(pid, p, db_path=db_path)
-    err += e_h
-    warn += n_h + plain_notes(p)
+    err += e_h + plain_notes(p)
+    warn += n_h
+    left = pieces_open(p)
+    if left:
+        err.append("pieces still open: %s. Finished: `python3 -I .kit/kit.py sub %s %s --status done`; not needed: `--status drop --why \"...\"`" % (
+            "; ".join("%d. %s" % (x["n"], x["title"][:60]) for x in left)[:300], pid, " ".join(str(x["n"]) for x in left)))
     pending_real = check_real_project(p, root=root)
     warn += pending_real         # CL32/CL38: a real project too, run by the orchestrator (pending)
     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
@@ -4374,6 +4384,8 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         n += 1
     doc = {"title": title, "part": part, "train": train, "column": "info", "status": "planned", "body": task or "", "task": task or "",
            "from": "orchestrator", "planned_by": "orchestrator", "created_at": _now_z()}
+    if task_pieces(task):
+        doc["subtasks"] = task_pieces(task)
     if parent:
         doc["parent"] = parent
     if sources:
@@ -4390,7 +4402,7 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
     elif not _board_write("set", "posts", pid, doc):
         return {"error": "the board did not take step %s (is the board server running?)" % part}
     rel, made = _write_step_prompt(pid, doc, list(sources), cli=cli)
-    res = {"post": pid, "adopted": False, "prompt": rel, "prompt_written": made,
+    res = {"post": pid, "adopted": False, "pieces": len(doc.get("subtasks") or []), "prompt": rel, "prompt_written": made,
            "launch": _launch_line(part, rel, model, cli=cli) if rel else None}
     if att:
         res.update({"board": att, "artifact_write": write,
@@ -6438,43 +6450,93 @@ def keep(m, db_path=None):
 SUB_STATES = ("open", "doing", "done")
 
 
-def subtask(pid, title, status="open", was="", db_path=None):
-    """`kit.py sub <post> "<piece>" [--status open|doing|done|drop]`: one piece of a step, a line on its post (no post, prompt, review
-    or proof of its own). A piece is its title: the same title again is the same line, whichever session writes it."""
-    title = re.sub(r"\s+", " ", str(title or "")).strip()[:120]
-    if not title or status not in SUB_STATES + ("drop",):
-        return {"error": "a piece has a title, and a status: %s or drop" % ", ".join(SUB_STATES)}
+def task_pieces(text):
+    """The pieces a task names itself: its lines numbered 1. 2. 3. (2 to 30, in order, not indented, not in a code block). Anything
+    else is prose, and prose is never cut into pieces."""
+    text = re.sub(r"(?ms)^\s*```.*?^\s*```\s*$", "", str(text or ""))
+    rows = re.findall(r"(?m)^(\d{1,2})[.)][ \t]+(\S.*)$", text)
+    if not 2 <= len(rows) <= 30 or [int(n) for n, _ in rows] != list(range(1, len(rows) + 1)):
+        return []
+    out = []
+    for n, t in rows:
+        t = re.sub(r"\s+", " ", t.replace("**", "").replace("`", "")).strip()
+        t = re.split(r"(?<=[^.\s]{3}[.:;])\s", t, maxsplit=1)[0].rstrip(" .:;") or t
+        if len(t) > 100:
+            t = t[:100].rsplit(" ", 1)[0] + "..."
+        if any(t.lower() == x["title"].lower() for x in out):
+            t = "%s (%s)" % (t, n)
+        out.append({"n": int(n), "title": t, "status": "open", "from": "task"})
+    return out
+
+
+def pieces_of(p):
+    """A step's pieces, each with the number that names it (kept for good: a piece that goes never renumbers the others)."""
+    rows = [dict(x) for x in _as_list(p.get("subtasks")) if isinstance(x, dict) and x.get("title")]
+    for i, x in enumerate(rows):
+        if not x.get("n"):
+            x["n"] = max([i] + [y.get("n") or 0 for y in rows[:i]]) + 1
+    return rows
+
+
+def pieces_open(p):
+    return [x for x in pieces_of(p) if x.get("status") not in ("done", "dropped")]
+
+
+def subtask(pid, title, status="open", was="", db_path=None, why="", known=False):
+    """`kit.py sub <post> "<piece>" | <number>... [--status open|doing|done|drop]`: the pieces of a step, lines on its post (no post,
+    prompt, review or proof of their own). A piece is its number or its title: the same title again is the same line, whichever session
+    writes it. One that the task names is dropped with a reason he can read. `known`: from a task list, whose own tasks are no new piece
+    where the task has named them."""
+    names = [title] if isinstance(title, str) else [str(x) for x in title]
+    if not all(x.isdigit() for x in names):
+        names = [re.sub(r"\s+", " ", " ".join(names)).strip()[:120]]
+    if not all(names) or not names or status not in SUB_STATES + ("drop",):
+        return {"error": "a piece has a number or a title, and a status: %s or drop" % ", ".join(SUB_STATES)}
     p = _get_post(pid, db_path=db_path)
     if not p:
         return {"error": "no post %s on the board" % pid}
-    rows = [dict(x) for x in _as_list(p.get("subtasks")) if isinstance(x, dict) and x.get("title")]
+    rows = pieces_of(p)
     same = lambda a, b: a.strip().lower() == b.strip().lower()  # noqa: E731
-    hit = next((x for x in rows if same(x["title"], was or title)), None) or next((x for x in rows if same(x["title"], title)), None)
-    if status == "drop":
-        rows = [x for x in rows if x is not hit]
-    elif hit:
-        # a piece named again by a session that takes over is not undone by it
-        hit.update(title=title, status=hit.get("status") if status == "open" else status)
-    elif len(rows) >= 30:
-        return {"error": "%s has 30 pieces: a step that needs more is several steps" % pid}
-    else:
-        rows.append({"title": title, "status": status})
+    for t in names:
+        hit = next((x for x in rows if t.isdigit() and x["n"] == int(t)), None) or next(
+            (x for x in rows if same(x["title"], was or t)), None) or next((x for x in rows if same(x["title"], t)), None)
+        if t.isdigit() and not hit:
+            return {"error": "%s has no piece %s: %s" % (pid, t, ", ".join(str(x["n"]) for x in rows) or "none")}
+        fixed = bool(hit) and hit.get("from") == "task"
+        if status == "drop":
+            if fixed and not str(why or "").strip():
+                return {"error": "piece %d is the task's: drop it with --why \"<why it is not needed>\" (he reads it)" % hit["n"]}
+            if fixed:
+                hit.update(status="dropped", why=re.sub(r"\s+", " ", why).strip()[:200])
+            else:
+                rows = [x for x in rows if x is not hit]
+        elif hit:
+            # a piece named again by a session that takes over is not undone by it; the task's words for a piece stay
+            hit.update(title=hit["title"] if fixed or t.isdigit() else t, status=hit.get("status") if status == "open" else status)
+        elif known and any(x.get("from") == "task" for x in rows):
+            continue
+        elif len(rows) >= 30:
+            return {"error": "%s has 30 pieces: a step that needs more is several steps" % pid}
+        else:
+            rows.append({"n": max([x["n"] for x in rows] + [0]) + 1, "title": t, "status": status})
     if rows != _as_list(p.get("subtasks")) and not _board_write("update", "posts", pid, {"subtasks": rows}):
         return {"error": "the board did not take it (is the board server running?)"}
-    return {"post": pid, "done": sum(x["status"] == "done" for x in rows), "of": len(rows)}
+    return {"post": pid, "done": sum(x["status"] == "done" for x in rows), "of": len([x for x in rows if x["status"] != "dropped"])}
 
 
 def subtask_lines(p, taking_over=False):
-    rows = [x for x in _as_list(p.get("subtasks")) if isinstance(x, dict) and x.get("title")]
+    rows = pieces_of(p)
     if not rows:
         return []
-    left = [x for x in rows if x.get("status") != "done"]
-    mark = {"done": "x", "doing": "~"}
-    out = ["", "## Its pieces (%d of %d done)" % (len(rows) - len(left), len(rows))]
-    out += ["- [%s] %s" % (mark.get(x.get("status"), " "), x["title"]) for x in rows]
-    if left:
-        out.append("Go on from the first that is not done. Where your task list does not show them: one TaskCreate for each not done, the "
-                   "same subject (it is the same line); without that tool, `python3 -I .kit/kit.py sub`.")
+    pid = p.get("id") or "<post>"
+    n = [x["status"] for x in rows]
+    mark = {"done": "x", "doing": "~", "dropped": "-"}
+    out = ["", "## Its pieces (%d of %d done)" % (n.count("done"), len(n) - n.count("dropped"))]
+    out += ["- [%s] %d. %s" % (mark.get(x.get("status"), " "), x["n"], x["title"]) for x in rows]
+    if pieces_open(p):
+        out.append("He sees these under your step. As each is finished: `python3 -I .kit/kit.py sub %s <number> --status done` (several numbers: "
+                   "`1 2`). `done` refuses the step while one is open; one that is not needed: `--status drop --why \"...\"`. Go on from the "
+                   "first that is not done." % pid)
     return out
 
 
@@ -6588,7 +6650,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         out.append("- your Done goes to the orchestrator, `%s`" % ((posts.get("_orchestrator") or {}).get("session_id") or "named by no post yet"))
         out += held_lines(pid, p, session or whoami())
         out += continues_lines(p, session or whoami())
-        out += subtask_lines(p)
+        out += subtask_lines(dict(p, id=post))
         out += owner_lines() + autonomy_lines()
         out += ["", "## Lessons that touch your files (%d files changed)" % len(files)] + _lesson_lines(lessons_for("part", files))
         out += _principle_lines("part", p.get("train"), files=files)
@@ -7042,7 +7104,8 @@ def main(argv=None):
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s.add_argument("--post-file", default=None, help=argparse.SUPPRESS)
-    s = sp.add_parser("sub", help="one piece of a step, a line on its post"); s.add_argument("post"); s.add_argument("title")
+    s = sp.add_parser("sub", help="a step's pieces, lines on its post: by number or title"); s.add_argument("post"); s.add_argument("title", nargs="+")
+    s.add_argument("--why", default="", help="why a piece the task names is dropped"); s.add_argument("--known", action="store_true", help=argparse.SUPPRESS)
     s.add_argument("--status", default="open"); s.add_argument("--was", default="", help="its title until now"); s.add_argument("--db", default=None)
     s = sp.add_parser("form", help="a step's result as a file, half filled: fill it, `done` sends and checks it"); s.add_argument("post")
     s.add_argument("--doing", default="", help="turn 1: the step is in progress, in this session's name"); s.add_argument("--db", default=None)
@@ -7232,7 +7295,7 @@ def main(argv=None):
         print(sections(db_path=a.db))
         return 0
     if a.cmd == "sub":
-        res = subtask(a.post, a.title, a.status, was=a.was, db_path=a.db)
+        res = subtask(a.post, a.title, a.status, was=a.was, db_path=a.db, why=a.why, known=a.known)
         print(json.dumps(res, ensure_ascii=False))
         return 1 if res.get("error") else 0
     if a.cmd == "form":

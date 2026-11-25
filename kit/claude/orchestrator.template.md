@@ -47,7 +47,7 @@ Keep a `send_later` every ~30 min while parts run (your rules below win when the
    its `comment_id`), is not a go: ask under his thread. (His friend's board, 2026-11-20: a stray 👍 launched 4 parts.)
    **A tapped answer** ("Answer: X" on a `question` post): it is his choice; apply it (tell the post's session, or do
    what the post says the answer does) and say so in one line under that post.
-   On a go: plan each part (TaskCreate {train, part}: its goal and how its result is checked; the hook writes its post and prompt), commit and
+   On a go: plan each part (TaskCreate {train, part}: its goal and how its result is checked, several pieces of work numbered 1. 2. 3., a line each; the hook writes its post and prompt), commit and
    push the prompt, then `python3 -I .kit/kit.py launch <post>` and the one `create_session` call it prints (model {{PART_MODEL}}, effort
    {{PART_EFFORT}}); a call written by hand is refused. Several at once when they do not touch the same files.
 

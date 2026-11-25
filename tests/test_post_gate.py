@@ -256,7 +256,7 @@ class Live(unittest.TestCase):
         self.assertEqual(self.run_("kit.py", "step", "open").stdout.count("Build"), 0)                # no step, no post of its own
         # its session dies; another, with an empty list, goes on from there
         out = self.run_("kit.py", "resume", "--role", "part", "--post", "w1").stdout
-        self.assertIn("## Its pieces (1 of 3 done)\n- [x] Read d'abord\n- [~] Build it\n- [ ] Check", out)
+        self.assertIn("## Its pieces (1 of 3 done)\n- [x] 1. Read d'abord\n- [~] 2. Build it\n- [ ] 3. Check", out)
         self.assertIn("## The task\nDo w", out)
         self.task("s-b", "TaskCreate", {"subject": "Build it"}, "1")                                  # another list's number 1
         self.task("s-b", "TaskCreate", {"subject": "Check"}, "2")
@@ -266,6 +266,32 @@ class Live(unittest.TestCase):
         self.assertEqual(rows(), [("Read d'abord", "done"), ("Build it", "done"), ("Check", "done")])
         self.task("s-b", "TaskUpdate", {"taskId": "2", "status": "deleted"})
         self.assertEqual(len(rows()), 2)
+
+    def test_a_numbered_task_is_its_pieces_and_done_waits_for_them(self):
+        k = load("kit_pieces", "scripts/kit.py")
+        task = "Goal: sums.\n\n1. **Add** the `plus` key. It is blue.\n2. Test it\n3. Say so, e.g. on the page\n\nHolds: none."
+        self.assertEqual([(x["n"], x["title"]) for x in k.task_pieces(task)], [(1, "Add the plus key"), (2, "Test it"), (3, "Say so, e.g. on the page")])
+        for prose in ("1. one only", "2. two\n3. three", "1. a\n1. b", "- a\n- b", "```\n1. a\n2. b\n```", "  1. a\n  2. b", ""):
+            self.assertEqual(k.task_pieces(prose), [], prose)
+        r = json.loads(self.run_("kit.py", "step", "new", "--train", "t", "--part", "N1", "--title", "sums", "--task", task).stdout.splitlines()[-1])
+        pid = r["post"]
+        self.assertEqual(r["pieces"], 3)
+        rows = lambda: [(x["n"], x["status"]) for x in self.get(pid)["subtasks"]]
+        # the same task list in other words is the part's own; the same words are the same line
+        self.task("n", "TaskCreate", {"subject": "my own plan"}, "1", opener="Your prompt is docs/prompts/%s.md: run `x`" % pid)
+        self.task("n", "TaskCreate", {"subject": "Test it"}, "2", opener="Your prompt is docs/prompts/%s.md: run `x`" % pid)
+        self.task("n", "TaskUpdate", {"taskId": "2", "status": "completed"}, opener="Your prompt is docs/prompts/%s.md: run `x`" % pid)
+        self.assertEqual(rows(), [(1, "open"), (2, "done"), (3, "open")])
+        self.assertIn("pieces still open: 1. Add the plus key; 3. Say so", self.run_("kit.py", "done", pid).stdout)
+        self.assertIn("--why", self.run_("kit.py", "sub", pid, "3", "--status", "drop").stdout)          # the task's: never dropped in silence
+        self.assertEqual(self.run_("kit.py", "sub", pid, "9", "--status", "done").returncode, 1)
+        self.assertEqual(json.loads(self.run_("kit.py", "sub", pid, "3", "--status", "drop", "--why", "no page").stdout), {"post": pid, "done": 1, "of": 2})
+        self.run_("kit.py", "sub", pid, "1", "2", "--status", "done")
+        self.assertEqual(rows(), [(1, "done"), (2, "done"), (3, "dropped")])
+        self.assertEqual(self.get(pid)["subtasks"][2]["why"], "no page")
+        self.assertNotIn("pieces still open", self.run_("kit.py", "done", pid).stdout)
+        self.run_("kit.py", "sub", pid, "One", "more")                                                   # a new one takes the next number
+        self.assertEqual((self.get(pid)["subtasks"][3]["title"], rows()[3]), ("One more", (4, "open")))
 
     def test_only_a_part_writes_pieces(self):
         self.put("posts", "w1", {"title": "w", "part": "W1", "train": "t", "column": "info", "status": "in progress", "body": "b"})
@@ -282,6 +308,15 @@ class Live(unittest.TestCase):
         self.assertEqual(k.plain_notes({"verdict": "The button is darker.", "body": "You see it on the home page.\n\n### How\n`a.py` 0a45d26f `b.py`"}), [])
         n = k.plain_notes({"verdict": "All 8 gaps closed in kit.py and install.py (0a45d26)", "body": "`tests/x.py` then `kit.py done`"})
         self.assertEqual([x.split(":")[0] for x in n], ["verdict", "lead"])
+        one = lambda **p: len(k.plain_notes(p))                                                          # noqa: E731
+        self.assertEqual(one(verdict="Run `npm test` to see it"), 1)
+        self.assertEqual(one(verdict="See docs/plan.md"), 1)
+        for p in ({"verdict": "plan.md is shorter", "asked": [{"id": "c", "quote": "make Plan.md shorter"}]}, {"verdict": "ok", "title": "fix a.py", "body": "a.py works"},
+                  {"verdict": "ok", "body": "[The page](out/page.html) is ready: https://x.org/a.html ![it](shots/a1b2c3d.png) `take 1.wav`"},
+                  {"verdict": "3 of 4 takes, 2.5 s, 1920x1080, v2.0, and 250000 rows"}):
+            self.assertEqual(k.plain_notes(p), [], p)
+        self.put("posts", "tech", dict(STEP, verdict="Closed in calc.py"))
+        self.assertIn("fix: verdict: he reads this first, and it names calc.py", self.run_("kit.py", "done", "tech").stdout)
 
     def test_ask_writes_the_question_whole(self):
         base = ["ask", "--title", "Which one", "--option", "A", "--option", "B", "--default", "A", "--deadline", "2027-01-01"]
