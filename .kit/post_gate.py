@@ -74,6 +74,21 @@ def is_complete(p):
     return str(p.get("status") or "").strip().lower() in ("complete", "completed", "done")
 
 
+def check_proof(doc_id, p, old=None, may_prove=False):
+    """Why this write of a whole post is refused, or None: the proof is `kit.py done`'s, and a step completes only with it. The
+    board server asks it for every write that is not a copy from git, so a write past board_cli.py meets it too. It stops a
+    step closed by mistake or by a short cut; whoever holds the board's token and means to forge one still can."""
+    old = old or {}
+    if str(doc_id).startswith("_") or not isinstance(p, dict):
+        return None
+    if p.get("proof") and p["proof"] != old.get("proof") and not may_prove:
+        return "`proof` is what `python3 -I .kit/kit.py done %s` leaves when it says OK, never written by hand" % doc_id
+    if (is_step(p) or is_step(old)) and is_complete(p) and not is_complete(old) and not proved(p):
+        return ("a step is complete only after `python3 -I .kit/kit.py done %s` says OK on the post as it is now "
+                "(its check passes, its break makes it fail, his comments are answered)" % doc_id)
+    return None
+
+
 KIT_FROM = ("kit compact", "kit web-env")
 
 
@@ -86,7 +101,7 @@ def check_post(doc_id, new, old=None, cfg=None, may_prove=False):
     new, p = dict(new), dict(old, **new)
     kit = p.get("from") in KIT_FROM                              # the kit's own posts (an import, the web environment)
     if "proof" in new and new["proof"] != old.get("proof") and not may_prove:
-        return new, notes, "`proof` is what `python3 -I .kit/kit.py done %s` leaves when it says OK, never written by hand" % doc_id
+        return new, notes, check_proof(doc_id, dict(p, proof=new["proof"] or True), old)
     fresh = lambda k: bool(p.get(k)) and not old.get(k)          # noqa: E731 - given by this write
     want = None
     if fresh("options") or (p.get("kind") == "question" and not old):
@@ -108,9 +123,9 @@ def check_post(doc_id, new, old=None, cfg=None, may_prove=False):
         if autonomy(cfg) == "full_auto" and p.get("needs") not in NEEDS:
             return new, notes, ("full_auto: apply the default and go on. A question is only for %s: name which (`needs`: %s)"
                                 % ("; ".join(NEEDS.values()), ", ".join(NEEDS)))
-    if (is_step(p) or is_step(old)) and is_complete(p) and not is_complete(old) and not proved(p):
-        return new, notes, ("a step is complete only after `python3 -I .kit/kit.py done %s` says OK on the post as it is now "
-                            "(its check passes, its break makes it fail, his comments are answered)" % doc_id)
+    err = check_proof(doc_id, p, old, may_prove=True)
+    if err:
+        return new, notes, err
     if (is_complete(p) or p.get("column") == "done") and p.get("working_by"):
         new["working_by"] = ""                                   # finished: nobody is on it any more
     return new, notes, None

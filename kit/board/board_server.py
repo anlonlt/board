@@ -2148,6 +2148,32 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 return dict(data, by=uid)
             return data
 
+        def _unproved(self, st, writes):
+            """True when one of these writes [(op, collection, id, body)] is refused (403 sent): a step completed, or a proof
+            written, past `kit.py done` (post_gate.check_proof). A member's writes are gated by their View (access.py)."""
+            how = self.headers.get("X-Kit-Gate") or ""
+            if not self._full() or not hasattr(GATE, "check_proof") or how == "copy":
+                return False
+            seen = {}
+            for op, coll, did, b in writes:
+                if coll != "posts" or not did or not isinstance(b, dict) or str(did).startswith("_"):
+                    continue
+                old = seen[did] if did in seen else (st.get_doc(coll, did).get("data") or {})
+                new = json.loads(json.dumps(old))
+                if op == "set":
+                    new = b.get("data")
+                elif op == "update" and isinstance(b.get("data"), dict):
+                    _deep_merge_doc(new, json.loads(json.dumps(b["data"])), doc_id=did)
+                elif op == "str_replace" and isinstance(new.get(b.get("field") or "body"), str):
+                    f = b.get("field") or "body"
+                    new[f] = new[f].replace(str(b.get("old_str") or ""), str(b.get("new_str") or ""), 1)
+                why = GATE.check_proof(did, new, old, may_prove=how == "done")
+                if why:
+                    self._send_json(403, {"error": "forbidden", "why": why})
+                    return True
+                seen[did] = new if isinstance(new, dict) else {}
+            return False
+
         def _match_token(self, candidate):
             c = str(candidate or "").strip()
             if not c:
@@ -2988,6 +3014,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 tstore, nrepo = self._store_for_doc(parsed, "posts", str(body["data"]["post_id"]))
             before = _lane(tstore, coll, doc_id)
             put_data = self._signed(body.get("data", {}), not before[1])
+            if self._unproved(tstore, [("set", coll, doc_id, {"data": put_data})]):
+                return
             res, err = tstore.set_doc(coll, doc_id, put_data, if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
@@ -3022,6 +3050,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             tstore, nrepo = self._store_for_doc(parsed, coll, doc_id)
             patch_data = body.get("data", {})
             before = _lane(tstore, coll, doc_id)
+            if self._unproved(tstore, [("update", coll, doc_id, body)]):
+                return
             res, err = tstore.update_doc(coll, doc_id, patch_data, if_version=body.get("if_version"))
             if err is not None:
                 self._send_json(409, {"error": "version_mismatch", "current_version": err})
@@ -3412,6 +3442,9 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 synced = bool(isinstance(body, dict) and body.get("sync") and self._full())
                 lanes = {} if synced else {str(op.get("doc_id")): _lane(bstore, "posts", op.get("doc_id")) for op in (ops or [])
                                            if isinstance(op, dict) and op.get("collection") == "posts" and op.get("doc_id")}
+                if not synced and self._unproved(bstore, [(op.get("op") or "set", op.get("collection"), op.get("doc_id"), op)
+                                                          for op in (ops or []) if isinstance(op, dict)]):
+                    return
                 results, err = bstore.batch_ops(ops or [])
                 if err is not None:
                     kind, doc_id, detail = err
@@ -3432,6 +3465,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             if path.startswith("/_api/db/") and path.endswith("/str_replace"):
                 rest = [urllib.parse.unquote(x) for x in path[len("/_api/db/"):-len("/str_replace")].strip("/").split("/") if x]
                 if len(rest) == 2:
+                    if self._unproved(self._main_store(parsed), [("str_replace", rest[0], rest[1], body)]):
+                        return
                     res, err = self._main_store(parsed).str_replace(
                         rest[0], rest[1], body.get("field", "body"),
                         body.get("old_str", ""), body.get("new_str", ""),

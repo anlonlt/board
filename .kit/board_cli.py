@@ -469,6 +469,8 @@ def main(argv=None):
     tok = a.token if a.token is not None else default_token()
     repo_id = (a.repo or os.environ.get("KIT_BOARD_REPO") or "").strip()
     base_hdrs = {"X-Kit-Repo": repo_id} if repo_id else {}
+    if os.environ.get("KIT_GATE") == "done" or a.cmd == "import":        # the server holds the proof gate too
+        base_hdrs["X-Kit-Gate"] = "copy" if a.cmd == "import" else "done"
     call = lambda m, p, body=None, headers=None, timeout=60: req(base, m, p, body=body, headers={**base_hdrs, **(headers or {})}, timeout=timeout, token=tok)
 
     if a.cmd == "changes":

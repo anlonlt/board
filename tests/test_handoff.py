@@ -37,8 +37,11 @@ def git(repo, *args):
     ).stdout
 
 
-def api_req(url, path, body=None, token=None, method=None):
+def api_req(url, path, body=None, token=None, method=None, gate="copy"):
+    """`gate` "copy": a test seeds a board's history, a finished step included; "" writes as anyone with the token does."""
     hdr = {"Content-Type": "application/json"}
+    if gate:
+        hdr["X-Kit-Gate"] = gate
     if token:
         hdr["X-Kit-Token"] = token
     req = urllib.request.Request(

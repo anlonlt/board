@@ -136,8 +136,8 @@ class Live(unittest.TestCase):
     def cli(self, *a):
         return self.run_("board_cli.py", *a)
 
-    def put(self, coll, i, d):                                        # the page's way: the owner's writes are not gated
-        api_req(self.url, "db/%s/%s" % (coll, i), {"data": d}, token=TOKEN, method="PUT")
+    def put(self, coll, i, d):                                        # the page's way: only a step's closing is gated there
+        api_req(self.url, "db/%s/%s" % (coll, i), {"data": d}, token=TOKEN, method="PUT", gate="")
 
     def get(self, i):
         return json.loads(self.cli("get", "posts", i).stdout)["data"]
@@ -167,6 +167,41 @@ class Live(unittest.TestCase):
         self.assertEqual(self.cli("set", "comments", "fake", "--data", c).returncode, 2)
         self.assertEqual(self.cli("set", "comments", "f2", "--data", json.dumps({"post_id": "n", "text": "Should I?"})).returncode, 2)
         self.assertEqual(self.cli("update", "posts", "n", "--data", '{"proof":{"key":"x"}}').returncode, 2)
+
+    def raw(self, path, body, method="PUT", **hdrs):
+        import urllib.error
+        import urllib.request
+        r = urllib.request.Request(self.url + "/_api/" + path, method=method, data=json.dumps(body).encode(),
+                                   headers=dict({"X-Kit-Token": TOKEN, "Content-Type": "application/json"}, **hdrs))
+        try:
+            with urllib.request.urlopen(r, timeout=20) as res:
+                return res.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    def test_the_server_refuses_a_step_completed_past_the_cli(self):
+        self.put("posts", "s9", STEP)
+        done = dict(STEP, status="complete")
+        forged = dict(done, proof={"key": g.proof_key(done)})
+        new = dict(forged, body="other")
+        self.assertEqual(self.raw("db/posts/s9", {"data": done}), 403)
+        self.assertEqual(self.raw("db/posts/s9", {"data": forged}), 403)
+        self.assertEqual(self.raw("db/posts/fresh", {"data": forged}), 403)
+        self.assertEqual(self.raw("doc/posts/s9", {"data": {"status": "complete"}}, "PATCH"), 403)
+        self.assertEqual(self.raw("db/posts/s9", {"data": {"proof": {"key": "x"}}}, "PATCH"), 403)
+        self.assertEqual(self.raw("db/posts/s9/str_replace", {"field": "status", "old_str": "in progress", "new_str": "complete"}, "POST"), 403)
+        self.assertEqual(self.raw("db/batch", {"writes": [{"op": "update", "collection": "posts", "doc_id": "s9", "data": {"status": "done"}}]}, "POST"), 403)
+        two = [{"op": "set", "collection": "posts", "doc_id": "s8", "data": dict(STEP, status="planned")},
+               {"op": "update", "collection": "posts", "doc_id": "s8", "data": {"status": "complete"}}]
+        self.assertEqual(self.raw("db/batch", two, "POST"), 403)
+        self.assertEqual(self.get("s9")["status"], "in progress")
+        self.assertNotIn("proof", self.get("s9"))
+        # what is not a step closing goes through: his page's writes, a copy from git, an import
+        self.assertEqual(self.raw("db/posts/s9", {"data": {"column": "done", "note": "his"}}, "PATCH"), 200)
+        self.assertEqual(self.raw("db/batch", {"writes": [{"op": "set", "collection": "posts", "doc_id": "old", "data": new}], "sync": True}, "POST"), 200)
+        self.assertEqual(self.raw("db/posts/old", {"data": {"title": "t2"}}, "PATCH"), 200)     # complete already
+        (self.d / "b.json").write_text(json.dumps({"posts": [{"id": "imp", "data": done}], "comments": []}))
+        self.assertEqual(self.cli("import", str(self.d / "b.json")).returncode, 0)
 
     def test_ask_writes_the_question_whole(self):
         base = ["ask", "--title", "Which one", "--option", "A", "--option", "B", "--default", "A", "--deadline", "2027-01-01"]

@@ -1856,11 +1856,20 @@ def init(m):
     if has:
         r = subprocess.run(["git", "-C", ROOT, "worktree", "add", "-B", BRANCH, m, "origin/" + BRANCH], capture_output=True, text=True)
         src = "origin/" + BRANCH
+    elif subprocess.run(["git", "-C", ROOT, "rev-parse", "--verify", "--quiet", "refs/heads/" + BRANCH], capture_output=True).returncode == 0:
+        r = subprocess.run(["git", "-C", ROOT, "worktree", "add", m, BRANCH], capture_output=True, text=True)     # made here, never pushed
+        src = "the local branch " + BRANCH
     else:
         r = subprocess.run(["git", "-C", ROOT, "worktree", "add", "--orphan", "-b", BRANCH, m], capture_output=True, text=True)
         src = "new orphan branch " + BRANCH
+        if r.returncode != 0:                                 # git before 2.42 has no --orphan here (Debian 12: 2.39)
+            for c in (["-C", ROOT, "worktree", "add", "--detach", "--no-checkout", m, "HEAD"],
+                      ["-C", m, "symbolic-ref", "HEAD", "refs/heads/" + BRANCH], ["-C", m, "read-tree", "--empty"]):
+                r = subprocess.run(["git"] + c, capture_output=True, text=True)
+                if r.returncode != 0:
+                    break
     if r.returncode != 0:
-        return (r.stdout + r.stderr).strip()
+        return "FAILED: " + ((r.stdout + r.stderr).strip() or "git worktree add")
     return "init: created worktree %s from %s. Next: python3 -I .kit/kit.py sync-db --commit" % (m, src)
 
 
@@ -6798,7 +6807,8 @@ def main(argv=None):
             print(why)
             return 3
     if a.cmd == "init":
-        print(init(m)); return 0
+        msg = init(m); print(msg)
+        return 1 if msg.startswith("FAILED") else 0
     if a.cmd == "push":
         r = git(m, "push", "-u", "origin", BRANCH)
         print((r.stdout + r.stderr).strip() or "pushed"); return r.returncode
