@@ -220,7 +220,7 @@ with tempfile.TemporaryDirectory() as d:
     check("claude-cli: orchestrator below its limit stops normally", cc_stop("cc-low-" + RUN, cc_low)[1] == {})
     cc_part = cc_transcript("part", "Your prompt is docs/prompts/p1.md: read it and do it.", 50000, 300000)
     check("claude-cli: a part above the limit is never handed over", cc_stop("cc-part-" + RUN, cc_part)[1] == {})
-    cc_orch = cc_transcript("orch-high", "Read .kit/claude-cli/orchestrator.md and start as the orchestrator for this repository", 2000, 370000, 12000)
+    cc_orch = cc_transcript("orch-high", "You are the orchestrator: start as the orchestrator for this repository", 2000, 370000, 12000)
     o1 = cc_stop("cc-orch-" + RUN, cc_orch)[1]
     check("claude-cli: orchestrator at 384k is blocked once with the reset steps (trains current, kit.py resume, handover.py)",
           o1.get("decision") == "block" and "384k >= 380k" in o1.get("reason", "") and "kit.py resume" in o1.get("reason", "")

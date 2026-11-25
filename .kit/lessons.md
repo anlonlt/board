@@ -1,16 +1,19 @@
 # The kit's lessons
 
 Every lesson here reaches the roles it names through `python3 -I .kit/kit.py resume --role <role>`; a part gets one
-with `files:` only when its change touches them. A project's own lessons live in its memory (`lessons/*.md`, same
+with `files:` only when its change touches them; one with `where: attached` reaches only a project that has another
+repo attached, or the kit's own. A project's own lessons live in its memory (`lessons/*.md`, same
 format, `kit.py lesson add`); a lesson only a project doc holds is refused (`kit.py lessons check`).
 
 ## K1: A step on another repo's board launches from that repo's clone
 roles: orchestrator
+where: attached
 from: O53 2026-11-23 22:04
 `kit.py launch <post>` from your project finds the post on the attached board and runs the launch in that board's clone next to yours. That clone starts no seeded board and never auto-pushes a board-mirror: an orchestrator's clone of anlonlt/board pushed seeded posts to its board-mirror. The clone may be read-only (a public board, nothing to attach): a push of the prompt refused for access makes launch put the prompt's full text in the create_session prompt (CL40).
 
 ## K2: A change to compact, install, resume, hooks or artifact is tried on a real project
 roles: part, review, orchestrator
+where: attached
 files: scripts/kit.py, install.py, kit/hooks/*, kit/web_takeover.py, kit/claude/kit_artifact_sync.py, kit/board/board_server.py
 from: CL29
 The kit's suite passed CL29's compact while Harmonize's story checker went red. The orchestrator's session, which holds both repos, runs the changed command in a clone of the consuming project (never pushed) and puts the command and its output in the part's `real_project`; a launched part never attaches a repo (CL38: a launched session's classifier refuses to attach one unless the owner types it; CL39: on the web the orchestrator's environment holds every repo); `kit.py done` says it is pending until then.
@@ -33,6 +36,7 @@ from: CL31
 
 ## K6: An attached board's comment is answered on that board
 roles: clerk, orchestrator
+where: attached
 A comment under `repos/<id>/comments` goes to the session the post on board `<id>` names; the reply goes back to `repos/<id>/comments`, never to this board.
 
 ## K7: Phone first, then every width
@@ -43,6 +47,7 @@ Read docs/DESIGN-PRINCIPLES.md before a UI change; `test_page_layout.js`, `test_
 
 ## K8: A board this server does not hold is refused, never read from the primary
 roles: part, orchestrator
+where: attached
 files: kit/board/board_server.py
 from: CL32
 `--repo board` in Harmonize's cloud clone used to read Harmonize's own posts (the portfolio path named a folder on the owner's computer). An attached board resolves from its clone next to the repo, or from what `artifact load` put in `.kit/attached/<id>`; else a 404 naming what to do.

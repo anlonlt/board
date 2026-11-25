@@ -120,6 +120,22 @@ class Resolve(unittest.TestCase):
             self.assertEqual(board_server.resolve_attached(str(proj), item)[1], str(Path(t) / "board"))
 
 
+class UpPrompt(unittest.TestCase):
+    def test_up_opens_the_orchestrator_by_one_command_and_the_hooks_know_it(self):
+        import re
+        root = Path(__file__).resolve().parents[1]
+        prompts = [m for m in re.findall(r'PROMPT="([^"]*)"', (root / "kit" / "up").read_text()) if "start as the orchestrator" in m]
+        self.assertEqual(len(prompts), 3)
+        guard = (root / "kit" / "hooks" / "kit_orchestrator_guard.py").read_text()
+        rx = re.compile("start as the orchestrator")
+        self.assertIn(rx.pattern, guard)
+        for q in prompts:
+            self.assertIn("kit.py resume --role orchestrator", q)
+            self.assertNotIn("Read ", q)                                     # resume prints the guide's part: reading it whole is a second copy
+            self.assertNotIn("orchestrator.md", q)
+            self.assertIn("you are the orchestrator", q.lower())             # agy's hand-over hook knows it by these words
+
+
 class Lessons(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -144,6 +160,30 @@ class Lessons(unittest.TestCase):
         self.assertEqual(self.ids(kit.lessons_for("part", ["scripts/x.py"])), ["K3"])
         self.assertEqual(self.ids(kit.lessons_for("part", ["install.py"])), ["K2", "K3"])
         self.assertEqual(self.ids(kit.lessons_for("clerk")), [])
+
+    def test_a_lesson_on_attached_repos_reaches_only_a_project_with_one(self):
+        f = self.root / "kit" / "lessons.md"
+        f.write_text(f.read_text() + "\n## K9: theirs\nroles: part, orchestrator\nwhere: attached\nText.\n")
+        self.assertEqual(self.ids(kit.lessons_for("orchestrator")), ["K1"])
+        self.assertNotIn("K9", self.ids(kit.lessons_for("part", [])))
+        with mock.patch.object(kit, "_kit_config", lambda *a: {"portfolio": [{"name": "board", "path": "/gone"}]}):
+            self.assertEqual(self.ids(kit.lessons_for("orchestrator")), ["K1", "K9"])
+        (self.root / "install.py").write_text("")
+        (self.root / "kit" / "hooks").mkdir()
+        self.assertEqual(self.ids(kit.lessons_for("orchestrator")), ["K1", "K9"])          # the kit's own repo
+        shipped = {x["id"]: x["where"] for x in kit.parse_lessons((Path(__file__).resolve().parents[1] / "kit" / "lessons.md").read_text())}
+        self.assertEqual({k for k, v in shipped.items() if v == "attached"}, {"K1", "K2", "K6", "K8"})
+
+    def test_resume_names_refused_lessons_once_a_doc(self):
+        (self.root / "docs").mkdir()
+        (self.root / "docs" / "O.md").write_text("".join("### Lesson %d: t\nText.\n" % n for n in range(40, 60)))
+        (self.root / ".board" / "memory" / "lessons" / "x.md").write_text("## X1: no roles\nText.\n")
+        out = kit._refused_lines()
+        self.assertEqual(len(out), 2, out)
+        self.assertIn("X1", out[0])
+        self.assertIn("20 only in docs/O.md (40, 41,", out[1])
+        self.assertLess(len("\n".join(out)), 400)
+        self.assertEqual(len(kit.lessons_check()), 21)                                        # each with its command
 
     def test_doc_only_lesson_and_untagged_lesson_are_refused(self):
         self.assertEqual(kit.lessons_check(), [])

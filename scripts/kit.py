@@ -5727,21 +5727,22 @@ def _kit_lessons_paths():
 
 
 def parse_lessons(text, source=""):
-    """[{id, title, roles, files, from, text, source}] from lesson Markdown: `## <id>: <title>`, then `roles:`,
-    optional `files:` (globs) and `from:` (where it was first written) lines, then the lesson itself."""
+    """[{id, title, roles, files, from, where, text, source}] from lesson Markdown: `## <id>: <title>`, then `roles:`,
+    optional `files:` (globs), `from:` (where it was first written) and `where: attached` (only a project that has another
+    repo attached, or the kit's own) lines, then the lesson itself."""
     out, cur = [], None
     for line in text.splitlines():
         m = LESSON_HEAD.match(line)
         if m:
-            cur = {"id": m.group(1), "title": m.group(2), "roles": [], "files": [], "from": "", "text": [], "source": source}
+            cur = {"id": m.group(1), "title": m.group(2), "roles": [], "files": [], "from": "", "where": "", "text": [], "source": source}
             out.append(cur)
             continue
         if cur is None:
             continue
-        kv = re.match(r"^(roles|files|from)\s*:\s*(.*)$", line.strip(), re.I)
+        kv = re.match(r"^(roles|files|from|where)\s*:\s*(.*)$", line.strip(), re.I)
         if kv and not cur["text"]:
             k, v = kv.group(1).lower(), kv.group(2).strip()
-            cur[k] = v if k == "from" else [x.strip() for x in re.split(r"[,\s]+", v) if x.strip()]
+            cur[k] = v if k in ("from", "where") else [x.strip() for x in re.split(r"[,\s]+", v) if x.strip()]
             continue
         if line.strip() or cur["text"]:
             cur["text"].append(line.rstrip())
@@ -5766,12 +5767,19 @@ def _touches(globs, files):
     return any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(os.path.basename(f), g) for g in globs for f in files)
 
 
+def _attaches_repos():
+    """This project works on another repo too (one is attached), or it is the kit's own."""
+    return bool(_is_kit_source_repo(ROOT) or _kit_config().get("portfolio") or os.path.isdir(os.path.join(ROOT, ".kit", "attached")))
+
+
 def lessons_for(role, files=None):
     """The lessons a role needs: tagged with it (or `all`); for a part with files, a lesson with `files:` only when it
     touches one of them (a lesson with no files applies to every part)."""
     out = []
     for les in all_lessons():
         if role not in les["roles"] and "all" not in les["roles"]:
+            continue
+        if les["where"] == "attached" and not _attaches_repos():
             continue
         if role == "part" and les["files"] and files is not None and not _touches(les["files"], files):
             continue
@@ -5790,6 +5798,16 @@ def lessons_check():
         bad = [r for r in x["roles"] if r not in ROLES and r != "all"]
         if bad:
             err.append("lesson %s (%s): unknown role %s (roles: %s, all)" % (x["id"], x["source"], ", ".join(bad), ", ".join(ROLES)))
+    for i, rel in _doc_only_lessons(les):
+        err.append("lesson %s lives only in %s: move it into the memory, tagged with its roles: "
+                   "`python3 -I .kit/kit.py lesson add %s --roles <roles> --from \"%s %s\" --title ... --text ...`"
+                   % (i, rel, i, rel, i))
+    return err
+
+
+def _doc_only_lessons(les):
+    """[(id, doc)] of the lessons a project doc names that the memory does not hold."""
+    out = []
     known = {x["id"].lower() for x in les} | {x["from"].split()[-1].lower() for x in les if x["from"]}
     docs = [p for p in glob.glob(os.path.join(ROOT, "docs", "**", "*.md"), recursive=True)
             if "%sprompts%s" % (os.sep, os.sep) not in p] + glob.glob(os.path.join(ROOT, "*.md"))
@@ -5802,10 +5820,19 @@ def lessons_check():
         rel = os.path.relpath(p, ROOT)
         for i in sorted(set(x.lower() for x in ids)):
             if i not in known:
-                err.append("lesson %s lives only in %s: move it into the memory, tagged with its roles: "
-                           "`python3 -I .kit/kit.py lesson add %s --roles <roles> --from \"%s %s\" --title ... --text ...`"
-                           % (i, rel, i, rel, i))
-    return err
+                out.append((i, rel))
+    return out
+
+
+def _refused_lines():
+    """What `resume` says of refused lessons: one line a doc (`kit.py lessons check` names each with its command)."""
+    docs = {}
+    for i, rel in _doc_only_lessons(all_lessons()):
+        docs.setdefault(rel, []).append(i)
+    out = ["- " + e for e in lessons_check() if " lives only in " not in e]
+    for rel, ids in docs.items():
+        out.append("- %d only in %s (%s): `python3 -I .kit/kit.py lessons check` gives the command for each" % (len(ids), rel, ", ".join(ids)))
+    return out
 
 
 def lesson_add(lid, roles, title, text, files=(), frm=""):
@@ -6286,9 +6313,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         if os.path.isfile(pref):
             with open(pref, encoding="utf-8") as fh:
                 out += ["", "## The owner's preferences (%s)" % os.path.relpath(pref, ROOT), fh.read().strip()]
-        bad = lessons_check()
+        bad = _refused_lines()
         if bad:
-            out += ["", "## Lessons refused (fix: they reach no role)"] + ["- " + e for e in bad]
+            out += ["", "## Lessons refused (fix: they reach no role)"] + bad
     elif role == "part":
         pid = _my_post(posts, post)
         if not pid:

@@ -379,7 +379,7 @@ class TaskTrainHook(unittest.TestCase):
             return [json.loads(x) for x in fh]
 
     def test_orchestrator_tasks_become_train_steps(self):
-        self.transcript("Read .kit/claude-cli/orchestrator.md and start as the orchestrator for this repository.")
+        self.transcript("You are the orchestrator: start as the orchestrator for this repository (you start the board clerk session if none runs).")
         sid = "orch-tt-%d" % os.getpid()
         msg = self.call(sid, "TaskCreate", {"subject": "PL4 fit the model", "description": "fit it",
                                             "metadata": {"train": "planner", "part": "PL4", "parent": "PL2"}},
@@ -422,7 +422,7 @@ class TaskTrainHook(unittest.TestCase):
         self.assertEqual(self.call(sid, "TaskCreate", {"subject": "tidy notes", "description": "x"}, {"task": {"id": "3"}}), "")
 
     # ------------------------------------------------ a task list that outlives its orchestrator
-    ORCH = "Read .kit/claude-cli/orchestrator.md and start as the orchestrator for this repository."
+    ORCH = "You are the orchestrator: start as the orchestrator for this repository (you start the board clerk session if none runs)."
 
     def kit_json(self, *a):
         r = subprocess.run([sys.executable, "-I", os.path.join(self.proj, ".kit", "kit.py")] + list(a), capture_output=True, text=True,
@@ -511,7 +511,7 @@ class TaskTrainHook(unittest.TestCase):
         self.assertNotIn("W1", [x["part"] for x in self.kit_json("step", "open")["steps"]])
 
     def test_deleting_removes_only_a_step_not_yet_started(self):
-        self.transcript("Read .kit/claude-cli/orchestrator.md and start as the orchestrator for this repository.")
+        self.transcript("You are the orchestrator: start as the orchestrator for this repository (you start the board clerk session if none runs).")
         sid = "orch-del-%d" % os.getpid()
         msg = self.call(sid, "TaskCreate", {"subject": "PL5 later", "description": "",
                                             "metadata": {"train": "planner", "part": "PL5", "sources": ["c-123"]}},
