@@ -69,6 +69,34 @@ class DeviceCap(unittest.TestCase):
         self.assertGreaterEqual(s["max_sessions"], 60)
 
 
+class SessionsAskedOnce(unittest.TestCase):
+    def test_resume_and_the_device_line_share_one_answer(self):
+        from unittest import mock
+        kit = load("kit_once_t", "scripts/kit.py")
+        calls, real = [], subprocess.run
+
+        def run(cmd, *a, **k):
+            if list(cmd)[:2] == ["claude", "agents"]:
+                calls.append(cmd)
+                return subprocess.CompletedProcess(cmd, 0, '[{"name": "x-p1", "sessionId": "s1", "status": "busy"}]', "")
+            return real(cmd, *a, **k)
+        with mock.patch("subprocess.run", run):
+            self.assertEqual(kit._alive_sessions(), {"x-p1", "s1"})
+            self.assertIn("kit_device", type(kit._device()).__name__ + kit._device().__name__)
+            kit._device().running_sessions([(1, 450, "claude")])
+            self.assertEqual(len(calls), 1)
+            kit._agents["at"] -= 60                                   # an old answer is asked again
+            self.assertEqual(kit._alive_sessions(), {"x-p1", "s1"})
+            self.assertEqual(len(calls), 2)
+
+    def test_no_claude_is_not_no_session(self):
+        from unittest import mock
+        kit = load("kit_once_t2", "scripts/kit.py")
+        with mock.patch("subprocess.run", side_effect=FileNotFoundError()):
+            self.assertIsNone(kit._alive_sessions())
+            self.assertIsNone(kit._alive_sessions())
+
+
 class GuardCap(unittest.TestCase):
     def test_counts_only_real_launches(self):
         self.assertEqual(guard.session_launches('KIT_ROLE=part claude --bg -n a -w b "x"'), 1)

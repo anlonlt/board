@@ -56,7 +56,7 @@
  ".kit/clerk.md": "7a18ed588a9e0448755eb13da3c6aeabfd6de11d5a3ddfe87b1df7b7135e4eac",
  ".kit/clerk_pending.py": "f2e2ccb421100db0896206d9be49694df24500b47a2dbfb1d8ee304ab0d9e0bc",
  ".kit/consultant.md": "b13e0debfac54d7475cb417342883fb91c33c4caa63117d2c5b735435ba44a62",
- ".kit/device.py": "4792b36fc9e69c86923db0df6df549eed86ae0f1afb2f129e2f4cc981405be9a",
+ ".kit/device.py": "b8cc26ffe23397ce32ef57bc0225eab4f6bd0d21ad3fea28fb2b40ea98420b4d",
  ".kit/end_session.py": "4686f4ff79d1c7e0bad326fd608e358b419f462ca03ce59aae253bc929b6468d",
  ".kit/git_watch.py": "0573bbb27c983c40a7394b695944b92068f69f15611561ee384e4e2ac9a0b08c",
  ".kit/handover.py": "69f896058cc0249b3da60ee86b44d21e0d1e4d468d004b2e7b0e01e354f5019b",
@@ -79,7 +79,7 @@
  ".kit/hooks/kit_web_save.py": "74229a81f846eb4ccb4bd8834d320e3adb605458ed49534cce1916eb0237bbf6",
  ".kit/hooks/kit_wip.py": "f3b9f3b4e4526021fc6eb267787edc7a063f82edec5caed739c080f30f6a2eb9",
  ".kit/hooks/test_hooks.py": "5e3cab03bce9161a4c84e8e6b22b33e4ea62b1a054251cfa9f3665b2de07dd06",
- ".kit/kit.py": "d2ed9308d828c3a41fa2a4f712334c0173103ba4d846b2aff2770cf08abf1824",
+ ".kit/kit.py": "aa3ca30ceb220416f09da32a9b9ccddf24a178be985d6f0438560cbe36458fbe",
  ".kit/kit_artifact_sync.py": "64760e0f0ff2e3e3aca193ddcbbf501ec30474179b5ea838a4e34dc5b8b2ca67",
  ".kit/kit_cards.py": "f7352a5317a42f958167146364539996603f8f8926a12da71f36ef6d4fa07ca8",
  ".kit/kit_import.py": "7ee7050f20af4343885704ca613b86945472e9ceec08ec8e0fb47645578ba809",
@@ -102,5 +102,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "76da62fb19db2af75aaf899cb956432df2c60027d0903295f9b93eb68f3f5749",
- "_kit_commit": "91f473b 2026-11-24T15:20:09-05:00"
+ "_kit_commit": "29b65fe 2026-11-24T18:21:05-05:00"
 }

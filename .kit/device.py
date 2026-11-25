@@ -205,12 +205,15 @@ def processes():
     return rows
 
 
+AGENTS = None            # kit.py gives its own answer of `claude agents --json`: it takes a second, and it just asked
+
+
 def running_sessions(procs=None):
     """Sessions running now: `claude agents --json` when it answers (it lists each session once, including the
     background ones), plus agy processes; else every claude/agy process."""
     procs = processes() if procs is None else procs
     agy = sum(1 for _, _, n in procs if n == "agy")
-    out = _run(["claude", "agents", "--json"], timeout=15)
+    out = AGENTS() if AGENTS else _run(["claude", "agents", "--json"], timeout=15)
     try:
         listed = json.loads(out) if out.strip() else None
     except ValueError:

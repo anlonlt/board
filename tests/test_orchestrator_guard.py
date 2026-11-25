@@ -16,7 +16,9 @@ from pathlib import Path
 HOOK = Path(__file__).resolve().parent.parent / "kit" / "hooks" / "kit_orchestrator_guard.py"
 
 
-class OrchestratorGuard(unittest.TestCase):
+class Project(unittest.TestCase):
+    """A project with the launch marks, and the guard run on it; no test of its own, so a class built on it repeats none."""
+
     def setUp(self):
         self.proj = tempfile.mkdtemp()
         os.makedirs(os.path.join(self.proj, ".kit"))
@@ -44,6 +46,8 @@ class OrchestratorGuard(unittest.TestCase):
                            env=env, timeout=30)
         return r.returncode, r.stderr
 
+
+class OrchestratorGuard(Project):
     def test_raw_reads(self):
         rc, err = self.run_hook("ArtifactData", {"action": "list", "collection": "posts", "url": "u"})
         self.assertEqual(rc, 2)
@@ -165,7 +169,7 @@ class OrchestratorGuard(unittest.TestCase):
         self.assertEqual(rc, 0)
 
 
-class LaunchRepo(OrchestratorGuard):
+class LaunchRepo(Project):
     """CL26 item 3 (the owner, via orchestrator 51): a part's session must clone the repo that holds its step. CL25 and
     CL26 (train `cli`, on the attached board `board` = anlonlt/board) were launched with source_url anlonlt/harmonize
     and could not push their work. The guard refuses a create_session whose source_url is not the step's repo (its

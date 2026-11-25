@@ -4068,6 +4068,7 @@ def _device():
         spec.loader.exec_module(mod)
     except Exception:  # a broken probe never blocks the kit
         return None
+    mod.AGENTS = _claude_agents
     return mod
 
 
@@ -4925,12 +4926,30 @@ def step_complete(pid, db_path=None, cli=None):
     return out
 
 
+_agents = {"at": None, "out": None}
+
+
+def _claude_agents(fresh=5.0):
+    """What `claude agents --json` prints ('' : nothing, or no `claude`). It takes about a second, up to five when cold,
+    and one `resume` needs it twice: asked once, kept a few seconds."""
+    now = time.monotonic()
+    if _agents["at"] is None or now - _agents["at"] > fresh:
+        try:
+            out = subprocess.run(["claude", "agents", "--json"], capture_output=True, text=True, timeout=20).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = None
+        _agents.update(at=time.monotonic(), out=out)
+    return _agents["out"] or ""
+
+
 def _alive_sessions():
     """Names (and ids) of the Claude Code sessions running on this computer, from `claude agents --json`."""
+    out = _claude_agents()
+    if _agents["out"] is None:
+        return None
     try:
-        out = subprocess.run(["claude", "agents", "--json"], capture_output=True, text=True, timeout=20).stdout
         rows = json.loads(out or "[]")
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except ValueError:
         return None
     alive = set()
     for r in rows:
