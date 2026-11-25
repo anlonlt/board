@@ -253,6 +253,9 @@ class View:
             # whoever a post is for may answer it: nobody makes it theirs, they can only hand it back
             if any(k in changed and str(new.get(k) or "") for k in FOR_FIELDS):
                 raise Denied("only the owner assigns a post; take it with working_by")
+        if self.gate is None and (old.get("train") or new.get("train")) and not did.startswith("_") and "status" in changed \
+                and str(new.get("status") or "").strip().lower() in ("complete", "completed", "done"):
+            raise Denied("a step is completed by the owner's side")          # a kit with no proof gate to ask
         if self.gate is not None and not did.startswith("_"):
             put, _, err = self.gate.check_post(did, dict(new, **{"from": self.uid}), old if exists else None, None)
             if err and "default" in err and own:

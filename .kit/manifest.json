@@ -40,7 +40,7 @@
  ".claude/skills/memory/SKILL.md": "675e0aed481f388cc3c45d0351e6f986fcfd804548c1f83046899f63f07277d8",
  ".kit/BOARD.md": "bce3b6625d342d27c0a16850601bd3bc49b56061dac16352f5cfc344293836f5",
  ".kit/ORCHESTRATOR.md": "c0a5a7c03f7eb71b5269e4a4fa29bd891584a466e5fe9aba4b17d314ba438c59",
- ".kit/access.py": "70ee0a8b5e223c693f06bdab52abc76958e70ac713146678c93cb444f6086747",
+ ".kit/access.py": "3d0b380523d87667a86d4f6d9aabf4147b355cea858bb25cd0d7eca7be723a72",
  ".kit/agents/kit-cards.md": "fa0459d4c6d7e1416f8bf73952b9ae732873bd36d74d9b34cfa3ed6869094485",
  ".kit/board.html": "9d849965e0911d6b79eee0f12ece2f6a3d9dfdd2372782bddfd14c70c838b667",
  ".kit/board_cli.py": "98cce26e1f39a86696d31beefc274f624e09055a27672de3423a0fb3ade5d77e",
@@ -102,5 +102,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "76da62fb19db2af75aaf899cb956432df2c60027d0903295f9b93eb68f3f5749",
- "_kit_commit": "29b65fe 2026-11-24T18:21:05-05:00"
+ "_kit_commit": "8ba4957 2026-11-24T19:54:08-05:00"
 }

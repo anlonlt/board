@@ -323,6 +323,14 @@ class Writing(Case):
         for did in ("_trains", "_dashboard", "_handover", "_orchestrator_vi"):
             self.assertEqual(self.put("posts", did, {"title": "x"}, self.lin), 403, did)
 
+    def test_a_kit_with_no_proof_gate_lets_no_member_complete_a_step(self):
+        self.store.update_doc("posts", "step1", {"for": "lin"})
+        v = access.View(self.store, {"id": "lin", "role": "member"}, gate=None)
+        for st in ("complete", " Done ", "completed"):
+            with self.assertRaises(access.Denied):
+                v.update_doc("posts", "step1", {"status": st})
+        self.assertIsNone(v.update_doc("posts", "step1", {"status": "held"})[1])
+
     def test_replacing_a_post_cannot_drop_what_is_not_theirs(self):
         self.assertEqual(self.put("posts", "step1", {"title": "S", "status": "in progress", "column": "info"}, self.lin), 403)
         self.put("posts", "np", {"title": "T", "column": "info"}, self.lin)
