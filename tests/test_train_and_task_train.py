@@ -378,6 +378,18 @@ class TaskTrainHook(unittest.TestCase):
         with open(self.log) as fh:
             return [json.loads(x) for x in fh]
 
+    def test_the_first_prompt_is_not_in_the_transcript_yet(self):
+        """Live, 2026-11-25: UserPromptSubmit runs before the prompt is written; the role read then must not be kept."""
+        for sid, opener, made in (("orch-early", self.ORCH_UP, True), ("part-early", "Your prompt is docs/prompts/x.md: read it and do it.", False)):
+            with open(self.tf, "w") as fh:
+                fh.write(json.dumps({"type": "queue-operation", "operation": "enqueue", "content": opener}) + "\n")
+            self.hook(sid, "UserPromptSubmit", {"prompt": opener})
+            self.transcript(opener)
+            msg = self.call(sid, "TaskCreate", {"subject": "E1 early", "description": "x", "metadata": {"train": "planner", "part": "E1"}}, {"task": {"id": "1"}})
+            self.assertEqual("post e1-early created" in msg, made, msg)
+
+    ORCH_UP = "You are the orchestrator: start as the orchestrator for this repository (you start the board clerk session if none runs)."
+
     def test_orchestrator_tasks_become_train_steps(self):
         self.transcript("You are the orchestrator: start as the orchestrator for this repository (you start the board clerk session if none runs).")
         sid = "orch-tt-%d" % os.getpid()

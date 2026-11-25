@@ -162,7 +162,9 @@ def on_update(root, st, ti):
 
 
 def is_orchestrator(data, st):
-    if "role" not in st:
+    if not st.get("role"):
+        # UserPromptSubmit comes before the first prompt is in the transcript: what it finds then is not the answer (2026-11-25:
+        # "" was kept, and an orchestrator's whole task list never reached the board). "-": read since, and not an orchestrator.
         st["role"] = os.environ.get("KIT_ROLE") or inspect_claude_transcript(str(data.get("transcript_path") or ""))[1] or ""
         prefix = str((config(data).get("kit") or {}).get("orchestrator_branch_prefix") or "")
         if not st["role"] and prefix:
@@ -173,6 +175,8 @@ def is_orchestrator(data, st):
             except (OSError, subprocess.SubprocessError):
                 br = ""
             st["role"] = "orchestrator" if br.startswith(prefix) else ""
+        if not st["role"] and data.get("hook_event_name") != "UserPromptSubmit":
+            st["role"] = "-"
     return st["role"] == "orchestrator"
 
 

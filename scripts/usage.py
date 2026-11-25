@@ -1011,8 +1011,8 @@ def main(argv=None):
         print("work-from-git: %d of %d ccr rows have commits (%d sessions in the trailers)" % (
             n, sum(r.get("source") == "ccr" for r in rows), len(work)))
         return 0
-    if a.cmd == "push":
-        print(push_locked(root))
+    if a.cmd == "push":                                      # end_session.py calls it too: the owner's "keep it here" holds for every caller
+        print(push_locked(root) if push_allowed(root, kit_conf(root)) else "kept on this computer (usage.push is off)")
         return 0
     if a.cmd == "compare":
         rows = merge_rows(all_rows(root, a.rows) if not a.only else [], _read_rows(a.rows))

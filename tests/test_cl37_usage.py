@@ -398,6 +398,19 @@ class Ledger(unittest.TestCase):
                            input=json.dumps({"transcript_path": "/nope.jsonl"}), capture_output=True, text=True)
         self.assertEqual(r.returncode, 0)
 
+    def test_push_off_holds_for_the_command_end_session_runs(self):
+        with tempfile.TemporaryDirectory() as d:
+            bare = os.path.join(d, "origin.git")
+            subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+            root = project(d)
+            subprocess.run(["git", "-C", root, "remote", "add", "origin", bare], check=True)
+            usage.record(root, fixture(d, sid="s-a"))
+            for env, want in (("0", False), ("", True)):
+                out = subprocess.run([sys.executable, "-I", str(SCRIPT), "--root", root, "push"], capture_output=True, text=True,
+                                     env=dict(os.environ, KIT_USAGE_PUSH=env)).stdout
+                refs = subprocess.run(["git", "-C", bare, "for-each-ref"], capture_output=True, text=True).stdout
+                self.assertEqual("kit-usage" in refs, want, out)
+
     def test_push_to_ledger_branch_merges_and_never_touches_head(self):
         with tempfile.TemporaryDirectory() as d:
             bare = os.path.join(d, "origin.git")
