@@ -17,7 +17,7 @@ function servePage(html) {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
         res.end(html);
       } else {
-        res.writeHead(404);
+        res.writeHead(req.url === '/favicon.ico' ? 204 : 404);  // the browser asks for an icon by itself: no page error
         res.end();
       }
     });
@@ -93,6 +93,12 @@ async function viaDevTools() {
   const proc = spawn(bin, ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
     '--remote-debugging-port=0', '--user-data-dir=' + profile, '--window-size=1300,900', 'about:blank'],
   { stdio: ['ignore', 'ignore', 'pipe'] });
+  // a test that fails, throws or is stopped takes its browser with it (2026-11-25: nine left running starved the computer)
+  process.on('exit', () => {
+    try { proc.kill('SIGKILL'); } catch (e) { /* gone */ }
+    try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 3 }); } catch (e) { /* busy */ }
+  });
+  for (const sig of ['SIGTERM', 'SIGINT']) process.once(sig, () => process.exit(1));
   const wsBrowser = await new Promise((resolve) => {
     let buf = '';
     const t = setTimeout(() => resolve(null), 15000);
