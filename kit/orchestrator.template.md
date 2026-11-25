@@ -46,7 +46,7 @@ Keep a timer via `schedule(DurationSeconds=1800, Prompt="orchestrator: 30-min ch
    **A tapped answer** ("Answer: X" on a `question` post): it is his choice; apply it (tell the post's subagent via `send_message`, or do what the post says the answer does) and say so in one line under that post.
    On a go: create the step with `kit.py step new` (if not already planned), commit and push `docs/prompts/<post id>.md`, check `python3 -I .kit/device.py --gate` (**device session cap, CL15** — `kit_guard.py` also refuses `invoke_subagent` past the cap; leave the step planned until a part finishes), mark it `kit.py step start <post>`, then launch each part with `invoke_subagent`:
    - `TypeName: "self"`, `Role: "Part: <part>"`, `Model: "{{PART_MODEL}}"` (e.g. `"inherit"` / `"pro"`), `Workspace: "share"` (gives parallel workers isolated git worktrees sharing the repo),
-   - `Prompt: "Your prompt is docs/prompts/<post id>.md: read it and do it."`
+   - the `Prompt` that `kit.py step new` prints, as it is
    Launch several at once when they do not touch the same files.
 
 <!-- case: words | the owner wrote a comment -->

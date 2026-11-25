@@ -354,7 +354,7 @@ class Roles(unittest.TestCase):
     def test_part_gets_post_prompt_lessons_tests_done(self):
         out = self.run_role("part", "cl32-x")
         for s in ("docs/prompts/cl32-x.md", "Lessons that touch your files", "Your tests", "kit.py done cl32-x",
-                  "SendMessage orch-1"):
+                  "the orchestrator, `orch-1`", "## How you work"):
             self.assertIn(s, out)
 
     def test_review_gets_step_acceptance_real_project(self):

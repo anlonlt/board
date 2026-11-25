@@ -219,7 +219,8 @@ class Launch(Base):
         self.assertEqual(Path(args[0]).resolve(), wt.resolve())          # claude runs inside that worktree
         self.assertIn("--bg", args)
         self.assertNotIn("-w", args)                                    # never `claude -w` (a worktree from main)
-        self.assertIn("Your prompt is docs/prompts/cl99-launch-me.md: read it and do it.", args)
+        self.assertIn("Your prompt is docs/prompts/cl99-launch-me.md: run `python3 -I .kit/kit.py resume --role part --post cl99-launch-me`, "
+                      "which prints it, and do it.", args)
 
     def test_cli_launch_refuses_an_uncommitted_prompt(self):
         repo = self.seed({"project": "Board", "kit": {"runtime": "local"}})

@@ -292,7 +292,8 @@ class PostFormat(unittest.TestCase):
                 dst.write(src.read().replace("{{PROJECT}}", "Demo").replace("{{TALK}}", "English"))
             rel, made = self.kit._write_step_prompt("pl9-agy", {"part": "PL9", "title": "agy step", "train": "planner", "body": "do it"}, [], cli="agy")
             self.assertTrue(made)
-            ptxt = rd(os.path.join(root, rel))
+            ptxt = "\n".join(self.kit.part_prompt("pl9-agy", {"part": "PL9", "title": "agy step", "train": "planner"}, cli="agy"))
+            self.assertIn("do it", ptxt)
             self.assertIn("conversationId", ptxt)
             self.assertIn("send_message", ptxt)
             self.assertIn("device.py run", ptxt)
@@ -401,9 +402,8 @@ class TaskTrainHook(unittest.TestCase):
         prompt = rd(os.path.join(self.proj, "docs", "prompts", "pl4-fit-the-model.md"))
         self.assertIn("Demo, part PL4: fit the model. Train `planner`, after `PL2`.", prompt)
         self.assertIn("## The task\nfit it", prompt)
-        self.assertIn("kit.py train planner --zoom PL4", prompt)
-        self.assertIn("kit.py done pl4-fit-the-model", prompt)
-        self.assertIn('kit.py form pl4-fit-the-model --doing', prompt)             # CL38: form writes the real session (kit.py whoami)
+        self.assertNotIn("## How you work", prompt)                                # the kit's, printed by resume, never copied in git
+        self.assertIn("kit.py resume --role part --post pl4-fit-the-model", prompt)
         self.assertNotIn("<", prompt.replace("<one line", "").replace("<you>", "").replace("<answer>", "").replace("<fill...>", ""))
         p = self.post("pl4-fit-the-model")
         self.assertEqual((p["title"], p["part"], p["train"], p["status"], p["parent"], p["body"]),

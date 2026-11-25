@@ -4211,6 +4211,67 @@ def device_line(survey=None):
         return "Device: could not measure (%s)." % e
 
 
+def _launch_text(rel):
+    """A part's start message: the task is in git at `rel`, and one command prints it with how a part works here."""
+    return "Your prompt is %s: run `python3 -I .kit/kit.py resume --role part --post %s`, which prints it, and do it." % (rel, os.path.basename(rel)[:-3])
+
+
+def _part_template(cli=None):
+    """This platform's part prompt (.kit/part.md agy, .kit/claude-cli/part.md, .kit/claude-web/part.md an Artifact board worked
+    from the web): its text, or None."""
+    kit = os.path.join(ROOT, ".kit")
+    mine, web = os.path.join(kit, "part.md"), os.path.join(kit, "claude-web", "part.md")
+    local = os.path.join(kit, "claude-cli", "part.md")
+    cands = (mine, local) if _active_cli(cli) == "agy" else (local, mine)
+    for cand in (web,) + cands if _launcher() == "web" else cands + (web,):
+        if os.path.isfile(cand):
+            with open(cand, encoding="utf-8") as fh:
+                return fh.read()
+    return None
+
+
+HOW_HEAD = "## How you work"
+
+
+def _fill_part(tpl, pid, doc):
+    c = _kit_config()
+    orch_doc = _get_post("_orchestrator") or {}
+    sources = _as_list(doc.get("sources"))
+    src = ("\n".join("- comment `%s`: read it with `python3 -I .kit/board_cli.py get comments %s --out-dir /tmp/src`" % (x, x)
+                      for x in sources) if sources else
+           "(none named: the task is the orchestrator's; ask under your post if it is unclear)")
+    # a source is the owner's comment or a review's (a redirect becomes a step that answers it)
+    vals = {"<PART>": str(doc.get("part") or pid), "<TITLE>": str(doc.get("title") or pid), "<TRAIN>": str(doc.get("train") or ""), "<POST_ID>": pid,
+            "<AFTER>": (", after `%s`" % doc["parent"]) if doc.get("parent") else "",
+            "<TASK>": str(doc.get("task") or doc.get("body") or "").strip() or str(doc.get("title") or pid), "<SOURCES>": src,
+            "<ORCH_ID>": str(orch_doc.get("session_id") or "<orchestrator conversationId>"),
+            # CL38: the session_id a part writes is its real session (a web part: `session_<id>`), worked out by the
+            # part's own shell at turn 1; the `<project>-<part>` name only where no session id exists (O54/O55)
+            "<SESSION>": "'\"$(python3 -I .kit/kit.py whoami %s-%s)\"'" % (_slug(c.get("project") or "project"), _slug(str(doc.get("part") or pid), 24))}
+    for kk, vv in vals.items():
+        tpl = tpl.replace(kk, vv)
+    return tpl
+
+
+def part_prompt(pid, p, cli=None):
+    """What a part starts from: its task (docs/prompts/<pid>.md, in git) and how a part works on this platform (the kit's, never
+    copied into the file). A file from before 2026-11-25 holds both."""
+    rel = "docs/prompts/%s.md" % pid
+    path, tpl = os.path.join(ROOT, rel), _part_template(cli)
+    task = ""
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as fh:
+            task = fh.read().strip()
+        # the task in git, without the line that sends a reader of the file here
+        task = re.sub(r"(?m)^Run `python3 -I \.kit/kit\.py resume --role part[^\n]*\n+", "", task)
+    elif p.get("task"):
+        task = "## The task\n%s" % str(p["task"]).strip()
+    out = [task or "(`%s` is NOT in this clone and the post holds no task: fetch its branch)" % rel]
+    if tpl and HOW_HEAD in tpl and HOW_HEAD not in task:
+        out += ["", _fill_part(HOW_HEAD + tpl.split(HOW_HEAD, 1)[1], pid, p).strip()]
+    return out
+
+
 def _launch_line(part, rel, model=None, cli=None, post=None):
     c = _kit_config()
     k = c.get("kit") or {}
@@ -4220,54 +4281,31 @@ def _launch_line(part, rel, model=None, cli=None, post=None):
     if active == "agy":
         agy_model = str(model or ((k.get("roles") or {}).get("part") or {}).get("model") or "inherit")
         return ('invoke_subagent(TypeName="self", Role="Part: %s", Model="%s", Workspace="share", '
-                'Prompt="Your prompt is %s: read it and do it.")') % (part, agy_model, rel)
+                'Prompt="%s")') % (part, agy_model, _launch_text(rel))
     model = str(model or ((k.get("claude_cli_roles") or {}).get("part") or {}).get("model") or "inherit")
     post = post or (os.path.basename(rel)[:-3] if rel and rel.endswith(".md") else None)
     if post:   # CL13: one launch command writes the post and the Trains row, then starts the part (CLI or web)
         return "python3 -I .kit/kit.py launch %s%s" % (post, (" --model %s" % model) if model != "inherit" else "")
     gate = "python3 -I .kit/device.py --gate && " if _device() is not None else ""
-    return "%sKIT_ROLE=part claude --bg -n %s -w %s --permission-mode %s%s \"Your prompt is %s: read it and do it.\"" % (
-        gate, name, _slug(part, 24), mode, (" --model %s" % model) if model != "inherit" else "", rel)
+    return "%sKIT_ROLE=part claude --bg -n %s -w %s --permission-mode %s%s \"%s\"" % (
+        gate, name, _slug(part, 24), mode, (" --model %s" % model) if model != "inherit" else "", _launch_text(rel).replace("`", "\\`"))
 
 
 def _write_step_prompt(pid, doc, sources, cli=None):
-    """docs/prompts/<pid>.md from this platform's part prompt (.kit/part.md agy, .kit/claude-cli/part.md, .kit/claude-web/part.md
-    an Artifact board worked from the web); never overwrites one that exists."""
+    """docs/prompts/<pid>.md: the step's task and his words, in git; how a part works is the kit's (part_prompt prints it). Never
+    overwrites one that exists."""
     rel = "docs/prompts/%s.md" % pid
     path = os.path.join(ROOT, rel)
     if os.path.exists(path):
         return rel, False
-    active = _active_cli(cli)
-    if active == "agy":
-        cands = (os.path.join(ROOT, ".kit", "part.md"), os.path.join(ROOT, ".kit", "claude-cli", "part.md"))
-    else:
-        cands = (os.path.join(ROOT, ".kit", "claude-cli", "part.md"), os.path.join(ROOT, ".kit", "part.md"))
-    web = os.path.join(ROOT, ".kit", "claude-web", "part.md")
-    cands = (web,) + cands if _launcher() == "web" else cands + (web,)
-    tpl = None
-    for cand in cands:
-        if os.path.isfile(cand):
-            with open(cand, encoding="utf-8") as fh:
-                tpl = fh.read()
-            break
+    tpl = _part_template(cli)
     if tpl is None:
         return None, False
-    c = _kit_config()
-    src = ("\n".join("- comment `%s`: read it with `python3 -I .kit/board_cli.py get comments %s --out-dir /tmp/src`" % (x, x)
-                      for x in sources) if sources else
-           "(none named: the task is the orchestrator's; ask under your post if it is unclear)")
-    orch_doc = _get_post("_orchestrator") or {}
-    orch_id = str(orch_doc.get("session_id") or "<orchestrator conversationId>")
-    # a source is the owner's comment or a review's (a redirect becomes a step that answers it)
-    vals = {"<PART>": doc["part"], "<TITLE>": doc["title"], "<TRAIN>": doc["train"], "<POST_ID>": pid,
-            "<AFTER>": (", after `%s`" % doc["parent"]) if doc.get("parent") else "",
-            "<TASK>": (doc.get("body") or "").strip() or doc["title"], "<SOURCES>": src,
-            "<ORCH_ID>": orch_id,
-            # CL38: the session_id a part writes is its real session (a web part: `session_<id>`), worked out by the
-            # part's own shell at turn 1; the `<project>-<part>` name only where no session id exists (O54/O55)
-            "<SESSION>": "'\"$(python3 -I .kit/kit.py whoami %s-%s)\"'" % (_slug(c.get("project") or "project"), _slug(doc["part"], 24))}
-    for kk, vv in vals.items():
-        tpl = tpl.replace(kk, vv)
+    head, sep, _ = tpl.partition(HOW_HEAD)
+    if sep:
+        first, _, rest = head.partition("\n")
+        head = "%s\n\nRun `python3 -I .kit/kit.py resume --role part --post <POST_ID>`: it prints this and how a part works here.\n%s" % (first, rest)
+    tpl = _fill_part(head.rstrip() + "\n", pid, dict(doc, sources=list(sources)))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(tpl)
@@ -4326,7 +4364,7 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
     while pid in posts:
         pid = "%s-%d" % (base, n)
         n += 1
-    doc = {"title": title, "part": part, "train": train, "column": "info", "status": "planned", "body": task or "",
+    doc = {"title": title, "part": part, "train": train, "column": "info", "status": "planned", "body": task or "", "task": task or "",
            "from": "orchestrator", "planned_by": "orchestrator", "created_at": _now_z()}
     if parent:
         doc["parent"] = parent
@@ -4570,8 +4608,8 @@ def _read_text(path):
 def _inline_prompt(text, rel, body):
     """CL40: the create_session prompt that carries the prompt's full text (the board could not be pushed): the new
     session commits it to `rel` on its branch first, so the step still starts from git."""
-    head = "Your prompt is %s: read it and do it." % rel
-    rest = text[len(head):].strip() if text.startswith(head) else ""
+    m = re.match(r"Your prompt is %s: .*?do it\.\s*" % re.escape(rel), text)
+    rest = text[m.end():].strip() if m else ""
     return ("Your prompt follows; first commit it to %s on your branch (it could not be pushed to the board), then read "
             "it and do it.%s\n\n<prompt path=\"%s\">\n%s\n</prompt>" % (rel, (" " + rest) if rest else "", rel, body.rstrip()))
 
@@ -4800,7 +4838,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
     out = {"ok": True, "post": pid, "part": part, "branch": branch, "web": web, "prompt": rel}
     base = _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "HEAD"
-    text = "Your prompt is %s: read it and do it." % rel
+    text = _launch_text(rel)
     me, people = _my_person(url, token)
     if not session_id and not take:
         held = step_holder(pid, post, me=me, people=people, alive=_alive_sessions(), saved=_saved_mins(branch))
@@ -6476,6 +6514,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
     elif role == "part":
         pid = _my_post(posts, post)
         if not pid:
+            if post and os.path.isfile(os.path.join(ROOT, "docs", "prompts", post + ".md")):
+                return "\n".join(part_prompt(post, {})) + ("\n\n## The board here\nno post `%s` on it: load it (above), or `python3 -I "
+                                                          ".kit/web_takeover.py` where none runs; then this command again\n" % post)
             return ("No post found for this session: `kit.py resume --role part --post <your post id>` (your prompt names "
                     "it), or KIT_POST=<id>.\n")
         p = posts[pid]
@@ -6484,14 +6525,13 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         out += ["# Resume: part %s (post `%s`)" % (p.get("part") or pid, pid),
                 "%s · train `%s` · status %s%s" % (p.get("title") or pid, p.get("train") or "?", p.get("status") or "?",
                                                     (" · board %s" % p["_board"]) if p.get("_board") else ""),
-                "", "## Your prompt", "`%s`%s: the owner's words in it are the task. You started from it: read it again only if it is not in your context." % (
-                    rel, "" if os.path.isfile(os.path.join(ROOT, rel)) else " (NOT in this clone: fetch its branch)"),
-                "", "## Your post now"]
+                ""] + part_prompt(pid, p) + ["", "## Your post now"]
         for k in ("verdict", "bars", "check", "handoff"):
             if p.get(k):
                 out.append("- %s: %s" % (k, "; ".join(map(str, _as_list(p[k])))[:400]))
         if len(out) and out[-1] == "## Your post now":
-            out.append("- (nothing yet: at turn 1 set session_id, status in progress and a one-line body)")
+            out.append("- (nothing yet)")
+        out.append("- your Done goes to the orchestrator, `%s`" % ((posts.get("_orchestrator") or {}).get("session_id") or "named by no post yet"))
         out += held_lines(pid, p, session or whoami())
         out += continues_lines(p, session or whoami())
         out += owner_lines() + autonomy_lines()
@@ -6519,14 +6559,8 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                        "path with `/` written `+2F~`), else ask under your post." % (
                            ("your change touches " + ", ".join(areas)) if areas else "nothing of compact/install/resume/hooks/artifact touched yet",
                            "/".join(REAL_PROJECT_AREAS), ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"))
-        orch = (posts.get("_orchestrator") or {}).get("session_id") or "the orchestrator"
-        out += ["", "## How you report Done",
-                "0. Your result lives in your post body: the text under `##` sections, pictures as `![what](path.png)`, "
-                "diagrams as ```mermaid or ```svg blocks (the page draws them); never a `docs/*.md` file for your text "
-                "(`done` refuses a body made of its section embeds; CL36).",
-                "1. `python3 -I .kit/kit.py form %s` gives the post as a file, half filled: fill it; `python3 -I .kit/kit.py done %s` sends it and says OK." % (pid, pid),
-                "2. Commit, push your branch; `python3 -I .kit/end_session.py`%s." % (" (the trunk takes it after its review)" if lands_after_review() else ""),
-                "3. SendMessage %s: `Done. Check post %s.`" % (orch, pid)]
+        if lands_after_review():
+            out += ["", "## When you are done", "- your branch reaches the trunk after its review: `end_session.py` pushes it, never onto the trunk"]
     elif role == "clerk":
         orch = (posts.get("_orchestrator") or {}).get("session_id") or "(none on _orchestrator)"
         out += ["# Resume: the clerk (comment routing only)", "",
@@ -6990,6 +7024,9 @@ def main(argv=None):
     if a.cmd in STALE_GATED and not getattr(a, "db", None):   # --db: a named database, not the Artifact's copy
         why = stale_copy()
         if why:
+            if a.cmd == "resume" and getattr(a, "role", "") == "part" and getattr(a, "post", None):
+                # a part starts before its board is loaded here: its task is in git, and how to load the board is in how it works
+                print("\n".join(part_prompt(a.post, {})) + "\n\n## The board here")
             print(why)
             return 3
     if a.cmd == "init":
