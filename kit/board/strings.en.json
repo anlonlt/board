@@ -188,6 +188,18 @@
   "kind": "js"
  },
  {
+  "en": "You",
+  "kind": "js"
+ },
+ {
+  "en": "Owner",
+  "kind": "js"
+ },
+ {
+  "en": "Viewer",
+  "kind": "js"
+ },
+ {
   "en": "Orchestrator changes",
   "kind": "js"
  },
@@ -405,10 +417,6 @@
  },
  {
   "en": "Unanswered for more than 24 hours",
-  "kind": "js"
- },
- {
-  "en": "You",
   "kind": "js"
  },
  {
