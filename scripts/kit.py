@@ -4511,7 +4511,7 @@ def _resume_extras(posts, comments, now=None, days=3, limit=12, session=None):
     since_t = now - timedelta(days=days)
     his = []
     for c in comments.values():
-        if not isinstance(c, dict) or c.get("from") not in (owner, "viewer") or not c.get("created_at"):
+        if not isinstance(c, dict) or c.get("from") != owner or not c.get("created_at"):
             continue
         try:
             if iso(c["created_at"]) < since_t:

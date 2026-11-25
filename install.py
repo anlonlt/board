@@ -1096,6 +1096,7 @@ def main(argv=None):
         ins.put(".kit/board_server.py", rd("kit", "board", "board_server.py"))   # also the Artifact mode's local copy
         ins.put(".kit/shim.js", rd("kit", "board", "shim.js"))
         ins.put(".kit/board_cli.py", rd("kit", "board", "board_cli.py"))
+        ins.put(".kit/access.py", rd("kit", "board", "access.py"))     # board_server.py: who may do what, every route
         ins.put(".kit/board_token.py", rd("kit", "board", "board_token.py"))
         if not claude_only:
             for _vf in ("pdf.min.js", "pdf.worker.min.js"):

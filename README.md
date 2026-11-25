@@ -73,7 +73,7 @@ Chat windows break down as soon as a real project lasts more than a day — even
 - **Automatic handovers & independent reviews:** orchestrators and clerks hand over before context ceilings, and a fresh **consultant** verifies route-setting milestones before you commit to the next phase.
 
 ### 4. Share Safely with People & Other AIs
-- **Board-scoped collaborators:** invite teammates (`viewer`, `member`, or `owner`) scoped to a specific board in multi-project portfolios, each with their own private Ask-the-Orchestrator channel.
+- **Board-scoped collaborators:** invite teammates (`viewer`, `member`, or `owner`) scoped to a specific board in multi-project portfolios, each with their own private Ask-the-Orchestrator channel. The local board enforces it on every route (`kit/board/access.py`, deny by default): a link gives its own rights, a member writes as themself (the board signs it) and changes their own posts and the state of posts that are `for` them, only the owner (or the person a question is for) answers, only a proof completes a step, and every change is logged with who made it. Agents are told when words are a collaborator's, not the owner's. **An Artifact has none of this:** anyone claude.ai lets edit it can write anything there, so share it to edit only with people you would give the owner's rights; others get "can view".
 - **1-link AI bootstrap & Link for AI:** hand any external AI a 24 h expiring share link (`/_share/<token>`), a collaborator bootstrap brief (`/_invite/<token>.md`), or a self-contained post brief on Artifacts.
 
 ---
