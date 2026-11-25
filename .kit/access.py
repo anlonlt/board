@@ -127,7 +127,7 @@ class View:
             return private_channel(pid) and pid != self.mine
         if coll.startswith("data/users/"):
             return coll.split("/")[2] != self.uid
-        return coll != "typing"
+        return coll not in ("typing", "activity")
 
     def _out(self, coll, doc_id, data):
         if coll == "posts" and doc_id == self.mine:

@@ -67,6 +67,8 @@ button:focus-visible, textarea:focus-visible, .card:focus-visible, img:focus-vis
 .card:hover { border-color: var(--c); }
 .card .t { font-weight: 700; font-size: 1rem; overflow-wrap: anywhere; }
 .card .first { color: var(--muted); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kit-now { display: block; color: var(--muted); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kit-now[hidden] { display: none; }
 .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: .78rem; font-variant-numeric: tabular-nums; }
 .part { font-family: var(--mono); font-size: .75rem; background: var(--sunk); border-radius: 4px; padding: 1px 6px; color: var(--ink); }
 .badge { font-size: .75rem; border-radius: 4px; padding: 1px 6px; background: var(--sunk); }
@@ -1682,6 +1684,31 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     box.textContent = ""; box.hidden = !t.length;
     if (t.length) box.appendChild(dotsNode(t.map(function (x) { return str(x.from) || "A session"; }).join(", ") + " is writing an answer"));
   }
+  /* What a running step's session is doing now: activity/<post> {at, actions, what, state, pieces}, written by the part's own hook
+     (kit_activity.py, no model call) at most every 15 s. Painted in place, so an open fold stays open. */
+  state.activity = {};
+  function isRunning(p) { return /progress|running/i.test(str(p.status)) && str(p.column) !== "done"; }
+  function actFor(p) { var a = p && state.activity[p.id]; return a && isRunning(p) ? a : null; }
+  function actText(a) {
+    if (!a) return "";
+    var at = Date.parse(str(a.at)); if (isNaN(at)) return "";
+    var min = Math.max(0, Math.round((Date.now() - at) / 60000)), n = Number(a.actions) || 0;
+    var acts = n + (n === 1 ? " action" : " actions"), what = str(a.what);
+    if (a.state === "stopped") return "Stopped " + (min < 1 ? "just now" : min + " min ago") + " · " + acts;
+    if (min < 3) return (what || "Working") + " · " + acts;
+    return "Quiet for " + min + " min · last: " + (what || "an action") + " · " + acts;
+  }
+  function actNode(p) { var e = el("span", "kit-now"); e.setAttribute("data-act", p.id); e.setAttribute("role", "status"); paintAct(e); return e; }
+  function paintAct(e) {
+    var p = postById(e.getAttribute("data-act"));
+    var t = actText(actFor(p)); e.textContent = t; e.hidden = !t;
+  }
+  function paintActs() { Array.prototype.forEach.call(document.getElementsByClassName("kit-now"), paintAct); }
+  function pieceNow(p, x, i) {
+    var a = actFor(p); if (!a || !Array.isArray(a.pieces) || x.status === "done" || x.status === "dropped") return false;
+    return a.pieces.indexOf(Number(x.n) || i + 1) >= 0;
+  }
+  setInterval(function () { if (Object.keys(state.activity).length) paintActs(); }, 30000);
   setInterval(function () {
     var any = Object.keys(state.typing).length || (state.special._typing && Object.keys(state.special._typing).length);
     if (any && !state.picking) { later("board"); if (state.openId) later("typing"); }
@@ -2342,6 +2369,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     b.appendChild(m);
     var f = firstLine(p.body);
     if (f) b.appendChild(el("span", "first", f));
+    if (isRunning(p)) b.appendChild(actNode(p));
     if (state.picking) {
       b.tabIndex = 0;
       b.className += " pick" + (state.picked[p.id] ? " on" : "");
@@ -3701,6 +3729,12 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
         }, function () {});
       } catch (e) { seenDoc = null; }
     }
+    liveQuery(function () { return db.collection("activity"); }, function (snap) {
+      var t = {}, moved = false;
+      snap.docs.forEach(function (d) { var o = d.data(); if (o) t[d.id] = o; });
+      Object.keys(t).forEach(function (k) { if (JSON.stringify((state.activity[k] || {}).pieces || []) !== JSON.stringify(t[k].pieces || [])) moved = true; });
+      state.activity = t; paintActs(); if (moved) later("board");
+    });
     liveQuery(function () { return db.collection("typing"); }, function (snap) {
       var t = {}; snap.docs.forEach(function (d) { var o = d.data(); if (o) t[d.id] = o; });
       state.typing = t; later("board"); later("typing");
@@ -4237,6 +4271,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
             var verdictTxt = str(p.verdict) || ((pieces.length ? piecesDone + " of " + piecesAll + " · " : "") + (firstLine(p.body) || "No summary yet."));
             var vDiv = document.createElement("div"); vDiv.className = "kit-tl-verdict"; vDiv.textContent = verdictTxt;
             item.appendChild(vDiv);
+            if (isRunning(p)) item.appendChild(actNode(p));
 
             /* Unfolds on hover (desktop) or tap (mobile) to reveal all 5 sections */
             var fold = document.createElement("div"); fold.className = "kit-tl-fold";
@@ -4286,9 +4321,9 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
             /* A part's own task list: the pieces of its step */
             if (pieces.length) {
               var pl = document.createElement("div");
-              pieces.forEach(function (x) {
+              pieces.forEach(function (x, i) {
                 var row = document.createElement("div");
-                row.textContent = (x.status === "done" ? "Done: " : x.status === "doing" ? "Now: " : x.status === "dropped" ? "Not needed: " : "Next: ") + str(x.title) + (x.status === "dropped" && str(x.why) ? " (" + str(x.why) + ")" : "");
+                row.textContent = (x.status === "done" ? "Done: " : x.status === "doing" || pieceNow(p, x, i) ? "Now: " : x.status === "dropped" ? "Not needed: " : "Next: ") + str(x.title) + (x.status === "dropped" && str(x.why) ? " (" + str(x.why) + ")" : "");
                 pl.appendChild(row);
               });
               addSec("Pieces (" + piecesDone + " of " + piecesAll + ")", pl);

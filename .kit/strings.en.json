@@ -248,6 +248,22 @@
   "kind": "js"
  },
  {
+  "en": "Stopped ",
+  "kind": "js"
+ },
+ {
+  "en": "Working",
+  "kind": "js"
+ },
+ {
+  "en": "Quiet for ",
+  "kind": "js"
+ },
+ {
+  "en": " min · last: ",
+  "kind": "js"
+ },
+ {
   "en": "All roles",
   "kind": "js"
  },

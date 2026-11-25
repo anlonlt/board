@@ -3792,6 +3792,7 @@ def form(pid, doing="", db_path=None):
         prj = "%s-%s" % (_slug(_kit_config().get("project") or "project"), _slug(p.get("part") or pid, 24))
         ok = _board_write("update", "posts", pid, {"session_id": whoami(prj), "status": "in progress", "body": doing, "started_at": _now_z()})
         out.append("post: in progress, yours" if ok else "post: NOT updated (is the board server running?)")
+    pieces_file(pid, p)
     path, rel = form_path(pid), os.path.relpath(form_path(pid), ROOT)
     if os.path.isfile(path):
         return 0, "\n".join(out + ["%s exists: fill it, then `python3 -I .kit/kit.py done %s`" % (rel, pid)])
@@ -6459,13 +6460,15 @@ def task_pieces(text):
         return []
     out = []
     for n, t in rows:
+        line = t
         t = re.sub(r"\s+", " ", t.replace("**", "").replace("`", "")).strip()
         t = re.split(r"(?<=[^.\s]{3}[.:;])\s", t, maxsplit=1)[0].rstrip(" .:;") or t
         if len(t) > 100:
             t = t[:100].rsplit(" ", 1)[0] + "..."
         if any(t.lower() == x["title"].lower() for x in out):
             t = "%s (%s)" % (t, n)
-        out.append({"n": int(n), "title": t, "status": "open", "from": "task"})
+        files = sorted(set(re.findall(r"(?<![\w/.-])(?:(?:[\w.-]+/)+[\w-][\w.-]*|[\w-][\w.-]+)\.[A-Za-z]\w{0,5}\b", re.sub(r"https?://\S+", "", line))))
+        out.append(dict({"n": int(n), "title": t, "status": "open", "from": "task"}, **({"files": files[:6]} if files else {})))
     return out
 
 
@@ -6524,10 +6527,24 @@ def subtask(pid, title, status="open", was="", db_path=None, why="", known=False
     return {"post": pid, "done": sum(x["status"] == "done" for x in rows), "of": len([x for x in rows if x["status"] != "dropped"])}
 
 
+def pieces_file(pid, p):
+    """.kit/run/pieces/<post>.json: the files each piece names, for the activity hook (it shows the piece being worked on)."""
+    rows = [{"n": x["n"], "files": x["files"]} for x in pieces_of(p) if x.get("files")]
+    if rows:
+        try:
+            path = os.path.join(ROOT, ".kit", "run", "pieces", pid + ".json")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(rows, fh)
+        except OSError:
+            pass
+
+
 def subtask_lines(p, taking_over=False):
     rows = pieces_of(p)
     if not rows:
         return []
+    pieces_file(str(p.get("id") or ""), p)
     pid = p.get("id") or "<post>"
     n = [x["status"] for x in rows]
     mark = {"done": "x", "doing": "~", "dropped": "-"}

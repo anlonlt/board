@@ -8,6 +8,16 @@ def project_dir(data=None):
     if isinstance(data, dict):
         cwd = data.get("cwd")
         if cwd and os.path.isdir(cwd):
+            # the session's shell may have moved into a subfolder (`cd src`): the project is the folder above it that holds .kit
+            # (2026-11-25: a hook wrote src/.kit/run/..., and the part spent turns removing it)
+            cur = os.path.abspath(cwd)
+            for _ in range(8):
+                if os.path.isdir(os.path.join(cur, ".kit")) or os.path.exists(os.path.join(cur, ".git")):
+                    return cur
+                up = os.path.dirname(cur)
+                if up == cur:
+                    break
+                cur = up
             return cwd
         wps = data.get("workspacePaths") or []
         if wps and isinstance(wps[0], str) and os.path.isdir(wps[0]):

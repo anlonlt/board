@@ -5,6 +5,7 @@ Run via: python3 -m unittest tests.test_post_gate -v
 """
 import importlib.util
 import json
+import time
 import os
 import shutil
 import subprocess
@@ -292,6 +293,57 @@ class Live(unittest.TestCase):
         self.assertNotIn("pieces still open", self.run_("kit.py", "done", pid).stdout)
         self.run_("kit.py", "sub", pid, "One", "more")                                                   # a new one takes the next number
         self.assertEqual((self.get(pid)["subtasks"][3]["title"], rows()[3]), ("One more", (4, "open")))
+
+    def test_what_a_part_does_now_reaches_its_step_with_no_model_call(self):
+        task = "Maps.\n\n1. docs/a.md : the sky\n2. Write `docs/b.md`\n3. Check them"
+        pid = json.loads(self.run_("kit.py", "step", "new", "--train", "t", "--part", "M1", "--title", "maps", "--task", task).stdout.splitlines()[-1])["post"]
+        self.run_("kit.py", "form", pid)                                                          # turn 1: the files of its pieces, for the hook
+        self.assertEqual(json.loads((self.d / ".kit" / "run" / "pieces" / (pid + ".json")).read_text()), [{"n": 1, "files": ["docs/a.md"]}, {"n": 2, "files": ["docs/b.md"]}])
+        hook = str(ROOT / "kit" / "hooks" / "kit_activity.py")
+
+        def call(payload, role="part", post=pid):
+            env = dict(self.env, CLAUDE_PROJECT_DIR=str(self.d), KIT_ROLE=role, KIT_POST=post)
+            r = subprocess.run([sys.executable, "-I", hook], input=json.dumps(dict({"session_id": "s1", "cwd": str(self.d)}, **payload)),
+                               capture_output=True, text=True, env=env, cwd=str(self.d), timeout=30)
+            self.assertEqual((r.returncode, r.stdout), (0, ""), r.stderr)                         # nothing said, nothing refused
+
+        def seen(want):
+            for _ in range(50):
+                r = self.cli("get", "activity", pid)
+                d = json.loads(r.stdout).get("data") if r.returncode == 0 and r.stdout.strip() else None
+                if d and all(d.get(k) == v for k, v in want.items()):
+                    return d
+                time.sleep(0.2)
+            self.fail("activity/%s never became %r: %s" % (pid, want, d))
+
+        (self.d / "docs").mkdir()
+        time.sleep(0.05)
+        (self.d / "docs" / "b.md").write_text("b")                                               # written by a shell command
+        call({"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "cat > docs/b.md", "description": "Write the second map"}})
+        seen({"actions": 1, "what": "Write the second map", "state": "working", "pieces": [2]})
+        call({"hook_event_name": "PostToolUse", "tool_name": "Edit", "tool_input": {"file_path": str(self.d / "x.py")}})
+        time.sleep(1)
+        self.assertEqual(seen({"actions": 1})["what"], "Write the second map")                    # one write every 15 s at most
+        call({"hook_event_name": "PostToolUse", "tool_name": "Edit", "tool_input": {"file_path": str(self.d / "docs" / "a.md")}})
+        seen({"actions": 3, "what": "Editing a.md", "pieces": [1]})                                # a piece it moves to is said at once
+        (self.d / "src").mkdir()
+        call({"hook_event_name": "PostToolUse", "tool_name": "Bash", "cwd": str(self.d / "src"), "tool_input": {"command": "cat > docs/c.md <<'EOF'\nx\nEOF"}})
+        self.assertFalse((self.d / "src" / ".kit").exists())                                       # a shell gone into src/ is still this project
+        call({"hook_event_name": "Stop"})
+        seen({"state": "stopped", "actions": 4, "what": "Writing c.md"})                            # no description: plain words from the command
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("kit_activity", hook)
+        ka = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ka)
+        for cmd, said in (("TOKEN=s3cret curl -H 'Authorization: x' https://a", "Running curl"), ("cd src; for n in 1 2; do sed -n \"${n}p\" app.jsx; done", "Reading app.jsx"),
+                          ("python3 -I .kit/kit.py done m1", "Checking its result"), ("npm test", "Running the tests"), ("git log -3", "Checking git")):
+            self.assertEqual(ka.bash_words(cmd), said, cmd)
+        self.assertEqual([x["status"] for x in self.get(pid)["subtasks"]], ["open"] * 3)           # the part ticks a piece done, never the hook
+        call({"hook_event_name": "Stop", "session_id": "s2"}, role="review")
+        call({"hook_event_name": "Stop", "session_id": "s3"}, post="")
+        self.assertFalse((self.d / ".kit" / "run" / "activity" / "s2.json").exists())               # a review is not a part
+        docs = api_req(self.url, "db/activity", token=TOKEN, gate="").get("docs") or []
+        self.assertEqual([x["id"] for x in docs], [pid])                                           # nothing from the others
 
     def test_only_a_part_writes_pieces(self):
         self.put("posts", "w1", {"title": "w", "part": "W1", "train": "t", "column": "info", "status": "in progress", "body": "b"})
