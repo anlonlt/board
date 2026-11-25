@@ -123,7 +123,8 @@ class NewInstall(unittest.TestCase):
 
     def test_nothing_the_kit_builds_is_committed(self):
         d = self.install("cli")
-        for p in (".kit/__pycache__/x.pyc", ".kit/hooks/__pycache__/x.pyc", ".claude/hooks/kit/__pycache__/x.pyc", ".agents/hooks/kit/__pycache__/x.pyc"):
+        for p in (".kit/__pycache__/x.pyc", ".kit/hooks/__pycache__/x.pyc", ".claude/hooks/kit/__pycache__/x.pyc", ".agents/hooks/kit/__pycache__/x.pyc",
+                  ".claude/worktrees/p1/a.js"):
             (d / p).parent.mkdir(parents=True, exist_ok=True)
             (d / p).write_text("x")
         self.assertEqual(self.git("status", "--porcelain"), "")

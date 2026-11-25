@@ -1296,7 +1296,7 @@ def main(argv=None):
     cur = open(gi, encoding="utf-8").read() if os.path.exists(gi) else ""
     gi_add = [x for x in ("%s/before-compaction.md" % mdir, ".kit/board_data/", ".kit/handover.flag", ".kit/handover.log",
                                 ".kit/handover-*.gen", ".kit/run/", ".kit/**/__pycache__/", ".claude/hooks/kit/__pycache__/",
-                                ".agents/hooks/kit/__pycache__/") if x not in cur]
+                                ".agents/hooks/kit/__pycache__/", ".claude/worktrees/") if x not in cur]
     if gi_add:
         ins.log.append(".gitignore: + " + ", ".join(gi_add))
         if not a.dry_run:

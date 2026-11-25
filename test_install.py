@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory() as d:
           and "KEPT" in out)
     page = open(os.path.join(t, ".kit", "board.html"), encoding="utf-8").read()
     check("page: the project's name, no Harmonize, no placeholder", "Tide Clock board" in page and "armoniz" not in page and "{{" not in page)
-    check(".gitignore appended, not replaced", open(os.path.join(t, ".gitignore")).read() == "build/\n.board/memory/before-compaction.md\n.kit/board_data/\n.kit/handover.flag\n.kit/handover.log\n.kit/handover-*.gen\n.kit/run/\n.kit/**/__pycache__/\n.claude/hooks/kit/__pycache__/\n.agents/hooks/kit/__pycache__/\n")
+    check(".gitignore appended, not replaced", open(os.path.join(t, ".gitignore")).read() == "build/\n.board/memory/before-compaction.md\n.kit/board_data/\n.kit/handover.flag\n.kit/handover.log\n.kit/handover-*.gen\n.kit/run/\n.kit/**/__pycache__/\n.claude/hooks/kit/__pycache__/\n.agents/hooks/kit/__pycache__/\n.claude/worktrees/\n")
     rc, out = inst(t)
     check("a rerun changes nothing", rc == 0 and "nothing to change" in out)
     open(os.path.join(t, ".kit", "BOARD.md"), "a").write("my note\n")
