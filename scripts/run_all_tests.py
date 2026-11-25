@@ -89,11 +89,28 @@ def bin_changes(before, after):
     return sorted(n for n in set(before) | set(after) if before.get(n) != after.get(n))
 
 
+def used_names(node):
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
+
+
+def set_names(n):
+    """The names a top-level assignment or import sets; [] when it sets something else (a[0], x.y)."""
+    if isinstance(n, (ast.Import, ast.ImportFrom)):
+        return [(a.asname or a.name).split(".")[0] for a in n.names if a.name != "*"]
+    out = []
+    for t in n.targets if isinstance(n, ast.Assign) else [n.target]:
+        e = list(t.elts) if isinstance(t, (ast.Tuple, ast.List)) else [t]
+        if not all(isinstance(x, ast.Name) for x in e):
+            return []
+        out += [x.id for x in e]
+    return out
+
+
 class Files:
     """The repo's files as they are now: contents hashed once, names looked up once."""
 
     def __init__(self, root=REPO_ROOT):
-        self.root, self._h, self._p, self._names = root, {}, {}, None
+        self.root, self._h, self._p, self._words, self._names = root, {}, {}, {}, None
 
     def touched(self, names, since):
         """True when one of these was written after `since`: what the suite saw is not known."""
@@ -127,9 +144,10 @@ class Files:
         return self._h[rel]
 
     def parts(self, rel):
-        """{"": the file without its functions, "f": function f, "C.m": a method}, hashed; {} when it does not parse."""
+        """{"": the file without its functions and names, "f": function f, "C.m": a method, "=X": the name X its top level
+        sets or imports}, hashed; {} when it does not parse. self._words[rel]: the words each of them uses."""
         if rel not in self._p:
-            out = {}
+            out, words = {}, {}
             try:
                 with open(os.path.join(self.root, rel), encoding="utf-8") as fh:
                     text = fh.read()
@@ -142,11 +160,20 @@ class Files:
                             b = n.end_lineno
                             first = min([n.lineno] + [d.lineno for d in n.decorator_list])
                             q = pre + n.name
+                            words.setdefault(q, set()).update(used_names(n))
                             out[q] = out.get(q, "") + "".join(lines[first - 1:b])
                             cut.append((first, b))
                         elif isinstance(n, ast.ClassDef):
                             out.setdefault(pre + n.name, "class")           # its body but for its methods is in the top level
                             walk(n.body, pre + n.name + ".")
+                        elif not pre and n in tree.body and isinstance(n, (ast.Assign, ast.AnnAssign, ast.Import, ast.ImportFrom)):
+                            for x in set_names(n):
+                                out["=" + x] = out.get("=" + x, "") + (
+                                    "".join(lines[n.lineno - 1:n.end_lineno]) if not isinstance(n, (ast.Import, ast.ImportFrom)) else
+                                    " ".join([getattr(n, "module", None) or ""] + [al.name for al in n.names if (al.asname or al.name).split(".")[0] == x]))
+                                words.setdefault("=" + x, set()).update(used_names(n) - {x})
+                            if set_names(n):
+                                cut.append((n.lineno, n.end_lineno))
                         else:
                             for k in ("body", "orelse", "finalbody"):
                                 walk([x for x in getattr(n, k, []) if isinstance(x, ast.stmt)], pre)
@@ -158,8 +185,26 @@ class Files:
                 out = {k: hashlib.sha1(v.encode()).hexdigest() for k, v in out.items()}
             except (OSError, ValueError, SyntaxError):
                 out = {}
-            self._p[rel] = out
+            self._p[rel], self._words[rel] = out, words
         return self._p[rel]
+
+    def words(self, rel, name):
+        """The names this part of a file uses, and those its own top-level names are made of."""
+        self.parts(rel)
+        w, got, todo = self._words[rel], set(), [name]
+        while todo:
+            for x in w.get(todo.pop(), ()):
+                if x not in got:
+                    got.add(x)
+                    todo.append("=" + x)
+        return got
+
+    def text_words(self, rel):
+        try:
+            with open(os.path.join(self.root, rel), encoding="utf-8") as fh:
+                return set(re.findall(r"[A-Za-z_]\w*", fh.read()))
+        except (OSError, UnicodeDecodeError):
+            return set()
 
     def part(self, rel, name):
         """A function's hash; the whole file's when it has no such function now, or does not parse."""
@@ -257,9 +302,19 @@ def read_trace(path, files, name=""):
 def stamps(deps, files):
     """{what: its hash now} for everything a pass rests on."""
     out = {f: files.hash(f) for f in deps["files"]}
+    # a top-level name counts for a suite whose code that ran, or whose own text, uses it
+    words = set()
     for f, names in deps.get("fns", {}).items():
         for n in names:
             out["%s %s" % (f, n + "()" if n else "top level")] = files.part(f, n)
+            words |= files.words(f, n)
+    for f in deps["files"]:
+        if f.endswith((".py", ".js")) and os.path.basename(f).startswith("test"):
+            words |= files.text_words(f)
+    for f in deps.get("fns", {}):
+        for x in files.parts(f):
+            if x[:1] == "=" and (x[1:] in words or x[1:].startswith("__")):
+                out["%s %s" % (f, x[1:])] = files.parts(f)[x]
     for d in deps["lists"]:
         out["names in " + d] = hashlib.sha1(" ".join(files.names(d)).encode()).hexdigest()
     out["python"] = sys.version

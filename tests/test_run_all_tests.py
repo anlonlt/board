@@ -23,7 +23,12 @@ class Runner(unittest.TestCase):
         for f in ("run_all_tests.py", "test_trace.py"):
             self.write("scripts/" + f, (ROOT / "scripts" / f).read_text(encoding="utf-8"))
         self.write("kit/mod.py", """\
-            LIMIT = 3
+            import os
+            BASE = 3
+            LIMIT = BASE + 0
+            PEEK = 7
+            if BASE > 2:
+                pass
 
 
             def one():
@@ -31,6 +36,7 @@ class Runner(unittest.TestCase):
 
 
             def two():
+                LIMIT
                 return 2
 
 
@@ -49,7 +55,7 @@ class Runner(unittest.TestCase):
             """)
         self.write("kit/note.md", "words\n")
         self.suite("one", "import mod; self.assertEqual(mod.one(), 1)")
-        self.suite("m", "import mod; self.assertEqual(mod.C().m(), 3)")
+        self.suite("m", "import mod; self.assertEqual(mod.C().m() + mod.PEEK, 10)")
         # a child, isolated, with a clean environment
         self.suite("child", "r = subprocess.run([sys.executable, '-I', K + '/cli.py', 'two'], capture_output=True, text=True, env={}); "
                             "self.assertEqual(r.stdout.strip(), '2', r.stderr)")
@@ -96,9 +102,11 @@ class Runner(unittest.TestCase):
         for rel, a, b, want in (("kit/mod.py", "return 1", "return 2 - 1", {"one", "copy"}), ("kit/mod.py", "return 2\n", "return 1 + 1\n", {"child"}),
                                 ("kit/mod.py", "return 3", "return 2 + 1", {"m"}), ("kit/mod.py", "return 4", "return 5", set()),
                                 ("kit/mod.py", "class C:", "def new():\n    return 0\n\n\n# words\nclass C:", set()),
-                                ("kit/mod.py", "LIMIT = 3", "LIMIT = 4", {"one", "m", "child", "copy"}),
+                                ("kit/mod.py", "LIMIT = BASE + 0", "LIMIT = BASE + 1", {"child"}), ("kit/mod.py", "BASE = 3", "BASE = 4", {"child"}),
+                                ("kit/mod.py", "PEEK = 7", "PEEK = 6 + 1", {"m"}), ("kit/mod.py", "PEEK = 7", "PEEK = 7\nNEW = 1", set()),
+                                ("kit/mod.py", "import os", "import os, re", set()), ("kit/mod.py", "    pass", "    print()", {"one", "m", "child", "copy"}),
                                 ("kit/cli.py", "print(", "print( ", {"child"}), ("kit/note.md", "words", "other words", {"note"}),
-                                ("tests/test_m.py", "3)", "4 - 1)", {"m"}), ("kit/mod.py", "def two():", "def zwei():", {"child"}),
+                                ("tests/test_m.py", "10)", "11 - 1)", {"m"}), ("kit/mod.py", "def two():", "def zwei():", {"child"}),
                                 ("kit/mod.py", "class C:", "class C(:", {"one", "m", "child", "copy"})):
             p = self.d / rel
             was = p.read_text(encoding="utf-8")
