@@ -20,6 +20,7 @@ The kit's suite passed CL29's compact while Harmonize's story checker went red. 
 
 ## K3: Reuse the kit's commands before writing code
 roles: part
+files: kit/*, .kit/*, scripts/kit.py, install.py, *board*.py, *artifact*.py, *mirror*.py
 from: CL28
 `kit.py commands <word>` for each thing the task touches; CL28 rebuilt what `resume` and `artifact load` already did.
 

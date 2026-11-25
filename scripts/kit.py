@@ -5492,7 +5492,9 @@ def adopt_text(r):
 # ---------------------------------------------------------------- the command index (CL28)
 # The owner, 2026-11-23: "Why are all the sessions skipping the kit's scripts???" A session asked to build something
 # wrote new code before looking for the kit's own command (CL28 itself: a brief that repeated resume, an adoption that
-# bypassed artifact load). `kit.py commands [word]` is the index a session reads BEFORE it writes any code; a test
+# bypassed artifact load). `kit.py commands <word>` is the index; it comes to a session when it edits the kit's own files
+# (lesson K3, resume and kit_memory_jit.py), never to every part (2026-11-25: six of six read 6,600 characters of it for
+# a script that had nothing to do with the kit); a test
 # keeps every kit.py command in it, so it cannot go stale.
 COMMANDS = [
     # (need, command, what it does)
@@ -5548,13 +5550,17 @@ COMMANDS = [
     ("setup", "kit_import.py / step0_scan.py", "a person's state from their chats / a project's step 0 profile"),
     ("measure", "kit.py usage compare --before <kit commit|date> --after <...> [--role part|orchestrator|clerk|review]", "tokens, cost, turns, tool calls, board bytes per role, median and total with n, before vs after a kit change (CL37)"),
     ("measure", "kit.py usage record|show|push|import-ccr", "one session's usage row from its transcript (the Stop/SessionEnd hook does it, no model call) / the rows / onto the ledger branch kit-usage / rows from saved get_session records"),
-    ("index", "kit.py commands [word]", "this list"),
+    ("index", "kit.py commands [word|all]", "the topics / the commands a word finds / every one"),
 ]
 
 
 def commands_text(word=None):
+    if not word:                                              # the topics; a word (or `all`) gives the commands
+        topics = list(dict.fromkeys(n for n, _, _ in COMMANDS))
+        return "# The kit's commands: `python3 -I .kit/kit.py commands <word>` (or `all`)\nTopics: %s\n" % ", ".join(topics)
+    word = None if word == "all" else word
     rows = [r for r in COMMANDS if not word or word.lower() in " ".join(r).lower()]
-    out = ["# The kit's commands (python3 -I .kit/<script>; read this before writing any code: reuse, never rebuild)"]
+    out = ["# The kit's commands (python3 -I .kit/<script>; reuse, never rebuild)"]
     need = None
     for n, cmd, what in rows:
         if n != need:
@@ -5562,7 +5568,7 @@ def commands_text(word=None):
             need = n
         out.append("- `%s`: %s" % (cmd, what))
     if not rows:
-        out.append("nothing matches %r: `kit.py commands` lists all" % word)
+        out.append("nothing matches %r: `kit.py commands all` lists them" % word)
     return "\n".join(out) + "\n"
 
 # ---------------------------------------------------------------- attached boards (cross-repo, kit_repos/_index)
@@ -6926,7 +6932,7 @@ def main(argv=None):
     s.add_argument("action", choices=["add"]); s.add_argument("id"); s.add_argument("--roles", required=True)
     s.add_argument("--title", required=True); s.add_argument("--text", required=True)
     s.add_argument("--files", default=""); s.add_argument("--from", dest="frm", default="")
-    s = sp.add_parser("commands", help="the index of the kit's commands: read it before writing any code")
+    s = sp.add_parser("commands", help="the kit's commands: the topics, or those a word finds (`all`)")
     s.add_argument("word", nargs="?", default=None)
     s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
     s.add_argument("--dry-run", action="store_true"); s.add_argument("--db", default=None)

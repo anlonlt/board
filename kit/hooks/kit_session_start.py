@@ -111,9 +111,8 @@ def main():
     else:
         out.append("WHERE THINGS STAND: on the board, the one record: `python3 -I .kit/kit.py resume` (each train's "
                    "open steps from their posts, questions included, and the owner's unanswered comments).")
-    if os.path.exists(os.path.join(root, ".kit", "kit.py")):
-        out.append("KIT COMMANDS: before writing any code, `python3 -I .kit/kit.py commands` (with a word: `commands artifact`): reuse the kit's "
-                   "command that does it; never rebuild one.")
+    if os.path.isfile(os.path.join(root, "install.py")) and os.path.isdir(os.path.join(root, "kit", "hooks")):
+        out.append("KIT COMMANDS (this is the kit's own repo): `python3 -I .kit/kit.py commands <word>` before writing one: reuse, never rebuild.")
     legacy = [n for n in ("awaits.md",) if os.path.exists(os.path.join(mdir, n))]
     legacy += ["state/%s" % os.path.basename(f) for f in sorted(glob.glob(os.path.join(mdir, "state", "*.md")))
                if os.path.basename(f) != "orchestrator.md"]

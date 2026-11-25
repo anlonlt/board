@@ -2,12 +2,15 @@
 """Just-in-time (JIT) memory hook: PreToolUse on Edit/Write/MultiEdit (Claude Code) and edit_file/write_file (agy).
 
 Instead of dumping every `files:<glob>` rule into Turn 1 of `kit.py resume`, this hook injects only
-the 1-3 active ledger entries whose `files:<glob>` scope matches the file about to be edited — once
-per (session, entry_id), right at the moment the agent needs them.
+the 1-3 active ledger entries whose `files:<glob>` scope matches the file about to be edited, and the lessons
+(`lessons.md`, the memory's `lessons/*.md`) whose `files:` do — once per (session, entry_id), right at the moment the agent needs them.
 """
+import fnmatch
+import glob
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -83,6 +86,29 @@ def _write_seen(path, ids):
         pass
 
 
+def lessons(root, mdir, rel_paths, role):
+    """The lessons tied to files that match one of these (the same files `kit.py lessons` reads; a lesson with no `files:` is
+    resume's, and `where: attached` is judged there too: an edited kit file says the rest)."""
+    kit = [p for p in (os.path.join(root, "kit", "lessons.md"), os.path.join(root, ".kit", "lessons.md")) if os.path.isfile(p)][:1]
+    out = []
+    for p in kit + sorted(glob.glob(os.path.join(mdir, "lessons", "*.md"))):
+        try:
+            with open(p, encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for m in re.finditer(r"(?ms)^## (\S+?):\s*([^\n]+)\n(.*?)(?=^## |\Z)", text):
+            head = dict((k.lower(), v) for k, v in re.findall(r"(?mi)^(roles|files|where):[ \t]*(.*)$", m.group(3)))
+            globs = [x for x in re.split(r"[,\s]+", head.get("files", "")) if x]
+            roles = [x.lower() for x in re.split(r"[,\s]+", head.get("roles", "")) if x]
+            if not globs or not (role in roles or "all" in roles):
+                continue
+            if any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(os.path.basename(f), g) for g in globs for f in rel_paths):
+                body = re.sub(r"(?mi)^(roles|files|from|where):.*$", "", m.group(3))
+                out.append({"id": m.group(1), "kind": "lesson", "summary": m.group(2).strip() + ". " + " ".join(body.split())})
+    return out
+
+
 def handle(data):
     role = os.environ.get("KIT_ROLE", "").strip().lower() or None
     if role == "clerk":
@@ -95,13 +121,13 @@ def handle(data):
     for p in raw_paths:
         rel_paths.append(os.path.relpath(p, root) if os.path.isabs(p) else p)
     ledger = _load_ledger_module(root)
-    if ledger is None:
-        return None
     mdir = _memory_dir(root, data)
-    hits = ledger.for_files(mdir, rel_paths, kit_root=root, role=role)
-    have = {h["id"] for h in hits}
-    for _, rows in ledger.open_fields(mdir, role or "part", files=rel_paths, kit_root=root):      # the fields these files open
-        hits += [r for r in rows if r["id"] not in have and not have.add(r["id"])]
+    hits = lessons(root, mdir, rel_paths, role or "part")
+    if ledger is not None:
+        hits += ledger.for_files(mdir, rel_paths, kit_root=root, role=role)
+        have = {h["id"] for h in hits}
+        for _, rows in ledger.open_fields(mdir, role or "part", files=rel_paths, kit_root=root):      # the fields these files open
+            hits += [r for r in rows if r["id"] not in have and not have.add(r["id"])]
     if not hits:
         return None
     sf = _seen_file(root, data)

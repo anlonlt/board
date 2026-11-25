@@ -10,6 +10,7 @@ python3 -m unittest tests.test_cl28_brief -v
 import json
 import re
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -347,13 +348,36 @@ class CommandIndex(unittest.TestCase):
         self.assertIn("kit.py artifact pull|load|push", out)
         self.assertIn("starts the local board", out)
 
-    def test_read_before_any_code(self):
-        for p in ("kit/part.template.md", "kit/claude-cli/part.template.md"):
+    def test_the_index_is_not_dumped_on_who_does_not_need_it(self):
+        out = subprocess.run([sys.executable, "-I", KIT, "commands"], capture_output=True, text=True).stdout
+        self.assertLess(len(out), 300)
+        self.assertIn("write the board", out)
+        self.assertIn("kit.py whoami", subprocess.run([sys.executable, "-I", KIT, "commands", "all"], capture_output=True, text=True).stdout)
+        for p in ("kit/part.template.md", "kit/claude-cli/part.template.md", "kit/claude/part.template.md"):
             with open(os.path.join(ROOT, p), encoding="utf-8") as fh:
-                self.assertIn("kit.py commands artifact", fh.read())
+                self.assertNotIn("kit.py commands", fh.read())
+
+    def test_it_comes_with_the_kits_own_files(self):
+        kit = load_kit()
+        k3 = next(x for x in kit.parse_lessons(open(os.path.join(ROOT, "kit", "lessons.md"), encoding="utf-8").read()) if x["id"] == "K3")
+        for f, want in ((".kit/board_cli.py", True), ("scripts/kit.py", True), ("scripts/new_board_sync.py", True), ("src/app.jsx", False),
+                        ("scripts/compte-lignes.cjs", False), ("pipeline/train.py", False)):
+            self.assertEqual(kit._touches(k3["files"], [f]), want, f)
+            with tempfile.TemporaryDirectory() as d:
+                os.makedirs(os.path.join(d, ".kit"))
+                shutil.copy(os.path.join(ROOT, "kit", "lessons.md"), os.path.join(d, ".kit", "lessons.md"))
+                env = dict({k: v for k, v in os.environ.items() if not k.startswith("KIT_")}, CLAUDE_PROJECT_DIR=d, KIT_ROLE="part")
+                r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "kit", "hooks", "kit_memory_jit.py")], capture_output=True, text=True, env=env,
+                                   input=json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Write", "cwd": d, "session_id": "k3-%s-%s" % (os.getpid(), f),
+                                                     "tool_input": {"file_path": os.path.join(d, f)}}))
+                self.assertEqual("**K3** (lesson)" in r.stdout, want, f + r.stdout + r.stderr)
+
+    def test_session_start_names_it_in_the_kits_own_repo(self):
         with tempfile.TemporaryDirectory() as d:
             os.makedirs(os.path.join(d, ".kit"))
             open(os.path.join(d, ".kit", "kit.py"), "w").close()
+            os.makedirs(os.path.join(d, "kit", "hooks"))
+            open(os.path.join(d, "install.py"), "w").close()
             env = dict(os.environ, CLAUDE_PROJECT_DIR=d)
             env.pop("KIT_ROLE", None)
             r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "kit", "hooks", "kit_session_start.py")],
