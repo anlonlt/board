@@ -180,7 +180,7 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
 1. **Get the kit (pin a reviewed commit or tag):** `install.py` copies executable hooks into your repository, so pin a reviewed commit SHA or release tag rather than blindly tracking a mutable branch:
    ```bash
    git clone https://github.com/anlonlt/board /tmp/board-kit
-   git -C /tmp/board-kit checkout <reviewed-commit-sha-or-tag>   # e.g. latest reviewed commit on agy-local
+   git -C /tmp/board-kit checkout <reviewed-commit-sha-or-tag>   # e.g. the latest reviewed commit on main
    ```
 2. **Install it** into the project root:
    ```bash
@@ -211,7 +211,7 @@ Steps marked **YOU** need a person; the agent prints each one with its direct li
    `KIT-installed` (`{title: "The board kit is installed", column: "info", part: "KIT", priority: 2, session_id: "<your conversationId>", created_at, body: "<what step 2 wrote and kept>"}`).
 5. **Start the orchestrator and the clerk** (only those installed):
    - Launch the clerk via `invoke_subagent(TypeName="self", Role="Board Clerk", Model="flash_lite", Workspace="inherit", Prompt=<text of .kit/clerk.md>)`. It registers `comments watch --on`, listens in the background with `board_cli.py comments wait`, and notifies the orchestrator.
-   - Run the orchestrator with `.kit/orchestrator.md`: it writes its conversation ID into `_orchestrator`, builds "Where we are" via `kit-cards`, and posts its welcome under `_orchestrator` (including the one-word launch command, phone links, and unattended mode).
+   - Run the orchestrator: its prompt is `python3 -I .kit/kit.py resume --role orchestrator`; it writes its conversation ID into `_orchestrator`, builds "Where we are" via `kit-cards`, and posts its welcome under `_orchestrator` (including the one-word launch command, phone links, and unattended mode).
 6. **YOU, the first comment:** open your phone or local board URL, open `KIT-installed`, write `"test"` and tap **Send comment**. The clerk wakes immediately, passes it to this session via `send_message`, marks it "Seen" and replies "Passed to ...". Answer it under the post (`board_cli.py set comments ...`).
 7. **The board's copy in git** (`.kit/ORCHESTRATOR.md` § 3):
    `python3 -I .kit/kit.py init`; `T0=$(date -u +%Y-%m-%dT%H:%M:%SZ)`; `python3 -I .kit/board_cli.py list posts --out-dir /tmp/kd`; `python3 -I .kit/board_cli.py list comments --out-dir /tmp/kd`; `python3 -I .kit/kit.py sync /tmp/kd --at "$T0" --full --commit`; `python3 -I .kit/kit.py post KIT-installed`; `python3 -I .kit/kit.py push`.
@@ -251,7 +251,7 @@ Open a Claude Code Web session on **your** repository (`https://claude.ai/code`)
    - Commit `.kit .claude <memory_dir> .gitignore` and push.
 4. **Optional phone push notifications (`ntfy.sh`):** ask the owner if they want pocket notifications when a post needs them or a session replies. If yes: install the [ntfy app](https://ntfy.sh) (Android/iOS), create an ntfy account + access token (avoids shared cloud-IP `429` limits), store it as a Claude Code Web environment secret via `request_credential` (`host: "ntfy.sh"`, `Authorization: Bearer ...`), pick a random topic (`https://ntfy.sh/board-<hex>`), rerun step 2 with `--notify-url <url>`, and send a test push (`kit_notify.py` omits post text by default; set `kit.notify_detail: true` to include previews).
 5. **Post `_orchestrator` and `KIT-installed`** via `ArtifactData` `batch` (`.kit/BOARD.md` § Post).
-6. **Start the orchestrator, then the clerk** via `create_session` using `.kit/orchestrator.md` and `.kit/clerk.md` (with models/effort from `.kit/config.json` `kit.roles`).
+6. **Start the orchestrator, then the clerk** via `create_session`: the orchestrator's prompt is "You are the orchestrator of this repository (.kit/orchestrator.md). Your prompt is one command: python3 -I .kit/kit.py resume --role orchestrator: run it and do what it says.", the clerk's "Your prompt is .kit/clerk.md: read it and follow it." (with models/effort from `.kit/config.json` `kit.roles`).
 7. **Verify first comment**, initialize git mirror (`kit.py init` + `sync --full` + `push`), and finish with `python3 -I /tmp/board-kit/install.py . --setup-done`.
 
 </details>
@@ -263,7 +263,7 @@ For **LMArena (Agent Mode)**, **E2B / Codespaces preview iframes**, **Codex**, *
 
 1. **Get the kit (pin a reviewed commit or tag):**
    ```bash
-   git clone --branch agy-local https://github.com/anlonlt/board /tmp/board-kit
+   git clone https://github.com/anlonlt/board /tmp/board-kit
    ```
 2. **Install out of the box** (skips Step-0 survey for sandbox/preview setups, auto-bootstraps `_orchestrator` + `KIT-installed`, and writes root `AGENTS.md` + `.kit/orchestrator.md`; add `--demo` to seed sample 4-lane cards & memory in an empty sandbox):
    ```bash

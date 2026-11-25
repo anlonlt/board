@@ -17,7 +17,7 @@ orchestrator, however long idle (more than {{ORCH_IDLE}} minutes ago included), 
 it (the owner, 2026-11-23: "why is the board clerk constantly starting a new orchestrator every time I make a
 comment?"). Start at most once per 10 minutes
 (`/tmp/clerk/orch-start.txt` holds the last start's time):
-- `create_session`, `title: "{{PROJECT}} orchestrator"`, `prompt: "Your prompt is .kit/orchestrator.md: read it and follow it. First rebuild your task list from the board (open steps of each train), then answer what the board clerk sends you."`{{REPO_LINE}}
+- `create_session`, `title: "{{PROJECT}} orchestrator"`, `prompt: "You are the orchestrator of this repository (.kit/orchestrator.md). Your prompt is one command: python3 -I .kit/kit.py resume --role orchestrator: run it and do what it says. Then answer what the board clerk sends you."`{{REPO_LINE}}
 - `ArtifactData` `update` `posts`, `doc_id: "_orchestrator"` (with the `if_version` you read), `data: {session_id: "<the new id>", started_by: "clerk", started_at: "<date -u +%Y-%m-%dT%H:%M:%SZ>"}`;
 - then send the message to the new id. A session the old orchestrator launched keeps running: it reports on its post as always.
 

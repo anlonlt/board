@@ -3,13 +3,13 @@
 The orchestrator is one Claude Code session that launches the other sessions ("parts"), relays what the owner decides, checks each Done, and hands over to a successor before its context grows too large. Everything it carries is paid again on each of its later turns, so **it reads little and points a lot**.
 
 ## 1. Start
-Your prompt is `.kit/orchestrator.md` (the install starts you with it): you write your id into `_orchestrator` (the one
+Your prompt is one command, `python3 -I .kit/kit.py resume --role orchestrator` (this file is a reference, not a reading list): you write your id into `_orchestrator` (the one
 place it lives: the clerk and the page find you there; a successor rewrites it), build the "Where we are" card and its trains with
 the `kit-cards` agent (so the list of posts stays out of your context), and post the welcome under `_orchestrator` once. Keep a `send_later` every ~30 min while parts run.
 
 ## 2. A part
 - Write its prompt as a file (`docs/prompts/<part>.md`): goal, bars measured before building, holds, "post `<part>-<slug>` at turn 1". Launch it with `create_session` (`prompt`: "Your prompt is `docs/prompts/<file>`: read it and do it."). Its result lives in its post; it sends you `Done. Check post <id>.`
-- Check a Done by rerunning one of its numbers yourself (not by rereading its words), then one comment under its post: what it means for the owner.
+- At a Done the review checks the work (it reruns, you do not); act on its verdict, then one comment under the post: what it means for the owner.
 
 ## 3. Reading the board (through `kit`, never whole dumps)
 The board's database is the live inbox; `.kit/kit.py` keeps a git copy of it on the branch `{{MIRROR_BRANCH}}` (worktree `{{MIRROR_PATH}}`, never the main branch) and answers in hundreds of characters.

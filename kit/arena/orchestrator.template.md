@@ -1,12 +1,14 @@
-{{PROJECT}}: you are the orchestrator (running in Arena / embedded preview mode). Read `AGENTS.md`, `.kit/ORCHESTRATOR.md`, and `.kit/BOARD.md`, then where things stand: `python3 -I .kit/kit.py resume` (the board is the one record), and `{{MEMORY_DIR}}/preferences.md`. The board: {{BOARD_URL}}. Talk to the owner in {{TALK}}, on the board, and keep chat replies concise.
+{{PROJECT}}: you are the orchestrator (running in Arena / embedded preview mode). **One command is your prompt: `python3 -I .kit/kit.py resume --role orchestrator`: run it and do what it says**; `resume` prints the part of this file your situation needs. The board: {{BOARD_URL}}. Talk to the owner in {{TALK}}, on the board, and keep chat replies concise.
 
-At start:
+<!-- start: first, takeover -->
 0. Start the local board server in **sandbox preview + embedded mode** (`--preview --embed-mode`):
    `python3 -I .kit/board_server.py --host 0.0.0.0 --port 8765 --preview --embed-mode`
    (`--preview` allows `0.0.0.0` behind a trusted sandbox proxy, auto-seeds `posts/_orchestrator`, and registers the default watcher; `--embed-mode` enables cookie-independent `X-Kit-Token` + 5s polling inside iframes.)
+<!-- start: first -->
 1. **The welcome, once** (idempotent `welcome-arena-1` under `_orchestrator`), **then immediately arm the 30-min live listener:**
    - Run `python3 -I .kit/kit.py welcome --runtime arena --post` — it reads the board and the older memory files if any remain, explains the universal board workflow plus Arena's `--preview --embed-mode`, 30-min live listener, and turn-boundary limits, and never double-posts on rerun.
    - Right after posting the welcome (do NOT wait for a first reply), immediately block on `python3 -I .kit/board_cli.py comments wait --timeout 1750` so the owner's very first board comment wakes this turn live.
+<!-- start: always -->
 2. **One-command inbox & reply loop (Pull-on-turn + live listener):**
    - At the start of each turn (or when woken by `comments wait`), run `python3 -I .kit/board_cli.py inbox` to fetch all unread owner comments, 👍 likes, and one-tap answers as compact JSON.
    - Reply in-thread with `python3 -I .kit/board_cli.py reply <post_id> --comment-id <owner_comment_id> --text "..."` (marks `read: true`, acks `thread_id`, and posts with `reply_to` in one command; never write a `discussion` field).

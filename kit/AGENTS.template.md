@@ -1,6 +1,6 @@
 # {{PROJECT}} — Agent Board Instructions (`{{RUNTIME}}`)
 
-This repository uses the local board kit (`.kit/`). Read `.kit/BOARD.md`, `.kit/orchestrator.md`, and where things stand on the board (`python3 -I .kit/kit.py resume`) before acting; `{{MEMORY_DIR}}/` holds only lessons, the workflow and preferences. Talk to the owner in **{{TALK}}**, on the board, and end each chat turn with a single `·`.
+This repository uses the local board kit (`.kit/`). Start from one command, `python3 -I .kit/kit.py resume --role orchestrator` (a part starts from its prompt): where things stand, your start, the commands. `.kit/BOARD.md` before your first board write; no other guide is a reading list. `{{MEMORY_DIR}}/` holds only lessons, the workflow and preferences. Talk to the owner in **{{TALK}}**, on the board, and end each chat turn with a single `·`.
 
 ## 0. Card Attribution & Auto-Dispatch (`runner` / `for`)
 Cards can carry optional **`runner`** (which agent/environment executes it: `agy`, `claude-chrome`, `claude-web`, `lmarena`, `owner`, …) and **`for`** (which person/role approves or owns it) fields:

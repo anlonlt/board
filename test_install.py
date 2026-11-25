@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory() as d:
           and "KEPT" in out)
     page = open(os.path.join(t, ".kit", "board.html"), encoding="utf-8").read()
     check("page: the project's name, no Harmonize, no placeholder", "Tide Clock board" in page and "armoniz" not in page and "{{" not in page)
-    check(".gitignore appended, not replaced", open(os.path.join(t, ".gitignore")).read() == "build/\n.board/memory/before-compaction.md\n.kit/board_data/\n.kit/handover.flag\n.kit/handover.log\n.kit/handover-*.gen\n.kit/run/\n")
+    check(".gitignore appended, not replaced", open(os.path.join(t, ".gitignore")).read() == "build/\n.board/memory/before-compaction.md\n.kit/board_data/\n.kit/handover.flag\n.kit/handover.log\n.kit/handover-*.gen\n.kit/run/\n.kit/**/__pycache__/\n.claude/hooks/kit/__pycache__/\n.agents/hooks/kit/__pycache__/\n")
     rc, out = inst(t)
     check("a rerun changes nothing", rc == 0 and "nothing to change" in out)
     open(os.path.join(t, ".kit", "BOARD.md"), "a").write("my note\n")
@@ -195,8 +195,8 @@ with tempfile.TemporaryDirectory() as d:
           all("import the set" not in v for v in role_out.values()) and "PLAN:" in role_out["part"]
           and "kit.py resume" in role_out[""] and "kit.py resume" in role_out["orchestrator"]
           and "kit.py resume" in role_out["orchestrator"])
-    check("a Claude Code CLI session is briefed on the local board, its guide and its session id",
-          r_ss.returncode == 0 and "board_cli.py" in r_ss.stdout and ".kit/claude-cli/orchestrator.md" in r_ss.stdout
+    check("a Claude Code CLI session is briefed on the local board, its one command and its session id",
+          r_ss.returncode == 0 and "board_cli.py" in r_ss.stdout and "kit.py resume --role orchestrator" in r_ss.stdout and "orchestrator.md" not in r_ss.stdout
           and "abc-123" in r_ss.stdout)
     rc2, out2 = inst(t_loc, "--no-cmd")
     check("a rerun of `local` changes nothing", rc2 == 0 and "nothing to change" in out2)

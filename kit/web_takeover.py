@@ -221,6 +221,8 @@ def cmd_save(quiet=False):
         return 1
     m = mirror_path()
     rc, ahead = sh(["git", "-C", m, "rev-list", "--count", "origin/%s..HEAD" % mirror_branch()])
+    if rc != 0:                                              # the first save: the remote has no copy yet
+        ahead = sh(["git", "-C", m, "rev-list", "--count", "HEAD"])[1]
     if rc == 0 and ahead.strip() == "0":
         if not quiet:
             print("save: the board is already in git (origin/%s)." % mirror_branch())

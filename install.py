@@ -1268,15 +1268,17 @@ def main(argv=None):
         if claude_only:
             ins.put(".kit/orchestrator.md", render(rd("kit", "claude", "orchestrator.template.md"), c))
             ins.put(".kit/consultant.md", render(rd("kit", "claude", "consultant.template.md"), c))
+            ins.put(".kit/claude-web/part.md", render(rd("kit", "claude", "part.template.md"), c))
             ins.put(".kit/runner.md", render(rd("kit", "claude", "runner.template.md"), c))
             ins.put(".kit/ORCHESTRATOR.md", render(rd("kit", "claude", "ORCHESTRATOR.template.md"), c))
         else:
-            orch_tpl = rd("kit", "arena", "orchestrator.template.md") if rt == "arena" else rd("kit", "orchestrator.template.md")
+            orch_tpl = rd("kit", rt, "orchestrator.template.md") if rt in ("arena", "generic") else rd("kit", "orchestrator.template.md")
             ins.put(".kit/orchestrator.md", render(orch_tpl, c))
             art = c["kit"].get("artifact") if isinstance(c["kit"].get("artifact"), dict) else {}
             if "claude.ai/" in str(c.get("board_url") or "") + str(art.get("url") or ""):
                 # an Artifact board is worked from the web, whatever runtime the config names
                 ins.put(".kit/claude-web/orchestrator.md", render(rd("kit", "claude", "orchestrator.template.md"), c))
+                ins.put(".kit/claude-web/part.md", render(rd("kit", "claude", "part.template.md"), c))
             ins.put(".kit/consultant.md", render(rd("kit", "consultant.template.md"), c))
             ins.put(".kit/part.md", render(rd("kit", "part.template.md"), c))
             ins.put(".kit/runner.md", render(rd("kit", "runner.template.md"), c))
@@ -1293,7 +1295,8 @@ def main(argv=None):
     gi = os.path.join(t, ".gitignore")
     cur = open(gi, encoding="utf-8").read() if os.path.exists(gi) else ""
     gi_add = [x for x in ("%s/before-compaction.md" % mdir, ".kit/board_data/", ".kit/handover.flag", ".kit/handover.log",
-                                ".kit/handover-*.gen", ".kit/run/") if x not in cur]
+                                ".kit/handover-*.gen", ".kit/run/", ".kit/**/__pycache__/", ".claude/hooks/kit/__pycache__/",
+                                ".agents/hooks/kit/__pycache__/") if x not in cur]
     if gi_add:
         ins.log.append(".gitignore: + " + ", ".join(gi_add))
         if not a.dry_run:

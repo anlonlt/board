@@ -6,3 +6,6 @@ __pycache__/
 .kit/handover-*.gen
 .kit/run/
 .claude/worktrees/
+.kit/**/__pycache__/
+.claude/hooks/kit/__pycache__/
+.agents/hooks/kit/__pycache__/

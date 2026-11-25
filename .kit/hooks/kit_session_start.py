@@ -48,8 +48,8 @@ def main():
         if claude and k.get("runtime") == "local":
             out.append("BOARD: your result goes in ONE place, your board post (.kit/BOARD.md, board %s, CLI `.kit/board_cli.py`), "
                        "made at turn 1 and updated in full. A turn the board or a session opened ends with a single \"·\" (the owner typing in your chat gets a short answer in words); to the orchestrator: "
-                       "\"Done. Check post <id>.\" Skills: `memory`, `board`. Claude Code CLI: the orchestrator's guide is "
-                       "`.kit/claude-cli/orchestrator.md`." % url)
+                       "\"Done. Check post <id>.\" Skills: `memory`, `board`. The orchestrator starts from "
+                       "`python3 -I .kit/kit.py resume --role orchestrator`." % url)
             sid = str(data.get("session_id") or "") if isinstance(data, dict) else ""
             if sid:
                 out.append("SESSION: your Claude Code session id is %s (the `session_id` of a post you write, unless the "
@@ -65,8 +65,8 @@ def main():
            for v in ("CLAUDE_CODE_REMOTE", "KIT_REMOTE", "AGY_REMOTE")) and os.path.exists(
             os.path.join(root, ".kit", "web_takeover.py")):
         out.append("WEB: this is a remote/web session: no board server yet until you run "
-                   "`python3 -I .kit/web_takeover.py` (the board from git + the steps to continue). To take over the "
-                   "orchestrator: `.kit/claude-cli/takeover.md` (or `.kit/orchestrator.md` in agy). A part continues on its "
+                   "`python3 -I .kit/web_takeover.py` (the board from git + the steps to continue). The orchestrator then "
+                   "starts from `python3 -I .kit/kit.py resume --role orchestrator`. A part continues on its "
                    "branch; the board goes back to git with `python3 -I .kit/web_takeover.py save` (the Stop hook runs it too).")
     landing = os.path.join(root, ".kit", "landing.py")
     if os.path.isfile(landing):

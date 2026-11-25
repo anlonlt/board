@@ -4111,7 +4111,8 @@ def _launch_line(part, rel, model=None, cli=None, post=None):
 
 
 def _write_step_prompt(pid, doc, sources, cli=None):
-    """docs/prompts/<pid>.md from .kit/part.md (agy) or .kit/claude-cli/part.md; never overwrites one that exists."""
+    """docs/prompts/<pid>.md from this platform's part prompt (.kit/part.md agy, .kit/claude-cli/part.md, .kit/claude-web/part.md
+    an Artifact board worked from the web); never overwrites one that exists."""
     rel = "docs/prompts/%s.md" % pid
     path = os.path.join(ROOT, rel)
     if os.path.exists(path):
@@ -4121,6 +4122,8 @@ def _write_step_prompt(pid, doc, sources, cli=None):
         cands = (os.path.join(ROOT, ".kit", "part.md"), os.path.join(ROOT, ".kit", "claude-cli", "part.md"))
     else:
         cands = (os.path.join(ROOT, ".kit", "claude-cli", "part.md"), os.path.join(ROOT, ".kit", "part.md"))
+    web = os.path.join(ROOT, ".kit", "claude-web", "part.md")
+    cands = (web,) + cands if _launcher() == "web" else cands + (web,)
     tpl = None
     for cand in cands:
         if os.path.isfile(cand):
@@ -5983,25 +5986,38 @@ def _test_command():
 def _launch_workflow():
     """The orchestrator's launch workflow for its runtime, attached-board steps included."""
     run = _launcher()
-    lines = ["## How you launch (%s)" % ("web: Claude Code on the web" if run == "web" else run)]
-    lines.append("1. Plan: TaskCreate {train, part} (the hook writes the post and its prompt) or "
-                 "`python3 -I .kit/kit.py step new --train T --part P --title ... --task-file F`; commit and push the prompt.")
+    pl = _platform()
+    alone = run is None or pl in ("arena", "generic")
+    lines = ["## How you launch (%s)" % ("web: Claude Code on the web" if run == "web" else "%s: no session can be started here" % pl if alone else run)]
+    lines.append("1. Plan: %s`python3 -I .kit/kit.py step new --train T --part P --title ... --task-file F`; commit and push the prompt."
+                 % ("" if alone or run == "agy" else "TaskCreate {train, part} (the hook writes the post and its prompt) or "))
     if run == "web":
         lines.append("2. `python3 -I .kit/kit.py launch <post>`: it marks the post and prints the `create_session` call "
                      "(claude-code-remote); make it, then `python3 -I .kit/kit.py launch <post> --session-id <its id>`.")
+    elif alone:
+        lines.append("2. You do the step yourself, from its prompt, on a branch of its own.")
+    elif run == "agy":
+        lines.append("2. `step new` prints the `invoke_subagent` call: make it once the prompt is committed (the device cap: "
+                     "`python3 -I .kit/kit.py capacity`, past it the step waits planned).")
     else:
         lines.append("2. `python3 -I .kit/kit.py launch <post>`: it marks the post and starts `claude --bg` in a worktree "
                      "(the device cap refuses past it: the step waits planned).")
-    lines.append("3. A step on an attached board (another repo's train, e.g. the kit's `cli`): the same command from here. "
+    if _attaches_repos():
+        lines.append("3. A step on an attached board (another repo's train, e.g. the kit's `cli`): the same command from here. "
                  "launch finds the post on that board and runs the launch in that repo's clone next to this one (missing: it "
                  "says the `git clone`); that clone starts no seeded board and never auto-pushes a board-mirror. A public board is "
                  "cloned read-only, nothing to attach: when its push is refused, the create_session call launch prints carries the "
                  "prompt's text (CL40). The session never attaches a repo (CL38): the real-project run on the projects it "
                  "tests on is yours.")
-    lines.append("4. With an attached Artifact board, make the ArtifactData batch launch prints (the post and the Trains row).")
-    lines.append("5. Done comes as a message: `kit.py done <post>` must say OK (a change to compact, install, resume, "
-                 "hooks or artifact needs its real-project dry run); then TaskUpdate completed: its review starts by itself.")
-    return lines
+    cfg = _kit_config()
+    if _attaches_repos() or "claude.ai/" in str(cfg.get("board_url") or "") + str(((cfg.get("kit") or {}).get("artifact") or {}).get("url") or ""):
+        lines.append("4. With an Artifact board (yours or an attached one), make the ArtifactData batch launch prints (the post and the Trains row).")
+    lines.append("5. Done%s: `kit.py done <post>` must say OK%s; then %s: %s."
+                 % ("" if alone else " comes as a message",
+                    " (a change to compact, install, resume, hooks or artifact needs its real-project dry run)" if _attaches_repos() else "",
+                    "`python3 -I .kit/kit.py step complete <post>`" if alone or run == "agy" else "TaskUpdate completed",
+                    "its review's prompt is written (`.kit/run`), and nothing else here can run it" if alone else "its review starts by itself"))
+    return lines[:1] + [re.sub(r"^\d+\.", "%d." % n, x) for n, x in enumerate(lines[1:], 1)]
 
 
 def principles_for(role, train=None):
@@ -6076,7 +6092,8 @@ def _platform():
 
 def orchestrator_guide(platform=None):
     """The orchestrator's guide of this platform, or None."""
-    for rel in {"web": ("claude-web/orchestrator.md", "orchestrator.md"), "cli": ("claude-cli/orchestrator.md", "orchestrator.md")}.get(
+    # a local board's web session takes over (claude-cli/takeover.md); .kit/orchestrator.md there is agy's
+    for rel in {"web": ("claude-web/orchestrator.md", "claude-cli/takeover.md", "orchestrator.md"), "cli": ("claude-cli/orchestrator.md", "orchestrator.md")}.get(
             platform or _platform(), ("orchestrator.md",)):
         p = os.path.join(ROOT, ".kit", rel)
         if os.path.isfile(p):
@@ -6173,6 +6190,14 @@ def autonomy_lines():
     return ["", "## How much you decide alone (kit.autonomy)"] + g.autonomy_lines(_kit_config()) if g else []
 
 
+def _board_answers():
+    """The board server of this project answers (a part's worktree has no database of its own)."""
+    try:
+        return bool(_board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=1", token=_resolve_board_token(None)))
+    except Exception:
+        return False
+
+
 def git_copy_lines(m, db_path=None, root=None):
     """How far git's copy of the board is behind what is here: git is the record, the Artifact and the local server are
     two ways to use it. Nothing is fetched; it reads this clone. A board attached to another project's Artifact is
@@ -6183,6 +6208,10 @@ def git_copy_lines(m, db_path=None, root=None):
         return []
     db = db_path or os.path.join(root, ".kit", "board_data", "board.db")
     if not os.path.isfile(db):
+        if git(root, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + BRANCH).returncode == 0 and not _board_answers():
+            return ["git copy: THIS CLONE HAS NO BOARD YET and git has one (origin/%s): everything above is empty because it was not "
+                    "read. `python3 -I .kit/web_takeover.py` first (on the owner's computer: `./.kit/up`), then this command again; "
+                    "answer nothing before" % BRANCH]
         return []
     if not os.path.isdir(os.path.join(m, "board")):
         return ["git copy: none in this clone (`python3 -I .kit/kit.py init`): what is written here is not in git yet"]
@@ -6304,7 +6333,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "- A part reads only `kit.py resume --role part` (its post, prompt, lessons, tests, how to report); never "
                 "paste a reading list into a prompt.",
                 "- At each check (your timer, a hand-over, a wake): a running part whose post has not changed for 30 min: "
-                "SendMessage it \"Save point: commit and push your work now, write in your post where you stopped.\" A part "
+                "message it \"Save point: commit and push your work now, write in your post where you stopped.\" A part "
                 "not running and not complete: post status stalled, continue it from its branch.",
                 "- Before you answer the owner: this resume, under 15 minutes old (the brief guard refuses otherwise)."]
         out += ["", "## Lessons for the orchestrator"] + _lesson_lines(lessons_for("orchestrator"))
@@ -6327,7 +6356,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         out += ["# Resume: part %s (post `%s`)" % (p.get("part") or pid, pid),
                 "%s · train `%s` · status %s%s" % (p.get("title") or pid, p.get("train") or "?", p.get("status") or "?",
                                                     (" · board %s" % p["_board"]) if p.get("_board") else ""),
-                "", "## Your prompt", "`%s`%s: read it whole; the owner's words in it are the task." % (
+                "", "## Your prompt", "`%s`%s: the owner's words in it are the task. You started from it: read it again only if it is not in your context." % (
                     rel, "" if os.path.isfile(os.path.join(ROOT, rel)) else " (NOT in this clone: fetch its branch)"),
                 "", "## Your post now"]
         for k in ("verdict", "bars", "check", "handoff"):

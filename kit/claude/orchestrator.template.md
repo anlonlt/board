@@ -25,7 +25,7 @@ Post one line under `_orchestrator`: "Orchestrator <N> took over.", and tell eac
 **Before you answer the owner: `python3 -I .kit/kit.py resume`** (CL28): the trains' open steps from their posts, questions included, and the owner's unanswered comments; answer from it, never from a memory file or a hand-over alone. A hook (`kit_brief_guard.py`) refuses your reply to the owner's comment when no `resume` ran in this session in the last 15 minutes (`kit.brief.max_age_min`). A decision the owner gives in chat goes on the board at once: a comment from you under the post it concerns (or `_orchestrator`) quoting the owner's words and the date, so the brief, the next orchestrator and every device see it.
 
 <!-- start: always -->
-**Work the board through the kit** (a hook refuses the raw way, for you only): read it with `python3 -I .kit/kit.py artifact pull` (then the list calls it prints, then `kit.py artifact load`) and `kit.py resume` / `post <id>` / `open` / `since <time>`; plan each step with TaskCreate {train, part} (`kit_task_train.py` writes its post and prompt); send local changes with `kit.py artifact push`; launch a part with "Your prompt is docs/prompts/<id>.md: read it and do it.". Your subagents may dump the board; you never do.
+**Work the board through the kit** (a hook refuses the raw way, for you only): read it with `python3 -I .kit/kit.py artifact pull` (then the list calls it prints, then `kit.py artifact load`) and `kit.py resume` / `post <id>` / `open` / `since <time>`; plan each step with TaskCreate {train, part} (`kit_task_train.py` writes its post and prompt); send local changes with `kit.py artifact push`; launch a part with `kit.py launch <post>` and the call it prints. Your subagents may dump the board; you never do.
 
 <!-- start: always -->
 Keep a `send_later` every ~30 min while parts run (your rules below win when they say otherwise). Messages to sessions: at most {{MSG}} characters; results live in posts. Hand over (`kit.py guide hand-over`) before your context passes about 75 % of its limit.
@@ -47,9 +47,9 @@ Keep a `send_later` every ~30 min while parts run (your rules below win when the
    its `comment_id`), is not a go: ask under his thread. (His friend's board, 2026-11-20: a stray 👍 launched 4 parts.)
    **A tapped answer** ("Answer: X" on a `question` post): it is his choice; apply it (tell the post's session, or do
    what the post says the answer does) and say so in one line under that post.
-   On a go: launch each part with `create_session` (repository, `model` {{PART_MODEL}}, `effort` {{PART_EFFORT}}
-   (`.kit/config.json` `kit.roles.part`), `prompt`: "Your prompt is `docs/prompts/<file>`: read it and do it.", after writing that prompt file and pushing it): its goal, how its result is checked, "post `<part>-<slug>` at turn 1, with `train: \"<project id>\"` (and
-   `parent: \"<part>\"` when it continues another part)", so it lands in its project's train. Several at once when they do not touch the same files.
+   On a go: plan each part (TaskCreate {train, part}: its goal and how its result is checked; the hook writes its post and prompt), commit and
+   push the prompt, then `python3 -I .kit/kit.py launch <post>` and the one `create_session` call it prints (model {{PART_MODEL}}, effort
+   {{PART_EFFORT}}); a call written by hand is refused. Several at once when they do not touch the same files.
 
 <!-- case: words | the owner wrote a comment -->
 **His words** (the clerk forwards them with a thread id): answer under the same post IN HIS THREAD, with

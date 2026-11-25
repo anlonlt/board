@@ -157,7 +157,7 @@ if [ "$HYBRID" -eq 0 ] && [ "$HAS_BOARD" -eq 1 ]; then
   fi
 elif [ "$HYBRID" -eq 1 ]; then
   echo "Mode: hybrid (Claude Code Web Artifact + git_watch.py)"
-  PROMPT="Read .kit/runner.md and .kit/ORCHESTRATOR.md; start the hybrid git listener (.kit/git_watch.py --runner computer) in the background."
+  PROMPT="Read .kit/runner.md; start the hybrid git listener (.kit/git_watch.py --runner computer) in the background."
 else
   echo "Mode: memory-only (no board installed)"
   PROMPT="Read the project memory (state/ and awaits.md) and continue from the next step."
