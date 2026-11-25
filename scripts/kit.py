@@ -3499,6 +3499,9 @@ def check_done(p, root=ROOT, body_max=1500):
                    "a check that cannot fail proves nothing")
     if not str(p.get("handoff") or "").strip():
         warn.append("handoff: missing (what the next step needs from yours)")
+    left = [str(x.get("title")) for x in _as_list(p.get("subtasks")) if isinstance(x, dict) and x.get("status") != "done"]
+    if left:
+        warn.append("pieces not done: %s: finish them, drop them, or say why in not_checked" % "; ".join(left)[:160])
     return err, warn
 
 
@@ -4145,7 +4148,8 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
         return 1, "review %s %s. Its prompt is %s: start it by hand." % (rid, NO_RUNTIME, os.path.relpath(out, ROOT))
     try:
         subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True, env=dict(os.environ, KIT_ROLE="review"))
+                         start_new_session=True,
+                         env=dict({kk: vv for kk, vv in os.environ.items() if kk != "CLAUDE_CODE_TASK_LIST_ID"}, KIT_ROLE="review"))
     except OSError as e:
         return 1, "review %s NOT STARTED: %s could not run (%s). Its prompt is %s." % (rid, cmd[0], e,
                                                                                         os.path.relpath(out, ROOT))
@@ -4209,6 +4213,10 @@ def device_line(survey=None):
         return d.summary(survey or d.survey())
     except Exception as e:
         return "Device: could not measure (%s)." % e
+
+
+def part_list(pid):
+    return "%s-%s" % (_slug(_kit_config().get("project") or "project"), _slug(pid, 60))
 
 
 def _launch_text(rel):
@@ -4287,7 +4295,7 @@ def _launch_line(part, rel, model=None, cli=None, post=None):
     if post:   # CL13: one launch command writes the post and the Trains row, then starts the part (CLI or web)
         return "python3 -I .kit/kit.py launch %s%s" % (post, (" --model %s" % model) if model != "inherit" else "")
     gate = "python3 -I .kit/device.py --gate && " if _device() is not None else ""
-    return "%sKIT_ROLE=part claude --bg -n %s -w %s --permission-mode %s%s \"%s\"" % (
+    return "%sCLAUDE_CODE_TASK_LIST_ID= KIT_ROLE=part claude --bg -n %s -w %s --permission-mode %s%s \"%s\"" % (
         gate, name, _slug(part, 24), mode, (" --model %s" % model) if model != "inherit" else "", _launch_text(rel).replace("`", "\\`"))
 
 
@@ -4891,8 +4899,10 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                 cmd += ["--model", m]
             cmd.append(text)
             try:
+                # its own task list, named after its step (the orchestrator's is in this environment): a session that
+                # replaces it on this computer opens the same one
                 r = subprocess.run(cmd, cwd=wt, capture_output=True, text=True, timeout=120,
-                                   env=dict(os.environ, KIT_ROLE="part"))
+                                   env=dict(os.environ, KIT_ROLE="part", KIT_POST=pid, CLAUDE_CODE_TASK_LIST_ID=part_list(pid)))
             except (OSError, subprocess.SubprocessError) as e:
                 return dict(out, ok=False, error="could not start claude: %s" % e)
             if r.returncode != 0:
@@ -5555,6 +5565,7 @@ COMMANDS = [
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor [--fix]", "the board's size, columns, oldest question, missing files / full install, hook parity, conflict & sync health"),
     ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
+    ("write the board", "kit.py sub <post> \"<piece>\" [--status doing|done|drop]", "one piece of a step, a line on its post (Claude Code's task list writes it by itself)"),
     ("launch and finish", "kit.py form <post> [--doing \"...\"]", "a step's result as a file, half filled; `done` sends and checks it"),
     ("launch and finish", "kit.py whoami [name]", "this session's id for a post's session_id (web: session_<id>; else the name given)"),
     ("launch and finish", "kit.py branches [--delete]", "origin's branches fully on the trunk (finished parts), and with --delete removes them"),
@@ -6424,6 +6435,49 @@ def keep(m, db_path=None):
     return txt or "git copy: kept", r.returncode == 0
 
 
+SUB_STATES = ("open", "doing", "done")
+
+
+def subtask(pid, title, status="open", was="", db_path=None):
+    """`kit.py sub <post> "<piece>" [--status open|doing|done|drop]`: one piece of a step, a line on its post (no post, prompt, review
+    or proof of its own). A piece is its title: the same title again is the same line, whichever session writes it."""
+    title = re.sub(r"\s+", " ", str(title or "")).strip()[:120]
+    if not title or status not in SUB_STATES + ("drop",):
+        return {"error": "a piece has a title, and a status: %s or drop" % ", ".join(SUB_STATES)}
+    p = _get_post(pid, db_path=db_path)
+    if not p:
+        return {"error": "no post %s on the board" % pid}
+    rows = [dict(x) for x in _as_list(p.get("subtasks")) if isinstance(x, dict) and x.get("title")]
+    same = lambda a, b: a.strip().lower() == b.strip().lower()  # noqa: E731
+    hit = next((x for x in rows if same(x["title"], was or title)), None) or next((x for x in rows if same(x["title"], title)), None)
+    if status == "drop":
+        rows = [x for x in rows if x is not hit]
+    elif hit:
+        # a piece named again by a session that takes over is not undone by it
+        hit.update(title=title, status=hit.get("status") if status == "open" else status)
+    elif len(rows) >= 30:
+        return {"error": "%s has 30 pieces: a step that needs more is several steps" % pid}
+    else:
+        rows.append({"title": title, "status": status})
+    if rows != _as_list(p.get("subtasks")) and not _board_write("update", "posts", pid, {"subtasks": rows}):
+        return {"error": "the board did not take it (is the board server running?)"}
+    return {"post": pid, "done": sum(x["status"] == "done" for x in rows), "of": len(rows)}
+
+
+def subtask_lines(p, taking_over=False):
+    rows = [x for x in _as_list(p.get("subtasks")) if isinstance(x, dict) and x.get("title")]
+    if not rows:
+        return []
+    left = [x for x in rows if x.get("status") != "done"]
+    mark = {"done": "x", "doing": "~"}
+    out = ["", "## Its pieces (%d of %d done)" % (len(rows) - len(left), len(rows))]
+    out += ["- [%s] %s" % (mark.get(x.get("status"), " "), x["title"]) for x in rows]
+    if left:
+        out.append("Go on from the first that is not done. Where your task list does not show them: one TaskCreate for each not done, the "
+                   "same subject (it is the same line); without that tool, `python3 -I .kit/kit.py sub`.")
+    return out
+
+
 def continues_lines(p, session=None):
     """A part that continues a step another session started (a context limit, a crash): what is already there."""
     prev = str(p.get("session_id") or "")
@@ -6534,6 +6588,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         out.append("- your Done goes to the orchestrator, `%s`" % ((posts.get("_orchestrator") or {}).get("session_id") or "named by no post yet"))
         out += held_lines(pid, p, session or whoami())
         out += continues_lines(p, session or whoami())
+        out += subtask_lines(p)
         out += owner_lines() + autonomy_lines()
         out += ["", "## Lessons that touch your files (%d files changed)" % len(files)] + _lesson_lines(lessons_for("part", files))
         out += _principle_lines("part", p.get("train"), files=files)
@@ -6987,6 +7042,8 @@ def main(argv=None):
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s.add_argument("--post-file", default=None, help=argparse.SUPPRESS)
+    s = sp.add_parser("sub", help="one piece of a step, a line on its post"); s.add_argument("post"); s.add_argument("title")
+    s.add_argument("--status", default="open"); s.add_argument("--was", default="", help="its title until now"); s.add_argument("--db", default=None)
     s = sp.add_parser("form", help="a step's result as a file, half filled: fill it, `done` sends and checks it"); s.add_argument("post")
     s.add_argument("--doing", default="", help="turn 1: the step is in progress, in this session's name"); s.add_argument("--db", default=None)
     s = sp.add_parser("done"); s.add_argument("post"); s.add_argument("--db", default=None)
@@ -7174,6 +7231,10 @@ def main(argv=None):
     if a.cmd == "sections":
         print(sections(db_path=a.db))
         return 0
+    if a.cmd == "sub":
+        res = subtask(a.post, a.title, a.status, was=a.was, db_path=a.db)
+        print(json.dumps(res, ensure_ascii=False))
+        return 1 if res.get("error") else 0
     if a.cmd == "form":
         rc, msg = form(a.post, doing=a.doing, db_path=a.db)
         print(msg)

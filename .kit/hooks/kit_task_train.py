@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Code PostToolUse (TaskCreate | TaskUpdate), orchestrator only: its task list IS the train, on the board.
+"""Claude Code PostToolUse (TaskCreate | TaskUpdate): the orchestrator's task list IS the train, a part's the pieces of its step.
 
 A thin adapter over `kit.py step` (the same commands an agy orchestrator runs by hand), so both CLIs share one logic:
 
@@ -18,7 +18,10 @@ The record (task id -> post) is kept under .kit/run, per task list, not in /tmp.
 
 Metadata keys: train, part (required for a step), board (an attached board's id: the step goes on its train, CL25), parent, sources (the owner's or a review's comment ids the step
 answers), model, review (false: no review). A task without train and part stays the orchestrator's own. Other sessions
-(parts, the clerk, reviews) are ignored: KIT_ROLE, else the transcript's first prompt. Never blocks the tool.
+(the clerk, reviews) are ignored: KIT_ROLE, else the transcript's first prompt. Never blocks the tool.
+
+A part (KIT_ROLE=part, or a first prompt that names docs/prompts/<post>.md): each task is one piece of its step, a line on its
+post (`kit.py sub`), so he sees "3 of 5" and a session that replaces it goes on from there. Nothing is said back.
 """
 import fcntl
 import json
@@ -161,6 +164,61 @@ def on_update(root, st, ti):
     return None
 
 
+PART_POST = re.compile(r"docs/prompts/([\w.-]+)\.md")
+
+
+def part_post(data, st):
+    """The post of the step this session is a part of, or ""."""
+    role = str(os.environ.get("KIT_ROLE") or "").strip().lower()
+    if role not in ("", "part"):
+        return ""
+    if os.environ.get("KIT_POST"):
+        return os.environ["KIT_POST"]
+    if st.get("part_post") is None or (not st["part_post"] and role == "part"):
+        first = ""
+        try:
+            with open(str(data.get("transcript_path") or ""), encoding="utf-8") as fh:
+                for line in fh:
+                    try:
+                        e = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(e, dict) or e.get("type") != "user" or e.get("isMeta") or e.get("isSidechain"):
+                        continue
+                    c = (e.get("message") or {}).get("content")
+                    c = " ".join(x.get("text") or "" for x in c if isinstance(x, dict)) if isinstance(c, list) else str(c or "")
+                    if c.strip() and not c.lstrip().startswith("<"):
+                        first = c
+                        break
+        except OSError:
+            pass
+        if not first:
+            return ""                                        # not in the transcript yet: asked again
+        m = PART_POST.search(first) if first.lstrip().startswith(("Your prompt is docs/prompts/", "Your prompt follows")) else None
+        st["part_post"] = m.group(1) if m and not m.group(1).startswith("CR-") else ""
+    return st["part_post"]
+
+
+def on_piece(root, st, name, ti, tr, post):
+    subs = st.setdefault("subs", {})
+    if name == "TaskCreate":
+        task = (tr or {}).get("task") if isinstance(tr, dict) else None
+        tid, title = str((task or {}).get("id") or ""), str(ti.get("subject") or "").strip()
+        if not tid or not title:
+            return
+        subs[tid] = title
+        args = [title]
+    else:
+        tid = str(ti.get("taskId") or "")
+        was, title = subs.get(tid), str(ti.get("subject") or "").strip()
+        status = {"pending": "open", "in_progress": "doing", "completed": "done", "deleted": "drop"}.get(str(ti.get("status") or ""))
+        if not was or not (status or title):
+            return
+        subs[tid] = title or was
+        args = [subs[tid]] + (["--status", status] if status else []) + (["--was", was] if title and title != was else [])
+    kit(root, ["sub", post] + args, raw=True)
+
+
 def is_orchestrator(data, st):
     if not st.get("role"):
         # UserPromptSubmit comes before the first prompt is in the transcript: what it finds then is not the answer (2026-11-25:
@@ -206,7 +264,14 @@ def main():
         except (OSError, ValueError):
             st = {"tasks": {}}
         msg = refuse = None
-        if is_orchestrator(data, st):
+        piece = part_post(data, st)
+        if piece:
+            if name in ("TaskCreate", "TaskUpdate") and event not in ("TaskCompleted", "UserPromptSubmit"):
+                on_piece(project_dir(data), st, name, data.get("tool_input") or {}, data.get("tool_response"), piece)
+            elif event == "TaskCompleted" and str(data.get("task_id") or "") not in st.get("subs", {}) and str(data.get("task_subject") or "").strip():
+                # a list opened by a session that replaces another: its record of the titles is not here
+                kit(project_dir(data), ["sub", piece, str(data["task_subject"]).strip(), "--status", "done"], raw=True)
+        elif is_orchestrator(data, st):
             root = project_dir(data)
             ti = data.get("tool_input") or {}
             if event == "TaskCompleted":

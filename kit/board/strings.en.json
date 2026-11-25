@@ -904,6 +904,18 @@
   "kind": "js"
  },
  {
+  "en": "Done: ",
+  "kind": "js"
+ },
+ {
+  "en": "Now: ",
+  "kind": "js"
+ },
+ {
+  "en": "Pieces (",
+  "kind": "js"
+ },
+ {
   "en": "None recorded",
   "kind": "js"
  },

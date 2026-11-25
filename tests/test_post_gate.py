@@ -235,6 +235,47 @@ class Live(unittest.TestCase):
         self.run_("kit.py", "done", "f1")
         self.assertEqual(self.get("f1")["handoff"], "changed on the board")
 
+    def task(self, sid, name, ti, tid=None, event="PostToolUse", opener="Your prompt is docs/prompts/w1.md: run `x`", role="part", **extra):
+        tf = self.d / ("tr-%s.jsonl" % sid)
+        tf.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": opener}}) + "\n")
+        r = subprocess.run([sys.executable, "-I", str(ROOT / "kit" / "hooks" / "kit_task_train.py")], capture_output=True, text=True, cwd=str(self.d), timeout=60,
+                           env=dict(self.env, CLAUDE_PROJECT_DIR=str(self.d), **({"KIT_ROLE": role} if role else {})),
+                           input=json.dumps(dict({"hook_event_name": event, "session_id": sid, "cwd": str(self.d), "transcript_path": str(tf), "tool_name": name,
+                                                  "tool_input": ti, "tool_response": {"task": {"id": tid}} if tid else {}}, **extra)))
+        self.assertEqual((r.returncode, r.stdout), (0, ""), r.stderr)                                # nothing said back, nothing refused
+
+    def test_a_parts_task_list_is_the_pieces_of_its_step(self):
+        self.put("posts", "w1", {"title": "w", "part": "W1", "train": "t", "column": "info", "status": "in progress", "body": "b", "task": "Do w", "session_id": "part-a"})
+        rows = lambda: [(x["title"], x["status"]) for x in self.get("w1").get("subtasks") or []]
+        for i, t in enumerate(("Read d'abord", "Build", "Check"), 1):
+            self.task("s-a", "TaskCreate", {"subject": t}, str(i))
+        self.task("s-a", "TaskUpdate", {"taskId": "1", "status": "in_progress"})
+        self.task("s-a", "TaskUpdate", {"taskId": "1", "status": "completed"})
+        self.task("s-a", "TaskUpdate", {"taskId": "2", "status": "in_progress", "subject": "Build it"})
+        self.assertEqual(rows(), [("Read d'abord", "done"), ("Build it", "doing"), ("Check", "open")])
+        self.assertEqual(self.run_("kit.py", "step", "open").stdout.count("Build"), 0)                # no step, no post of its own
+        # its session dies; another, with an empty list, goes on from there
+        out = self.run_("kit.py", "resume", "--role", "part", "--post", "w1").stdout
+        self.assertIn("## Its pieces (1 of 3 done)\n- [x] Read d'abord\n- [~] Build it\n- [ ] Check", out)
+        self.assertIn("## The task\nDo w", out)
+        self.task("s-b", "TaskCreate", {"subject": "Build it"}, "1")                                  # another list's number 1
+        self.task("s-b", "TaskCreate", {"subject": "Check"}, "2")
+        self.assertEqual(rows(), [("Read d'abord", "done"), ("Build it", "doing"), ("Check", "open")])
+        self.task("s-b", "TaskUpdate", {"taskId": "1", "status": "completed"})
+        self.task("s-c", None, {}, event="TaskCompleted", task_id="9", task_subject="Check")           # the same list, its record elsewhere
+        self.assertEqual(rows(), [("Read d'abord", "done"), ("Build it", "done"), ("Check", "done")])
+        self.task("s-b", "TaskUpdate", {"taskId": "2", "status": "deleted"})
+        self.assertEqual(len(rows()), 2)
+
+    def test_only_a_part_writes_pieces(self):
+        self.put("posts", "w1", {"title": "w", "part": "W1", "train": "t", "column": "info", "status": "in progress", "body": "b"})
+        for sid, role, opener in (("c", "clerk", "Your prompt is docs/prompts/w1.md"), ("r", "review", "Your prompt is docs/prompts/w1.md"),
+                                  ("o", "", "Look at docs/prompts/w1.md and tell me"), ("cr", "", "Your prompt is docs/prompts/CR-w1.md: read it")):
+            self.task(sid, "TaskCreate", {"subject": "x"}, "1", opener=opener, role=role)
+        self.assertNotIn("subtasks", self.get("w1"))
+        self.task("p", "TaskCreate", {"subject": "x"}, "1", role="")                                  # a part by its first prompt (the web sets no KIT_ROLE)
+        self.assertEqual(len(self.get("w1")["subtasks"]), 1)
+
     def test_what_he_reads_first_is_for_him(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         k = load("kit_plain", "scripts/kit.py")

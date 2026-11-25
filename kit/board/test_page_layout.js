@@ -17,7 +17,8 @@ const STUB = `(function () {
       "_trains": { column: "info", created_at: at(300), rows: [] },
       "cl1-done": { title: "CL1 done step " + LONG, part: "CL1", train: "cli", column: "done", status: "complete", created_at: at(200), done_at: at(190), verdict: "Done " + LONG, body: body },
       "cl2-done": { title: "CL2 second done step", part: "CL2", parent: "CL1", train: "cli", column: "done", status: "complete", created_at: at(180), done_at: at(170), body: "done" },
-      "cl3-open": { title: WORDS + " " + LONG, part: "CL3", parent: "CL2", train: "cli", column: "info", status: "in progress", created_at: at(60), body: body },
+      "cl3-open": { title: WORDS + " " + LONG, part: "CL3", parent: "CL2", train: "cli", column: "info", status: "in progress", created_at: at(60), body: body,
+        subtasks: [{ title: "Read the rules", status: "done" }, { title: "Build " + LONG, status: "doing" }, { title: "Check it", status: "open" }] },
       "other-1": { title: LONG, column: "question", created_at: at(30), body: body, options: [LONG, "No"] }
     },
     _dashboard: null,
@@ -198,6 +199,7 @@ function overflows() {
     const m = document.getElementById('kit-tl-modal'); return m ? m.textContent : 'no tasklist';
   });
   check('the Trains view\'s tasklist shows the done steps (2 / 3 done)', /CL1/.test(viaUi) && /CL2/.test(viaUi) && /2 \/ 3 done/.test(viaUi), viaUi.slice(0, 160));
+  check('a step under way shows its pieces (Pieces 1 of 3, done, now, next)', /Pieces \(1 of 3\)/.test(viaUi) && /Done: Read the rules/.test(viaUi) && /Now: Build/.test(viaUi) && /Next: Check it/.test(viaUi), viaUi.slice(0, 400));
   if (/2 \/ 3 done/.test(viaUi)) { await p.viewport(390, 844); await p.wait(300); const o = await ev(overflows); check('phone: nothing overflows in the tasklist', !o.length, o); }
 
   check('no page error', p.errors.length === 0, p.errors.slice(0, 5));

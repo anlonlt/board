@@ -4231,7 +4231,9 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
             head.appendChild(tSpan);
             item.appendChild(head);
 
-            var verdictTxt = str(p.verdict) || firstLine(p.body) || "No summary yet.";
+            var pieces = (Array.isArray(p.subtasks) ? p.subtasks : []).filter(function (x) { return x && str(x.title); });
+            var piecesDone = pieces.filter(function (x) { return x.status === "done"; }).length;
+            var verdictTxt = str(p.verdict) || ((pieces.length ? piecesDone + " of " + pieces.length + " · " : "") + (firstLine(p.body) || "No summary yet."));
             var vDiv = document.createElement("div"); vDiv.className = "kit-tl-verdict"; vDiv.textContent = verdictTxt;
             item.appendChild(vDiv);
 
@@ -4279,6 +4281,16 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
               addSec("Artifacts", artWrap);
             } else {
               addSec("Artifacts", "None linked");
+            }
+            /* A part's own task list: the pieces of its step */
+            if (pieces.length) {
+              var pl = document.createElement("div");
+              pieces.forEach(function (x) {
+                var row = document.createElement("div");
+                row.textContent = (x.status === "done" ? "Done: " : x.status === "doing" ? "Now: " : "Next: ") + str(x.title);
+                pl.appendChild(row);
+              });
+              addSec("Pieces (" + piecesDone + " of " + pieces.length + ")", pl);
             }
             /* 4. Bars / Checks */
             var barsList = Array.isArray(p.bars) && p.bars.length ? p.bars.join(" · ") : "None recorded";
