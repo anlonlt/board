@@ -21,7 +21,7 @@ The post's fields (`doc_id: "<part>-<slug>"`), `data: {title, body, column, part
 - **Never `set` a post that exists:** the page writes its own fields on it (`column_before`, `done_at` when he moves
   it, `priority` when he taps 1-3); `set` would erase them. Change your post with `update` / `str_replace` + `if_version` (the version the last write returned). Add, do not resend: `str_replace` `field: "body"`, `old_str` its first line, `new_str` the new lines + that first line.
 
-## The post format (checked by `the format below` before Done)
+## The post format (a step's: `python3 -I .kit/kit.py form <post>`; checked by `kit.py done <post>`)
 The owner and the train view read fields, not prose. A finished post carries:
 | field | what | shown as |
 |---|---|---|

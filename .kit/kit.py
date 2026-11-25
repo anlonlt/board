@@ -3771,10 +3771,129 @@ def check_trunk_merged(root=ROOT):
     return []
 
 
+# ---------------------------------------------------------------- the form: a step's result, filled in and sent by `done`
+FORM_PARTS = ("lead", "verdict", "bars", "asked", "artifacts", "not_checked", "check", "breaks", "handoff", "body")
+FORM_LISTS = ("bars", "artifacts", "not_checked")
+_BLANK = re.compile(r"<fill[^>]*>")
+
+
+def form_path(pid):
+    return os.path.join(ROOT, ".kit", "run", "form", pid + ".md")
+
+
+def form(pid, doing="", db_path=None):
+    """`kit.py form <post>`: the step's result as a file with what the kit knows filled in; `kit.py done <post>` sends and
+    checks it. `doing`: the step is in progress, in this session's name (turn 1). An existing form is never overwritten."""
+    p = _get_post(pid, db_path=db_path)
+    if not p:
+        return 1, "no post %s on the board" % pid
+    out = []
+    if doing:
+        prj = "%s-%s" % (_slug(_kit_config().get("project") or "project"), _slug(p.get("part") or pid, 24))
+        ok = _board_write("update", "posts", pid, {"session_id": whoami(prj), "status": "in progress", "body": doing, "started_at": _now_z()})
+        out.append("post: in progress, yours" if ok else "post: NOT updated (is the board server running?)")
+    path, rel = form_path(pid), os.path.relpath(form_path(pid), ROOT)
+    if os.path.isfile(path):
+        return 0, "\n".join(out + ["%s exists: fill it, then `python3 -I .kit/kit.py done %s`" % (rel, pid)])
+    asked = []
+    for s in [str(x) for x in _as_list(p.get("sources"))]:
+        c = _get_comment(s, db_path=db_path)
+        if c and c.get("from") == "owner" and not c.get("like"):
+            asked.append("- %s: %s" % (s, re.sub(r"\s+", " ", str(c.get("text") or "")).strip()))
+    ids = " ".join("(asked %s)" % a[2:].split(":")[0] for a in asked)
+    test = _test_command()
+    say = {
+        "lead": "<fill: what he must know or do, 1 to 3 sentences in his words: what changed for him, no path, hash or command>",
+        "verdict": "<fill: ONE plain sentence that answers the task, at most 240 characters>",
+        "bars": "- <fill: one measured number a line, with its denominator or reference: 41 of 50 takes> %s" % ids,
+        "asked": "\n".join(asked) or "(nothing of his named as this step's source)",
+        "artifacts": "- auto",
+        "not_checked": "- <fill: what you did NOT check, or: nothing left unchecked>",
+        "check": "<fill: one command that passes only if the task is done%s>" % ("" if test.startswith("(") else "; the project's tests: " + test),
+        "breaks": "<fill: a command that plants a fault so that check fails, or `revert`, or `manual: what the review does`>",
+        "handoff": "<fill: what the next step needs from yours>",
+        "body": "<fill: the rest, under ### headings (they fold). Picture ![what](path.png), diagram a mermaid block, audio its path in a "
+                "code span. A choice for him is not here: kit.py ask>"}
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("Replace each <fill...>, keep the ## lines (artifacts `auto`: the files your branch changes). Then: python3 -I .kit/kit.py done %s (it sends this and checks it).\n\n%s" % (
+            pid, "".join("## %s\n%s\n\n" % (k, say[k]) for k in FORM_PARTS)))
+    return 0, "\n".join(out + ["%s: fill it as you go, then `python3 -I .kit/kit.py done %s`" % (rel, pid)])
+
+
+def read_form(text):
+    """(fields, errors) of a form. The body is everything after its `## body` line."""
+    cut = re.search(r"(?m)^## body[ \t]*$", text)
+    head, body = (text[:cut.start()], text[cut.end():].strip()) if cut else (text, "")
+    got = {k: v.strip() for k, v in re.findall(r"(?ms)^## (\w+)[ \t]*\n(.*?)(?=^## \w+[ \t]*$|\Z)", head)}
+    got["body"] = body
+    err = ["form: `## %s` is missing" % k for k in FORM_PARTS if not got.get(k)]
+    err += ["form: `## %s` still has %s" % (k, _BLANK.search(got[k]).group(0)[:40] + "...") for k in FORM_PARTS if _BLANK.search(got.get(k) or "")]
+    if err:
+        return None, err
+    items = lambda t: [re.sub(r"^[-*]\s+", "", x).strip() for x in re.split(r"(?m)^(?=[-*]\s)", t) if x.strip()]  # noqa: E731
+    f = {k: items(got[k]) if k in FORM_LISTS else got[k] for k in ("verdict", "bars", "artifacts", "not_checked", "check", "breaks", "handoff")}
+    for k in ("check", "breaks"):
+        f[k] = re.sub(r"\A```\w*\n(.*?)\n?```\Z", r"\1", f[k], flags=re.S).strip()
+        if re.match(r"\A`[^`\n]+`\Z", f[k]):
+            f[k] = f[k][1:-1]
+    if "auto" in f["artifacts"]:                              # the files this branch changes, known when it is sent
+        skip = ("docs/prompts/", ".kit/", ".claude/", ".agents/")
+        f["artifacts"] = [x for x in f["artifacts"] if x != "auto"] + [
+            x for x in _changed_files() if not x.startswith(skip) and x not in f["artifacts"] and os.path.isfile(os.path.join(ROOT, x))]
+    f["verdict"] = re.sub(r"\s+", " ", f["verdict"])
+    f["body"] = got["lead"] + "\n\n" + got["body"]
+    asked = [re.match(r"([\w.-]+):\s*(.+)", x, re.S) for x in items(got["asked"]) if not x.startswith("(nothing")]
+    if any(m is None for m in asked):
+        return None, ["form: `## asked`: each line is `- <his comment's id>: <his words>`"]
+    if asked:
+        f["asked"] = [{"id": m.group(1), "quote": re.sub(r"\s+", " ", m.group(2)).strip()} for m in asked]
+    return f, []
+
+
+def send_form(pid):
+    """The filled form onto the post, once for each state of it: errors, or [] (also when there is no form)."""
+    path = form_path(pid)
+    if not os.path.isfile(path):
+        return []
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    key = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    try:
+        with open(path + ".sent", encoding="utf-8") as fh:
+            if fh.read().strip() == key:
+                return []
+    except OSError:
+        pass
+    f, err = read_form(text)
+    if err:
+        return err
+    if not _board_write("update", "posts", pid, f):
+        return ["form: the board did not take it (is the board server running?)"]
+    with open(path + ".sent", "w", encoding="utf-8") as fh:
+        fh.write(key)
+    return []
+
+
+def plain_notes(p):
+    """What in a post's first words is for agents, not for him (design principles 9): notes, never a refusal."""
+    out = []
+    lead = re.split(r"(?m)^#{1,4} ", str(p.get("body") or ""), maxsplit=1)[0]
+    for k, t in (("verdict", str(p.get("verdict") or "")), ("lead", lead)):
+        hit = re.findall(r"`[^`\n]+`|\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b|\b[\w/-]+\.(?:py|js|cjs|mjs|ts|tsx|css|html|md|sh|json|kt)\b", t)
+        if len(hit) > 1:
+            out.append("%s: he reads this first; it names %s: say what changed for him, those go under a heading" % (k, ", ".join(dict.fromkeys(hit))[:90]))
+    return out
+
+
 def done(pid, db_path=None, root=None):
     p = _get_post(pid, db_path=db_path)
     if not p:
         return 1, "NOT READY: no post %s on the board" % pid
+    bad = send_form(pid)
+    if bad:
+        return 1, "\n".join(["NOT READY: %s" % pid] + ["  fix: " + e for e in bad])
+    p = _get_post(pid, db_path=db_path) or p
     k = _kit_config().get("kit") or {}
     root = root or ROOT
     err, warn = check_done(p, root=root, body_max=int(k.get("post_body_max", 1500)))
@@ -3783,7 +3902,7 @@ def done(pid, db_path=None, root=None):
     warn += n_a
     e_h, n_h = check_his_words(pid, p, db_path=db_path)
     err += e_h
-    warn += n_h
+    warn += n_h + plain_notes(p)
     pending_real = check_real_project(p, root=root)
     warn += pending_real         # CL32/CL38: a real project too, run by the orchestrator (pending)
     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
@@ -3810,7 +3929,8 @@ def done(pid, db_path=None, root=None):
     lines = (["NOT READY: %s" % pid] if err else ["OK: %s follows the post format" % pid])
     lines += ["  fix: " + e for e in err] + ["  note: " + w for w in warn]
     if not err:
-        lines.append("Next: commit and push, run .kit/end_session.py, then SendMessage the orchestrator: Done. Check post %s." % pid)
+        lines.append("Next: commit and push, run .kit/end_session.py, then %s the orchestrator: Done. Check post %s." % (
+            "SendMessage" if _launcher() == "claude" else "message", pid))
     return (1 if err else 0), "\n".join(lines)
 
 
@@ -5395,6 +5515,7 @@ COMMANDS = [
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor [--fix]", "the board's size, columns, oldest question, missing files / full install, hook parity, conflict & sync health"),
     ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
+    ("launch and finish", "kit.py form <post> [--doing \"...\"]", "a step's result as a file, half filled; `done` sends and checks it"),
     ("launch and finish", "kit.py whoami [name]", "this session's id for a post's session_id (web: session_<id>; else the name given)"),
     ("launch and finish", "kit.py branches [--delete]", "origin's branches fully on the trunk (finished parts), and with --delete removes them"),
     ("launch and finish", "kit.py web-env [ask] [--id env_...]", "several repos on the web (CL39): the create_environment call (every repo, hooks at user level), its question post, its id for the hand-over"),
@@ -5873,7 +5994,8 @@ def _lesson_lines(les):
 def _changed_files(root=ROOT, base=None):
     """The files this branch changes against the trunk (committed and not)."""
     files = set()
-    for ref in ([base] if base else []) + ["origin/main", "origin/master", "main"]:
+    trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+    for ref in ([base] if base else []) + ["origin/" + trunk, trunk, "origin/main", "origin/master", "main"]:
         r = subprocess.run(["git", "-C", root, "merge-base", "HEAD", ref], capture_output=True, text=True)
         if r.returncode == 0 and r.stdout.strip():
             d = subprocess.run(["git", "-C", root, "diff", "--name-only", r.stdout.strip()], capture_output=True, text=True)
@@ -6396,7 +6518,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "0. Your result lives in your post body: the text under `##` sections, pictures as `![what](path.png)`, "
                 "diagrams as ```mermaid or ```svg blocks (the page draws them); never a `docs/*.md` file for your text "
                 "(`done` refuses a body made of its section embeds; CL36).",
-                "1. The post in the kit's format (`.kit/BOARD.md` § The post format); `python3 -I .kit/kit.py done %s` says OK." % pid,
+                "1. `python3 -I .kit/kit.py form %s` gives the post as a file, half filled: fill it; `python3 -I .kit/kit.py done %s` sends it and says OK." % (pid, pid),
                 "2. Commit, push your branch; `python3 -I .kit/end_session.py`%s." % (" (the trunk takes it after its review)" if lands_after_review() else ""),
                 "3. SendMessage %s: `Done. Check post %s.`" % (orch, pid)]
     elif role == "clerk":
@@ -6825,6 +6947,8 @@ def main(argv=None):
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s.add_argument("--post-file", default=None, help=argparse.SUPPRESS)
+    s = sp.add_parser("form", help="a step's result as a file, half filled: fill it, `done` sends and checks it"); s.add_argument("post")
+    s.add_argument("--doing", default="", help="turn 1: the step is in progress, in this session's name"); s.add_argument("--db", default=None)
     s = sp.add_parser("done"); s.add_argument("post"); s.add_argument("--db", default=None)
     s = sp.add_parser("pair"); s.add_argument("post"); s.add_argument("--answer", default=None); s.add_argument("--db", default=None)
     s = sp.add_parser("sections"); s.add_argument("--db", default=None)
@@ -7007,6 +7131,10 @@ def main(argv=None):
     if a.cmd == "sections":
         print(sections(db_path=a.db))
         return 0
+    if a.cmd == "form":
+        rc, msg = form(a.post, doing=a.doing, db_path=a.db)
+        print(msg)
+        return rc
     if a.cmd == "done":
         ft = field_text("report")                         # before its verdict: what a report must be, while it can change
         if ft:

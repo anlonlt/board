@@ -203,6 +203,45 @@ class Live(unittest.TestCase):
         (self.d / "b.json").write_text(json.dumps({"posts": [{"id": "imp", "data": done}], "comments": []}))
         self.assertEqual(self.cli("import", str(self.d / "b.json")).returncode, 0)
 
+    def test_the_form_is_filled_once_and_sent_by_done(self):
+        self.put("posts", "f1", {"title": "f", "part": "F1", "train": "t", "column": "info", "status": "planned", "body": "b", "sources": ["his1"]})
+        self.put("comments", "his1", {"post_id": "_orchestrator", "from": "owner", "text": "L'addition, \"vite\" s'il te pla\u00eet", "created_at": "2026-01-01T00:00:00Z"})
+        r = self.run_("kit.py", "form", "f1", "--doing", "Je commence par l'addition")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((self.get("f1")["status"], self.get("f1")["body"]), ("in progress", "Je commence par l'addition"))
+        f = self.d / ".kit" / "run" / "form" / "f1.md"
+        text = f.read_text()
+        self.assertIn("- his1: L'addition, \"vite\" s'il te pla\u00eet", text)                         # his words, as he wrote them
+        r = self.run_("kit.py", "done", "f1")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout.count("still has <fill"), 8, r.stdout)                             # each blank, in one answer
+        self.assertNotIn("verdict", self.get("f1"))                                                  # nothing half sent
+        import re
+        say = {"lead": "L'addition marche, c'est pr\u00eat.", "verdict": "Elle additionne.", "bars": "- 4 of 4 sums (asked his1)\n- 2 of 2 signs\n  read twice",
+               "not_checked": "- floats", "check": "```sh\n%s\n```" % STEP["check"], "breaks": "`%s`" % STEP["breaks"].replace("`", ""), "handoff": "h",
+               "body": "### How\n## not a field\nIt's `calc.py`, d'accord."}
+        for k, v in say.items():
+            text = re.sub(r"(?ms)^## %s\n.*?(?=^## \w+$|\Z)" % k, lambda m: "## %s\n%s\n\n" % (k, v), text, count=1)
+        f.write_text(text)
+        (self.d / "calc.py").write_text((self.d / "calc.py").read_text() + "# touched\n")
+        subprocess.run(["git", "-C", str(self.d), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "c"], check=True)
+        r = self.run_("kit.py", "done", "f1")
+        p = self.get("f1")
+        self.assertEqual((p["verdict"], p["bars"], p["check"], p["breaks"]), ("Elle additionne.", ["4 of 4 sums (asked his1)", "2 of 2 signs\n  read twice"], STEP["check"], STEP["breaks"]))
+        self.assertEqual(p["asked"], [{"id": "his1", "quote": "L'addition, \"vite\" s'il te pla\u00eet"}])
+        self.assertTrue(p["body"].startswith("L'addition marche, c'est pr\u00eat.\n\n### How\n## not a field"), p["body"])
+        self.assertIn("OK: f1", r.stdout, r.stdout + r.stderr)
+        self.cli("update", "posts", "f1", "--data", '{"handoff":"changed on the board"}')               # an unchanged form is not sent again
+        self.run_("kit.py", "done", "f1")
+        self.assertEqual(self.get("f1")["handoff"], "changed on the board")
+
+    def test_what_he_reads_first_is_for_him(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        k = load("kit_plain", "scripts/kit.py")
+        self.assertEqual(k.plain_notes({"verdict": "The button is darker.", "body": "You see it on the home page.\n\n### How\n`a.py` 0a45d26f `b.py`"}), [])
+        n = k.plain_notes({"verdict": "All 8 gaps closed in kit.py and install.py (0a45d26)", "body": "`tests/x.py` then `kit.py done`"})
+        self.assertEqual([x.split(":")[0] for x in n], ["verdict", "lead"])
+
     def test_ask_writes_the_question_whole(self):
         base = ["ask", "--title", "Which one", "--option", "A", "--option", "B", "--default", "A", "--deadline", "2027-01-01"]
         self.assertIn("full_auto", self.run_("kit.py", *base).stdout)

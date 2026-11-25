@@ -90,12 +90,15 @@ class OldRuleGone(unittest.TestCase):
         self.assertEqual(left, [])
 
     def test_the_guides_teach_the_new_rule(self):
-        for rel in ("kit/board/BOARD.template.md", "kit/claude/BOARD.template.md", "kit/part.template.md",
-                    "kit/claude-cli/part.template.md"):
+        for rel in ("kit/board/BOARD.template.md", "kit/claude/BOARD.template.md", "scripts/kit.py"):
             with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
                 t = fh.read()
-            self.assertIn("```mermaid", t, rel)
+            self.assertIn("a mermaid block" if rel == "scripts/kit.py" else "```mermaid", t, rel)      # the form says it to a part
             self.assertIn("never", t, rel)
+        for rel in ("kit/part.template.md", "kit/claude-cli/part.template.md", "kit/claude/part.template.md"):
+            with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+                t = fh.read()
+            self.assertIn("never a `docs/*.md` file for your text", t, rel)
 
 
 if __name__ == "__main__":

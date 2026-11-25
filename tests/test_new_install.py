@@ -101,6 +101,23 @@ class NewInstall(unittest.TestCase):
                 self.assertEqual("claude-code-remote" in text, pl == "web", pl)
                 self.assertNotIn("<PART>", text)
 
+    def test_the_files_of_a_branch_are_against_this_projects_trunk(self):
+        d = self.install("cli")
+        self.git("checkout", "-qb", "p1")
+        (d / "a.js").write_text("1\n")
+        self.git("add", "a.js")
+        self.git("commit", "-qm", "a")
+        r = self.run_(["-c", "import importlib.util as u; s=u.spec_from_file_location('k','.kit/kit.py'); k=u.module_from_spec(s); s.loader.exec_module(k); print(k._changed_files())"])
+        self.assertEqual(r.stdout.strip(), "['a.js']", r.stderr)
+
+    def test_a_part_prompt_names_no_missing_section(self):
+        for tpl, board in (("kit/part.template.md", "kit/board/BOARD.template.md"), ("kit/claude-cli/part.template.md", "kit/board/BOARD.template.md"),
+                           ("kit/claude/part.template.md", "kit/claude/BOARD.template.md")):
+            heads = re.findall(r"(?m)^## (.+)$|^\*\*(Sections fold)", (ROOT / board).read_text())
+            have = " | ".join(a or b for a, b in heads)
+            for sec in re.findall(r"BOARD\.md` \u00a7 ([A-Z][\w ]+)", (ROOT / tpl).read_text()):
+                self.assertIn(sec.strip(), have, tpl)
+
     def test_nothing_the_kit_builds_is_committed(self):
         d = self.install("cli")
         for p in (".kit/__pycache__/x.pyc", ".kit/hooks/__pycache__/x.pyc", ".claude/hooks/kit/__pycache__/x.pyc", ".agents/hooks/kit/__pycache__/x.pyc"):
