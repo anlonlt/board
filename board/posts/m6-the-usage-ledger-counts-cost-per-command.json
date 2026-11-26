@@ -5,6 +5,7 @@
  "from": "orchestrator",
  "part": "M6",
  "planned_by": "orchestrator",
+ "runner": "claude-web",
  "status": "planned",
  "subtasks": [
   {
@@ -42,5 +43,6 @@
  ],
  "task": "The usage ledger counts cost per command, so a waste like rereading the board shows up as a number.\n\n1. For each tool result, the ledger records its size (characters and estimated tokens) grouped by command: `kit.py resume`, `kit.py post`, `kit.py train`, the tests, git, reads of files; in scripts/usage.py with tests/test_cl37_usage.py.\n2. It estimates what each one costs afterwards by staying in the context (its tokens times the calls that followed, at the cache read price).\n3. `usage.py show --commands` and `compare --commands` print the top commands by cost, per role.\n4. Commands repeated across sessions (the same sequence in 3 sessions or more) are listed as candidates for a script, with how often and what they cost.\n\nBars: on this computer's transcripts, the share of an orchestrator's tokens spent on resumes and the five most repeated sequences.\n",
  "title": "The usage ledger counts cost per command",
- "train": "memory"
+ "train": "memory",
+ "updated_at": "2026-11-26T21:07:40Z"
 }

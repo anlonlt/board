@@ -5,6 +5,7 @@
  "from": "orchestrator",
  "part": "M5",
  "planned_by": "orchestrator",
+ "runner": "claude-web",
  "status": "planned",
  "subtasks": [
   {
@@ -36,5 +37,6 @@
  ],
  "task": "A resume prints only what changed since the session's last one: the orchestrator stays current before answering the owner, without rereading the whole board each time.\n\n1. `kit.py resume` in a session that already ran one prints what changed since then (steps, sessions, questions, the owner's comments, other writers), or one line \"nothing new since HH:MM\"; `--full` prints it all. In scripts/kit.py with tests/test_resume_delta.py.\n2. The brief guard accepts that read as fresh, in kit/hooks/kit_brief_guard.py.\n3. The first resume of a session, a hand-over and a takeover still print it whole.\n\nBars: characters of a second resume with nothing new and with one change, against the full one (19,800 characters for the orchestrator's now).\n",
  "title": "A resume prints only what changed",
- "train": "memory"
+ "train": "memory",
+ "updated_at": "2026-11-26T21:07:38Z"
 }
