@@ -203,6 +203,13 @@
       });
       es.onerror = function () {
         if (es) { try { es.close(); } catch (e) {} es = null; }
+        // A stream cannot see why it failed: ask once. A refused token is not "reconnecting" forever: the page
+        // goes to the token screen (which tries the saved token, then asks).
+        try {
+          fetch("/_api/db/posts/_dashboard", { credentials: "same-origin", cache: "no-store" }).then(function (r) {
+            if (r.status === 401) { window.location.replace("/"); }
+          }).catch(function () {});
+        } catch (e) {}
         if (!reconnectTimer) {
           reconnectTimer = setTimeout(function () { reconnectTimer = null; connectEvents(); }, 2000);
         }
