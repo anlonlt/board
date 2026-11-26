@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:05:07Z",
+ "created_at": "2026-11-26T22:13:19Z",
  "rows": [
   {
    "at": 39,
@@ -88,7 +88,8 @@
     "end_session says why a push failed",
     "CL41's redirect resolved, so the trunk can move",
     "A test never writes to the real board",
-    "A session on a computer never writes to the Artifact"
+    "A session on a computer never writes to the Artifact",
+    "Tests clean up after themselves"
    ],
    "train": "P-board-data"
   },
@@ -162,5 +163,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T22:05:07Z"
+ "updated_at": "2026-11-26T22:13:19Z"
 }
