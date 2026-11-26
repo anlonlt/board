@@ -4966,6 +4966,12 @@ def queue_lines(posts, areas=None, limit=40):
     return out
 
 
+def _resume_queue(posts):
+    """R6, the orchestrator's resume: launch from the top; every new step re-ranks it."""
+    return ["", "## The queue (launch from the top; `kit.py queue` for all of it, a launch out of order is refused)"] + \
+        queue_lines(posts, limit=12)
+
+
 def queue_text(posts, areas=None):
     hub = queue_facts(posts, areas)[2]
     return "\n".join(["# The queue (every open step against every other: damage first, then what unblocks the most, "
@@ -6626,9 +6632,8 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
     if not n_active:
         out.append("")
         out.append("No train has an open step.")
-    else:                                             # R6: launch from the top; every new step re-ranks it
-        out += ["", "## The queue (launch from the top; `kit.py queue` for all of it, a launch out of order is refused)"]
-        out += queue_lines(posts, limit=12)
+    else:
+        out += _resume_queue(posts)
     out.extend(_resume_extras(posts, comments, now=now, session=session))
     dl = device_line()
     if dl:
