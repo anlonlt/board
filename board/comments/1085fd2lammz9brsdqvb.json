@@ -1,0 +1,19 @@
+{
+ "created_at": "2026-11-24T02:08:31.487Z",
+ "delivered": true,
+ "delivered_at": "2026-11-24T02:08:32.513Z",
+ "delivery_error": "",
+ "files": [
+  {
+   "id": "bcefe8a27f4f0726e09261a09a7e625c",
+   "name": "Screenshot_20261123-210814.png",
+   "type": "image/png"
+  }
+ ],
+ "from": "owner",
+ "post_id": "cl36-a-part-s-result-lives-in-its-post-post-b",
+ "read": true,
+ "read_at": "2026-11-24T02:10:00Z",
+ "text": "Why is your flowchart just code then ?",
+ "thread_id": "e0ba9a86-d3d8-4c72-be59-0978754a605d"
+}

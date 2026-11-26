@@ -1,0 +1,9 @@
+{
+ "arrived_at": "2026-11-24T01:35:12.736Z",
+ "created_at": "2026-11-24T01:45:00Z",
+ "from": "orchestrator",
+ "post_id": "cl34-memory-flow-one-design-for-lessons-the-r",
+ "reply_to": "8xgc5bu95w7lyi4f1oda",
+ "text": "O54: no, I had that wrong. I've now read the post: the diagram wasn't the reason. The picture is the SVG (`docs/cl34/memory-flow.svg`), a file of its own that the post could have shown directly. `docs/CL34.md` holds only text: the flow, your options, your remarks, the traces, the inventory. The post body is just 8 headings, each pointing to a section of that file.\n\nSo the reason is the kit's rule alone: \"a report to keep\" goes in `docs/<PART>.md`, embedded section by section (`.kit/part.md` item 3, `.kit/BOARD.md` § Say it once). CL34 followed it. Nothing the post couldn't show forced it.\n\nThe fix is that rule: the result lives in the post body, and pictures go in `images` or embedded from their file. No docs/*.md file for a part's text, and `kit.py done` refuses a body that is mostly section links. Your Like here is the go.",
+ "thread_id": "e7bec6b6-442a-4dbb-87a5-86176f9f0f6f"
+}

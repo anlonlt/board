@@ -1,0 +1,39 @@
+{
+ "artifacts": [
+  "docs/CL34.md",
+  "docs/cl34/memory-flow.svg",
+  "scripts/memory-inventory.py"
+ ],
+ "bars": [
+  "stores holding memory today: 18 of 18 inventory rows (12 in Harmonize, 5 in the kit, 1 his chats), in 3 formats for his words behind a rule",
+  "his remarks on lost or paraphrased words: 14 rows in docs/CL34.md, 12 of 14 with a comment id",
+  "traces through the flow: 3 of 3 hold on Harmonize today (scripts/memory-inventory.py); quotes verbatim 3 of 3",
+  "R51 (licence) reached AC1: 0 of 6 files it was told to read; carried by 64 of 324 prompts",
+  "prompts copying a Rules: line today: 96 of 324 (dropped by the flow)"
+ ],
+ "body": "For you: a design to Like or change, with 3 choices (one ledger or three files; your Like before a rule acts; lesson stories kept). Your words stay verbatim with their id; a rule, principle or lesson is one row pointing to them, with a scope saying who must read it; resume prints each role its rows, so prompts stop copying rules. Nothing is coded yet. The files are in anlonlt/harmonize (`docs/CL34.md`, `docs/cl34/memory-flow.svg`, `scripts/memory-inventory.py`, a repo link: the viewers do not open .py).\n\nSince then (2026-11-24): kit main (219f713) has CL32's `.kit/lessons.md` (lessons tagged by role and files, printed by `resume --role`) plus `kit.py lesson add` and `kit.py lessons check`. My inventory read dc2d76b and missed them. In the flow they are step 5 and the lesson half of the ledger, already built. The rest (rules and principles in the same table, Like to confirm, exit by status) is what remains.\n\n## The picture\n`docs/CL34.md § The picture`\n\n## The flow\n`docs/CL34.md § The flow`\n\n## Options for you\n`docs/CL34.md § Options for you`\n\n## Your remarks, and which store failed\n`docs/CL34.md § His remarks on lost context and paraphrased words`\n\n## Three remarks traced end to end\n`docs/CL34.md § Three remarks traced through the flow`\n\n## Inventory\n`docs/CL34.md § Inventory: where memory lives today`\n\n## What merges, what is dropped, the cost\n`docs/CL34.md § Today's stores mapped to the flow`\n\n## What I checked {fold}\n`python3 -I scripts/memory-inventory.py`: every count in the inventory table for Harmonize, and the 3 traces (quotes verbatim in your comments; R51 absent from AC1's 6 files; R14/X02 present and no scope column; lesson 51b only in ORCHESTRATION, the brief guard present). Read-only: nothing in Harmonize or the kit changed but the 3 new files.\n\nNot checked: see the post's fields.\n\nCommits: 90571e1, 3128b30 (Harmonize, branch ccr-21e871fb-funs5x, pushed). The post was written straight to repos/board/posts: `kit.py artifact push` from Harmonize targets its own `posts` (the gap CL32 fixes), so `kit.py done` cannot see it; its format check and the check/breaks proof pass when run on this post (check passes, fails after revert).",
+ "breaks": "revert",
+ "check": "python3 -I scripts/memory-inventory.py",
+ "column": "info",
+ "created_at": "2026-11-23T23:00:45Z",
+ "from": "orchestrator",
+ "handoff": "On his Like (and his 3 choices in docs/CL34.md § Options for you): one kit part (ledger columns kind/scope/status, kit.py ledger check reusing check_asked and rules-check's carrier scan, resume --role filter reading the ledger: fold into CL32, Like-to-confirm path, templates drop Rules: lines), then one Harmonize migration part (89 scopes, ~35 lesson rows, chat quotes posted back). Commands checked before writing: kit.py commands memory (compact), resume, done/check_asked, scripts/rules-check.py.",
+ "issues": [
+  "his words that started CL34 are not on the board (chat only): the orchestrator could post them verbatim under _orchestrator"
+ ],
+ "not_checked": [
+  "whether a part heeds a row it is shown (needs a live run after migration)",
+  "the token size of each role's share (estimated ~140 Harmonize rows in all, not measured)",
+  "the kit-side counts (DESIGN-PRINCIPLES 13, kit memory 0 lessons): read by hand, not by the script",
+  "his agy chats: quoted only as kit DESIGN-PRINCIPLES.md quotes them",
+  "his CL34 words (23:2x) are on no board comment I found: they reach this part only through the prompt"
+ ],
+ "part": "CL34",
+ "planned_by": "orchestrator",
+ "session_id": "session_01AE1HGjfBzeQgsoV2h6pKLu",
+ "status": "complete",
+ "title": "memory flow: one design for lessons, the rules ledger, principles and his words, so nothing is paraphrased or lost",
+ "train": "cli",
+ "updated_at": "2026-11-23T23:10:00Z",
+ "verdict": "One flow: his words enter verbatim with an id; a session distils each into one ledger row (kind, quote, scope, hook); his Like puts it in force; resume --role prints each role its rows; rows leave only when replaced or out of scope."
+}

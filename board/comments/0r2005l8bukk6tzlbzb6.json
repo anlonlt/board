@@ -1,0 +1,13 @@
+{
+ "created_at": "2026-11-24T02:18:52.747Z",
+ "delivered": true,
+ "delivered_at": "2026-11-24T02:18:53.791Z",
+ "delivery_error": "",
+ "from": "owner",
+ "post_id": "cl37-usage-ledger-tokens-tools-agents-per-ses",
+ "read": true,
+ "read_at": "2026-11-24T02:25:00Z",
+ "reply_to": "o54-cl37-old-rule-0220",
+ "text": "Also, why are there a bunch of branches ? Isn't the trunk thing activated, where everything gets merged to main ?",
+ "thread_id": "93e9f802-6bea-4808-82bb-cb7772b0f434"
+}

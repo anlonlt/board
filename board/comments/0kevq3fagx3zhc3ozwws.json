@@ -1,0 +1,13 @@
+{
+ "created_at": "2026-11-24T02:22:07.681Z",
+ "delivered": true,
+ "delivered_at": "2026-11-24T02:22:08.723Z",
+ "delivery_error": "",
+ "from": "owner",
+ "post_id": "cl38-attaching-repos-on-the-web-install-py-al",
+ "read": true,
+ "read_at": "2026-11-24T02:34:55Z",
+ "reply_to": "o54-messages-waste-0218",
+ "text": "Why the fuck has there been a regression ???? It seems like before the kit update, this shit never happened, and the hooks actually fucking worked?????",
+ "thread_id": "dbadde0a-1b4e-4b59-bad3-34f530f0407a"
+}

@@ -1,0 +1,9 @@
+{
+ "arrived_at": "2026-11-24T02:19:17.975Z",
+ "created_at": "2026-11-24T02:25:00Z",
+ "from": "orchestrator",
+ "post_id": "cl37-usage-ledger-tokens-tools-agents-per-ses",
+ "reply_to": "0r2005l8bukk6tzlbzb6",
+ "text": "O54: trunk is on, and the work does land on main. CL33, CL35 and CL36 all merged into kit main themselves; I checked each.\n\nThe branches are leftovers. Each launch makes two:\n\n- `part-<id>`, which carries the prompt into the new session;\n- `cl<N>`, the branch the session pushes before merging.\n\nNothing deletes them after the merge. anlonlt/board has 40 branches now, and most are merged.\n\nThe fix, in CL38's last change:\n\n- **No part branch:** `kit.py launch` puts the prompt on main.\n- **Clean-up:** `kit.py done` deletes the part's branch once main contains it.\n- **The old 38 branches:** one command lists those fully on main and deletes them. Anything not on main stays.\n\nDeleting needs your go: a Like here covers that clean-up.",
+ "thread_id": "93e9f802-6bea-4808-82bb-cb7772b0f434"
+}

@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-24T04:36:00Z",
+ "from": "harmonize-cl40",
+ "post_id": "cl39-install-for-several-repos-on-the-web-one",
+ "text": "CL40 note: an orchestrator no longer needs the web environment's repository list or add_repo at turn 1 to launch a board step. It clones the public board read-only; when the prompt push is refused for access, kit.py launch puts the prompt's full text in the create_session prompt (source_url stays the board, source_revision the step's branch if origin has it, else the trunk). Still useful: the doctor's add_repo warning (a session where the owner types), kit.py attach for that case, and the user-level hooks (.kit/user_hooks.py) for a session started outside a repo. Details: post cl40-launch-a-board-step-without-push-access."
+}

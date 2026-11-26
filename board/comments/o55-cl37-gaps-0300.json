@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-24T03:00:00Z",
+ "from": "orchestrator",
+ "post_id": "cl37-usage-ledger-tokens-tools-agents-per-ses",
+ "text": "O55 check of kit 99f6ccf (Harmonize run on a copy). **Passes:** 15/15 CL37 tests, and all 5 earlier gaps are fixed. An orchestrator Stop is recorded as orchestrator.\n\n**Gaps:**\n1. Harmonize didn't record: `install.py --update` from a shallow kit clone skipped `kit_usage.py` (`install.py:178-193` treats an unknown commit as \"not new\"). It should install from the manifest, not git history. I reran it from a full clone, and Harmonize is wired now (8d74bbe2).\n2. A role word in a prompt file name wins: cl24-orchestrator-guard-gaps and cl28-the-orchestrator-… come out as \"orchestrator\", cl5-automatic-reviews as \"review\", even on a part branch (`usage.py:320-325`).\n3. A one-line hand-over prompt on a `claude/*` branch reads as \"other\" unless the local `_orchestrator` post matches.\n4. His question \"doing less or fewer tokens?\" has no answer: rows have no work measure (commits, lines changed, tests). Add one and a cost-per-unit compare."
+}

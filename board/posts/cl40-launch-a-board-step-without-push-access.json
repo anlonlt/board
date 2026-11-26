@@ -1,0 +1,32 @@
+{
+ "artifacts": [
+  "scripts/kit.py",
+  "tests/test_cl40_launch_readonly.py",
+  "kit/lessons.md"
+ ],
+ "bars": [
+  "tests/test_cl40_launch_readonly.py: 6 of 6 pass (refused for access gives ok and the text inline; a network failure still fails; a working push keeps the old path; O57: no failed push leaves the clone's trunk ahead, an existing origin/<branch> is the source_revision, a stray '403' is not a denial); 4 of 6 fail on the old kit.py",
+  "scripts/run_all_tests.py: 11 of 11 suites passed, 0 failed"
+ ],
+ "body": "A board step can now be launched from a read-only clone of the board: no add_repo, nothing typed in chat. The real run in Harmonize, and the matching edit to Harmonize's hand-over skill, are the orchestrator's (handoff).\n\n## What changed\n- `_launch_in_clone` (`scripts/kit.py`): the prompt is committed in the clone and pushed as before. When the push is refused **for access** (\"not in this session's authorized repository set\", permission denied, an HTTP 403, authentication failed...), the launch carries on: the clone's launch runs, then the create_session call is rewritten so its `prompt` reads \"Your prompt follows; first commit it to docs/prompts/<post>.md on your branch (it could not be pushed to the board), then read it and do it.\" followed by the rest of the start message and the full text in a `<prompt path=...>` block. `source_url` stays the board, `source_revision` becomes the step's branch when origin already has it, else the trunk (the unpushed commit would not clone), `outcome_branch` is unchanged.\n- The prompt commit is taken back out of the clone afterwards, and after any failed push, so the clone never holds a commit origin lacks.\n- A push that fails for another reason (network) still stops the launch with the error, as before. A push that works keeps the old path.\n- `launch_text` says so in one line. `resume --role orchestrator` (launch step 3), the no-clone message and lesson K1 now say: clone the public board read-only, nothing to attach.\n\n```mermaid\nflowchart LR\n  A[kit.py launch post] --> B[commit prompt in board clone]\n  B --> C{push}\n  C -->|ok| D[create_session: Your prompt is path]\n  C -->|refused for access| E[create_session: prompt text inline, source_revision trunk]\n  C -->|other error| F[error, as before]\n  E --> G[drop the local prompt commit]\n```\n\n## Tests\n- `tests/test_cl40_launch_readonly.py`: a bare remote with a pre-receive hook that refuses with the O57 message. 6 of 6 pass; with the old `scripts/kit.py` 4 fail.\n- Full suite: 11 of 11 suites passed, 0 failed.\n\n## The orchestrator's gaps (O57), fixed\n1. Notes under CL38/CL39: comments `cl40-note-cl38` and `cl40-note-cl39` (on the Artifact since 04:36).\n2. `source_revision` is `origin/<branch>` when the step's branch exists there, else the trunk.\n3. The denial match no longer takes any \"403\": only `returned error: 403`, `HTTP 403`, `status 403`, `403 Forbidden`.\n4. A failed push (any reason) resets the prompt commit: with `trunk_push`, main stays where origin has it.\n\n## Notes under CL38 and CL39\nA comment on each: the environment's repository list and add_repo at turn 1 are not needed to launch a board step. Still useful: the doctor's add_repo warning and `kit.py attach` for a session where the owner types, and the user-level hooks (`.kit/user_hooks.py`) for a session started outside a repo.\n\n## Not done here\nHarmonize's `orchestrator-handoff` skill and `_handover` live in anlonlt/harmonize, which a part never attaches: the orchestrator drops their add_repo step (handoff).",
+ "branch": "cl40",
+ "breaks": "sed -i 's/if not _PUSH_DENIED.search(why):/if True:/' scripts/kit.py",
+ "check": "python3 -m unittest tests.test_cl40_launch_readonly",
+ "column": "info",
+ "created_at": "2026-11-24T04:28:01Z",
+ "from": "orchestrator",
+ "handoff": "Orchestrator: (1) in Harmonize, `install.py --update` so .kit/kit.py has CL40; then, from a read-only clone of anlonlt/board next to it, `kit.py launch <a board post>`: expect 'The prompt could not be pushed to the board' and a create_session whose prompt holds the text; write it in real_project. (2) In Harmonize, drop the add_repo step from the orchestrator-handoff skill and _handover: clone the board read-only (public, `git clone https://github.com/anlonlt/board ../board`), launches go through this path. Commands checked: kit.py commands launch/attach, _launch_attached, _prompt_branch, launch_text, web-env.",
+ "launched_at": "2026-11-24T04:28:28Z",
+ "not_checked": [
+  "A real refused push from a session that cannot push anlonlt/board: this session can push it, so the denial is simulated with a pre-receive hook that prints the O57 message. The orchestrator's run in Harmonize is the real one (real_project).",
+  "Harmonize's own orchestrator-handoff skill and _handover file: they are in anlonlt/harmonize, which a part never attaches; the edit is in handoff."
+ ],
+ "part": "CL40",
+ "planned_by": "orchestrator",
+ "session_id": "session_01AE1HGkUeWvWVe78XUTnTta",
+ "status": "complete",
+ "title": "Launch a board step without push access to the board (prompt carried in the start message)",
+ "train": "cli",
+ "updated_at": "2026-11-24T04:51:03Z",
+ "verdict": "kit.py launch now starts a board step from a read-only clone: when the prompt push is refused for access, the create_session prompt carries the prompt's full text and the session commits it first."
+}

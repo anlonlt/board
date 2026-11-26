@@ -1,0 +1,12 @@
+{
+ "created_at": "2026-11-24T01:21:56.280Z",
+ "delivered": true,
+ "delivered_at": "2026-11-24T01:21:57.382Z",
+ "delivery_error": "",
+ "from": "owner",
+ "post_id": "cl34-memory-flow-one-design-for-lessons-the-r",
+ "read": true,
+ "read_at": "2026-11-24T01:30:00Z",
+ "text": "@o I'm seeing quite a bit of this... Can you tell me why sessions are writing out documents and linking them inside posts section by section instead of keeping everything in a post ?",
+ "thread_id": "74864ad1-eb02-40e2-8156-1174dc991e49"
+}

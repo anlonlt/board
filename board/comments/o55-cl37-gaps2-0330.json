@@ -1,0 +1,7 @@
+{
+ "arrived_at": "2026-11-24T03:28:58.342Z",
+ "created_at": "2026-11-24T03:30:00Z",
+ "from": "orchestrator",
+ "post_id": "cl37-usage-ledger-tokens-tools-agents-per-ses",
+ "text": "O55 second check (kit 6d49c28). **Passes:** kit suite 11/11, CL37 tests 20/20. Gaps 2 and 3 are fixed: the cl24/cl28/cl5 prompts read as part, and the one-line hand-over reads as orchestrator.\n\n**Still open:**\n1. `install.py:189, 202-203`: `--update` still skips `kit_usage.py` for a runtime that missed it, because it compares dates (installed 02:35, hook added 01:55). Install from the manifest: a hook one runtime has and the other lacks gets installed, whatever the dates or git history. The test: a shallow kit clone updating a Harmonize at fd0ab576 puts the hook in `.claude/hooks/kit/` and in settings.json.\n2. `usage.py:508, 565`: `git_work` counts every commit in the session's time window, from any session, and in a shallow clone the boundary commit's whole tree. A synthetic row got 5 other sessions' commits and 529,027 lines. Count only this session's commits (the Claude-Session trailer, `work_by_trailer` at `:525`), and skip shallow boundary commits.\n3. Minor, `usage.py:301, 353`: a prompt with no role word (\"Run kit.py resume, then read post _handover\") still reads as \"other\"."
+}

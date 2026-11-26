@@ -1,0 +1,39 @@
+{
+ "artifacts": [
+  "kit/user_hooks.py",
+  "install.py",
+  "kit/handover.py",
+  "scripts/kit.py",
+  "tests/test_cl39_web_multi.py",
+  "kit/board/BOARD.template.md"
+ ],
+ "bars": [
+  "tests/test_cl39_web_multi.py: 9 of 9 green on 5e296cf (new module; the breaks below turns 1 of 9 red)",
+  "user hooks on the Harmonize-shaped scratch copy: 23 of 23 project hooks at user level, rerun 0 changed (byte-identical), 1 of 1 user line kept",
+  "300-char SendMessage: refused 1 of 1 from the parent folder (exit 2), skipped 1 of 1 inside the repo (exit 0, no output); a 40-char one passes 1 of 1",
+  "hand-over (web, dry run): environment_id in 1 of 1 create_session after --id, add_repo in 0; resume --role orchestrator: add_repo in 0 lines",
+  "scripts/run_all_tests.py on 5e296cf: 11 of 11 suites pass, 0 failed"
+ ],
+ "body": "You need to do nothing yet. The kit can now set up a project that manages several repos from web sessions. Three things wait for the orchestrator: run it on real Harmonize (K2), post the environment question, and on your Like create the environment once.\n\n## What changed\n- **install.py** asks once whether the project manages several repos on the web, or takes `--web-multi yes|no` and `--web-repos owner/a,owner/b`. On yes it installs `.kit/user_hooks.py` and `.kit/handover.py`. It also writes the environment to create in `.kit/config.json` `kit.web_env`: the repos, the setup script line `if [ -f harmonize/.kit/user_hooks.py ]; then python3 -I harmonize/.kit/user_hooks.py install; fi`, and `environment_id` (empty for now). `--update` keeps the answer.\n- **kit/user_hooks.py** (`install | remove | show`). It copies every command hook from the project's `.claude/settings.json` into `~/.claude/settings.json`. Each hook is wrapped in `user_hooks.py run --repo <repo> -- '<command>'`. The wrapped hook runs only where the session's project has no settings of its own, with `CLAUDE_PROJECT_DIR` and the working folder set to the repo. The hook's own command is passed as one quoted word, so the outer shell cannot expand `$CLAUDE_PROJECT_DIR` to the parent folder. My first version had that bug and the test caught it. A rerun first strips this repo's wrapped lines and then adds them again: 0 changed. The user's own lines are kept.\n- **kit.py web-env**: `ask` posts the question `KIT-web-env` (a Like is the go). With no argument it prints the `create_environment` call (personal, `switch_session: none`). `--id env_...` records the id.\n- **resume --role orchestrator** has a \"Web environment\" section: post the question / the owner liked it, make the call / ready. Its add_repo lines are gone: the attached-board line with no clone, launch step 3 and the launch output's \"add_repo read in its first step\" (false since CL38). Lesson K2 no longer names add_repo.\n- **handover.py** (web): the successor's `create_session` carries `environment_id` once it is recorded. Its prompt never says add_repo. The clerk's orchestrator start (`REPO_LINE`) uses `environment_id` in place of `source_url`.\n\n## How it runs\n```mermaid\nflowchart LR\n  I[install.py --web-multi yes] --> C[kit.web_env + .kit/user_hooks.py]\n  C --> Q[kit.py web-env ask: post KIT-web-env]\n  Q -->|owner's Like| E[create_environment, once]\n  E --> D[kit.py web-env --id env_...]\n  D --> H[handover.py / clerk: create_session environment_id]\n  E -->|setup script, each container| U[user_hooks.py install: hooks at user level]\n  U --> S[parent folder: hooks run, CLAUDE_PROJECT_DIR=repo]\n  U --> R[inside a repo: skipped, the project's own copy runs]\n```\n\n## Measured on a scratch copy shaped like Harmonize\nThe fixture is the kit installed with runtime claude (20 hooks) plus 3 hooks of Harmonize's own, so 23 in all. Two repos: anlonlt/harmonize and anlonlt/board.\n- user_hooks install: 23 hooks; a rerun: `0 changed`, the file byte-identical; remove: 23 lines out, the user's own line stays.\n- A 300-character SendMessage through the wrapped `kit_say_it_once.py`: refused from the parent folder (exit 2, \"this message is 300 characters (limit 200)\"); a 40-character one passes; inside the repo the wrapped line is skipped (exit 0, no output).\n- handover.py --dry-run (web): no `environment_id` before `--id`, `env_01TestAbc` after, no add_repo anywhere in the call; the clerk's guide after `--update` names `environment_id: \"env_01TestAbc\"`.\n\n## Commands checked before building (K3)\nI checked `kit.py commands` for question, environment and hook (nothing existed for an environment), `attach` / `add_repo_allowed` (kept: still the path when the owner is typing), `install.py` `ask_yes_no` / `Installer.put` / `merge_claude_settings`, `handover.py`, `_board_write`, `_load_board_docs` and the Like format of comments. The new command is `kit.py web-env`. The new script is `kit/user_hooks.py`, because nothing in the kit wrote user-level settings.\n",
+ "branch": "cl39",
+ "breaks": "sed -i 's/    return os.path.isfile(os.path.join(d, \".claude\", \"settings.json\"))/    return False/' kit/user_hooks.py",
+ "check": "python3 -m unittest tests.test_cl39_web_multi",
+ "column": "info",
+ "created_at": "2026-11-24T04:02:13Z",
+ "from": "orchestrator",
+ "handoff": "Orchestrator (K2): in a clone of Harmonize, `python3 -I <kit>/install.py . --update --web-multi yes --web-repos anlonlt/harmonize,anlonlt/board`, then `python3 -I .kit/user_hooks.py install --settings /tmp/u.json` twice (expect 23, then 0 changed), and write it in real_project. Harmonize already has env_01VxiCbR7EgEi8Qv5VQKXq1v, so skip `web-env ask` and record it: `kit.py web-env --id env_01VxiCbR7EgEi8Qv5VQKXq1v`, commit. Its setup script can then call .kit/user_hooks.py in place of scripts/env/user_hooks.py. Commands checked: kit.py commands question/environment/hook, attach, install ask_yes_no/put, handover.py, _board_write.",
+ "launched_at": "2026-11-24T04:15:44Z",
+ "not_checked": [
+  "Harmonize's own scripts/env/user_hooks.py (O56) was not reachable here (not in kit_docs), so it was not compared line by line: the kit's version was built from the prompt's description",
+  "real-project dry run per K2 (install --update --web-multi yes on a clone of anlonlt/harmonize, then .kit/user_hooks.py install --settings <tmp>): the orchestrator's, pending",
+  "the first orchestrator the kit's hand-over starts in env_01VxiCbR7EgEi8Qv5VQKXq1v: board at turn 1, no add_repo, a hook usage row: needs `kit.py web-env --id env_01VxiCbR7EgEi8Qv5VQKXq1v` in Harmonize and a real hand-over (orchestrator)"
+ ],
+ "part": "CL39",
+ "planned_by": "orchestrator",
+ "session_id": "session_01AE1HGhF48HBSYir6H2xWYZ",
+ "status": "in progress",
+ "title": "Install for several repos on the web: one environment with every repo, hooks at user level",
+ "train": "cli",
+ "updated_at": "2026-11-24T04:26:19Z",
+ "verdict": "install --web-multi puts a project's hooks at user level (23 on a Harmonize-shaped copy, idempotent, a long message refused from the parent folder, skipped in the repo); the hand-over starts the successor in that environment, no add_repo."
+}

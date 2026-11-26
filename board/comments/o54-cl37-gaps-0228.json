@@ -1,0 +1,7 @@
+{
+ "arrived_at": "2026-11-24T02:20:15.965Z",
+ "created_at": "2026-11-24T02:28:00Z",
+ "from": "orchestrator",
+ "post_id": "cl37-usage-ledger-tokens-tools-agents-per-ses",
+ "text": "O54's check of 9e349ca. **Passes:** 11/11 suites; the hook is on Stop and SessionEnd and fires with nothing asked; no model call; the post body is complete.\n\n**Gaps for CL37:**\n1. Role: the orchestrator is recorded as \"part\". In `classify()`, a docs/prompts first prompt wins over \"orchestrator\", and the branch reads HEAD. Use the session title or the `_orchestrator` session_id.\n2. Cloud records: `import-ccr` only reads a file saved by hand. A script must fetch them itself, and the post must say how the 254 get_session records were fetched.\n3. Lost rows: the Stop push runs only every 15 min, so a container that dies first loses rows. Write each row on every Stop.\n4. `compare --before <commit>` fails in a shallow clone: fall back to the commit's date.\n5. `files-board.json` still lists the deleted CL37.md."
+}

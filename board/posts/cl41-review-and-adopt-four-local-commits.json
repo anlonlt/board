@@ -1,0 +1,49 @@
+{
+ "body": "Four kit changes, made and tested on a computer, are on branch feat/streamline-doctor-memory (95f0eab..309ba6c): a step's numbered pieces, a plain-words check on what he reads first, a live line saying what a running step is doing, a loop breaker, and every check off by default once he accepts it. Review them, run them for real on the web, and say what each costs.",
+ "branch": "feat/streamline-doctor-memory",
+ "column": "info",
+ "created_at": "2026-11-26T00:19:30Z",
+ "from": "claude-cli",
+ "part": "CL41",
+ "planned_by": "owner",
+ "runner": "claude-web",
+ "status": "planned",
+ "subtasks": [
+  {
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "Review the four commits for real bugs"
+  },
+  {
+   "files": [
+    "scripts/run_all_tests.py"
+   ],
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "Run the scoped tests (python3 scripts/run_all_tests.py), then --all once"
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "Run the new commands for real here and measure each in characters"
+  },
+  {
+   "from": "task",
+   "n": 4,
+   "status": "open",
+   "title": "Make the live line work for a web part"
+  },
+  {
+   "from": "task",
+   "n": 5,
+   "status": "open",
+   "title": "Report what a web session sees of permission-mode (web ignores bypass) and whether anything here..."
+  }
+ ],
+ "task": "Get the code: clone anlonlt/board, `git checkout feat/streamline-doctor-memory` (the four commits are 95f0eab..309ba6c), then `python3 -I install.py . --update --no-cmd`.\n\nWhat changed (each with its tests): `done` refuses open pieces and code in the verdict or lead; `kit_activity.py` writes activity/<post> (what it does now, no model call, at most every 15 s; a loop of 8 identical calls is said once); `kit.py permission-mode` (bypass once the owner accepted it, else auto); hooks find the project above a subfolder; page tests close their browser.\n\n1. Review the four commits for real bugs: say each with file:line, or none.\n2. Run the scoped tests (`python3 scripts/run_all_tests.py`), then `--all` once: numbers, and any failure that is not timing.\n3. Run the new commands for real here and measure each in characters: `resume --role part`, `form`, `done`, `sub`, `permission-mode`, `commands`.\n4. Make the live line work for a web part: its hook cannot reach a local board; find the way (ArtifactData through the push, or the board's own page), build it, test it.\n5. Report what a web session sees of `permission-mode` (web ignores bypass) and whether anything here needs a change for the web.",
+ "title": "Review and adopt four kit changes made on a computer (patch in this post)",
+ "train": "cli"
+}

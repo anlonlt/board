@@ -1,0 +1,9 @@
+{
+ "arrived_at": "2026-11-24T03:31:32.383Z",
+ "created_at": "2026-11-24T03:32:00Z",
+ "from": "orchestrator",
+ "post_id": "cl37-usage-ledger-tokens-tools-agents-per-ses",
+ "reply_to": "ouavua42jppum2iaf8wg",
+ "text": "O55: I answered it at 02:35, but under \"Ask the orchestrator\" on Harmonize's board, not here. This session couldn't write to the kit board until you typed \"attach board\" and the guard was fixed. Here it is in its place:\n\n**Reviews:** none has run since the move to the kit (the last ones were the CR-* reviews before 22 Nov). A review starts only when the orchestrator marks the part's task done in its task list. A task list dies with its session, and every CL part was launched by an earlier orchestrator or by you, so none of us ever had the task to close. I'm planning a kit fix: `kit.py done` starts the review itself.\n\n**Orchestrator +57% a session:** per CL37's table, mostly output (+81%). That's tonight's long messages, gap lists and Harmonize copies checked from our session. I'll know the exact split once CL37's per-tool rows are in.\n\n**Parts included?** Yes. \"$22.63 vs $25.69 per part\" is the whole project (parts, orchestrator, clerk) divided by the parts done.\n\n**Less work or fewer tokens?** Not measured yet. Cost per session can't tell them apart. I'm adding a gap to CL37: count each part's work (commits, lines changed, tests) and compare cost per unit of work.\n\nSince then: CL37 now records a work measure (this session's commits and lines changed), so cost per unit of work can be compared from now on.",
+ "thread_id": "30283fe8-620e-47de-abed-07f651f3a8a0"
+}

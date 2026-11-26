@@ -1,9 +1,9 @@
 {
  "column": "info",
- "created_at": "2026-11-23T22:46:50Z",
+ "created_at": "2026-11-24T04:36:22Z",
  "rows": [
   {
-   "at": 30,
+   "at": 37,
    "key": "A",
    "name": "Cli",
    "note": "Next: The Trains view: task lists (A) or the old flow map (B)?",
@@ -40,11 +40,19 @@
     "kit compact keeps a project's story checker green",
     "every agent uses the kit's scripts, enforced by hooks",
     "kit artifact push never overwrites a newer live card (_dashboard, _trains)",
+    "compact posts every open awaits point and open issue as a board post before archiving",
+    "memory flow: one design for lessons, the rules ledger, principles and his words, so not...",
+    "Why the owner doesn't see agents' board writes until he reopens, and one list of what w...",
+    "A part's result lives in its post: post bodies render diagrams and pictures, no docs fi...",
+    "Usage ledger: tokens, tools, agents per session, recorded without tokens",
+    "Attaching repos on the web: install.py allows add_repo, kit attach, doctor warns",
+    "Launch a board step without push access to the board (prompt carried in the start message)",
     "Design principles, complete, and no emoji Like",
     "The board travels in git, always current (mirror synced on every step)",
     "A crashed part is continued from its last checkpoint",
     "The Trains view: task lists (A) or the old flow map (B)?",
-    "resume per role: what each role needs, the lessons and the workflow included"
+    "resume per role: what each role needs, the lessons and the workflow included",
+    "Install for several repos on the web: one environment with every repo, hooks at user level"
    ],
    "train": "P-cli"
   },
@@ -84,5 +92,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-23T22:46:50Z"
+ "updated_at": "2026-11-24T04:36:22Z"
 }

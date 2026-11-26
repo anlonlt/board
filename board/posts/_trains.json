@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-23T22:46:50Z",
+ "created_at": "2026-11-24T04:36:22Z",
  "rows": [
   {
    "also": [],
@@ -30,7 +30,15 @@
     "CL29",
     "CL30",
     "CL31",
-    "CL32"
+    "CL32",
+    "CL33",
+    "CL34",
+    "CL35",
+    "CL36",
+    "CL37",
+    "CL38",
+    "CL39",
+    "CL40"
    ],
    "parent": "",
    "part": "P-cli",
@@ -606,8 +614,96 @@
    "session": "session_01AE1HGj64wNW2VqtikzfGg4",
    "state": "running",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL33",
+   "post": "cl33-compact-posts-every-open-awaits-point-an",
+   "prompt": "",
+   "session": "584e5e22-31d5-588a-9265-ce87a56639c2",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL34",
+   "post": "cl34-memory-flow-one-design-for-lessons-the-r",
+   "prompt": "",
+   "session": "session_01AE1HGjfBzeQgsoV2h6pKLu",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL35",
+   "post": "cl35-why-the-owner-doesn-t-see-agents-board-w",
+   "prompt": "",
+   "session": "harmonize-cl35",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL36",
+   "post": "cl36-a-part-s-result-lives-in-its-post-post-b",
+   "prompt": "",
+   "session": "session_01AE1HGgWQaEwXFhugH9vfbc",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL37",
+   "post": "cl37-usage-ledger-tokens-tools-agents-per-ses",
+   "prompt": "",
+   "session": "harmonize-cl37",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL38",
+   "post": "cl38-attaching-repos-on-the-web-install-py-al",
+   "prompt": "",
+   "session": "session_01AE1HGm4GLpDYDS9nBPA9AN",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL39",
+   "post": "cl39-install-for-several-repos-on-the-web-one",
+   "prompt": "",
+   "session": "session_01AE1HGhF48HBSYir6H2xWYZ",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL40",
+   "post": "cl40-launch-a-board-step-without-push-access",
+   "prompt": "",
+   "session": "session_01AE1HGkUeWvWVe78XUTnTta",
+   "state": "done",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-23T22:46:50Z"
+ "updated_at": "2026-11-24T04:36:22Z"
 }

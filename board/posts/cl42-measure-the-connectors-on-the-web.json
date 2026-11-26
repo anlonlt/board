@@ -1,0 +1,45 @@
+{
+ "body": "Your claude.ai connectors (Gmail, Calendar, Drive, Docs, Vercel) add about 10,900 tokens to a session on a computer, 7,500 of them Vercel's. Measure the same on the web, and whether the account, the repository or the environment decides it.",
+ "column": "info",
+ "created_at": "2026-11-26T00:19:30Z",
+ "from": "claude-cli",
+ "part": "CL42",
+ "planned_by": "owner",
+ "runner": "claude-web",
+ "status": "planned",
+ "subtasks": [
+  {
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "List which connectors load at the start of a web session, with their number of tools"
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "Measure the first and second model call's context (input + cache read + cache creation) from the..."
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "Change one thing at a time where you can (another repository, another environment, network off, the..."
+  },
+  {
+   "from": "task",
+   "n": 4,
+   "status": "open",
+   "title": "Try both project settings above on a throwaway branch"
+  },
+  {
+   "from": "task",
+   "n": 5,
+   "status": "open",
+   "title": "Answer in this post"
+  }
+ ],
+ "task": "On a computer (Claude Code 2.1.332, empty folder, no kit): context at the second call 32,950 tokens with them, 25,390 with Vercel denied (`deniedMcpServers`), 22,085 with `disableClaudeAiConnectors: true`. They connect in the background: one run in three started before they were there. The full question is in harmonize, branch `connectors-question`, `docs/CONNECTORS-QUESTION.md`.\n\n1. List which connectors load at the start of a web session, with their number of tools.\n2. Measure the first and second model call's context (input + cache read + cache creation) from the session's own transcript, over several runs.\n3. Change one thing at a time where you can (another repository, another environment, network off, the connector off in the account or the environment) and say which decides.\n4. Try both project settings above on a throwaway branch: do they work on the web, and what else stops working?\n5. Answer in this post: each number with its command and run count; what you could not test.",
+ "title": "Measure what the account's connectors cost on the web, and who decides that they load",
+ "train": "cli"
+}

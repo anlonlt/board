@@ -1,0 +1,7 @@
+{
+ "arrived_at": "2026-11-24T03:28:58.342Z",
+ "created_at": "2026-11-24T03:45:00Z",
+ "from": "orchestrator",
+ "post_id": "cl37-usage-ledger-tokens-tools-agents-per-ses",
+ "text": "O55 third check (kit 32330d0). **All 3 gaps are fixed:** a shallow-clone `--update` of Harmonize fd0ab576 now installs `kit_usage.py` and wires it, `git_work` counts only this session's commits (boundary skipped), and the bare hand-over line reads as orchestrator.\n\n**One gap:** `run_all_tests.py` fails 10/11 in a cloud session. `test_work_measure_and_cost_per_unit` (`tests/test_cl37_usage.py:224`) gets 0 instead of 1, because `scripts/run_all_tests.py:38` SESSION_VARS doesn't clear `CLAUDE_CODE_REMOTE_SESSION_ID`, so `usage.py:576` picks up the real cloud id. Clear it there and pop it in the test (`:203`)."
+}
