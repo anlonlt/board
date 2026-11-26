@@ -81,7 +81,7 @@
  ".kit/hooks/kit_web_save.py": "74229a81f846eb4ccb4bd8834d320e3adb605458ed49534cce1916eb0237bbf6",
  ".kit/hooks/kit_wip.py": "f3b9f3b4e4526021fc6eb267787edc7a063f82edec5caed739c080f30f6a2eb9",
  ".kit/hooks/test_hooks.py": "778123d6f729d1363c6ddad76c18cdb44cbe4fc4b6e9b2275211b1c62f53e654",
- ".kit/kit.py": "f8505469ec722ae3b444cc9d066cb97847c5866fe90e1e6afb06edd19c6929ae",
+ ".kit/kit.py": "7bf0f93ea0897189bf0ed905ffada1834b65052d94693f033659962f02a038d6",
  ".kit/kit_artifact_sync.py": "64760e0f0ff2e3e3aca193ddcbbf501ec30474179b5ea838a4e34dc5b8b2ca67",
  ".kit/kit_cards.py": "f7352a5317a42f958167146364539996603f8f8926a12da71f36ef6d4fa07ca8",
  ".kit/kit_import.py": "7ee7050f20af4343885704ca613b86945472e9ceec08ec8e0fb47645578ba809",
@@ -104,5 +104,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "e1b282847457310ea4317ef717ebb9d4ae8a743a77201e154c53c23ac05e74a1",
- "_kit_commit": "3746aa8 2026-11-25T22:06:35-05:00"
+ "_kit_commit": "e551381 2026-11-26T00:49:18-05:00"
 }

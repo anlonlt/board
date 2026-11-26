@@ -6628,6 +6628,43 @@ def subtask_lines(p, taking_over=False):
     return out
 
 
+def take_step_branch(p):
+    """A part starts on the newest work of its step (CL44 item 13), whatever started it (agy, claude --bg -w, the web):
+    when the post names a branch whose commits this checkout lacks, bring them in now (fast-forward, else a merge);
+    when that cannot be done safely (uncommitted changes, a conflict), the first lines say so and what to run."""
+    br = str(p.get("branch") or "")
+    if not br:
+        return []
+    have = lambda x: _git_run("rev-parse", "--verify", "--quiet", x).returncode == 0  # noqa: E731
+    if have("origin/" + br):
+        _git_run("fetch", "-q", "origin", br, timeout=60)
+    refs = [x for x in ("origin/" + br, br) if have(x)]
+    missing = [x for x in refs if _git_run("merge-base", "--is-ancestor", x, "HEAD").returncode != 0]
+    if not missing:
+        return []
+    ref = missing[0] if len(missing) == 1 or _git_run("merge-base", "--is-ancestor", missing[1], missing[0]).returncode == 0 else missing[1]
+    head = _git_run("rev-parse", "--short", "HEAD").stdout.strip()
+    stop = lambda why: ["## FIRST: this checkout lacks your step's work on `%s` (%s)" % (ref, why),  # noqa: E731
+                        "- run `git merge --no-edit %s` (commit or stash your changes first) before anything else; "
+                        "never redo what it holds" % ref, ""]
+    cur = _git_run("branch", "--show-current").stdout.strip()
+    mine = cur == br or (_slug(str(p.get("part") or ""), 24) or "\0") in cur.lower()
+    if not mine:
+        return stop("this checkout is on `%s`, not the part's own branch, so nothing was changed here" % (cur or "a detached HEAD"))
+    if _git_run("status", "--porcelain", "--untracked-files=no").stdout.strip():
+        return stop("uncommitted changes here, so it was not merged for you")
+    r = _git_run("merge", "--ff-only", "-q", ref, timeout=60)
+    how = "fast-forward"
+    if r.returncode != 0:
+        r = _git_run("merge", "--no-edit", "-q", ref, timeout=60)
+        how = "merge"
+        if r.returncode != 0:
+            _git_run("merge", "--abort")
+            return stop("a merge conflict, so nothing was changed")
+    return ["## Your step's work is here: `%s` brought into this checkout (%s, %s -> %s)" % (
+        ref, how, head, _git_run("rev-parse", "--short", "HEAD").stdout.strip()), ""]
+
+
 def continues_lines(p, session=None):
     """A part that continues a step another session started (a context limit, a crash): what is already there."""
     prev = str(p.get("session_id") or "")
@@ -6725,8 +6762,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                     "it), or KIT_POST=<id>.\n")
         p = posts[pid]
         rel = "docs/prompts/%s.md" % pid
+        took = take_step_branch(p)
         files = sorted(set(_changed_files()) | {str(a).split(" §")[0].strip("` ") for a in _as_list(p.get("artifacts"))})
-        out += ["# Resume: part %s (post `%s`)" % (p.get("part") or pid, pid),
+        out += took + ["# Resume: part %s (post `%s`)" % (p.get("part") or pid, pid),
                 "%s · train `%s` · status %s%s" % (p.get("title") or pid, p.get("train") or "?", p.get("status") or "?",
                                                     (" · board %s" % p["_board"]) if p.get("_board") else ""),
                 ""] + part_prompt(pid, p) + ["", "## Your post now"]
