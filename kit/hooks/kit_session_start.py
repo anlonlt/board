@@ -9,6 +9,7 @@ lessons' count.
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -26,6 +27,14 @@ def main():
     claude = is_claude_payload(data)
     k = c.get("kit", {})
     out = []
+    if str((data or {}).get("source") or "") in ("compact", "clear"):
+        # M5: a resume after this prints whole again (its delta is against a context this session no longer holds)
+        sid = re.sub(r"[^A-Za-z0-9._-]", "_", str((data or {}).get("session_id") or ""))
+        for p in (glob.glob(os.path.join(root, ".kit", "run", "resume", "*-%s.json" % sid)) if sid else []):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
     if claude and str((data or {}).get("source") or "") == "compact":
         # a compaction is the safety net past the kit's limit, never how a role goes on: its context is now a summary
         role = os.environ.get("KIT_ROLE") or inspect_claude_transcript(str(data.get("transcript_path") or ""))[1]

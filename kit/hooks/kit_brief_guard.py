@@ -11,6 +11,8 @@ you check before answering?" This hook is that check:
     (CL30), in Bash / run_command; agy's MCP `board_reply` checks the same stamp, .kit/mcp_stdio.py) is refused unless
     `kit.py resume` ran in this session in the last `kit.brief.max_age_min` minutes (15); the refusal names the command.
   - PostToolUse on Bash / run_command: a `kit.py resume` that ran stamps the session (.kit/run/brief/<session>).
+    That includes a second resume of the session, which prints only what changed since its last one (M5): the delta
+    is read against what this session already read, so it is as fresh as the whole one (`--full`).
 Everyone else (parts, the clerk, the owner's own sessions) is never refused. Exit 2 with the reason on stderr (Claude
 Code), {"decision": "deny"} (agy).
 """

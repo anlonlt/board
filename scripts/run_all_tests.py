@@ -577,7 +577,7 @@ def main(argv=None):
         commit, why_not = run_commit(REPO_ROOT)
         if commit and not a.fresh:
             note = note_read(REPO_ROOT, commit, fetch=not a.list)
-        elif not commit:
+        elif not commit and not a.list:            # --list prints the suites and nothing else
             print("full run not saved on a commit: %s" % why_not, flush=True)
         note = dict(note, commit=commit, passed=dict(note.get("passed") or {}), failed=list(note.get("failed") or []))
     for s in suites():
