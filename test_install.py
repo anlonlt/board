@@ -164,7 +164,8 @@ with tempfile.TemporaryDirectory() as d:
           and "## The post format" in board_md and "## Which feature for what" in board_md and "board_cli.py reply" in board_md
           and {k: v for k, v in cfg_loc.get("review", {}).items() if k != "since"} == {"auto": "all", "train_every": 4} and cfg_loc["review"].get("since") and cfg_loc.get("post_body_max") == 1500)
     orch_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "orchestrator.md"), encoding="utf-8").read()
-    cards_cli = not os.path.exists(os.path.join(t_loc, ".claude", "agents", "kit-cards.md"))   # no cards agent on the CLI
+    # 38b1803: the web's cards agent is installed in every repo (any repo can be opened on the web); the CLI guide never calls it
+    cards_cli = os.path.exists(os.path.join(t_loc, ".claude", "agents", "kit-cards.md"))
     clerk_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "clerk.md"), encoding="utf-8").read()
     check("the Claude Code CLI orchestrator starts a haiku clerk session and parts as named background sessions",
           "claude --bg -n harmonize-clerk --model haiku --autocompact 120000 --permission-mode \"$(python3 -I .kit/kit.py permission-mode)\"" in orch_cli
