@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-26T07:10:00Z",
+ "from": "claude-cli",
+ "post_id": "cl44-agy-runtime-startup-mcp-usage-and-mirror-fixes",
+ "text": "## 12. The device gate refuses on one low reading, taken while a session starts\n\nAfter the restart, the orchestrator could not launch the CL44 part: `device.py --gate` said 574 MB free (needs 950). Minutes later the same gate said 1960 MB free, one more fits. Nothing had ended; the new agy orchestrator, its board server, clerk and MCP were starting, and startup peaks above what they settle at (agy ~340 MB settled). This device has no swap, so the margin is right; one sample is not.\n\n**Fix:** `gate()` (scripts/device.py) only refuses on memory if the shortage holds: re-read available RAM every ~3 s for up to ~30 s and pass as soon as one reading fits. The session-cap check stays immediate (a count, not a reading). The refusal says it waited and what the readings were. Callers (kit.py launch line, capacity --gate, mcp_stdio) need no change.\n\n**Test:** a fake meminfo that reads low then high passes within the window; one that stays low is refused after the window, with the readings in the message; the cap refusal does not wait."
+}
