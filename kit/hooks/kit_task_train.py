@@ -62,6 +62,11 @@ def artifact_board(cfg):
     return any("claude.ai/" in str(u or "") for u in (cfg.get("board_url"), k.get("artifact_url"), a.get("url")))
 
 
+def on_web():
+    """CL51: the Artifact is the Claude Code web session's; on a computer no hook asks for an `artifact push`."""
+    return str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes")
+
+
 def on_create(root, st, ti, tr):
     task = (tr or {}).get("task") if isinstance(tr, dict) else None
     tid = str((task or {}).get("id") or "")
@@ -449,7 +454,7 @@ def main():
         print("NOT complete: %s." % refuse, file=sys.stderr)
         return 2
     if msg:
-        if artifact_board(config(data)) and event != "UserPromptSubmit":
+        if artifact_board(config(data)) and event != "UserPromptSubmit" and on_web():
             # an Artifact board: the step is on the local copy; one batch carries it (and every other change) across
             msg += (" The board is an Artifact: send this to it with `python3 -I .kit/kit.py artifact push` (it prints one "
                     "ArtifactData batch per 50 changes); batch several steps before you push.")

@@ -919,6 +919,13 @@ def _art_save(st):
     write_doc(os.path.join(_art_dir(), "state.json"), st)
 
 
+def artifact_here():
+    """CL51 (the owner's rule): the Artifact is the Claude Code web session's. On a computer, a session works with the
+    local board, which reaches GitHub (board-mirror), and never writes to or waits on the Artifact: no STALE gate, no
+    push at launch or adopt, no "not on the board yet" at done. The attached board on the web, else None."""
+    return attached_board() if _is_web() else None
+
+
 def attached_board():
     """The Artifact this repo's board lives in, from config alone (CL13): {"url", "prefix"} or None.
     `kit.artifact: {"url": <claude.ai/artifact/...>, "prefix": "repos/<id>/"}` (or `"repo": "<id>"`) says the board is
@@ -1146,6 +1153,43 @@ def _merge_doc(did, remote, local, base, lost=None):
     return _merge_fields(remote, local, base)
 
 
+_CLOSED = ("complete", "completed", "done", "dropped", "shipped", "merged", "closed")
+
+
+def _status_rank(st):
+    st = str(st or "").strip().lower()
+    if not st:
+        return None
+    if st in _CLOSED:
+        return 3
+    if "review" in st:
+        return 2
+    if "progress" in st or st in ("running", "doing", "held", "blocked"):
+        return 1
+    return 0 if st in ("planned", "open", "todo", "queued") else None
+
+
+def keep_newer(incoming, here):
+    """CL51 (the 20:23Z overwrite: CL44's local part loaded the Artifact's older copies over 11 newer posts of the local
+    board, CL43 back to planned): the copy a load writes. The newer of the two by updated_at stands, with only the fields
+    it lacks taken from the other; a status (or a done column) is never lowered."""
+    if not isinstance(here, dict) or not isinstance(incoming, dict):
+        return incoming if incoming is not None else here
+    a, b = here.get("updated_at"), incoming.get("updated_at")
+    newer_here = isinstance(a, str) and (not isinstance(b, str) or a > b)
+    first, other = (here, incoming) if newer_here else (incoming, here)
+    out = dict(first)
+    for k, v in other.items():
+        if k not in out:
+            out[k] = v
+    rh, ro = _status_rank(here.get("status")), _status_rank(out.get("status"))
+    if rh is not None and (ro is None or ro < rh):
+        out["status"] = here["status"]
+    if here.get("column") == "done" and out.get("column") != "done":
+        out["column"] = "done"
+    return out
+
+
 def artifact_load(url=None, token=None, in_dir=None):
     url = url or local_board_url()
     if not _ensure_local_board(url):
@@ -1176,11 +1220,13 @@ def artifact_load(url=None, token=None, in_dir=None):
                     except OSError:
                         pass
                     continue
+                new = keep_newer(new, local)
                 merged += new != local
                 kept += new == local
             else:
-                new = remote
-                taken += local != remote
+                new = keep_newer(remote, local)       # CL51: an older copy there never goes back over a newer one here
+                taken += new != local
+                kept += local is not None and new == local and local != remote
             if new != local:
                 _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": new,
                                                              "if_version": d.get("version", 0)}], "sync": True}, token=token)
@@ -1328,17 +1374,10 @@ def artifact_blobs_text(r):
 def stale_copy():
     """CL30: '' when the scripts may read the local copy, else why not (an Artifact board whose copy was never loaded,
     or loaded longer ago than kit.artifact.fresh_min, 15). $KIT_STALE_OK=1 reads it anyway.
-    CL44: local agy / local CLI sessions running against a local board server (`kit.mode == 'local'` with a non-claude.ai
-    board_url, outside Claude Code Web) are not blocked by the Claude-Web Artifact STALE gate unless KIT_ARTIFACT_URL is
-    explicitly forced."""
-    if not attached_board() or os.environ.get("KIT_STALE_OK"):
+    CL44/CL51: a session on a computer (outside Claude Code web) is never held by it: the Artifact is the web's."""
+    if not artifact_here() or os.environ.get("KIT_STALE_OK"):    # CL51: never on a computer, whatever kit.mode says
         return ""
     k = _kit_config().get("kit") or {}
-    # CL44: in local mode (local agy or local CLI) with a local board server, kit.artifact.url may be set for web
-    # sessions or cross-sync; do not block local sessions with the Claude-Web Artifact pull/load STALE gate unless
-    # running in Claude Code Web (_is_web()) or KIT_ARTIFACT_URL is explicitly forced in the environment.
-    if str(k.get("mode") or "").strip().lower() == "local" and not _is_web() and not os.environ.get("KIT_ARTIFACT_URL"):
-        return ""
     try:
         cap = float(((k.get("artifact") if isinstance(k.get("artifact"), dict) else {}) or {}).get("fresh_min", 15))
     except (TypeError, ValueError):
@@ -2681,7 +2720,7 @@ class _LocalBoard:
 
     def __init__(self, db_path=None):
         self.db_path = db_path
-        self.artifact = bool(attached_board())
+        self.artifact = bool(artifact_here())
 
     def posts(self):
         return _all_posts(self.db_path)
@@ -4055,6 +4094,28 @@ def plain_notes(p):
     return out
 
 
+def _mirror_path():
+    mp = (CONFIG.get("mirror") or {}).get("path")
+    return os.environ.get("KIT_MIRROR") or (os.path.join(ROOT, mp) if mp else os.path.join(os.path.dirname(ROOT), "board-mirror"))
+
+
+def git_copy_has(pid, p, strip, m=None):
+    """CL51: done on a computer: the post as the local board has it is in the board's git copy (board-mirror); if not,
+    it is kept there now (`kit.py keep`, what end_session does) and read again. [] when it is there, or when this clone
+    has no git copy (said by `resume`); else why not."""
+    m = m or _mirror_path()
+    f = os.path.join(m, "board", "posts", pid + ".json")
+    if not os.path.isdir(os.path.join(m, "board")):
+        return []
+    if strip(_read_json(f)) == strip(p):
+        return []
+    txt, ok = keep(m)
+    if strip(_read_json(f)) == strip(p):
+        return []
+    return ["the post is not in the board's git copy yet (%s): `python3 -I .kit/kit.py keep` said: %s; then done again"
+            % (BRANCH, (txt or "nothing")[-200:])]
+
+
 def done(pid, db_path=None, root=None):
     p = _get_post(pid, db_path=db_path)
     if not p:
@@ -4081,7 +4142,11 @@ def done(pid, db_path=None, root=None):
     warn += pending_real         # CL32/CL38: a real project too, run by the orchestrator (pending)
     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
     strip = lambda d: {k: v for k, v in (d or {}).items() if k not in ("proof", "updated_at")}  # noqa: E731
-    if attached_board() and strip(_read_json(_base_path("posts", pid))) != strip(p):
+    if not artifact_here():
+        # CL51: on a computer the board is the local one and git carries it: the post is on the local board (read
+        # above) and in the git copy, never a step on the Artifact
+        err += git_copy_has(pid, p, strip)
+    elif strip(_read_json(_base_path("posts", pid))) != strip(p):
         # CL28: a part updated its post on the local copy only and said "Done": the live board (the Artifact) still
         # showed it planned, with none of its results (the owner: "How come you said you posted when you didn't?")
         err.append("the post is not on the board yet (%s): its local copy differs from what the Artifact last had. Run "
@@ -4098,7 +4163,7 @@ def done(pid, db_path=None, root=None):
                                                            "branch": _git_run("symbolic-ref", "--short", "-q", "HEAD").stdout.strip(),
                                                            "needs_real": bool(pending_real)}}, env={"KIT_GATE": "done"}):
             warn.append("proof: the board did not take it (is the board server running?): the step cannot be completed without it")
-        elif attached_board():
+        elif artifact_here():
             warn.append("proof: written here; send it: `python3 -I .kit/kit.py artifact push`")
     lines = (["NOT READY: %s" % pid] if err else ["OK: %s follows the post format" % pid])
     lines += ["  fix: " + e for e in err] + ["  note: " + w for w in warn]
@@ -5345,7 +5410,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     tr = _local_update(url, token, "posts", "_trains", lambda t: _trains_mark(t, pid, dict(post, **fields), sess, rel))
     out["session_id"] = sess
     out["trains"] = tr is not None
-    if attached_board():
+    if artifact_here():                        # CL51: on a computer, launch sends nothing to the Artifact
         out.update({"batches": [], "need_pin": []})
         try:
             r = artifact_push(url=url, token=token)
@@ -6035,7 +6100,7 @@ def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
             if _local_update(url, token, "posts", pid, {"train": t}) is not None:
                 n += 1
     out = {"trains": plan, "written": n}
-    if attached_board():
+    if artifact_here():
         out["push"] = artifact_push(url=url, token=token)
     return out
 
@@ -8605,6 +8670,12 @@ def main(argv=None):
         print(msg)
         return rc
     if a.cmd == "artifact":
+        if a.action in ("pull", "load", "push", "sent", "pin") and not _is_web() and not os.environ.get("KIT_ARTIFACT_ON_COMPUTER"):
+            # CL51 (the owner's rule): CL44's local part ran `artifact load` because done asked it to, and wrote the
+            # Artifact's older copies over 11 newer posts of the local board
+            print("not on a computer: the Artifact is the Claude Code web session's. Here the local board is the board "
+                  "(the git copy, board-mirror, carries it); the web session reconciles its Artifact with GitHub.")
+            return 2
         try:
             if a.action == "pull":
                 print(artifact_pull(full=a.full), end="")
