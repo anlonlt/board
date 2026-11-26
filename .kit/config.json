@@ -153,6 +153,9 @@
     "check": "python3 -I .kit/kit.py resume --role orchestrator"
    }
   ],
-  "unified_hooks": "2026-11-24"
+  "unified_hooks": "2026-11-24",
+  "memory": {
+   "review_days": 90
+  }
  }
 }
