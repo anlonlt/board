@@ -109,6 +109,18 @@ with tempfile.TemporaryDirectory() as d:
     rc, out, _ = run("kit_say_it_once.py", {"hookEventName": "PostInvocation", "conversationId": cid_post}, proj)
     check("say: after a board write, PostInvocation reminds to end with ·", "·" in injected_text(out))
 
+    cid_act = "act-" + RUN
+    act_call = {"hookEventName": "PostToolUse", "conversationId": cid_act,
+                "toolCall": {"name": "run_command", "args": {"CommandLine": "npm test"}}}
+    for _ in range(7):
+        rc_a, out_a, _ = run("kit_activity.py", act_call, proj)
+        check("activity: quiet before 8th repeat", rc_a == 0 and out_a == {}) if _ == 6 else None
+    rc_a8, out_a8, _ = run("kit_activity.py", act_call, proj)
+    rc_pi8, out_pi8, _ = run("kit_activity.py", {"hookEventName": "PostInvocation", "conversationId": cid_act}, proj)
+    rc_pi9, out_pi9, _ = run("kit_activity.py", {"hookEventName": "PostInvocation", "conversationId": cid_act}, proj)
+    check("activity: 8th repeat silent on PostToolUse and injected once on PostInvocation",
+          rc_a8 == 0 and out_a8 == {} and rc_pi8 == 0 and "8 times in a row" in injected_text(out_pi8) and rc_pi9 == 0 and out_pi9 == {})
+
     rc, out, _ = run("kit_board_typing.py", {
         "hookEventName": "PreInvocation", "conversationId": "t1-" + RUN,
         "lastUserInput": "Board comment from the owner on your post P1-x, thread t, 10:00, verbatim: \"a\""

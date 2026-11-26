@@ -155,6 +155,8 @@ AGY_CASES = [(e, dict(p, hookEventName=e)) for e, p in [
     ("PreToolUse", agy("edit_file", {"Path": "@ROOT@/app/a.html"})),
     ("PreToolUse", agy("read_file", {"Path": "@ROOT@/app/a.html"})),
     ("PostToolUse", agy("run_command", {"CommandLine": "ls"})),
+    ("PostToolUse", agy("edit_file", {"Path": "@ROOT@/app/a.html"})),
+    ("PostToolUse", agy("write_file", {"Path": "@ROOT@/b.txt"})),
     ("PostToolUse", agy("send_message", {"Recipient": "x", "Message": "hi"})),
     ("PreInvocation", agy(lastUserInput="please do the thing")),
     ("PostInvocation", agy()),
@@ -204,7 +206,7 @@ class Parity(unittest.TestCase):
     def test_the_table_is_what_each_runtime_had(self):
         """The lines as they were written by hand before the table (53f23c4): no hook gained, lost or narrowed."""
         count = {rt: len(hook.rows(rt)) for rt in hook.RUNTIMES}
-        self.assertEqual(count, {"web": 30, "cli": 27, "agy": 16})          # cli and web (CL41): + what a part does now (3); each: + the work saved (2); web: + the board saved and the hand-over at Stop; 53f23c4's 21, 20, 15 (agy: guard's two tools on one row) + the task list's two
+        self.assertEqual(count, {"web": 30, "cli": 27, "agy": 20})          # cli, web (CL41) and agy (CL43): + what a part does now (3; agy + PostInvocation loop delivery); each: + the work saved (2); web: + the board saved and the hand-over at Stop; 53f23c4's 21, 20, 15 (agy: guard's two tools on one row) + the task list's two
         self.assertEqual([r[2] for r in hook.rows("cli", "Stop")].count("kit_web_save.py"), 1)
         self.assertEqual([r[2] for r in hook.rows("cli", "Stop")].count("kit_pre_compact.py"), 1)
         self.assertTrue(all(g == (ev in ("PreToolUse", "TaskCompleted")) or f in ("kit_memory_jit.py", "kit_activity.py") for ev, f, _, g, _ in hook.TABLE))  # they inform, never refuse

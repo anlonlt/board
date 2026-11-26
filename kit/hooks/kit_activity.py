@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Claude Code PreToolUse, PostToolUse and Stop, a part's session: what it is doing now, on its step, for the owner to see.
-On a computer the page reads it from the local board within seconds; on the web (CL41) the hook writes the same document to the
-container's local copy, and `kit.py artifact push`, which the part runs at each change of its post and its Stop check asks for,
-carries it to the Artifact (a hook cannot call ArtifactData).
+"""PreToolUse, PostToolUse, PostInvocation (agy) and Stop, a part's session: what it is doing now, on its step, for the owner to see.
+Works on Claude Code (CLI and web) and agy. On a computer the page reads it from the local board within seconds; on the web (CL41)
+the hook writes the same document to the container's local copy, and `kit.py artifact push`, which the part runs at each change of
+its post and its Stop check asks for, carries it to the Artifact (a hook cannot call ArtifactData).
 And, in every session, a loop breaker: the same call with the same input 8 times in a row is said once to the session (and shown on
-the step). That line is the only thing it ever says; nothing is refused.
+the step). On Claude Code it is returned as PostToolUse additionalContext; on agy, PostToolUse records it and PostInvocation injects
+it via injectSteps (agy ignores injectSteps on PostToolUse). That line is the only thing it ever says; nothing is refused.
 
-No model call. At most one write every 15 seconds (and one when a turn ends) of
-activity/<post> on the board: {at, actions, what, state, pieces}. `what` is the call starting (before it) or done (after), in the plain words of a Bash call's own
-description ("Run the tests"), or the file it edits; `actions` the calls counted since the session began; `state` "working"
-or "stopped" (the turn ended). `pieces`: the numbers of the step's pieces whose file (a path the task names in that piece's line,
-`.kit/run/pieces/<post>.json`) changed last, which the page shows as "Now". It never writes a piece's status: the part ticks it
-done, since a file that exists proves nothing finished. The post is KIT_POST (set by `kit.py launch`), else a part's first prompt.
+No model call. At most one write every 15 seconds (and one when a turn ends, a piece changes, or a loop is detected) of
+activity/<post> on the board: {at, actions, what, state, pieces}. `what` is the call starting (before it) or done (after), in the
+plain words of a Bash/run_command call's own description/toolSummary ("Run the tests"), or the file it edits/writes; `actions` the
+calls counted since the session began; `state` "working" or "stopped" (the turn ended). `pieces`: the numbers of the step's pieces
+whose file (a path the task names in that piece's line, `.kit/run/pieces/<post>.json`) changed last, which the page shows as "Now".
+It never writes a piece's status: the part ticks it done, since a file that exists proves nothing finished. The post is KIT_POST
+(set by `kit.py launch`), else a part's first prompt.
 The write is a detached `board_cli.py set` (activity/ is not a post: no gate, no git copy, no "new" mark).
 """
 import json
@@ -22,7 +24,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from kit_config import project_dir  # noqa: E402
+from kit_config import is_claude_payload, project_dir  # noqa: E402
 
 EVERY = 15
 LOOP = 8                                       # the same call this many times in a row: said once, and on the board
@@ -69,20 +71,40 @@ def bash_words(cmd):
     return ("Running %s" % prog[:30]) if re.match(r"^[\w.+-]+$", prog) else "Running a command"
 
 
+def _sid(data):
+    return re.sub(r"[^\w.-]", "_", str(data.get("session_id") or data.get("conversationId") or data.get("conversation_id") or "session"))
+
+
+def _file_path(ti):
+    for k in ("file_path", "notebook_path", "Path", "TargetFile", "path"):
+        v = ti.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _tool_and_input(data):
+    tc = data.get("toolCall") if isinstance(data.get("toolCall"), dict) else {}
+    name = str(data.get("tool_name") or tc.get("name") or "")
+    raw = data.get("tool_input") if isinstance(data.get("tool_input"), dict) else tc.get("args")
+    return name, raw if isinstance(raw, dict) else {}
+
+
 def what_of(name, ti):
-    if name == "Bash":
-        d = re.sub(r"\s+", " ", str(ti.get("description") or "")).strip()
-        return d[:90] or bash_words(ti.get("command"))
-    if name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
-        return "Editing %s" % os.path.basename(str(ti.get("file_path") or ti.get("notebook_path") or "a file"))
-    if name in ("SendMessage", "mcp__claude-code-remote__send_message"):
+    if name in ("Bash", "run_command"):
+        d = re.sub(r"\s+", " ", str(ti.get("description") or ti.get("toolSummary") or "")).strip()
+        return d[:90] or bash_words(ti.get("command") or ti.get("CommandLine"))
+    if name in ("Edit", "Write", "MultiEdit", "NotebookEdit", "edit_file", "write_file"):
+        verb = "Writing" if name == "write_file" else "Editing"
+        return "%s %s" % (verb, os.path.basename(_file_path(ti) or "a file"))
+    if name in ("SendMessage", "mcp__claude-code-remote__send_message", "send_message"):
         return "Sending a message"
     return ""
 
 
 def changed_pieces(root, pieces, since, ti):
     """The numbers of the pieces whose file this call edits or that changed on disk since `since`."""
-    edited = str(ti.get("file_path") or "")
+    edited = _file_path(ti)
     hit = []
     for x in pieces:
         for f in x.get("files") or []:
@@ -106,17 +128,22 @@ def main():
         data = json.load(sys.stdin)
     except (ValueError, OSError):
         return 0
+    if not isinstance(data, dict):
+        return 0
     role = str(os.environ.get("KIT_ROLE") or "").strip().lower()
     if os.environ.get("KIT_ACTIVITY") == "0":
         return 0
     root = project_dir(data)
-    ev = str(data.get("hook_event_name") or "")
-    name, ti = str(data.get("tool_name") or ""), data.get("tool_input") or {}
-    said = loop_check(root, data, ev, name, ti)                 # every session: silent unless the same call repeats
+    claude = is_claude_payload(data)
+    ev = str(data.get("hook_event_name") or data.get("hookEventName") or "")
+    if ev == "PostInvocation":
+        return _say_agy(_pop_pending(root, data))
+    name, ti = _tool_and_input(data)
+    said = loop_check(root, data, ev, name, ti, claude)         # every session: silent unless the same call repeats
     if role not in ("", "part"):
-        return _say(said)
+        return _say(said, claude)
     run = os.path.join(root, ".kit", "run", "activity")
-    sid = re.sub(r"[^\w.-]", "_", str(data.get("session_id") or "session"))
+    sid = _sid(data)
     path = os.path.join(run, sid + ".json")
     try:
         with open(path, encoding="utf-8") as fh:
@@ -135,7 +162,7 @@ def main():
     if not post:
         if "post" in st:
             _save(path, st)
-        return _say(said)
+        return _say(said, claude)
     now = time.time()
     stop, before = ev == "Stop", ev == "PreToolUse"
     if not stop:
@@ -170,32 +197,61 @@ def main():
             except OSError:
                 pass
     _save(path, st)
-    return _say(said)
+    return _say(said, claude)
 
 
-def loop_check(root, data, ev, name, ti):
+def _loop_path(root, data):
+    return os.path.join(root, ".kit", "run", "activity", "loop-%s.json" % _sid(data))
+
+
+def loop_check(root, data, ev, name, ti, claude=True):
     """The same tool with the same input LOOP times in a row (after each call): one line to the session, once per run of them."""
     if ev != "PostToolUse" or not name:
         return ""
-    sid = re.sub(r"[^\w.-]", "_", str(data.get("session_id") or "session"))
-    path = os.path.join(root, ".kit", "run", "activity", "loop-%s.json" % sid)
+    path = _loop_path(root, data)
     try:
         with open(path, encoding="utf-8") as fh:
             lp = json.load(fh)
     except (OSError, ValueError):
         lp = {}
     key = call_key(name, ti)
-    lp = {"key": key, "n": lp.get("n", 0) + 1 if lp.get("key") == key else 1}
-    _save(path, lp)
-    if lp["n"] != LOOP:
+    n = lp.get("n", 0) + 1 if lp.get("key") == key else 1
+    msg = ""
+    if n == LOOP:
+        msg = ("The same %s call, with the same input, %d times in a row: it is not getting anywhere. Change the approach, or stop and say "
+               "in your post what blocks you." % (name, LOOP))
+    new_lp = {"key": key, "n": n}
+    if msg and not claude:
+        new_lp["pending"] = msg                                 # agy ignores injectSteps on PostToolUse; PostInvocation delivers it
+    elif not claude and lp.get("key") == key and lp.get("pending"):
+        new_lp["pending"] = lp["pending"]
+    _save(path, new_lp)
+    return msg
+
+
+def _pop_pending(root, data):
+    """Consume a pending agy loop-breaker message recorded by PostToolUse, so PostInvocation injects it once."""
+    path = _loop_path(root, data)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lp = json.load(fh)
+    except (OSError, ValueError):
         return ""
-    return ("The same %s call, with the same input, %d times in a row: it is not getting anywhere. Change the approach, or stop and say "
-            "in your post what blocks you." % (name, LOOP))
+    msg = str(lp.pop("pending", "") or "")
+    if msg:
+        _save(path, lp)
+    return msg
 
 
-def _say(text):
-    if text:
+def _say(text, claude=True):
+    if text and claude:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
+    return 0
+
+
+def _say_agy(text):
+    if text:
+        print(json.dumps({"injectSteps": [{"systemMessage": {"systemMessage": text}}]}, ensure_ascii=False))
     return 0
 
 
