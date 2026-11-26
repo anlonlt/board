@@ -6,7 +6,7 @@
  "part": "CL43",
  "planned_by": "owner",
  "runner": "agy",
- "status": "planned",
+ "status": "in progress",
  "subtasks": [
   {
    "from": "task",
@@ -41,5 +41,6 @@
  ],
  "task": "The code is on branch feat/streamline-doctor-memory (309ba6c): `kit/hooks/kit_activity.py`, its rows in `kit/hook.py` TABLE, the page's `kit-now` line.\n\n1. Find how an agy part's hook payload names its tool and input (run_command, edit_file, write_file) and its post.\n2. Adapt `kit_activity.py` to them, with the same limits: no model call, at most one write every 15 s, nothing said but the loop line.\n3. Wire it in the agy rows of the TABLE and test it the way tests/test_post_gate.py tests the Claude Code one.\n4. Run one real agy part and record what the board showed, every few seconds.",
  "title": "The live line and the loop breaker on agy",
- "train": "cli"
+ "train": "cli",
+ "updated_at": "2026-11-26T05:41:53Z"
 }
