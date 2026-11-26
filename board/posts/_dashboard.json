@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:45:07Z",
+ "created_at": "2026-11-26T22:48:06Z",
  "rows": [
   {
    "at": 0,
@@ -105,7 +105,7 @@
     "The kit suggests where a step runs, from the devices and platforms it remembers",
     "On a computer, a part runs its own real-project check before Done",
     "Every rule that differs by platform says where it applies, checked by a test",
-    "The next step is the most important one, never the oldest"
+    "Every new step is measured against every open one: queue order and what runs together"
    ],
    "train": "P-runners"
   },
@@ -165,5 +165,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T22:45:07Z"
+ "updated_at": "2026-11-26T22:48:06Z"
 }
