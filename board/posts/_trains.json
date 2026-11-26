@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T20:01:04Z",
+ "created_at": "2026-11-26T20:01:28Z",
  "rows": [
   {
    "also": [],
@@ -103,7 +103,8 @@
     "M6",
     "M3",
     "M7",
-    "M8"
+    "M8",
+    "M9"
    ],
    "parent": "",
    "part": "P-memory",
@@ -882,8 +883,19 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-memory",
+   "part": "M9",
+   "post": "m9-the-workflow-on-the-map-what-lives-outsi",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T20:01:04Z"
+ "updated_at": "2026-11-26T20:01:28Z"
 }
