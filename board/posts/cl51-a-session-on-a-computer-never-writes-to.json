@@ -1,0 +1,37 @@
+{
+ "body": "A session on a computer never writes to the Artifact. CL44's part (a local Claude Code session) sent its post to the web board: `kit.py done` refuses Done when the config names an Artifact and the post differs from the Artifact's last copy (\"the post is not on the board yet\"), whatever the platform. The owner's rule: the Artifact is the Claude Code web session's; a local session works with the local board, which reaches GitHub, and the web session reconciles its Artifact with GitHub (CL45).\n\n1. `kit.py done` checks the Artifact only on the web; on a computer it checks that the post is on the local board and in the git copy (board-mirror) instead.\n2. The same for every Artifact step a local session is told to do (the STALE gate, launch's Artifact batch, the task-train hook's \"push\"): none on a computer.\n3. Tests: a local done with an Artifact named in the config passes without any Artifact call; on the web it still asks for the push.\n",
+ "column": "info",
+ "created_at": "2026-11-26T21:33:09Z",
+ "from": "orchestrator",
+ "part": "CL51",
+ "planned_by": "orchestrator",
+ "runner": "claude-web",
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "kit.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "kit.py done checks the Artifact only on the web"
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "The same for every Artifact step a local session is told to do (the STALE gate, launch's Artifact..."
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "Tests"
+  }
+ ],
+ "task": "A session on a computer never writes to the Artifact. CL44's part (a local Claude Code session) sent its post to the web board: `kit.py done` refuses Done when the config names an Artifact and the post differs from the Artifact's last copy (\"the post is not on the board yet\"), whatever the platform. The owner's rule: the Artifact is the Claude Code web session's; a local session works with the local board, which reaches GitHub, and the web session reconciles its Artifact with GitHub (CL45).\n\n1. `kit.py done` checks the Artifact only on the web; on a computer it checks that the post is on the local board and in the git copy (board-mirror) instead.\n2. The same for every Artifact step a local session is told to do (the STALE gate, launch's Artifact batch, the task-train hook's \"push\"): none on a computer.\n3. Tests: a local done with an Artifact named in the config passes without any Artifact call; on the web it still asks for the push.\n",
+ "title": "A session on a computer never writes to the Artifact",
+ "train": "board-data",
+ "updated_at": "2026-11-26T21:33:10Z"
+}
