@@ -1174,6 +1174,7 @@ def main(argv=None):
     claude_cli = rt in ("local", "agy", "both")
     claude_cli_hooks = rt == "local"
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
+    ins.put(".kit/kit_map.py", rd("scripts", "kit_map.py"))   # M1: kit.py map, the project's map from its code
     ins.put(".kit/usage.py", rd("scripts", "usage.py"))       # CL37: the usage ledger (kit.py usage)
     ins.put(".kit/ledger.py", rd("kit", "ledger.py"))        # 3-layer memory ledger (observations -> principles)
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))

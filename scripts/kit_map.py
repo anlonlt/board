@@ -28,6 +28,7 @@ import time
 
 MAX_OVERVIEW = 60          # lines: one screen
 BIG_FILE = 1500            # lines: a file too big to read whole
+MAX_PARSE = 400_000        # characters: above, a bundle or minified file, counted but not parsed
 PY_EXT = (".py",)
 TS_EXT = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
 CODE_EXT = PY_EXT + TS_EXT
@@ -39,6 +40,7 @@ HTTP_METHODS = ("GET", "HEAD", "OPTIONS") + WRITE_METHODS
 CSRF_RE = r"\b\w*(?:csrf|xsrf|origin|origine|samesite)\w*\s*\("
 AUTH_RE = (r"\b\w*(?:auth|session|user|utilisateur|connecte|login|token|jwt|role|permission|enseignant|admin|"
            r"current|courant|requireuser|getuser)\w*\s*\(")
+PUBLIC_RE = r"(login|logout|signin|signup|sign-in|sign-up|register|connexion|deconnexion|inscription|password|mdp|health|webhook|cron)"
 STOP_SEGMENTS = {"app", "api", "src", "lib", "libs", "test", "tests", "spec", "specs", "unit", "e2e", "index", "page",
                  "route", "layout", "components", "component", "utils", "util", "scripts", "script", "main", "types",
                  "type", "public", "static", "assets", "fixtures", "helpers", "common", "core", "shared", "config",
@@ -110,50 +112,16 @@ def list_files(root, out_rel=None):
 
 # ── TypeScript / JavaScript: a light lexer, no parser to install ───────────────────────────────────────────────
 
+_TOK = re.compile(r"""//[^\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`"""
+                  r"""|(?:(?<=[(,=:\[!&|?{};])|(?<=return))[ \t]*/(?![/*])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n\[])+/""")
+
+
 def strip_ts(src):
-    """Comments blanked (newlines kept, so line numbers hold); strings and template literals kept as written."""
-    out, i, n = [], 0, len(src)
-    last = ""   # last significant char, to tell a regex literal from a division
-    while i < n:
-        c = src[i]
-        nx = src[i + 1] if i + 1 < n else ""
-        if c == "/" and nx == "/":
-            j = src.find("\n", i)
-            j = n if j < 0 else j
-            out.append(" " * (j - i)); i = j; continue
-        if c == "/" and nx == "*":
-            j = src.find("*/", i + 2)
-            j = n if j < 0 else j + 2
-            out.append(re.sub(r"[^\n]", " ", src[i:j])); i = j; continue
-        if c in "\"'`":
-            j = i + 1
-            while j < n and src[j] != c:
-                if src[j] == "\\":
-                    j += 1
-                elif c != "`" and src[j] == "\n":
-                    break
-                j += 1
-            out.append(src[i:j + 1]); i = j + 1; last = c; continue
-        if c == "/" and (last == "" or last in "(,=:[!&|?{};+-*%<>~^" or src[max(0, i - 7):i].rstrip().endswith("return")):
-            j = i + 1
-            in_class = False
-            while j < n and src[j] != "\n":
-                if src[j] == "\\":
-                    j += 2; continue
-                if src[j] == "[":
-                    in_class = True
-                elif src[j] == "]":
-                    in_class = False
-                elif src[j] == "/" and not in_class:
-                    break
-                j += 1
-            if j < n and src[j] == "/":
-                out.append(src[i:j + 1]); i = j + 1; last = "/"; continue
-        out.append(c)
-        if not c.isspace():
-            last = c
-        i += 1
-    return "".join(out)
+    """Comments blanked (newlines kept, so line numbers hold); strings, template and regex literals kept."""
+    def blank(m):
+        t = m.group(0)
+        return re.sub(r"[^\n]", " ", t) if t[:2] in ("//", "/*") else t
+    return _TOK.sub(blank, src)
 
 
 def _match(s, i, open_c="(", close_c=")"):
@@ -210,8 +178,14 @@ def _top_keys(body):
         if not t:
             continue
         if t.startswith("..."):
-            for m in re.finditer(r"\{([^{}]*)\}", t):
-                spread_keys.extend(k for k, _ in _top_keys(m.group(1)) if k)
+            j = 3
+            while j < len(t):            # the outer object literals of `...(c ? {a} : {b})`, not those nested in them
+                if t[j] == "{":
+                    e = _match(t, j, "{", "}")
+                    spread_keys.extend(k for k, _ in _top_keys(t[j + 1:e - 1]) if k)
+                    j = e
+                else:
+                    j += 1
             continue
         m = re.match(r"""(?:async\s+)?(?:get\s+|set\s+)?(?:["']([^"']+)["']|([A-Za-z_$][\w$]*))\s*(\??\s*:|\(|$)""", t)
         if m:
@@ -458,9 +432,16 @@ def _code_reader(root, files):
     facts = {}
     for p in files:
         src = _read(os.path.join(root, p))
-        f = read_py(p, src) if p.endswith(PY_EXT) else read_ts(p, src)
+        if len(src) > MAX_PARSE:   # a bundle or a minified mock-up: counted, not read
+            f = {"lang": "py" if p.endswith(PY_EXT) else "ts", "imports": [], "exports": [], "zod": {}, "tables": {},
+                 "routes": [], "calls": [], "objects": [], "types": {}, "parses": [], "doc": "(not read: %d KB)" % (len(src) // 1024),
+                 "reexports": [], "funcs": {}, "_stripped": ""}
+        else:
+            f = read_py(p, src) if p.endswith(PY_EXT) else read_ts(p, src)
         f["lines"] = src.count("\n") + (1 if src and not src.endswith("\n") else 0)
         f["sha"] = _sha(src)
+        st = os.stat(os.path.join(root, p))
+        f["stat"] = [st.st_size, st.st_mtime_ns]
         facts[p] = f
     return facts
 
@@ -674,11 +655,18 @@ def run_generators(root, out, gens, facts, areas_index):
         with open(os.path.join(out, rel), "w", encoding="utf-8") as fh:
             fh.write("$ %s\n(exit %d)\n%s" % (g["run"], rc, text))
         area = g.get("area")
-        if not area:   # the area of a file the command names, else none
-            for tok in re.findall(r"[\w./-]+\.\w+", g["run"]):
-                if tok in areas_index:
-                    area = areas_index[tok]; break
-        done.append({"name": g["name"], "run": g["run"], "rc": rc, "out": rel, "area": area,
+        cmd = g["run"]
+        pm = re.match(r"\s*(?:pnpm|npm|yarn|bun)\s+(?:-s\s+|--silent\s+)?(?:run\s+)?([\w:.-]+)", cmd)
+        if pm:   # `pnpm carte` runs what package.json says: `tsx scripts/carte-du-jeu.mts`
+            try:
+                with open(os.path.join(root, "package.json"), encoding="utf-8") as fh:
+                    cmd += " " + ((json.load(fh).get("scripts") or {}).get(pm.group(1)) or "")
+            except (OSError, ValueError):
+                pass
+        files_run = [tok for tok in re.findall(r"[\w./-]+\.\w+", cmd) if tok in areas_index]
+        if not area and files_run:
+            area = areas_index[files_run[0]]
+        done.append({"name": g["name"], "run": g["run"], "rc": rc, "out": rel, "area": area, "files": files_run,
                      "seconds": round(time.time() - t0, 1), "lines": text.count("\n")})
     return done
 
@@ -760,7 +748,12 @@ def build(root, out=None, config_path=None, run_gens=True):
         for p in stems.get(stem, []):
             if tp not in tests_of[p]:
                 tests_of[p].add(tp)
-                link("file:" + tp, "file:" + p, "tests", tp, os.path.splitext(os.path.basename(p))[0])
+                ev = os.path.splitext(os.path.basename(p))[0]
+                if ev in facts[tp].get("_stripped", _read(os.path.join(root, tp))):
+                    link("file:" + tp, "file:" + p, "tests", tp, ev)
+                else:   # matched by its name only: the check is that both files are still there
+                    links.append({"from": "file:" + tp, "to": "file:" + p, "kind": "tests",
+                                  "check": {"reader": "code", "file": tp, "exists": [tp, p]}})
     for p, ts in tests_of.items():
         for tp in ts:
             if p in imports_of[tp]:
@@ -808,18 +801,26 @@ def build(root, out=None, config_path=None, run_gens=True):
         span = f["funcs"].get(r["method"]) if f["lang"] == "ts" else None
         body_txt = f.get("_stripped", "")[span[0]:span[1]] if span else f.get("_stripped", "")
         parsed = [n for n in dict.fromkeys(f["parses"]) if re.search(r"\b%s\s*\.\s*(safe)?[pP]arse" % re.escape(n), body_txt)]
+        found = []
         for n in parsed:
             if n in f["zod"]:
-                schema, schema_file, schema_name = f["zod"][n], r["file"], n; break
+                found.append((f["zod"][n], r["file"], n)); continue
             for sp_, z in schemas.get(n, []):
                 if sp_ in imports_of[r["file"]]:
-                    schema, schema_file, schema_name = z, sp_, n; break
-            if schema:
-                break
+                    found.append((z, sp_, n)); break
+        if len(found) == 1:
+            schema, schema_file, schema_name = found[0]
+        elif found:   # tried one after another (a creation, else a vote): the route accepts any of them
+            schema = {"fields": {}, "mode": "strict" if all(z.get("mode") == "strict" for z, _, _ in found) else
+                      "passthrough" if any(z.get("mode") == "passthrough" for z, _, _ in found) else "strip"}
+            for z, _, _ in found:
+                for k, v in z.get("fields", {}).items():
+                    schema["fields"].setdefault(k, v)
+            schema_file, schema_name = found[0][1], "+".join(n for _, _, n in found)
         if schema:
             things.append({"id": "schema:%s#%s" % (schema_file, schema_name), "kind": "schema", "file": schema_file,
                            "fields": _schema_fields(schema)})
-            link(r["id"], "schema:%s#%s" % (schema_file, schema_name), "validates", r["file"], schema_name + ".")
+            link(r["id"], "schema:%s#%s" % (schema_file, schema_name), "validates", r["file"], schema_name.split("+")[0] + ".")
         # tables: those named in the handler file, then one step through what it imports
         touched = sorted(tn for tn in tables if re.search(r"\b%s\b" % re.escape(tn), body_txt))
         via = {}
@@ -867,6 +868,8 @@ def build(root, out=None, config_path=None, run_gens=True):
         guards = {}
         if r["method"] in WRITE_METHODS and f["lang"] == "ts":
             guards = {"csrf": bool(csrf_re.search(body_txt)) or mw_csrf, "auth": bool(auth_re.search(body_txt))}
+            if re.search(cfg.get("public") or PUBLIC_RE, r["path"], re.I):
+                guards["auth"] = "public"
             missing = [g for g in ("csrf", "auth") if not guards[g]]
             if missing and not r["path"].startswith(("/api/cron", "/api/webhook")):
                 flags.append({"kind": "no-" + "-".join(missing), "thing": r["id"],
@@ -912,7 +915,7 @@ def build(root, out=None, config_path=None, run_gens=True):
                 if not reads:
                     flags.append({"kind": "never-read", "thing": "file:" + cf,
                                   "text": "`%s` (type %s, %s:%d) comes from %s but no screen reads it" % (
-                                      fld, tname, cf, t["line"], ", ".join(sorted(set(rids))[:2])),
+                                      fld, tname, cf, t["line"], ", ".join(x.split(":", 1)[1] for x in sorted(set(rids))[:2])),
                                   "check": {"reader": "code", "file": cf, "contains": fld}})
 
     gens = run_generators(root, out, cfg["generators"], facts, areas_index) if run_gens and cfg["generators"] else []
@@ -931,7 +934,7 @@ def build(root, out=None, config_path=None, run_gens=True):
         ext_in = {p: len([q for q in imported_by[p] if areas_index[q] != a]) for p in fs}
         entry = sorted(fs, key=lambda p: (-(os.path.basename(p).split(".")[0] in ("index", "__init__", "main")),
                                           -ext_in[p], -facts[p]["lines"]))
-        doc = next((facts[p]["doc"] for p in entry if facts[p]["doc"]), "")
+        doc = next((facts[p]["doc"] for p in entry if facts[p]["doc"] and not facts[p]["doc"].startswith("(not read")), "")
         entries = []
         for p in fs:
             for r in facts[p]["routes"]:
@@ -957,6 +960,7 @@ def build(root, out=None, config_path=None, run_gens=True):
     data = {"version": 1, "root": root, "commit": commit, "dirty": dirty, "fingerprint": fingerprint(facts),
             "built_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "seconds": None,
             "files": {p: facts[p]["sha"] for p in sorted(facts)},
+            "stat": {p: facts[p].get("stat") for p in sorted(facts)},
             "areas": area_rows, "features": feature_rows, "joins": joins, "generators": gens,
             "things": things, "links": links, "flags": flags}
     os.makedirs(os.path.join(out, "areas"), exist_ok=True)
@@ -1050,7 +1054,7 @@ def overview_md(d):
         if shown >= room:
             break
         per_kind[f["kind"]] = per_kind.get(f["kind"], 0) + 1
-        if per_kind[f["kind"]] > (6 if f["kind"] in ("dropped-field", "no-csrf", "no-csrf-auth") else 3):
+        if per_kind[f["kind"]] > (6 if f["kind"] in ("dropped-field", "no-csrf", "no-csrf-auth") else 4 if f["kind"] == "never-read" else 3):
             continue
         L.append("- **%s** %s" % (f["kind"], f["text"]))
         shown += 1
@@ -1064,6 +1068,22 @@ def area_card(row, fs, facts, imports_of, imported_by, tests_of, areas_index, jo
     if row.get("for"):
         L += ["For: " + row["for"], ""]
     L.append("%d files, %d lines." % (len(fs), sum(facts[p]["lines"] for p in fs)))
+    fset0 = set(fs)
+    code = [p for p in fs if not _is_test(p)]
+    screens = sorted([p for p in code if _is_ui(p)], key=lambda p: -facts[p]["lines"])[:2]
+    ncall = {j["route"]: len(j["callers"]) for j in joins}
+    writes = sorted({"%s %s" % (r["method"], r["path"]) for p in code for r in facts[p]["routes"] if r["method"] in WRITE_METHODS},
+                    key=lambda w: (-ncall.get("route:" + w, 0), w))[:3]
+    lean = {}
+    for p in code:
+        for q in imports_of[p]:
+            if q not in fset0 and not _is_test(q):
+                lean[q] = lean.get(q, 0) + 1
+    core = [q for q, _ in sorted(lean.items(), key=lambda kv: (-kv[1] * max(1, facts[kv[0]]["lines"]) ** 0.5, kv[0]))[:2]]
+    start = (["screens " + ", ".join(screens)] if screens else []) + (["writes " + ", ".join(writes)] if writes else []) + \
+        (["leans on " + ", ".join(core)] if core else [])
+    if start:
+        L.append("Start here: " + "; ".join(start) + ".")
     if row.get("entries"):
         L += ["", "## Entry points"] + ["- " + e for e in row["entries"]]
     L += ["", "## Files", "| file | lines | exports | what it is |", "|---|---|---|---|"]
@@ -1093,7 +1113,7 @@ def area_card(row, fs, facts, imports_of, imported_by, tests_of, areas_index, jo
     if js:
         L += ["", "## Routes it serves or calls (joins.md has the fields)"]
         L += ["- %s %s -> %s%s" % (j["method"], j["path"], j["handler"], (" [schema %s]" % j["schema"]) if j["schema"] else "") for j in js[:30]]
-    g_here = [g for g in gens if g["area"] == a or (g["area"] in {areas_index[p] for p in fs} and feature)]
+    g_here = [g for g in gens if g["area"] in (a, a.replace("feature ", "")) or fset & set(g.get("files") or [])]
     if g_here:
         L += ["", "## Its own generators"] + ["- `%s` (exit %d): [output](../%s)" % (g["run"], g["rc"], g["out"]) for g in g_here]
     fl = [f for f in flags if f["thing"].split(":", 1)[-1] in fset or any(j["route"] == f["thing"] for j in js)]
@@ -1116,7 +1136,7 @@ def joins_md(d):
             ("%s: " % j["schema"].split("#")[-1] + ", ".join([x for x in acc if "[" not in x][:12]) +
              (" (+%d in union members)" % len([x for x in acc if "[" in x]) if any("[" in x for x in acc) else "")) if acc is not None else "no schema found",
             j["handler"], ", ".join(j["tables"][:6]) or "-", ", ".join(j["tests"][:3]) + (" +%d" % (len(j["tests"]) - 3) if len(j["tests"]) > 3 else "") or "**none**",
-            ", ".join("%s %s" % (k, "yes" if v else "**no**") for k, v in j["guards"].items()) or "-"))
+            ", ".join("%s %s" % (k, v if isinstance(v, str) else "yes" if v else "**no**") for k, v in j["guards"].items()) or "-"))
     return "\n".join(L) + "\n"
 
 
@@ -1134,8 +1154,14 @@ def check(root, out=None, config_path=None, run_gens=True):
         return 1, "STALE: no map at %s: run `kit.py map`" % out
     out_rel = os.path.relpath(out, root).replace("\\", "/") if out.startswith(root + os.sep) else None
     files = list_files(root, out_rel)
-    now = {p: _sha(_read(os.path.join(root, p))) for p in files}
-    old = d.get("files") or {}
+    old, stat = d.get("files") or {}, d.get("stat") or {}
+    now = {}
+    for p in files:   # a file whose size and time did not move is not read again (a slow disk reads 800 files in a minute)
+        try:
+            st = os.stat(os.path.join(root, p))
+        except OSError:
+            continue
+        now[p] = old[p] if p in old and stat.get(p) == [st.st_size, st.st_mtime_ns] else _sha(_read(os.path.join(root, p)))
     changed = sorted(p for p in set(now) | set(old) if now.get(p) != old.get(p))
     problems = []
     if changed:
@@ -1165,8 +1191,10 @@ def check(root, out=None, config_path=None, run_gens=True):
         txt = cache[fp]
         if "contains" in c and c["contains"] not in txt:
             failed.append("%s -%s-> %s: `%s` is no longer in %s" % (ln["from"], ln["kind"], ln["to"], c["contains"], fp))
-        elif "imports" in c and not txt:
-            failed.append("%s -%s-> %s: %s is gone" % (ln["from"], ln["kind"], ln["to"], fp))
+        elif "imports" in c and not (txt and os.path.isfile(os.path.join(root, c["imports"]))):
+            failed.append("%s -%s-> %s: a file is gone" % (ln["from"], ln["kind"], ln["to"]))
+        elif "exists" in c and not all(os.path.isfile(os.path.join(root, x)) for x in c["exists"]):
+            failed.append("%s -%s-> %s: a file is gone" % (ln["from"], ln["kind"], ln["to"]))
     if failed:
         problems.append("%d of %d link checks fail: %s" % (len(failed), ran, "; ".join(failed[:6]) + (" ..." if len(failed) > 6 else "")))
     if problems:

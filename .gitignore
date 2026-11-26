@@ -9,3 +9,4 @@ __pycache__/
 .kit/**/__pycache__/
 .claude/hooks/kit/__pycache__/
 .agents/hooks/kit/__pycache__/
+.board/map/

@@ -6115,6 +6115,7 @@ COMMANDS = [
     ("setup", "kit_import.py / step0_scan.py", "a person's state from their chats / a project's step 0 profile"),
     ("measure", "kit.py usage compare --before <kit commit|date> --after <...> [--role part|orchestrator|clerk|review]", "tokens, cost, turns, tool calls, board bytes per role, median and total with n, before vs after a kit change (CL37)"),
     ("measure", "kit.py usage record|show|push|import-ccr", "one session's usage row from its transcript (the Stop/SessionEnd hook does it, no model call) / the rows / onto the ledger branch kit-usage / rows from saved get_session records"),
+    ("read the code", "kit.py map [--root DIR] [--out DIR] [--config F] [--check]", "a map of any project generated from its code (M1): overview.md in one screen, a card per area and feature, joins.md (UI fields sent vs schema accepted, handler, tables, tests; dropped fields, write routes with no CSRF/auth, uncalled handlers, files over 1,500 lines), map.json things/links/flags; --check fails when the code changed or a link check fails"),
     ("index", "kit.py commands [word|all]", "the topics / the commands a word finds / every one"),
 ]
 
@@ -6729,6 +6730,24 @@ def principles_for(role, train=None):
         if scopes & {"all", role, str(train or "").lower()} - {""}:
             out.append(l)
     return out
+
+
+def _map_cmd(a):
+    """kit.py map: scripts/kit_map.py (the kit's repo) or .kit/kit_map.py (an installed kit), next to this file."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    try:
+        import kit_map  # noqa: E402
+    except ImportError:
+        print("STOP: kit_map.py is not next to kit.py (%s): `python3 -I install.py . --update`" % here)
+        return 2
+    argv = ["--root", a.root or ROOT]
+    for flag, val in (("--out", a.out), ("--config", a.map_config)):
+        if val:
+            argv += [flag, val]
+    argv += (["--check"] if a.check else []) + (["--no-generators"] if a.no_generators else [])
+    return kit_map.main(argv)
 
 
 def _load_ledger_mod():
@@ -7801,6 +7820,9 @@ def main(argv=None):
     s.add_argument("action", choices=["add"]); s.add_argument("id"); s.add_argument("--roles", required=True)
     s.add_argument("--title", required=True); s.add_argument("--text", required=True)
     s.add_argument("--files", default=""); s.add_argument("--from", dest="frm", default="")
+    s = sp.add_parser("map", help="a map of the project from its code: overview, area cards, joins, map.json (--check: still true?)")
+    s.add_argument("--root", default=None); s.add_argument("--out", default=None); s.add_argument("--config", dest="map_config", default=None)
+    s.add_argument("--check", action="store_true"); s.add_argument("--no-generators", action="store_true")
     s = sp.add_parser("commands", help="the kit's commands: the topics, or those a word finds (`all`)")
     s.add_argument("word", nargs="?", default=None)
     s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
@@ -7897,6 +7919,8 @@ def main(argv=None):
             if a.commit:
                 print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
         return 0
+    if a.cmd == "map":
+        return _map_cmd(a)
     if a.cmd == "whoami":
         print(whoami(a.name))
         return 0
