@@ -1,0 +1,10 @@
+{
+ "column": "info",
+ "created_at": "2026-11-26T10:04:00Z",
+ "from": "orchestrator",
+ "goal": "agy runs the kit as well as Claude Code does: launch, resume, hooks, usage and takeover all work there",
+ "kind": "train",
+ "status": "open",
+ "title": "Train agy",
+ "train": "agy"
+}

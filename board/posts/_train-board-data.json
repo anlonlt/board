@@ -1,0 +1,10 @@
+{
+ "column": "info",
+ "created_at": "2026-11-26T10:04:04Z",
+ "from": "orchestrator",
+ "goal": "The board's data is never lost and always readable: the git copy, seeding, reconcile and every checkout's access",
+ "kind": "train",
+ "status": "open",
+ "title": "Train board-data",
+ "train": "board-data"
+}
