@@ -6114,6 +6114,7 @@ COMMANDS = [
     ("setup", "install.py <project> [--update]", "install or update the kit in a project (every present runtime)"),
     ("setup", "kit_import.py / step0_scan.py", "a person's state from their chats / a project's step 0 profile"),
     ("measure", "kit.py usage compare --before <kit commit|date> --after <...> [--role part|orchestrator|clerk|review]", "tokens, cost, turns, tool calls, board bytes per role, median and total with n, before vs after a kit change (CL37)"),
+    ("measure", "kit.py usage show --commands [--role R] [--transcripts GLOB] / compare ... --commands", "cost per command: each result's size and its carry (tokens x calls after it, cache read price), top commands per role, runs of commands repeated in 3+ sessions as script candidates (M6)"),
     ("measure", "kit.py usage record|show|push|import-ccr", "one session's usage row from its transcript (the Stop/SessionEnd hook does it, no model call) / the rows / onto the ledger branch kit-usage / rows from saved get_session records"),
     ("index", "kit.py commands [word|all]", "the topics / the commands a word finds / every one"),
 ]
