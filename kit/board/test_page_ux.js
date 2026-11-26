@@ -11,9 +11,9 @@ const KIT = process.env.KIT_KIT || path.join(__dirname, '..', '..');
 let fails = 0;
 const check = (n, ok, more) => { console.log((ok ? 'ok   ' : 'FAIL ') + n + (ok || more === undefined ? '' : '\n       ' + (typeof more === 'string' ? more : JSON.stringify(more)))); fails += !ok; };
 const freePort = () => new Promise((r) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
-const req = (port, method, p, body) => new Promise((res, rej) => {
+const req = (port, method, p, body, hdrs) => new Promise((res, rej) => {
   const d = body ? Buffer.from(JSON.stringify(body)) : null;
-  const q = http.request({ host: '127.0.0.1', port, method, path: p, headers: d ? { 'content-type': 'application/json', 'content-length': d.length } : {} }, (r) => { let b = ''; r.on('data', (c) => b += c); r.on('end', () => res([r.statusCode, b])); });
+  const q = http.request({ host: '127.0.0.1', port, method, path: p, headers: Object.assign(d ? { 'content-type': 'application/json', 'content-length': d.length } : {}, hdrs || {}) }, (r) => { let b = ''; r.on('data', (c) => b += c); r.on('end', () => res([r.statusCode, b])); });
   q.on('error', rej); if (d) q.write(d); q.end();
 });
 
@@ -49,7 +49,8 @@ const VV = `(() => {
   if (!up) { console.log('FAIL the board server did not start'); srv.kill(); process.exit(1); }
   const now = Date.now(), at = (m) => new Date(now - m * 60000).toISOString();
   const LONG = 'A comment long enough to wrap over several lines of the phone, the way he writes them when something is off. ';
-  const put = (c, id, data) => req(port, 'PUT', '/_api/db/' + c + '/' + id, { data });
+  // seeded as a copy of a board (X-Kit-Gate: copy): the proof gate is for live writes, and a refused seed must stop the test, not drop a post
+  const put = async (c, id, data) => { const r = await req(port, 'PUT', '/_api/db/' + c + '/' + id, { data }, { 'X-Kit-Gate': 'copy' }); if (r[0] >= 300) throw new Error('seed ' + id + ' refused: ' + r[0] + ' ' + r[1]); return r; };
   await put('posts', '_orchestrator', { title: 'Ask the orchestrator', column: 'info', created_at: at(500) });
   await put('posts', '_trains', { column: 'info', created_at: at(500), rows: [] });
   await put('posts', 'cl1-done', { title: 'CL1 a done step', part: 'CL1', train: 'cli', column: 'done', status: 'complete', created_at: at(400), done_at: at(390), verdict: 'Done and checked.', body: 'done' });

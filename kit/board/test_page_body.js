@@ -16,9 +16,9 @@ const SERVER = INST ? path.join(INST, 'board_server.py') : path.join(KIT, 'kit',
 let fails = 0;
 const check = (n, ok, more) => { console.log((ok ? 'ok   ' : 'FAIL ') + n + (ok || more === undefined ? '' : '\n       ' + JSON.stringify(more))); fails += !ok; };
 const freePort = () => new Promise((r) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
-const req = (port, method, p, body) => new Promise((res, rej) => {
+const req = (port, method, p, body, hdrs) => new Promise((res, rej) => {
   const d = body ? Buffer.from(JSON.stringify(body)) : null;
-  const q = http.request({ host: '127.0.0.1', port, method, path: p, headers: d ? { 'content-type': 'application/json', 'content-length': d.length } : {} }, (r) => { let b = ''; r.on('data', (c) => b += c); r.on('end', () => res([r.statusCode, b])); });
+  const q = http.request({ host: '127.0.0.1', port, method, path: p, headers: Object.assign(d ? { 'content-type': 'application/json', 'content-length': d.length } : {}, hdrs || {}) }, (r) => { let b = ''; r.on('data', (c) => b += c); r.on('end', () => res([r.statusCode, b])); });
   q.on('error', rej); if (d) q.write(d); q.end();
 });
 
@@ -40,7 +40,8 @@ const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width=
   let up = false; for (let i = 0; i < 60 && !up; i++) { try { up = (await req(port, 'GET', '/_api/health'))[0] === 200; } catch (e) { await new Promise((r) => setTimeout(r, 150)); } }
   if (!up) { console.log('FAIL the board server did not start'); srv.kill(); process.exit(1); }
   const at = new Date().toISOString();
-  const put = (c, id, data) => req(port, 'PUT', '/_api/db/' + c + '/' + id, { data });
+  // seeded as a copy of a board (X-Kit-Gate: copy): the proof gate is for live writes, and a refused seed must stop the test, not drop a post
+  const put = async (c, id, data) => { const r = await req(port, 'PUT', '/_api/db/' + c + '/' + id, { data }, { 'X-Kit-Gate': 'copy' }); if (r[0] >= 300) throw new Error('seed ' + id + ' refused: ' + r[0] + ' ' + r[1]); return r; };
   await put('posts', '_orchestrator', { title: 'Ask the orchestrator', column: 'info', created_at: at });
   await put('posts', 'cl9-new', { title: 'CL9 a result in its post', column: 'info', status: 'complete', created_at: at, verdict: 'Shown in the post.',
     body: 'The lead.\n\n## The flow\n\n```mermaid\nflowchart LR\n  A["Session"] --> B["Board post"]\n  B -->|"he reads"| C["Owner"]\n```\n\n' +
