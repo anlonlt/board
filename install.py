@@ -1200,6 +1200,7 @@ def main(argv=None):
     claude_cli = rt in ("local", "agy", "both")
     claude_cli_hooks = rt == "local"
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
+    ins.put(".kit/test_guard.py", rd("kit", "test_guard.py"))  # CL48: a test run (KIT_TEST) writes only under a temp folder
     ins.put(".kit/usage.py", rd("scripts", "usage.py"))       # CL37: the usage ledger (kit.py usage)
     ins.put(".kit/ledger.py", rd("kit", "ledger.py"))        # 3-layer memory ledger (observations -> principles)
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
