@@ -1134,6 +1134,14 @@
    "bt": "2026-11-23T23:21:01Z",
    "sig": "ev8d32.7o"
   },
+  "cl44-agy-runtime-startup-mcp-usage-and-mirror-fixes": {
+   "at": "",
+   "bt": "2026-11-26T08:35:21.083Z",
+   "sig": "1tdf0q7.75",
+   "v": [
+    "cl44-item7-mirror-loss"
+   ]
+  },
   "cl5-automatic-reviews-said-once-on-the-board": {
    "at": "2026-11-22T23:49:07Z",
    "bt": "2026-11-22T23:49:07Z",
