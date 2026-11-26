@@ -98,14 +98,15 @@ def lessons(root, mdir, rel_paths, role):
         except (OSError, UnicodeDecodeError):
             continue
         for m in re.finditer(r"(?ms)^## (\S+?):\s*([^\n]+)\n(.*?)(?=^## |\Z)", text):
-            head = dict((k.lower(), v) for k, v in re.findall(r"(?mi)^(roles|files|where):[ \t]*(.*)$", m.group(3)))
+            head = dict((k.lower(), v) for k, v in re.findall(r"(?mi)^(roles|files|where|from|check):[ \t]*(.*)$", m.group(3)))
             globs = [x for x in re.split(r"[,\s]+", head.get("files", "")) if x]
             roles = [x.lower() for x in re.split(r"[,\s]+", head.get("roles", "")) if x]
             if not globs or not (role in roles or "all" in roles):
                 continue
             if any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(os.path.basename(f), g) for g in globs for f in rel_paths):
-                body = re.sub(r"(?mi)^(roles|files|from|where):.*$", "", m.group(3))
-                out.append({"id": m.group(1), "kind": "lesson", "summary": m.group(2).strip() + ". " + " ".join(body.split())})
+                body = re.sub(r"(?mi)^(roles|files|from|where|check):.*$", "", m.group(3))
+                out.append({"id": m.group(1), "kind": "lesson", "summary": m.group(2).strip() + ". " + " ".join(body.split()),
+                            "check": head.get("check", "").strip(), "from": head.get("from", ""), "_file": p})
     return out
 
 
@@ -178,9 +179,11 @@ def handle(data):
     seen.update(h["id"] for h in fresh)
     _write_seen(sf, seen)
     lines = ["Memory JIT for %s:" % ", ".join(rel_paths)]
+    note = getattr(ledger, "check_note", None) if ledger is not None else None      # M7: unchecked or failing, said so
+    cache = ledger.read_checks_cache(root) if note else {}
     for h in fresh:
         q = (' — "%s"' % " ".join(h["quote"].split())[:120]) if h.get("quote") else ""
-        lines.append("- **%s** (%s): %s%s" % (h["id"], h["kind"], h["summary"], q))
+        lines.append("- **%s** (%s): %s%s%s" % (h["id"], h["kind"], h["summary"], q, note(root, h, cache) if note else ""))
     msg = "\n".join(lines)
     if is_claude_payload(data):
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": msg}}
