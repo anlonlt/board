@@ -6696,9 +6696,30 @@ def _led_call(name, *args, **kw):
     return f(*args, **kw) if f else None
 
 
+def _whole_file_lessons():
+    """The memory's lesson files written as one lesson a file (`lessons/<date>-<slug>.md`: symptom, cause, remedy; no
+    `## <id>:` heading): each is an entry, its id the file's name, its check a `check:` line in it, its date in its name."""
+    out = []
+    for p in sorted(glob.glob(os.path.join(_resolve_memory_dir(), "lessons", "*.md"))):
+        try:
+            with open(p, encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if parse_lessons(text):
+            continue
+        m = re.search(r"(?mi)^\s*check\s*:\s*(.+?)\s*$", text)
+        t = re.search(r"(?m)^#+\s*(.+?)\s*$", text)
+        out.append({"id": os.path.splitext(os.path.basename(p))[0], "title": t.group(1) if t else "", "roles": [], "files": [],
+                    "from": "", "where": "", "check": m.group(1) if m else "", "text": text.strip(),
+                    "source": os.path.relpath(p, ROOT), "_file": os.path.relpath(p, ROOT)})
+    return out
+
+
 def memory_entries():
-    """M7: every memory entry a check can hold: the lessons, and the ledger's live rows (fields excepted)."""
-    out = list(all_lessons())
+    """M7: every memory entry a check can hold: the lessons (a heading each, or one a file), and the ledger's live rows
+    (fields excepted)."""
+    out = list(all_lessons()) + _whole_file_lessons()
     led = _load_ledger_mod()
     if led is not None:
         try:
