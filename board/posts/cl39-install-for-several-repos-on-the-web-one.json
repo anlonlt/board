@@ -31,9 +31,10 @@
  "part": "CL39",
  "planned_by": "orchestrator",
  "session_id": "session_01AE1HGhF48HBSYir6H2xWYZ",
- "status": "in progress",
+ "status": "complete",
+ "status_fixed": "was \"in progress\": its work landed (5e296cf, 6f66480 'CL39: post done') and its verdict is written (owner's go, 2026-11-26)",
  "title": "Install for several repos on the web: one environment with every repo, hooks at user level",
  "train": "cli",
- "updated_at": "2026-11-24T04:26:19Z",
+ "updated_at": "2026-11-26T10:04:09Z",
  "verdict": "install --web-multi puts a project's hooks at user level (23 on a Harmonize-shaped copy, idempotent, a long message refused from the parent folder, skipped in the repo); the hand-over starts the successor in that environment, no add_repo."
 }

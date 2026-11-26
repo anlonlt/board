@@ -6,7 +6,8 @@
  "part": "CL42",
  "planned_by": "owner",
  "runner": "claude-web",
- "status": "planned",
+ "status": "complete",
+ "status_fixed": "was \"planned\": the web session finished it (5 CL42 commits: deniedMcpServers works on the web) (owner's go, 2026-11-26)",
  "subtasks": [
   {
    "from": "task",
@@ -41,5 +42,6 @@
  ],
  "task": "On a computer (Claude Code 2.1.332, empty folder, no kit): context at the second call 32,950 tokens with them, 25,390 with Vercel denied (`deniedMcpServers`), 22,085 with `disableClaudeAiConnectors: true`. They connect in the background: one run in three started before they were there. The full question is in harmonize, branch `connectors-question`, `docs/CONNECTORS-QUESTION.md`.\n\n1. List which connectors load at the start of a web session, with their number of tools.\n2. Measure the first and second model call's context (input + cache read + cache creation) from the session's own transcript, over several runs.\n3. Change one thing at a time where you can (another repository, another environment, network off, the connector off in the account or the environment) and say which decides.\n4. Try both project settings above on a throwaway branch: do they work on the web, and what else stops working?\n5. Answer in this post: each number with its command and run count; what you could not test.",
  "title": "Measure what the account's connectors cost on the web, and who decides that they load",
- "train": "cli"
+ "train": "cli",
+ "updated_at": "2026-11-26T10:04:09Z"
 }

@@ -3,9 +3,11 @@
  "column": "info",
  "created_at": "2026-11-22T23:17:04Z",
  "from": "orchestrator",
+ "moved_from_train": "cli",
  "part": "CL17",
  "planned_by": "orchestrator",
  "status": "planned",
  "title": "A crashed part is continued from its last checkpoint",
- "train": "cli"
+ "train": "takeover",
+ "updated_at": "2026-11-26T10:04:09Z"
 }

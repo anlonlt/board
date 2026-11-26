@@ -7,7 +7,8 @@
  "part": "CL41",
  "planned_by": "owner",
  "runner": "claude-web",
- "status": "planned",
+ "status": "complete",
+ "status_fixed": "was \"planned\": the web session finished it; merged into feat/streamline-doctor-memory (a73fa1a) (owner's go, 2026-11-26)",
  "subtasks": [
   {
    "from": "task",
@@ -45,5 +46,6 @@
  ],
  "task": "Get the code: clone anlonlt/board, `git checkout feat/streamline-doctor-memory` (the four commits are 95f0eab..309ba6c), then `python3 -I install.py . --update --no-cmd`.\n\nWhat changed (each with its tests): `done` refuses open pieces and code in the verdict or lead; `kit_activity.py` writes activity/<post> (what it does now, no model call, at most every 15 s; a loop of 8 identical calls is said once); `kit.py permission-mode` (bypass once the owner accepted it, else auto); hooks find the project above a subfolder; page tests close their browser.\n\n1. Review the four commits for real bugs: say each with file:line, or none.\n2. Run the scoped tests (`python3 scripts/run_all_tests.py`), then `--all` once: numbers, and any failure that is not timing.\n3. Run the new commands for real here and measure each in characters: `resume --role part`, `form`, `done`, `sub`, `permission-mode`, `commands`.\n4. Make the live line work for a web part: its hook cannot reach a local board; find the way (ArtifactData through the push, or the board's own page), build it, test it.\n5. Report what a web session sees of `permission-mode` (web ignores bypass) and whether anything here needs a change for the web.",
  "title": "Review and adopt four kit changes made on a computer (patch in this post)",
- "train": "cli"
+ "train": "cli",
+ "updated_at": "2026-11-26T10:04:09Z"
 }

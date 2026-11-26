@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T08:16:37Z",
+ "created_at": "2026-11-26T10:04:13Z",
  "rows": [
   {
    "also": [],
@@ -9,8 +9,6 @@
     "CL12",
     "CL14",
     "CL15",
-    "CL16",
-    "CL17",
     "CL18",
     "CL19",
     "CL20",
@@ -69,6 +67,19 @@
   {
    "also": [],
    "children": [
+    "CL16"
+   ],
+   "parent": "",
+   "part": "P-board-data",
+   "post": "cl16-the-board-travels-in-git-always-current",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
     "D0",
     "D3",
     "D2",
@@ -80,6 +91,19 @@
    "prompt": "",
    "session": "",
    "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL17"
+   ],
+   "parent": "",
+   "part": "P-takeover",
+   "post": "cl17-a-crashed-part-is-continued-from-its-las",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -356,7 +380,7 @@
   {
    "also": [],
    "children": [],
-   "parent": "P-cli",
+   "parent": "P-board-data",
    "part": "CL16",
    "post": "cl16-the-board-travels-in-git-always-current",
    "prompt": "",
@@ -367,7 +391,7 @@
   {
    "also": [],
    "children": [],
-   "parent": "P-cli",
+   "parent": "P-takeover",
    "part": "CL17",
    "post": "cl17-a-crashed-part-is-continued-from-its-las",
    "prompt": "",
@@ -616,7 +640,7 @@
    "post": "cl32-resume-per-role-what-each-role-needs-the",
    "prompt": "",
    "session": "session_01AE1HGj64wNW2VqtikzfGg4",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -693,7 +717,7 @@
    "post": "cl39-install-for-several-repos-on-the-web-one",
    "prompt": "",
    "session": "session_01AE1HGhF48HBSYir6H2xWYZ",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -715,7 +739,7 @@
    "post": "cl41-review-and-adopt-four-local-commits",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "done",
    "store": []
   },
   {
@@ -726,7 +750,7 @@
    "post": "cl42-measure-the-connectors-on-the-web",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "done",
    "store": []
   },
   {
@@ -753,5 +777,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T08:16:37Z"
+ "updated_at": "2026-11-26T10:04:13Z"
 }

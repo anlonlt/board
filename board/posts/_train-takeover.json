@@ -1,0 +1,10 @@
+{
+ "column": "info",
+ "created_at": "2026-11-26T10:04:07Z",
+ "from": "orchestrator",
+ "goal": "A session that stops (limit, crash, reset) is continued from where it stopped, never redone",
+ "kind": "train",
+ "status": "open",
+ "title": "Train takeover",
+ "train": "takeover"
+}

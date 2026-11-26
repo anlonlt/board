@@ -1,0 +1,11 @@
+{
+ "closed_at": "2026-11-26T10:04:15Z",
+ "column": "info",
+ "created_at": "2026-11-26T10:04:15Z",
+ "goal": "",
+ "kind": "train",
+ "status": "closed",
+ "title": "Train cli",
+ "train": "cli",
+ "why_closed": "its goal, Claude Code CLI as a first-class runtime, was met by CL1-CL7; later work goes on one train per goal (agy, board-data, takeover)"
+}
