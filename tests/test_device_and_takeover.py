@@ -31,6 +31,13 @@ def chromebook(running, avail=2300, env=None, store=None):
 
 
 class DeviceCap(unittest.TestCase):
+    def setUp(self):
+        # the gate counts the memory real jobs reserved (a test run registers itself as one): none here
+        self._jobs, device.running_jobs = device.running_jobs, lambda: []
+
+    def tearDown(self):
+        device.running_jobs = self._jobs
+
     def test_meminfo_parsed(self):
         with tempfile.NamedTemporaryFile("w", delete=False) as fh:
             fh.write("MemTotal:        2845696 kB\nMemFree: 100 kB\nMemAvailable:    2359296 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n")
