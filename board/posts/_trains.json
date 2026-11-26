@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-24T04:36:22Z",
+ "created_at": "2026-11-26T05:31:32Z",
  "rows": [
   {
    "also": [],
@@ -38,7 +38,10 @@
     "CL37",
     "CL38",
     "CL39",
-    "CL40"
+    "CL40",
+    "CL41",
+    "CL42",
+    "CL43"
    ],
    "parent": "",
    "part": "P-cli",
@@ -702,8 +705,41 @@
    "session": "session_01AE1HGkUeWvWVe78XUTnTta",
    "state": "done",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL41",
+   "post": "cl41-review-and-adopt-four-local-commits",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL42",
+   "post": "cl42-measure-the-connectors-on-the-web",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-cli",
+   "part": "CL43",
+   "post": "cl43-the-live-line-and-loop-breaker-on-agy",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-24T04:36:22Z"
+ "updated_at": "2026-11-26T05:31:32Z"
 }

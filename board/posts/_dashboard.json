@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-24T04:36:22Z",
+ "created_at": "2026-11-26T05:31:32Z",
  "rows": [
   {
    "at": 37,
@@ -52,7 +52,10 @@
     "A crashed part is continued from its last checkpoint",
     "The Trains view: task lists (A) or the old flow map (B)?",
     "resume per role: what each role needs, the lessons and the workflow included",
-    "Install for several repos on the web: one environment with every repo, hooks at user level"
+    "Install for several repos on the web: one environment with every repo, hooks at user level",
+    "Review and adopt four kit changes made on a computer (patch in this post)",
+    "Measure what the account's connectors cost on the web, and who decides that they load",
+    "The live line and the loop breaker on agy"
    ],
    "train": "P-cli"
   },
@@ -92,5 +95,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-24T04:36:22Z"
+ "updated_at": "2026-11-26T05:31:32Z"
 }
