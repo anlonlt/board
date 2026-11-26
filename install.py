@@ -1184,12 +1184,14 @@ def main(argv=None):
         ins.put(".kit/handover.py", rd("kit", "handover.py"))   # its web successor starts in the environment
     if claude_only:
         ins.put(".kit/web_takeover.py", rd("kit", "web_takeover.py"))
+        ins.put(".kit/antigravity_web.py", rd("kit", "antigravity_web.py"))
         ins.put(".kit/device.py", rd("scripts", "device.py"))
     if not claude_only:
         ins.put(".kit/git_watch.py", rd("kit", "git_watch.py"))
         ins.put(".kit/up", rd("kit", "up"))
         ins.put(".kit/handover.py", rd("kit", "handover.py"))
         ins.put(".kit/web_takeover.py", rd("kit", "web_takeover.py"))
+        ins.put(".kit/antigravity_web.py", rd("kit", "antigravity_web.py"))
         ins.put(".kit/device.py", rd("scripts", "device.py"))
         ins.put(".kit/step0_scan.py", rd("scripts", "step0_scan.py"))
         ins.put(".kit/twrp_wizard.py", rd("scripts", "twrp_wizard.py"))

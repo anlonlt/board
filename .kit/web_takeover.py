@@ -69,6 +69,22 @@ def is_web():
                for v in ("CLAUDE_CODE_REMOTE", "KIT_REMOTE", "AGY_REMOTE"))
 
 
+def is_antigravity_web():
+    """True inside Antigravity on the web (dedicated cloud devbox VM, no Claude ArtifactData MCP)."""
+    if str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes"):
+        return False
+    if str(os.environ.get("AGY_WEB") or "").lower() in ("1", "true", "yes"):
+        return True
+    return bool(os.environ.get("ANTIGRAVITY_APP_DATA_DIR") or os.environ.get("JULES_SESSION_ID"))
+
+
+def ensure_mirror_ref(branch=None):
+    """Fetch origin/<branch> explicitly so single-branch clones (e.g. Antigravity web) still see board-mirror."""
+    b = branch or mirror_branch()
+    rc, _ = sh(["git", "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (b, b)], timeout=120)
+    return rc == 0
+
+
 def git_identity():
     """Commits fail without one (the cause of a two-day-stale mirror on 2026-11-22): borrow the last author's."""
     if sh(["git", "config", "user.email"])[1]:
@@ -141,6 +157,7 @@ def start_board():
 
 
 def ensure_mirror_worktree():
+    ensure_mirror_ref()
     if os.path.exists(os.path.join(mirror_path(), ".git")):
         return
     sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "init"])
@@ -186,6 +203,7 @@ def continuation(resume_text, trunk="<trunk>"):
 def cmd_start():
     git_identity()
     rc, out = sh(["git", "fetch", "--all", "--prune", "-q"], timeout=300)
+    ensure_mirror_ref()
     print("git fetch: %s" % ("ok" if rc == 0 else "FAILED: " + out[-300:]))
     rc, br = sh(["git", "branch", "--show-current"])
     print("Branch: %s" % br)
@@ -203,46 +221,62 @@ def cmd_start():
     return 0
 
 
-def cmd_save(quiet=False):
+def cmd_save(quiet=False, allow_mirror_push=False, with_blobs=False):
     git_identity()
     if not healthy(port()) and not os.path.exists(os.path.join(KIT, "board_data", "board.db")):
         if not quiet:
             print("save: no board here (run `python3 -I .kit/web_takeover.py` first).")
         return 0
+    allow = allow_mirror_push or str(os.environ.get("KIT_ALLOW_MIRROR_PUSH") or "").lower() in ("1", "true", "yes")
     own, why = owns_board()
+    if not own and allow and "attached to the Artifact board" in why:
+        # Non-Claude cloud runners (e.g. Antigravity on the web) have no ArtifactData tool; reconcile against
+        # origin/board-mirror first so newer remote posts are preserved, then push cleanly to board-mirror.
+        own = True
     if not own:
         if not quiet:
             print("save: not pushed: %s. This session's board is its own project's." % why)
         return 0
     ensure_mirror_worktree()
-    rc, out = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "sync-db", "--commit"], timeout=180)
+    m = mirror_path()
+    br = mirror_branch()
+    if healthy(port()):
+        # Pull newer remote board docs into the local DB before exporting so concurrent writes are never clobbered.
+        sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "reconcile", "--no-push"], timeout=180)
+        if sh(["git", "-C", m, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (br, br)], timeout=120)[0] == 0:
+            sh(["git", "-C", m, "reset", "--hard", "origin/%s" % br])
+    sync_args = [sys.executable, "-I", os.path.join(KIT, "kit.py"), "sync-db", "--commit"]
+    if allow:
+        sync_args.append("--full")
+    if with_blobs or os.path.isdir(os.path.join(KIT, "board_data", "blobs")):
+        sync_args.append("--with-blobs")
+    rc, out = sh(sync_args, timeout=180)
     if rc != 0:
         print("save: sync-db FAILED: %s" % out[-400:])
         return 1
-    m = mirror_path()
-    rc, ahead = sh(["git", "-C", m, "rev-list", "--count", "origin/%s..HEAD" % mirror_branch()])
+    rc, ahead = sh(["git", "-C", m, "rev-list", "--count", "origin/%s..HEAD" % br])
     if rc != 0:                                              # the first save: the remote has no copy yet
         ahead = sh(["git", "-C", m, "rev-list", "--count", "HEAD"])[1]
     if rc == 0 and ahead.strip() == "0":
         if not quiet:
-            print("save: the board is already in git (origin/%s)." % mirror_branch())
+            print("save: the board is already in git (origin/%s)." % br)
         return 0
-    rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % mirror_branch()], timeout=120)
+    rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % br], timeout=120)
     if rc != 0:
         # Both sides wrote (web + computer): merge; a conflicting hunk keeps this side (board/sync.json, the sync log,
         # always conflicts). A per-post merge by updated_at is CL16's.
-        rc2, out2 = sh(["git", "-C", m, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", mirror_branch()],
+        rc2, out2 = sh(["git", "-C", m, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", br],
                        timeout=120)
         if rc2 != 0:
             sh(["git", "-C", m, "merge", "--abort"])
         if rc2 == 0:
-            rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % mirror_branch()], timeout=120)
+            rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % br], timeout=120)
     if rc != 0:
         print("save: PUSH OF %s REFUSED: %s\nThe board's changes are committed in %s but not on GitHub. If this web "
               "session may only push its own branch, tell the owner: the board cannot leave this session." % (
-                  mirror_branch(), out[-400:], m))
+                  br, out[-400:], m))
         return 1
-    print("save: the board is in git (origin/%s, %s commit%s pushed)." % (mirror_branch(), ahead, "" if ahead == "1" else "s"))
+    print("save: the board is in git (origin/%s, %s commit%s pushed)." % (br, ahead, "" if ahead == "1" else "s"))
     return 0
 
 
@@ -257,7 +291,10 @@ def main(argv):
         cmd_save(quiet=True)
         return 0
     if argv and argv[0] == "save":
-        return cmd_save()
+        return cmd_save(
+            allow_mirror_push="--allow-mirror-push" in argv,
+            with_blobs="--with-blobs" in argv,
+        )
     return cmd_start()
 
 

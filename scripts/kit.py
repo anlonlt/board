@@ -219,6 +219,17 @@ def _export_blobs_to_mirror(db_path, m, max_bytes=5 * 1024 * 1024):
     return copied
 
 
+def _db_origin(conn):
+    """Lightweight origin stamp for a local SQLite board.db so two machines/containers never confuse seq numbers."""
+    import socket
+    try:
+        row = conn.execute("SELECT seq, at FROM changes ORDER BY seq ASC LIMIT 1").fetchone()
+    except Exception:
+        row = None
+    first = ("%s@%s" % (row[0], row[1])) if row else "empty"
+    return "%s:%s" % (socket.gethostname(), first)
+
+
 def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
     """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full)."""
     import sqlite3
@@ -234,7 +245,17 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
     try:
         latest_seq = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM changes").fetchone()[0]
         min_seq = conn.execute("SELECT COALESCE(MIN(seq), 0) FROM changes").fetchone()[0]
-        can_delta = (not full) and bool(st.get("cursor")) and last_seq > 0 and (min_seq == 0 or last_seq >= min_seq - 1)
+        cur_origin = _db_origin(conn)
+        prev_origin = str(st.get("db_origin") or "")
+        same_db = (not prev_origin) or (prev_origin == cur_origin)
+        can_delta = (
+            (not full)
+            and bool(st.get("cursor"))
+            and last_seq > 0
+            and same_db
+            and latest_seq >= last_seq
+            and (min_seq == 0 or last_seq >= min_seq - 1)
+        )
         if not can_delta:
             # CL44 (item 7): a full sync never deletes a mirror file that git added or changed unless the board
             # explicitly deleted it (its changes log). Missing files not deleted by the board are kept and imported.
@@ -273,6 +294,7 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
                 _export_blobs_to_mirror(db, m)
             st2 = read_state(m)
             st2["db_seq"] = latest_seq
+            st2["db_origin"] = cur_origin
             write_doc(os.path.join(m, "board", "sync.json"), st2)
             return res
 
@@ -319,8 +341,11 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
                     doc = json.loads(r[0])
                     if old_s.get(user) != doc:
                         write_doc(os.path.join(sdir, user + ".json"), doc)
+        if with_blobs:
+            _export_blobs_to_mirror(db, m)
         st["cursor"] = now
         st["db_seq"] = latest_seq
+        st["db_origin"] = cur_origin
         st["log"].append({"at": now, "full": False, "db_seq": latest_seq, "posts": len(old_p) - pr,
                           "posts_written": pw, "posts_removed": pr, "comments_read": len(rows),
                           "new": new, "changed": changed, "removed": removed})
@@ -777,6 +802,40 @@ def _utc(ts):
     return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _restore_mirror_blobs(repo, ref, db_path):
+    """Restore missing board/blobs/<id>[.json] files from git ref into local board_data/blobs/."""
+    import io
+    import tarfile
+    blob_dir = os.path.join(os.path.dirname(os.path.abspath(db_path)), "blobs")
+    arc = subprocess.run(["git", "-C", repo, "archive", "--format=tar", ref, "board/blobs"], capture_output=True, timeout=180)
+    if arc.returncode != 0 or not arc.stdout:
+        return 0
+    restored = 0
+    os.makedirs(blob_dir, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
+        for mem in tf.getmembers():
+            parts = tar_name(mem.name).split("/")
+            if not mem.isfile() or len(parts) != 3 or parts[0] != "board" or parts[1] != "blobs":
+                continue
+            fn = parts[2]
+            if not re.fullmatch(r"[a-fA-F0-9]{16,64}(?:\.json)?", fn):
+                continue
+            dst = os.path.join(blob_dir, fn)
+            if os.path.exists(dst):
+                continue
+            src = tf.extractfile(mem)
+            if src is None:
+                continue
+            data = src.read()
+            tmp = dst + ".tmp"
+            with open(tmp, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp, dst)
+            if not fn.endswith(".json"):
+                restored += 1
+    return restored
+
+
 def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
     """The board here against its git copy (origin/<branch>), document by document; the more recent copy wins.
 
@@ -814,6 +873,11 @@ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
         if not has_remote or git(repo, "merge-base", "--is-ancestor", remote_ref, local_ref).returncode == 0:
             head = local_head
     db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    n_blobs = 0
+    if has_remote:
+        n_blobs += _restore_mirror_blobs(repo, remote_ref, db)
+    if has_local and local_head != remote_head:
+        n_blobs += _restore_mirror_blobs(repo, local_ref, db)
     local_t = {}
     if os.path.isfile(db):
         conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
@@ -879,13 +943,17 @@ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
             if r.returncode != 0:
                 git(m, "merge", "--abort")
         if os.path.isfile(db):
-            sync_db(m, db_path=db, at=zstamp(datetime.now(timezone.utc)), full=True)
+            has_blobs = os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(db)), "blobs"))
+            sync_db(m, db_path=db, at=zstamp(datetime.now(timezone.utc)), full=True, with_blobs=has_blobs)
             if git(m, "status", "--porcelain", "board").stdout.strip():
                 commit(m, "kit reconcile: local and git, the newer copy of each post", branch=branch)
         r = git(m, "push", "-q", "origin", "HEAD:" + branch)
         pushed = "pushed" if r.returncode == 0 else "push refused: " + (r.stdout + r.stderr).strip()[-200:]
-    return {"status": "reconciled with origin/%s" % branch, "from_git": n_git, "added": n_add, "kept_here": n_here,
-            "git": pushed or "git copy not updated here"}
+    res = {"status": "reconciled with origin/%s" % branch, "from_git": n_git, "added": n_add, "kept_here": n_here,
+           "git": pushed or "git copy not updated here"}
+    if n_blobs:
+        res["blobs_restored"] = n_blobs
+    return res
 
 
 # ---------------------------------------------------------------- Artifact mode (a claude.ai Artifact board)
@@ -4081,7 +4149,8 @@ def done(pid, db_path=None, root=None):
     warn += pending_real         # CL32/CL38: a real project too, run by the orchestrator (pending)
     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
     strip = lambda d: {k: v for k, v in (d or {}).items() if k not in ("proof", "updated_at")}  # noqa: E731
-    if attached_board() and strip(_read_json(_base_path("posts", pid))) != strip(p):
+    mirror_transport = str(os.environ.get("KIT_BOARD_TRANSPORT") or "").strip().lower() == "mirror"
+    if attached_board() and not mirror_transport and strip(_read_json(_base_path("posts", pid))) != strip(p):
         # CL28: a part updated its post on the local copy only and said "Done": the live board (the Artifact) still
         # showed it planned, with none of its results (the owner: "How come you said you posted when you didn't?")
         err.append("the post is not on the board yet (%s): its local copy differs from what the Artifact last had. Run "
@@ -4098,8 +4167,10 @@ def done(pid, db_path=None, root=None):
                                                            "branch": _git_run("symbolic-ref", "--short", "-q", "HEAD").stdout.strip(),
                                                            "needs_real": bool(pending_real)}}, env={"KIT_GATE": "done"}):
             warn.append("proof: the board did not take it (is the board server running?): the step cannot be completed without it")
-        elif attached_board():
+        elif attached_board() and not mirror_transport:
             warn.append("proof: written here; send it: `python3 -I .kit/kit.py artifact push`")
+        elif mirror_transport:
+            warn.append("proof: written here; send it: `python3 -I .kit/antigravity_web.py save`")
     lines = (["NOT READY: %s" % pid] if err else ["OK: %s follows the post format" % pid])
     lines += ["  fix: " + e for e in err] + ["  note: " + w for w in warn]
     if not err:
@@ -4847,6 +4918,14 @@ def step_drop(pid, db_path=None):
 # ---------------------------------------------------------------- launch (CL13): a launched part is always on the board
 def _is_web():
     return str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes")
+
+
+def _is_antigravity_web():
+    if _is_web():
+        return False
+    if str(os.environ.get("AGY_WEB") or "").lower() in ("1", "true", "yes"):
+        return True
+    return bool(os.environ.get("ANTIGRAVITY_APP_DATA_DIR") or os.environ.get("JULES_SESSION_ID"))
 
 
 def _git_run(*args, cwd=None, timeout=60):
