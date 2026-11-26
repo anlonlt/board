@@ -376,6 +376,108 @@ class Live(unittest.TestCase):
         docs = api_req(self.url, "db/activity", token=TOKEN, gate="").get("docs") or []
         self.assertEqual([x["id"] for x in docs], [pid])                                           # nothing from the others
 
+    def test_what_an_agy_part_does_now_reaches_its_step_with_no_model_call(self):
+        task = "Maps.\n\n1. docs/a.md : the sky\n2. Write `docs/b.md`\n3. Check them"
+        pid = json.loads(self.run_("kit.py", "step", "new", "--train", "t", "--part", "M2", "--title", "agy maps", "--task", task).stdout.splitlines()[-1])["post"]
+        self.run_("kit.py", "form", pid)
+        hook = str(ROOT / "kit" / "hooks" / "kit_activity.py")
+        # Real agy subagent transcript (SYSTEM_MESSAGE with [Message] ... content=Your prompt is <abs>/docs/prompts/<pid>.md)
+        tf_sub = self.d / "agy-subagent-transcript.jsonl"
+        tf_sub.write_text(json.dumps({
+            "step_index": 0, "source": "SYSTEM", "type": "SYSTEM_MESSAGE", "status": "DONE",
+            "content": "The following is a <SYSTEM_MESSAGE>.\n\n<SYSTEM_MESSAGE>\n[Message] timestamp=2026-11-26T03:09:04Z sender=orch priority=MESSAGE_PRIORITY_HIGH content=Your prompt is %s/docs/prompts/%s.md: read it and do it.\n</SYSTEM_MESSAGE>" % (self.d, pid)
+        }) + "\n")
+        # Real agy -p transcript (USER_INPUT with <USER_REQUEST> wrapper)
+        tf_cli = self.d / "agy-cli-transcript.jsonl"
+        tf_cli.write_text(json.dumps({
+            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "status": "DONE",
+            "content": "<USER_REQUEST>\nYour prompt is docs/prompts/%s.md: read it and do it.\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nnow\n</ADDITIONAL_METADATA>" % pid
+        }) + "\n")
+        tf_cr = self.d / "agy-cr-transcript.jsonl"
+        tf_cr.write_text(json.dumps({
+            "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "status": "DONE",
+            "content": "<USER_REQUEST>\nYour prompt is docs/prompts/CR-%s.md: read it.\n</USER_REQUEST>" % pid
+        }) + "\n")
+
+        def call(payload, role="", says=""):
+            env = dict(self.env)
+            if role:
+                env["KIT_ROLE"] = role
+            base = {"conversationId": "agy-c1", "cwd": str(self.d), "workspacePaths": [str(self.d)], "transcriptPath": str(tf_sub)}
+            base.update(payload)
+            r = subprocess.run([sys.executable, "-I", hook], input=json.dumps(base),
+                               capture_output=True, text=True, env=env, cwd=str(self.d), timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            if says:
+                steps = json.loads(r.stdout)["injectSteps"]
+                self.assertIn(says, steps[0]["systemMessage"]["systemMessage"])
+            else:
+                self.assertEqual(r.stdout, "")
+
+        def seen(want):
+            d = None
+            for _ in range(50):
+                r = self.cli("get", "activity", pid)
+                d = json.loads(r.stdout).get("data") if r.returncode == 0 and r.stdout.strip() else None
+                if d and all(d.get(k) == v for k, v in want.items()):
+                    return d
+                time.sleep(0.2)
+            self.fail("activity/%s never became %r: %s" % (pid, want, d))
+
+        (self.d / "docs").mkdir()
+        time.sleep(0.05)
+        (self.d / "docs" / "b.md").write_text("b")
+        # 1. PostToolUse run_command with toolSummary (discovered via agy subagent transcript, no KIT_POST/KIT_ROLE)
+        call({"hookEventName": "PostToolUse", "toolCall": {"id": "c1", "name": "run_command",
+              "args": {"CommandLine": "cat > docs/b.md", "toolSummary": "Write the second map", "WaitMsBeforeAsync": 5000}}})
+        seen({"actions": 1, "what": "Write the second map", "state": "working", "pieces": [2]})
+        # 2. Rate-limited (< 15s) on unrelated edit_file
+        call({"hookEventName": "PostToolUse", "toolCall": {"id": "c2", "name": "edit_file", "args": {"Path": str(self.d / "x.py")}}})
+        time.sleep(0.6)
+        self.assertEqual(seen({"actions": 1})["what"], "Write the second map")
+        # 3. Piece move via write_file (Path) flushes immediately
+        call({"hookEventName": "PostToolUse", "toolCall": {"id": "c3", "name": "write_file", "args": {"Path": str(self.d / "docs" / "a.md")}}})
+        seen({"actions": 3, "what": "Writing a.md", "pieces": [1]})
+        # 4. Subfolder cwd + no toolSummary falls back to bash_words, never creates src/.kit
+        (self.d / "src").mkdir()
+        call({"hookEventName": "PostToolUse", "cwd": str(self.d / "src"),
+              "toolCall": {"id": "c4", "name": "run_command", "args": {"CommandLine": "cat > docs/c.md <<'EOF'\nx\nEOF"}}})
+        self.assertFalse((self.d / "src" / ".kit").exists())
+        # 5. Stop writes immediately
+        call({"hookEventName": "Stop", "terminationReason": "NO_TOOL_CALL", "fullyIdle": True})
+        seen({"state": "stopped", "actions": 4, "what": "Writing c.md"})
+        # 6. Loop breaker on agy: 8 identical calls -> PostToolUse records & writes loop:8 (stdout empty); PostInvocation injects once
+        same = {"hookEventName": "PostToolUse", "conversationId": "agy-o1", "transcriptPath": "",
+                "toolCall": {"id": "c", "name": "run_command", "args": {"CommandLine": "npm test", "WaitMsBeforeAsync": 5000}}}
+        post_inv = {"hookEventName": "PostInvocation", "conversationId": "agy-o1", "transcriptPath": ""}
+        for i in range(1, 10):
+            call(same, role="orchestrator")
+            call(post_inv, role="orchestrator", says="8 times in a row" if i == 8 else "")
+        call(post_inv, role="orchestrator")                                                        # already consumed: silent
+        # Different call resets; part session writes loop:8 on the board and delivers once even if 8th & 9th run before PostInvocation
+        call(dict(same, toolCall={"id": "d", "name": "run_command", "args": {"CommandLine": "npm run lint"}}), role="orchestrator")
+        part_same = {"hookEventName": "PostToolUse", "conversationId": "agy-p2", "transcriptPath": str(tf_cli),
+                     "toolCall": {"id": "c", "name": "run_command", "args": {"CommandLine": "npm test"}}}
+        for i in range(1, 10):
+            call(part_same)
+        seen({"loop": 8})
+        call({"hookEventName": "PostInvocation", "conversationId": "agy-p2", "transcriptPath": str(tf_cli)}, says="8 times in a row")
+        call({"hookEventName": "PostInvocation", "conversationId": "agy-p2", "transcriptPath": str(tf_cli)})
+        # 7. PreToolUse shows what starts before it finishes (discovered via lastUserInput when no transcript file exists)
+        call({"hookEventName": "PreToolUse", "conversationId": "agy-p3", "transcriptPath": "",
+              "lastUserInput": "Your prompt is docs/prompts/%s.md: go" % pid,
+              "toolCall": {"id": "p3", "name": "run_command", "args": {"CommandLine": "pytest -q"}}})
+        seen({"what": "Running the tests"})
+        # 8. Non-parts (review role, CR- prompt, plain user prompt) stay quiet and create no activity doc or state file
+        self.assertEqual([x["status"] for x in self.get(pid)["subtasks"]], ["open"] * 3)
+        call({"hookEventName": "Stop", "conversationId": "agy-rev"}, role="review")
+        call({"hookEventName": "Stop", "conversationId": "agy-cr", "transcriptPath": str(tf_cr)})
+        call({"hookEventName": "Stop", "conversationId": "agy-human", "transcriptPath": "", "lastUserInput": "Look at docs/prompts/%s.md" % pid})
+        for cid in ("agy-rev", "agy-cr", "agy-human"):
+            self.assertFalse((self.d / ".kit" / "run" / "activity" / (cid + ".json")).exists())
+        docs = api_req(self.url, "db/activity", token=TOKEN, gate="").get("docs") or []
+        self.assertEqual([x["id"] for x in docs], [pid])
+
     def test_review_cl41_names_and_numbers(self):
         k = load("kit_cl41", "scripts/kit.py")
         self.assertEqual(k.plain_notes({"verdict": "The board works in Node.js and on a phone.", "body": "x"}), [])  # a product's name

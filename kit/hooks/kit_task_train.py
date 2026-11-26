@@ -168,6 +168,45 @@ def on_update(root, st, ti):
 
 PART_POST = re.compile(r"docs/prompts/([\w.-]+)\.md")
 PART_POST_ARG = re.compile(r"--role part --post ([\w.-]+)")
+PART_OPEN = re.compile(r"^\s*Your prompt (?:is (?:\S*/)?docs/prompts/|follows)")
+AGY_USER_REQ = re.compile(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", re.S)
+AGY_SUBAGENT_MSG = re.compile(r"\[Message\][^\n]*?\bcontent=(.*?)(?:\n</SYSTEM_MESSAGE>|\Z)", re.S)
+
+
+def _first_prompt(data):
+    """The opening prompt of this session, from a Claude Code or agy transcript, else agy's lastUserInput."""
+    tp = str(data.get("transcriptPath") or data.get("transcript_path") or "")
+    try:
+        if tp:
+            with open(tp, encoding="utf-8") as fh:
+                for line in fh:
+                    try:
+                        e = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(e, dict):
+                        continue
+                    kind = e.get("type")
+                    if kind == "user" and not e.get("isMeta") and not e.get("isSidechain"):
+                        c = (e.get("message") or {}).get("content")
+                        c = " ".join(x.get("text") or "" for x in c if isinstance(x, dict)) if isinstance(c, list) else str(c or "")
+                        if c.strip() and not c.lstrip().startswith("<"):
+                            return c
+                    elif kind == "USER_INPUT":
+                        c = str(e.get("content") or "")
+                        m = AGY_USER_REQ.search(c)
+                        if m:
+                            c = m.group(1)
+                        if c.strip():
+                            return c
+                    elif kind == "SYSTEM_MESSAGE":
+                        c = str(e.get("content") or "")
+                        m = AGY_SUBAGENT_MSG.search(c)
+                        if m and m.group(1).strip():
+                            return m.group(1).strip()
+    except OSError:
+        pass
+    return str(data.get("lastUserInput") or "")
 
 
 def part_post(data, st):
@@ -178,26 +217,10 @@ def part_post(data, st):
     if os.environ.get("KIT_POST"):
         return os.environ["KIT_POST"]
     if st.get("part_post") is None or (not st["part_post"] and role == "part"):
-        first = ""
-        try:
-            with open(str(data.get("transcript_path") or ""), encoding="utf-8") as fh:
-                for line in fh:
-                    try:
-                        e = json.loads(line)
-                    except ValueError:
-                        continue
-                    if not isinstance(e, dict) or e.get("type") != "user" or e.get("isMeta") or e.get("isSidechain"):
-                        continue
-                    c = (e.get("message") or {}).get("content")
-                    c = " ".join(x.get("text") or "" for x in c if isinstance(x, dict)) if isinstance(c, list) else str(c or "")
-                    if c.strip() and not c.lstrip().startswith("<"):
-                        first = c
-                        break
-        except OSError:
-            pass
+        first = _first_prompt(data)
         if not first:
             return ""                                        # not in the transcript yet: asked again
-        m = PART_POST.search(first) if first.lstrip().startswith(("Your prompt is docs/prompts/", "Your prompt follows")) else None
+        m = PART_POST.search(first) if PART_OPEN.match(first) else None
         if m is None and first.lstrip().startswith("You are part "):
             # CL41: a web part the orchestrator launched in its own words ("You are part CL41 ... resume --role part --post <id>")
             m = PART_POST_ARG.search(first)
