@@ -138,6 +138,15 @@ class Authority(Tmp):
         self.assertEqual([x["kind"] for x in out], ["conflict"])
         self.assertIn("2 files each claim to rank first", out[0]["why"])
 
+    def test_prose_that_is_not_about_documents_is_no_claim(self):
+        # Harmonize's real run (asked by the orchestrator's redirect): music prose flagged 33 files
+        ps = [self.write("docs/theory%d.md" % n, t) for n, t in enumerate((
+            "The tonic takes precedence over the dominant in a cadence.\n",
+            "Tune to the reference pitch: A comes first, then the other strings.\n",
+            "La tonique prime sur la dominante ; le la 440 Hz est la référence.\n",
+            "The melody ranks first in the mix, the bass supersedes the pads.\n"))]
+        self.assertEqual(led.authority_claims(ps, root=str(self.root)), [])
+
     def test_one_authority_said_once_is_fine_said_twice_is_a_repeat(self):
         a = self.write("AGENTS.md", "The board is the one record of where things stand.\n")
         b = self.write("docs/x.md", "Nothing here.\n```\nthis file ranks first\n```\n")
@@ -210,6 +219,16 @@ class KitSide(Tmp):
         self.assertTrue(r.get("ok"), r)
         self.assertEqual(self.ids(), ["K1", "K2", "L2"])
         self.assertFalse((self.root / ".board" / "memory" / "lessons" / "L1.md").exists())     # its file emptied: gone
+
+    def test_a_new_lesson_is_dated_the_day_it_is_written(self):
+        r = kit.lesson_add("L3", ["part"], "fresh", "Run the check.")
+        self.assertTrue(r.get("ok"), r)
+        got = {i["id"]: i["confirmed"] for i in kit.memory_items()}
+        self.assertEqual(got.get("L3"), datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+        (self.root / ".board" / "memory" / "lessons" / "L4.md").write_text("## L4: by hand\nroles: part\nText.\n")
+        self.assertEqual({i["id"]: i["confirmed"] for i in kit.memory_items()}["L4"],
+                         datetime.now(timezone.utc).strftime("%Y-%m-%d"))                # not committed: the file's day
+        self.assertNotIn("never dated", "\n".join(kit.memory_check_text()))
 
     def test_a_lesson_naming_a_live_one_it_replaces_is_flagged(self):
         f = self.root / ".board" / "memory" / "lessons" / "L1.md"
