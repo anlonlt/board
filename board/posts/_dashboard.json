@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:32:57Z",
+ "created_at": "2026-11-26T21:33:05Z",
  "rows": [
   {
    "at": 39,
@@ -142,8 +142,21 @@
     "The kit suggests where a step runs, from the devices and platforms it remembers"
    ],
    "train": "P-runners"
+  },
+  {
+   "at": 0,
+   "key": "G",
+   "name": "Takeover",
+   "note": "Next: A part reaches the orchestrator running now, whoever it is",
+   "post": "cl49-a-part-reaches-the-orchestrator-running",
+   "state": "ready",
+   "steps": [
+    "A part reaches the orchestrator running now, whoever it is",
+    "A part launched in the background knows its own step"
+   ],
+   "train": "P-takeover"
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T21:32:57Z"
+ "updated_at": "2026-11-26T21:33:05Z"
 }

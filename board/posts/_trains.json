@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:32:57Z",
+ "created_at": "2026-11-26T21:33:05Z",
  "rows": [
   {
    "also": [],
@@ -132,6 +132,20 @@
    "prompt": "",
    "session": "",
    "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL49",
+    "CL50"
+   ],
+   "parent": "",
+   "part": "P-takeover",
+   "post": "cl49-a-part-reaches-the-orchestrator-running",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -978,8 +992,30 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-takeover",
+   "part": "CL49",
+   "post": "cl49-a-part-reaches-the-orchestrator-running",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-takeover",
+   "part": "CL50",
+   "post": "cl50-a-part-launched-in-the-background-knows",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T21:32:57Z"
+ "updated_at": "2026-11-26T21:33:05Z"
 }
