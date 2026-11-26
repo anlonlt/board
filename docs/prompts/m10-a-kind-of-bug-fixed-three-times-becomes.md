@@ -9,6 +9,7 @@ A kind of bug fixed three times becomes a design question, never a fourth patch.
 2. When a kind reaches 3, the orchestrator's resume says so in one line and plans a design step for it (what all of them share and the change that makes the kind impossible), instead of the next patch.
 3. Seed it from history: today's three kinds (platform leaks, silent errors, two copies with nothing keeping them equal) with their fixes, so the counts start true.
 4. Tests on a fixture ledger: two fixes of one kind say nothing, the third raises it.
+5. The owner repeating a rule is the strongest signal: the owner's comments and chat words recorded as observations (verbatim, kit/ledger.py) are grouped by theme the same way; a third time the owner states the same rule ("git is the one source" was said about ten times by 2026-11-26, "never hide an error" several times) means nothing enforces it: the orchestrator's resume says so first, and a step is planned that makes it a check (a hook, a refusal, a test), never another memory line. A principle distilled from them names its check, or is shown as unenforced (M7).
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
