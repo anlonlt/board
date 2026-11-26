@@ -25,17 +25,11 @@ fi
 HYBRID=0
 BOARD_ONLY=0
 CLI="${KIT_CLI:-}"
-AGY_MODE_ARG=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --hybrid) HYBRID=1 ;;
-    --board-only) BOARD_ONLY=1 ;;
-    --agy) CLI=agy ;;
-    --claude) CLI=claude ;;
-    --agy-mode) shift; AGY_MODE_ARG="${1:-}" ;;
-    --agy-mode=*) AGY_MODE_ARG="${1#--agy-mode=}" ;;
-  esac
-  shift || true
+for arg in "$@"; do
+  [ "$arg" = "--hybrid" ] && HYBRID=1
+  [ "$arg" = "--board-only" ] && BOARD_ONLY=1
+  [ "$arg" = "--agy" ] && CLI=agy
+  [ "$arg" = "--claude" ] && CLI=claude
 done
 RUNTIME="local"
 if [ -f ".kit/config.json" ]; then
@@ -286,35 +280,12 @@ fi
 # Context hand-over (both Claude Code CLI and agy): at its context limit the orchestrator saves its state, writes
 # .kit/handover.flag and ends its own session (.kit/handover.py); a fresh orchestrator, empty context, opens here at once.
 rm -f .kit/handover.flag
-CUR_PROMPT="$PROMPT"
 while :; do
-  if [ "$CLI" = "agy" ] && [ "$AGY_MODE_TRIED_AUTO" -eq 1 ]; then
-    AGY_ERR_LOG="$(mktemp 2>/dev/null || echo "/tmp/kit-agy-err-$$.log")"
-    LAUNCH_RC=0
-    "${LAUNCH[@]}" 2> >(tee "$AGY_ERR_LOG" >&2) || LAUNCH_RC=$?
-    sleep 0.05
-    if grep -qiE "mode auto is not available|unknown flag.*--mode|flag provided but not defined: -?mode|invalid.*mode.*auto" "$AGY_ERR_LOG" 2>/dev/null; then
-      mkdir -p "$(dirname "$AGY_AUTO_CACHE")" 2>/dev/null || true
-      printf 'unavailable\n' > "$AGY_AUTO_CACHE" 2>/dev/null || true
-      rm -f "$AGY_ERR_LOG"
-      if [ "$LAUNCH_RC" -ne 0 ]; then
-        resolve_agy_flags
-        LAUNCH=(agy ${AGY_FLAGS[@]+"${AGY_FLAGS[@]}"} -i "$CUR_PROMPT")
-        "${LAUNCH[@]}" || true
-      else
-        echo "NOTE: agy reported --mode auto is unavailable for this account; saved fallback for future launches (set KIT_AGY_MODE=bypass|accept-edits|default to override)." >&2
-      fi
-    else
-      rm -f "$AGY_ERR_LOG"
-    fi
-  else
-    "${LAUNCH[@]}" || true
-  fi
+  "${LAUNCH[@]}" || true
   [ -f .kit/handover.flag ] || break
   NEXT_PROMPT="$(python3 -I -c 'import json; print(json.load(open(".kit/handover.flag"))["prompt"])' 2>/dev/null)"
   rm -f .kit/handover.flag
   [ -n "$NEXT_PROMPT" ] || break
-  CUR_PROMPT="$NEXT_PROMPT"
   echo "Context hand-over: opening a fresh orchestrator (${CLI}, empty context)."
   if [ "$CLI" = "claude" ]; then
     LAUNCH=(claude --permission-mode "$CMODE" "${AC_ARGS[@]}" ${NAME_ARGS[@]+"${NAME_ARGS[@]}"} "$NEXT_PROMPT")

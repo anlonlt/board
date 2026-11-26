@@ -2511,9 +2511,6 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
     for pid, d in posts.items():
         if d.get("removed") or _is_card_done(d):
             continue
-        st = str(d.get("status") or "").strip().lower()
-        if st in done_statuses:
-            continue
         if unblocked_only and _is_card_blocked(d, posts):
             continue
         pr = str(d.get("runner") or train_runners.get(pid) or "").strip()
