@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T19:40:34Z",
+ "created_at": "2026-11-26T19:41:04Z",
  "rows": [
   {
    "also": [],
@@ -99,7 +99,9 @@
     "M1",
     "M2",
     "M4",
-    "M5"
+    "M5",
+    "M6",
+    "M3"
    ],
    "parent": "",
    "part": "P-memory",
@@ -834,8 +836,30 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-memory",
+   "part": "M6",
+   "post": "m6-the-usage-ledger-counts-cost-per-command",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-memory",
+   "part": "M3",
+   "post": "m3-done-keeps-the-map-each-part-checks-its",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T19:40:34Z"
+ "updated_at": "2026-11-26T19:41:04Z"
 }

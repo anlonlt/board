@@ -1,0 +1,47 @@
+{
+ "body": "Done keeps the map: every part checks its stretch of the plumbing and adds what it built or found, or its step is refused. Waits on M1.\n\n1. `kit.py done` runs `kit.py map --check` and refuses on a check that fails, naming the link, in scripts/kit.py with tests/test_map_done.py.\n2. It refuses when files the step changed are not on the map, or a new thing has no check (the part adds them, each link with its check).\n3. A thing only a browser sees (a page in a web app, a sharing setting) carries a probe, an instruction the next browser part performs, and \"last confirmed\" with its date; past a number of days set in the kit config it shows as unconfirmed, never as fine.\n4. The part's guides say it in two lines: confirm your stretch, add what you built with its check, in kit/part.template.md and kit/claude-cli/part.template.md.\n\nBars: on the kit itself, how many of the last 10 steps' changed files the map covers; how many seconds `done` spends on the map check.\n",
+ "column": "info",
+ "created_at": "2026-11-26T19:41:04Z",
+ "from": "orchestrator",
+ "part": "M3",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "kit.py",
+    "scripts/kit.py",
+    "tests/test_map_done.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "kit.py done runs kit.py map --check and refuses on a check that fails, naming the link, in..."
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "It refuses when files the step changed are not on the map, or a new thing has no check (the part..."
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "A thing only a browser sees (a page in a web app, a sharing setting) carries a probe, an..."
+  },
+  {
+   "files": [
+    "kit/claude-cli/part.template.md",
+    "kit/part.template.md"
+   ],
+   "from": "task",
+   "n": 4,
+   "status": "open",
+   "title": "The part's guides say it in two lines"
+  }
+ ],
+ "task": "Done keeps the map: every part checks its stretch of the plumbing and adds what it built or found, or its step is refused. Waits on M1.\n\n1. `kit.py done` runs `kit.py map --check` and refuses on a check that fails, naming the link, in scripts/kit.py with tests/test_map_done.py.\n2. It refuses when files the step changed are not on the map, or a new thing has no check (the part adds them, each link with its check).\n3. A thing only a browser sees (a page in a web app, a sharing setting) carries a probe, an instruction the next browser part performs, and \"last confirmed\" with its date; past a number of days set in the kit config it shows as unconfirmed, never as fine.\n4. The part's guides say it in two lines: confirm your stretch, add what you built with its check, in kit/part.template.md and kit/claude-cli/part.template.md.\n\nBars: on the kit itself, how many of the last 10 steps' changed files the map covers; how many seconds `done` spends on the map check.\n",
+ "title": "Done keeps the map: each part checks its stretch and adds what it built",
+ "train": "memory"
+}
