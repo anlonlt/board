@@ -11,6 +11,14 @@ comparison and optimization pre/post kit updates and changes."
     python3 -I .kit/usage.py push                     the local rows onto the ledger branch (origin/kit-usage)
     python3 -I .kit/usage.py compare --before A --after B [--role part] [--json]
     python3 -I .kit/usage.py show [--session S]       the rows, one line each
+    python3 -I .kit/usage.py show --commands [--role R] [--transcripts '~/.claude/projects/*/*.jsonl']
+                                                      M6: top commands by cost per role, runs repeated in 3+ sessions
+    python3 -I .kit/usage.py compare --before A --after B --commands   M6: each command's carry $ per session
+
+M6, cost per command: every tool result's size (characters, tokens estimated at 4 characters each) is counted under
+its command (`kit.py resume`, `kit.py post`, `tests`, `git status`, `Read`, `ArtifactData list`, ...), with its carry:
+its tokens x the API calls that followed it (until a compaction dropped it), at the cache read price. A row keeps
+`commands` (totals per command) and `cmd_seq` (the first 600 results, in order) for the repeated runs.
 
 Sources, measured, never estimated:
   * the Claude Code transcript (`~/.claude/projects/<dir>/<session>.jsonl`, the hook payload's transcript_path) and
@@ -239,6 +247,7 @@ def parse_transcript(path, conf=None, depth=0):
     agy_sub_meta = []
     agy_children = []
     seen_agy_children = set()
+    seen_mids, results, last_model = set(), [], None   # M6: each tool result, the calls that followed it
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line_no, line in enumerate(fh):
             try:
@@ -331,11 +340,16 @@ def parse_transcript(path, conf=None, depth=0):
                 branches[e["gitBranch"]] += 1
             if e.get("type") == "system" and e.get("subtype") == "compact_boundary" or e.get("isCompactSummary"):
                 compactions += 1
+                for res in results:                  # a compaction drops what was in the context
+                    if res["end"] is None:
+                        res["end"] = len(seen_mids)
             m = e.get("message") if isinstance(e.get("message"), dict) else {}
             if e.get("type") == "assistant":
                 mid = m.get("id") or e.get("uuid")
                 if m.get("usage") and m.get("model") != "<synthetic>":
                     calls[mid] = (m.get("model"), m["usage"])
+                    seen_mids.add(mid)
+                    last_model = m.get("model")
                 for b in m.get("content") or []:
                     if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id") not in tool_name:
                         name = b.get("name") or "?"
@@ -366,6 +380,9 @@ def parse_transcript(path, conf=None, depth=0):
                     for b in c:
                         if isinstance(b, dict) and b.get("type") == "tool_result":
                             name, inp = tool_name.get(b.get("tool_use_id"), ("?", {}))
+                            chars = len(_text([b]))
+                            results.append({"key": cmd_key(name, inp), "chars": chars, "at": len(seen_mids),
+                                            "end": None, "model": last_model})
                             if name == "ArtifactData" and (inp.get("action") in ("get", "list", "query")):
                                 board["read_bytes"] += len(_text([b]))
                             elif name == "Bash" and "board_cli.py" in str(inp.get("command") or ""):
@@ -431,6 +448,8 @@ def parse_transcript(path, conf=None, depth=0):
         "board": {k: v for k, v in board.items() if k != "tests_run"}, "tests_run": board.get("tests_run", 0),
         "compactions": compactions, "first_prompt": prompts[0] if prompts else (msg_prompts[0] if msg_prompts else ""),
     }
+    commands, seq = command_costs(results, len(seen_mids), conf)
+    row["commands"], row["cmd_seq"] = commands, seq[:SEQ_KEEP]
     subs = []
     if depth == 0:
         sdir = os.path.join(os.path.dirname(path), os.path.basename(path)[:-6], "subagents")
@@ -445,6 +464,7 @@ def parse_transcript(path, conf=None, depth=0):
                          "description": meta.get("description"), "model": sub["model"],
                          "api_calls": sub["api_calls"], "tokens": sub["tokens"], "cost_usd": sub["cost_usd"],
                          "tool_calls": sub["tool_calls"], "tools": sub["tools"], "context_peak": sub["context_peak"]})
+            add_commands(commands, sub.get("commands"))
         abs_self = os.path.abspath(path)
         for cid, cpath, meta in agy_children:
             if not cpath or not os.path.isfile(cpath) or os.path.abspath(cpath) == abs_self:
@@ -463,6 +483,202 @@ def parse_transcript(path, conf=None, depth=0):
         tot.update(s["tokens"])
     row["tokens_all"] = dict(tot)
     return row
+
+
+# ---------------------------------------------------------------- M6: what each command costs
+
+SEQ_KEEP = 600            # the command sequence kept on a row (the first N results)
+CHARS_PER_TOKEN = 4.0     # the estimate: a token is about 4 characters of English or code
+_LEAD = re.compile(r"^\s*(?:(?:cd|export|source|\.)\s+[^&;|]*?(?:&&|;)\s*|[A-Z_][A-Z0-9_]*=\S*\s+)+")
+
+
+def bash_key(cmd):
+    """A shell command -> its command: `kit.py resume`, `tests`, `git status`, `py:usage.py`, `sh:grep`."""
+    cmd = str(cmd or "")
+    m = KIT_CMD.search(cmd)
+    if m:
+        return m.group(1) + (" " + m.group(2) if m.group(2) else "")
+    if TEST_CMD.search(cmd):
+        return "tests"
+    words = _LEAD.sub("", cmd).split()
+    if not words:
+        return "sh"
+    w0 = os.path.basename(words[0])
+    if w0 == "git":
+        sub = next((w for w in words[1:] if not w.startswith("-") and not re.fullmatch(r"\S+=\S*|/\S+", w)), "")
+        return ("git " + sub).strip()
+    if re.fullmatch(r"python[0-9.]*|node", w0):
+        script = next((w for w in words[1:] if not w.startswith("-")), "")
+        script = "stdin" if not script or script.startswith("<") else os.path.basename(script)
+        return ("py:" if w0.startswith("python") else "node:") + script
+    return "sh:" + w0
+
+
+def cmd_key(name, inp):
+    """One tool call -> the command it is counted under."""
+    inp = inp if isinstance(inp, dict) else {}
+    if name == "Bash":
+        return bash_key(inp.get("command"))
+    if name == "run_command":
+        return bash_key(inp.get("CommandLine") or inp.get("command"))
+    if name == "ArtifactData":
+        return "ArtifactData " + str(inp.get("action") or "?")
+    if name == "Read":
+        return "Read"
+    if name.startswith("mcp__"):
+        return "mcp:" + name.split("__")[-1]
+    return name
+
+
+def command_costs(results, n_calls, conf=None):
+    """Each result's size (chars, estimated tokens) and its carry: tokens x the API calls that followed it until
+    the session ended or a compaction dropped it, at the cache read price of the model then serving.
+    -> ({command: totals}, [[command, carry $], ...] in order)."""
+    out, seq = {}, []
+    for res in results:
+        tok = int(round(res["chars"] / CHARS_PER_TOKEN))
+        after = max(0, (n_calls if res["end"] is None else res["end"]) - res["at"])
+        p = price(res["model"], conf)
+        usd = tok * after * p[2] / 1e6 if p else 0.0
+        d = out.setdefault(res["key"], {"n": 0, "chars": 0, "tokens": 0, "carry_tokens": 0, "carry_usd": 0.0})
+        d["n"] += 1
+        d["chars"] += res["chars"]
+        d["tokens"] += tok
+        d["carry_tokens"] += tok * after
+        d["carry_usd"] += usd
+        seq.append([res["key"], round(usd, 6)])
+    for d in out.values():
+        d["carry_usd"] = round(d["carry_usd"], 6)
+    return out, seq
+
+
+def add_commands(into, more):
+    for k, v in (more or {}).items():
+        d = into.setdefault(k, {"n": 0, "chars": 0, "tokens": 0, "carry_tokens": 0, "carry_usd": 0.0})
+        for f in d:
+            d[f] = d[f] + (v.get(f) or 0)
+        d["carry_usd"] = round(d["carry_usd"], 6)
+    return into
+
+
+def by_role_commands(rows):
+    """{role: {"sessions": n, "tokens": all tokens, "commands": {command: totals + sessions}}} (rows with commands)."""
+    out = {}
+    for r in rows:
+        if not r.get("commands"):
+            continue
+        g = out.setdefault(r.get("role") or "other", {"sessions": 0, "tokens": 0, "commands": {}})
+        g["sessions"] += 1
+        g["tokens"] += _tot(r.get("tokens_all") or r.get("tokens"))
+        for k, v in r["commands"].items():
+            d = g["commands"].setdefault(k, {"n": 0, "chars": 0, "tokens": 0, "carry_tokens": 0, "carry_usd": 0.0,
+                                             "sessions": 0})
+            for f in ("n", "chars", "tokens", "carry_tokens", "carry_usd"):
+                d[f] += v.get(f) or 0
+            d["sessions"] += 1
+    return out
+
+
+def repeated_sequences(rows, min_sessions=3, lengths=(2, 3, 4, 5), top=5):
+    """The same run of commands (2 to 5 in a row, at least 2 different) in min_sessions sessions or more: a script
+    to write. -> [{"seq", "sessions", "times", "carry_usd"}], by sessions x times, a run inside a longer listed one
+    with as many sessions left out."""
+    found = {}
+    for r in rows:
+        seq = r.get("cmd_seq") or []
+        keys = [x[0] for x in seq]
+        for n in lengths:
+            for i in range(len(keys) - n + 1):
+                t = tuple(keys[i:i + n])
+                if len(set(t)) < 2:
+                    continue
+                d = found.setdefault(t, {"sessions": set(), "times": 0, "carry_usd": 0.0})
+                d["sessions"].add(r.get("session_id"))
+                d["times"] += 1
+                d["carry_usd"] += sum(float(x[1] or 0) for x in seq[i:i + n])
+    cand = [(t, d) for t, d in found.items() if len(d["sessions"]) >= min_sessions]
+    cand.sort(key=lambda x: (-len(x[1]["sessions"]) * x[1]["times"], -len(x[0]), -x[1]["carry_usd"]))
+    out = []
+    for t, d in cand:
+        if any(len(o["seq"]) > len(t) and o["sessions"] >= len(d["sessions"]) and
+               any(tuple(o["seq"][j:j + len(t)]) == t for j in range(len(o["seq"]) - len(t) + 1)) for o in out):
+            continue
+        out = [o for o in out if not (len(t) > len(o["seq"]) and len(d["sessions"]) >= o["sessions"] and
+                                      any(t[j:j + len(o["seq"])] == tuple(o["seq"]) for j in range(len(t) - len(o["seq"]) + 1)))]
+        out.append({"seq": list(t), "sessions": len(d["sessions"]), "times": d["times"],
+                    "carry_usd": round(d["carry_usd"], 4)})
+        if len(out) >= top * 3:
+            break
+    return out[:top]
+
+
+def render_commands(rows, top=10, min_sessions=3):
+    """`show --commands`: per role, the top commands by what they cost staying in the context, and the runs of
+    commands repeated across sessions."""
+    g = by_role_commands(rows)
+    L = ["# Cost per command (a result's estimated tokens x the API calls after it, at the cache read price)", ""]
+    for role in sorted(g):
+        gr = g[role]
+        tot = gr["tokens"] or 1
+        L += ["## %s (%d sessions, %s tokens)" % (role, gr["sessions"], _fmt(gr["tokens"], "")), "",
+              "| command | calls | sessions | chars | est. tokens | carried tokens | share of tokens | carry $ |",
+              "|---|---|---|---|---|---|---|---|"]
+        items = sorted(gr["commands"].items(), key=lambda kv: (-kv[1]["carry_usd"], -kv[1]["carry_tokens"]))[:top]
+        for k, d in items:
+            L.append("| %s | %d | %d | %s | %s | %s | %.1f%% | %.3f |" % (
+                k, d["n"], d["sessions"], _fmt(d["chars"], ""), _fmt(d["tokens"], ""), _fmt(d["carry_tokens"], ""),
+                100.0 * d["carry_tokens"] / tot, d["carry_usd"]))
+        rs = gr["commands"].get("kit.py resume")
+        L += ["", "resumes: %.1f%% of this role's tokens (%s carried of %s)" % (
+            100.0 * (rs or {}).get("carry_tokens", 0) / tot, _fmt((rs or {}).get("carry_tokens", 0), ""),
+            _fmt(gr["tokens"], "")), ""]
+    if not g:
+        L.append("no rows with commands (a row recorded before M6 has none: record it again)")
+        return "\n".join(L)
+    seqs = repeated_sequences(rows, min_sessions=min_sessions)
+    L += ["## Repeated across sessions (%d or more): candidates for a script" % min_sessions, ""]
+    if seqs:
+        L += ["| commands in a row | sessions | times | carry $ |", "|---|---|---|---|"]
+        L += ["| %s | %d | %d | %.3f |" % (" > ".join(x["seq"]), x["sessions"], x["times"], x["carry_usd"]) for x in seqs]
+    else:
+        L.append("none: no run of commands is in %d sessions yet" % min_sessions)
+    return "\n".join(L)
+
+
+def render_compare_commands(rows, t_before, t_after, label_b, label_a, role=None, top=10):
+    """`compare --commands`: per role, each top command's carry $ per session, before and after the cut."""
+    sides = {"before": [], "after": []}
+    for r in rows:
+        if role and r.get("role") != role:
+            continue
+        w = _when(r)
+        if w is None:
+            continue
+        if w <= t_before:
+            sides["before"].append(r)
+        if w >= t_after:
+            sides["after"].append(r)
+    gb, ga = by_role_commands(sides["before"]), by_role_commands(sides["after"])
+    L = ["# Cost per command: before (%s) vs after (%s), carry $ per session" % (label_b, label_a), ""]
+    for rl in sorted(set(gb) | set(ga)):
+        b, a = gb.get(rl) or {"sessions": 0, "commands": {}}, ga.get(rl) or {"sessions": 0, "commands": {}}
+        L += ["## %s (sessions with commands: before %d, after %d)" % (rl, b["sessions"], a["sessions"]), "",
+              "| command | before $/session | after $/session | change | before calls/session | after calls/session |",
+              "|---|---|---|---|---|---|"]
+        keys = set(b["commands"]) | set(a["commands"])
+
+        def per(g, k, f):
+            return (g["commands"].get(k) or {}).get(f, 0) / g["sessions"] if g["sessions"] else None
+        keys = sorted(keys, key=lambda k: -max(per(b, k, "carry_usd") or 0, per(a, k, "carry_usd") or 0))[:top]
+        for k in keys:
+            vb, va = per(b, k, "carry_usd"), per(a, k, "carry_usd")
+            ch = "%+.0f%%" % (100.0 * (va - vb) / vb) if vb and va is not None else "-"
+            L.append("| %s | %s | %s | %s | %s | %s |" % (
+                k, _fmt(vb, "$"), _fmt(va, "$"), ch, _fmt(per(b, k, "n"), ""), _fmt(per(a, k, "n"), "")))
+        L.append("")
+    if not (gb or ga):
+        L.append("no rows with commands on either side of the cut (rows recorded before M6 have none)")
+    return "\n".join(L)
 
 
 # ---------------------------------------------------------------- role and part
@@ -1150,9 +1366,19 @@ def main(argv=None):
     s.add_argument("--only", action="store_true", help="only the --rows files (a fixed set, for a reproducible check)")
     s.add_argument("--kit-repo")
     s.add_argument("--json", action="store_true")
+    s.add_argument("--commands", action="store_true", help="the top commands by cost, per role (M6)")
+    s.add_argument("--top", type=int, default=10)
     s = sp.add_parser("show")
     s.add_argument("--session")
     s.add_argument("--rows", action="append", default=[])
+    s.add_argument("--only", action="store_true", help="only the --rows files")
+    s.add_argument("--role")
+    s.add_argument("--commands", action="store_true",
+                   help="the top commands by cost per role, and runs of commands repeated in 3 sessions or more (M6)")
+    s.add_argument("--top", type=int, default=10)
+    s.add_argument("--min-sessions", type=int, default=3)
+    s.add_argument("--transcripts", action="append", default=[],
+                   help="also read these transcripts (a glob, e.g. ~/.claude/projects/*/*.jsonl) without recording them")
     a = ap.parse_args(argv)
     root = project_root(a.root)
     if a.cmd == "hook":
@@ -1206,15 +1432,41 @@ def main(argv=None):
         rows = merge_rows(all_rows(root, a.rows) if not a.only else [], _read_rows(a.rows))
         tb, lb = cut_time(root, a.before, a.kit_repo, rows)
         ta, la = cut_time(root, a.after or a.before, a.kit_repo, rows)
+        if a.commands:
+            print(render_compare_commands(rows, tb, ta, lb, la, a.role, a.top))
+            return 0
         res = compare(rows, tb, ta, a.role, a.project, a.part_prefix)
         print(json.dumps(res, indent=1) if a.json else render(res, lb, la))
         return 0
     if a.cmd == "show":
-        for r in sorted(all_rows(root, a.rows), key=lambda r: str(r.get("started"))):
-            if not a.session or str(r.get("session_id", "")).startswith(a.session):
-                print(one_line(r))
+        rows = merge_rows(all_rows(root, a.rows) if not a.only else [], _read_rows(a.rows),
+                          transcript_rows(a.transcripts))
+        rows = [r for r in rows if (not a.session or str(r.get("session_id", "")).startswith(a.session))
+                and (not a.role or r.get("role") == a.role)]
+        if a.commands:
+            print(render_commands(rows, a.top, a.min_sessions))
+            return 0
+        for r in sorted(rows, key=lambda r: str(r.get("started"))):
+            print(one_line(r))
         return 0
     return 1
+
+
+def transcript_rows(patterns):
+    """Rows read from transcripts on this computer (not saved): a role from the transcript itself."""
+    out = []
+    for pat in patterns:
+        for p in sorted(glob.glob(os.path.expanduser(pat))):
+            if "/subagents/" in p:
+                continue
+            try:
+                row = parse_transcript(p)
+            except (OSError, ValueError):
+                continue
+            row["role"], row["part"] = classify(row)
+            row["recorded_at"] = "~transcript"
+            out.append(row)
+    return out
 
 
 def one_line(r):

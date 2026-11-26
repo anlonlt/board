@@ -3438,7 +3438,7 @@ def field_text(moment, role="part", train=None):
     if led is None or not hasattr(led, "open_fields"):
         return ""
     try:
-        lines = led.field_lines(led.open_fields(_resolve_memory_dir(), role, moment=moment, kit_root=ROOT, train=train))
+        lines = led.field_lines(led.open_fields(_resolve_memory_dir(), role, moment=moment, kit_root=ROOT, train=train), ROOT)
     except (OSError, ValueError, KeyError):
         return ""
     return "\n".join(lines).strip()
@@ -6067,7 +6067,7 @@ COMMANDS = [
     ("git copy", "kit.py landing | save | checkpoint", "which steps may reach the trunk; save work in progress to wip/<branch> or checkpoint on the step's branch (CL17)"),
     ("save the board", "kit.py keep", "the board here into git, committed and pushed (git is the record)"),
     ("read the board", "kit.py resume --role orchestrator|part|clerk|review [--post P]", "what that role needs and nothing else: a session starts from it alone (lessons, launch workflow, tests, how to report)"),
-    ("memory", "kit.py lessons [--role R] [--files F...] | lessons check [--ask]", "the lessons a role needs / refuse untagged ones and ones only a project doc holds; flag two live entries that contradict, a second claim of authority, and ask which wins"),
+    ("memory", "kit.py lessons [--role R] [--files F...] | lessons check [--ask]", "the lessons a role needs / refuse untagged ones, ones only a project doc holds, a \"be careful\" remedy, and run every entry's check (test:, hook:, code:, refusal:): flags one whose test is gone or fails or whose code no longer exists, lists the unchecked (M7); flags two live entries that contradict and a second claim of authority, and asks which wins (M8)"),
     ("memory", "kit.py lessons replace <wins> <goes> | lesson add ... --replaces <id> | ledger observe ... --replaces <id>", "an entry replaces another: the old one goes to the archive with a pointer to its successor"),
     ("memory", "kit.py lessons review [--post] [--days N] | lessons keep <id>", "entries unconfirmed for more than kit.memory.review_days, as a question post on the board (never deleted) / say one still holds"),
     ("memory", "kit.py lesson add <id> --roles R,.. --title T --text X [--files G,..] [--from \"doc id\"]", "a lesson into the memory, tagged with its roles"),
@@ -6116,6 +6116,7 @@ COMMANDS = [
     ("setup", "install.py <project> [--update]", "install or update the kit in a project (every present runtime)"),
     ("setup", "kit_import.py / step0_scan.py", "a person's state from their chats / a project's step 0 profile"),
     ("measure", "kit.py usage compare --before <kit commit|date> --after <...> [--role part|orchestrator|clerk|review]", "tokens, cost, turns, tool calls, board bytes per role, median and total with n, before vs after a kit change (CL37)"),
+    ("measure", "kit.py usage show --commands [--role R] [--transcripts GLOB] / compare ... --commands", "cost per command: each result's size and its carry (tokens x calls after it, cache read price), top commands per role, runs of commands repeated in 3+ sessions as script candidates (M6)"),
     ("measure", "kit.py usage record|show|push|import-ccr", "one session's usage row from its transcript (the Stop/SessionEnd hook does it, no model call) / the rows / onto the ledger branch kit-usage / rows from saved get_session records"),
     ("index", "kit.py commands [word|all]", "the topics / the commands a word finds / every one"),
 ]
@@ -6424,20 +6425,21 @@ def _kit_lessons_paths():
 
 
 def parse_lessons(text, source=""):
-    """[{id, title, roles, files, from, where, text, source}] from lesson Markdown: `## <id>: <title>`, then `roles:`,
-    optional `files:` (globs), `from:` (where it was first written) and `where: attached` (only a project that has another
-    repo attached, or the kit's own) lines, then the lesson itself."""
+    """[{id, title, roles, files, from, where, check, text, source}] from lesson Markdown: `## <id>: <title>`, then `roles:`,
+    optional `files:` (globs), `from:` (where it was first written), `where: attached` (only a project that has another
+    repo attached, or the kit's own) and `check:` (what enforces it, M7: test:/hook:/code:/refusal:) lines, then the
+    lesson itself."""
     out, cur = [], None
     for n, line in enumerate(text.splitlines(), 1):
         m = LESSON_HEAD.match(line)
         if m:
-            cur = {"id": m.group(1), "title": m.group(2), "roles": [], "files": [], "from": "", "where": "", "replaces": "",
-                   "replaced_by": "", "confirmed": "", "text": [], "source": source, "line": n}
+            cur = {"id": m.group(1), "title": m.group(2), "roles": [], "files": [], "from": "", "where": "", "check": "", "replaces": "",
+                   "replaced_by": "", "confirmed": "", "text": [], "source": source, "_file": source, "line": n}
             out.append(cur)
             continue
         if cur is None:
             continue
-        kv = re.match(r"^(roles|files|from|where|replaces|replaced_by|confirmed)\s*:\s*(.*)$", line.strip(), re.I)
+        kv = re.match(r"^(roles|files|from|where|check|replaces|replaced_by|confirmed)\s*:\s*(.*)$", line.strip(), re.I)
         if kv and not cur["text"]:
             k, v = kv.group(1).lower(), kv.group(2).strip()
             cur[k] = [x.strip() for x in re.split(r"[,\s]+", v) if x.strip()] if k in ("roles", "files") else v
@@ -6510,11 +6512,61 @@ def lessons_check():
         bad = [r for r in x["roles"] if r not in ROLES and r != "all"]
         if bad:
             err.append("lesson %s (%s): unknown role %s (roles: %s, all)" % (x["id"], x["source"], ", ".join(bad), ", ".join(ROLES)))
+    for x in les:
+        why = _led_call("check_error", x.get("check"))
+        if why:
+            err.append("lesson %s (%s): %s" % (x["id"], x["source"], why))
+        vague = _led_call("vague_remedy", x["text"], x.get("check"))
+        if vague:
+            err.append("lesson %s (%s): its remedy is %r: a lesson names the test, hook, refusal or code that keeps the mistake "
+                       "from coming back (`check:` under its heading)" % (x["id"], x["source"], vague))
     for i, rel in _doc_only_lessons(les):
         err.append("lesson %s lives only in %s: move it into the memory, tagged with its roles: "
                    "`python3 -I .kit/kit.py lesson add %s --roles <roles> --from \"%s %s\" --title ... --text ...`"
                    % (i, rel, i, rel, i))
     return err
+
+
+def _led_call(name, *args, **kw):
+    """A kit/ledger.py function, or None when this install has no ledger (an old copy)."""
+    led = _load_ledger_mod()
+    f = getattr(led, name, None) if led is not None else None
+    return f(*args, **kw) if f else None
+
+
+def memory_entries():
+    """M7: every memory entry a check can hold: the lessons, and the ledger's live rows (fields excepted)."""
+    out = list(all_lessons())
+    led = _load_ledger_mod()
+    if led is not None:
+        try:
+            rows = led.load_entries(_resolve_memory_dir(), kit_root=ROOT)
+        except (OSError, ValueError):
+            rows = []
+        out += [r for r in rows if r.get("status") == "active" and r.get("kind") in getattr(led, "CHECKED_KINDS", ())]
+    return out
+
+
+def memory_checks(run=False):
+    """[{id, status: ok|fail|unchecked, why, since, checks}] for every memory entry; run=True runs the tests and keeps
+    their results (.kit/run/memory-checks.json) for the resume and the hook, which never run one."""
+    led = _load_ledger_mod()
+    if led is None or not hasattr(led, "check_entry"):
+        return []
+    ents = memory_entries()
+    cache = led.read_checks_cache(ROOT)
+    res = [led.check_entry(ROOT, e, run=run, cache=cache) for e in ents]
+    if run:
+        led.write_checks_cache(ROOT, res, {e["id"]: led.entry_check_value(e) or "" for e in ents})
+    return res
+
+
+def memory_line():
+    """The orchestrator's one line: entries checked, failing, unchecked."""
+    led = _load_ledger_mod()
+    if led is None or not hasattr(led, "memory_line"):
+        return ""
+    return led.memory_line(memory_checks(run=False), led.read_checks_cache(ROOT).get("at", ""))
 
 
 def _doc_only_lessons(les):
@@ -6547,15 +6599,17 @@ def _refused_lines():
     return out
 
 
-def lesson_add(lid, roles, title, text, files=(), frm="", replaces=""):
-    res = _lesson_add(lid, roles, title, text, files, frm)
+def lesson_add(lid, roles, title, text, files=(), frm="", check="", replaces=""):
+    res = _lesson_add(lid, roles, title, text, files, frm, check)
     if res.get("ok") and replaces:
         r = memory_replace(res["lesson"], replaces)
         res.update({"replaced": r} if r.get("ok") else {"error": r.get("error")})
     return res
 
 
-def _lesson_add(lid, roles, title, text, files=(), frm=""):
+def _lesson_add(lid, roles, title, text, files=(), frm="", check=""):
+    """A lesson into the memory. It names its check (M7): without one it is written "unchecked" and the answer proposes
+    one; a remedy that is only "be careful" with no check is refused."""
     roles = [r.strip().lower() for r in roles if r.strip()]
     if not roles:
         return {"error": "a lesson needs its roles (--roles %s): one no role reads is never read" % ",".join(ROLES)}
@@ -6565,6 +6619,20 @@ def _lesson_add(lid, roles, title, text, files=(), frm=""):
     lid = re.sub(r"[^\w.-]+", "-", str(lid)).strip("-")
     if not lid or not str(title).strip() or not str(text).strip():
         return {"error": "a lesson needs an id, a title and its text"}
+    check = str(check or "").strip()
+    why = _led_call("check_error", check)
+    if why:
+        return {"error": why}
+    proposed = "" if check else (_led_call("propose_check", ROOT, title, text, list(files)) or "")
+    vague = _led_call("vague_remedy", "%s %s" % (title, text), check)
+    if vague:
+        return {"error": "the remedy is %r: name what keeps the mistake from coming back (a test, a hook, a refusal in a "
+                         "command, the code) with --check%s" % (vague, (", e.g. --check \"%s\"" % proposed) if proposed else ""),
+                "proposed_check": proposed}
+    if check:
+        r = _led_call("check_entry", ROOT, {"id": lid, "check": check}, run=False)
+        if r and r["status"] == "fail":
+            return {"error": "--check %s: %s" % (check, r["why"])}
     d = os.path.join(_resolve_memory_dir(), "lessons")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, "%s.md" % lid)
@@ -6573,17 +6641,27 @@ def _lesson_add(lid, roles, title, text, files=(), frm=""):
         body.append("files: %s" % ", ".join(files))
     if frm:
         body.append("from: %s" % frm)
+    if check:
+        body.append("check: %s" % check)
     body += ["", text.strip(), ""]
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(body))
-    return {"ok": True, "lesson": lid, "path": os.path.relpath(path, ROOT)}
+    out = {"ok": True, "lesson": lid, "path": os.path.relpath(path, ROOT)}
+    if not check:
+        out["unchecked"] = ("nothing runs it: it is given to sessions as unchecked. Add its check: a `check:` line under its "
+                            "heading%s" % ((", proposed: `check: %s`" % proposed) if proposed else ""))
+        out["proposed_check"] = proposed
+    return out
 
 
 def _lesson_lines(les):
     out = []
+    led = _load_ledger_mod()
+    note = getattr(led, "check_note", None) if led is not None else None
+    cache = led.read_checks_cache(ROOT) if note else {}
     for x in les:
-        out.append("- **%s** %s%s: %s" % (x["id"], x["title"], (" (files %s)" % ", ".join(x["files"])) if x["files"] else "",
-                                          x["text"].replace("\n", " ")))
+        out.append("- **%s** %s%s: %s%s" % (x["id"], x["title"], (" (files %s)" % ", ".join(x["files"])) if x["files"] else "",
+                                            x["text"].replace("\n", " "), note(ROOT, x, cache) if note else ""))
     return out or ["- (none tagged for this role)"]
 
 
@@ -7588,6 +7666,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "not running and not complete: post status stalled, continue it from its branch.",
                 "- Before you answer the owner: this resume, under 15 minutes old (the brief guard refuses otherwise)."]
         out += ["", "## Lessons for the orchestrator"] + _lesson_lines(lessons_for("orchestrator"))
+        ml = memory_line()
+        if ml:
+            out += ["", ml]
         out += _principle_lines("orchestrator")
         pref = os.path.join(_resolve_memory_dir(), "preferences.md")
         if os.path.isfile(pref):
@@ -8075,6 +8156,8 @@ def main(argv=None):
     s.add_argument("--title", required=True); s.add_argument("--text", required=True)
     s.add_argument("--files", default=""); s.add_argument("--from", dest="frm", default="")
     s.add_argument("--replaces", default="", help="the lesson or ledger entry this one replaces: it goes to the archive")
+    s.add_argument("--check", default="", help="what enforces it: test:<file>[::Class.test] | hook:<name> | code:<file>[#text] | "
+                   "refusal:<file>#<text> (`;` between several); without it the lesson is unchecked and a check is proposed")
     s = sp.add_parser("commands", help="the kit's commands: the topics, or those a word finds (`all`)")
     s.add_argument("word", nargs="?", default=None)
     s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
@@ -8429,9 +8512,18 @@ def main(argv=None):
         return 0
     if a.cmd == "lessons":
         if a.action == "check":
-            out = memory_check_text(a.days)
-            bad = [l for l in out if not l.startswith("REVIEW:")]
-            print("\n".join(out) if out else "OK: every lesson is in the memory, tagged with its roles; nothing in it disagrees")
+            err = lessons_check()
+            res = memory_checks(run=True)
+            bad = [r for r in res if r["status"] == "fail"]
+            err += ["%s: its check fails or what it names is gone: %s" % (r["id"], r["why"]) for r in bad]
+            odd = [l for l in memory_check_text(a.days) if not l.startswith("REFUSED: ")]
+            print("\n".join(["REFUSED: " + e for e in err] + odd) if err or odd else
+                  "OK: every lesson is in the memory, tagged with its roles, every check passes, nothing in it disagrees")
+            for r in res:
+                if r["status"] == "unchecked":
+                    print("UNCHECKED: %s since %s: nothing runs it (add `check:` naming its test, hook, refusal or code)" % (r["id"], r["since"]))
+            if res:
+                print(memory_line())
             if a.ask:
                 pairs = [c for c in memory_conflicts() if c["kind"] in ("contradiction", "authority")]
                 if pairs:
@@ -8441,7 +8533,7 @@ def main(argv=None):
                     print(json.dumps(ask("Memory: %d pair(s) disagree, which one wins?" % len(pairs), body,
                                          ["Leave both flagged", "I answer under the post"], "Leave both flagged", deadline,
                                          needs="direction", train="memory", priority=2), ensure_ascii=False))
-            return 1 if bad else 0
+            return 1 if err or [l for l in odd if not l.startswith("REVIEW:")] else 0
         if a.action == "replace":
             if len(a.ids) != 2:
                 print(json.dumps({"error": "lessons replace <the one that wins> <the one that goes>"}))
@@ -8467,7 +8559,7 @@ def main(argv=None):
         print("\n".join(_lesson_lines(les)))
         return 0
     if a.cmd == "lesson":
-        res = lesson_add(a.id, a.roles.split(","), a.title, a.text, [f for f in a.files.split(",") if f.strip()], a.frm,
+        res = lesson_add(a.id, a.roles.split(","), a.title, a.text, [f for f in a.files.split(",") if f.strip()], a.frm, a.check,
                          replaces=a.replaces)
         print(json.dumps(res, ensure_ascii=False))
         return 1 if res.get("error") else 0
