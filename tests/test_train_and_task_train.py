@@ -265,13 +265,15 @@ class PostFormat(unittest.TestCase):
         self.kit.ROOT = root
         os.environ["KIT_BOARD_URL"] = "http://127.0.0.1:9"
         try:
-            rc, out = self.kit.review("PL2-b", dry_run=True)
+            # cli= says where it runs: the launcher is otherwise picked from the session that runs the suite (inside
+            # agy it is agy; with no claude on PATH there is none), and this test is about the prompt.
+            rc, out = self.kit.review("PL2-b", dry_run=True, cli="claude")
             self.assertEqual(rc, 0)
             self.assertIn("claude --bg -n demo-review-pl2-b --permission-mode auto --model opus", out)
             self.assertIn("The step `PL2-b` (part PL2, train `planner`) is complete", out)
             self.assertNotIn("<POST_ID>", out)
             self.assertNotIn("<REVIEW_ID>", out)
-            rc, out = self.kit.review(None, train="planner", dry_run=True)
+            rc, out = self.kit.review(None, train="planner", dry_run=True, cli="claude")
             self.assertIn("CROSS REVIEW of the whole train `planner` (1 steps complete)", out)
             # started once: a prompt already written is not started again
             os.makedirs(os.path.join(root, ".kit", "run"))

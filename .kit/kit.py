@@ -5869,6 +5869,7 @@ COMMANDS = [
     ("memory", "kit.py lesson add <id> --roles R,.. --title T --text X [--files G,..] [--from \"doc id\"]", "a lesson into the memory, tagged with its roles"),
     ("read the board", "kit.py train <train> [--zoom <part>] [--brief | --sections [PART..] | --full PART..]", "a train's steps at three depths: two lines each; their seven fields; a step whole"),
     ("read the board", "kit.py post <id> [--head N]", "one post and its comments"),
+    ("plan", "kit.py trains [list | new <train> --goal G | close <train> --why W]", "the trains and their one goal each; a new train's goal before its first step; a train closed when its goal is met (step new refuses a closed or full one)"),
     ("read the board", "kit.py open [--since ISO]", "the owner's comments not answered yet"),
     ("read the board", "kit.py since <ISO>", "what changed on the board since a time"),
     ("read the board", "kit.py session <post>", "the session a post names, and what it left"),
