@@ -73,6 +73,30 @@ try:
 except ImportError:
     fcntl = None
 
+def _test_guard():
+    """CL48: in a test run (KIT_TEST set) a write to a board, a mirror or a remote outside a temp folder is refused
+    (kit/test_guard.py, every git command checked first); None outside a test run."""
+    if not os.environ.get("KIT_TEST"):
+        return None
+    if sys.modules.get("kit_test_guard"):
+        return sys.modules["kit_test_guard"]
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    for f in [os.path.join(d, "test_guard.py") for d in (here, os.path.join(here, "..", "kit"), os.path.join(here, ".."))] + \
+            [os.environ.get("KIT_TEST_GUARD") or ""]:     # a test's hand-made copy of a few scripts: the runner's
+        if f and os.path.isfile(f):
+            spec = importlib.util.spec_from_file_location("kit_test_guard", f)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["kit_test_guard"] = mod
+            spec.loader.exec_module(mod)
+            mod.install()
+            return mod
+    raise SystemExit("KIT_TEST: REFUSED: test_guard.py is not next to %s: a test run writes nothing without it" % __file__)
+
+
+_TEST_GUARD = _test_guard()
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG = {}
 BRANCH = "board-mirror"
@@ -138,6 +162,8 @@ def read_state(m):
 # ---------------------------------------------------------------- sync
 def sync(m, d, at, full=False):
     """Overlay DIR on the copy. Returns (posts written, posts removed, comments new, comments changed, comments removed)."""
+    if _TEST_GUARD:     # CL48: a test run writes a board's git copy under a temp folder only
+        _TEST_GUARD.check_path(m, "to a board's git copy")
     posts = load_dir(d, "posts")
     if not posts:
         raise SystemExit("kit sync: %s/posts is empty: the posts must be listed in full at every sync" % d)
@@ -221,6 +247,8 @@ def _export_blobs_to_mirror(db_path, m, max_bytes=5 * 1024 * 1024):
 
 def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
     """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full)."""
+    if _TEST_GUARD:     # CL48: a test run writes a board's git copy under a temp folder only
+        _TEST_GUARD.check_path(m, "to a board's git copy")
     import sqlite3
     import tempfile
 
@@ -552,6 +580,8 @@ def _resolve_board_token(explicit=None):
 
 
 def _board_request(url, path, body=None, token=None, method=None):
+    if _TEST_GUARD:     # CL48: a test run writes only to a test's board, never to the real one
+        _TEST_GUARD.check_board(url, method or ("POST" if body is not None else "GET"))
     hdr = {"Content-Type": "application/json"}
     if token:
         hdr["X-Kit-Token"] = token
@@ -1261,6 +1291,8 @@ def _local_blob(url, bid, token):
 
 
 def _put_blob(url, bid, raw, name, token):
+    if _TEST_GUARD:     # CL48
+        _TEST_GUARD.check_board(url, "POST")
     req = urllib.request.Request(url.rstrip("/") + "/_api/blobs", data=raw, method="POST", headers={
         "X-Kit-Token": token or "", "X-Blob-Id": bid, "X-Filename": urllib.parse.quote(name),
         "Content-Type": BLOB_TYPES.get(os.path.splitext(name)[1].lower(), "application/octet-stream")})
@@ -1944,6 +1976,8 @@ def _sync_lock(m):
 
 
 def init(m):
+    if _TEST_GUARD:     # CL48: a test run writes a board's git copy under a temp folder only
+        _TEST_GUARD.check_path(m, "to a board's git copy")
     if os.path.exists(os.path.join(m, ".git")):
         br = git(m, "symbolic-ref", "--short", "HEAD").stdout.strip() or BRANCH
         return "init: mirror already exists at %s (branch %s). Next: python3 -I .kit/kit.py sync-db --commit" % (m, br)
