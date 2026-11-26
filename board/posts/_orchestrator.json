@@ -1,10 +1,9 @@
 {
- "body": "Orchestrator: the install session of the board kit on Tide Clock (branch test-install). It runs the README Install steps; the board clerk is started next.",
+ "body": "Orchestrator of the board kit's own repository (anlonlt/board): it reads the board, launches each step as a part on its own branch, merges what is reviewed and answers the owner here. Start it with `python3 -I .kit/kit.py resume --role orchestrator`.",
  "column": "info",
  "created_at": "2026-11-20T02:50:36Z",
  "part": "orchestrator",
- "restored_from": "board-mirror 5d7db0d: an artifact load at 2026-11-26T20:23Z (CL44's part, on this computer) overwrote it with an older Artifact copy; fields only that copy had are kept",
- "session_id": "c79c7b98-8778-4409-9e12-6d66323ac46e",
+ "session_id": "session_01AE1HGgfX1UjBPPJLiaUHxW",
  "title": "Ask the orchestrator",
- "updated_at": "2026-11-26T07:49:31Z"
+ "updated_at": "2026-11-26T23:00:00Z"
 }

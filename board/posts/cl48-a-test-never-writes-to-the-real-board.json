@@ -1,18 +1,47 @@
 {
- "body": "A test never writes to the real board. The real board's `_orchestrator` post says \"the install session of the board kit on Tide Clock (branch test-install)\": Tide Clock is the made-up project of the install tests, and that text reached the real board's git copy on 2026-11-20 (board-mirror commit 738a5f3, \"kit sync ... (full)\").\n\n1. Find how: which test or install run wrote to the real board or its board-mirror (a test whose board URL, token or mirror path fell back to the real one).\n2. Make it impossible: a test run (run_all_tests.py, or KIT_TEST set) refuses any write to a board, mirror or remote that is not under a temp folder, with the path it refused.\n3. Put the `_orchestrator` post's text right (what it says for this repo), keeping its session id.\n4. A test that tries to write to the real board from a test run and is refused.\n",
+ "artifacts": [
+  "kit/test_guard.py",
+  "tests/test_cl48_test_guard.py",
+  "scripts/run_all_tests.py",
+  "scripts/kit.py",
+  "kit/board/board_server.py",
+  "kit/board/board_cli.py",
+  "kit/end_session.py",
+  "kit/web_takeover.py",
+  "install.py"
+ ],
+ "bars": [
+  "8 of 8 cases in the new test pass: 4 writes to the real board, its git copy or its remote refused with the path or URL, 3 same writes to a temp folder still go through, 1 outside a test run nothing checked",
+  "71 of 71 test suites pass with the guard on (run_all_tests --all), so no existing test was writing outside a temp folder once hand-made script copies find the guard",
+  "1 of 1 cause found: board-mirror commit 738a5f3 is the first commit of that branch, written by session 01AE1HGkiSyy... on branch test-install (Tide Clock, board Etco5hYbtiiSHtV53saYB7)"
+ ],
+ "body": "The Tide Clock text on the board came from the live install test of 11-20: its made-up project was a branch of the kit's own repository, so its first board sync landed in the kit's real board copy. From now on a test run refuses any write to a board, a board copy or a remote that is not in a temp folder, and says which path it refused. The orchestrator's post now describes this repository again, with its session kept.\n\n### How the Tide Clock text got onto the real board\n- `origin/board-mirror` begins with commit 738a5f3 (2026-11-20 02:51Z, \"kit sync ... (full)\"), which adds `_orchestrator` (\"the install session of the board kit on Tide Clock (branch test-install)\") and `KIT-installed`.\n- `origin/test-install` is an orphan branch of anlonlt/board made at 02:48Z for the install test BD10: \"Test project for the kit's install: a tiny tide clock\". Its install commit at 02:50Z names another board (Etco5hYbtiiSHtV53saYB7) but keeps the mirror branch name `board-mirror`.\n- The mirror branch is one per repository, not per branch: the test project's `kit sync --commit` + `kit push` from a clone of anlonlt/board created the kit's own board-mirror. The real board then grew on top of it, and the `_orchestrator` post was never rewritten.\n- So it was not a Python test with a fallen-back URL but a live install test with no temp folder and no test mark. No unit test wrote there (the full suite now runs with the guard and nothing is refused).\n\n### What refuses now (kit/test_guard.py, installed as .kit/test_guard.py)\nIn a test run (`KIT_TEST` set; run_all_tests.py sets it for every suite):\n- every `git` command a kit script starts goes through a check first: a commit, merge, push, pull, rebase, reset... in a repository outside a temp folder is refused, and a push must go to a local folder under a temp folder (never github.com);\n- kit.py's sync, sync-db and init refuse a board copy (mirror) outside a temp folder, before writing a file;\n- a board server refuses to open a data folder outside a temp folder;\n- board_cli and kit.py refuse an HTTP write to a board server unless its health says its data is a test's (`\"temp\": true`, only ever true for a server started in a test run, under a temp folder; the real board always says no and the path is never shown). The default URL fallback (127.0.0.1:8765, the real board) is therefore refused whether it runs or not.\nEach refusal reads `KIT_TEST: REFUSED: a test run writes ... outside a temp folder: <path or URL>`. Scripts that load it: kit.py, board_server.py, board_cli.py, end_session.py, web_takeover.py. Outside a test run it is not even loaded.\n\n### The orchestrator post\n`_orchestrator` now reads: \"Orchestrator of the board kit's own repository (anlonlt/board): it reads the board, launches each step as a part on its own branch, merges what is reviewed and answers the owner here. Start it with `python3 -I .kit/kit.py resume --role orchestrator`.\" Its session id (session_01AE1HGgfX1UjBPPJLiaUHxW, the Artifact's) and created_at are kept.\n\n### The test\ntests/test_cl48_test_guard.py, in a test run: kit.py init on the real `../board-mirror` is refused with its path and creates nothing; kit.py push to https://github.com/anlonlt/board.git is refused with the URL; a board_cli write to a board server started outside a test run (the real board's stand-in) is refused and the post does not exist after; board_cli with no URL (the real board's default) is refused; a board server on the repository's own data is refused with `.kit/board_data`. The same push to a temp bare repository and the same write to a test's board go through.",
+ "branch": "cl48",
+ "breaks": "revert",
+ "check": "python3 -m unittest tests.test_cl48_test_guard",
  "column": "info",
  "created_at": "2026-11-26T21:32:57Z",
  "from": "orchestrator",
+ "handoff": "A test run is KIT_TEST=1 (run_all_tests.py sets it, with KIT_TEST_GUARD pointing at kit/test_guard.py for tests that copy a few scripts by hand). A live install test by an agent should export KIT_TEST=1 and use a temp folder for its project. A new script that writes to a board, a mirror or a remote loads the guard with the same 20-line _test_guard() as kit.py.",
+ "launched_at": "2026-11-26T22:58:05Z",
+ "not_checked": [
+  "A live install test run by an agent (like BD10) is covered only if KIT_TEST is set in that session: nothing marks such a run as a test by itself.",
+  "Writes the agent makes itself with ArtifactData (the claude.ai board) are not scripts and are not guarded; kit's scripts only build the batch.",
+  "The board-mirror history still starts with the Tide Clock commit 738a5f3; it is not rewritten (the post's text is corrected instead).",
+  "tests/test_train_and_task_train.py fails here outside the runner (it reads this session's half-loaded Artifact copy, \"never loaded\"), the same before this change; it passes in run_all_tests."
+ ],
  "part": "CL48",
  "planned_by": "orchestrator",
  "priority": 1,
  "runner": "claude-web",
- "status": "planned",
+ "session_id": "session_01AE1HGj52SDKNgDnUMMSCiL",
+ "started_at": "2026-11-26T22:59:06Z",
+ "status": "in progress",
  "subtasks": [
   {
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "Find how"
   },
   {
@@ -21,24 +50,26 @@
    ],
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "Make it impossible"
   },
   {
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "Put the _orchestrator post's text right (what it says for this repo), keeping its session id"
   },
   {
    "from": "task",
    "n": 4,
-   "status": "open",
+   "status": "done",
    "title": "A test that tries to write to the real board from a test run and is refused"
   }
  ],
  "task": "A test never writes to the real board. The real board's `_orchestrator` post says \"the install session of the board kit on Tide Clock (branch test-install)\": Tide Clock is the made-up project of the install tests, and that text reached the real board's git copy on 2026-11-20 (board-mirror commit 738a5f3, \"kit sync ... (full)\").\n\n1. Find how: which test or install run wrote to the real board or its board-mirror (a test whose board URL, token or mirror path fell back to the real one).\n2. Make it impossible: a test run (run_all_tests.py, or KIT_TEST set) refuses any write to a board, mirror or remote that is not under a temp folder, with the path it refused.\n3. Put the `_orchestrator` post's text right (what it says for this repo), keeping its session id.\n4. A test that tries to write to the real board from a test run and is refused.\n",
  "title": "A test never writes to the real board",
  "train": "board-data",
- "updated_at": "2026-11-26T22:44:45Z"
+ "updated_at": "2026-11-26T23:14:01Z",
+ "verdict": "Found (the 11-20 install test shared the kit repo's board-mirror), closed for every test run (writes outside a temp folder are refused with the path), and the orchestrator post is right again.",
+ "working_by": "owner"
 }

@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-26T21:53:28Z",
+ "from": "orchestrator",
+ "post_id": "m5-a-resume-prints-only-what-changed",
+ "text": "Orchestrator: review says continue. Not landed yet: feat/streamline-doctor-memory also holds M7, M8 (being fixed) and CL41 (review said redirect); the branch lands once those pass."
+}

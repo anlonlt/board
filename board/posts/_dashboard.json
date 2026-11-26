@@ -8,7 +8,7 @@
    "name": "Board data",
    "note": "Next: The board travels in git, always current (mirror synced on every step)",
    "post": "cl16-the-board-travels-in-git-always-current",
-   "state": "ready",
+   "state": "running",
    "steps": [
     "The board travels in git, always current (mirror synced on every step)",
     "A web session reconciles its Artifact with GitHub at its start",
@@ -116,7 +116,7 @@
    "name": "Takeover",
    "note": "Next: A crashed part is continued from its last checkpoint",
    "post": "cl17-a-crashed-part-is-continued-from-its-las",
-   "state": "ready",
+   "state": "running",
    "steps": [
     "A crashed part is continued from its last checkpoint",
     "A part reports to the orchestrator that started it, unless another claimed it",
@@ -145,21 +145,21 @@
    "train": "P-demo"
   },
   {
-   "at": 1,
+   "at": 5,
    "key": "G",
    "name": "Memory",
    "note": "Next: Install draws the first map",
    "post": "m2-install-draws-the-first-map",
-   "state": "running",
+   "state": "ready",
    "steps": [
     "A map of any project, generated from its code",
-    "Install draws the first map",
-    "Map readers beyond code: Power BI, documents, any folder",
     "A resume prints only what changed",
     "The usage ledger counts cost per command",
-    "Done keeps the map: each part checks its stretch and adds what it built",
     "Every memory entry is checked against reality",
     "Replacing and forgetting in memory",
+    "Install draws the first map",
+    "Map readers beyond code: Power BI, documents, any folder",
+    "Done keeps the map: each part checks its stretch and adds what it built",
     "The workflow on the map: what lives outside the repo, with checks",
     "A bug fixed three times, or a rule the owner repeats once, becomes a check"
    ],

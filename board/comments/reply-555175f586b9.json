@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-26T22:31:43Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "M5, M6, M7, M8: all four reviews say continue, and all four pass on Harmonize. They cannot land yet: feat/streamline-doctor-memory also carries CL41, whose review said redirect (33 commits main lacks, not 4; 2 phone checks in test_page_ux.js and 2 install tests fail there but not on main). The branch lands when CL41 is fixed and reviewed again. M2 and M3 wait on M1: my question in chat (take M1 over from its branch?)."
+}
