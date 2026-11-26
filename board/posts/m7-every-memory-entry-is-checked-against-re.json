@@ -49,6 +49,7 @@
   "kit/handover.py",
   "kit/hook.py",
   "kit/hooks/kit_activity.py",
+  "kit/hooks/kit_brief_guard.py",
   "kit/hooks/kit_config.py",
   "kit/hooks/kit_guard.py",
   "kit/hooks/kit_memory_jit.py",
@@ -108,12 +109,14 @@
   "tests/test_launch.py",
   "tests/test_launch_runtime.py",
   "tests/test_memory_checks.py",
+  "tests/test_memory_replace.py",
   "tests/test_mirror_init.py",
   "tests/test_new_install.py",
   "tests/test_orchestrator_guard.py",
   "tests/test_part_starts_on_its_work.py",
   "tests/test_post_gate.py",
   "tests/test_resume_attached_boards.py",
+  "tests/test_resume_delta.py",
   "tests/test_resume_one_prompt.py",
   "tests/test_run_all_tests.py",
   "tests/test_seen_marks.py",
@@ -127,38 +130,49 @@
  "bars": [
   "kit's own memory entries with a check: 8 of 9 (K1, K2, K4 to K9; K3 has no check: it is about how an agent behaves, not something a test can run)",
   "of those checks, failing today: 0 of 8",
-  "tests for this step: 17 of 17 pass (tests/test_memory_checks.py)",
-  "full suite (--all --keep-going): 66 of 68 suites pass alone; tests/test_run_all_tests.py fails the same way on the commit before this step (its 'full' entry from the WIP commit 568b8f5), tests/test_cl44_agy_runtime.py and tests/test_device_and_takeover.py failed only when run in parallel and pass alone (rerun after merging main)"
+  "tests for this step: 19 of 19 pass (tests/test_memory_checks.py), 2 of them a Harmonize-shaped project: the kit's 8 checked lessons are reported as run in the kit's repo (0 failing, exit 0), and the `.story/lessons/<date>-<slug>.md` files count (1 checked, 1 unchecked since its date) (asked by the orchestrator's real run)",
+  "full suite (--all --keep-going) after merging the branch (M5, M6, M8): 69 of 70 suites pass; tests/test_cl44_agy_runtime.py fails only when run in parallel and passes alone"
  ],
- "body": "The memory can no longer rot quietly. Each lesson now names the test, hook, refusal or code that enforces it, and one command runs them all. A lesson with nothing to run reaches every session marked \"unchecked since <date>\", and a lesson whose only fix is \"be careful\" is refused.\n\n### What changed\n1. **Each entry names its check.** A lesson gets a `check:` line under its heading. A ledger row uses its existing `enforced_by:` field, which now also accepts `code:` and `refusal:`. `kit.py lessons check` runs the tests (each one by its own name, with node for a `.js` file), confirms hooks exist, and confirms code files still contain the text they name. It flags a test that is gone, renamed or failing, and code that no longer exists. Any of those makes the command fail (exit 1). It also lists the unchecked entries with their dates.\n2. **Unchecked entries are labelled where a session sees them.** The lessons in `resume` (every role), the ledger rows in `resume` (principles, decisions, rules) and the memory hook that runs on Edit/Write all add \"(unchecked since <date>: nothing runs it, not certain)\", or \"(its check FAILS: …; not certain)\". The date comes from the entry's `created_at`, then a date in its `from:`, then the day git added its heading line.\n3. **\"Be careful\" is refused.** `kit.py lesson add` and `ledger observe` (for kinds lesson and rule) refuse a remedy like \"be careful\", \"pay attention\", \"double-check\" or \"remember to\" when it comes with no check. `lessons check` flags existing lessons like that too. A new lesson added without `--check` is still written, but the reply says it is unchecked and proposes a check (the test whose name shares the most words with the lesson, or a file the lesson names).\n4. **One line in the orchestrator's resume**, for example: `Memory: 9 entries: 8 checked, 0 failing, 1 unchecked; tests as of 2026-11-26 21:21`.\n\n### The kit's own lessons and what checks each one\n| Lesson | Check |\n|---|---|\n| K1 launch from the attached repo's clone | test_orchestrator_guard LaunchRepo.test_a_step_on_an_attached_board_launches_from_that_repo |\n| K2 a real-project run | test_cl32_roles RealProject.test_install_change_needs_a_real_project_result |\n| K3 reuse the kit's commands | none: unchecked since 2026-11-24 |\n| K4 a post only on the local copy is not on the board | test_cl28_brief DoneOnlyWhenOnTheBoard.test_done_refuses_a_post_the_artifact_has_not_got |\n| K5 never write over a newer live card | test_cl31_card_push CardPush.test_pin_without_the_live_copy_is_refused |\n| K6 an attached board's comment is answered there | test_cl28_brief Guard.test_board_cli_reply_and_batch_and_attached_board |\n| K7 phone first | kit/board/test_page_layout.js |\n| K8 a board this server does not hold is refused | test_cl32_roles Server.test_unknown_repo_is_refused_not_read_from_the_primary |\n| K9 a part's result lives in its post | test_cl36_post_body BodyInPost.test_refuses_a_body_of_section_embeds |\n\n### Files\nscripts/kit.py (and its copy .kit/kit.py), kit/ledger.py (and .kit/ledger.py), kit/hooks/kit_memory_jit.py (and .kit/hooks/), kit/lessons.md (and .kit/), the memory skill (kit/, .claude/, .agents/), tests/test_memory_checks.py.",
+ "body": "The memory can no longer rot quietly. Each lesson now names the test, hook, refusal or code that enforces it, and one command runs them all. A lesson with nothing to run reaches every session marked \"unchecked since <date>\", and a lesson whose only fix is \"be careful\" is refused. Fixed after the Harmonize run: a project no longer fails on the kit's own lessons, whose tests exist only in the kit's repo, and Harmonize's own lessons, one file each, now count.\n\n### What changed\n1. **Each entry names its check.** A lesson gets a `check:` line under its heading. A ledger row uses its existing `enforced_by:` field, which now also accepts `code:` and `refusal:`. `kit.py lessons check` runs the tests (each one by its own name, with node for a `.js` file), confirms hooks exist, and confirms code files still contain the text they name. It flags a test that is gone, renamed or failing, and code that no longer exists. Any of those makes the command fail (exit 1). It also lists the unchecked entries with their dates.\n2. **Unchecked entries are labelled where a session sees them.** The lessons in `resume` (every role), the ledger rows in `resume` (principles, decisions, rules) and the memory hook that runs on Edit/Write all add \"(unchecked since <date>: nothing runs it, not certain)\", or \"(its check FAILS: …; not certain)\". The date comes from the entry's `created_at`, then a date in its `from:`, then the day git added its heading line.\n3. **\"Be careful\" is refused.** `kit.py lesson add` and `ledger observe` (for kinds lesson and rule) refuse a remedy like \"be careful\", \"pay attention\", \"double-check\" or \"remember to\" when it comes with no check. `lessons check` flags existing lessons like that too. A new lesson added without `--check` is still written, but the reply says it is unchecked and proposes a check (the test whose name shares the most words with the lesson, or a file the lesson names).\n4. **In a project** (after the Harmonize run): in a project, the kit's shipped lessons (.kit/lessons.md, .kit/ledger.md) that name a check get the status \"kit\": not run here, not counted, and named once in the line. A memory lesson file with no `## <id>:` heading counts as one entry: its id is the file name, its date comes from the name, and a `check:` line anywhere in it is its check. The \"be careful\" refusal is not applied to those existing files, so old lessons do not turn red because of it. In short: the kit's own lessons are checked in the kit's repo, not in the project, and one-lesson-per-file memories (`.story/lessons/<date>-<slug>.md`) count as entries.\n5. **One line in the orchestrator's resume**, for example: `Memory: 9 entries: 8 checked, 0 failing, 1 unchecked; tests as of 2026-11-26 21:21`.\n\n### The kit's own lessons and what checks each one\n| Lesson | Check |\n|---|---|\n| K1 launch from the attached repo's clone | test_orchestrator_guard LaunchRepo.test_a_step_on_an_attached_board_launches_from_that_repo |\n| K2 a real-project run | test_cl32_roles RealProject.test_install_change_needs_a_real_project_result |\n| K3 reuse the kit's commands | none: unchecked since 2026-11-24 |\n| K4 a post only on the local copy is not on the board | test_cl28_brief DoneOnlyWhenOnTheBoard.test_done_refuses_a_post_the_artifact_has_not_got |\n| K5 never write over a newer live card | test_cl31_card_push CardPush.test_pin_without_the_live_copy_is_refused |\n| K6 an attached board's comment is answered there | test_cl28_brief Guard.test_board_cli_reply_and_batch_and_attached_board |\n| K7 phone first | kit/board/test_page_layout.js |\n| K8 a board this server does not hold is refused | test_cl32_roles Server.test_unknown_repo_is_refused_not_read_from_the_primary |\n| K9 a part's result lives in its post | test_cl36_post_body BodyInPost.test_refuses_a_body_of_section_embeds |\n\n### Files\nscripts/kit.py (and its copy .kit/kit.py), kit/ledger.py (and .kit/ledger.py), kit/hooks/kit_memory_jit.py (and .kit/hooks/), kit/lessons.md (and .kit/), the memory skill (kit/, .claude/, .agents/), tests/test_memory_checks.py.",
  "branch": "feat/streamline-doctor-memory",
  "breaks": "revert",
  "check": "python3 -I .kit/kit.py lessons check && python3 -m unittest tests.test_memory_checks tests.test_cl32_roles tests.test_fields tests.test_kit_copies_current tests.test_unified_hooks",
  "column": "info",
+ "completed_at": "2026-11-26T21:59:54Z",
  "created_at": "2026-11-26T20:00:55Z",
  "from": "orchestrator",
  "handoff": "- M8 (replacing and forgetting): a replaced or forgotten entry should drop out of `memory_checks()`. It already reads only `active` ledger rows; a lesson file that is deleted drops out by itself.\n- How to write a check (on a lesson's `check:` line, or a ledger row's `enforced_by:`): `test:<file>[::Class.test]` | `hook:<name>` | `code:<file-or-glob>[#text]` | `refusal:<file>#<text>`, with `;` between several.\n- Test results are saved in `.kit/run/memory-checks.json`. The resume and the memory hook only read that file and never run a test themselves; `lessons check` refreshes it.",
  "launched_at": "2026-11-26T21:13:56Z",
  "not_checked": [
-  "The full-suite runner is not in `check`: tests/test_run_all_tests.py already fails before this step (WIP commit 568b8f5), so a check that includes it could never pass.",
-  "Not run on a real project (anlonlt/harmonize): that is the orchestrator's real-project run.",
+  "The full-suite runner is not in `check`: test_cl44_agy_runtime fails at random when suites run in parallel.",
+  "Not rerun on Harmonize itself after the fix: the orchestrator reruns it there (a part never attaches a repo).",
   "K7's check is the browser layout test: it passes here because Chromium is installed; on a computer with no browser it says SKIP and still counts as passing.",
   "Observations in a project's ledger (the owner's preferences) count as entries, so they show up as unchecked unless a row names an `enforced_by`. The kit's own memory has no ledger rows, so this case is covered only by the tests."
  ],
  "part": "M7",
  "planned_by": "orchestrator",
  "proof": {
-  "at": "2026-11-26T21:31:13Z",
+  "at": "2026-11-26T21:58:23Z",
   "branch": "feat/streamline-doctor-memory",
-  "commit": "071e307",
-  "key": "ed0c5cab6f7635fc",
-  "needs_real": true,
-  "sha": "071e30791636a8fbf865b0d5817b058043d5d9bd"
+  "commit": "c2607d1",
+  "key": "02ace534bdcad4a9",
+  "needs_real": false,
+  "sha": "c2607d1f5bbae08ed2572c353a31b3fa643cc9fd"
  },
+ "real_project": {
+  "command": "install.py --update (kit 313466a) on a scratch copy; kit.py lessons check",
+  "output": "No K1-K9 failures (before: 8 failing): 'the kit's own 8 checked lessons are run in the kit's repo, not here'. Harmonize's .story/lessons entries now counted, listed UNCHECKED (no check: yet). rc=1 remains only from 19 'lesson NN lives only in docs/ORCHESTRATION.md' refusals, an older rule already on main (not M7): Harmonize's own migration. Verdict: works.",
+  "project": "anlonlt/harmonize"
+ },
+ "review": "continue",
+ "review_commit": "313466add441d6e16bde5d924a244cff950ef03c",
+ "review_id": "CR-m7-every-memory-entry-is-checked-against-re",
+ "review_session": "session_01AE1HGm6YWkyzDbRuGziEXq",
+ "review_started": "2026-11-26T22:00:07Z",
  "runner": "claude-web",
  "session_id": "session_01AE1HGhgJf3d79GsK2UopnQ",
  "started_at": "2026-11-26T21:14:46Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "files": [
@@ -194,7 +208,7 @@
  "task": "Every memory entry is checked against reality where it can be, so the memory cannot rot the way the French game's docs did (a doc older than 149 of the 168 commits under it, still ranked first).\n\n1. A lesson or a decision names what enforces it: a test, a hook, a refusal in a command, or the code that implements it; `kit.py lessons check` runs those and flags an entry whose test is gone or fails, or whose code no longer exists. In scripts/kit.py and kit/ledger.py, tests in tests/test_memory_checks.py.\n2. An entry with nothing to run says so: \"unchecked since <date>\", shown when it is given to a session (the memory hook, resume), never presented as certain.\n3. A lesson whose remedy is \"be careful\" is refused (the memory guide already says so); a new lesson proposes its check.\n4. The orchestrator's resume carries one line: entries checked, failing, unchecked.\n\nBars: on the kit's own memory, entries with a check out of all, and how many fail today.\n",
  "title": "Every memory entry is checked against reality",
  "train": "memory",
- "updated_at": "2026-11-26T21:31:13Z",
+ "updated_at": "2026-11-26T22:06:16Z",
  "verdict": "On the kit's own memory, 8 of 9 lessons name a real test and all 8 pass today; the ninth (K3, reuse the kit's commands) is shown everywhere as \"unchecked since 2026-11-24\".",
- "working_by": "owner"
+ "working_by": ""
 }

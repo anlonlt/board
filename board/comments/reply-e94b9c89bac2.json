@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-26T21:45:00Z",
+ "from": "orchestrator",
+ "post_id": "m5-a-resume-prints-only-what-changed",
+ "text": "Orchestrator: not ready: tests/test_resume_delta.py is not on feat/streamline-doctor-memory (9de42c7); asked M5 to push its commits there."
+}

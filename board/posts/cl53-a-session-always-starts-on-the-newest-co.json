@@ -1,35 +1,66 @@
 {
- "body": "A session always starts on the newest code from GitHub, in every checkout: the rule \"use git\" covers the board's data (reconcile at start) and parts (6b69f1e: a part starts on its step's newest work), but not a project's own checkout. ~/harmonize sat on branch agy-board-install from 11-22 while Harmonize's main on GitHub had moved on (0d020efb, 11-24): a session opened there, and the kit's own real-project check, worked on two-day-old code with nothing saying so.\n\n1. At `board` start and at the first resume of any role, the kit fetches origin and says, before anything else, when this checkout is behind its trunk or sits on a branch that is merged or stale (no commit for N days while the trunk moved): one line with what is newer.\n2. When the checkout is clean and its branch is the trunk or merged into it, it moves forward by itself (fast-forward, or switch to the trunk); with uncommitted work or commits of its own, it never moves it: it says what to do, and resume names it as the first thing.\n3. The same on every platform (a web clone is fresh already: nothing to do there), with a test: a clone behind origin is moved forward at start; one with uncommitted work is only warned.\n",
+ "artifacts": [
+  "scripts/kit.py",
+  "kit/hooks/kit_session_start.py",
+  "tests/test_checkout_fresh.py"
+ ],
+ "bars": [
+  "8 of 8 cases pass in the new test: behind on main moved; uncommitted work only warned (twice, the edit kept); merged branch switched to main; stale branch with own commits warned, not moved; fresh branch told it is behind; up to date silent; web clone left alone; hook and resume print it as their first line",
+  "71 of 71 test suites pass (`run_all_tests.py --all`)",
+  "stale means no commit for 2 days while the trunk moved (the harmonize gap: 11-22 to 11-24)"
+ ],
+ "body": "A session on your computer now starts on the newest code from GitHub: at session start (and at the first resume of any role) the kit fetches and, when the checkout is clean and on main or on a branch already merged into it, moves it forward by itself. When it holds work of its own (uncommitted changes, or commits not on main) it never moves it: the first line says it is behind or stale and what to run.\n\n### What happens at start\nThe SessionStart hook runs `kit.py fresh` (fetch of the trunk only, 25 s at most) and puts its line first; `kit.py resume` does the same before anything else, the first time in a session (a mark per session id in .kit/run/fresh/). Later resumes look again without fetching and repeat only a line that still asks something (uncommitted work, own commits on the trunk, a stale branch).\n\n### The cases\n| checkout | what the kit does |\n|---|---|\n| on main, clean, behind | fast-forward to origin/main, one line says how many commits and the newest |\n| branch merged into main (no commit of its own), clean | switch to main (created tracking origin/main if absent), fast-forward |\n| behind, uncommitted changes | not moved; says to commit or stash, then the merge to run |\n| main with commits not on origin | not moved; `git pull --no-rebase`, then push |\n| branch with own commits, no commit for 2+ days while main moved | not moved; stale: merge origin/main or finish it |\n| branch with own commits, recent | told it is behind and what is newer; not moved |\n| web session (CLAUDE_CODE_REMOTE, KIT_REMOTE, AGY_REMOTE) | nothing: the clone is fresh |\n| fetch fails | one line: could not fetch, the code may be old |\n\nUntracked files do not count as uncommitted work (git refuses a move that would overwrite one anyway). The old SessionStart line (CLONE: behind its upstream, no fetch) stays only where .kit/kit.py is absent.\n\n### Where\n`checkout_fresh` and `checkout_fresh_once` in scripts/kit.py, the `fresh` command (listed in `kit.py commands`), kit/hooks/kit_session_start.py, tests/test_checkout_fresh.py.",
+ "branch": "cl53",
+ "breaks": "revert",
+ "check": "python3 -m unittest tests.test_checkout_fresh -v",
  "column": "info",
  "created_at": "2026-11-26T22:30:01Z",
  "from": "orchestrator",
+ "handoff": "The orchestrator's real-project run: open a session in ~/harmonize (on agy-board-install or any branch behind main) and see the first line say CHECKOUT and, when clean and merged, the checkout land on origin/main. The command is `kit.py fresh` (`--again` to run it now, past the once-a-session mark in .kit/run/fresh/).",
+ "launched_at": "2026-11-26T22:58:04Z",
+ "not_checked": [
+  "the real run on ~/harmonize (the orchestrator's, per the launch: this session attaches no repo)",
+  "a Windows checkout: the code is plain git calls with no shell, but it ran here on Linux only"
+ ],
  "part": "CL53",
  "planned_by": "orchestrator",
  "priority": 1,
+ "proof": {
+  "at": "2026-11-26T23:07:31Z",
+  "branch": "cl53",
+  "commit": "f5e93f4",
+  "key": "abc652ddb28eceb5",
+  "needs_real": true,
+  "sha": "f5e93f4ef16c471c726f16e513d210d0c568f034"
+ },
  "runner": "claude-web",
- "status": "planned",
+ "session_id": "session_01AE1HGgvTvP34CBA3WeGJBJ",
+ "started_at": "2026-11-26T22:59:06Z",
+ "status": "in progress",
  "subtasks": [
   {
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "At board start and at the first resume of any role, the kit fetches origin and says, before..."
   },
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "When the checkout is clean and its branch is the trunk or merged into it, it moves forward by..."
   },
   {
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "The same on every platform (a web clone is fresh already"
   }
  ],
  "task": "A session always starts on the newest code from GitHub, in every checkout: the rule \"use git\" covers the board's data (reconcile at start) and parts (6b69f1e: a part starts on its step's newest work), but not a project's own checkout. ~/harmonize sat on branch agy-board-install from 11-22 while Harmonize's main on GitHub had moved on (0d020efb, 11-24): a session opened there, and the kit's own real-project check, worked on two-day-old code with nothing saying so.\n\n1. At `board` start and at the first resume of any role, the kit fetches origin and says, before anything else, when this checkout is behind its trunk or sits on a branch that is merged or stale (no commit for N days while the trunk moved): one line with what is newer.\n2. When the checkout is clean and its branch is the trunk or merged into it, it moves forward by itself (fast-forward, or switch to the trunk); with uncommitted work or commits of its own, it never moves it: it says what to do, and resume names it as the first thing.\n3. The same on every platform (a web clone is fresh already: nothing to do there), with a test: a clone behind origin is moved forward at start; one with uncommitted work is only warned.\n",
  "title": "A session always starts on the newest code from GitHub, in every checkout",
  "train": "takeover",
- "updated_at": "2026-11-26T22:44:47Z"
+ "updated_at": "2026-11-26T23:07:31Z",
+ "verdict": "Done: a checkout behind GitHub is moved forward at start when that loses nothing, and otherwise warned in the first line; the ~/harmonize case (a merged branch two days behind main) now switches to main by itself.",
+ "working_by": "owner"
 }

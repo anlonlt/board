@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:51:22Z",
+ "created_at": "2026-11-26T23:15:28Z",
  "rows": [
   {
    "also": [],
@@ -18,7 +18,7 @@
    "post": "cl16-the-board-travels-in-git-always-current",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "running",
    "store": []
   },
   {
@@ -115,7 +115,7 @@
    "post": "cl17-a-crashed-part-is-continued-from-its-las",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "running",
    "store": []
   },
   {
@@ -153,7 +153,7 @@
    "post": "m2-install-draws-the-first-map",
    "prompt": "",
    "session": "",
-   "state": "running",
+   "state": "idle",
    "store": []
   },
   {
@@ -864,7 +864,7 @@
    "post": "m5-a-resume-prints-only-what-changed",
    "prompt": "",
    "session": "session_01AE1HGkn9yVt5GC18jwJYPp",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -875,7 +875,7 @@
    "post": "m6-the-usage-ledger-counts-cost-per-command",
    "prompt": "",
    "session": "session_01AE1HGghTLsK8hDwkg9LrM1",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -897,7 +897,7 @@
    "post": "m7-every-memory-entry-is-checked-against-re",
    "prompt": "",
    "session": "session_01AE1HGhgJf3d79GsK2UopnQ",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -908,7 +908,7 @@
    "post": "m8-replacing-and-forgetting-in-memory",
    "prompt": "",
    "session": "session_01AE1HGm2DpG5A7piTbrR3Bz",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -964,8 +964,8 @@
    "part": "CL45",
    "post": "cl45-a-web-session-reconciles-its-artifact-wi",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGkKV7HtTWfm1NM2pbv",
+   "state": "running",
    "store": []
   },
   {
@@ -986,8 +986,8 @@
    "part": "CL47",
    "post": "cl47-cl41-s-redirect-resolved-so-the-trunk-ca",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGhpJ89oBj1xBqG4Daw",
+   "state": "running",
    "store": []
   },
   {
@@ -997,8 +997,8 @@
    "part": "CL48",
    "post": "cl48-a-test-never-writes-to-the-real-board",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGj52SDKNgDnUMMSCiL",
+   "state": "running",
    "store": []
   },
   {
@@ -1008,8 +1008,8 @@
    "part": "CL49",
    "post": "cl49-a-part-reaches-the-orchestrator-running",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGjpqRTVZzbRuw9ooMx",
+   "state": "running",
    "store": []
   },
   {
@@ -1030,8 +1030,8 @@
    "part": "CL51",
    "post": "cl51-a-session-on-a-computer-never-writes-to",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGhnU13NdSkjhWagX2m",
+   "state": "running",
    "store": []
   },
   {
@@ -1085,8 +1085,8 @@
    "part": "CL53",
    "post": "cl53-a-session-always-starts-on-the-newest-co",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGgvTvP34CBA3WeGJBJ",
+   "state": "running",
    "store": []
   },
   {
@@ -1096,8 +1096,8 @@
    "part": "R6",
    "post": "r6-the-next-step-is-the-most-important-one",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGhgHvcKDoRPiZWHzPn",
+   "state": "running",
    "store": []
   },
   {
@@ -1113,5 +1113,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T22:51:22Z"
+ "updated_at": "2026-11-26T23:15:28Z"
 }

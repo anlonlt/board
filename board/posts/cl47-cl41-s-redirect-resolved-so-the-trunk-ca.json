@@ -1,24 +1,56 @@
 {
- "body": "CL41's redirect, so the trunk can move again: nothing reaches main until it is resolved (the pre-push guard refuses), and every step since 11-24 waits behind it on feat/streamline-doctor-memory.\n\nCL41's review (comment CR-cl41-review-and-adopt-four-local-commits, 2026-11-26 01:36Z): \"do not merge cl41 to main yet: it carries 33 commits main lacks (not 4), and with them 2 phone checks that pass on main fail on cl41\". Its suggestion: make test_page_ux.js and test_install_present_runtimes.py pass as on main (bisect 590c15b..95f0eab for the 411 px fold), list the earlier computer commits on the post, and merge only after a full run shows 0 failed.\n\n1. Make the two phone checks pass on the branch as they do on main (find the commit that broke the 411 px fold).\n2. List on CL41's post the commits main lacks, one line each, so its review sees all of them.\n3. A full run (`run_all_tests.py --all`, it resumes from where a stopped run left off on the same commit) with 0 failed, its result on the post.\n4. Then ask for CL41's review again; on continue, `kit.py land` merges onto main.\n",
+ "artifacts": [
+  "kit/board/test_page_ux.js",
+  "tests/test_install_present_runtimes.py"
+ ],
+ "bars": [
+  "Page phone checks failing on the branch: 0 of 2 (on CL41's commit: 2 of 2, the same 2 as the review)",
+  "Commit that broke them, by checkout: 397954d 2 failed, its parent 0 failed (1 of 1 bisect pair)",
+  "CL41's commit plus only the test seed fix (0703d5e): 0 of 2 failing",
+  "Install check for a present runtime: 4 of 4 pass, 3 of 3 runs, with full git history (shallow clone: 3 pass, 1 skipped, which hides it)",
+  "Commits on the branch that main lacks: 101 of 101 listed (plus 23 merges), 269 files, +30,461 / -9,911; listed one line each on CL41's post",
+  "Full run with --all on 78df8a0 (the branch, full git history): 70 of 70 suites passed, 0 failed (203 s)"
+ ],
+ "body": "The two phone checks CL41's review found broken pass again on the branch, and the cause is known: a server rule added on 11-25 (a step cannot be closed without its proof) silently refused the test's own example of a done step, so the page had nothing to fold. The page itself was never broken; a test fix already on the branch (11-25) seeds the example the allowed way. The full list of commits main lacks is now on CL41's post: 101, not 4.\n\n### What broke the fold at 411 px\n- 397954d (11-25 00:37) made the board server refuse a post written as done without the proof `kit.py done` leaves. The page test seeds a done step (CL1) with a plain write, so the seed was refused in silence: no done step on the board, nothing to fold, and the two checks that tap the fold failed.\n- Main never had 397954d, which is why the same test passed there.\n- 0703d5e (11-25 21:04, on the branch after CL41's commit) seeds as a board copy (the header the server lets through for copies) and stops the test if a seed is refused. With only that commit on top of CL41's, 0 failed.\n\n### The install check\n- On a shallow clone it skips one of its 4 tests (it needs the git history of the hooks), so a run there says green without running it. After `git fetch --unshallow`: 4 of 4, on the branch and on CL41's commit.\n\n### Commits main lacks\n- Comment `cl47-commits-main-lacks` on CL41's post: 101 commits by `git cherry` against main 90ece47, one line each, the 27 before CL41's four marked.",
+ "branch": "cl47",
+ "breaks": "sed -i \"s/{ 'X-Kit-Gate': 'copy' }/{}/\" kit/board/test_page_ux.js",
+ "check": "node kit/board/test_page_ux.js && python3 -m pytest -q tests/test_install_present_runtimes.py | grep -q '4 passed'",
  "column": "info",
  "created_at": "2026-11-26T21:24:56Z",
  "from": "orchestrator",
+ "handoff": "CL41's review again (asked in comment cl47-review-again), on the branch head, not 309ba6c (`kit.py review cl41-review-and-adopt-four-local-commits --force`): if it says continue, `kit.py land` merges feat/streamline-doctor-memory onto main. A clone for the install check needs full history (`git fetch --unshallow`), or that check skips.",
+ "launched_at": "2026-11-26T22:58:02Z",
+ "not_checked": [
+  "The install check's 2 failures the review saw: not reproduced, neither on CL41's commit nor on the branch (4 of 4, with full history); the review's environment may have differed",
+  "The 101 commits' code, line by line: listed, not re-reviewed",
+  "The trunk merge: not done by this step; it waits for CL41's second verdict"
+ ],
  "part": "CL47",
  "planned_by": "orchestrator",
  "priority": 1,
+ "proof": {
+  "at": "2026-11-26T23:10:00Z",
+  "branch": "cl47",
+  "commit": "95c356f",
+  "key": "2da776e1449987b5",
+  "needs_real": true,
+  "sha": "95c356f898669a89be6b53cf8de6a46fe063a491"
+ },
  "runner": "claude-web",
- "status": "planned",
+ "session_id": "session_01AE1HGhpJ89oBj1xBqG4Daw",
+ "started_at": "2026-11-26T22:58:59Z",
+ "status": "in progress",
  "subtasks": [
   {
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "Make the two phone checks pass on the branch as they do on main (find the commit that broke the 411..."
   },
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "List on CL41's post the commits main lacks, one line each, so its review sees all of them"
   },
   {
@@ -27,7 +59,7 @@
    ],
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "A full run (run_all_tests.py --all, it resumes from where a stopped run left off on the same..."
   },
   {
@@ -36,12 +68,14 @@
    ],
    "from": "task",
    "n": 4,
-   "status": "open",
+   "status": "done",
    "title": "Then ask for CL41's review again"
   }
  ],
  "task": "CL41's redirect, so the trunk can move again: nothing reaches main until it is resolved (the pre-push guard refuses), and every step since 11-24 waits behind it on feat/streamline-doctor-memory.\n\nCL41's review (comment CR-cl41-review-and-adopt-four-local-commits, 2026-11-26 01:36Z): \"do not merge cl41 to main yet: it carries 33 commits main lacks (not 4), and with them 2 phone checks that pass on main fail on cl41\". Its suggestion: make test_page_ux.js and test_install_present_runtimes.py pass as on main (bisect 590c15b..95f0eab for the 411 px fold), list the earlier computer commits on the post, and merge only after a full run shows 0 failed.\n\n1. Make the two phone checks pass on the branch as they do on main (find the commit that broke the 411 px fold).\n2. List on CL41's post the commits main lacks, one line each, so its review sees all of them.\n3. A full run (`run_all_tests.py --all`, it resumes from where a stopped run left off on the same commit) with 0 failed, its result on the post.\n4. Then ask for CL41's review again; on continue, `kit.py land` merges onto main.\n",
  "title": "CL41's redirect resolved, so the trunk can move",
  "train": "board-data",
- "updated_at": "2026-11-26T22:44:46Z"
+ "updated_at": "2026-11-26T23:10:00Z",
+ "verdict": "The 411 px fold checks broke because the proof rule refused the test's seeded done step, not because of the page; they pass on the branch, the install check passes too, and the full commit list is on CL41's post.",
+ "working_by": "owner"
 }

@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-26T21:45:00Z",
+ "from": "orchestrator",
+ "post_id": "m8-replacing-and-forgetting-in-memory",
+ "text": "Orchestrator: done check passes from feat/streamline-doctor-memory (9de42c7) except the real-project run on anlonlt/harmonize (mine, once M5 is on the branch)."
+}

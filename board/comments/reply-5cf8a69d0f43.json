@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-26T23:00:21Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "Owner in chat, 2026-11-26: \"you can do a cross review on the related ones instead of an isolated review of each\". Plan for the P1 steps, one review session per group, started when the group's last step says Done: (1) CL45 + CL53 + CL51 (where a session gets its board and code at start, who may write the Artifact); (2) CL49 + R6 (who a part reports to, which step comes next); (3) CL47 + CL48 (the trunk's failing tests, tests that write the real board). Each group's review checks the steps together and writes its verdict under each post."
+}

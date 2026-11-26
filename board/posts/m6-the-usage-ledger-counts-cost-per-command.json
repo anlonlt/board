@@ -135,6 +135,7 @@
  "breaks": "sed -i 's/after = max(0, /after = 0 * max(0, /' scripts/usage.py",
  "check": "python3 -m unittest tests.test_cl37_usage",
  "column": "info",
+ "completed_at": "2026-11-26T21:50:26Z",
  "created_at": "2026-11-26T19:40:41Z",
  "from": "orchestrator",
  "handoff": "Rows recorded from now on carry `commands` and `cmd_seq`; older rows have none, so `compare --commands` only has an after side until sessions run under this commit. The orchestrator gets the bars by running `usage.py show --commands --role orchestrator --transcripts '~/.claude/projects/*/*.jsonl'` on a computer with its transcripts (the same flag works with `--rows` for saved rows).",
@@ -155,10 +156,20 @@
   "needs_real": true,
   "sha": "1d763275ccc216b179ef978fe9a637deec918c41"
  },
+ "real_project": {
+  "command": "python3 -I .kit/usage.py show --commands; compare --before 2026-11-24 --commands; show --commands --transcripts ~/.claude/projects/*/*.jsonl",
+  "output": "show/compare: 'no rows with commands (a row recorded before M6 has none)'; Harmonize's 3 ledger rows predate M6, no Harmonize transcripts here. With transcripts (a board session): table per command, 'resumes: 2.4% of this role's tokens'. Verdict: runs; nothing to measure for Harmonize until sessions record under this commit.",
+  "project": "anlonlt/harmonize"
+ },
+ "review": "continue",
+ "review_commit": "6b20a2f076ef155f176b6beee129fdeae1cf43b6",
+ "review_id": "CR-m6-the-usage-ledger-counts-cost-per-command",
+ "review_session": "session_01AE1HGj7prKunVrWrpRqvtm",
+ "review_started": "2026-11-26T21:50:52Z",
  "runner": "claude-web",
  "session_id": "session_01AE1HGghTLsK8hDwkg9LrM1",
  "started_at": "2026-11-26T21:14:44Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "files": [
@@ -196,7 +207,7 @@
  "task": "The usage ledger counts cost per command, so a waste like rereading the board shows up as a number.\n\n1. For each tool result, the ledger records its size (characters and estimated tokens) grouped by command: `kit.py resume`, `kit.py post`, `kit.py train`, the tests, git, reads of files; in scripts/usage.py with tests/test_cl37_usage.py.\n2. It estimates what each one costs afterwards by staying in the context (its tokens times the calls that followed, at the cache read price).\n3. `usage.py show --commands` and `compare --commands` print the top commands by cost, per role.\n4. Commands repeated across sessions (the same sequence in 3 sessions or more) are listed as candidates for a script, with how often and what they cost.\n\nBars: on this computer's transcripts, the share of an orchestrator's tokens spent on resumes and the five most repeated sequences.\n",
  "title": "The usage ledger counts cost per command",
  "train": "memory",
- "updated_at": "2026-11-26T21:27:47Z",
+ "updated_at": "2026-11-26T21:53:46Z",
  "verdict": "Done: the ledger counts each result by command with its carry cost, lists the top commands per role and the repeated runs; the orchestrator bars need its transcripts, absent from this computer.",
- "working_by": "owner"
+ "working_by": ""
 }
