@@ -25,6 +25,11 @@ import install  # noqa: E402
 sys.path[:] = _path        # install.py adds kit/board: it would shadow tests/test_kit_cards.py for the other suites
 
 
+# a browser run that has not ended by then is hung: a guard against hanging, never a speed check (a busy computer
+# made a 400 s limit fail an honest run of 437 s)
+HANG_S = 1800
+
+
 def git(cwd, *a):
     return subprocess.run(["git", "-C", str(cwd)] + list(a), capture_output=True, text=True, check=True).stdout
 
@@ -178,7 +183,7 @@ class PageSwitcher(unittest.TestCase):
             subprocess.run([sys.executable, str(ROOT / "kit" / "claude" / "build_artifact_page.py"), "--kit", str(ROOT), "--page", page,
                             "--board-url", "https://claude.ai/artifact/test", "--project", "Harmonize"], capture_output=True, check=True)
             for test in ("test_artifact_repos.js", "test_artifact_page.js", "test_artifact_live.js"):
-                r = subprocess.run(["node", str(ROOT / "kit" / "claude" / test)], capture_output=True, text=True, timeout=240,
+                r = subprocess.run(["node", str(ROOT / "kit" / "claude" / test)], capture_output=True, text=True, timeout=HANG_S,
                                    env=dict(env, KIT_PAGE=page), cwd=str(ROOT))
                 self.assertEqual(r.returncode, 0, test + "\n" + r.stdout[-2000:] + r.stderr[-2000:])
         finally:

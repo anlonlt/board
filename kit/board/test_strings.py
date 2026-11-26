@@ -16,6 +16,11 @@ import strings  # noqa: E402
 fails = 0
 
 
+# a browser run that has not ended by then is hung: a guard against hanging, never a speed check (a busy computer
+# made a 400 s limit fail an honest run of 437 s)
+HANG_S = 1800
+
+
 def check(name, ok):
     global fails
     print(("ok   " if ok else "FAIL ") + name)
@@ -98,7 +103,7 @@ if node:
             fh.write(out)
             tmp_html = fh.name
         try:
-            r = subprocess.run([node, os.path.join(HERE, "test_page.js")], capture_output=True, text=True, timeout=300,
+            r = subprocess.run([node, os.path.join(HERE, "test_page.js")], capture_output=True, text=True, timeout=HANG_S,
                                env=dict(os.environ, KIT_PAGE=tmp_html), cwd=repo_root)
             check("the translated page runs: test_page.js passes on it (%s)" % (r.stdout.strip().splitlines() or ["?"])[-1],
                   r.returncode == 0 and "0 failed" in r.stdout)

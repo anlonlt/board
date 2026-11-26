@@ -150,7 +150,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
         # P2-1: pre-read Content-Length enforcement (413 without allocating oversized body)
         import http.client
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
         conn.putrequest("POST", "/_api/blobs")
         conn.putheader("Content-Length", str(25 * 1024 * 1024))
         conn.putheader("Content-Type", "application/octet-stream")
@@ -159,7 +159,7 @@ with tempfile.TemporaryDirectory() as tmp:
         check("pre-read Content-Length rejects >20 MB blob with 413", r_big_blob.status == 413)
         conn.close()
 
-        conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
         conn2.putrequest("PUT", "/_api/doc/posts/oversized")
         conn2.putheader("Content-Length", str(6 * 1024 * 1024))
         conn2.putheader("Content-Type", "application/json")
@@ -201,7 +201,7 @@ with tempfile.TemporaryDirectory() as tmp:
             method="POST",
         )
         sent = json.loads(urllib.request.urlopen(req_send).read().decode("utf-8"))
-        wt.join(timeout=5)
+        wt.join(timeout=120)   # a hang guard: the CLI starts slowly on a busy computer
         wrc, wout, _ = wait_res["r"]
         wdata = json.loads(wout) if wrc == 0 else {}
         check("comments wait wakes immediately with thread_id and text", wrc == 0 and wdata.get("thread_id") == sent["thread_id"] and "[post P-1] test comment" in wdata.get("text", ""))
@@ -220,12 +220,13 @@ with tempfile.TemporaryDirectory() as tmp:
 
         # 6c. Comment lease & ack: unacknowledged comment re-queues after lease expires; acked comment does not
         sent_lease = store.send_comment({"id": "p-title"}, "[post P-1] lease test")
-        w_l1 = store.wait_comment(timeout=0.5, lease_sec=0.2)
-        w_l_busy = store.wait_comment(timeout=0.05, lease_sec=0.2)
-        time.sleep(0.25)
-        w_l2 = store.wait_comment(timeout=0.5, lease_sec=0.2)
+        # the lease is the caller's: an hour while it must hold, none once it must have run out (no sleep: a busy computer
+        # that paused this test between two calls made a 0.2 s lease run out, and the check failed for no fault of the code)
+        w_l1 = store.wait_comment(timeout=5, lease_sec=3600)
+        w_l_busy = store.wait_comment(timeout=0.05, lease_sec=3600)
+        w_l2 = store.wait_comment(timeout=5, lease_sec=0)
         rc_ack, out_ack, _ = cli(url, "comments", "ack", sent_lease["thread_id"])
-        w_l3 = store.wait_comment(timeout=0.1, lease_sec=0.01)
+        w_l3 = store.wait_comment(timeout=0.1, lease_sec=0)
         check("wait_comment re-queues unacknowledged thread after lease expiry and stops after ack",
               w_l1.get("thread_id") == sent_lease["thread_id"]
               and w_l_busy.get("event") == "timeout"
@@ -387,9 +388,9 @@ with tempfile.TemporaryDirectory() as tmp:
     try:
         rurl = "http://127.0.0.1:%d" % free_port
         ready = False
-        for _ in range(40):
+        for _ in range(800):   # up to about 2 minutes: until it answers, not a speed check
             try:
-                h = json.loads(urllib.request.urlopen(rurl + "/_api/health", timeout=1).read().decode("utf-8"))
+                h = json.loads(urllib.request.urlopen(rurl + "/_api/health", timeout=30).read().decode("utf-8"))
                 if h.get("ok"):
                     ready = True
                     break
@@ -404,7 +405,7 @@ with tempfile.TemporaryDirectory() as tmp:
         time.sleep(0.55)
         still_alive = False
         try:
-            h2 = json.loads(urllib.request.urlopen(rurl + "/_api/health", timeout=1).read().decode("utf-8"))
+            h2 = json.loads(urllib.request.urlopen(rurl + "/_api/health", timeout=30).read().decode("utf-8"))
             still_alive = h2.get("ok") is True and h2.get("pid") == orig_pid
         except Exception:
             still_alive = False
@@ -416,13 +417,13 @@ with tempfile.TemporaryDirectory() as tmp:
             json.dump({"project": "AfterReload"}, fh)
         reloaded_name = ""
         reloaded_pid = 0
-        for _ in range(40):
+        for _ in range(800):   # up to about 2 minutes: until it answers, not a speed check
             try:
-                rp = json.loads(urllib.request.urlopen(rurl + "/_api/repos", timeout=1).read().decode("utf-8"))
+                rp = json.loads(urllib.request.urlopen(rurl + "/_api/repos", timeout=30).read().decode("utf-8"))
                 nm = (rp.get("repos") or [{}])[0].get("name") or ""
                 if nm == "AfterReload":
                     reloaded_name = nm
-                    reloaded_pid = json.loads(urllib.request.urlopen(rurl + "/_api/health", timeout=1).read().decode("utf-8")).get("pid") or 0
+                    reloaded_pid = json.loads(urllib.request.urlopen(rurl + "/_api/health", timeout=30).read().decode("utf-8")).get("pid") or 0
                     break
             except Exception:
                 pass

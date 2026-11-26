@@ -63,17 +63,19 @@ const VV = `(() => {
   await put('comments', 'w1', { post_id: '_orchestrator', from: 'orchestrator', text: 'Welcome. ' + LONG.repeat(4), created_at: at(90) });
   for (let i = 0; i < 6; i++) await put('comments', 'o' + i, { post_id: '_orchestrator', from: i % 2 ? 'owner' : 'orchestrator', text: LONG.repeat(3), discussion: 'w1', created_at: at(80 - i), delivered: true });
 
-  const b = await pw.chromium.launch();
+  const b = await pw.chromium.launch(); const { settle } = require('./test_settle'); require('./test_settle').arm(b);   // waits for the page, never a fixed time
   // the board drawn (its cards are on the page), then a short settle: a fixed 1.6 s was not enough on a busy computer
-  const ready = async (p) => { await p.waitForFunction(() => document.querySelectorAll('.card').length > 0, null, { timeout: 20000 }).catch(() => {}); await p.waitForTimeout(400); };
+  const ready = async (p) => { await p.waitForFunction(() => document.querySelectorAll('.card').length > 0, null, { timeout: 20000 }).catch(() => {}); await settle(p); };
   const open = async (w, h, mobile, hash) => {
     const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1 });
     await ctx.addInitScript(VV);
+    // the page's poll runs every second here, not every 15 s: what it does is seen by every run, not only by a slow one
+    await ctx.addInitScript('window.__KIT_LIVE_REFRESH_MS__ = 1000;');
     const p = await ctx.newPage(); p.errs = []; p.on('pageerror', (e) => p.errs.push(String(e)));
     await p.goto(URL0 + '/' + (hash || '')); await ready(p);
     return p;
   };
-  const view = async (p, name) => { await p.evaluate((n) => { const x = document.querySelector('.kit-focus-exit'); if (x && x.offsetParent) x.click(); const b = [...document.querySelectorAll('#kit-views button')].find((e) => e.textContent.trim() === n); if (b) b.click(); }, name); await p.waitForTimeout(600); };
+  const view = async (p, name) => { await p.evaluate((n) => { const x = document.querySelector('.kit-focus-exit'); if (x && x.offsetParent) x.click(); const b = [...document.querySelectorAll('#kit-views button')].find((e) => e.textContent.trim() === n); if (b) b.click(); }, name); await settle(p); };
   // the header: its visible controls, in how many rows, any off screen, any two overlapping
   const header = (p) => p.evaluate(() => {
     const W = document.documentElement.clientWidth, hs = [...document.querySelectorAll('header.top h1, header.top button, header.top #kit-views, header.top .status')]
@@ -123,7 +125,7 @@ const VV = `(() => {
       check('411 px: a folded train card shows only its open steps (CL2, CL3), not its done ones (CL1, nor CL0 that the train moved past: his 08:55)', shown === 'CL2,CL3', before.map((x) => x.t + ':' + x.h).join(' '));
       const gapF = await p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); const bd = s.querySelector('.kit-tl-body'); const its = [...bd.querySelectorAll('.kit-tl-item')].filter((i) => i.getBoundingClientRect().height > 2); return Math.round(its[0].getBoundingClientRect().top - bd.getBoundingClientRect().top); });
       check('411 px: no blank band where the done steps are folded (first open step ' + gapF + ' px under the card\'s list top, at most 16; his 08:55)', gapF <= 16, gapF);
-      await p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); s.querySelector('.kit-tl-hdr b').click(); }); await p.waitForTimeout(500);
+      await p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); s.querySelector('.kit-tl-hdr b').click(); }); await settle(p);
       const after = await vis();
       const cl1 = after && after.find((x) => x.t === 'CL1'), cl2 = after && after.find((x) => x.t === 'CL2');
       const hid = before && before.find((x) => x.t === 'CL1');
@@ -131,7 +133,7 @@ const VV = `(() => {
       // remembered per train on this device: after a reload the card is still unfolded
       await p.reload(); await ready(p); await view(p, 'Trains');
       const again = await vis(), cl1b = again && again.find((x) => x.t === 'CL1');
-      await p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); if (s) s.querySelector('.kit-tl-hdr b').click(); }); await p.waitForTimeout(500);
+      await p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); if (s) s.querySelector('.kit-tl-hdr b').click(); }); await settle(p);
       await p.reload(); await ready(p); await view(p, 'Trains');
       const third = await vis(), cl1c = third && third.find((x) => x.t === 'CL1');
       check('411 px: the fold is remembered per train across a reload (unfolded stays unfolded, folded stays folded)', !!(cl1b && cl1b.h > 10 && cl1c && cl1c.h <= 2), { again, third });
@@ -142,15 +144,15 @@ const VV = `(() => {
 
   {
     const p = await open(411, 860, true, '#/post/cl2-open');
-    await p.evaluate(() => document.getElementById('composer').scrollIntoView({ block: 'end' })); await p.waitForTimeout(300);
+    await p.evaluate(() => document.getElementById('composer').scrollIntoView({ block: 'end' })); await settle(p);
     // 5. "the send button and attachment buttons that cover up text"
-    await typeLong(p); await p.waitForTimeout(200);
+    await typeLong(p); await settle(p);
     const ta = await rect(p, '#c-text'), snd = await rect(p, '#c-send'), att = await rect(p, '#c-attach');
     check('phone: the send and attach buttons sit beside the text, never over it', ta && snd && !hit(ta, snd) && !hit(ta, att || null), { ta, snd, att });
     check('phone: the comment box grows with the text (taller than one line)', ta && ta.h > 60, ta);
     // 6. "the comment box that feels off and not adapted to the mobile keyboard appearing, there being a huge margin on the top"
     for (const [h, top] of [[470, 0], [470, 300]]) {
-      await p.evaluate(([a, c]) => window.__setVV(a, c), [h, top]); await p.waitForTimeout(250);
+      await p.evaluate(([a, c]) => window.__setVV(a, c), [h, top]); await settle(p);
       const c = await rect(p, '#composer'), br = await rect(p, '#sheet .bar');
       check('phone, keyboard open (visible ' + top + '..' + (top + h) + '): the comment box sits in the visible part, on the keyboard', c && c.t >= top - 1 && c.b <= top + h + 1 && c.b >= top + h - 40, c);
       check('phone, keyboard open (visible ' + top + '..' + (top + h) + '): the post bar is at the top of it, no margin', br && Math.abs(br.t - top) <= 2, br);
@@ -161,22 +163,22 @@ const VV = `(() => {
     // "New below" with the keyboard open and the page panned: the pill is above the box, not on its text
     await p.evaluate(() => { const t = document.getElementById('c-text'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); try { localStorage.clear(); } catch (e) {} });
     await p.evaluate(() => { const sh = document.getElementById('sheet'); const c = document.querySelector('.cmt'); if (c) sh.scrollTop += c.getBoundingClientRect().top - 120; });
-    await p.waitForTimeout(2500);
+    await settle(p);
     const pj = await rect(p, '#p-newjump'), pc = await rect(p, '#composer');
     check('phone, keyboard open and panned: the "New below" pill shows and is not over the box', !!pj && !hit(pj, pc), { pj, pc });
-    await p.evaluate(() => window.__setVV(0)); await p.waitForTimeout(200);
+    await p.evaluate(() => window.__setVV(0)); await settle(p);
     // 7. a word tapped in the box keeps the keyboard: nothing on the page blurs it, and the browser's spelling menu
     //    (Chrome's, which hides the keyboard) is not asked for on a touch screen
     const t0 = await rect(p, '#c-text');
-    await p.touchscreen.tap(t0.l + 40, t0.t + 14); await p.waitForTimeout(150);
+    await p.touchscreen.tap(t0.l + 40, t0.t + 14); await settle(p);
     await put('comments', 'live1', { post_id: 'cl2-open', from: 'orchestrator', text: 'A live reply', created_at: new Date().toISOString() });
-    await p.waitForTimeout(1800);
+    await settle(p);
     const fstate = await p.evaluate(() => ({ focus: document.activeElement && document.activeElement.id, spell: document.getElementById('c-text').spellcheck }));
     check('phone: a tap in the text and a live reply keep the box focused (the keyboard stays)', fstate.focus === 'c-text', fstate);
     check('phone: the box does not ask for the browser\'s spelling menu (the keyboard\'s strip corrects)', fstate.spell === false, fstate);
     // 8. nothing of the post shows under or below the comment box
     await p.evaluate(() => { const t = document.getElementById('c-text'); t.value = ''; t.dispatchEvent(new Event('input', { bubbles: true })); document.getElementById('sheet').scrollTop = 0; document.getElementById('composer').scrollIntoView({ block: 'end' }); });
-    await p.evaluate(() => { const sh = document.getElementById('sheet'); sh.scrollTop = Math.max(0, sh.scrollTop - 200); }); await p.waitForTimeout(250);
+    await p.evaluate(() => { const sh = document.getElementById('sheet'); sh.scrollTop = Math.max(0, sh.scrollTop - 200); }); await settle(p);
     const u = await under(p);
     check('phone: no text of the post shows below the comment box', !u, u);
     await p.close();
@@ -185,30 +187,30 @@ const VV = `(() => {
   {
     // 9. the orchestrator and a feed post's comments: full sheets on a phone, the box at the bottom, the pill above it
     const p = await open(411, 860, true);
-    await p.evaluate(() => document.getElementById('ask').click()); await p.waitForTimeout(700);
-    await p.evaluate(() => { const d = document.querySelector('.disc[data-disc]'); if (d) d.click(); }); await p.waitForTimeout(900);
+    await p.evaluate(() => document.getElementById('ask').click()); await settle(p);
+    await p.evaluate(() => { const d = document.querySelector('.disc[data-disc]'); if (d) d.click(); }); await settle(p);
     const s = await rect(p, '#sheet');
     check('phone: the orchestrator is a full sheet, edge to edge (no 8 px frame)', s && s.l <= 0 && s.t <= 0 && s.r >= 411 && s.b >= 860, s);
     const u = await under(p);
     check('phone: no message shows below the orchestrator\'s comment box', !u, u);
-    await p.evaluate(() => { const si = document.querySelector('#sheet .sheet-in'); if (si) si.scrollTop = 0; }); await p.waitForTimeout(1200);
+    await p.evaluate(() => { const si = document.querySelector('#sheet .sheet-in'); if (si) si.scrollTop = 0; }); await settle(p);
     const nj = await rect(p, '#p-newjump'), cp = await rect(p, '#composer');
     check('phone: the "New below" pill is not over the comment box', !hit(nj, cp), { nj, cp });
     await p.evaluate(() => { const t = document.getElementById('c-text'); t.focus(); });
-    await p.evaluate(() => window.__setVV(470, 0)); await p.waitForTimeout(250);
+    await p.evaluate(() => window.__setVV(470, 0)); await settle(p);
     const c2 = await rect(p, '#composer'), b2 = await rect(p, '#sheet .bar');
     check('phone, keyboard open: the orchestrator\'s box is on the keyboard and its bar at the top', c2 && b2 && c2.b <= 471 && c2.b >= 430 && Math.abs(b2.t) <= 2, { c2, b2 });
     await p.evaluate(() => window.__setVV(0));
     // a git diff drawn for a post is not carried into the orchestrator
     await p.evaluate(() => { const d = document.createElement('details'); d.id = 'kit-git-diff'; d.textContent = 'Inspect git diff (abc1234)'; const b = document.getElementById('p-body'); b.dataset.kitDiffPost = 'cl2-open'; b.after(d); });
-    await p.evaluate(() => { document.getElementById('back') && document.getElementById('back').click(); }); await p.waitForTimeout(300);
-    await p.goto(URL0 + '/#/lanes'); await p.waitForTimeout(1200);
-    await p.evaluate(() => { const d = document.createElement('details'); d.id = 'kit-git-diff'; d.textContent = 'Inspect git diff (abc1234)'; const b = document.getElementById('p-body'); b.dataset.kitDiffPost = 'cl2-open'; b.after(d); document.getElementById('ask').click(); }); await p.waitForTimeout(800);
+    await p.evaluate(() => { document.getElementById('back') && document.getElementById('back').click(); }); await settle(p);
+    await p.goto(URL0 + '/#/lanes'); await settle(p);
+    await p.evaluate(() => { const d = document.createElement('details'); d.id = 'kit-git-diff'; d.textContent = 'Inspect git diff (abc1234)'; const b = document.getElementById('p-body'); b.dataset.kitDiffPost = 'cl2-open'; b.after(d); document.getElementById('ask').click(); }); await settle(p);
     const gd = await p.evaluate(() => { const d = document.getElementById('kit-git-diff'); return !!(d && d.offsetParent); });
     check('phone: the orchestrator does not show the git diff of the post opened before it', !gd);
-    await p.goto(URL0 + '/#/lanes'); await p.waitForTimeout(1200);
+    await p.goto(URL0 + '/#/lanes'); await settle(p);
     await view(p, 'Feed');
-    await p.evaluate(() => { const c = document.querySelector('.ffeed-card'); const b = c && [...c.querySelectorAll('button')].find((x) => /comment/i.test((x.getAttribute('aria-label') || '') + (x.title || ''))); if (b) b.click(); }); await p.waitForTimeout(900);
+    await p.evaluate(() => { const c = document.querySelector('.ffeed-card'); const b = c && [...c.querySelectorAll('button')].find((x) => /comment/i.test((x.getAttribute('aria-label') || '') + (x.title || ''))); if (b) b.click(); }); await settle(p);
     const fs2 = await rect(p, '#sheet');
     check('phone: a feed post\'s comments open as a full sheet (no 12 px frame)', fs2 && fs2.l <= 0 && fs2.t <= 0 && fs2.r >= 411 && fs2.b >= 860, fs2);
     check('phone: no page error', p.errs.length === 0, p.errs.slice(0, 3));
@@ -222,7 +224,16 @@ const VV = `(() => {
     await ctx.route('**/_api/repo-asset**', async (r) => { await new Promise((x) => setTimeout(x, 900)); await r.continue(); });
     await ctx.route('**/pic.png**', async (r) => { await new Promise((x) => setTimeout(x, 900)); await r.continue(); });
     const p = await ctx.newPage(); p.errs = []; p.on('pageerror', (e) => p.errs.push(String(e)));
-    await p.goto(URL0 + '/#/post/cl2-open'); await p.waitForTimeout(3500);
+    await p.goto(URL0 + '/#/post/cl2-open'); await settle(p);
+    // the three sections it embeds are drawn, their pictures loaded, and each stays where it is for 300 ms (they load on their own, after the post)
+    await p.waitForFunction(() => {
+      const cards = [...document.querySelectorAll('.kit-inline-embed')];
+      const ready = ['Third', 'Looked at, not a problem', 'What is left'].every((n) => cards.some((c) => [...c.querySelectorAll('h1,h2,h3,h4')].some((h) => h.textContent.trim() === n)));
+      if (!ready || [...document.querySelectorAll('.kit-inline-embed img')].some((i) => !i.complete)) { window.__kitPos = null; return false; }
+      const pos = cards.map((c) => { const b = c.querySelector('.kit-inline-embed-body'); return b ? b.scrollTop : 0; }).join();
+      if (pos !== (window.__kitPos || {}).v) { window.__kitPos = { v: pos, at: performance.now() }; return false; }
+      return performance.now() - window.__kitPos.at >= 300;
+    }, null, { timeout: 30000, polling: 50 }).catch(() => {});
     const v = await p.evaluate(() => {
       const codes = [...document.querySelectorAll('#p-body code')];
       const comma = codes.find((c) => /Looked at, not a problem/.test(c.textContent));
@@ -237,7 +248,15 @@ const VV = `(() => {
     check('a list item\'s wrapped source line stays in the item, not a paragraph of its own (his 08:20)', /stays in the item/.test(v.li) && !v.stray, v);
     check('the section asked for is the first thing in its viewer, after slow pictures loaded, the last one too (his 08:20): ' + v.third + ' / ' + v.looked + ' / ' + v.last + ' px from the top', typeof v.third === 'number' && v.third >= 0 && v.third <= 14 && typeof v.looked === 'number' && v.looked >= 0 && v.looked <= 14 && typeof v.last === 'number' && v.last >= 0 && v.last <= 14, v);
     // the same in the document viewer opened on that section
-    await p.evaluate(() => window._kitOpenRepoDoc('docs/t.md', 'What is left')); await p.waitForTimeout(2800);
+    await p.evaluate(() => window._kitOpenRepoDoc('docs/t.md', 'What is left')); await settle(p);
+    // the viewer shows that heading and has stopped scrolling to it (the same place for 300 ms)
+    await p.waitForFunction(() => {
+      const hs = [...document.querySelectorAll('.kit-docs-modal h2')].filter((h) => h.offsetParent && h.textContent.trim() === 'What is left');
+      const h = hs[hs.length - 1]; if (!h || [...document.querySelectorAll('.kit-docs-modal img')].some((i) => !i.complete)) return false;
+      const y = Math.round(h.getBoundingClientRect().top);
+      if (y !== (window.__kitDv || {}).y) { window.__kitDv = { y, at: performance.now() }; return false; }
+      return performance.now() - window.__kitDv.at >= 300;
+    }, null, { timeout: 30000, polling: 50 }).catch(() => {});
     const dv = await p.evaluate(() => { const hs = [...document.querySelectorAll('.kit-docs-modal h2')].filter((h) => h.offsetParent && h.textContent.trim() === 'What is left'); const h = hs[hs.length - 1]; if (!h) return 'no heading'; let sc = h.parentElement; while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement; return sc ? Math.round(h.getBoundingClientRect().top - sc.getBoundingClientRect().top) : 'no scroller'; });
     check('the document viewer opened on its last, short section shows that heading first (' + dv + ' px from its top)', typeof dv === 'number' && dv >= 0 && dv <= 30, dv);
     check('viewer checks: no page error', p.errs.length === 0, p.errs.slice(0, 3));
@@ -248,7 +267,7 @@ const VV = `(() => {
     const p = await open(1300, 900, false, '#/post/cl2-open');
     const sp = await p.evaluate(() => document.getElementById('c-text').spellcheck);
     check('desktop: the comment box keeps the browser\'s spelling underline (a right-click menu, no keyboard to hide)', sp === true);
-    await p.goto(URL0 + '/#/lanes'); await p.waitForTimeout(1200);
+    await p.goto(URL0 + '/#/lanes'); await settle(p);
     const hd = await header(p);
     check('desktop: the header is one row, nothing over anything', hd.rows === 1 && !hd.off.length && !hd.over.length, hd);
     check('desktop: no page error', p.errs.length === 0, p.errs.slice(0, 3));

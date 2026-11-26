@@ -49,7 +49,7 @@ const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width=
   await put('posts', 'cl8-old', { title: 'CL8 an older post that embeds a docs file', column: 'info', status: 'complete', created_at: at, verdict: 'Old way.',
     body: 'Lead.\n\n## The flow\n\n`docs/old.md § The flow`\n' });
 
-  const b = await pw.chromium.launch();
+  const b = await pw.chromium.launch(); const { settle } = require('./test_settle'); require('./test_settle').arm(b);   // waits for the page, never a fixed time
   for (const [w, h, mobile] of [[390, 844, true], [1280, 900, false]]) {
     const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1 });
     const p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(String(e)));

@@ -3647,7 +3647,10 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     s.since = function (field, margin) { return new Date(Math.max(0, (s.readAt || Date.now()) - (margin || 600000))).toISOString(); };
     s.poll = function () {
       var qs = recent ? recent(s.since) : null, at = Date.now();
-      if (!qs) { s.full(); return; }
+      /* a board whose queries cannot be read (the local board pushes its own changes: its queries have no get) is not polled;
+         before, each poll threw "e.get is not a function" there, every LIVE_MS */
+      var readable = function (q) { var r = q && q.pageBy ? q.make("") : q; return !!r && typeof r.get === "function"; };
+      if (!qs || !qs.every(readable)) { s.full(); return; }
       Promise.all(qs.map(readPages)).then(function (lists) {
         var changed = false, snaps = [].concat.apply([], lists); s.readAt = at;
         snaps.forEach(function (snap) {

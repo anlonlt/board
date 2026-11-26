@@ -74,7 +74,7 @@ class Replica:
 
     def stop(self):
         self.proc.terminate()
-        self.proc.wait(timeout=5)
+        self.proc.wait(timeout=60)
         self.proc.stdout.close()
 
     def read_in(self):

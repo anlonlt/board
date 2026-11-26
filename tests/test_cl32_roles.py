@@ -66,7 +66,7 @@ class Server(unittest.TestCase):
         self.addCleanup(stack.close)
         proc = subprocess.Popen([sys.executable, "-I", "-c", BOOT_ATTACH, str(ROOT / "kit" / "board"), str(proj)],
                                 stdout=subprocess.PIPE, text=True)
-        stack.callback(lambda: (proc.terminate(), proc.wait(timeout=5), proc.stdout.close()))
+        stack.callback(lambda: (proc.terminate(), proc.wait(timeout=60), proc.stdout.close()))
         url = "http://127.0.0.1:" + proc.stdout.readline().strip()
         pushes = proc.stdout.readline().strip()
         return url, pushes

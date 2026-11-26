@@ -70,7 +70,7 @@ class Base(unittest.TestCase):
         self.board_dir.mkdir()
         self.proc = subprocess.Popen([sys.executable, "-I", "-c", BOOT, str(ROOT / "kit" / "board"), str(self.board_dir)],
                                      stdout=subprocess.PIPE, text=True)
-        stack.callback(lambda: (self.proc.terminate(), self.proc.wait(timeout=5), self.proc.stdout.close()))
+        stack.callback(lambda: (self.proc.terminate(), self.proc.wait(timeout=60), self.proc.stdout.close()))
         self.url = "http://127.0.0.1:" + self.proc.stdout.readline().strip()
         self.env = {}
         for k in ("KIT_ARTIFACT_DIR", "KIT_BOARD_URL", "KIT_BOARD_TOKEN", "CLAUDE_CODE_REMOTE", "KIT_ARTIFACT_URL",

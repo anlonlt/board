@@ -38,7 +38,7 @@ class CardPush(unittest.TestCase):
         (self.tmp / "proj").mkdir()
         self.proc = subprocess.Popen([sys.executable, "-I", "-c", BOOT, str(ROOT / "kit" / "board"), str(self.tmp / "proj")],
                                      stdout=subprocess.PIPE, text=True)
-        stack.callback(lambda: (self.proc.terminate(), self.proc.wait(timeout=5), self.proc.stdout.close()))
+        stack.callback(lambda: (self.proc.terminate(), self.proc.wait(timeout=60), self.proc.stdout.close()))
         self.url = "http://127.0.0.1:" + self.proc.stdout.readline().strip()
         self.art = self.tmp / "art"
         for k, v in (("KIT_ARTIFACT_DIR", str(self.art)), ("KIT_ARTIFACT_PREFIX", "")):

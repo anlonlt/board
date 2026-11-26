@@ -328,7 +328,7 @@ class Ntfy:
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.url = "http://127.0.0.1:%d/topic" % self.srv.server_port
 
-    def wait(self, n, t=3.0):
+    def wait(self, n, t=60.0):   # until n came (a busy computer is slower, not wrong); then a moment for one too many
         end = time.time() + t
         while len(self.got) < n and time.time() < end:
             time.sleep(0.05)
@@ -480,7 +480,10 @@ class Funnel(unittest.TestCase):
         with mock.patch.object(server, "_funnel_allowed", return_value=True), mock.patch.object(server, "_take_funnel", took.append), \
                 mock.patch.object(server, "_funnel_lost", side_effect=[False, True] + [False] * 999):
             server._ensure_funnel_async(8765, "/x", every=0.02)
-            time.sleep(0.4)
+            end = time.time() + 60                    # until it took it twice (at start, then once lost), not a fixed 0.4 s
+            while len(took) < 2 and time.time() < end:
+                time.sleep(0.02)
+            time.sleep(0.1)                           # and no third time
         self.assertEqual(took, [8765, 8765])
         with mock.patch.object(server, "_funnel_allowed", return_value=False), mock.patch.object(server, "_take_funnel", took.append):
             server._ensure_funnel_async(8765, "/x", every=0.02)

@@ -30,28 +30,28 @@ const leftText = (p) => p.evaluate(() => {
 });
 (async () => {
   if (!POST) { console.log('SKIP set KIT_POST'); process.exit(0); }
-  const b = await pw.chromium.launch();
+  const b = await pw.chromium.launch(); const { settle } = require('./test_settle'); require('./test_settle').arm(b);   // waits for the page, never a fixed time
   for (const width of [411, 390]) {
     const ctx = await b.newContext({ viewport: { width, height: 860 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
     const p = await ctx.newPage();
-    await p.goto(URL0 + '/?token=' + encodeURIComponent(TOK)); await p.waitForTimeout(1500);
-    await p.goto(URL0 + '/#/lanes'); await p.waitForTimeout(2000);
+    await p.goto(URL0 + '/?token=' + encodeURIComponent(TOK)); await settle(p);
+    await p.goto(URL0 + '/#/lanes'); await settle(p);
     const top = await span('header.top')(p);
     check(width + ' px: the board header fills the top edge to edge (' + JSON.stringify(top) + ')', fullWidth(top) && top.t <= 0);
     if (process.argv[2]) await p.screenshot({ path: process.argv[2] + '-lanes-' + width + '.png' });
-    await p.goto(URL0 + '/#/post/' + encodeURIComponent(POST)); await p.waitForTimeout(2500);
+    await p.goto(URL0 + '/#/post/' + encodeURIComponent(POST)); await settle(p);
     const bar = await span('#sheet .bar')(p);
     check(width + ' px: the post bar spans the screen edge to edge, from the top (' + JSON.stringify(bar) + ')', fullWidth(bar) && bar.t <= 0);
     const lt = await leftText(p);
     check(width + ' px: no text of the post starts left of the screen' + (lt.length ? ' (' + lt.slice(0, 3).join(' | ') + ')' : ''), lt.length === 0);
     if (process.argv[2]) await p.screenshot({ path: process.argv[2] + '-post-' + width + '.png' });
-    await p.goto(URL0 + '/#/trains'); await p.waitForTimeout(2000);
+    await p.goto(URL0 + '/#/trains'); await settle(p);
     const opened = await p.evaluate((t) => {
       const bs = Array.from(document.querySelectorAll('.train-tl-btn')).filter((x) => x.offsetParent);
       const btn = bs.find((x) => !t || x.parentElement.parentElement.textContent.trim().toLowerCase().indexOf(t.toLowerCase()) === 0) || bs[0];
       if (btn) btn.click(); return !!btn;
     }, TRAIN);
-    await p.waitForTimeout(700);
+    await settle(p);
     if (opened) {
       const win = await span('#kit-tl-modal')(p), hdr = await span('#kit-tl-modal .kit-tl-hdr')(p);
       const radius = await p.evaluate(() => getComputedStyle(document.getElementById('kit-tl-modal')).borderTopLeftRadius);

@@ -165,10 +165,6 @@ class WebTakeover(unittest.TestCase):
         self.assertIn("WEB:", on.stdout)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TaskLoad(unittest.TestCase):
     """CL19: the load per task, learned on the device."""
 
@@ -228,9 +224,15 @@ class TaskLoad(unittest.TestCase):
         device.memory = lambda *a, **k: {"total_mb": 2000, "available_mb": 1000, "swap_total_mb": 0,
                                          "swap_free_mb": 0, "cgroup_limit_mb": None}
         times = {}
-        job = [sys.executable, "-c", "import time; time.sleep(1.5)"]
+        # each job writes when it really ran: the check is that the two never overlap, whichever the computer started first
+        mark = os.path.join(self.tmp, "ran")
+        jobf = os.path.join(self.tmp, "job.py")
+        with open(jobf, "w") as fh:
+            fh.write("import sys, time\nt0 = time.time()\ntime.sleep(1.5)\n"
+                     "open(sys.argv[1], 'a').write('%s %r %r\\n' % (sys.argv[2], t0, time.time()))\n")
 
         def go(name):
+            job = [sys.executable, jobf, mark, name]
             times[name + "0"] = time.time()
             device.run(job, kind="big", quiet=True)
             times[name + "1"] = time.time()
@@ -244,7 +246,14 @@ class TaskLoad(unittest.TestCase):
             b.join()
         finally:
             device.memory = orig
-        self.assertGreaterEqual(times["b1"] - times["a1"], 1.4, "b must start only after a ended")
+        ran = {}
+        with open(mark) as fh:
+            for line in fh:
+                k, t0, t1 = line.split()
+                ran[k] = (float(t0), float(t1))
+        (s1, e1), (s2, e2) = sorted(ran.values())
+        self.assertEqual(sorted(ran), ["a", "b"])
+        self.assertGreaterEqual(s2, e1 - 0.01, "the second big job must start only after the first ended: %r" % ran)
 
     def test_cgroup_limit_beats_host_ram(self):  # bar (c)
         root = os.path.join(self.tmp, "cg")
@@ -276,3 +285,7 @@ class TaskLoad(unittest.TestCase):
         st = {"kinds": {"train": {"runs": 3, "ooms": 1, "peaks": [1500] * 3, "oom_floor_mb": 2400}}}
         s = device.survey(env={}, mem=dict(CHROMEBOOK), procs=[(1, 450, "claude")], running=1, store=st)
         self.assertIn("train one at a time", device.load_line(s, st))
+
+
+if __name__ == "__main__":
+    unittest.main()

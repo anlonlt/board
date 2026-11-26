@@ -190,13 +190,14 @@ function overflows() {
   const viaUi = await ev(async () => {
     const tab = [...document.querySelectorAll('button, [role=tab]')].find((b) => /^\s*Trains\s*$/i.test(b.textContent || '') || b.dataset.tab === 'trains');
     if (tab) tab.click();
-    await new Promise((r) => setTimeout(r, 400));
+    const until = async (f) => { for (let t = 0; t < 400 && !f(); t++) await new Promise((r) => setTimeout(r, 50)); };   // drawn, not a fixed time
+    await until(() => [...document.querySelectorAll('.kit-tl-inline')].some((r) => /CL3/.test(r.textContent || '')) || document.querySelector('.tnet-row'));
     // CL27: the Trains view is each train's task list (the old map's tasklist button opened the same list as a window)
     const inl = [...document.querySelectorAll('.kit-tl-inline')].find((r) => /CL3/.test(r.textContent || ''));
     if (inl) return inl.textContent;
     const row = [...document.querySelectorAll('.tnet-row')].find((r) => /Claude Code CLI runtime/.test(r.textContent || ''));
     const btn = row && row.querySelector('.train-tl-btn'); if (!btn) return 'no tasklist button on the cli train';
-    btn.click(); await new Promise((r) => setTimeout(r, 300));
+    btn.click(); await until(() => document.getElementById('kit-tl-modal'));
     const m = document.getElementById('kit-tl-modal'); return m ? m.textContent : 'no tasklist';
   });
   check('the Trains view\'s tasklist shows the done steps (2 / 3 done)', /CL1/.test(viaUi) && /CL2/.test(viaUi) && /2 \/ 3 done/.test(viaUi), viaUi.slice(0, 160));

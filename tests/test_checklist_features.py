@@ -77,7 +77,7 @@ class TestChecklistFeatures(unittest.TestCase):
             t = threading.Thread(target=srv.serve_forever, daemon=True)
             t.start()
             try:
-                c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                c = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
                 c.request("GET", "/", headers={"Accept-Encoding": "gzip"})
                 r = c.getresponse()
                 body = r.read()
@@ -168,7 +168,7 @@ class TestChecklistFeatures(unittest.TestCase):
             t = threading.Thread(target=srv.serve_forever, daemon=True)
             t.start()
             try:
-                c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                c = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
                 c.request("POST", "/_api/unlock", body=json.dumps({"token": "wrong"}), headers={"Content-Type": "application/json"})
                 r_bad = c.getresponse(); r_bad.read()
                 self.assertEqual(r_bad.status, 401)
@@ -249,7 +249,7 @@ class TestChecklistFeatures(unittest.TestCase):
                 stok = sh["token"]
 
                 # Unauthenticated GET /_share/<token> works (like over Tailscale Funnel)
-                c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                c = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
                 c.request("GET", "/_share/" + stok)
                 r1 = c.getresponse(); txt = r1.read().decode("utf-8")
                 self.assertEqual(r1.status, 200)
@@ -303,7 +303,7 @@ class TestChecklistFeatures(unittest.TestCase):
             t.start()
             try:
                 cli = os.path.join(ROOT, "kit", "board", "board_cli.py")
-                c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                c = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
                 c.request("GET", "/_api/repos", headers={"X-Kit-Token": "master-tok"})
                 r_rep = c.getresponse(); repos = json.loads(r_rep.read().decode("utf-8"))
                 self.assertEqual({x["id"] for x in repos["repos"]}, {"harmonize", "board"})

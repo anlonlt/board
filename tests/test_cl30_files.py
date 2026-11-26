@@ -56,7 +56,7 @@ class Base(unittest.TestCase):
         (self.repo / "board").mkdir()
         self.proc = subprocess.Popen([sys.executable, "-I", "-c", BOOT, str(ROOT / "kit" / "board"), str(self.repo / "board")],
                                      stdout=subprocess.PIPE, text=True)
-        stack.callback(lambda: (self.proc.terminate(), self.proc.wait(timeout=5), self.proc.stdout.close()))
+        stack.callback(lambda: (self.proc.terminate(), self.proc.wait(timeout=60), self.proc.stdout.close()))
         self.url = "http://127.0.0.1:" + self.proc.stdout.readline().strip()
         self.art = self.tmp / "art"
         saved = {k: os.environ.get(k) for k in ("KIT_ARTIFACT_DIR", "KIT_ARTIFACT_URL", "KIT_ARTIFACT_PREFIX",

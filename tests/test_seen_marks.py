@@ -27,6 +27,11 @@ import board_server  # noqa: E402
 SEEN = "/_api/doc/data/users/owner/board-seen"
 
 
+# a browser run that has not ended by then is hung: a guard against hanging, never a speed check (a busy computer
+# made a 400 s limit fail an honest run of 437 s)
+HANG_S = 1800
+
+
 def call(url, method, path, repo="", body=None):
     req = urllib.request.Request(url + path, method=method, data=json.dumps(body).encode() if body is not None else None)
     req.add_header("Content-Type", "application/json")
@@ -80,7 +85,7 @@ class ArtifactPageSeen(unittest.TestCase):
             subprocess.run([sys.executable, str(ROOT / "kit" / "claude" / "build_artifact_page.py"), "--kit", str(ROOT), "--page", page,
                             "--board-url", "https://claude.ai/artifact/test", "--project", "Harmonize"], capture_output=True, check=True)
             r = subprocess.run(["node", str(ROOT / "kit" / "claude" / "test_seen_marks.js")], capture_output=True, text=True,
-                               timeout=400, env=dict(env, KIT_PAGE=page), cwd=str(ROOT))
+                               timeout=HANG_S, env=dict(env, KIT_PAGE=page), cwd=str(ROOT))
             self.assertEqual(r.returncode, 0, r.stdout[-3000:] + r.stderr[-2000:])
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

@@ -9,6 +9,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const { spawn, execFileSync } = require('child_process');
+const SETTLE = require(path.join(__dirname, '..', 'board', 'test_settle.js'));   // wait() = until the page is quiet
 
 function servePage(html) {
   return new Promise((resolve) => {
@@ -44,19 +45,22 @@ async function viaPlaywright() {
     return null;
   }
   const ctx = await b.newContext({ viewport: { width: 1300, height: 900 } });
+  ctx.setDefaultTimeout(SETTLE.HANG_MS); ctx.setDefaultNavigationTimeout(SETTLE.HANG_MS);   // hang guards, not speed checks
+  await ctx.addInitScript(SETTLE.WATCH);
   const p = await ctx.newPage();
   const d = { kind: 'playwright', errors: [] };
   p.on('pageerror', (e) => d.errors.push(String(e)));
   p.on('console', (m) => { if (m.type() === 'error') d.errors.push('console: ' + m.text()); });
   d.open = async (html) => {
     await p.route('**/*', (r) => (r.request().url().startsWith('http://kit.test') ? r.fulfill({ body: html, contentType: 'text/html; charset=utf-8' }) : r.abort()));
-    await p.goto('http://kit.test/');
+    await p.goto('http://kit.test/'); await SETTLE.settle(p);
   };
   d.evaluate = (fn, arg) => p.evaluate(asExpression(fn, arg));
   d.press = (key) => p.keyboard.press(key);
   d.viewport = (width, height) => p.setViewportSize({ width, height });
   d.shot = (file) => p.screenshot({ path: file });
-  d.wait = (ms) => p.waitForTimeout(ms);
+  // wait(ms): at least ms, then until the page is quiet (test_settle.js): a busy computer makes a run slower, not different
+  d.wait = async (ms) => { if (ms) await p.waitForTimeout(ms); await SETTLE.settle(p); };   // at least ms (a poll's turn), then quiet
   d.close = () => b.close();
   return d;
 }
@@ -143,11 +147,12 @@ async function viaDevTools() {
   await send('Runtime.enable');
   await send('Log.enable');
   await send('Page.enable');
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE.WATCH });
   let server = null;
   d.open = async (html) => {
     server = await servePage(html);
     await send('Page.navigate', { url: server.url });
-    await new Promise((r) => setTimeout(r, 300));
+    await d.wait();
   };
   d.evaluate = async (fn, arg) => {
     const r = await send('Runtime.evaluate', { expression: asExpression(fn, arg), awaitPromise: true, returnByValue: true, userGesture: true });
@@ -163,7 +168,15 @@ async function viaDevTools() {
   };
   // A phone or a desktop window: the page lays out again at that width (deviceScaleFactor 1, no touch).
   d.viewport = (width, height) => send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 });
-  d.wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  d.wait = async (ms) => {         // at least ms (a poll's turn), then until the page is quiet (test_settle.js), at most 20 s
+    if (ms) await new Promise((res) => setTimeout(res, ms));
+    const end = Date.now() + 20000;
+    while (Date.now() < end) {
+      const r = await send('Runtime.evaluate', { expression: '(' + SETTLE.QUIET + ')(300)', returnByValue: true }).catch(() => null);
+      if (r && r.result && r.result.value === true) return;
+      await new Promise((res) => setTimeout(res, 50));
+    }
+  };
   d.close = async () => {
     try { ws.close(); } catch (e) { /* closed */ }
     if (server) server.srv.close();
