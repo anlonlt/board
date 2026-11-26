@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:48:06Z",
+ "created_at": "2026-11-26T22:50:25Z",
  "rows": [
   {
    "at": 0,
@@ -120,7 +120,8 @@
     "A crashed part is continued from its last checkpoint",
     "A part reports to the orchestrator that started it, unless another claimed it",
     "A part launched in the background knows its own step",
-    "A session always starts on the newest code from GitHub, in every checkout"
+    "A session always starts on the newest code from GitHub, in every checkout",
+    "A step's task is written once, in its post; the prompt is generated at launch"
    ],
    "train": "P-takeover"
   },
@@ -165,5 +166,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T22:48:06Z"
+ "updated_at": "2026-11-26T22:50:25Z"
 }
