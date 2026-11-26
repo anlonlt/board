@@ -18,7 +18,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KIT = os.path.join(ROOT, "scripts", "kit.py")
 CLI = os.path.join(ROOT, "kit", "board", "board_cli.py")
 SERVER = os.path.join(ROOT, "kit", "board", "board_server.py")
-REAL_MIRROR = os.path.join(os.path.dirname(ROOT), "board-mirror")      # kit.py's fallback: the real board's git copy
+
+def _in_temp(p):
+    t = os.path.realpath(tempfile.gettempdir())
+    return os.path.realpath(p).startswith(t.rstrip(os.sep) + os.sep)
+
+
+# the real project: this repository, or (when this runs from a copy in a temp folder, as `kit.py done` does) a folder
+# of the home that is never created: the refusal comes before any write
+REAL = ROOT if not _in_temp(ROOT) else os.path.join(os.path.expanduser("~"), ".kit-cl48-never-created", "board")
+REAL_MIRROR = os.path.join(os.path.dirname(REAL), "board-mirror")      # kit.py's fallback: the real board's git copy
 
 
 def env(test=True, **kw):
@@ -92,7 +101,7 @@ class GitCopyAndRemote(unittest.TestCase):
         self.assertFalse(test_guard.active({}))
         self.assertTrue(test_guard.active({"KIT_TEST": "1"}))
         self.assertTrue(test_guard.under_temp(self.mirror))
-        self.assertFalse(test_guard.under_temp(ROOT) and not ROOT.startswith(tempfile.gettempdir()))
+        self.assertFalse(test_guard.under_temp(REAL))
 
 
 class Board(unittest.TestCase):
@@ -142,10 +151,10 @@ class Board(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
     def test_a_board_server_on_the_real_data_is_refused(self):
-        r = run([sys.executable, "-I", SERVER, "--root", ROOT, "--port", str(free_port()), "--auto-sync-interval", "0"])
+        r = run([sys.executable, "-I", SERVER, "--root", REAL, "--port", str(free_port()), "--auto-sync-interval", "0"])
         self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("KIT_TEST: REFUSED", r.stdout + r.stderr)
-        self.assertIn(os.path.join(os.path.realpath(ROOT), ".kit", "board_data"), r.stdout + r.stderr)
+        self.assertIn(os.path.join(os.path.realpath(REAL), ".kit", "board_data"), r.stdout + r.stderr)
 
 
 if __name__ == "__main__":
