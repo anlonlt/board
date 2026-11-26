@@ -103,6 +103,60 @@ class TestBoardToken(Sandbox):
         self.assertNotIn(tok, r.stdout + r.stderr, "the CLI printed the token")
         self.assertIn("the machine's", r.stdout)
 
+    def test_read_token_falls_back_to_worktree_parent_and_machine_token(self):
+        # 1. Machine token fallback when worktree/project has no .kit/board_data/token (read-only: never creates files)
+        bare = self.project("no-tok")
+        self.assertIsNone(board_token.read_token(bare, self.env))
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".config", "board-kit", "board_token")),
+                         "read_token must never create a machine token")
+        mtok = board_token.machine_token(self.env)
+        self.assertEqual(board_token.read_token(bare, self.env), mtok)
+        self.assertFalse(os.path.exists(os.path.join(bare, ".kit", "board_data", "token")),
+                         "read_token must never create a project token")
+
+        # 2. Linked git worktree inherits its main checkout's custom token before machine token
+        main_repo = self.project("main-repo")
+        os.makedirs(os.path.join(main_repo, ".git", "worktrees", "wt1"))
+        with open(os.path.join(main_repo, ".git", "worktrees", "wt1", "commondir"), "w") as fh:
+            fh.write("../..\n")
+        os.makedirs(os.path.join(main_repo, ".kit", "board_data"))
+        with open(os.path.join(main_repo, ".kit", "board_data", "token"), "w") as fh:
+            fh.write("mainworktreetok\n")
+        wt = self.project("wt1")
+        with open(os.path.join(wt, ".git"), "w") as fh:
+            fh.write("gitdir: %s\n" % os.path.join(main_repo, ".git", "worktrees", "wt1"))
+        self.assertEqual(board_token.read_token(wt, self.env), "mainworktreetok")
+
+        # 3. Project's own token beats main worktree; KIT_BOARD_TOKEN env beats all
+        os.makedirs(os.path.join(wt, ".kit", "board_data"))
+        with open(os.path.join(wt, ".kit", "board_data", "token"), "w") as fh:
+            fh.write("wttoken\n")
+        self.assertEqual(board_token.read_token(wt, self.env), "wttoken")
+        self.assertEqual(board_token.read_token(wt, dict(self.env, KIT_BOARD_TOKEN="envtok")), "envtok")
+
+    def test_board_cli_and_kit_resolve_worktree_and_machine_token(self):
+        wt = self.project("fresh-wt")
+        shutil.copy(os.path.join(ROOT, "kit", "board", "board_token.py"), os.path.join(wt, ".kit", "board_token.py"))
+        shutil.copy(os.path.join(ROOT, "kit", "board", "board_cli.py"), os.path.join(wt, ".kit", "board_cli.py"))
+        shutil.copy(os.path.join(ROOT, "scripts", "kit.py"), os.path.join(wt, ".kit", "kit.py"))
+        mtok = board_token.machine_token(self.env)
+        env = dict(os.environ, HOME=self.home)
+        env.pop("XDG_CONFIG_HOME", None)
+        env.pop("KIT_BOARD_TOKEN", None)
+        r = subprocess.run(
+            [sys.executable, "-I", "-c",
+             "import importlib.util, sys;"
+             "s1=importlib.util.spec_from_file_location('bc', sys.argv[1]); m1=importlib.util.module_from_spec(s1); s1.loader.exec_module(m1);"
+             "s2=importlib.util.spec_from_file_location('kt', sys.argv[2]); m2=importlib.util.module_from_spec(s2); s2.loader.exec_module(m2);"
+             "print('OK' if (m1.default_token() == sys.argv[3] and m2._resolve_board_token() == sys.argv[3]) else 'MISMATCH')",
+             os.path.join(wt, ".kit", "board_cli.py"),
+             os.path.join(wt, ".kit", "kit.py"),
+             mtok],
+            capture_output=True, text=True, env=env, cwd=wt, timeout=30,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr[-400:])
+        self.assertEqual(r.stdout.strip(), "OK")
+
 
 class TestUpAndInstall(Sandbox):
     """`up` for both CLIs, and install.py, go through the same helper."""

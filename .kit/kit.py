@@ -497,15 +497,34 @@ def _resolve_board_token(explicit=None):
         return explicit
     env_tok = os.environ.get("KIT_BOARD_TOKEN")
     if env_tok:
-        return env_tok
-    tok_path = os.path.join(ROOT, ".kit", "board_data", "token")
-    if os.path.isfile(tok_path):
-        try:
-            tok = open(tok_path, encoding="utf-8").read().strip()
-            if tok:
-                return tok
-        except OSError:
-            pass
+        return env_tok.strip() or None
+    for bt_path in (
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "board_token.py"),
+        os.path.join(ROOT, ".kit", "board_token.py"),
+        os.path.join(ROOT, "kit", "board", "board_token.py"),
+    ):
+        if os.path.isfile(bt_path):
+            try:
+                spec = importlib.util.spec_from_file_location("kit_board_token", bt_path)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                if hasattr(mod, "read_token"):
+                    return mod.read_token(ROOT)
+            except Exception:
+                pass
+            break
+    for tok_path in (
+        os.path.join(ROOT, ".kit", "board_data", "token"),
+        os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config"),
+                     "board-kit", "board_token"),
+    ):
+        if os.path.isfile(tok_path):
+            try:
+                tok = open(tok_path, encoding="utf-8").read().strip()
+                if tok:
+                    return tok
+            except OSError:
+                pass
     return None
 
 

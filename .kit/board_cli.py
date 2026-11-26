@@ -132,11 +132,28 @@ def _no_server_hint():
 def default_token():
     if os.environ.get("KIT_BOARD_TOKEN"):
         return os.environ["KIT_BOARD_TOKEN"].strip()
-    tp = os.path.join(ROOT, ".kit", "board_data", "token")
-    try:
-        return open(tp, encoding="utf-8").read().strip() or None
-    except OSError:
-        return None
+    bt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "board_token.py")
+    if os.path.isfile(bt_path):
+        try:
+            spec = importlib.util.spec_from_file_location("kit_board_token", bt_path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            if hasattr(mod, "read_token"):
+                return mod.read_token(ROOT)
+        except Exception:
+            pass
+    for tp in (
+        os.path.join(ROOT, ".kit", "board_data", "token"),
+        os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config"),
+                     "board-kit", "board_token"),
+    ):
+        try:
+            tok = open(tp, encoding="utf-8").read().strip()
+            if tok:
+                return tok
+        except OSError:
+            pass
+    return None
 
 
 def req(base, method, path, body=None, headers=None, timeout=60, token=None):
