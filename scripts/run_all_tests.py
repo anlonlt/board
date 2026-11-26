@@ -60,9 +60,10 @@ def suites(root=REPO_ROOT):
 # Variables a kit session exports (its role, a board token or url). Inherited, they make the
 # suites depend on who runs them (KIT_ROLE=clerk fails the hook tests), so every suite runs without them.
 # CL26: so are the runtime markers the launchers read (a suite run from a web session must not launch as one).
-SESSION_VARS = ("KIT_ROLE", "KIT_BOARD_TOKEN", "KIT_BOARD_URL", "KIT_BOARD_REPO", "KIT_BREAKS_COPY", "CLAUDE_PROJECT_DIR",
+SESSION_VARS = ("KIT_ROLE", "KIT_POST", "CLAUDE_CODE_TASK_LIST_ID", "KIT_BOARD_TOKEN", "KIT_BOARD_URL", "KIT_BOARD_REPO", "KIT_BREAKS_COPY", "CLAUDE_PROJECT_DIR",
                 "KIT_CLI", "CLAUDE_CODE_REMOTE", "CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PID", "AGY_PID",
                 "CLAUDE_CODE_REMOTE_SESSION_ID")   # CL37: usage.py reads it as the session's commit trailer
+# KIT_POST and the task list: a part's launch sets them, and the hooks the suites run then act for that post (CL44).
 # What a run writes, or what is not the kit's: never a reason to run again.
 NOISE = re.compile(r"^(?:\.git|\.kit/run|\.kit/board_data|\.claude/worktrees)(?:/|$)|(?:^|/)__pycache__(?:/|$)|\.pyc$")
 

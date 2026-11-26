@@ -671,6 +671,7 @@ class Bug12DeviceGateRecheck(unittest.TestCase):
 
     def test_low_then_high_meminfo_passes_within_window(self):
         dev = _load("dev_cl44_b12", ROOT / "scripts" / "device.py")
+        dev.running_jobs = lambda: []   # the jobs this device runs now (this suite's own) never change the readings
         with tempfile.TemporaryDirectory() as td:
             mi = Path(td) / "meminfo"
             self._write_meminfo(mi, 4096, 574)
@@ -690,6 +691,7 @@ class Bug12DeviceGateRecheck(unittest.TestCase):
 
     def test_persistent_low_meminfo_refuses_after_window_with_readings(self):
         dev = _load("dev_cl44_b12b", ROOT / "scripts" / "device.py")
+        dev.running_jobs = lambda: []   # the jobs this device runs now (this suite's own) never change the readings
         with tempfile.TemporaryDirectory() as td:
             mi = Path(td) / "meminfo"
             self._write_meminfo(mi, 4096, 574)
@@ -703,6 +705,7 @@ class Bug12DeviceGateRecheck(unittest.TestCase):
 
     def test_cap_refusal_is_immediate_without_waiting(self):
         dev = _load("dev_cl44_b12c", ROOT / "scripts" / "device.py")
+        dev.running_jobs = lambda: []   # the jobs this device runs now (this suite's own) never change the readings
         with tempfile.TemporaryDirectory() as td:
             mi = Path(td) / "meminfo"
             self._write_meminfo(mi, 2779, 574)
