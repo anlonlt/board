@@ -314,7 +314,8 @@ class Gap5AgyMcp(unittest.TestCase):
 class Gap6And7Registration(unittest.TestCase):
     def test_the_sets(self):
         inst = load("install_cl30_g6", ROOT / "install.py")
-        self.assertIn("kit_cards_reminder.py", [f for _, _, f in inst.CLAUDE_CLI_SETTINGS])
+        self.assertNotIn("kit_cards_reminder.py", [f for _, _, f in inst.CLAUDE_CLI_SETTINGS])   # the CLI's board server builds the cards
+        self.assertIn("kit_cards_reminder.py", [f for _, _, f in inst.CLAUDE_SETTINGS])          # the web's Artifact has none
         self.assertIn("kit_task_train.py", [f for _, _, f in inst.CLAUDE_SETTINGS])
         for spec in (inst.CLAUDE_SETTINGS, inst.CLAUDE_CLI_SETTINGS):
             self.assertIn("kit_board_guard.py", [f for _, _, f in spec])

@@ -80,6 +80,46 @@ class PartStartsOnItsWork(unittest.TestCase):
         git(self.d, "checkout", "-q", "cl44")
         self.assertEqual(kit.take_step_branch(self.p), [])
 
+    def test_a_named_branch_that_is_not_here_is_said_first(self):
+        out = "\n".join(kit.take_step_branch(dict(self.p, branch="cl99")))
+        self.assertIn("## FIRST", out); self.assertIn("cl99", out)
+
+
+class ResumeStopsWhenItCannotSee(unittest.TestCase):
+    """The owner, 2026-11-26: agy's sandbox hid git and the board; resume printed the task and exited 0."""
+
+    def run_resume(self, root, posts=None, err=None):
+        args = ["resume", "--role", "part", "--post", "cl44-x"]
+        with mock.patch.object(kit, "ROOT", root), mock.patch.object(kit, "_load_board_docs", return_value=({}, {})), \
+                mock.patch.object(kit, "_all_posts", side_effect=lambda *a, **k: (kit.BOARD_ERRORS.append(err) if err else None) or dict(posts or {})), \
+                mock.patch.object(kit, "stale_copy", return_value=""), mock.patch.object(kit, "_attached_boards", return_value=([], [])):
+            import io, contextlib
+            o, e = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(o), contextlib.redirect_stderr(e):
+                rc = kit.main(args)
+        return rc, o.getvalue() + e.getvalue()
+
+    def setUp(self):
+        del kit.BOARD_ERRORS[:]
+        self.d = tempfile.mkdtemp()
+        git(self.d, "init", "-q", "-b", "main"); git(self.d, "config", "user.email", "t@t"); git(self.d, "config", "user.name", "t")
+        Path(self.d, "a").write_text("a"); git(self.d, "add", "."); git(self.d, "commit", "-qm", "a")
+
+    def test_git_that_fails_stops_it(self):
+        bare = tempfile.mkdtemp()                      # no repository at all: what agy's sandbox showed
+        rc, out = self.run_resume(bare)
+        self.assertNotEqual(rc, 0); self.assertIn("STOP", out); self.assertIn("git does not work", out)
+        self.assertIn("BypassSandbox", out)
+
+    def test_a_board_that_refuses_stops_it_and_says_why(self):
+        rc, out = self.run_resume(self.d, err="the board server refused or failed: HTTP Error 401: Unauthorized")
+        self.assertNotEqual(rc, 0); self.assertIn("401", out); self.assertIn("BypassSandbox", out)
+        self.assertNotIn("## The task", out)          # no task printed as if all were well
+
+    def test_a_post_the_board_lacks_stops_it(self):
+        rc, out = self.run_resume(self.d, posts={"other": {"part": "X"}})
+        self.assertNotEqual(rc, 0); self.assertIn("holds no post `cl44-x`", out)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -49,7 +49,7 @@ TABLE = [
                                    "agy": "run_command|edit_file|write_file"}, PLAIN, 25),
     ("UserPromptSubmit", "kit_say_it_once.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("UserPromptSubmit", "kit_board_typing.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
-    ("UserPromptSubmit", "kit_cards_reminder.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
+    ("UserPromptSubmit", "kit_cards_reminder.py", {"web": ANY}, PLAIN, 50),  # the CLI's board server builds the cards
     ("UserPromptSubmit", "kit_task_train.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("TaskCompleted", "kit_task_train.py", {"web": ANY, "cli": ANY}, GUARD, 50),
     ("PreInvocation", "kit_say_it_once.py", {"agy": ANY}, PLAIN, 50),

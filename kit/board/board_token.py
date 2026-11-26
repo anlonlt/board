@@ -73,6 +73,49 @@ def project_token_path(root):
     return os.path.join(root, ".kit", "board_data", "token")
 
 
+def _main_worktree_root(root):
+    """If `root` is a linked git worktree, return its main checkout root; else None."""
+    dot_git = os.path.join(root, ".git")
+    if not os.path.isfile(dot_git):
+        return None
+    raw = _read(dot_git)
+    if not raw.startswith("gitdir:"):
+        return None
+    gitdir = raw.split(":", 1)[1].strip()
+    if not os.path.isabs(gitdir):
+        gitdir = os.path.normpath(os.path.join(root, gitdir))
+    cdir = _read(os.path.join(gitdir, "commondir"))
+    if cdir:
+        common = cdir if os.path.isabs(cdir) else os.path.normpath(os.path.join(gitdir, cdir))
+    elif os.path.basename(os.path.dirname(gitdir)) == "worktrees":
+        common = os.path.dirname(os.path.dirname(gitdir))
+    else:
+        return None
+    if os.path.basename(common) == ".git":
+        return os.path.dirname(common)
+    return None
+
+
+def read_token(root, env=None):
+    """Read the board token for `root` without ever creating a file:
+    KIT_BOARD_TOKEN -> <root>/.kit/board_data/token -> main worktree's token -> machine token."""
+    env = os.environ if env is None else env
+    tok = (env.get("KIT_BOARD_TOKEN") or "").strip()
+    if tok:
+        return tok
+    if root:
+        tok = _read(project_token_path(root))
+        if tok:
+            return tok
+        main_root = _main_worktree_root(root)
+        if main_root and os.path.abspath(main_root) != os.path.abspath(root):
+            tok = _read(project_token_path(main_root))
+            if tok:
+                return tok
+    tok = _read(machine_token_path(env))
+    return tok or None
+
+
 def ensure(root, env=None):
     """The project's token path, filled from the machine token when the project has none. Returns (path, source)
     where source is "project" (kept) or "machine" (copied)."""

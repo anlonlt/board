@@ -83,7 +83,6 @@ with tempfile.TemporaryDirectory() as d:
     check("rendered role models and automatic handover/clerk rotation in orchestrator & clerk prompts",
           'Role="Orchestrator <N+1>", Model="inherit"' in orch
           and 'Role="Board Clerk", Model="flash_lite"' in orch
-          and 'Model="flash"' in orch
           and '380' in orch and '80' in orch
           and 'Role="Orchestrator <N+1>", Model="inherit"' in guide
           and 'ready for replacement' in clerk and '80' in clerk
@@ -100,8 +99,9 @@ with tempfile.TemporaryDirectory() as d:
           and os.access(os.path.join(d, "bin", "tide-clock"), os.X_OK)
           and "`tide-clock`" in orch and "--mode auto" in orch)
     check("the orchestrator cleans up what he moved to Done", "manage_subagents" in orch)
-    check("the kit-cards agent prompt installed", os.path.exists(os.path.join(t, ".kit", "agents", "kit-cards.md")))
-    check("the orchestrator calls the agent, never lists posts itself", "kit-cards" in orch and "list posts" not in orch)
+    check("no cards agent on agy: the board server builds the cards", not os.path.exists(os.path.join(t, ".kit", "agents", "kit-cards.md")))
+    check("the orchestrator checks the cards with kit.py cards, never lists posts itself",
+          "kit.py cards" in orch and "kit-cards" not in orch and "list posts" not in orch)
     check("a kit file edited by the project is kept", "my note" in open(os.path.join(t, ".kit", "BOARD.md")).read() and "KEPT" in out)
     cfg = json.load(open(os.path.join(t, ".kit", "config.json")))
     check("config keeps earlier answers", cfg["project"] == "Tide Clock" and cfg["language"]["talk"] == "French"
@@ -164,7 +164,7 @@ with tempfile.TemporaryDirectory() as d:
           and "## The post format" in board_md and "## Which feature for what" in board_md and "board_cli.py reply" in board_md
           and {k: v for k, v in cfg_loc.get("review", {}).items() if k != "since"} == {"auto": "all", "train_every": 4} and cfg_loc["review"].get("since") and cfg_loc.get("post_body_max") == 1500)
     orch_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "orchestrator.md"), encoding="utf-8").read()
-    cards_cli = open(os.path.join(t_loc, ".claude", "agents", "kit-cards.md"), encoding="utf-8").read()
+    cards_cli = not os.path.exists(os.path.join(t_loc, ".claude", "agents", "kit-cards.md"))   # no cards agent on the CLI
     clerk_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "clerk.md"), encoding="utf-8").read()
     check("the Claude Code CLI orchestrator starts a haiku clerk session and parts as named background sessions",
           "claude --bg -n harmonize-clerk --model haiku --autocompact 120000 --permission-mode \"$(python3 -I .kit/kit.py permission-mode)\"" in orch_cli
@@ -172,7 +172,7 @@ with tempfile.TemporaryDirectory() as d:
           and "kit.py launch <post id>" in orch_cli and "claude --bg -n harmonize-<part>" in orch_cli  # CL13
           and "session_id\":\"harmonize-orchestrator\"" in orch_cli and "welcome --runtime claude-cli" in orch_cli
           and not any(x in orch_cli + clerk_cli for x in ("invoke_subagent", "run_command", "send_message", "WaitMsBeforeAsync", "{{"))
-          and "model: haiku" in cards_cli and "tools: Bash, Read" in cards_cli)
+          and cards_cli and "kit.py cards" in orch_cli and "kit-cards" not in orch_cli)
     check("the Claude Code CLI clerk listens in the background and forwards by session name",
           "comments next --timeout 300" in clerk_cli and "run_in_background: true" in clerk_cli
           and "SendMessage` to `target_session_id`" in clerk_cli and "harmonize-orchestrator" in clerk_cli)

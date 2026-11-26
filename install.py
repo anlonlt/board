@@ -189,9 +189,16 @@ def present_runtimes(t):
     return {n for n, d in RUNTIME_HOOK_DIRS.items() if os.path.isdir(os.path.join(t, d))}
 
 
+# Files the kit once installed and no longer does where this run did not put them (an update would otherwise leave the old
+# copy behind for ever): removed when unchanged since the kit wrote them, else KEPT and named.
+RETIRED = {".kit/agents/kit-cards.md": "the board server builds the cards; `kit.py cards` checks them",
+           ".claude/agents/kit-cards.md": "the board server builds the cards; `kit.py cards` checks them"}
+
+
 class Installer:
     def __init__(self, target, dry):
         self.t, self.dry, self.log, self.kept = os.path.abspath(target), dry, [], []
+        self.touched = set()
         mp = os.path.join(self.t, ".kit", "manifest.json")
         self.manifest = json.load(open(mp, encoding="utf-8")) if os.path.exists(mp) else {}
 
@@ -199,6 +206,7 @@ class Installer:
         """`past`: git blob ids of earlier kit versions of this file; a target copy equal to one is refreshed (CL25)."""
         if isinstance(data, str):
             data = data.encode("utf-8")
+        self.touched.add(rel)
         p = os.path.join(self.t, rel)
         if os.path.exists(p):
             cur = open(p, "rb").read()
@@ -219,7 +227,21 @@ class Installer:
             if rel.endswith(".py") or rel == ".kit/up":
                 os.chmod(p, 0o755)
 
+    def retire(self):
+        for rel, why in sorted(RETIRED.items()):
+            p = os.path.join(self.t, rel)
+            if rel in self.touched or not os.path.isfile(p):
+                continue
+            if self.manifest.get(rel) != sha(open(p, "rb").read()):
+                self.kept.append("KEPT (the kit no longer ships it: %s; changed since, so not removed): %s" % (why, rel))
+                continue
+            self.log.append("removed %s (the kit no longer ships it: %s)" % (rel, why))
+            self.manifest.pop(rel, None)
+            if not self.dry:
+                os.remove(p)
+
     def finish(self):
+        self.retire()
         if not self.dry:
             os.makedirs(os.path.join(self.t, ".kit"), exist_ok=True)
             with open(os.path.join(self.t, ".kit", "manifest.json"), "w", encoding="utf-8") as fh:
@@ -1261,11 +1283,13 @@ def main(argv=None):
         board_tpl = rd("kit", "claude", "BOARD.template.md") if claude_only else rd("kit", "board", "BOARD.template.md")
         cards_tpl = rd("kit", "claude", "kit-cards.md") if claude_only else rd("kit", "agents", "kit-cards.md")
         ins.put(".kit/BOARD.md", render(board_tpl, c))
-        if want_agy:
+        if want_agy and claude_only:     # the cards agent is the web's only (no board server there): kit.py cards elsewhere
             ins.put(".kit/agents/kit-cards.md", cards_tpl)
+        if want_agy:
             ins.put(".agents/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
         if want_claude:
-            ins.put(".claude/agents/kit-cards.md", render(rd("kit", "claude-cli", "kit-cards.template.md"), c) if claude_cli_hooks else cards_tpl)
+            if claude_only:
+                ins.put(".claude/agents/kit-cards.md", cards_tpl)
             ins.put(".claude/skills/board/SKILL.md", rd("kit", "claude", "SKILL.board.md") if claude_only else rd("kit", "skills", "board", "SKILL.md"))
     if parts["clerk"]:
         ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))

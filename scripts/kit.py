@@ -492,6 +492,20 @@ def tar_name(n):
     return n
 
 
+class PartStop(Exception):
+    """A part cannot start safely (git or the board unreadable here): resume says why and exits non-zero, never a
+    task printed as if all were well (the owner, 2026-11-26: an agy part's sandbox hid git and the board, resume
+    printed the task and exited 0, and the part redid saved work)."""
+
+
+BOARD_ERRORS = []   # why the last read of the board server failed (empty when it answered)
+
+
+def _sandbox_hint():
+    return ("On agy: run this same command again with BypassSandbox: true (its sandbox hides the main checkout's .git and "
+            "the board). If it still fails, do not start: message the orchestrator with this message.")
+
+
 class Conflict(Exception):
     pass
 
@@ -506,15 +520,34 @@ def _resolve_board_token(explicit=None):
         return explicit
     env_tok = os.environ.get("KIT_BOARD_TOKEN")
     if env_tok:
-        return env_tok
-    tok_path = os.path.join(ROOT, ".kit", "board_data", "token")
-    if os.path.isfile(tok_path):
-        try:
-            tok = open(tok_path, encoding="utf-8").read().strip()
-            if tok:
-                return tok
-        except OSError:
-            pass
+        return env_tok.strip() or None
+    for bt_path in (
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "board_token.py"),
+        os.path.join(ROOT, ".kit", "board_token.py"),
+        os.path.join(ROOT, "kit", "board", "board_token.py"),
+    ):
+        if os.path.isfile(bt_path):
+            try:
+                spec = importlib.util.spec_from_file_location("kit_board_token", bt_path)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                if hasattr(mod, "read_token"):
+                    return mod.read_token(ROOT)
+            except Exception:
+                pass
+            break
+    for tok_path in (
+        os.path.join(ROOT, ".kit", "board_data", "token"),
+        os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config"),
+                     "board-kit", "board_token"),
+    ):
+        if os.path.isfile(tok_path):
+            try:
+                tok = open(tok_path, encoding="utf-8").read().strip()
+                if tok:
+                    return tok
+            except OSError:
+                pass
     return None
 
 
@@ -4322,9 +4355,62 @@ def _all_posts(db_path=None):
         try:                                      # a part's worktree (or empty local DB): the board server holds it
             r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
             posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or []}
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 - kept, never swallowed: resume --role part stops on it
+            BOARD_ERRORS.append("the board server refused or failed: %s" % e)
     return posts
+
+
+def _kit_cards_mod():
+    """kit_cards (.kit/kit_cards.py, kit/board/kit_cards.py in the kit's own repo); None if missing."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path in (os.path.join(here, "kit_cards.py"), os.path.join(here, "..", "kit", "board", "kit_cards.py")):
+        if os.path.isfile(path):
+            spec = importlib.util.spec_from_file_location("kit_cards_cmd", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mod.ROOT = ROOT
+            return mod
+    return None
+
+
+def cards(db_path=None, url=None, token=None, now=None):
+    """`kit.py cards`: "Where we are" (_dashboard) and its trains (_trains) as the posts say now, and the sessions to
+    archive, in one line. A script, not an agent: the local board server already rebuilds both cards at each write, so
+    this writes only a card that differs (a board the server did not build, a copy); the list of posts never reaches
+    the caller's context. (Was the kit-cards subagent on agy and the CLI: a model run at each launch and Done.)"""
+    kc = _kit_cards_mod()
+    if kc is None:
+        return 2, "cards: FAILED no kit_cards.py here: reinstall the kit"
+    now = now or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    posts = _all_posts(db_path)
+    real = {k: v for k, v in posts.items() if isinstance(v, dict) and not k.startswith("_")}
+    dash = kc.build(now, board=dict(real))
+    trains = kc.build_trains(dict(real), dash["rows"], now)
+    for r in dash["rows"]:                       # same rule as kit_cards.main: a row whose train runs, runs
+        if r["state"] in ("ready", "idle") and any(x["state"] == "running" for x in trains["rows"] if x["parent"] == r["train"]):
+            r["state"] = "running"
+    wrote = []
+    for did, doc in (("_dashboard", dash), ("_trains", trains)):
+        if (posts.get(did) or {}).get("rows") == doc.get("rows"):
+            continue
+        try:
+            _board_request(_resolve_board_url(url or _kit_config().get("board_url")), "db/posts/" + did, {"data": doc},
+                           token=token or _resolve_board_token(None), method="PUT")
+            wrote.append(did)
+        except Exception as e:  # noqa: BLE001
+            return 1, "cards: FAILED writing %s: %s" % (did, e)
+    try:
+        done = set(open(os.path.join(ROOT, ".kit", "archived.txt"), encoding="utf-8").read().split())
+    except OSError:
+        done = set()
+    todo = []
+    for p in real.values():                      # any platform's session id (agy's are not session_*)
+        sid = str(p.get("session_id") or "")
+        if p.get("column") == "done" and sid and not sid.startswith("pending") and sid not in done and sid not in todo:
+            todo.append(sid)
+    return 0, "cards: %d rows, trains %d (%s); to archive: %s" % (
+        len(dash["rows"]), len(trains["rows"]), ("rewrote " + ", ".join(wrote)) if wrote else "already current",
+        " ".join(todo) if todo else "none")
 
 
 def _device():
@@ -4469,7 +4555,8 @@ def _write_step_prompt(pid, doc, sources, cli=None):
     head, sep, _ = tpl.partition(HOW_HEAD)
     if sep:
         first, _, rest = head.partition("\n")
-        head = "%s\n\nRun `python3 -I .kit/kit.py resume --role part --post <POST_ID>`: it prints this and how a part works here.\n%s" % (first, rest)
+        head = ("%s\n\nRun `python3 -I .kit/kit.py resume --role part --post <POST_ID>`: it prints this and how a part works here. "
+                "If it fails or prints STOP, do not start: do what it says.\n%s" % (first, rest))
     tpl = _fill_part(head.rstrip() + "\n", pid, dict(doc, sources=list(sources)))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
@@ -4498,8 +4585,56 @@ def _step_board(train, posts, board=None):
     return (hits[0]["id"], dict(hits[0]["posts"])) if len(hits) == 1 else (None, None)
 
 
+SPLIT_MAX_PIECES = 6     # more pieces than this in one step: split it (the owner, 2026-11-26: CL44 held 14 unrelated items)
+SPLIT_MAX_GROUPS = 2     # more separate groups of files than this: they can run as parallel steps
+
+
+def split_groups(pieces):
+    """The pieces in groups that share files ([[piece n, ...], ...]). A file most pieces name (a hub such as kit.py, when
+    4+ pieces) joins nothing: different functions of one big file merge cleanly. A piece naming no file (run the tests, the
+    live check) is the whole step's, not a group."""
+    ps = [x for x in pieces or [] if isinstance(x, dict)]
+    count = {}
+    for x in ps:
+        for fl in set(x.get("files") or []):
+            count[fl] = count.get(fl, 0) + 1
+    hub = {fl for fl, c in count.items() if len(ps) >= 4 and c * 2 > len(ps)}
+    groups = []                                    # [(set of files, [n])]
+    for x in ps:
+        fs = set(x.get("files") or []) - hub
+        if not fs:
+            continue
+        hit = [g for g in groups if g[0] & fs]
+        merged = (set(fs), [x.get("n")])
+        for g in hit:
+            merged[0].update(g[0]); merged[1][:0] = g[1]
+            groups.remove(g)
+        groups.append(merged)
+    return [sorted(n for n in g[1] if n is not None) for g in groups], hub
+
+
+def split_check(pieces):
+    """Why a step should be several steps ("" when it is fine): too many pieces, or pieces in separate groups of files
+    that parallel parts could take side by side. The proposal names the groups."""
+    ps = [x for x in pieces or [] if isinstance(x, dict)]
+    if not ps:
+        return ""
+    groups, hub = split_groups(ps)
+    if len(ps) <= SPLIT_MAX_PIECES and len(groups) <= SPLIT_MAX_GROUPS:
+        return ""
+    title = {x.get("n"): str(x.get("title") or "")[:50] for x in ps}
+    files = {x.get("n"): set(x.get("files") or []) - hub for x in ps}
+    rows = ["  - pieces %s: %s%s" % (", ".join(map(str, g)), "; ".join(title[n] for n in g[:3]) + ("; ..." if len(g) > 3 else ""),
+                                     (" (%s)" % ", ".join(sorted(set().union(*[files[n] for n in g]))[:4])) if any(files[n] for n in g) else "")
+            for g in groups]
+    return ("%d pieces in %d separate groups of files (at most %d pieces and %d groups a step): one step per group, run "
+            "side by side where memory allows%s:\n%s" % (len(ps), len(groups), SPLIT_MAX_PIECES, SPLIT_MAX_GROUPS,
+                                                         (" (shared by most, ignored: %s)" % ", ".join(sorted(hub))) if hub else "",
+                                                         "\n".join(rows)))
+
+
 def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None, cli=None,
-             board=None):
+             board=None, keep_whole=None):
     """A train step: its post (adopted when the train already has one for that part, never duplicated) and its
     generated prompt. Returns {post, adopted, prompt, prompt_written, launch} or {error}. On an attached board (CL25)
     also {board, artifact_write}: the post is a file under .kit/run/artifact/out/repos/<id>/posts/, sent by the one
@@ -4523,6 +4658,10 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         if att:
             res["board"] = att
         return res
+    why_split = split_check(task_pieces(task))
+    if why_split and not keep_whole:
+        return {"error": "step %s is several steps: %s\nPlan one `step new` per group, or keep it whole with --keep-whole "
+                         "\"<why these must be one part>\" (recorded on the post)." % (part, why_split), "split": True}
     title = re.sub(r"^\s*%s\b[\s:.-]*" % re.escape(part), "", title or part, flags=re.I) or title or part
     base = "%s-%s" % (_slug(part, 12), _slug(title))
     pid, n = base, 2
@@ -4535,6 +4674,8 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         doc["subtasks"] = task_pieces(task)
     if parent:
         doc["parent"] = parent
+    if why_split and keep_whole:
+        doc["kept_whole"] = str(keep_whole)
     if sources:
         doc["sources"] = list(sources)
     if review is False:
@@ -6570,6 +6711,20 @@ def situation(posts, comments, session=None, platform=None):
     return out + (["takeover"] if named or not out else [])
 
 
+def split_lines(posts):
+    """Open steps the split check flags (written before it, or grown by comments since): split before launching more."""
+    out = []
+    for pid, p in sorted(posts.items()):
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("kept_whole") or p.get("removed"):
+            continue
+        if str(p.get("status") or "").lower() in ("complete", "done", "dropped") or str(p.get("column") or "") == "done":
+            continue
+        why = split_check(p.get("subtasks"))
+        if why:
+            out.append("- `%s` (%s): %s" % (pid, p.get("part") or pid, why.replace("\n", "\n  ")))
+    return ["", "## Steps that are several steps (split them: `kit.py step new` per group, then trim the step)"] + out if out else []
+
+
 def start_lines(posts, comments, session=None):
     p = orchestrator_guide()
     if not p:
@@ -6926,7 +7081,17 @@ def take_step_branch(p):
     if have("origin/" + br):
         _git_run("fetch", "-q", "origin", br, timeout=60)
     refs = [x for x in ("origin/" + br, br) if have(x)]
-    missing = [x for x in refs if _git_run("merge-base", "--is-ancestor", x, "HEAD").returncode != 0]
+    if not refs:
+        return ["## FIRST: your post names branch `%s`, and this checkout has no such branch (nor origin/%s)" % (br, br),
+                "- if the step was started before, its work is there: find it (`git fetch origin %s`, another clone, the "
+                "orchestrator) before you write anything; a new step: create it with `git checkout -b %s`" % (br, br), ""]
+    missing = []
+    for x in refs:
+        r = _git_run("merge-base", "--is-ancestor", x, "HEAD")
+        if r.returncode not in (0, 1):
+            raise PartStop("git could not compare `%s` with this checkout: %s %s" % (x, (r.stderr or "").strip()[:300], _sandbox_hint()))
+        if r.returncode == 1:
+            missing.append(x)
     if not missing:
         return []
     ref = missing[0] if len(missing) == 1 or _git_run("merge-base", "--is-ancestor", missing[1], missing[0]).returncode == 0 else missing[1]
@@ -7025,6 +7190,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         gl = git_copy_lines(m, db_path)
         if gl:
             out += ["", "## The record is git, and it is behind"] + ["- " + x for x in gl]
+        out += split_lines(posts)
         out += start_lines(posts, comments, session or whoami())
         out += owner_lines() + autonomy_lines()
         out += [""] + _launch_workflow()
@@ -7045,11 +7211,17 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         if bad:
             out += ["", "## Lessons refused (fix: they reach no role)"] + bad
     elif role == "part":
+        g = _git_run("rev-parse", "--verify", "HEAD")
+        if g.returncode != 0:
+            raise PartStop("git does not work in this checkout (%s): %s %s" % (ROOT, (g.stderr or g.stdout).strip()[:300], _sandbox_hint()))
         pid = _my_post(posts, post)
         if not pid:
-            if post and os.path.isfile(os.path.join(ROOT, "docs", "prompts", post + ".md")):
-                return "\n".join(part_prompt(post, {})) + ("\n\n## The board here\nno post `%s` on it: load it (above), or `python3 -I "
-                                                          ".kit/web_takeover.py` where none runs; then this command again\n" % post)
+            if post:
+                why = ("; ".join(BOARD_ERRORS[-2:]) + ". " + _sandbox_hint()) if BOARD_ERRORS else (
+                    "the board answered but holds no post `%s`: load it (`python3 -I .kit/web_takeover.py` where no board "
+                    "runs), or ask the orchestrator which post is yours" % post)
+                raise PartStop("cannot read your post `%s`, so you would start without its branch, its saved work and its "
+                               "comments: %s" % (post, why))
             return ("No post found for this session: `kit.py resume --role part --post <your post id>` (your prompt names "
                     "it), or KIT_POST=<id>.\n")
         p = posts[pid]
@@ -7516,6 +7688,9 @@ def main(argv=None):
     s = sp.add_parser("reconcile", help="the board here vs its git copy: the newer copy of each post and comment wins")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--branch", default=None)
     s.add_argument("--db", default=None); s.add_argument("--no-push", action="store_true")
+    s = sp.add_parser("cards", help="rebuild \"Where we are\" and the trains if they differ from the posts; one line, "
+                      "with the sessions to archive (no agent)")
+    s.add_argument("--db", default=None)
     s = sp.add_parser("capacity", help="the device's session cap (.kit/device.py): --gate exits 1 when no slot is free")
     s.add_argument("--gate", action="store_true"); s.add_argument("--json", action="store_true")
     s = sp.add_parser("launch", help="start a part: its post in progress + Trains row running, then claude --bg (CLI) "
@@ -7541,6 +7716,7 @@ def main(argv=None):
     s.add_argument("--task", default=""); s.add_argument("--task-file"); s.add_argument("--parent")
     s.add_argument("--source", action="append", default=[]); s.add_argument("--model")
     s.add_argument("--no-review", action="store_true"); s.add_argument("--db", default=None)
+    s.add_argument("--keep-whole", default=None, help="why a step the split check flags must stay one part (recorded)")
     s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--board", default=None, help="an attached board's id (repos/<id>/ in the Artifact): the step goes "
                    "on its train (default: this board, or the one attached board that holds the train)")
@@ -7694,7 +7870,7 @@ def main(argv=None):
                 with open(a.task_file, encoding="utf-8") as fh:
                     task = fh.read()
             res = step_new(a.train, a.part, a.title or a.part, task=task, parent=a.parent, sources=a.source,
-                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board)
+                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board, keep_whole=a.keep_whole)
         elif a.action == "open":
             res = {"steps": step_open(a.db)}
         elif a.action == "find":
@@ -7840,7 +8016,12 @@ def main(argv=None):
         sess = a.session or (os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
                              if os.environ.get("KIT_ROLE") == "orchestrator" else None)
         if a.role:
-            print(resume_role(m, a.role, post=a.post, db_path=a.db, cli=a.cli, session=sess), end="")
+            try:
+                print(resume_role(m, a.role, post=a.post, db_path=a.db, cli=a.cli, session=sess), end="")
+            except PartStop as e:
+                print("STOP: do not start the work. %s" % e)
+                print("STOP: %s" % e, file=sys.stderr)
+                return 4
         else:
             print(resume(m, db_path=a.db, cli=a.cli, session=sess), end="")
         return 0
@@ -7873,6 +8054,10 @@ def main(argv=None):
         print(field_text("launch", "orchestrator"), file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
         return 0 if r.get("ok") else 1
+    if a.cmd == "cards":
+        rc, line = cards(db_path=a.db)
+        print(line)
+        return rc
     if a.cmd == "capacity":
         d = _device()
         if d is None:
