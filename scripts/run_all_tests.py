@@ -577,7 +577,7 @@ def main(argv=None):
         commit, why_not = run_commit(REPO_ROOT)
         if commit and not a.fresh:
             note = note_read(REPO_ROOT, commit, fetch=not a.list)
-        elif not commit:
+        elif not commit and not a.list:            # --list prints the suites and nothing else
             print("full run not saved on a commit: %s" % why_not, flush=True)
         note = dict(note, commit=commit, passed=dict(note.get("passed") or {}), failed=list(note.get("failed") or []))
     for s in suites():
@@ -608,6 +608,8 @@ def main(argv=None):
     # Every launcher a test install writes goes to a temp dir; the real ~/.local/bin is watched.
     tmp_bin = tempfile.mkdtemp(prefix="kit-test-bin-")
     env["KIT_BIN_DIR"] = tmp_bin
+    # the device's jobs the suites see: none (this run is one, and a test of the gate must not count it)
+    env["KIT_JOBS_DIR"] = tempfile.mkdtemp(prefix="kit-test-jobs-")
     real_bin = os.path.expanduser("~/.local/bin")
     before = bin_snapshot(real_bin)
     last_push = [0.0]

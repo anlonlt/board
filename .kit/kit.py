@@ -6060,7 +6060,7 @@ def adopt_text(r):
 # keeps every kit.py command in it, so it cannot go stale.
 COMMANDS = [
     # (need, command, what it does)
-    ("read the board", "kit.py resume", "every train's open steps (the task list), live sessions, open questions (age, default, what each blocks), the owner's decisions of the last 3 days, the owner's unanswered comments, attached boards; run it before answering the owner"),
+    ("read the board", "kit.py resume", "every train's open steps (the task list), live sessions, open questions (age, default, what each blocks), the owner's decisions of the last 3 days, the owner's unanswered comments, attached boards; run it before answering the owner; again in the same session it prints only what changed since the last one (`--full`: all of it)"),
     ("read the board", "kit.py guide [case]", "one case of the orchestrator's guide, when it comes up (resume lists them)"),
     ("ask him", "kit.py ask --title T --option A --option B --default A --deadline D [--needs N]", "one question post in his lane, whole; never a question in a thread"),
     ("launch and finish", "kit.py land <post>", "a reviewed step's branch onto the trunk, its check run on the two together; never forced"),
@@ -6404,6 +6404,168 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
                    "TaskUpdate in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it or "
                    "ask the owner.")
     return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------- M5: a resume prints only what changed
+# A session that already ran `resume` gets what changed since its last one (steps, sessions, questions, the owner's
+# comments, other writers), or one line; `--full` prints it whole. The first resume of a session, a hand-over (a new
+# generation in .kit/handover-<role>.gen) and a takeover (a new session id) print it whole; a compaction clears the
+# session's state (kit_session_start.py), so the summary-holder reads it whole again.
+RESUME_DELTA_ROLES = (None, "orchestrator")
+
+
+def resume_state_path(session, role=None):
+    sid = re.sub(r"[^A-Za-z0-9._-]", "_", str(session or ""))
+    return os.path.join(ROOT, ".kit", "run", "resume", "%s-%s.json" % (role or "orchestrator", sid)) if sid else ""
+
+
+def _handover_gen(role=None):
+    try:
+        with open(os.path.join(ROOT, ".kit", "handover-%s.gen" % (role or "orchestrator")), encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
+def _resume_snapshot(posts, comments, alive=None):
+    """What a delta compares: per post its state, per comment who and what, his open comments, the running sessions."""
+    ad = answer_delay()
+    ps = {}
+    for pid, p in (posts or {}).items():
+        if not isinstance(p, dict):
+            continue
+        ps[pid] = {k: str(p.get(k) or "") for k in ("title", "part", "train", "status", "column", "kind", "session_id",
+                                                     "updated_at", "done_at", "from", "_board")}
+    cs = {}
+    for cid, c in (comments or {}).items():
+        if isinstance(c, dict) and c.get("post_id"):
+            cs[cid] = {"post_id": str(c.get("post_id") or ""), "from": str(c.get("from") or ""),
+                       "his": bool(ad.is_his(c)), "like": bool(c.get("like")), "answer": str(c.get("answer") or ""),
+                       "text": (c.get("text") or "").replace("\n", " ")[:100], "board": str(c.get("_board") or "")}
+    try:
+        opn = sorted(x.split(" ", 1)[0] for x in _open_of({k: v for k, v in (comments or {}).items()
+                                                            if isinstance(v, dict)}, empty=False))
+    except Exception:  # noqa: BLE001 - a malformed comment never loses the delta
+        opn = []
+    return {"posts": ps, "comments": cs, "open": opn, "alive": sorted(alive) if alive is not None else None}
+
+
+def _resume_docs(m, db_path=None):
+    """The host's posts and comments, and each attached board's under `repo:<id>/` (so a change there shows too)."""
+    posts, comments = _load_board_docs(m, db_path=db_path)
+    posts, comments = dict(posts or {}), dict(comments or {})
+    try:
+        for b in _attached_boards()[0]:
+            for pid, p in (b.get("posts") or {}).items():
+                posts["repo:%s/%s" % (b["id"], pid)] = dict(p, _board=b["id"])
+            for cid, c in (b.get("comments") or {}).items():
+                comments["repo:%s/%s" % (b["id"], cid)] = dict(c, _board=b["id"])
+    except Exception:  # noqa: BLE001 - never lose the host's delta over an attached board
+        pass
+    return posts, comments
+
+
+def _is_q(p):
+    return p.get("kind") == "question" or p.get("column") == "question"
+
+
+def resume_delta_lines(old, new, since_hhmm, me=None):
+    """What changed between two snapshots, grouped; [] when nothing did."""
+    op, np_ = old.get("posts") or {}, new.get("posts") or {}
+    steps, qs, sess, his, others = [], [], [], [], []
+
+    def name(pid, p):
+        return "%s%s" % (("%s " % p["part"]) if p.get("part") else "", (p.get("title") or pid)[:70]) + " (`%s`)" % pid
+
+    for pid in sorted(set(op) | set(np_)):
+        a, b = op.get(pid), np_.get(pid)
+        if a == b:
+            continue
+        p = b or a
+        bucket = qs if _is_q(p) else steps if (p.get("part") or p.get("train")) and not pid.split("/")[-1].startswith("_") else others
+        if a is None:
+            bucket.append("- new: %s, %s" % (name(pid, b), b.get("status") or b.get("column") or "open"))
+            continue
+        if b is None:
+            bucket.append("- gone: %s" % name(pid, a))
+            continue
+        what = []
+        for k in ("status", "column"):
+            if a.get(k) != b.get(k):
+                what.append("%s %s -> %s" % (k, a.get(k) or "-", b.get(k) or "-"))
+        if a.get("session_id") != b.get("session_id"):
+            sess.append("- %s: session %s -> %s" % (name(pid, b), a.get("session_id") or "none", b.get("session_id") or "none"))
+        if not what and a.get("updated_at") != b.get("updated_at"):
+            what.append("updated%s" % ((" by %s" % b["from"]) if b.get("from") and b.get("from") != me else ""))
+        if what:
+            bucket.append("- %s: %s" % (name(pid, b), ", ".join(what)))
+    oa, na = old.get("alive"), new.get("alive")
+    if oa is not None and na is not None and oa != na:
+        sess += ["- now running: %s" % x for x in sorted(set(na) - set(oa))]
+        sess += ["- ended: %s" % x for x in sorted(set(oa) - set(na))]
+    oc, nc = old.get("comments") or {}, new.get("comments") or {}
+    per_post = {}
+    for cid in sorted(set(nc) - set(oc)):
+        c = nc[cid]
+        if c["his"]:
+            his.append("- %s on %s: %s" % (cid, c["post_id"], c["text"]))
+        elif c["from"] == "owner":
+            his.append("- %s on %s: %s" % (cid, c["post_id"], "a Like" if c["like"] else "answered %s" % c["answer"] if c["answer"] else c["text"]))
+        else:
+            per_post.setdefault((c["post_id"], c["from"]), []).append(cid)
+    for (pid, frm), ids in sorted(per_post.items()):
+        others.append("- %s wrote %d comment%s on %s (%s)" % (frm or "someone", len(ids), "" if len(ids) == 1 else "s", pid,
+                                                               ", ".join(ids[:3]) + (", ..." if len(ids) > 3 else "")))
+    gone_open = sorted(set(old.get("open") or []) - set(new.get("open") or []))
+    if gone_open:
+        his.append("- answered since: %s" % ", ".join(gone_open))
+    still = sorted(set(new.get("open") or []) & set(old.get("open") or []))
+    out = []
+    for head, rows in (("Steps", steps), ("Sessions", sess), ("Questions", qs), ("The owner's comments", his),
+                       ("Other writers", others)):
+        if rows:
+            out += ["", "## %s" % head] + rows
+    if out and still:
+        out += ["", "Still unanswered of his (from before): %s" % ", ".join(still)]
+    return out
+
+
+def resume_delta(m, role=None, session=None, db_path=None, cli=None, full=False, now=None, alive=None):
+    """-> the text to print instead of the whole resume, or None (print it whole). Saves this read's snapshot either
+    way, so the next resume of this session prints only what changed since this one."""
+    if role not in RESUME_DELTA_ROLES:
+        return None
+    path = resume_state_path(session, role)
+    if not path:
+        return None                                     # no session id: every resume is whole
+    now = now or datetime.now(timezone.utc)
+    posts, comments = _resume_docs(m, db_path=db_path)
+    if alive is None:
+        alive = None if _active_cli(cli) == "agy" else _alive_sessions()
+    snap = _resume_snapshot(posts, comments, alive)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            old = json.load(fh)
+    except (OSError, ValueError):
+        old = None
+    gen = _handover_gen(role)
+    state = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "gen": gen, "db": db_path or "", "snap": snap}
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump(state, fh, ensure_ascii=False)
+        os.replace(path + ".tmp", path)
+    except OSError:
+        return None
+    if full or not isinstance(old, dict) or old.get("gen", "") != gen or old.get("db", "") != (db_path or ""):
+        return None                                     # the first of this session, a hand-over, or asked whole
+    hhmm = str(old.get("at") or "")[11:16] or "?"
+    rows = resume_delta_lines(old.get("snap") or {}, snap, hhmm, me=role or "orchestrator")
+    if not rows:
+        return "Resume: nothing new since %s UTC (the whole: `kit.py resume%s --full`).\n" % (
+            hhmm, " --role %s" % role if role else "")
+    return "\n".join(["# Resume: what changed since %s UTC (the whole: `kit.py resume%s --full`)" % (
+        hhmm, " --role %s" % role if role else "")] + rows) + "\n"
 
 
 # ---------------------------------------------------------------- CL32: resume per role, the lessons, real-project tests
@@ -7667,7 +7829,8 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "- At each check (your timer, a hand-over, a wake): a running part whose post has not changed for 30 min: "
                 "message it \"Save point: commit and push your work now, write in your post where you stopped.\" A part "
                 "not running and not complete: post status stalled, continue it from its branch.",
-                "- Before you answer the owner: this resume, under 15 minutes old (the brief guard refuses otherwise)."]
+                "- Before you answer the owner: this resume, under 15 minutes old (the brief guard refuses otherwise); run again "
+                "in this session, it prints only what changed since your last one, and that counts as fresh (`--full`: all of it)."]
         out += ["", "## Lessons for the orchestrator"] + _lesson_lines(lessons_for("orchestrator"))
         ml = memory_line()
         if ml:
@@ -8145,6 +8308,7 @@ def main(argv=None):
     s.add_argument("--session", default=None, help="your session id: resume flags an _orchestrator post naming another")
     s.add_argument("--role", choices=list(ROLES), default=None, help="what that role needs, nothing else (CL32)")
     s.add_argument("--post", default=None, help="--role part|review: the step's post (default: this branch's)")
+    s.add_argument("--full", action="store_true", help="the whole resume, not only what changed since this session's last one (M5)")
     s = sp.add_parser("lessons", help="the lessons a role needs (--role), or `check`: refuse untagged lessons and "
                       "lessons only a project doc holds")
     s.add_argument("action", nargs="?", choices=["list", "check", "replace", "keep", "review"], default="list")
@@ -8503,6 +8667,11 @@ def main(argv=None):
         # the _orchestrator check is the orchestrator's (a part's own session is never named there)
         sess = a.session or (os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
                              if os.environ.get("KIT_ROLE") == "orchestrator" else None)
+        dsess = sess or a.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
+        delta = resume_delta(m, role=a.role, session=dsess, db_path=a.db, cli=a.cli, full=a.full)
+        if delta is not None:
+            print(delta, end="")
+            return 0
         if a.role:
             try:
                 print(resume_role(m, a.role, post=a.post, db_path=a.db, cli=a.cli, session=sess), end="")
