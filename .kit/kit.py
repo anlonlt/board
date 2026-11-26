@@ -4218,6 +4218,59 @@ def _all_posts(db_path=None):
     return posts
 
 
+def _kit_cards_mod():
+    """kit_cards (.kit/kit_cards.py, kit/board/kit_cards.py in the kit's own repo); None if missing."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path in (os.path.join(here, "kit_cards.py"), os.path.join(here, "..", "kit", "board", "kit_cards.py")):
+        if os.path.isfile(path):
+            spec = importlib.util.spec_from_file_location("kit_cards_cmd", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mod.ROOT = ROOT
+            return mod
+    return None
+
+
+def cards(db_path=None, url=None, token=None, now=None):
+    """`kit.py cards`: "Where we are" (_dashboard) and its trains (_trains) as the posts say now, and the sessions to
+    archive, in one line. A script, not an agent: the local board server already rebuilds both cards at each write, so
+    this writes only a card that differs (a board the server did not build, a copy); the list of posts never reaches
+    the caller's context. (Was the kit-cards subagent on agy and the CLI: a model run at each launch and Done.)"""
+    kc = _kit_cards_mod()
+    if kc is None:
+        return 2, "cards: FAILED no kit_cards.py here: reinstall the kit"
+    now = now or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    posts = _all_posts(db_path)
+    real = {k: v for k, v in posts.items() if isinstance(v, dict) and not k.startswith("_")}
+    dash = kc.build(now, board=dict(real))
+    trains = kc.build_trains(dict(real), dash["rows"], now)
+    for r in dash["rows"]:                       # same rule as kit_cards.main: a row whose train runs, runs
+        if r["state"] in ("ready", "idle") and any(x["state"] == "running" for x in trains["rows"] if x["parent"] == r["train"]):
+            r["state"] = "running"
+    wrote = []
+    for did, doc in (("_dashboard", dash), ("_trains", trains)):
+        if (posts.get(did) or {}).get("rows") == doc.get("rows"):
+            continue
+        try:
+            _board_request(_resolve_board_url(url or _kit_config().get("board_url")), "db/posts/" + did, {"data": doc},
+                           token=token or _resolve_board_token(None), method="PUT")
+            wrote.append(did)
+        except Exception as e:  # noqa: BLE001
+            return 1, "cards: FAILED writing %s: %s" % (did, e)
+    try:
+        done = set(open(os.path.join(ROOT, ".kit", "archived.txt"), encoding="utf-8").read().split())
+    except OSError:
+        done = set()
+    todo = []
+    for p in real.values():                      # any platform's session id (agy's are not session_*)
+        sid = str(p.get("session_id") or "")
+        if p.get("column") == "done" and sid and not sid.startswith("pending") and sid not in done and sid not in todo:
+            todo.append(sid)
+    return 0, "cards: %d rows, trains %d (%s); to archive: %s" % (
+        len(dash["rows"]), len(trains["rows"]), ("rewrote " + ", ".join(wrote)) if wrote else "already current",
+        " ".join(todo) if todo else "none")
+
+
 def _device():
     """.kit/device.py (scripts/device.py in the kit's own repo): the device's session cap (CL15); None if missing."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "device.py")
@@ -7220,6 +7273,9 @@ def main(argv=None):
     s = sp.add_parser("reconcile", help="the board here vs its git copy: the newer copy of each post and comment wins")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--branch", default=None)
     s.add_argument("--db", default=None); s.add_argument("--no-push", action="store_true")
+    s = sp.add_parser("cards", help="rebuild \"Where we are\" and the trains if they differ from the posts; one line, "
+                      "with the sessions to archive (no agent)")
+    s.add_argument("--db", default=None)
     s = sp.add_parser("capacity", help="the device's session cap (.kit/device.py): --gate exits 1 when no slot is free")
     s.add_argument("--gate", action="store_true"); s.add_argument("--json", action="store_true")
     s = sp.add_parser("launch", help="start a part: its post in progress + Trains row running, then claude --bg (CLI) "
@@ -7572,6 +7628,10 @@ def main(argv=None):
         print(field_text("launch", "orchestrator"), file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
         return 0 if r.get("ok") else 1
+    if a.cmd == "cards":
+        rc, line = cards(db_path=a.db)
+        print(line)
+        return rc
     if a.cmd == "capacity":
         d = _device()
         if d is None:
