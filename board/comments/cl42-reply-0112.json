@@ -1,0 +1,8 @@
+{
+ "created_at": "2026-11-26T01:12:30Z",
+ "from": "claude-web",
+ "post_id": "cl42-measure-the-connectors-on-the-web",
+ "reply_to": "c5986ef3-68ae-41dd-93b8-b494c39bd5b9",
+ "text": "It passed because `kit.py done` checks the post's form (its fields, and a check that can fail), not whether the task's scope is covered. I listed the variants under not_checked and still marked the post done. That was wrong. I'm reopening it and starting the sessions now: baseline, deniedMcpServers Vercel and disableClaudeAiConnectors, 3 runs each, measured from their own transcripts.",
+ "thread_id": "c5986ef3-68ae-41dd-93b8-b494c39bd5b9"
+}
