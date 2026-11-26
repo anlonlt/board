@@ -1300,14 +1300,12 @@ def stale_copy():
     explicitly forced."""
     if not attached_board() or os.environ.get("KIT_STALE_OK"):
         return ""
-    c = _kit_config()
-    k = c.get("kit") or {}
-    if not _is_web() and not os.environ.get("KIT_ARTIFACT_URL"):
-        mode = str(k.get("mode") or "").strip().lower()
-        rt = str(k.get("runtime") or "").strip().lower()
-        burl = str(c.get("board_url") or "")
-        if mode == "local" and rt != "claude" and "claude.ai/" not in burl:
-            return ""
+    k = _kit_config().get("kit") or {}
+    # CL44: in local mode (local agy or local CLI) with a local board server, kit.artifact.url may be set for web
+    # sessions or cross-sync; do not block local sessions with the Claude-Web Artifact pull/load STALE gate unless
+    # running in Claude Code Web (_is_web()) or KIT_ARTIFACT_URL is explicitly forced in the environment.
+    if str(k.get("mode") or "").strip().lower() == "local" and not _is_web() and not os.environ.get("KIT_ARTIFACT_URL"):
+        return ""
     try:
         cap = float(((k.get("artifact") if isinstance(k.get("artifact"), dict) else {}) or {}).get("fresh_min", 15))
     except (TypeError, ValueError):
@@ -2445,6 +2443,17 @@ def doctor(m, db_path=None, fix=False, root=None):
     return "\n".join(lines), (1 if issues else 0)
 
 
+_CLOSED_CARD_STATUSES = {"complete", "completed", "done", "dropped", "shipped", "merged", "closed", "abandoned", "superseded"}
+
+
+def _is_card_done(doc):
+    if not isinstance(doc, dict):
+        return False
+    if str(doc.get("column") or "").strip().lower() == "done":
+        return True
+    return str(doc.get("status") or "").strip().lower() in _CLOSED_CARD_STATUSES
+
+
 def _is_card_blocked(doc, posts):
     """Return True if doc declares blocked_by items that are not yet done in posts."""
     raw = doc.get("blocked_by")
@@ -2460,7 +2469,7 @@ def _is_card_blocked(doc, posts):
             # Also match by part id (case-insensitive)
             sl = s.lower()
             ref = next((p for p in posts.values() if str(p.get("part") or "").strip().lower() == sl), None)
-        if ref is None or ref.get("column") != "done":
+        if ref is None or not _is_card_done(ref):
             return True
     return False
 
@@ -2471,48 +2480,36 @@ def post_person(d):
 
 
 def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=False):
-    """List open cards (including runner-assigned planned/in-progress train steps) attributed to a runner or person/role."""
+    """List open cards and planned/in-progress train steps attributed to a runner or person/role from SQLite, live server, or mirror."""
     rf = (runner or "").strip().lower()
     ff = (for_owner or "").strip().lower()
     posts = {}
-    if db_path is None:
-        # Try local board.db first (if non-empty), else live local board server (works from git worktrees), else mirror.
-        local_db = os.path.join(ROOT, ".kit", "board_data", "board.db")
-        if os.path.isfile(local_db):
-            posts, _ = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=local_db)
-        if not posts:
-            try:
-                res = _board_request(local_board_url(), "db/posts", token=_resolve_board_token(None))
-                for row in res.get("docs") or []:
-                    did = row.get("id")
-                    data = row.get("data")
-                    if did and isinstance(data, dict):
-                        posts[did] = data
-            except Exception:
-                posts = {}
-        if not posts:
-            posts, _ = _load_board_docs(m, db_path=None)
+    db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    has_local_db = os.path.isfile(db)
+    has_mirror_dir = bool(m) and os.path.isdir(os.path.join(m, "board", "posts"))
+    # In a worktree with no local board.db and no checked-out mirror dir, prefer the live board server when reachable,
+    # then fall back to _load_board_docs (which reads local SQLite -> mirror worktree -> git board-mirror).
+    if db_path is None and not has_local_db and not has_mirror_dir and os.path.isfile(os.path.join(ROOT, ".kit", "config.json")):
+        try:
+            r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
+            posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or [] if not str(d.get("id") or "").startswith("_")}
+        except Exception:
+            posts = {}
+    if not posts:
+        loaded_posts, _ = _load_board_docs(m, db_path=db_path)
+        posts = {did: doc for did, doc in loaded_posts.items() if not str(did).startswith("_")}
+        trains_doc = loaded_posts.get("_trains")
     else:
-        posts, _ = _load_board_docs(m, db_path=db_path)
-
-    # Inherit runner from _trains rows if a step post omits it, and track active train step states.
+        trains_doc = None
+    # Inherit runner from _trains rows if a step post omits it
     train_runners = {}
-    trains_doc = posts.get("_trains")
     if isinstance(trains_doc, dict):
         for trow in trains_doc.get("rows") or []:
-            if not isinstance(trow, dict):
-                continue
-            tpid = str(trow.get("post") or "").strip()
-            trun = str(trow.get("runner") or "").strip()
-            if tpid and trun:
-                train_runners[tpid] = trun
-
-    done_statuses = {"complete", "completed", "done", "dropped"}
+            if isinstance(trow, dict) and trow.get("post") and trow.get("runner"):
+                train_runners[str(trow["post"]).strip()] = str(trow["runner"]).strip()
     rows = []
     for pid, d in posts.items():
-        if pid.startswith("_") or not isinstance(d, dict):
-            continue
-        if d.get("removed") or d.get("column") == "done":
+        if d.get("removed") or _is_card_done(d):
             continue
         st = str(d.get("status") or "").strip().lower()
         if st in done_statuses:
@@ -2528,25 +2525,29 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
         if not rf and not ff and not pr and not pf:
             continue
         prio = int(d.get("priority") or 3)
-        rows.append((prio, pid, pr, pf, d.get("column") or "todo", st, str(d.get("train") or "").strip(),
-                     str(d.get("part") or "").strip(), str(d.get("title") or "(untitled)"), str(d.get("body") or "")))
+        col = str(d.get("column") or "todo")
+        st = str(d.get("status") or "").strip()
+        train = str(d.get("train") or "").strip()
+        part = str(d.get("part") or "").strip()
+        rows.append((prio, pid, pr, pf, col, st, train, part, str(d.get("title") or "(untitled)"), str(d.get("body") or "")))
     rows.sort(key=lambda x: (x[0], x[1]))
     if not rows:
         who = ("runner=%s" % runner if runner else "") + (" for=%s" % for_owner if for_owner else "")
         return "queue%s: 0 open cards" % ((" (" + who.strip() + ")") if who.strip() else "")
     out = []
-    for prio, pid, pr, pf, col, st, tr, part, title, body in rows:
+    for prio, pid, pr, pf, col, st, train, part, title, body in rows:
         tags = []
         if pr:
             tags.append("@" + pr)
         if pf:
             tags.append("for:" + pf)
-        if tr:
-            tags.append("train:" + tr + ("/" + part if part else ""))
-        if st in ("planned", "in progress", "in_progress"):
-            tags.append(st)
+        if train:
+            tags.append("train:" + train + ("/" + part if part else ""))
+        elif part:
+            tags.append(part)
+        col_label = "%s/%s" % (col, st) if (train and st) else col
         first = body.strip().splitlines()[0][:100] if body.strip() else ""
-        out.append("P%d [%s] %s (%s) — %s%s" % (prio, col, pid, " ".join(tags) or "unassigned", title, (" | " + first) if first else ""))
+        out.append("P%d [%s] %s (%s) — %s%s" % (prio, col_label, pid, " ".join(tags) or "unassigned", title, (" | " + first) if first else ""))
     return "\n".join(out) + "\n(%d card%s)" % (len(rows), "" if len(rows) == 1 else "s")
 
 
@@ -3283,7 +3284,8 @@ def portfolio_summary(config_path=None, roots=None):
 
 
 def _load_board_docs(m, db_path=None):
-    """Load posts and comments dicts from local SQLite DB, falling back to mirror worktree (or git mirror) if missing or empty."""
+    """Load posts and comments dicts from local SQLite DB, falling back to mirror worktree (or local git board-mirror)
+    when board.db is missing or has 0 docs."""
     posts, comments = {}, {}
     db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
     if os.path.isfile(db):
@@ -3318,19 +3320,35 @@ def _load_board_docs(m, db_path=None):
                 pass
     if posts or comments:
         return posts, comments
-    # Last fallback when neither board.db nor a checked-out mirror worktree has docs (e.g. a fresh git worktree):
-    # read the newest of local board-mirror and origin/board-mirror from git objects without touching the working tree.
-    if not db_path and not str(m or "").endswith("board-mirror-missing"):
-        for ref in ("refs/heads/" + BRANCH, "refs/remotes/origin/" + BRANCH):
-            if git(ROOT, "rev-parse", "--verify", "--quiet", ref).returncode == 0:
-                gdocs = _git_board_docs(ROOT, ref)
-                for (kind, key), (doc, _) in gdocs.items():
-                    if kind == "posts":
-                        posts[key] = doc
-                    elif kind == "comments":
-                        comments[key] = doc
-                if posts or comments:
-                    return posts, comments
+    # CL44: if local SQLite has 0 docs and no mirror worktree is checked out on disk, read local git board-mirror
+    # objects (offline, no network fetch) unless caller passed an explicit --db or suppressed mirror fallback.
+    if db_path is None and os.path.basename(str(m or "")) != "board-mirror-missing":
+        branch = str((CONFIG.get("mirror") or {}).get("branch") or BRANCH or "board-mirror")
+        try:
+            ref = next((r for r in (branch, "origin/" + branch)
+                        if subprocess.run(["git", "-C", ROOT, "rev-parse", "--verify", "--quiet", r],
+                                          capture_output=True, timeout=5).returncode == 0), None)
+            if ref:
+                arc = subprocess.run(["git", "-C", ROOT, "archive", "--format=tar", ref, "board"],
+                                     capture_output=True, timeout=15)
+                if arc.returncode == 0 and arc.stdout:
+                    import io
+                    import tarfile
+                    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
+                        for mem in tf.getmembers():
+                            parts = tar_name(mem.name).split("/")
+                            if not mem.isfile() or len(parts) != 3 or parts[0] != "board" or parts[1] not in ("posts", "comments") or not parts[2].endswith(".json"):
+                                continue
+                            try:
+                                data = json.loads(tf.extractfile(mem).read().decode("utf-8"))
+                            except (ValueError, UnicodeDecodeError, AttributeError):
+                                continue
+                            if isinstance(data, dict) and isinstance(data.get("data"), dict) and set(data) <= {"id", "data", "version", "updated_at"}:
+                                data = data["data"]
+                            if isinstance(data, dict):
+                                (posts if parts[1] == "posts" else comments)[parts[2][:-5]] = data
+        except (OSError, subprocess.SubprocessError):
+            pass
     return posts, comments
 
 
@@ -4303,9 +4321,8 @@ def _board_write(cmd, coll, doc_id, data, env=None):
 
 def _all_posts(db_path=None):
     posts, _ = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=db_path)
-    if not posts and not db_path and os.path.isfile(os.path.join(ROOT, ".kit", "config.json")) and \
-            not os.path.isfile(os.path.join(ROOT, ".kit", "board_data", "board.db")):
-        try:                                      # a part's worktree has no database: the board server holds it
+    if not posts and not db_path and os.path.isfile(os.path.join(ROOT, ".kit", "config.json")):
+        try:                                      # a part's worktree (or empty local DB): the board server holds it
             r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
             posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or []}
         except Exception:
@@ -5284,6 +5301,91 @@ def _alive_sessions():
     return alive
 
 
+def _step_work_locations(pid, p):
+    """CL44 (item 11): find where a step's work actually lives: matching local/remote branches, last checkpoint commit,
+    and any worktree (including agy subagent worktrees) holding uncommitted changes for this step."""
+    trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+    part_slug = _slug(str(p.get("part") or ""), 24)
+    named_br = str(p.get("branch") or "").strip()
+    pat = re.compile(r"(^|[-/_])%s($|[-/_])" % re.escape(part_slug), re.I) if len(part_slug) >= 2 else None
+
+    def _matches(br):
+        b = str(br or "").strip()
+        if not b or b in (trunk, "main", "master", "HEAD", "board-mirror", "kit-usage") or b.startswith("wip/"):
+            return False
+        if named_br and b == named_br:
+            return True
+        if pid and pid.lower() in b.lower():
+            return True
+        return bool(pat and pat.search(b))
+
+    branches = []
+    seen_br = set()
+    try:
+        r = _git_run("for-each-ref", "--sort=-committerdate", "--format=%(refname:short)\t%(objectname:short)\t%(committerdate:iso-strict)\t%(subject)",
+                     "refs/heads", "refs/remotes/origin", timeout=15)
+        for line in (r.stdout or "").splitlines():
+            parts = line.split("\t", 3)
+            if len(parts) < 4:
+                continue
+            ref, sha, when, subj = parts
+            short_br = ref[len("origin/"):] if ref.startswith("origin/") else ref
+            if not _matches(short_br) or short_br in seen_br:
+                continue
+            seen_br.add(short_br)
+            # Only report last checkpoint if the branch has at least one commit beyond trunk (or is the named branch)
+            has_own = _git_run("rev-list", "--count", "%s..%s" % (trunk, ref), timeout=10).stdout.strip() not in ("", "0")
+            if has_own or (named_br and short_br == named_br):
+                branches.append({"ref": ref, "branch": short_br, "sha": sha, "when": when[:16].replace("T", " "),
+                                 "subject": subj[:80], "has_own": has_own})
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    worktrees = []
+    try:
+        r = _git_run("worktree", "list", "--porcelain", timeout=15)
+        cur_wt, cur_br = None, ""
+        entries = []
+        for line in (r.stdout or "").splitlines() + [""]:
+            if line.startswith("worktree "):
+                cur_wt, cur_br = line[9:].strip(), ""
+            elif line.startswith("branch refs/heads/"):
+                cur_br = line[len("branch refs/heads/"):].strip()
+            elif not line.strip() and cur_wt:
+                entries.append((cur_wt, cur_br))
+                cur_wt, cur_br = None, ""
+        for wt, br in entries:
+            if not (_matches(br) or (part_slug and pat and pat.search(os.path.basename(wt)))):
+                continue
+            if not os.path.isdir(wt):
+                continue
+            st = _git_run("status", "--porcelain", "--untracked-files=all", cwd=wt, timeout=15).stdout
+            dirty = [ln[3:].strip() for ln in st.splitlines() if ln.strip()]
+            if dirty:
+                worktrees.append({"path": wt, "branch": br, "dirty": dirty})
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return {"branches": branches, "worktrees": worktrees}
+
+
+def _step_location_lines(pid, p, skip_wt=None):
+    """Formatted lines naming a step's branch, last checkpoint commit, and dirty worktrees."""
+    loc = _step_work_locations(pid, p)
+    out = []
+    for b in loc["branches"][:3]:
+        ck = (" · last checkpoint `%s` (%s): %s" % (b["sha"], b["when"], b["subject"])) if b["has_own"] else " · no commits ahead of trunk yet"
+        out.append("  branch `%s`%s" % (b["ref"], ck))
+    abs_skip = os.path.abspath(skip_wt) if skip_wt else None
+    for w in loc["worktrees"]:
+        if abs_skip and os.path.abspath(w["path"]) == abs_skip:
+            continue
+        rel = os.path.relpath(w["path"], ROOT)
+        shown_path = rel if not rel.startswith("..") else w["path"]
+        out.append("  worktree `%s` (branch `%s`): %d uncommitted file(s): %s" % (
+            shown_path, w["branch"] or "?", len(w["dirty"]), ", ".join(w["dirty"][:6]) + (" ..." if len(w["dirty"]) > 6 else "")))
+    return out
+
+
 def _launch_traces(pid, p):
     """What a launched part leaves behind (CL13): its branch, its worktree (and what is uncommitted there), its
     transcript. None when it left nothing (never launched)."""
@@ -5303,6 +5405,10 @@ def _launch_traces(pid, p):
     sess = str(p.get("session_id") or "")
     if sess and not sess.startswith("pending"):
         hits = glob.glob(os.path.join(os.path.expanduser("~"), ".claude", "projects", "*", sess + ".jsonl"))
+        agy_hit = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity-cli", "brain", sess,
+                               ".system_generated", "logs", "transcript.jsonl")
+        if os.path.isfile(agy_hit):
+            hits.append(agy_hit)
         if hits:
             found.append("transcript")
     if not found:
@@ -5370,6 +5476,8 @@ def _train_lines(posts, alive, h="##", board=None):
                                                   (" · " + st) if st and st != "planned" else "", who, quiet))
             if board is not None:
                 out.extend(_attached_step_detail(board, pid, p, "running" not in who or "not running" in who))
+            elif st in ("planned", "in progress") or "progress" in st:
+                out.extend(_step_location_lines(pid, p))
         got = found_so_far(posts, t)
         if got:
             out.append("%s# Found so far (do not repeat it; a new step near one says what it does differently)" % h)
@@ -6690,7 +6798,94 @@ def subtask(pid, title, status="open", was="", db_path=None, why="", known=False
             rows.append({"n": max([x["n"] for x in rows] + [0]) + 1, "title": t, "status": status})
     if rows != _as_list(p.get("subtasks")) and not _board_write("update", "posts", pid, {"subtasks": rows}):
         return {"error": "the board did not take it (is the board server running?)"}
-    return {"post": pid, "done": sum(x["status"] == "done" for x in rows), "of": len([x for x in rows if x["status"] != "dropped"])}
+    res = {"post": pid, "done": sum(x["status"] == "done" for x in rows), "of": len([x for x in rows if x["status"] != "dropped"])}
+    # CL44 (item 10): auto-checkpoint on the step's own branch when a piece is finished so progress is committed in git.
+    if (status == "done" and db_path is None and os.environ.get("KIT_AUTO_CHECKPOINT") != "0"
+            and (_kit_config().get("kit") or {}).get("auto_checkpoint", True) is not False):
+        cur_br = _git_run("branch", "--show-current").stdout.strip()
+        named_br = str(p.get("branch") or "").strip()
+        part_slug = _slug(str(p.get("part") or ""), 24)
+        on_mine = bool(cur_br) and (
+            (named_br and cur_br == named_br)
+            or (len(part_slug) >= 2 and re.search(r"(^|[-/_])%s($|[-/_])" % re.escape(part_slug), cur_br, re.I))
+        )
+        if on_mine:
+            ck = checkpoint(post=pid, message="piece %s done" % ", ".join(names), quiet=True, on_step_branch=True)
+            if ck.get("committed"):
+                res["checkpoint"] = ck["sha"]
+    return res
+
+
+_CK_SECRETS = (".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "keystore.properties",
+               "id_rsa*", "id_ed25519*", "*credentials*.json", "*secret*", ".netrc", ".npmrc", ".pypirc")
+_CK_MAX_FILE = 2 * 1024 * 1024
+
+
+def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=False):
+    """CL44 (item 10 / CL17): commit in-progress work on the step's branch (never on the trunk or detached HEAD)
+    so a session limit or crash never leaves work only uncommitted in a worktree."""
+    cfg = _kit_config()
+    k = cfg.get("kit") or {}
+    trunk = str(k.get("main_branch") or "main")
+    br = _git_run("branch", "--show-current").stdout.strip()
+    if not br:
+        return {"ok": False, "committed": False, "why": "detached HEAD: switch to your step branch first"}
+    if br in (trunk, "main", "master", "board-mirror", "kit-usage") or br.startswith("wip/"):
+        if on_step_branch:
+            return {"ok": True, "committed": False, "why": "skipped on trunk/system branch %s" % br}
+        return {"ok": False, "committed": False, "why": "refusing to checkpoint on branch %s (use a step branch)" % br}
+    st = _git_run("status", "--porcelain", "--untracked-files=all")
+    if st.returncode != 0 or not st.stdout.strip():
+        return {"ok": True, "committed": False, "branch": br, "why": "working tree clean"}
+    never = tuple((k.get("guard") or {}).get("never_add") or ()) + _CK_SECRETS
+    # Stage tracked modifications and safe untracked files (skip secrets, oversized files, .kit/run/, .kit/board_data/)
+    tracked = _git_run("diff", "--name-only").stdout.splitlines() + _git_run("diff", "--cached", "--name-only").stdout.splitlines()
+    untracked = _git_run("ls-files", "--others", "--exclude-standard", "-z").stdout.split("\0")
+    to_add = []
+    for f in sorted(set(x for x in tracked + untracked if x)):
+        low = f.lower().replace("\\", "/")
+        if low.startswith(".kit/run/") or low.startswith(".kit/board_data/"):
+            continue
+        if any(fnmatch.fnmatch(low, p.lower()) or fnmatch.fnmatch(os.path.basename(low), p.lower()) for p in never):
+            continue
+        fp = os.path.join(ROOT, f)
+        if os.path.isfile(fp):
+            try:
+                if os.path.getsize(fp) > _CK_MAX_FILE:
+                    continue
+            except OSError:
+                continue
+        to_add.append(f)
+    if not to_add:
+        return {"ok": True, "committed": False, "branch": br, "why": "nothing safe to stage"}
+    add_r = _git_run("add", "--", *to_add)
+    if add_r.returncode != 0:
+        return {"ok": False, "committed": False, "branch": br, "why": add_r.stderr.strip() or "git add failed"}
+    if not _git_run("diff", "--cached", "--name-only").stdout.strip():
+        return {"ok": True, "committed": False, "branch": br, "why": "nothing staged"}
+    label = str(post or os.environ.get("KIT_POST") or br)
+    msg = "checkpoint(%s): %s" % (label, str(message or "save progress").strip()[:120])
+    c_args = []
+    if not _git_run("config", "user.name").stdout.strip():
+        c_args += ["-c", "user.name=board kit"]
+    if not _git_run("config", "user.email").stdout.strip():
+        c_args += ["-c", "user.email=kit@localhost"]
+    cr = _git_run(*c_args, "commit", "-q", "-m", msg)
+    if cr.returncode != 0:
+        return {"ok": False, "committed": False, "branch": br, "why": (cr.stderr or cr.stdout).strip() or "git commit failed"}
+    sha = _git_run("rev-parse", "--short", "HEAD").stdout.strip()
+    try:
+        stamp = os.path.join(ROOT, ".kit", "run", "checkpoint-last")
+        os.makedirs(os.path.dirname(stamp), exist_ok=True)
+        open(stamp, "a").close()
+        os.utime(stamp, None)
+    except OSError:
+        pass
+    pushed = False
+    if push or k.get("checkpoint_push"):
+        pr = _git_run("push", "-q", "-u", "origin", "HEAD", timeout=120)
+        pushed = pr.returncode == 0
+    return {"ok": True, "committed": True, "branch": br, "sha": sha, "message": msg, "pushed": pushed}
 
 
 def pieces_file(pid, p):
@@ -6723,8 +6918,46 @@ def subtask_lines(p, taking_over=False):
     return out
 
 
-def continues_lines(p, session=None):
-    """A part that continues a step another session started (a context limit, a crash): what is already there."""
+def take_step_branch(p):
+    """A part starts on the newest work of its step (CL44 item 13), whatever started it (agy, claude --bg -w, the web):
+    when the post names a branch whose commits this checkout lacks, bring them in now (fast-forward, else a merge);
+    when that cannot be done safely (uncommitted changes, a conflict), the first lines say so and what to run."""
+    br = str(p.get("branch") or "")
+    if not br:
+        return []
+    have = lambda x: _git_run("rev-parse", "--verify", "--quiet", x).returncode == 0  # noqa: E731
+    if have("origin/" + br):
+        _git_run("fetch", "-q", "origin", br, timeout=60)
+    refs = [x for x in ("origin/" + br, br) if have(x)]
+    missing = [x for x in refs if _git_run("merge-base", "--is-ancestor", x, "HEAD").returncode != 0]
+    if not missing:
+        return []
+    ref = missing[0] if len(missing) == 1 or _git_run("merge-base", "--is-ancestor", missing[1], missing[0]).returncode == 0 else missing[1]
+    head = _git_run("rev-parse", "--short", "HEAD").stdout.strip()
+    stop = lambda why: ["## FIRST: this checkout lacks your step's work on `%s` (%s)" % (ref, why),  # noqa: E731
+                        "- run `git merge --no-edit %s` (commit or stash your changes first) before anything else; "
+                        "never redo what it holds" % ref, ""]
+    cur = _git_run("branch", "--show-current").stdout.strip()
+    mine = cur == br or (_slug(str(p.get("part") or ""), 24) or "\0") in cur.lower()
+    if not mine:
+        return stop("this checkout is on `%s`, not the part's own branch, so nothing was changed here" % (cur or "a detached HEAD"))
+    if _git_run("status", "--porcelain", "--untracked-files=no").stdout.strip():
+        return stop("uncommitted changes here, so it was not merged for you")
+    r = _git_run("merge", "--ff-only", "-q", ref, timeout=60)
+    how = "fast-forward"
+    if r.returncode != 0:
+        r = _git_run("merge", "--no-edit", "-q", ref, timeout=60)
+        how = "merge"
+        if r.returncode != 0:
+            _git_run("merge", "--abort")
+            return stop("a merge conflict, so nothing was changed")
+    return ["## Your step's work is here: `%s` brought into this checkout (%s, %s -> %s)" % (
+        ref, how, head, _git_run("rev-parse", "--short", "HEAD").stdout.strip()), ""]
+
+
+def continues_lines(p, session=None, pid=None):
+    """A part that continues a step another session started (a context limit, a crash): what is already there,
+    including its branch, last checkpoint commit, and any worktree with uncommitted changes (CL44 item 11)."""
     prev = str(p.get("session_id") or "")
     if not prev or (session and prev == session) or prev.startswith("pending"):
         return []
@@ -6740,6 +6973,10 @@ def continues_lines(p, session=None):
             "- its branch `%s` holds no commit of its own yet" % br]
     elif "progress" not in str(p.get("status") or ""):
         return []
+    for line in _step_location_lines(pid or str(p.get("id") or ""), p, skip_wt=ROOT):
+        s = line.strip()
+        if not (ref and s.startswith("branch `%s`" % br)):
+            out.append("- " + s)
     if br:
         rc, w = _landing("wip", br)
         out += [x for x in w.splitlines() if x.startswith("- ")] if rc == 0 else []
@@ -6820,8 +7057,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                     "it), or KIT_POST=<id>.\n")
         p = posts[pid]
         rel = "docs/prompts/%s.md" % pid
+        took = take_step_branch(p)
         files = sorted(set(_changed_files()) | {str(a).split(" §")[0].strip("` ") for a in _as_list(p.get("artifacts"))})
-        out += ["# Resume: part %s (post `%s`)" % (p.get("part") or pid, pid),
+        out += took + ["# Resume: part %s (post `%s`)" % (p.get("part") or pid, pid),
                 "%s · train `%s` · status %s%s" % (p.get("title") or pid, p.get("train") or "?", p.get("status") or "?",
                                                     (" · board %s" % p["_board"]) if p.get("_board") else ""),
                 ""] + part_prompt(pid, p) + ["", "## Your post now"]
@@ -6832,7 +7070,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
             out.append("- (nothing yet)")
         out.append("- your Done goes to the orchestrator, `%s`" % ((posts.get("_orchestrator") or {}).get("session_id") or "named by no post yet"))
         out += held_lines(pid, p, session or whoami())
-        out += continues_lines(p, session or whoami())
+        out += continues_lines(p, session or whoami(), pid=pid)
         out += subtask_lines(dict(p, id=post))
         out += owner_lines() + autonomy_lines()
         out += ["", "## Lessons that touch your files (%d files changed)" % len(files)] + _lesson_lines(lessons_for("part", files))
@@ -7252,6 +7490,10 @@ def main(argv=None):
     s = sp.add_parser("landing", help="JSON: which steps may reach the trunk"); s.add_argument("--post", default=None)
     s.add_argument("--branch", default=None); s.add_argument("--mark", default=None, help="landed at this commit"); s.add_argument("--db", default=None)
     sp.add_parser("save", help="the work in progress to wip/<branch> now")
+    s = sp.add_parser("checkpoint", help="commit in-progress work on the step's branch (never on trunk)")
+    s.add_argument("--post", default=None); s.add_argument("-m", "--message", default=None)
+    s.add_argument("--push", action="store_true"); s.add_argument("--quiet", action="store_true")
+    s.add_argument("--on-step-branch", action="store_true")
     sp.add_parser("keep", help="the board here into git: committed and pushed")
     s = sp.add_parser("guide", help="a case of the orchestrator's guide (no case: their list)"); s.add_argument("case", nargs="?", default=None)
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
@@ -7485,6 +7727,11 @@ def main(argv=None):
         res = subtask(a.post, a.title, a.status, was=a.was, db_path=a.db, why=a.why, known=a.known)
         print(json.dumps(res, ensure_ascii=False))
         return 1 if res.get("error") else 0
+    if a.cmd == "checkpoint":
+        res = checkpoint(post=a.post, message=a.message, push=a.push, quiet=a.quiet, on_step_branch=a.on_step_branch)
+        if not a.quiet:
+            print(json.dumps(res, ensure_ascii=False))
+        return 0 if res.get("ok") else 1
     if a.cmd == "form":
         rc, msg = form(a.post, doing=a.doing, db_path=a.db)
         print(msg)

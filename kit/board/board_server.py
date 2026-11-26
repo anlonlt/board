@@ -3526,10 +3526,7 @@ def _post_sig(q):
 
 
 def _mirror_git_docs(root_dir, ref):
-    """Read board/posts, board/comments, board/seen and their last-commit UTC timestamps from a git ref."""
-    import io
-    import tarfile
-
+    """Read board/posts, board/comments, board/seen tar bytes and their last-commit UTC timestamps from a git ref."""
     arc = subprocess.run(
         ["git", "-C", root_dir, "archive", "--format=tar", ref, "board"],
         capture_output=True,
@@ -3835,22 +3832,33 @@ def resolve_attached(root_dir, item):
                        "repos/%s and run `kit.py artifact load`" % (raw or "(none named)", up, gh or aid, aid))
 
 
+def _cleanup_empty_db(db_path):
+    """Remove a newly created 0-doc SQLite DB (and its WAL/SHM sidecars) on failed startup."""
+    for suffix in ("", "-wal", "-shm"):
+        p = db_path + suffix
+        try:
+            if os.path.exists(p):
+                os.unlink(p)
+        except OSError:
+            pass
+
+
 def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None, embed_mode=False, preview=False, default_watcher=None, auto_sync_interval=0.0, auto_sync_push=False, attach=None):
     if host.strip().lower() not in LOOPBACK_HOSTS and not token and not preview:
         raise ValueError("refusing to bind to non-loopback host %r without --token / KIT_BOARD_TOKEN" % host)
-    # CL44: bind the HTTP socket BEFORE creating BoardStore so a port-in-use failure never leaves behind an empty
-    # 0-doc board.db that would shadow board-mirror or skip --seed-from-mirror on the next launch.
+    # Bind the listening socket BEFORE creating BoardStore so a failed bind (e.g. port already in use)
+    # never creates or leaves behind a 0-doc board.db that shadows board-mirror.
     srv = BoardHTTPServer((host, port), None)
     data_dir = os.path.join(root_dir, ".kit", "board_data")
     db_path = os.path.join(data_dir, "board.db")
-    db_existed = os.path.isfile(db_path)
+    db_existed = os.path.exists(db_path)
     store = None
     extra_stores = {}
     try:
         store = BoardStore(data_dir)
-        actual_port = srv.server_address[1]
         if auto_sync_interval and float(auto_sync_interval) > 0:
             store.enable_auto_sync(root_dir, interval_sec=float(auto_sync_interval), push=auto_sync_push)
+            actual_port = srv.server_address[1]
             if actual_port:
                 store._auto_sync_url = "http://127.0.0.1:%d" % int(actual_port)
                 store._auto_sync_token = token or ""
@@ -3895,7 +3903,7 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
             if not token:
                 print(
                     "board_server: WARNING: --preview disables authentication! "
-                    "Anyone who can reach http://%s:%d can read and write this board." % (host, actual_port),
+                    "Anyone who can reach http://%s:%d can read and write this board." % (host, srv.server_address[1]),
                     file=sys.stderr,
                     flush=True,
                 )
@@ -3917,28 +3925,29 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
         srv.RequestHandlerClass = make_handler(root_dir, store, token=token, notify_url=notify_url, embed_mode=embed_mode, extra_stores=extra_stores)
         srv._extra_stores = extra_stores
         return srv, store
-    except BaseException:
-        srv.server_close()
-        for rinfo in extra_stores.values():
+    except Exception:
+        try:
+            srv.server_close()
+        except Exception:
+            pass
+        for info in extra_stores.values():
             try:
-                rinfo["store"].close()
+                info["store"].close()
             except Exception:
                 pass
         if store is not None:
+            empty = False
             try:
-                cnt = store.conn.execute("SELECT COUNT(*) FROM docs").fetchone()[0]
+                cnt = store.conn.execute("SELECT COUNT(*) FROM docs").fetchone()
+                empty = bool(cnt and cnt[0] == 0)
             except Exception:
-                cnt = 1
+                pass
             try:
                 store.close()
             except Exception:
                 pass
-            if not db_existed and cnt == 0:
-                for suf in ("", "-wal", "-shm"):
-                    try:
-                        os.remove(db_path + suf)
-                    except OSError:
-                        pass
+            if not db_existed and empty:
+                _cleanup_empty_db(db_path)
         raise
 
 

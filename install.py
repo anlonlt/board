@@ -635,14 +635,14 @@ def merge_hooks(t, dry, log, board=True, unified=False):
 
 def merge_agy_mcp(t, dry, log):
     """Merge the zero-dependency board-kit stdio MCP server into .agents/mcp_config.json (other servers kept).
-    CL44: use a worktree-safe relative script path (no hardcoded parent checkout path) so git worktrees and other
-    checkouts resolve their own .kit/mcp_stdio.py and root."""
+    Uses worktree-safe relative paths (`.kit/mcp_stdio.py`, `--root .`) so clones and git worktrees never point
+    back to a hardcoded parent checkout path."""
     p = os.path.join(t, ".agents", "mcp_config.json")
     s = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
     servers = s.setdefault("mcpServers", {})
     desired = {
         "command": "python3",
-        "args": ["-I", ".kit/mcp_stdio.py"],
+        "args": ["-I", ".kit/mcp_stdio.py", "--root", "."],
     }
     if servers.get("board-kit") == desired:
         return

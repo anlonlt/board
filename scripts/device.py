@@ -229,11 +229,12 @@ def per_session_mb(procs):
     return int(statistics.median(sizes)) if sizes else DEFAULT_SESSION_MB
 
 
-def survey(env=None, mem=None, procs=None, running=None, store=None):
+def survey(env=None, mem=None, procs=None, running=None, store=None, meminfo_path=None):
     import platform
     import socket
     env = os.environ if env is None else env
-    mem = memory() if mem is None else mem
+    live_mem = mem is None
+    mem = (memory(meminfo_path) if meminfo_path else memory()) if mem is None else mem
     procs = processes() if procs is None else procs
     store = load_store() if store is None else store
     cloud = is_cloud(env)
@@ -249,7 +250,7 @@ def survey(env=None, mem=None, procs=None, running=None, store=None):
                                                   "the owner's setting in %s" % store_path())
         except (TypeError, ValueError):
             pass
-    return {
+    out = {
         "host": socket.gethostname(), "os": "%s %s" % (platform.system(), platform.machine()),
         "kind": "cloud" if cloud else "local", "cores": os.cpu_count(),
         "ram_total_mb": total, "ram_available_mb": mem.get("available_mb"),
@@ -259,26 +260,65 @@ def survey(env=None, mem=None, procs=None, running=None, store=None):
         "running": running_sessions(procs) if running is None else running,
         "measured_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    if live_mem:
+        out["_live_mem"] = True
+        if meminfo_path:
+            out["_meminfo_path"] = meminfo_path
+    return out
 
 
-def gate(s, extra=1):
-    """(ok, why): whether `extra` more sessions fit on this device now."""
+def _effective_avail(avail):
+    if avail is None:
+        return None
+    try:
+        avail -= sum(max(0, int(j.get("need_mb") or 0) - tree_rss_mb(j["pid"])) for j in running_jobs())
+    except Exception:
+        pass
+    return avail
+
+
+def gate(s, extra=1, read_avail=None, wait_s=30, interval_s=3, sleep=None):
+    """(ok, why): whether `extra` more sessions fit on this device now.
+    Session-cap refusals are immediate. Memory refusals re-read available RAM every ~interval_s for up to ~wait_s
+    so transient startup spikes do not falsely block launches."""
+    import time as _time
     if s["kind"] == "cloud":
         return True, "cloud session: no cap (each new web session gets its own container)"
-    cap, run, avail, per = s["max_sessions"], s["running"], s["ram_available_mb"], s["per_session_mb"]
+    cap, run, per = s["max_sessions"], s["running"], s["per_session_mb"]
+    headroom = s["headroom_mb"]
     if cap is not None and run + extra > cap:
         return False, ("this device holds %d sessions (%s) and %d run now: wait until one ends, or the owner raises "
                        "it with `python3 -I .kit/device.py --set-cap N`" % (cap, s["cap_source"], run))
-    if avail is not None:
-        try:
-            avail -= sum(max(0, int(j.get("need_mb") or 0) - tree_rss_mb(j["pid"])) for j in running_jobs())
-        except Exception:
-            pass
-    if avail is not None and avail - per * extra < s["headroom_mb"]:
+    avail = _effective_avail(s["ram_available_mb"])
+    if avail is None or avail - per * extra >= headroom:
+        return True, "%d of %s sessions run, %s MB free: one more fits" % (
+            run, "?" if cap is None else cap, "?" if avail is None else avail)
+    reader = read_avail
+    if reader is None and s.get("_live_mem"):
+        mp = s.get("_meminfo_path")
+        reader = (lambda: memory(mp).get("available_mb")) if mp else (lambda: memory().get("available_mb"))
+    if reader is None or not wait_s or wait_s <= 0:
         return False, ("%d MB of RAM free now; a session takes ~%d MB and %d MB must stay free: wait until one ends "
-                       "or close something" % (avail, per, s["headroom_mb"]))
-    return True, "%d of %s sessions run, %s MB free: one more fits" % (
-        run, "?" if cap is None else cap, "?" if avail is None else avail)
+                       "or close something" % (avail, per, headroom))
+    sleeper = _time.sleep if sleep is None else sleep
+    readings = [avail]
+    waited = 0.0
+    step_s = max(0.01, float(interval_s or 3))
+    while waited < wait_s:
+        nap = min(step_s, wait_s - waited)
+        sleeper(nap)
+        waited += nap
+        cur = _effective_avail(reader())
+        if cur is not None:
+            readings.append(cur)
+        if cur is None or cur - per * extra >= headroom:
+            return True, ("%d of %s sessions run, %s MB free (settled after %ds; readings: %s MB): one more fits" % (
+                run, "?" if cap is None else cap, "?" if cur is None else cur, int(round(waited)),
+                ", ".join(str(x) for x in readings)))
+    last = readings[-1]
+    return False, ("%d MB of RAM free now (waited %ds; readings: %s MB); a session takes ~%d MB and %d MB must stay "
+                   "free: wait until one ends or close something" % (
+                       last, int(round(waited)), ", ".join(str(x) for x in readings), per, headroom))
 
 
 def summary(s, with_load=True):
@@ -592,16 +632,17 @@ def main(argv=None):
             st["max_sessions"] = max(1, int(a.set_cap))
         save_store(st)
     s = survey()
+    s_pub = {k: v for k, v in s.items() if not k.startswith("_")}
     if a.save or a.set_cap is not None:
         st = load_store()
-        st["survey"] = s
+        st["survey"] = s_pub
         save_store(st)
     if a.gate:
         ok, why = gate(s)
         print(("ok: " if ok else "NO FREE SLOT: ") + why, file=sys.stdout if ok else sys.stderr)
         return 0 if ok else 1
     if a.json:
-        print(json.dumps(s, indent=1))
+        print(json.dumps(s_pub, indent=1))
     else:
         print(summary(s, with_load=False))
         print("  cores %s · swap %s MB · GPUs: %s" % (s["cores"], s["swap_total_mb"], ", ".join(s["gpus"]) or "none found"))

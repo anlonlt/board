@@ -176,6 +176,13 @@ AGY_SUBAGENT_MSG = re.compile(r"\[Message\][^\n]*?\bcontent=(.*?)(?:\n</SYSTEM_M
 def _first_prompt(data):
     """The opening prompt of this session, from a Claude Code or agy transcript, else agy's lastUserInput."""
     tp = str(data.get("transcriptPath") or data.get("transcript_path") or "")
+    if not tp:
+        cid = str(data.get("conversationId") or data.get("conversation_id") or "")
+        if cid and re.fullmatch(r"[A-Za-z0-9._-]+", cid):
+            cand = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity-cli", "brain", cid,
+                                ".system_generated", "logs", "transcript.jsonl")
+            if os.path.isfile(cand):
+                tp = cand
     try:
         if tp:
             with open(tp, encoding="utf-8") as fh:
@@ -209,23 +216,138 @@ def _first_prompt(data):
     return str(data.get("lastUserInput") or "")
 
 
-def part_post(data, st):
-    """The post of the step this session is a part of, or ""."""
-    role = str(os.environ.get("KIT_ROLE") or "").strip().lower()
-    if role not in ("", "part"):
+def _part_post_from_branch(root):
+    """Fallback when an agy subagent payload lacks transcriptPath: match branch name (e.g. subagent-Part--CL44-...)
+    uniquely against docs/prompts/<post>.md."""
+    try:
+        br = subprocess.run(["git", "-C", root, "branch", "--show-current"], capture_output=True, text=True, timeout=5).stdout.strip().lower()
+    except (OSError, subprocess.SubprocessError):
         return ""
+    if not br:
+        return ""
+    pdir = os.path.join(root, "docs", "prompts")
+    if not os.path.isdir(pdir):
+        return ""
+    hits = []
+    for fn in sorted(os.listdir(pdir)):
+        if not fn.endswith(".md"):
+            continue
+        pid = fn[:-3]
+        if pid.lower().startswith("cr-"):
+            continue
+        part = pid.split("-", 1)[0].lower()
+        if pid.lower() in br or (len(part) >= 2 and re.search(r"(^|[-/_])%s($|[-/_])" % re.escape(part), br)):
+            hits.append(pid)
+    return hits[0] if len(hits) == 1 else ""
+
+
+def part_post(data, st):
+    """The post of the step this session is a part of, or "".
+    Note (CL44): an agy part subagent inherits KIT_ROLE=orchestrator from `kit/up` in its parent process, so an explicit
+    KIT_POST or a part opening prompt (`Your prompt is docs/prompts/<post>.md`) overrides an inherited role."""
+    role = str(os.environ.get("KIT_ROLE") or "").strip().lower()
     if os.environ.get("KIT_POST"):
         return os.environ["KIT_POST"]
+    if role not in ("", "part", "orchestrator"):
+        return ""
     if st.get("part_post") is None or (not st["part_post"] and role == "part"):
         first = _first_prompt(data)
-        if not first:
-            return ""                                        # not in the transcript yet: asked again
-        m = PART_POST.search(first) if PART_OPEN.match(first) else None
-        if m is None and first.lstrip().startswith("You are part "):
-            # CL41: a web part the orchestrator launched in its own words ("You are part CL41 ... resume --role part --post <id>")
-            m = PART_POST_ARG.search(first)
-        st["part_post"] = m.group(1) if m and not m.group(1).startswith("CR-") else ""
+        m = None
+        if first:
+            m = PART_POST.search(first) if PART_OPEN.match(first) else None
+            if m is None and first.lstrip().startswith("You are part "):
+                # CL41: a web part the orchestrator launched in its own words ("You are part CL41 ... resume --role part --post <id>")
+                m = PART_POST_ARG.search(first)
+        if m and not m.group(1).startswith("CR-"):
+            st["part_post"] = m.group(1)
+        elif not first:
+            br_hit = _part_post_from_branch(project_dir(data)) if role != "orchestrator" else ""
+            if br_hit:
+                st["part_post"] = br_hit
+            else:
+                return ""                                    # not in the transcript yet: asked again
+        else:
+            st["part_post"] = ""
     return st["part_post"]
+
+
+_AGY_STEP_NUM = re.compile(r"^\s*(?:(?:item|piece|step)\s+|#)?(\d+)(?:[.):\s-]+|$)", re.I)
+_AGY_STEP_STATUS = {"pending": "open", "in_progress": "doing", "done": "done", "skipped": "drop", "failed": "open"}
+
+
+def _agy_step_list(ti):
+    raw = ti.get("steps")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return []
+    return [x for x in (raw or []) if isinstance(x, dict)]
+
+
+def _post_subtasks(root, post):
+    """Read current subtasks of `post` from board_cli.py (best-effort) so update_steps can match by title overlap or index."""
+    cli = os.path.join(root, ".kit", "board_cli.py")
+    if not os.path.isfile(cli):
+        return []
+    try:
+        r = subprocess.run([sys.executable, "-I", cli, "get", "posts", post], capture_output=True, text=True, timeout=15, cwd=root)
+        if r.returncode == 0 and r.stdout.strip():
+            d = json.loads(r.stdout).get("data") or {}
+            return [x for x in (d.get("subtasks") or []) if isinstance(x, dict)]
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    return []
+
+
+def _match_agy_piece(title, idx, total_steps, subtasks):
+    """Resolve an agy update_steps item to a piece number or title for `kit.py sub`."""
+    m = _AGY_STEP_NUM.match(title)
+    if m:
+        return m.group(1)
+    tl = title.strip().lower()
+    for row in subtasks:
+        if str(row.get("title") or "").strip().lower() == tl:
+            return str(row.get("n") or title)
+    if subtasks:
+        words = {w for w in re.findall(r"[a-z0-9_]{3,}", tl)}
+        best_n, best_score = None, 0
+        for row in subtasks:
+            rw = {w for w in re.findall(r"[a-z0-9_]{3,}", str(row.get("title") or "").lower())}
+            score = len(words & rw)
+            if score > best_score:
+                best_score, best_n = score, row.get("n")
+        if best_score >= 2 and best_n is not None:
+            return str(best_n)
+        if total_steps == len(subtasks) and idx < len(subtasks) and subtasks[idx].get("n") is not None:
+            return str(subtasks[idx]["n"])
+    return title
+
+
+def on_agy_steps(root, st, ti, post):
+    """CL44 (item 8): mirror agy's `update_steps` checklist onto the step's post pieces (`kit.py sub`)."""
+    steps = _agy_step_list(ti)
+    if not steps:
+        return
+    prev = st.setdefault("agy_steps", {})
+    subtasks = None
+    for idx, item in enumerate(steps):
+        title = str(item.get("title") or "").strip()
+        raw_st = str(item.get("status") or "").strip().lower()
+        mapped = _AGY_STEP_STATUS.get(raw_st)
+        if not title or not mapped:
+            continue
+        key = "%d:%s" % (idx, title.lower())
+        if prev.get(key) == mapped:
+            continue
+        if subtasks is None:
+            subtasks = _post_subtasks(root, post)
+        target = _match_agy_piece(title, idx, len(steps), subtasks)
+        args = ["sub", post, target, "--status", mapped, "--known"]
+        if mapped == "drop":
+            args += ["--why", "skipped in agy step list"]
+        kit(root, args, raw=True)
+        prev[key] = mapped
 
 
 def on_piece(root, st, name, ti, tr, post):
@@ -272,12 +394,16 @@ def main():
         data = json.load(sys.stdin)
     except (ValueError, OSError):
         return 0
-    name = str(data.get("tool_name") or "")
-    event = str(data.get("hook_event_name") or "")
-    if name not in ("TaskCreate", "TaskUpdate") and event not in ("TaskCompleted", "UserPromptSubmit"):
+    tc = data.get("toolCall") if isinstance(data.get("toolCall"), dict) else {}
+    name = str(data.get("tool_name") or tc.get("name") or "")
+    event = str(data.get("hook_event_name") or data.get("hookEventName") or "")
+    is_agy = bool(tc or data.get("hookEventName") or data.get("conversationId"))
+    if name not in ("TaskCreate", "TaskUpdate", "update_steps") and event not in ("TaskCompleted", "UserPromptSubmit"):
         return 0
     # a list shared between sessions (CLAUDE_CODE_TASK_LIST_ID) has one record: its task ids are the same in each
-    sid = re.sub(r"[^a-zA-Z0-9._-]", "_", str(os.environ.get("CLAUDE_CODE_TASK_LIST_ID") or data.get("session_id") or "session"))
+    sid = re.sub(r"[^a-zA-Z0-9._-]", "_", str(
+        os.environ.get("CLAUDE_CODE_TASK_LIST_ID") or data.get("session_id") or data.get("conversationId")
+        or data.get("conversation_id") or "session"))
     d = os.path.join(project_dir(data), ".kit", "run", "task-train")
     try:
         os.makedirs(d, exist_ok=True)
@@ -295,12 +421,15 @@ def main():
         msg = refuse = None
         piece = part_post(data, st)
         if piece:
-            if name in ("TaskCreate", "TaskUpdate") and event not in ("TaskCompleted", "UserPromptSubmit"):
+            if name == "update_steps":
+                args = tc.get("args") if isinstance(tc.get("args"), dict) else (data.get("tool_input") or {})
+                on_agy_steps(project_dir(data), st, args, piece)
+            elif name in ("TaskCreate", "TaskUpdate") and event not in ("TaskCompleted", "UserPromptSubmit"):
                 on_piece(project_dir(data), st, name, data.get("tool_input") or {}, data.get("tool_response"), piece)
             elif event == "TaskCompleted" and str(data.get("task_id") or "") not in st.get("subs", {}) and str(data.get("task_subject") or "").strip():
                 # a list opened by a session that replaces another: its record of the titles is not here
                 kit(project_dir(data), ["sub", piece, str(data["task_subject"]).strip(), "--status", "done", "--known"], raw=True)
-        elif is_orchestrator(data, st):
+        elif not is_agy and is_orchestrator(data, st):
             root = project_dir(data)
             ti = data.get("tool_input") or {}
             if event == "TaskCompleted":
@@ -314,6 +443,8 @@ def main():
                 json.dump(st, fh)
         except OSError:
             pass
+    if is_agy:
+        return 0                                             # agy PostToolUse: never emit injectSteps
     if refuse:                                               # exit 2: Claude Code keeps the task open and says why
         print("NOT complete: %s." % refuse, file=sys.stderr)
         return 2

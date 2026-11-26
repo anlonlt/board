@@ -139,7 +139,7 @@
    "orchestrator": true
   },
   "survey": "skipped: the kit's own repo: testing the Claude Code CLI workflow on its own board",
-  "cmd": "board",
+  "cmd": "",
   "memory_dir": ".board/memory",
   "pinned_docs": [
    "AGENTS.md",

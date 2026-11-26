@@ -154,12 +154,32 @@ TOOLS = [
 
 
 class MCPServer:
+    CLOSED_STATUSES = {"complete", "completed", "done", "dropped", "shipped", "merged", "closed", "abandoned", "superseded"}
+
     def __init__(self, root_dir, board_url=None, token=None):
-        self.root = os.path.abspath(root_dir)
+        self.root = self._resolve_root(root_dir)
         self.board_url = board_url
         self.token = token
         self.cli_py = self._find("board_cli.py", [os.path.join(self.root, ".kit", "board_cli.py"), os.path.join(os.path.dirname(__file__), "board_cli.py")])
         self.kit_py = self._find("kit.py", [os.path.join(self.root, ".kit", "kit.py"), os.path.join(self.root, "scripts", "kit.py")])
+
+    @staticmethod
+    def _resolve_root(root_dir):
+        cur = os.path.abspath(root_dir or os.getcwd())
+        if os.path.isdir(os.path.join(cur, ".kit")):
+            return cur
+        probe = cur
+        for _ in range(6):
+            parent = os.path.dirname(probe)
+            if parent == probe:
+                break
+            probe = parent
+            if os.path.isdir(os.path.join(probe, ".kit")):
+                return probe
+        here_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if os.path.basename(os.path.dirname(os.path.abspath(__file__))) == ".kit" and os.path.isdir(os.path.join(here_parent, ".kit")):
+            return here_parent
+        return cur
 
     @staticmethod
     def _find(name, candidates):
@@ -218,12 +238,10 @@ class MCPServer:
             out.extend(["--token", self.token])
         return out
 
-    def _offline_inbox(self, args):
-        """CL44: clean offline fallback for board_inbox when the local board HTTP server is unreachable.
-        Reads unread owner comments, likes, option answers, and runner/for_owner assigned posts from local SQLite
-        (if non-empty), mirror worktree, or git board-mirror."""
-        import sqlite3
+    def _offline_load_docs(self):
+        """Read posts and comments offline from local non-empty SQLite board.db, mirror worktree, or local git board-mirror."""
         import io
+        import sqlite3
         import tarfile
 
         posts, comments = {}, {}
@@ -239,65 +257,69 @@ class MCPServer:
                             doc = json.loads(raw)
                         except ValueError:
                             continue
-                        if coll == "posts":
-                            posts[did] = doc
-                        else:
-                            comments[did] = doc
+                        (posts if coll == "posts" else comments)[did] = doc
                 finally:
                     conn.close()
-            except Exception:
+            except sqlite3.Error:
                 posts, comments = {}, {}
-        if not posts and not comments:
+            if posts or comments:
+                return posts, comments, "sqlite"
+        cfg = {}
+        try:
+            with open(os.path.join(self.root, ".kit", "config.json"), encoding="utf-8") as fh:
+                cfg = json.load(fh)
+        except (OSError, ValueError):
             cfg = {}
-            try:
-                cfg = json.load(open(os.path.join(self.root, ".kit", "config.json"), encoding="utf-8"))
-            except (OSError, ValueError):
-                pass
-            mcfg = cfg.get("mirror") if isinstance(cfg.get("mirror"), dict) else {}
-            mrel = mcfg.get("path") or "../board-mirror"
-            mpath = mrel if os.path.isabs(mrel) else os.path.normpath(os.path.join(self.root, mrel))
-            for coll, target in (("posts", posts), ("comments", comments)):
-                d = os.path.join(mpath, "board", coll)
-                if not os.path.isdir(d):
+        mp = (cfg.get("mirror") or {}).get("path")
+        m_dir = os.environ.get("KIT_MIRROR") or (os.path.join(self.root, mp) if mp else os.path.join(os.path.dirname(self.root), "board-mirror"))
+        for coll, target in (("posts", posts), ("comments", comments)):
+            d = os.path.join(m_dir, "board", coll)
+            if not os.path.isdir(d):
+                continue
+            for fn in sorted(os.listdir(d)):
+                if not fn.endswith(".json"):
                     continue
-                for fn in sorted(os.listdir(d)):
-                    if not fn.endswith(".json"):
-                        continue
-                    try:
-                        target[fn[:-5]] = json.load(open(os.path.join(d, fn), encoding="utf-8"))
-                    except (OSError, ValueError):
-                        pass
-            if not posts and not comments:
-                branch = mcfg.get("branch") or "board-mirror"
-                for ref in ("refs/heads/" + branch, "refs/remotes/origin/" + branch):
-                    try:
-                        arc = subprocess.run(
-                            ["git", "-C", self.root, "archive", "--format=tar", ref, "board"],
-                            capture_output=True, timeout=30,
-                        )
-                    except (OSError, subprocess.SubprocessError):
-                        break
-                    if arc.returncode == 0 and arc.stdout:
-                        try:
-                            with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
-                                for mem in tf.getmembers():
-                                    parts = mem.name.lstrip("./").split("/")
-                                    if not mem.isfile() or len(parts) != 3 or parts[1] not in ("posts", "comments") or not parts[2].endswith(".json"):
-                                        continue
-                                    try:
-                                        doc = json.loads(tf.extractfile(mem).read().decode("utf-8"))
-                                    except (ValueError, UnicodeDecodeError, AttributeError):
-                                        continue
-                                    if isinstance(doc, dict):
-                                        (posts if parts[1] == "posts" else comments)[parts[2][:-5]] = doc
-                        except Exception:
-                            pass
-                        if posts or comments:
-                            break
+                try:
+                    with open(os.path.join(d, fn), encoding="utf-8") as fh:
+                        target[fn[:-5]] = json.load(fh)
+                except (OSError, ValueError):
+                    pass
+        if posts or comments:
+            return posts, comments, "board-mirror"
+        branch = str((cfg.get("mirror") or {}).get("branch") or "board-mirror")
+        try:
+            ref = next((r for r in (branch, "origin/" + branch)
+                        if subprocess.run(["git", "-C", self.root, "rev-parse", "--verify", "--quiet", r],
+                                          capture_output=True, timeout=5).returncode == 0), None)
+            if ref:
+                arc = subprocess.run(["git", "-C", self.root, "archive", "--format=tar", ref, "board"],
+                                     capture_output=True, timeout=15)
+                if arc.returncode == 0 and arc.stdout:
+                    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
+                        for mem in tf.getmembers():
+                            parts = mem.name.lstrip("./").split("/")
+                            if not mem.isfile() or len(parts) != 3 or parts[0] != "board" or parts[1] not in ("posts", "comments") or not parts[2].endswith(".json"):
+                                continue
+                            try:
+                                data = json.loads(tf.extractfile(mem).read().decode("utf-8"))
+                            except (ValueError, UnicodeDecodeError, AttributeError):
+                                continue
+                            if isinstance(data, dict) and isinstance(data.get("data"), dict) and set(data) <= {"id", "data", "version", "updated_at"}:
+                                data = data["data"]
+                            if isinstance(data, dict):
+                                (posts if parts[1] == "posts" else comments)[parts[2][:-5]] = data
+        except (OSError, subprocess.SubprocessError):
+            pass
+        if posts or comments:
+            return posts, comments, "board-mirror"
+        return posts, comments, "offline"
 
-        since = args.get("since")
-        out_comments, likes, answers = [], [], []
-        for cid, d in sorted(comments.items()):
+    def _offline_inbox(self, args):
+        """Build the board_inbox JSON payload offline when the local board server is unreachable."""
+        posts, comments_map, source = self._offline_load_docs()
+        since = str(args.get("since") or "")
+        comments, likes, answers = [], [], []
+        for cid, d in sorted(comments_map.items()):
             if not isinstance(d, dict):
                 continue
             by = str(d.get("by") or "")
@@ -308,7 +330,7 @@ class MCPServer:
                 continue
             if d.get("read") is True:
                 continue
-            if since and str(d.get("created_at") or "") < str(since):
+            if since and str(d.get("created_at") or "") < since:
                 continue
             item = {
                 "id": cid,
@@ -327,36 +349,35 @@ class MCPServer:
                 answers.append(item)
             else:
                 item["text"] = d.get("text") or ""
-                out_comments.append(item)
-
+                comments.append(item)
         out = {
-            "total": len(out_comments) + len(likes) + len(answers),
-            "comments": out_comments,
+            "total": len(comments) + len(likes) + len(answers),
+            "comments": comments,
             "likes": likes,
             "answers": answers,
             "watcher_status": "offline",
             "pending_threads": 0,
             "offline": True,
+            "source": source,
         }
-        if args.get("runner") or args.get("for_owner"):
-            rf = str(args.get("runner") or "").strip().lower()
-            ff = str(args.get("for_owner") or "").strip().lower()
-            done_statuses = {"complete", "completed", "done", "dropped"}
-            assigned = []
+        runner = str(args.get("runner") or "").strip().lower()
+        for_owner = str(args.get("for_owner") or "").strip().lower()
+        if runner or for_owner:
+            assigned_posts = []
             for pid, pd in posts.items():
-                if pid.startswith("_") or not isinstance(pd, dict):
+                if str(pid).startswith("_") or not isinstance(pd, dict):
                     continue
-                if pd.get("removed") or pd.get("column") == "done":
+                if pd.get("removed") or str(pd.get("column") or "").strip().lower() == "done":
                     continue
-                if str(pd.get("status") or "").strip().lower() in done_statuses:
+                if str(pd.get("status") or "").strip().lower() in self.CLOSED_STATUSES:
                     continue
                 pr = str(pd.get("runner") or "").strip().lower()
                 pf = str(pd.get("for") or pd.get("assignee") or pd.get("assigned_to") or "").strip().lower()
-                if rf and pr != rf:
+                if runner and pr != runner:
                     continue
-                if ff and pf != ff:
+                if for_owner and pf != for_owner:
                     continue
-                assigned.append({
+                assigned_posts.append({
                     "id": pid,
                     "title": pd.get("title") or "",
                     "column": pd.get("column") or "todo",
@@ -366,9 +387,9 @@ class MCPServer:
                     "status": pd.get("status") or "",
                     "body": str(pd.get("body") or "")[:300],
                 })
-            assigned.sort(key=lambda x: (int(x["priority"] or 9), x["id"]))
-            out["assigned_posts"] = assigned
-            out["assigned_total"] = len(assigned)
+            assigned_posts.sort(key=lambda x: (int(x["priority"] or 9), x["id"]))
+            out["assigned_posts"] = assigned_posts
+            out["assigned_total"] = len(assigned_posts)
         return True, json.dumps(out, ensure_ascii=False)
 
     def call_tool(self, name, args):
@@ -382,7 +403,10 @@ class MCPServer:
             if args.get("for_owner"):
                 cmd.extend(["--for", str(args["for_owner"])])
             ok, out = self._run_py(self.cli_py, cmd)
-            if not ok and any(tok in out for tok in ("cannot reach board server", "Connection refused", "URLError", "timed out")):
+            if ok:
+                return ok, out
+            low = (out or "").lower()
+            if "cannot reach board server" in low or "connection refused" in low or "urlopen error" in low:
                 return self._offline_inbox(args)
             return ok, out
         if name == "board_queue":

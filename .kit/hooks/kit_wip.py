@@ -37,6 +37,26 @@ def main():
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         except (OSError, ValueError):
             pass
+    # CL44 (item 10): periodic checkpoint commit on a part's step branch (default every 15 min) so session limits never
+    # leave work uncommitted in a worktree. Never commits on the trunk or detached HEAD (--on-step-branch).
+    kit_py = os.path.join(root, ".kit", "kit.py")
+    if os.environ.get("KIT_CHECKPOINT") != "0" and str(k.get("checkpoint") or "auto") != "off" and os.path.isfile(kit_py):
+        ck_stamp = os.path.join(root, ".kit", "run", "checkpoint-last")
+        try:
+            ck_age = time.time() - os.path.getmtime(ck_stamp)
+        except OSError:
+            ck_age = None
+        try:
+            if ck_age is None:
+                os.makedirs(os.path.dirname(ck_stamp), exist_ok=True)
+                open(ck_stamp, "w").close()
+            elif ck_age >= 60 * float(k.get("checkpoint_minutes") or 15):
+                os.utime(ck_stamp, None)
+                subprocess.Popen([sys.executable, "-I", kit_py, "checkpoint", "--quiet", "--on-step-branch"],
+                                 cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+        except (OSError, ValueError):
+            pass
     if not is_claude_payload(data) and data.get("hookEventName"):
         print(json.dumps({"decision": "allow"} if "Stop" in str(data.get("hookEventName")) else {}))
     return 0
