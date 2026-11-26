@@ -170,6 +170,7 @@
  ],
  "part": "R1",
  "planned_by": "orchestrator",
+ "priority": 3,
  "runner": "antigravity-web",
  "session_id": "6319c198-c54b-4220-bce1-3cde2b58cf98",
  "started_at": "2026-11-26T21:20:37Z",
@@ -213,6 +214,6 @@
  "task": "Find out how far Antigravity on the web runs the board kit, and which profile it fits: like the Claude Code CLI (a computer: git, the local board, hooks), like Claude Code on the web (a GitHub clone: the board's git copy, no local server), like LMArena (no GitHub: the board's shared link only), or in between. This step runs on that platform itself (runner `antigravity-web`): the owner starts it there with this prompt.\n\n1. Reach: can it clone the repo from GitHub, read `docs/prompts/` and the board's git copy (branch board-mirror), run python3, commit and push a branch? Say what worked, with the command and its output.\n2. The board: can it run `python3 -I .kit/kit.py resume --role part --post <this post>`; write its result into its post (board_cli, or a commit to board-mirror); comment; tick a piece (`kit.py sub`)? For each: works, works another way (which), or not at all.\n3. The rest of the kit: hooks (does the platform run any?), the live line, the usage ledger row, the memory given at the moment a file is edited, a save point, a takeover by another platform from where it stopped.\n4. Limits that matter for routing: session length and usage limits, whether it can run in the background, files and secrets it can or cannot reach, what it costs.\n5. The profile: one table, feature by feature (yes / another way / no), and the verdict: CLI-like, web-like, LMArena-like or in between, and which kinds of steps it should get (research, code, browser work, review).\n\nBars: board features that work out of all tried; minutes from start to the first write that reached the board.\n",
  "title": "Antigravity on the web: how far it runs the board kit, and its profile",
  "train": "runners",
- "updated_at": "2026-11-26T21:51:00Z",
+ "updated_at": "2026-11-26T22:44:52Z",
  "verdict": "Antigravity on the web sits between Claude Code web and CLI: full Linux VM, headless browsers, and unrestricted GitHub pushes, but no hooks, no local board reach, no transcript ledger, and no cross-session messaging."
 }

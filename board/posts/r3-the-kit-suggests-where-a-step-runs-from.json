@@ -5,6 +5,7 @@
  "from": "orchestrator",
  "part": "R3",
  "planned_by": "orchestrator",
+ "priority": 3,
  "status": "planned",
  "subtasks": [
   {
@@ -40,5 +41,6 @@
  ],
  "task": "The kit suggests where a step should run, from the devices and platforms it remembers, to save time and usage: a step waiting on a full computer while a web runner is free, or a non-sensitive research step that LMArena could take instead of a paid session.\n\n1. The kit remembers the runners: each device (its RAM, its cap, what is running) and each platform the owner has (Claude Code CLI and web, agy, LMArena, Gemini, the browser parts), each with its profile from R1 and R2 (what it reaches, what it costs, its limits), in the workflow memory and the map (M9).\n2. At each plan and each refused launch, the orchestrator's resume says in one line where a waiting step could run now and why (\"M5 waits on penguin's RAM: Claude Code web can take it, it needs only git\"), never a choice it cannot make: sensitive work (secrets, private data, the owner's accounts) is never routed to a platform that shares it.\n3. A step can say what it needs (git, the local board, a browser, secrets, a GPU); the suggestion matches needs to profiles; `kit.py launch --web` or a runner card follows from the suggestion in one command.\n4. Tests on a fixture with two devices and three platforms, in tests/test_runner_suggest.py.\n\nBars: on today's board, the waiting steps the suggestion places, out of all waiting.\n",
  "title": "The kit suggests where a step runs, from the devices and platforms it remembers",
- "train": "runners"
+ "train": "runners",
+ "updated_at": "2026-11-26T22:44:53Z"
 }

@@ -5,6 +5,7 @@
  "from": "orchestrator",
  "part": "M2",
  "planned_by": "orchestrator",
+ "priority": 3,
  "status": "planned",
  "subtasks": [
   {
@@ -43,5 +44,6 @@
  ],
  "task": "Install draws the first map: the plumbing that already exists is on the map from day one. Waits on M1 (the map's format: things, links, flags; every link carries a check that runs).\n\n1. Step 0's scan builds the first map with `kit.py map` and keeps it with the project, in scripts/step0_scan.py and install.py.\n2. Install on a project with no map runs it once; `--update` refreshes it and says what changed (things and links added or gone, checks now failing).\n3. The welcome and the orchestrator's resume name the map's health in one line: things, links, checks passing, checks unconfirmed.\n4. Tests on a small project fixture, in tests/test_map_install.py with install.py.\n\nBars: build time at install on the kit itself and on a Harmonize-shaped copy; how many of its files the first map covers (out of all).\n",
  "title": "Install draws the first map",
- "train": "memory"
+ "train": "memory",
+ "updated_at": "2026-11-26T22:44:51Z"
 }
