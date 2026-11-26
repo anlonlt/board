@@ -6,7 +6,7 @@ prompts, although the kit scripts all of it for a fraction of the tokens (the ow
 taken the time to script everything for token efficiency"). Rules in a guide were skipped; this hook refuses, for
 the orchestrator only, the three gestures that bypass the kit, and says the kit's way:
   - a `list` or broad `query` of posts or comments (also an attached board's repos/<id>/...), except the kit's own
-    pull (`out_dir` under .kit/run/artifact/) and a targeted lookup (a `where`, limit <= 5): use
+    pull (a call `kit.py artifact pull` printed in the last 30 minutes, M11) and a targeted lookup (a `where`, limit <= 5): use
     `kit.py artifact pull` / `load`, then `kit.py resume`, `post <id>`, `open`, `since <time>`;
   - a `set` of a step post (not a `_` card, not `_orchestrator`): plan it with TaskCreate {train, part}: the
     task-train hook writes the post and its prompt; a batch from `kit.py artifact push` (.kit/run/artifact/out) passes;
@@ -127,7 +127,8 @@ def under(path, root, *parts):
     return p == base or p.startswith(base + os.sep)
 
 
-READ_WAY = ("read the board through the kit: `python3 -I .kit/kit.py artifact pull` (it prints the ArtifactData calls, "
+READ_WAY = ("a whole collection is read only through the kit: `python3 -I .kit/kit.py artifact pull` (it prints the "
+            "ArtifactData calls, changes only after the first load; a part's first: `--post <id>`, its own documents; "
             "the attached boards' repos/<id>/posts and comments too, "
             "saved under .kit/run/artifact/in), `python3 -I .kit/kit.py artifact load`, then `kit.py resume`, "
             "`kit.py post <id>`, `kit.py open`, `kit.py since <time>`; one document: ArtifactData `get`; a targeted "
@@ -254,11 +255,36 @@ def _hand_write(w, root):
     return (m.group(2), "%s/%s" % (w.get("collection"), did))
 
 
+PULL_FRESH_S = 30 * 60
+
+
+def pulled(ti, root):
+    """M11: this whole-collection read is one `kit.py artifact pull` printed (its record .kit/run/artifact/pull.json,
+    under 30 minutes old, names its action and collection) and it saves under that copy's .kit/run/artifact. An
+    out_dir there alone no longer passes: a hand-made list copied it (11-26: 31 lists in 12 of 12 part sessions)."""
+    out = str(ti.get("out_dir") or "")
+    bases = [os.path.join(r, ".kit", "run", "artifact") for r in kit_roots(root)]
+    if os.environ.get("KIT_ARTIFACT_DIR"):
+        bases.insert(0, os.environ["KIT_ARTIFACT_DIR"])
+    for base in bases:
+        if not under(out, base):
+            continue
+        rec = _read(os.path.join(base, "pull.json")) or {}
+        try:
+            fresh = time.time() - float(rec.get("at") or 0) <= PULL_FRESH_S
+        except (TypeError, ValueError):
+            fresh = False
+        if fresh and any(isinstance(c, dict) and c.get("action") == ti.get("action")
+                         and c.get("collection") == ti.get("collection") for c in rec.get("calls") or []):
+            return True
+    return False
+
+
 def board_verdict(ti, root, orch):
     """CL30: the board rules for every session (the orchestrator, parts, the clerk, reviews)."""
     act = str(ti.get("action") or "")
     if act in ("list", "query") and BOARD_COLL.match(str(ti.get("collection") or "")):
-        if any(under(str(ti.get("out_dir") or ""), r, ".kit", "run", "artifact") for r in kit_roots(root)):
+        if pulled(ti, root):
             return None
         q = ti.get("query") or {}
         try:

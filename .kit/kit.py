@@ -1011,13 +1011,67 @@ def _read_json(p):
         return None
 
 
-def artifact_pull(full=False):
+SCOPE_CARDS = ("_orchestrator", "_trains", "_dashboard", "_prefs")
+
+
+def _scope_post(post=None):
+    """M11: the post a part's first pull is scoped to: --post, else the one `resume --role part --post X` named here."""
+    return post or str(_art_state().get("scope_post") or "")
+
+
+def _scoped_pull_lines(board, d, pre, post):
+    """M11: a part's first pull in a fresh copy: only the documents it works on (its post, its comments, the cards,
+    its train's post), each by id, instead of a list of the whole board (~10k characters a call in the reply, 48
+    calls in 20 of 20 sessions on 11-26). The rest of the copy is the git seed; later pulls bring every change."""
+    ids = [post] + list(SCOPE_CARDS)
+    try:
+        doc = _board_request(local_board_url(), "doc/posts/%s" % urllib.parse.quote(post, safe=""),
+                             token=_resolve_board_token(None))
+        tr = _norm_train((doc.get("data") or {}).get("train")) if doc.get("exists") else ""
+        if tr:
+            ids.append("_train-" + tr)
+    except Exception:
+        pass
+    lines = ["# The board from the Artifact to this copy (%s): only post %s and what it needs (a first pull; "
+             "`--full` for the whole board)" % (board, post), ""]
+    for did in ids:
+        lines.append("- `ArtifactData` `get`, `url` %s, `collection: \"%sposts\"`, `doc_id: \"%s\"`, `out_dir: \"%s\"` "
+                     "(\"No document\" is fine)." % (board, pre, did, d))
+    lines.append("- `ArtifactData` `query`, `url` %s, `collection: \"%scomments\"`, `query: {where: [[\"post_id\", \"==\", "
+                 "\"%s\"]], limit: 1000}`, `out_dir: \"%s\"`." % (board, pre, post, d))
+    lines.append("- `ArtifactData` `get`, `url` %s, `collection: \"%skit_docs\"`, `doc_id: \"_index\"`, `out_dir: \"%s\"` "
+                 "(the files' map; \"No document\" is fine)." % (board, pre, d))
+    lines += ["", "Then: `python3 -I .kit/kit.py artifact load` (starts the local board if needed; your own unsent changes "
+              "stay). Every later pull brings what changed on the whole board since this one."]
+    return "\n".join(lines) + "\n"
+
+
+def _pull_record(text):
+    """M11: the whole-collection calls this pull printed, for the guard (kit_orchestrator_guard.py lets a `list` or
+    broad `query` of posts or comments through only when a pull printed it, 30 minutes)."""
+    calls = [{"action": a, "collection": c} for a, c in
+             re.findall(r"`ArtifactData` `(list|query)`, `url` \S+, `collection: \"([^\"]+)\"`", text)]
+    try:
+        os.makedirs(_art_dir(), exist_ok=True)
+        write_doc(os.path.join(_art_dir(), "pull.json"), {"at": time.time(), "calls": calls})
+    except OSError:
+        pass
+    return text
+
+
+def artifact_pull(full=False, post=None):
     """The calls that bring the board here. After a first full pull, only what changed since the last load (a full
-    list of a big board costs ~20 tokens a document in the tool's reply: 1,500 documents, ~30k)."""
+    list of a big board costs ~20 tokens a document in the tool's reply: 1,500 documents, ~30k). M11: a part's first
+    pull (its post known: --post or its resume) gets only its own documents by id."""
     board = artifact_url() or "<the board's claude.ai/artifact url>"
     d = os.path.join(_art_dir(), "in")
     since = "" if full else str(_art_state().get("loaded_at") or "")
     pre = _art_prefix()
+    scope = "" if full or since else _scope_post(post)
+    if scope:
+        for f in glob.glob(os.path.join(d, "*", "*.json")) + glob.glob(os.path.join(d, "repos", "*", "*", "*.json")):
+            os.remove(f)
+        return _scoped_pull_lines(board, d, pre, scope)
     attached = [] if pre else _attached_ids()          # before the delta pull clears in/kit_repos/_index.json
     if since:
         t = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) - timedelta(minutes=10)
@@ -6412,9 +6466,8 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
                    % ", ".join(skipped))
     if boards and artifact_url() and not glob.glob(os.path.join(_art_dir(), "in", "repos", "*")):
         out.append("")
-        out.append("(Comments written on the Artifact page on an attached board live only there: `ArtifactData` `list`, `url` "
-                   "%s, `collection: \"repos/<id>/comments\"` (and `repos/<id>/posts`), `out_dir: \"%s\"`, then resume again.)"
-                   % (artifact_url(), os.path.join(_art_dir(), "in", "repos", "<id>", "comments")))
+        out.append("(Comments written on the Artifact page on an attached board live only there: `python3 -I .kit/kit.py "
+                   "artifact pull` brings them (changes only), then `kit.py artifact load`, then resume again.)")
     out.append("")
     if active == "agy":
         out.append("Resume in agy: cross-check each session UUID above with `manage_subagents(Action=\"list\")`. "
@@ -7886,6 +7939,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "not running and not complete: post status stalled, continue it from its branch.",
                 "- Before you answer the owner: this resume, under 15 minutes old (the brief guard refuses otherwise); run again "
                 "in this session, it prints only what changed since your last one, and that counts as fresh (`--full`: all of it)."]
+        al = audit_lines()
+        if al:
+            out += ["", "## Kit commands skipped (last 24 h; all of it: `kit.py usage audit --since <time>`)"] + al
         out += ["", "## Lessons for the orchestrator"] + _lesson_lines(lessons_for("orchestrator"))
         ml = memory_line()
         if ml:
@@ -8284,6 +8340,24 @@ def _usage_self():
         pass
 
 
+def audit_lines(n=3, hours=24):
+    """M11: resume --role orchestrator: the top n manual actions where a kit command exists, from the usage ledger
+    (`kit.py usage audit`), the last `hours`. [] when the ledger has none or cannot be read."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    script = next((p for p in (os.path.join(here, "usage.py"), os.path.join(here, "..", "scripts", "usage.py"))
+                   if os.path.isfile(p)), None)
+    if not script:
+        return []
+    try:
+        spec = importlib.util.spec_from_file_location("kit_usage_audit", script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M")
+        return mod.audit_top(mod.all_rows(ROOT), n=n, since=since, conf=mod.kit_conf(ROOT))
+    except Exception:
+        return []
+
+
 def main(argv=None):
     _usage_self()
     _argv = sys.argv[1:] if argv is None else list(argv)
@@ -8387,6 +8461,7 @@ def main(argv=None):
     s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
     s.add_argument("action", choices=["pull", "load", "push", "sent", "pin", "status"]); s.add_argument("args", nargs="*")
     s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
+    s.add_argument("--post", default=None, help="pull: a first pull reads only this post's documents (M11)")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("reconcile", help="the board here vs its git copy: the newer copy of each post and comment wins")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--branch", default=None)
@@ -8449,6 +8524,11 @@ def main(argv=None):
     m = mirror_dir(a)
     if a.cmd in STALE_GATED and not getattr(a, "db", None):   # --db: a named database, not the Artifact's copy
         why = stale_copy()
+        if why and a.cmd == "resume" and getattr(a, "role", "") == "part" and getattr(a, "post", None) and attached_board():
+            st = _art_state()                          # M11: the first pull here reads only this post's documents
+            if st.get("scope_post") != a.post:
+                st["scope_post"] = a.post
+                _art_save(st)
         if why:
             if a.cmd == "resume" and getattr(a, "role", "") == "part" and getattr(a, "post", None):
                 # a part starts before its board is loaded here: its task is in git, and how to load the board is in how it works
@@ -8641,7 +8721,7 @@ def main(argv=None):
     if a.cmd == "artifact":
         try:
             if a.action == "pull":
-                print(artifact_pull(full=a.full), end="")
+                print(_pull_record(artifact_pull(full=a.full, post=a.post)), end="")
             elif a.action == "load":
                 r = artifact_load(url=a.board_url, token=a.token)
                 print("Loaded from the Artifact: %d taken, %d kept from here (unsent), %d merged field by field. "
