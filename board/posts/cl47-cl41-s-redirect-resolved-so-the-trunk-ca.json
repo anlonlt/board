@@ -5,6 +5,7 @@
  "from": "orchestrator",
  "part": "CL47",
  "planned_by": "orchestrator",
+ "runner": "claude-web",
  "status": "planned",
  "subtasks": [
   {
@@ -40,5 +41,6 @@
  ],
  "task": "CL41's redirect, so the trunk can move again: nothing reaches main until it is resolved (the pre-push guard refuses), and every step since 11-24 waits behind it on feat/streamline-doctor-memory.\n\nCL41's review (comment CR-cl41-review-and-adopt-four-local-commits, 2026-11-26 01:36Z): \"do not merge cl41 to main yet: it carries 33 commits main lacks (not 4), and with them 2 phone checks that pass on main fail on cl41\". Its suggestion: make test_page_ux.js and test_install_present_runtimes.py pass as on main (bisect 590c15b..95f0eab for the 411 px fold), list the earlier computer commits on the post, and merge only after a full run shows 0 failed.\n\n1. Make the two phone checks pass on the branch as they do on main (find the commit that broke the 411 px fold).\n2. List on CL41's post the commits main lacks, one line each, so its review sees all of them.\n3. A full run (`run_all_tests.py --all`, it resumes from where a stopped run left off on the same commit) with 0 failed, its result on the post.\n4. Then ask for CL41's review again; on continue, `kit.py land` merges onto main.\n",
  "title": "CL41's redirect resolved, so the trunk can move",
- "train": "board-data"
+ "train": "board-data",
+ "updated_at": "2026-11-26T21:25:02Z"
 }
