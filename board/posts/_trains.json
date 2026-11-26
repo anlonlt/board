@@ -130,7 +130,7 @@
    "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "running",
    "store": []
   },
   {
@@ -908,8 +908,8 @@
    "part": "R1",
    "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "6319c198-c54b-4220-bce1-3cde2b58cf98",
+   "state": "running",
    "store": []
   },
   {
