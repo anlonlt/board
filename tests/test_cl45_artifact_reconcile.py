@@ -135,6 +135,12 @@ class ArtifactReconcile(unittest.TestCase):
         out = r["push"]
         self.assertIn("posts/P0", out["need_pin"])         # exists there: its version is fetched first
         sent = self.sent_all(r)
+        pin = self.art / "pin" / "v1" / "posts"                # the get before the pin (CL31): the live P0
+        pin.mkdir(parents=True, exist_ok=True)
+        (pin / "P0.json").write_text(json.dumps(p0))
+        kit.artifact_pin(["posts/P0=1"])
+        sent.update(self.sent_all({"push": kit.artifact_push(url=self.url, token=TOKEN)}))
+        self.assertEqual(sent["posts/P0"][1]["title"], "Shared, renamed on the computer")
         self.assertIn("posts/M5", sent)
         self.assertNotIn("if_version", sent["posts/M5"][0])
         self.assertIn("comments/" + conflicts[0]["id"], sent)
@@ -143,6 +149,7 @@ class ArtifactReconcile(unittest.TestCase):
 
         # a second run (the Artifact now holds what was sent): nothing new, the conflict is not doubled
         self.artifact("posts", "M5", sent["posts/M5"][1])
+        self.artifact("posts", "P0", sent["posts/P0"][1])
         self.artifact("comments", conflicts[0]["id"], cdoc)
         r2 = self.reconcile()
         self.assertEqual((r2["from_git"], r2["conflicts"]), ([], []), kit.artifact_reconcile_line(r2))
@@ -171,6 +178,85 @@ class ArtifactReconcile(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("not in a local session", out.stdout)
         self.assertFalse((self.art / "state.json").exists())     # nothing loaded, nothing reconciled
+
+    # ---- the review's redirect (CR-cl45): CL51's load keeps the newer copy and never lowers a status; the reconcile
+    # must still see the Artifact's raw copy when the local board was seeded from git first, as at a real web start
+    P = {"title": "Step", "column": "info", "status": "complete", "body": "the original", "updated_at": "2026-11-26T10:00:00Z"}
+
+    def reconciled_once(self):
+        c = self.computer
+        c.write("posts/P", self.P)
+        c.publish()
+        self.artifact("posts", "P", self.P)
+        r = self.reconcile()
+        self.assertEqual(r["conflicts"], [])
+        c.read_in()
+
+    def seed_from_git(self, new_container):
+        if new_container:                                      # the kit's Artifact state is gone with the container
+            import shutil
+            shutil.rmtree(self.art / "base", ignore_errors=True)
+            (self.art / "state.json").unlink(missing_ok=True)
+        for key, doc in self.git_docs().items():               # web_takeover's seed: git's copies on the board
+            api_req(self.url, "doc/" + key, {"data": doc}, TOKEN, "PUT")
+
+    def both_changed(self, new_container, git_newer):
+        self.reconciled_once()
+        g_at, w_at = ("2026-11-26T12:00:00Z", "2026-11-26T11:00:00Z") if git_newer else \
+            ("2026-11-26T11:00:00Z", "2026-11-26T12:00:00Z")
+        self.computer.write("posts/P", dict(self.P, body="the computer's edit", updated_at=g_at))
+        self.computer.publish()
+        self.seed_from_git(new_container)
+        self.artifact("posts", "P", dict(self.P, body="the web's edit", updated_at=w_at))   # the pull
+        r = self.reconcile()
+        shown = self.web("posts/P")["data"]["body"]
+        kept = [d["data"] for d in api_req(self.url, "db/comments", token=TOKEN)["docs"]
+                if (d["data"] or {}).get("kind") == "conflict"]
+        self.assertEqual(r["conflicts"], ["posts/P"], kit.artifact_reconcile_line(r))
+        self.assertEqual(shown, "the computer's edit" if git_newer else "the web's edit")
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0]["conflict"]["other"]["body"], "the web's edit" if git_newer else "the computer's edit")
+        self.assertEqual(self.git_docs()["posts/P"]["body"], shown)
+
+    def test_seeded_new_container_both_changed_git_newer(self):
+        self.both_changed(new_container=True, git_newer=True)
+
+    def test_seeded_new_container_both_changed_web_newer(self):
+        self.both_changed(new_container=True, git_newer=False)
+
+    def test_same_container_both_changed_git_newer(self):
+        self.both_changed(new_container=False, git_newer=True)
+
+    def test_same_container_both_changed_web_newer(self):
+        self.both_changed(new_container=False, git_newer=False)
+
+    def test_a_reopen_made_on_the_artifact_stands(self):
+        self.reconciled_once()
+        self.seed_from_git(new_container=True)
+        reopened = dict(self.P, status="in progress", updated_at="2026-11-26T13:00:00Z")
+        self.artifact("posts", "P", reopened)
+        r = self.reconcile()
+        self.assertEqual(r["conflicts"], [])
+        self.assertEqual(self.web("posts/P")["data"]["status"], "in progress")
+        self.assertEqual(self.git_docs()["posts/P"]["status"], "in progress")
+        sent = [e["doc_id"] for p in r["push"]["batches"] for e in json.loads(Path(p).read_text())
+                if e["collection"] == "posts"]
+        self.assertNotIn("P", sent + r["push"]["need_pin"])     # the Artifact already holds it: nothing goes back
+
+    def test_a_web_review_never_pushes_the_git_copy(self):
+        """CR-cl45: a review's web session ran the WEB steps and pushed board-mirror; it has no KIT_ROLE, but the post
+        it reviews names its session in review_session."""
+        self.artifact("posts", "R", {"title": "Reviewed", "column": "info", "review_session": "session_rev1"})
+        before = git(self.remote, "rev-parse", "board-mirror").strip()
+        old = os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID")
+        os.environ["CLAUDE_CODE_REMOTE_SESSION_ID"] = "cse_rev1"
+        try:
+            r = self.reconcile()
+        finally:
+            os.environ.pop("CLAUDE_CODE_REMOTE_SESSION_ID") if old is None else os.environ.__setitem__("CLAUDE_CODE_REMOTE_SESSION_ID", old)
+        self.assertIn("a review never writes it", r["git"])
+        self.assertEqual(git(self.remote, "rev-parse", "board-mirror").strip(), before)
+        self.assertIn("posts/R", r["to_git"])                  # said, not done
 
 
 if __name__ == "__main__":

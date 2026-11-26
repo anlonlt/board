@@ -1689,6 +1689,31 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
     if not attached_board():
         raise Conflict("this board has no Artifact (kit.artifact / a claude.ai board_url in .kit/config.json)")
     url = url or local_board_url()
+    if not _ensure_local_board(url):
+        raise Conflict("no local board at %s (run `python3 -I .kit/web_takeover.py` first)" % url)
+    tok0 = _resolve_board_token(token)
+    # CL45+CL51 (the review's redirect): the Artifact's side is its raw pulled copy, taken BEFORE the load: CL51's load
+    # keeps the newer of the Artifact's copy and this board's (a git seed at a web start) and never lowers a status, so
+    # after it a both-sides change or a reopen made on the Artifact could no longer be seen here
+    pre = _art_prefix()
+    raw, base_before, here_before = {}, {}, {}
+    for coll in ART_COLLS:
+        for f in glob.glob(os.path.join(_art_dir(), "in", *(pre + coll).split("/"), "*.json")):
+            d = _read_json(f)
+            if isinstance(d, dict):
+                raw[(coll, os.path.basename(f)[:-5])] = d
+        for f in glob.glob(os.path.join(_art_dir(), "base", coll, "*.json")):
+            d = _read_json(f)
+            if isinstance(d, dict):
+                base_before[(coll, os.path.basename(f)[:-5])] = d
+        for row in _board_request(url, "db/%s" % coll, token=tok0).get("docs") or []:
+            here_before[(coll, row["id"])] = row.get("data") or {}
+    not_there_before = set(_art_state().get("not_there") or [])
+    # a review never writes the git copy (CR-cl45: a web review, launched by create_session, has no KIT_ROLE; the post
+    # it reviews names it in review_session)
+    me = whoami()
+    reviewing = sorted(k[1] for k, d in list(raw.items()) + list(here_before.items())
+                       if me and k[0] == "posts" and isinstance(d, dict) and d.get("review_session") == me)
     loaded = artifact_load(url=url, token=token)
     token = _resolve_board_token(token)
     branch = branch or BRANCH
@@ -1706,20 +1731,32 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
             base = {}
     st = _art_state()
     not_there = set(st.get("not_there") or [])
-    here, art = {}, {}
+    here, art, side = {}, {}, {}
     for coll in ART_COLLS:
         for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
             k = (coll, row["id"])
             here[k] = (row.get("data") or {}, row.get("version", 0))
-            if "%s/%s" % k not in not_there:
-                b = _read_json(_base_path(coll, row["id"]))
-                if isinstance(b, dict):
-                    art[k] = b                 # what the Artifact holds (load and sent keep it)
+    for k in set(here) | set(raw) | set(base_before):
+        key = "%s/%s" % k
+        if k in raw:
+            art[k] = raw[k]                    # pulled now: the Artifact's copy as it is
+        elif k in base_before and key not in not_there_before:
+            art[k] = base_before[k]            # not in a delta pull: what it last had
+    for k in set(here) | set(art):
+        a = art.get(k)
+        hb, bb, g = here_before.get(k), base_before.get(k), gdocs.get(k, (None,))[0]
+        if hb is not None and bb is not None and hb != bb and hb != g and "%s/%s" % k not in not_there_before:
+            # this session's own edit, not yet sent (a git seed equals git's copy, and is no edit)
+            side[k] = _merge_doc(k[1], a, hb, bb) if a is not None and a != bb else hb
+        elif a is not None:
+            side[k] = a
+        elif k in here:
+            side[k] = here[k][0]               # only on this board
     writes, to_git, conflicts, decided_by_date = {}, {}, [], 0
-    final = {}
-    for k in sorted(set(here) | set(gdocs)):
+    final, got = {}, set()
+    for k in sorted(set(side) | set(gdocs)):
         kind, did = k
-        l = here.get(k, (None, 0))[0]
+        l = side.get(k)
         g, gt = gdocs.get(k, (None, ""))
         key = "%s/%s" % k
         if g is None:
@@ -1730,6 +1767,7 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
         if l is None:
             writes[k] = g                      # in git only: here, then the Artifact
             final[k] = g
+            got.add(k)
             continue
         if l == g:
             final[k] = l
@@ -1757,9 +1795,14 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
         if win == "git":
             writes[k] = g
             final[k] = g
+            got.add(k)
         else:
             to_git[k] = l
             final[k] = l
+    # the board here shows each final copy, whatever the load kept (CL51's keep_newer is for a plain load)
+    for k, f in final.items():
+        if f is not None and k not in writes and here.get(k, (None,))[0] != f:
+            writes[k] = f
     # here: one document at a time, pinned to the version read before it (a post's write can touch a card)
     for (coll, did), data in sorted(writes.items()):
         api = "doc/%s/%s" % (coll, urllib.parse.quote(did, safe=""))
@@ -1794,7 +1837,9 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
     _art_save(st)
     # git: the documents it lacks or holds older, and the base (each document both sides will hold), in one commit
     pushed = "git copy not updated (--no-push)"
-    if push:
+    if push and reviewing:
+        pushed = "git copy not updated (this session reviews %s: a review never writes it)" % reviewing[0]
+    elif push:
         if not os.path.exists(os.path.join(m, ".git")):
             pushed = "git copy not updated (no board-mirror worktree at %s)" % m
         else:
@@ -1818,7 +1863,7 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
             else:
                 pushed = "git copy already current"
     out = artifact_push(url=url, token=token)
-    from_git = sorted("%s/%s" % k for k in writes if not str(k[1]).startswith("conflict-"))
+    from_git = sorted("%s/%s" % k for k in got)
     return {"loaded": loaded, "from_git": from_git, "to_git": sorted("%s/%s" % k for k in to_git), "conflicts": conflicts,
             "by_date": decided_by_date, "git": pushed, "push": out}
 
