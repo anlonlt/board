@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T23:29:23Z",
+ "created_at": "2026-11-26T23:47:20Z",
  "rows": [
   {
    "at": 0,
@@ -106,7 +106,8 @@
     "On a computer, a part runs its own real-project check before Done",
     "Every rule that differs by platform says where it applies, checked by a test",
     "Every new step is measured against every open one: queue order and what runs together",
-    "macOS Install Guide & Script: Connecting GitHub to Antigravity Desktop App"
+    "macOS Install Guide & Script: Connecting GitHub to Antigravity Desktop App",
+    "Antigravity desktop app (local computer, NOT web) — Direct kit support patch & review b..."
    ],
    "train": "P-runners"
   },
@@ -168,5 +169,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T23:29:23Z"
+ "updated_at": "2026-11-26T23:47:20Z"
 }

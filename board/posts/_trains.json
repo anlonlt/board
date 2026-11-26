@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T23:29:23Z",
+ "created_at": "2026-11-26T23:47:20Z",
  "rows": [
   {
    "also": [],
@@ -92,7 +92,8 @@
     "R4",
     "R5",
     "R6",
-    "antigravity-macos-local"
+    "antigravity-macos-local",
+    "antigravity-app-local"
    ],
    "parent": "",
    "part": "P-runners",
@@ -1134,8 +1135,19 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-runners",
+   "part": "antigravity-app-local",
+   "post": "r1-antigravity-on-the-web-how-far-it-antigravity-app--ed2a38",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T23:29:23Z"
+ "updated_at": "2026-11-26T23:47:20Z"
 }
