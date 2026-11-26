@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T19:14:25Z",
+ "created_at": "2026-11-26T19:40:34Z",
  "rows": [
   {
    "also": [],
@@ -96,7 +96,10 @@
   {
    "also": [],
    "children": [
-    "M1"
+    "M1",
+    "M2",
+    "M4",
+    "M5"
    ],
    "parent": "",
    "part": "P-memory",
@@ -784,7 +787,7 @@
    "part": "CL44",
    "post": "cl44-agy-runtime-startup-mcp-usage-and-mirror-fixes",
    "prompt": "",
-   "session": "board-cl44",
+   "session": "9ef1a1ef-83ed-4c2e-9928-3ee330787aa8",
    "state": "running",
    "store": []
   },
@@ -798,8 +801,41 @@
    "session": "14f4e948-4a51-4209-a354-df2737018933",
    "state": "running",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-memory",
+   "part": "M2",
+   "post": "m2-install-draws-the-first-map",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-memory",
+   "part": "M4",
+   "post": "m4-map-readers-beyond-code-power-bi-documen",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-memory",
+   "part": "M5",
+   "post": "m5-a-resume-prints-only-what-changed",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T19:14:25Z"
+ "updated_at": "2026-11-26T19:40:34Z"
 }

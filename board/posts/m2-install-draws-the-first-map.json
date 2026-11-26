@@ -1,0 +1,47 @@
+{
+ "body": "Install draws the first map: the plumbing that already exists is on the map from day one. Waits on M1 (the map's format: things, links, flags; every link carries a check that runs).\n\n1. Step 0's scan builds the first map with `kit.py map` and keeps it with the project, in scripts/step0_scan.py and install.py.\n2. Install on a project with no map runs it once; `--update` refreshes it and says what changed (things and links added or gone, checks now failing).\n3. The welcome and the orchestrator's resume name the map's health in one line: things, links, checks passing, checks unconfirmed.\n4. Tests on a small project fixture, in tests/test_map_install.py with install.py.\n\nBars: build time at install on the kit itself and on a Harmonize-shaped copy; how many of its files the first map covers (out of all).\n",
+ "column": "info",
+ "created_at": "2026-11-26T19:40:25Z",
+ "from": "orchestrator",
+ "part": "M2",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "install.py",
+    "kit.py",
+    "scripts/step0_scan.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "Step 0's scan builds the first map with kit.py map and keeps it with the project, in..."
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "Install on a project with no map runs it once"
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "The welcome and the orchestrator's resume name the map's health in one line"
+  },
+  {
+   "files": [
+    "install.py",
+    "tests/test_map_install.py"
+   ],
+   "from": "task",
+   "n": 4,
+   "status": "open",
+   "title": "Tests on a small project fixture, in tests/test_map_install.py with install.py"
+  }
+ ],
+ "task": "Install draws the first map: the plumbing that already exists is on the map from day one. Waits on M1 (the map's format: things, links, flags; every link carries a check that runs).\n\n1. Step 0's scan builds the first map with `kit.py map` and keeps it with the project, in scripts/step0_scan.py and install.py.\n2. Install on a project with no map runs it once; `--update` refreshes it and says what changed (things and links added or gone, checks now failing).\n3. The welcome and the orchestrator's resume name the map's health in one line: things, links, checks passing, checks unconfirmed.\n4. Tests on a small project fixture, in tests/test_map_install.py with install.py.\n\nBars: build time at install on the kit itself and on a Harmonize-shaped copy; how many of its files the first map covers (out of all).\n",
+ "title": "Install draws the first map",
+ "train": "memory"
+}
