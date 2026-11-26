@@ -103,6 +103,17 @@ def owns_board():
     return True, ""
 
 
+def artifact_board():
+    """The claude.ai Artifact this board lives in (kit.artifact.url, or a claude.ai board_url), '' for a git-only board."""
+    c = cfg()
+    a = (c.get("kit") or {}).get("artifact")
+    for u in ((a or {}).get("url") if isinstance(a, dict) else "", os.environ.get("KIT_ARTIFACT_URL"), c.get("board_url"),
+              (c.get("kit") or {}).get("artifact_url")):
+        if u and "claude.ai/" in str(u):
+            return str(u)
+    return ""
+
+
 def start_board():
     p = port()
     if healthy(p):
@@ -193,8 +204,18 @@ def cmd_start():
     ensure_mirror_worktree()
     # the board here against git: what the computer saved before it stopped (or crashed) comes in, newer copy wins
     own, why = owns_board()
-    rc, rec = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "reconcile"] + ([] if own else ["--no-push"]), timeout=240)
-    print(rec.splitlines()[-1] if rec else "reconcile: no output")
+    if artifact_board():
+        # CL45: an Artifact board is reconciled with git by `kit.py artifact reconcile` once its pull is made (the
+        # ArtifactData calls are this session's): a git reconcile here first would put git's copies in before the
+        # Artifact's, and the documents only git had would never reach the Artifact
+        print("Board vs git: after the pull below, `python3 -I .kit/kit.py artifact reconcile` (the Artifact against "
+              "origin/%s, both ways, newer wins, a both-sides change kept twice)." % mirror_branch())
+        rc, pull = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "artifact", "pull"], timeout=60)
+        print(pull)
+    else:
+        rc, rec = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "reconcile"] + ([] if own else ["--no-push"]),
+                     timeout=240)
+        print(rec.splitlines()[-1] if rec else "reconcile: no output")
     rc, res = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "resume"], timeout=180)
     print()
     print(res)

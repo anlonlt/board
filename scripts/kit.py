@@ -1027,7 +1027,12 @@ def artifact_pull(full=False):
     if since:
         lines.append("(A post changed on the page without a new `updated_at`, or a comment edited later, comes with "
                      "`kit.py artifact pull --full`: do it once a day or when something looks stale.)")
-    lines += ["", "Then: `python3 -I .kit/kit.py artifact load` (starts the local board if needed; your own unsent changes stay)."]
+    if _is_web():
+        # CL45: a web session's start reconciles the Artifact with GitHub (board-mirror), not only loads it
+        lines += ["", "Then: `python3 -I .kit/kit.py artifact reconcile` (it runs `artifact load`, then the Artifact against "
+                  "origin/board-mirror both ways, and prints the batches to send; your own unsent changes stay)."]
+    else:
+        lines += ["", "Then: `python3 -I .kit/kit.py artifact load` (starts the local board if needed; your own unsent changes stay)."]
     return "\n".join(lines) + "\n"
 
 
@@ -1347,6 +1352,8 @@ def stale_copy():
     way = ("run `python3 -I .kit/kit.py artifact pull`, make the ArtifactData calls it prints, then `python3 -I "
            ".kit/kit.py artifact load`; then this command again (KIT_STALE_OK=1 reads the old copy anyway)")
     if not at:
+        if _is_web():      # CL45: a web session's first load is its reconcile with GitHub
+            way = way.replace("kit.py artifact load`", "kit.py artifact reconcile` (the Artifact against GitHub, both ways)")
         return "STALE: this copy of the Artifact board (%s) was never loaded here: %s." % (artifact_url(), way)
     try:
         age = (datetime.now(timezone.utc) - datetime.strptime(at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -1600,6 +1607,193 @@ def artifact_sent(batch_path):
     except OSError:
         pass
     return len(batch)
+
+
+# ---------------------------------------------------------------- CL45: a web session reconciles its Artifact with git
+# The Artifact (the web's record) and origin/board-mirror (the computer's record) each gain posts the other lacks. At a
+# web session's start, after the pull: load the Artifact here, then each post and comment against git: in one side only,
+# it goes to the other; changed on one side since the last reconcile, that side wins; changed on BOTH (the base, kept in
+# git as board/artifact-reconciled.json, says what both had), the newer copy shows and the other is kept in a comment.
+ART_RECONCILED = "board/artifact-reconciled.json"
+
+
+def _doc_hash(d):
+    return hashlib.sha256(json.dumps(d, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+
+
+def _doc_stamp(d, fallback=""):
+    d = d if isinstance(d, dict) else {}
+    return _utc(d.get("updated_at") or d.get("created_at") or "") or fallback or ""
+
+
+def _conflict_comment(kind, did, kept, kept_side, other, other_side):
+    """The copy that lost a both-sides change, kept as a comment under its post (the board shows it there)."""
+    cid = "conflict-%s" % _doc_hash([kind, did, other])
+    post = did if kind == "posts" else str((other or {}).get("post_id") or (kept or {}).get("post_id") or did)
+    excerpt = str((other or {}).get("body") or (other or {}).get("text") or (other or {}).get("title") or "")
+    if len(excerpt) > 1500:
+        excerpt = excerpt[:1500] + "…"
+    text = ("Conflict: %s %s changed both on the %s and on the %s since the last reconcile. The board shows the %s copy "
+            "(newer, %s); the %s copy (%s) is kept here, whole, in this comment's `conflict.other`; nothing was lost. "
+            "Pick one and write it back to the %s." % (
+                "post" if kind == "posts" else "comment", did, "Artifact", "GitHub copy (board-mirror)", kept_side,
+                _doc_stamp(kept) or "no date", other_side, _doc_stamp(other) or "no date", kind[:-1]))
+    if excerpt:
+        text += "\n\nThe %s copy:\n\n> %s" % (other_side, excerpt.replace("\n", "\n> "))
+    return cid, {"post_id": post, "from": "kit", "kind": "conflict", "text": text, "created_at": _now_z(),
+                 "conflict": {"doc": "%s/%s" % (kind, did), "shown": kept_side, "other_side": other_side, "other": other}}
+
+
+def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
+    """`kit.py artifact reconcile` (after `artifact pull` and its ArtifactData calls): the Artifact against
+    origin/<branch>, both ways, nothing lost. Returns the counts and the artifact push (the batches to send)."""
+    if not attached_board():
+        raise Conflict("this board has no Artifact (kit.artifact / a claude.ai board_url in .kit/config.json)")
+    url = url or local_board_url()
+    loaded = artifact_load(url=url, token=token)
+    token = _resolve_board_token(token)
+    branch = branch or BRANCH
+    repo = m if os.path.exists(os.path.join(m, ".git")) else ROOT
+    remote_ref = "refs/remotes/origin/" + branch
+    git(repo, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:%s" % (branch, remote_ref))
+    has_remote = git(repo, "rev-parse", "--verify", "--quiet", remote_ref).returncode == 0
+    gdocs = {k: v for k, v in (_git_board_docs(repo, remote_ref) if has_remote else {}).items() if k[0] in ART_COLLS}
+    base = {}
+    if has_remote:
+        r = git(repo, "show", "%s:%s" % (remote_ref, ART_RECONCILED))
+        try:
+            base = (json.loads(r.stdout) or {}).get("docs") or {} if r.returncode == 0 else {}
+        except ValueError:
+            base = {}
+    st = _art_state()
+    not_there = set(st.get("not_there") or [])
+    here, art = {}, {}
+    for coll in ART_COLLS:
+        for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
+            k = (coll, row["id"])
+            here[k] = (row.get("data") or {}, row.get("version", 0))
+            if "%s/%s" % k not in not_there:
+                b = _read_json(_base_path(coll, row["id"]))
+                if isinstance(b, dict):
+                    art[k] = b                 # what the Artifact holds (load and sent keep it)
+    writes, to_git, conflicts, decided_by_date = {}, {}, [], 0
+    final = {}
+    for k in sorted(set(here) | set(gdocs)):
+        kind, did = k
+        l = here.get(k, (None, 0))[0]
+        g, gt = gdocs.get(k, (None, ""))
+        key = "%s/%s" % k
+        if g is None:
+            final[k] = l
+            if key not in not_there or k in art:
+                to_git[k] = l                  # the Artifact's (or this session's) document: git gets it
+            continue
+        if l is None:
+            writes[k] = g                      # in git only: here, then the Artifact
+            final[k] = g
+            continue
+        if l == g:
+            final[k] = l
+            continue
+        b = base.get(key)
+        hl, hg = _doc_hash(l), _doc_hash(g)
+        if b and hg == b:
+            win = "here"
+        elif b and hl == b:
+            win = "git"
+        else:
+            sl, sg = _doc_stamp(l), _doc_stamp(g, gt)
+            win = "git" if sg > sl else "here"
+            if b:                              # both changed since the last reconcile: never silent
+                kept, other = (g, l) if win == "git" else (l, g)
+                cid, cdoc = _conflict_comment(kind, did, kept, "GitHub" if win == "git" else "Artifact", other,
+                                              "Artifact" if win == "git" else "GitHub")
+                if ("comments", cid) not in here and ("comments", cid) not in gdocs:
+                    writes[("comments", cid)] = cdoc
+                    to_git[("comments", cid)] = cdoc
+                    final[("comments", cid)] = cdoc
+                conflicts.append(key)
+            else:
+                decided_by_date += 1
+        if win == "git":
+            writes[k] = g
+            final[k] = g
+        else:
+            to_git[k] = l
+            final[k] = l
+    # here: one document at a time, pinned to the version read before it (a post's write can touch a card)
+    for (coll, did), data in sorted(writes.items()):
+        api = "doc/%s/%s" % (coll, urllib.parse.quote(did, safe=""))
+        for attempt in (1, 2):
+            cur = _board_request(url, api, token=token)
+            try:
+                _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": data,
+                                                             "if_version": cur.get("version", 0)}], "sync": True}, token=token)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code != 409 or attempt == 2:
+                    raise Conflict("the board kept changing under %s/%s; run it again" % (coll, did)) from e
+        key = "%s/%s" % (coll, did)
+        if key in not_there and (coll, did) not in art:
+            # O53 kept a document the Artifact never had from being sent; one git holds goes now, as a create
+            not_there.discard(key)
+            try:
+                os.remove(_base_path(coll, did))
+            except OSError:
+                pass
+    # what this copy held that only git also holds (a git seed made before this): the Artifact gets it too
+    for k, (g, _gt) in gdocs.items():
+        key = "%s/%s" % k
+        if key in not_there and k not in art and k not in writes and here.get(k, (None,))[0] == g:
+            not_there.discard(key)
+            try:
+                os.remove(_base_path(*k))
+            except OSError:
+                pass
+    st = _art_state()
+    st["not_there"] = sorted(not_there)
+    _art_save(st)
+    # git: the documents it lacks or holds older, and the base (each document both sides will hold), in one commit
+    pushed = "git copy not updated (--no-push)"
+    if push:
+        if not os.path.exists(os.path.join(m, ".git")):
+            pushed = "git copy not updated (no board-mirror worktree at %s)" % m
+        else:
+            git(m, "fetch", "-q", "--no-tags", "origin", branch)
+            if has_remote and git(m, "merge", "--ff-only", "origin/" + branch).returncode != 0:
+                if git(m, "merge", "--no-edit", "-X", "ours", "origin/" + branch).returncode != 0:
+                    git(m, "merge", "--abort")
+            new_base = dict(base)
+            for k, f in final.items():
+                if f is not None and art.get(k) == f and (to_git.get(k, gdocs.get(k, (None,))[0]) == f):
+                    new_base["%s/%s" % k] = _doc_hash(f)   # both sides hold it: the next reconcile's base
+            for (coll, did), data in to_git.items():
+                write_doc(os.path.join(m, "board", coll, did + ".json"), data)
+            write_doc(os.path.join(m, ART_RECONCILED), {"docs": dict(sorted(new_base.items())), "at": _now_z()})
+            if git(m, "status", "--porcelain", "board").stdout.strip():
+                git(m, "add", "board")
+                git(m, "commit", "-q", "-m", "kit artifact reconcile: %d to git, %d conflict(s)" % (len(to_git), len(conflicts)))
+                r = git(m, "push", "-q", "origin", "HEAD:" + branch)
+                pushed = "pushed to origin/%s" % branch if r.returncode == 0 else \
+                    "push to origin/%s refused: %s" % (branch, (r.stdout + r.stderr).strip()[-200:])
+            else:
+                pushed = "git copy already current"
+    out = artifact_push(url=url, token=token)
+    from_git = sorted("%s/%s" % k for k in writes if not str(k[1]).startswith("conflict-"))
+    return {"loaded": loaded, "from_git": from_git, "to_git": sorted("%s/%s" % k for k in to_git), "conflicts": conflicts,
+            "by_date": decided_by_date, "git": pushed, "push": out}
+
+
+def artifact_reconcile_line(r):
+    """The one line: what came from GitHub, what went to it, the conflicts kept."""
+    def few(xs):
+        return ("" if not xs else " (%s%s)" % (", ".join(x.split("/", 1)[1] for x in xs[:6]), ", …" if len(xs) > 6 else ""))
+    p = r.get("push") or {}
+    return ("Artifact vs GitHub: %d from GitHub%s; %d to GitHub%s, %s; %d conflict(s)%s%s; to the Artifact: %d write(s) in "
+            "%d batch(es)." % (len(r["from_git"]), few(r["from_git"]), len(r["to_git"]), few(r["to_git"]), r["git"],
+                               len(r["conflicts"]), few(r["conflicts"]),
+                               " (both kept, see each post's conflict comment)" if r["conflicts"] else "",
+                               p.get("writes", 0), len(p.get("batches") or [])))
 
 
 def _pin_dir():
@@ -6106,6 +6300,7 @@ COMMANDS = [
     ("launch and finish", "handover.py --role R", "a context reset: a fresh session under the same name"),
     ("Artifact and web", "web_takeover.py [save]", "a web session: the board from git and the steps to continue / the board back to git"),
     ("Artifact and web", "kit.py artifact pull|load|push|sent|pin", "the Artifact board to the local copy (starts the local board) and back, as pinned batches"),
+    ("Artifact and web", "kit.py artifact reconcile", "a web session's start, after the pull: the Artifact vs origin/board-mirror, both ways, newer wins, a both-sides change kept twice"),
     ("Artifact and web", "kit.py reconcile", "the board here vs its git copy: the newer copy of each document wins"),
     ("Artifact and web", "kit_artifact_sync.py", "the repo's documents and files into the Artifact for its viewers"),
     ("Artifact and web", "update_board.py", "the Artifact's page to the kit's current page"),
@@ -8350,8 +8545,10 @@ def main(argv=None):
     s.add_argument("word", nargs="?", default=None)
     s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
     s.add_argument("--dry-run", action="store_true"); s.add_argument("--db", default=None)
-    s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
-    s.add_argument("action", choices=["pull", "load", "push", "sent", "pin", "status"]); s.add_argument("args", nargs="*")
+    s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>... | reconcile")
+    s.add_argument("action", choices=["pull", "load", "push", "sent", "pin", "status", "reconcile"]); s.add_argument("args", nargs="*")
+    s.add_argument("--no-push", action="store_true", help="reconcile: the git copy is not committed nor pushed")
+    s.add_argument("--branch", default=None, help="reconcile: the git copy's branch (default: the mirror's)")
     s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("reconcile", help="the board here vs its git copy: the newer copy of each post and comment wins")
@@ -8621,6 +8818,20 @@ def main(argv=None):
                 for u in r.get("unmerged") or []:
                     print("NOT MERGED (rows without a key changed on both sides; this copy kept, its pin will refuse): " + u)
                 print(artifact_blobs_text(r), end="")
+            elif a.action == "reconcile":
+                if not _is_web() and not os.environ.get("KIT_ARTIFACT_RECONCILE_LOCAL"):
+                    print("artifact reconcile: not in a local session (a computer reconciles its own board with git: "
+                          "`kit.py reconcile`); it runs at a web session's start.")
+                    return 0
+                with _sync_lock(m) if os.path.isdir(m) else contextlib.nullcontext():
+                    # a review, a check or KIT_NO_BOARD_PUSH never writes the git copy (web_takeover.owns_board's rule)
+                    quiet = str(os.environ.get("KIT_ROLE") or "").strip().lower() in ("review", "check", "consultant") or \
+                        str(os.environ.get("KIT_NO_BOARD_PUSH") or "").lower() in ("1", "true", "yes")
+                    r = artifact_reconcile(m, url=a.board_url, token=a.token, branch=a.branch, push=not (a.no_push or quiet))
+                print(artifact_reconcile_line(r))
+                for u in r["loaded"].get("unmerged") or []:
+                    print("NOT MERGED (rows without a key changed on both sides; this copy kept, its pin will refuse): " + u)
+                print(artifact_push_text(r["push"]), end="")
             elif a.action == "push":
                 print(artifact_push_text(artifact_push(url=a.board_url, token=a.token)), end="")
             elif a.action == "sent":
