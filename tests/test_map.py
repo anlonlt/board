@@ -343,6 +343,30 @@ class Generators(unittest.TestCase):
             shutil.rmtree(root, ignore_errors=True)
 
 
+class WhatItCannotRead(unittest.TestCase):
+    """Harmonize (2026-11-26): 568 Kotlin files, no reader, and an overview that said "flags: none"."""
+
+    def test_unread_languages_are_named_first_and_flagged(self):
+        files = dict(PY_FILES)
+        for i in range(3):
+            files["android/app/src/Main%d.kt" % i] = "package x\nclass Main%d\n" % i
+        files["db/migr.sql"] = "create table t (id int);\n"
+        root = make(files, git=False)
+        try:
+            d, out = kit_map.build(root, os.path.join(root, "o"), run_gens=False)
+            self.assertEqual(len(d["unread"]["Kotlin"]), 3)
+            ov = rd(os.path.join(out, "overview.md")).splitlines()
+            head = "\n".join(ov[:4])
+            self.assertIn("NOT READ: 4 source file(s)", head)
+            self.assertIn("3 Kotlin", head)
+            self.assertIn("covers 5 of 9 source files", head)
+            kt = [f for f in d["flags"] if f["kind"] == "unread" and "Kotlin" in f["text"]]
+            self.assertTrue(kt and "android/ 3" in kt[0]["text"], d["flags"])
+            self.assertNotIn("flags at the joins: none", "\n".join(ov).lower())
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+
 class KitCommand(unittest.TestCase):
     def test_kit_py_map_runs_and_is_in_the_command_index(self):
         root = make(TS_FILES)
