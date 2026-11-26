@@ -5,6 +5,7 @@
  "from": "orchestrator",
  "part": "CL48",
  "planned_by": "orchestrator",
+ "priority": 1,
  "runner": "claude-web",
  "status": "planned",
  "subtasks": [
@@ -39,5 +40,5 @@
  "task": "A test never writes to the real board. The real board's `_orchestrator` post says \"the install session of the board kit on Tide Clock (branch test-install)\": Tide Clock is the made-up project of the install tests, and that text reached the real board's git copy on 2026-11-20 (board-mirror commit 738a5f3, \"kit sync ... (full)\").\n\n1. Find how: which test or install run wrote to the real board or its board-mirror (a test whose board URL, token or mirror path fell back to the real one).\n2. Make it impossible: a test run (run_all_tests.py, or KIT_TEST set) refuses any write to a board, mirror or remote that is not under a temp folder, with the path it refused.\n3. Put the `_orchestrator` post's text right (what it says for this repo), keeping its session id.\n4. A test that tries to write to the real board from a test run and is refused.\n",
  "title": "A test never writes to the real board",
  "train": "board-data",
- "updated_at": "2026-11-26T21:32:59Z"
+ "updated_at": "2026-11-26T22:44:45Z"
 }

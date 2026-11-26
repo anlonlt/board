@@ -1,10 +1,28 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:43:01Z",
+ "created_at": "2026-11-26T22:44:44Z",
  "rows": [
   {
-   "at": 40,
+   "at": 0,
    "key": "A",
+   "name": "Board data",
+   "note": "Next: The board travels in git, always current (mirror synced on every step)",
+   "post": "cl16-the-board-travels-in-git-always-current",
+   "state": "ready",
+   "steps": [
+    "The board travels in git, always current (mirror synced on every step)",
+    "A web session reconciles its Artifact with GitHub at its start",
+    "end_session says why a push failed",
+    "CL41's redirect resolved, so the trunk can move",
+    "A test never writes to the real board",
+    "A session on a computer never writes to the Artifact",
+    "Tests clean up after themselves"
+   ],
+   "train": "P-board-data"
+  },
+  {
+   "at": 40,
+   "key": "B",
    "name": "Cli",
    "note": "Next: The Trains view: task lists (A) or the old flow map (B)?",
    "post": "cl27-q-trains-view",
@@ -60,7 +78,7 @@
   },
   {
    "at": 4,
-   "key": "B",
+   "key": "C",
    "name": "Release",
    "note": "Next: Benchmark: mirror reads 12× smaller",
    "post": "demo-info-1",
@@ -73,24 +91,6 @@
     "Benchmark: mirror reads 12× smaller"
    ],
    "train": "P-release"
-  },
-  {
-   "at": 0,
-   "key": "C",
-   "name": "Board data",
-   "note": "Next: The board travels in git, always current (mirror synced on every step)",
-   "post": "cl16-the-board-travels-in-git-always-current",
-   "state": "ready",
-   "steps": [
-    "The board travels in git, always current (mirror synced on every step)",
-    "A web session reconciles its Artifact with GitHub at its start",
-    "end_session says why a push failed",
-    "CL41's redirect resolved, so the trunk can move",
-    "A test never writes to the real board",
-    "A session on a computer never writes to the Artifact",
-    "Tests clean up after themselves"
-   ],
-   "train": "P-board-data"
   },
   {
    "at": 6,
@@ -164,5 +164,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T22:43:01Z"
+ "updated_at": "2026-11-26T22:44:44Z"
 }
