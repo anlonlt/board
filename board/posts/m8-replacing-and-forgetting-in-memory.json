@@ -5,6 +5,7 @@
  "from": "orchestrator",
  "part": "M8",
  "planned_by": "orchestrator",
+ "runner": "claude-web",
  "status": "planned",
  "subtasks": [
   {
@@ -41,5 +42,6 @@
  ],
  "task": "Replacing and forgetting: an entry that replaces another names it, and the old one leaves the memory, so a session never meets two rules that disagree (the French repo: two docs each claiming to rank first).\n\n1. A lesson, decision or principle can say `replaces: <id>`; the replaced one moves to the archive with a pointer to its successor, in kit/ledger.py with tests/test_memory_replace.py.\n2. `kit.py lessons check` flags two live entries on the same files or theme that contradict each other (opposite verbs on the same subject, the same setting with different values) and asks which one wins.\n3. An entry unconfirmed for longer than a number of days set in the kit config goes to a review list on the board, never deleted silently.\n4. Guides and memory files say which one is the authority in one place only; a second claim of authority is flagged.\n\nBars: on the kit's and the French repo's memory, contradicting pairs found.\n",
  "title": "Replacing and forgetting in memory",
- "train": "memory"
+ "train": "memory",
+ "updated_at": "2026-11-26T21:07:43Z"
 }
