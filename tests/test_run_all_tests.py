@@ -163,5 +163,44 @@ class Runner(unittest.TestCase):
         self.assertIn("test_a_bad.py", self.run_("--list").stdout.splitlines()[0])
 
 
+    def commit(self):
+        for a in (["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "c"]):
+            subprocess.run(["git", "-C", str(self.d)] + a, check=True)
+
+    def note(self):
+        r = subprocess.run(["git", "-C", str(self.d), "notes", "--ref", "kit-tests", "show", "HEAD"], capture_output=True, text=True)
+        import json
+        return json.loads(r.stdout) if r.returncode == 0 else None
+
+    def test_a_full_run_is_saved_on_its_commit_and_resumed_by_the_next(self):
+        self.suite("a_bad", "self.fail('x')")
+        self.commit()
+        r = self.run_("--all", "--keep-going")
+        self.assertEqual(r.returncode, 1)
+        n = self.note()
+        self.assertEqual(set(n["passed"]), {"tests/test_%s.py" % x for x in ("one", "m", "child", "note", "copy")})
+        self.assertEqual(n["failed"], ["tests/test_a_bad.py"])
+        # the next session (a stopped run, another device after a fetch) runs only what has not passed on this commit
+        r = self.run_("--all", "--keep-going")
+        self.assertIn("5 suites already passed on it, 1 to run", r.stdout)
+        self.assertIn("[FAIL] tests/test_a_bad.py", r.stdout)
+        self.assertNotIn("test_one.py", r.stdout.split("resuming", 1)[1].split("SUMMARY")[0])
+        self.assertIn("5 passed earlier on this commit", r.stdout)
+        self.assertIn("6 to run", self.run_("--all", "--fresh", "--list").stdout.replace("\n", " ") + " 6 to run")
+        # a new commit starts fresh
+        self.suite("a_bad", "pass")
+        self.commit()
+        r = self.run_("--all")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertNotIn("resuming", r.stdout)
+        self.assertEqual(len(self.note()["passed"]), 6)
+
+    def test_uncommitted_changes_are_never_saved_as_a_pass(self):
+        self.commit()
+        self.edit("kit/note.md", "words", "other words")
+        r = self.run_("--all")
+        self.assertIn("full run not saved on a commit: uncommitted changes", r.stdout)
+        self.assertIsNone(self.note())
+
 if __name__ == "__main__":
     unittest.main()

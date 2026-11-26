@@ -401,6 +401,58 @@ def save_memo(memo):
         pass
 
 
+NOTES_REF = "kit-tests"   # git notes: a full run's progress, on the commit it ran on (pushed: any session resumes it)
+
+
+def _git(root, *a, timeout=30):
+    try:
+        return subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as e:
+        return subprocess.CompletedProcess(a, 1, "", str(e))
+
+
+def run_commit(root):
+    """(commit, why_not): the commit a full run's passes count for, or None and why (uncommitted changes to tracked
+    files: a pass is only worth something for code that is in a commit)."""
+    head = _git(root, "rev-parse", "HEAD")
+    if head.returncode != 0:
+        return None, "no commit here"
+    dirty = _git(root, "status", "--porcelain", "--untracked-files=no").stdout.strip()
+    if dirty:
+        return None, "uncommitted changes (%d files): this run starts fresh and is not saved" % len(dirty.splitlines())
+    return head.stdout.strip(), ""
+
+
+def note_read(root, commit, fetch=True):
+    """What a full run on `commit` already did: {"passed": {suite: seconds}, "failed": [...], ...} ({} for none)."""
+    if fetch:
+        _git(root, "fetch", "-q", "origin", "+refs/notes/%s:refs/notes/%s" % (NOTES_REF, NOTES_REF), timeout=20)
+    r = _git(root, "notes", "--ref", NOTES_REF, "show", commit)
+    try:
+        d = json.loads(r.stdout) if r.returncode == 0 else {}
+    except ValueError:
+        d = {}
+    return d if isinstance(d, dict) else {}
+
+
+def note_write(root, commit, note):
+    """Record the run's progress on the commit (local at once; pushed by note_push)."""
+    return _git(root, "notes", "--ref", NOTES_REF, "add", "-f", "-m", json.dumps(note, sort_keys=True), commit).returncode == 0
+
+
+def note_push(root, wait=False):
+    """Push the notes so another session or device resumes the run; detached unless `wait`."""
+    cmd = ["git", "-C", root, "push", "-q", "origin", "refs/notes/%s:refs/notes/%s" % (NOTES_REF, NOTES_REF)]
+    try:
+        if wait:
+            return subprocess.run(cmd, capture_output=True, timeout=60).returncode == 0
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                         start_new_session=True)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def tail(text, n=60):
     lines = text.rstrip().splitlines()
     i = next((k for k, x in enumerate(lines) if x.startswith(("ERROR: ", "FAIL: ", "FAIL "))), None)
@@ -410,8 +462,9 @@ def tail(text, n=60):
     return "\n".join(lines[:n] if i is not None else lines[-n:])
 
 
-def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True):
-    """(results, stopped): the suites run, at most `jobs` at once; the first failure stops the others."""
+def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True, on_done=None):
+    """(results, stopped): the suites run, at most `jobs` at once; the first failure stops the others. `on_done(name,
+    ok, seconds)` after each suite (a full run records its progress on the commit)."""
     work = tempfile.mkdtemp(prefix="kit-tests-")
     live, results, queue, stopped, ears = {}, [], list(todo), False, Listeners(out)
 
@@ -474,6 +527,8 @@ def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True):
                     if not keep_going:
                         stopped = True
                 save_memo(memo)
+                if on_done:
+                    on_done(name, ok, dt)
             if stopped:
                 for p in list(live):
                     kill(p)
@@ -492,18 +547,35 @@ def main(argv=None):
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--keep-going", action="store_true")
+    ap.add_argument("--fresh", action="store_true", help="--all from the start, not resuming this commit's run")
     ap.add_argument("-j", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     a = ap.parse_args(argv)
     t0, memo, files, todo, same = time.monotonic(), load_memo(), Files(), [], []
+    # A full run is a task like any other: its progress is on the commit (git notes), so a run stopped anywhere is
+    # resumed by any session on any device; only what has not passed on this commit runs again.
+    commit, note, resumed = None, {}, []
+    if a.all and not a.words:
+        commit, why_not = run_commit(REPO_ROOT)
+        if commit and not a.fresh:
+            note = note_read(REPO_ROOT, commit, fetch=not a.list)
+        elif not commit:
+            print("full run not saved on a commit: %s" % why_not, flush=True)
+        note = dict(note, commit=commit, passed=dict(note.get("passed") or {}), failed=list(note.get("failed") or []))
     for s in suites():
         if a.words:
             reason = "named" if any(w in s[0] for w in a.words) else None
+        elif a.all and s[0] in note.get("passed", {}):
+            resumed.append(s[0])
+            reason = None
         else:
             reason = "all" if a.all else why(memo, s[0], files)
         if reason:
             todo.append((s, reason))
         elif reason == "":
             same.append(s[0])
+    if resumed:
+        print("resuming the full run on %s: %d suites already passed on it, %d to run (--fresh: all again)"
+              % (commit[:9], len(resumed), len(todo)), flush=True)
     # what failed last time first (it tells soonest), then the long ones (the short ones fill the gaps)
     todo.sort(key=lambda x: (not (memo.get(x[0][0]) or {}).get("failed"), -float((memo.get(x[0][0]) or {}).get("seconds") or 999)))
     if a.list:
@@ -519,16 +591,39 @@ def main(argv=None):
     env["KIT_BIN_DIR"] = tmp_bin
     real_bin = os.path.expanduser("~/.local/bin")
     before = bin_snapshot(real_bin)
-    results, stopped = run([s for s, _ in todo], memo, files, max(1, a.j), a.keep_going, env, lambda *x: print(*x, flush=True), listen=not a.all)
+    last_push = [0.0]
+
+    def record(name, ok, dt):
+        if not commit:
+            return
+        if ok:
+            note["passed"][name] = round(dt, 1)
+            note["failed"] = [n for n in note["failed"] if n != name]
+        elif name not in note["failed"]:
+            note["failed"].append(name)
+        note["at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        note["total"] = len(suites())
+        note_write(REPO_ROOT, commit, note)
+        if time.monotonic() - last_push[0] > 60:      # at most a push a minute, never waited for
+            last_push[0] = time.monotonic()
+            note_push(REPO_ROOT)
+
+    try:
+        results, stopped = run([s for s, _ in todo], memo, files, max(1, a.j), a.keep_going, env,
+                               lambda *x: print(*x, flush=True), listen=not a.all, on_done=record)
+    finally:
+        if commit:
+            note_push(REPO_ROOT, wait=True)
     shutil.rmtree(tmp_bin, ignore_errors=True)
     changed = bin_changes(before, bin_snapshot(real_bin))
     if changed:
         print("[FAIL] files written to %s by the suites: %s" % (real_bin, ", ".join(changed)))
     failed = [n for n, ok, _ in results if not ok]
     print("=" * 60)
-    print("SUMMARY: %d passed, %d failed%s, %d unchanged since they passed (%.0f s)" % (
+    print("SUMMARY: %d passed, %d failed%s, %d unchanged since they passed%s (%.0f s)" % (
         len(results) - len(failed), len(failed) + bool(changed),
-        (", %d not run (stopped at the first failure)" % (len(todo) - len(results))) if stopped else "", len(same), time.monotonic() - t0))
+        (", %d not run (stopped at the first failure)" % (len(todo) - len(results))) if stopped else "", len(same),
+        (", %d passed earlier on this commit" % len(resumed)) if resumed else "", time.monotonic() - t0))
     for n in failed:
         print("  FAIL " + n)
     return 1 if failed or changed else 0
