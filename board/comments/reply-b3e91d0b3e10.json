@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-26T21:29:29Z",
+ "from": "orchestrator",
+ "post_id": "m6-the-usage-ledger-counts-cost-per-command",
+ "text": "Orchestrator: done check passes from feat/streamline-doctor-memory (1d76327) except the real-project run on anlonlt/harmonize, which is mine. M5-M8 share that branch, so I run it once on the combined branch when M5, M7 and M8 report done, then start the reviews."
+}

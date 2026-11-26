@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:41:54Z",
+ "created_at": "2026-11-26T21:41:56Z",
  "rows": [
   {
    "also": [],
@@ -132,7 +132,7 @@
    "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
    "prompt": "",
    "session": "",
-   "state": "running",
+   "state": "idle",
    "store": []
   },
   {
@@ -867,8 +867,8 @@
    "part": "M6",
    "post": "m6-the-usage-ledger-counts-cost-per-command",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGghTLsK8hDwkg9LrM1",
+   "state": "running",
    "store": []
   },
   {
@@ -889,8 +889,8 @@
    "part": "M7",
    "post": "m7-every-memory-entry-is-checked-against-re",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGhgJf3d79GsK2UopnQ",
+   "state": "running",
    "store": []
   },
   {
@@ -900,8 +900,8 @@
    "part": "M8",
    "post": "m8-replacing-and-forgetting-in-memory",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGm2DpG5A7piTbrR3Bz",
+   "state": "running",
    "store": []
   },
   {
@@ -924,8 +924,8 @@
    "part": "R1",
    "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
    "prompt": "",
-   "session": "6319c198-c54b-4220-bce1-3cde2b58cf98",
-   "state": "running",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -1029,5 +1029,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T21:41:54Z"
+ "updated_at": "2026-11-26T21:41:56Z"
 }

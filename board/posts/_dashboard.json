@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:41:53Z",
+ "created_at": "2026-11-26T21:41:56Z",
  "rows": [
   {
    "at": 39,
@@ -136,7 +136,7 @@
    "name": "Runners",
    "note": "Next: Antigravity on the web: how far it runs the board kit, and its profile",
    "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
-   "state": "running",
+   "state": "ready",
    "steps": [
     "Antigravity on the web: how far it runs the board kit, and its profile",
     "Gemini tasks: how far it runs the board kit, and its profile",
@@ -159,5 +159,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T21:41:53Z"
+ "updated_at": "2026-11-26T21:41:56Z"
 }
