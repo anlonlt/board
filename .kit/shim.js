@@ -233,8 +233,24 @@
       }
     } catch (e) {}
     function initRepoSwitcher() {
-      rawApi("GET", "/_api/repos").then(function (info) {
+      // which boards this server holds is the server's, not a repo's: asked with no repo named (a saved repo the
+      // server lacks would refuse even this question)
+      var asked = window.__KIT_ACTIVE_REPO__; window.__KIT_ACTIVE_REPO__ = "";
+      var reposReq = rawApi("GET", "/_api/repos");
+      window.__KIT_ACTIVE_REPO__ = asked;
+      reposReq.then(function (info) {
         if (info && Array.isArray(info.repos)) window.__KIT_REPOS_INFO__ = info.repos;
+        // A repo this browser saved that this server does not hold (another project's board, attached before):
+        // every request would answer 404 and the page would say "Loading..." for good. Drop it, show the board here.
+        if (info && Array.isArray(info.repos) && window.__KIT_ACTIVE_REPO__) {
+          var held = info.repos.concat([{ id: "all" }]).some(function (r) { return !r.primary && r.id === window.__KIT_ACTIVE_REPO__; });
+          if (!held) {
+            try { localStorage.removeItem("kit_active_repo"); } catch (e) {}
+            window.__KIT_ACTIVE_REPO__ = "";
+            window.location.replace(window.location.pathname);
+            return;
+          }
+        }
         if (!info || !Array.isArray(info.repos) || info.repos.length <= 1) return;
         var hdr = document.querySelector("header.top");
         var h1 = hdr && hdr.querySelector("h1");
