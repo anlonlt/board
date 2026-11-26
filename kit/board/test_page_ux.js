@@ -45,7 +45,7 @@ const VV = `(() => {
   const env = Object.assign({}, process.env); delete env.KIT_BOARD_TOKEN;
   const srv = spawn('python3', ['-I', path.join(KIT, 'kit', 'board', 'board_server.py'), '--host', '127.0.0.1', '--port', String(port), '--root', root], { env, stdio: 'ignore' });
   const URL0 = 'http://127.0.0.1:' + port;
-  let up = false; for (let i = 0; i < 60 && !up; i++) { try { up = (await req(port, 'GET', '/_api/health'))[0] === 200; } catch (e) { await new Promise((r) => setTimeout(r, 150)); } }
+  let up = false; for (let i = 0; i < 200 && !up; i++) { try { up = (await req(port, 'GET', '/_api/health'))[0] === 200; } catch (e) { await new Promise((r) => setTimeout(r, 150)); } }
   if (!up) { console.log('FAIL the board server did not start'); srv.kill(); process.exit(1); }
   const now = Date.now(), at = (m) => new Date(now - m * 60000).toISOString();
   const LONG = 'A comment long enough to wrap over several lines of the phone, the way he writes them when something is off. ';
@@ -64,11 +64,13 @@ const VV = `(() => {
   for (let i = 0; i < 6; i++) await put('comments', 'o' + i, { post_id: '_orchestrator', from: i % 2 ? 'owner' : 'orchestrator', text: LONG.repeat(3), discussion: 'w1', created_at: at(80 - i), delivered: true });
 
   const b = await pw.chromium.launch();
+  // the board drawn (its cards are on the page), then a short settle: a fixed 1.6 s was not enough on a busy computer
+  const ready = async (p) => { await p.waitForFunction(() => document.querySelectorAll('.card').length > 0, null, { timeout: 20000 }).catch(() => {}); await p.waitForTimeout(400); };
   const open = async (w, h, mobile, hash) => {
     const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1 });
     await ctx.addInitScript(VV);
     const p = await ctx.newPage(); p.errs = []; p.on('pageerror', (e) => p.errs.push(String(e)));
-    await p.goto(URL0 + '/' + (hash || '')); await p.waitForTimeout(1600);
+    await p.goto(URL0 + '/' + (hash || '')); await ready(p);
     return p;
   };
   const view = async (p, name) => { await p.evaluate((n) => { const x = document.querySelector('.kit-focus-exit'); if (x && x.offsetParent) x.click(); const b = [...document.querySelectorAll('#kit-views button')].find((e) => e.textContent.trim() === n); if (b) b.click(); }, name); await p.waitForTimeout(600); };
@@ -127,10 +129,10 @@ const VV = `(() => {
       const hid = before && before.find((x) => x.t === 'CL1');
       check('411 px: a tap on the train\'s name pulls its hidden done step out above the open one', !!(hid && hid.h <= 2 && cl1 && cl2 && cl1.h > 10 && cl1.y < cl2.y), { before, after });
       // remembered per train on this device: after a reload the card is still unfolded
-      await p.reload(); await p.waitForTimeout(1600); await view(p, 'Trains');
+      await p.reload(); await ready(p); await view(p, 'Trains');
       const again = await vis(), cl1b = again && again.find((x) => x.t === 'CL1');
       await p.evaluate(() => { const s = [...document.querySelectorAll('.kit-tl-inline')].find((x) => /CL2/.test(x.textContent)); if (s) s.querySelector('.kit-tl-hdr b').click(); }); await p.waitForTimeout(500);
-      await p.reload(); await p.waitForTimeout(1600); await view(p, 'Trains');
+      await p.reload(); await ready(p); await view(p, 'Trains');
       const third = await vis(), cl1c = third && third.find((x) => x.t === 'CL1');
       check('411 px: the fold is remembered per train across a reload (unfolded stays unfolded, folded stays folded)', !!(cl1b && cl1b.h > 10 && cl1c && cl1c.h <= 2), { again, third });
     }

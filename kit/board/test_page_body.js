@@ -37,7 +37,7 @@ const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width=
   const port = await freePort();
   const env = Object.assign({}, process.env); delete env.KIT_BOARD_TOKEN;
   const srv = spawn('python3', ['-I', SERVER, '--host', '127.0.0.1', '--port', String(port), '--root', root], { env, stdio: 'ignore' });
-  let up = false; for (let i = 0; i < 60 && !up; i++) { try { up = (await req(port, 'GET', '/_api/health'))[0] === 200; } catch (e) { await new Promise((r) => setTimeout(r, 150)); } }
+  let up = false; for (let i = 0; i < 200 && !up; i++) { try { up = (await req(port, 'GET', '/_api/health'))[0] === 200; } catch (e) { await new Promise((r) => setTimeout(r, 150)); } }
   if (!up) { console.log('FAIL the board server did not start'); srv.kill(); process.exit(1); }
   const at = new Date().toISOString();
   // seeded as a copy of a board (X-Kit-Gate: copy): the proof gate is for live writes, and a refused seed must stop the test, not drop a post
@@ -54,7 +54,12 @@ const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width=
     const ctx = await b.newContext({ viewport: { width: w, height: h }, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: 1 });
     const p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(String(e)));
     const tag = mobile ? 'phone' : 'desktop';
-    await p.goto('http://127.0.0.1:' + port + '/#/post/cl9-new'); await p.waitForTimeout(2200);
+    await p.goto('http://127.0.0.1:' + port + '/#/post/cl9-new');
+    // drawn, not a fixed sleep: on a busy computer 2.2 s was not enough (its pictures, diagram and svg each load on their own)
+    await p.waitForFunction(() => { const b = document.querySelector('#p-body, .kit-post-win-body'); if (!b) return false;
+      const ok = (i) => i && i.complete && i.naturalWidth > 0; const pics = [...b.querySelectorAll('img.md-img')];
+      return b.querySelectorAll('.kit-mmd-row').length >= 2 && pics.length >= 2 && pics.every(ok) && ok(b.querySelector('.kit-svg-box img'))
+        && [...b.querySelectorAll('.kit-inline-embed[data-kind="img"] img')].some(ok); }, null, { timeout: 20000 }).catch(() => {});
     const r = await p.evaluate(() => {
       const box = document.querySelector('#p-body, .kit-post-win-body'); if (!box) return { noBody: true };
       box.querySelectorAll('details').forEach((d) => { d.open = true; });
@@ -77,10 +82,11 @@ const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width=
     check(tag + ': an .svg named by its path shows inline', r.svgFileEmbed, r);
     check(tag + ': nothing drawn wider than the screen', r.wide === 0, r);
     if (process.env.KIT_SHOT && !mobile) await p.screenshot({ path: process.env.KIT_SHOT, fullPage: true });   // `shot`: the post as he sees it
-    await p.goto('http://127.0.0.1:' + port + '/#/post/cl8-old'); await p.waitForTimeout(2200);
+    await p.goto('http://127.0.0.1:' + port + '/#/post/cl8-old');
+    await p.waitForFunction(() => { const b = document.querySelector('#p-body, .kit-post-win-body'); return !!(b && b.querySelector('.kit-inline-embed[data-kind="md"]')); }, null, { timeout: 20000 }).catch(() => {});
     const o = await p.evaluate(() => { const box = document.querySelector('#p-body, .kit-post-win-body'); const e = box && box.querySelector('.kit-inline-embed[data-kind="md"]');
       return { embed: !!e, text: e ? e.textContent : '' }; });
-    await p.waitForFunction(() => { const e = document.querySelector('.kit-inline-embed[data-kind="md"]'); return e && /Text of the old section/.test(e.textContent); }, null, { timeout: 4000 }).catch(() => {});
+    await p.waitForFunction(() => { const e = document.querySelector('.kit-inline-embed[data-kind="md"]'); return e && /Text of the old section/.test(e.textContent); }, null, { timeout: 20000 }).catch(() => {});
     const o2 = await p.evaluate(() => { const e = document.querySelector('.kit-inline-embed[data-kind="md"]'); return e ? e.textContent : ''; });
     check(tag + ': an older post that embeds `docs/old.md § The flow` still shows that section inline', o.embed && /Text of the old section/.test(o2), { o, o2: o2.slice(0, 120) });
     check(tag + ': no page error', !errs.length, errs);
