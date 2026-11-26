@@ -204,10 +204,10 @@ class Parity(unittest.TestCase):
     def test_the_table_is_what_each_runtime_had(self):
         """The lines as they were written by hand before the table (53f23c4): no hook gained, lost or narrowed."""
         count = {rt: len(hook.rows(rt)) for rt in hook.RUNTIMES}
-        self.assertEqual(count, {"web": 27, "cli": 26, "agy": 16})          # cli: + what a part does now (2); each: + the work saved (2); web: + the board saved and the hand-over at Stop; 53f23c4's 21, 20, 15 (agy: guard's two tools on one row) + the task list's two
+        self.assertEqual(count, {"web": 27, "cli": 27, "agy": 16})          # cli: + what a part does now (3); each: + the work saved (2); web: + the board saved and the hand-over at Stop; 53f23c4's 21, 20, 15 (agy: guard's two tools on one row) + the task list's two
         self.assertEqual([r[2] for r in hook.rows("cli", "Stop")].count("kit_web_save.py"), 1)
         self.assertEqual([r[2] for r in hook.rows("cli", "Stop")].count("kit_pre_compact.py"), 1)
-        self.assertTrue(all(g == (ev in ("PreToolUse", "TaskCompleted")) or f == "kit_memory_jit.py" for ev, f, _, g, _ in hook.TABLE))
+        self.assertTrue(all(g == (ev in ("PreToolUse", "TaskCompleted")) or f in ("kit_memory_jit.py", "kit_activity.py") for ev, f, _, g, _ in hook.TABLE))  # they inform, never refuse
         files = {f.name for f in (ROOT / "kit" / "hooks").glob("kit_*.py")} - {"kit_config.py"}
         self.assertEqual({f for _, f, _, _, _ in hook.TABLE}, files)         # a hook installed is a hook wired
 

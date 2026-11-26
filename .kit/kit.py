@@ -4139,7 +4139,7 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
     elif run is None:
         start = None
     else:
-        mode = k.get("claude_permission_mode") or "auto"
+        mode = permission_mode(k)
         model = ((k.get("claude_cli_roles") or {}).get("consultant") or {}).get("model") or "opus"
         cmd = ["claude", "--bg", "-n", session, "--permission-mode", mode]
         if model != "inherit":
@@ -4226,6 +4226,26 @@ def device_line(survey=None):
         return "Device: could not measure (%s)." % e
 
 
+def permission_mode(k=None):
+    """The permission mode the kit starts a Claude Code session in. `best` (the default): every check off
+    (bypassPermissions) once the owner has accepted that mode himself (Claude Code records it in his settings as
+    skipDangerousModePermissionPrompt; the kit never writes it), else auto. The kit's guard hooks and deny rules still apply in
+    bypassPermissions (Claude Code's docs). Claude Code refuses it as root; Claude Code on the web ignores it."""
+    k = k if k is not None else (_kit_config().get("kit") or {})
+    m = str(os.environ.get("KIT_CLAUDE_PERMISSION_MODE") or k.get("claude_permission_mode") or "best").strip()
+    if m != "best":
+        return m.rstrip("!")                   # "auto!": auto, kept by --update
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return "auto"
+    base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    try:
+        with open(os.path.join(base, "settings.json"), encoding="utf-8") as fh:
+            ok = json.load(fh).get("skipDangerousModePermissionPrompt") is True
+    except (OSError, ValueError, AttributeError):
+        ok = False
+    return "bypassPermissions" if ok else "auto"
+
+
 def part_list(pid):
     return "%s-%s" % (_slug(_kit_config().get("project") or "project"), _slug(pid, 60))
 
@@ -4295,7 +4315,7 @@ def _launch_line(part, rel, model=None, cli=None, post=None):
     c = _kit_config()
     k = c.get("kit") or {}
     active = _active_cli(cli)
-    mode = k.get("claude_permission_mode") or "auto"
+    mode = permission_mode(k)
     name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
     if active == "agy":
         agy_model = str(model or ((k.get("roles") or {}).get("part") or {}).get("model") or "inherit")
@@ -4907,7 +4927,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
             out["worktree"] = wt
             k = c.get("kit") or {}
             m = str(model or ((k.get("claude_cli_roles") or {}).get("part") or {}).get("model") or "inherit")
-            cmd = ["claude", "--bg", "-n", name, "--permission-mode", str(k.get("claude_permission_mode") or "auto")]
+            cmd = ["claude", "--bg", "-n", name, "--permission-mode", permission_mode(k)]
             if m != "inherit":
                 cmd += ["--model", m]
             cmd.append(text)
@@ -5577,6 +5597,7 @@ COMMANDS = [
     ("read the board", "kit.py queue [--runner R]", "the steps waiting for a runner"),
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor [--fix]", "the board's size, columns, oldest question, missing files / full install, hook parity, conflict & sync health"),
+    ("sessions", "kit.py permission-mode", "the mode the kit starts Claude Code sessions in: every check off once he accepted it, else auto"),
     ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
     ("write the board", "kit.py sub <post> \"<piece>\" [--status doing|done|drop]", "one piece of a step, a line on its post (Claude Code's task list writes it by itself)"),
     ("launch and finish", "kit.py form <post> [--doing \"...\"]", "a step's result as a file, half filled; `done` sends and checks it"),
@@ -7121,6 +7142,7 @@ def main(argv=None):
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s.add_argument("--post-file", default=None, help=argparse.SUPPRESS)
+    sp.add_parser("permission-mode", help="the permission mode the kit starts Claude Code sessions in")
     s = sp.add_parser("sub", help="a step's pieces, lines on its post: by number or title"); s.add_argument("post"); s.add_argument("title", nargs="+")
     s.add_argument("--why", default="", help="why a piece the task names is dropped"); s.add_argument("--known", action="store_true", help=argparse.SUPPRESS)
     s.add_argument("--status", default="open"); s.add_argument("--was", default="", help="its title until now"); s.add_argument("--db", default=None)
@@ -7310,6 +7332,9 @@ def main(argv=None):
         return 1 if res.get("error") or res.get("ok") is False else 0
     if a.cmd == "sections":
         print(sections(db_path=a.db))
+        return 0
+    if a.cmd == "permission-mode":
+        print(permission_mode())
         return 0
     if a.cmd == "sub":
         res = subtask(a.post, a.title, a.status, was=a.was, db_path=a.db, why=a.why, known=a.known)

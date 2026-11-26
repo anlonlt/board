@@ -1694,6 +1694,7 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     var at = Date.parse(str(a.at)); if (isNaN(at)) return "";
     var min = Math.max(0, Math.round((Date.now() - at) / 60000)), n = Number(a.actions) || 0;
     var acts = n + (n === 1 ? " action" : " actions"), what = str(a.what);
+    if (a.loop && a.state !== "stopped") return "Repeating the same action (" + a.loop + " times in a row) · " + (what || "an action");
     if (a.state === "stopped") return "Stopped " + (min < 1 ? "just now" : min + " min ago") + " · " + acts;
     if (min < 3) return (what || "Working") + " · " + acts;
     return "Quiet for " + min + " min · last: " + (what || "an action") + " · " + acts;

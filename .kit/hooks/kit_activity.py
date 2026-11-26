@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Claude Code PostToolUse and Stop, a part's session on a computer: what it is doing now, on its step, for the owner to see.
+"""Claude Code PreToolUse, PostToolUse and Stop, a part's session on a computer: what it is doing now, on its step, for the owner to see.
+And, in every session, a loop breaker: the same call with the same input 8 times in a row is said once to the session (and shown on
+the step). That line is the only thing it ever says; nothing is refused.
 
-No model call, nothing said back, nothing refused. At most one write every 15 seconds (and one when a turn ends) of
-activity/<post> on the board: {at, actions, what, state, pieces}. `what` is the plain words of the last Bash call's own
+No model call. At most one write every 15 seconds (and one when a turn ends) of
+activity/<post> on the board: {at, actions, what, state, pieces}. `what` is the call starting (before it) or done (after), in the plain words of a Bash call's own
 description ("Run the tests"), or the file it edits; `actions` the calls counted since the session began; `state` "working"
 or "stopped" (the turn ended). `pieces`: the numbers of the step's pieces whose file (a path the task names in that piece's line,
 `.kit/run/pieces/<post>.json`) changed last, which the page shows as "Now". It never writes a piece's status: the part ticks it
@@ -20,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_config import project_dir  # noqa: E402
 
 EVERY = 15
+LOOP = 8                                       # the same call this many times in a row: said once, and on the board
 
 
 KIT_WORDS = {"form": "Filling in its result", "done": "Checking its result", "resume": "Reading its task", "sub": "Ticking a piece",
@@ -90,15 +93,24 @@ def changed_pieces(root, pieces, since, ti):
     return hit
 
 
+def call_key(name, ti):
+    return name + ":" + json.dumps(ti, sort_keys=True, ensure_ascii=False)[:4000]
+
+
 def main():
     try:
         data = json.load(sys.stdin)
     except (ValueError, OSError):
         return 0
     role = str(os.environ.get("KIT_ROLE") or "").strip().lower()
-    if role not in ("", "part") or os.environ.get("KIT_ACTIVITY") == "0":
+    if os.environ.get("KIT_ACTIVITY") == "0":
         return 0
     root = project_dir(data)
+    ev = str(data.get("hook_event_name") or "")
+    name, ti = str(data.get("tool_name") or ""), data.get("tool_input") or {}
+    said = loop_check(root, data, ev, name, ti)                 # every session: silent unless the same call repeats
+    if role not in ("", "part"):
+        return _say(said)
     run = os.path.join(root, ".kit", "run", "activity")
     sid = re.sub(r"[^\w.-]", "_", str(data.get("session_id") or "session"))
     path = os.path.join(run, sid + ".json")
@@ -119,13 +131,13 @@ def main():
     if not post:
         if "post" in st:
             _save(path, st)
-        return 0
-    ev = str(data.get("hook_event_name") or "")
-    name, ti = str(data.get("tool_name") or ""), data.get("tool_input") or {}
+        return _say(said)
     now = time.time()
-    stop = ev == "Stop"
+    stop, before = ev == "Stop", ev == "PreToolUse"
     if not stop:
-        st["actions"] = st.get("actions", 0) + 1
+        if not before:
+            st["actions"] = st.get("actions", 0) + 1
+        # before a call: what it starts (a test run of minutes shows while it runs); after: what it did
         st["what"] = what_of(name, ti) or st.get("what") or ""
     pieces, pf = [], os.path.join(root, ".kit", "run", "pieces", post + ".json")
     try:
@@ -135,14 +147,16 @@ def main():
             st["checked"] = os.path.getmtime(pf)
     except (OSError, ValueError):
         pass
-    moved = changed_pieces(root, pieces, st.get("checked") or st["since"], ti) if pieces and not stop else []
+    moved = changed_pieces(root, pieces, st.get("checked") or st["since"], ti) if pieces and not stop and not before else []
     st["checked"] = now
     if moved and moved != st.get("pieces"):
         st["pieces"] = moved
-    if stop or moved or now - st.get("written", 0) >= EVERY:
+    if stop or moved or said or now - st.get("written", 0) >= EVERY:
         st["written"] = now
         doc = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), "actions": st["actions"], "what": st.get("what") or "",
                "state": "stopped" if stop else "working", "pieces": st.get("pieces") or []}
+        if said:
+            doc["loop"] = LOOP
         cli = os.path.join(root, ".kit", "board_cli.py")
         if os.path.isfile(cli):
             try:
@@ -152,6 +166,32 @@ def main():
             except OSError:
                 pass
     _save(path, st)
+    return _say(said)
+
+
+def loop_check(root, data, ev, name, ti):
+    """The same tool with the same input LOOP times in a row (after each call): one line to the session, once per run of them."""
+    if ev != "PostToolUse" or not name:
+        return ""
+    sid = re.sub(r"[^\w.-]", "_", str(data.get("session_id") or "session"))
+    path = os.path.join(root, ".kit", "run", "activity", "loop-%s.json" % sid)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lp = json.load(fh)
+    except (OSError, ValueError):
+        lp = {}
+    key = call_key(name, ti)
+    lp = {"key": key, "n": lp.get("n", 0) + 1 if lp.get("key") == key else 1}
+    _save(path, lp)
+    if lp["n"] != LOOP:
+        return ""
+    return ("The same %s call, with the same input, %d times in a row: it is not getting anywhere. Change the approach, or stop and say "
+            "in your post what blocks you." % (name, LOOP))
+
+
+def _say(text):
+    if text:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}))
     return 0
 
 

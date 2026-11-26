@@ -111,7 +111,7 @@ DEFAULT_KIT = {
     "claude_cli_roles": {"clerk": {"model": "haiku"}, "part": {"model": "inherit"}, "consultant": {"model": "opus"},
                          "cards": {"model": "haiku"}},
     # Every Claude Code CLI session of the kit runs in this mode (sessions in different modes hold each other's messages).
-    "claude_permission_mode": "auto",
+    "claude_permission_mode": "best",
 }
 CLAUDE_ROLES = {"part": {"model": "opus", "effort": "high"},
                 "clerk": {"model": "haiku", "effort": "low"},
@@ -427,6 +427,11 @@ def permissions(t, k, old_k, a, first, log):
     old_k = old_k or {}
     for key in keep_on(old_k, k):
         log.append("KEPT %s: on (already on in .kit/config.json; to turn it off, edit that file)" % key)
+    if old_k.get("claude_permission_mode") == "auto":
+        # 2026-11-25, the owner: all checks off by default, as other kits do. "auto" was only the installer's default before
+        old_k["claude_permission_mode"] = "best"
+        log.append("permission mode: best (every check off once you have accepted Claude Code's bypass mode yourself, auto until then; "
+                   "the kit's guards still apply). To keep auto: set kit.claude_permission_mode to \"auto!\" in .kit/config.json")
     if old_k.get("claude_permission_mode") and k.get("claude_permission_mode") != old_k["claude_permission_mode"]:
         k["claude_permission_mode"] = old_k["claude_permission_mode"]
         log.append("KEPT kit.claude_permission_mode: %s (already set in .kit/config.json)" % k["claude_permission_mode"])
@@ -580,7 +585,7 @@ def render(text, c):
             "CLI_PART_MODEL": cli_role("part"), "CLI_CONS_MODEL": cli_role("consultant"), "CLI_CARDS_MODEL": cli_role("cards"),
             "CLI_CLERK_MODEL": cli_role("clerk"),
             "CLI_PART_MODEL_FLAG": "" if cli_role("part") == "inherit" else "--model %s " % cli_role("part"),
-            "CLAUDE_MODE": k.get("claude_permission_mode") or "auto",
+            "CLAUDE_MODE": "\"$(python3 -I .kit/kit.py permission-mode)\"" if (k.get("claude_permission_mode") or "best") == "best" else k["claude_permission_mode"].rstrip("!"),
             "AUTONOMY_LEVEL": auto_level,
             "AUTONOMY_RULE": render_vars(autonomy_rule, {"MEMORY_DIR": k.get("memory_dir") or ".board/memory"})}
     if c["project"].strip().lower().endswith("board"):

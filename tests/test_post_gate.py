@@ -301,11 +301,15 @@ class Live(unittest.TestCase):
         self.assertEqual(json.loads((self.d / ".kit" / "run" / "pieces" / (pid + ".json")).read_text()), [{"n": 1, "files": ["docs/a.md"]}, {"n": 2, "files": ["docs/b.md"]}])
         hook = str(ROOT / "kit" / "hooks" / "kit_activity.py")
 
-        def call(payload, role="part", post=pid):
+        def call(payload, role="part", post=pid, says=""):
             env = dict(self.env, CLAUDE_PROJECT_DIR=str(self.d), KIT_ROLE=role, KIT_POST=post)
             r = subprocess.run([sys.executable, "-I", hook], input=json.dumps(dict({"session_id": "s1", "cwd": str(self.d)}, **payload)),
                                capture_output=True, text=True, env=env, cwd=str(self.d), timeout=30)
-            self.assertEqual((r.returncode, r.stdout), (0, ""), r.stderr)                         # nothing said, nothing refused
+            self.assertEqual(r.returncode, 0, r.stderr)                                          # nothing refused
+            if says:
+                self.assertIn(says, json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"])
+            else:
+                self.assertEqual(r.stdout, "")                                                   # nothing said
 
         def seen(want):
             for _ in range(50):
@@ -331,6 +335,17 @@ class Live(unittest.TestCase):
         self.assertFalse((self.d / "src" / ".kit").exists())                                       # a shell gone into src/ is still this project
         call({"hook_event_name": "Stop"})
         seen({"state": "stopped", "actions": 4, "what": "Writing c.md"})                            # no description: plain words from the command
+        # the loop breaker: the same call 8 times in a row, said once on the 8th, in any session; a different call starts again
+        same = {"hook_event_name": "PostToolUse", "tool_name": "Bash", "session_id": "o1", "tool_input": {"command": "npm test"}}
+        for i in range(1, 10):
+            call(same, role="orchestrator", says="8 times in a row" if i == 8 else "")
+        call(dict(same, tool_input={"command": "npm run lint"}), role="orchestrator")
+        for i in range(1, 9):
+            call(same, says="8 times in a row" if i == 8 else "")
+        seen({"loop": 8})
+        # before a call: what it starts shows while it runs (a long test run)
+        call({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "p2", "tool_input": {"command": "pytest -q"}})
+        seen({"what": "Running the tests"})
         import importlib.util
         spec = importlib.util.spec_from_file_location("kit_activity", hook)
         ka = importlib.util.module_from_spec(spec)
@@ -344,6 +359,22 @@ class Live(unittest.TestCase):
         self.assertFalse((self.d / ".kit" / "run" / "activity" / "s2.json").exists())               # a review is not a part
         docs = api_req(self.url, "db/activity", token=TOKEN, gate="").get("docs") or []
         self.assertEqual([x["id"] for x in docs], [pid])                                           # nothing from the others
+
+    def test_every_check_off_once_he_accepted_it(self):
+        k = load("kit_mode", "scripts/kit.py")
+        with tempfile.TemporaryDirectory() as home:
+            old = {x: os.environ.get(x) for x in ("CLAUDE_CONFIG_DIR", "KIT_CLAUDE_PERMISSION_MODE")}
+            os.environ.pop("KIT_CLAUDE_PERMISSION_MODE", None)
+            os.environ["CLAUDE_CONFIG_DIR"] = home
+            try:
+                self.assertEqual(k.permission_mode({}), "auto")                                   # not accepted by him: auto
+                Path(home, "settings.json").write_text(json.dumps({"skipDangerousModePermissionPrompt": True}))
+                self.assertEqual(k.permission_mode({}), "bypassPermissions")
+                self.assertEqual(k.permission_mode({"claude_permission_mode": "auto!"}), "auto")   # his choice, kept
+                self.assertEqual(k.permission_mode({"claude_permission_mode": "acceptEdits"}), "acceptEdits")
+            finally:
+                for x, v in old.items():
+                    os.environ.pop(x, None) if v is None else os.environ.__setitem__(x, v)
 
     def test_only_a_part_writes_pieces(self):
         self.put("posts", "w1", {"title": "w", "part": "W1", "train": "t", "column": "info", "status": "in progress", "body": "b"})

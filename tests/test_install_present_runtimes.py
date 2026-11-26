@@ -126,7 +126,7 @@ class PresentRuntimes(unittest.TestCase):
         self.assertEqual(sum("kit_brief_guard.py" in c for c in cmds), 2, cmds)
         self.assertEqual(sum("kit_board_guard.py" in c for c in cmds), 2, cmds)   # CL30's new hook: Post Bash, Stop
         self.assertEqual(sum("kit_usage.py" in c for c in cmds), 2, cmds)         # CL37: Stop and SessionEnd
-        self.assertEqual(sum("/hooks/kit/" in c for c in cmds), 12, cmds)  # + what a part does now (PostToolUse, Stop) + CL38's message guard, the JIT memory (PreToolUse)  # no other kit hook added
+        self.assertEqual(sum("/hooks/kit/" in c for c in cmds), 13, cmds)  # + what a part does now (PreToolUse, PostToolUse, Stop) + CL38's message guard, the JIT memory (PreToolUse)  # no other kit hook added
         # the target's Claude Code hooks are the web ones (an ArtifactData guard is there): the reply tool is matched too
         st.write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": "ArtifactData|mcp__claude-code-remote__create_session",
                       "hooks": [{"type": "command", "command": "python3 -I x/.claude/hooks/kit/kit_orchestrator_guard.py"}]}]}}))

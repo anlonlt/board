@@ -171,13 +171,14 @@ fi
 
 if [ "$CLI" = "claude" ]; then
   # Unattended like `agy --mode auto`; kit_guard.py (PreToolUse on Bash) still blocks destructive commands.
-  # The mode is kit.claude_permission_mode (default auto): the clerk and part sessions use the same one.
+  # The mode is kit.claude_permission_mode (default best: every check off once he accepted it, else auto): the clerk and parts use the same one.
   # The session is named <slug>-orchestrator: the clerk and the parts reach it by that name (SendMessage).
-  read -r CMODE CNAME CLIMIT <<< "$(python3 -I -c 'import json,re; c=json.load(open(".kit/config.json")); k=c.get("kit",{}); print(k.get("claude_permission_mode") or "auto", re.sub(r"[^a-z0-9]+","-",(c.get("project") or "board").lower()).strip("-") or "project", int((k.get("orchestrator") or {}).get("context_limit_k", 380)))' 2>/dev/null || echo "auto project 380")"
+  read -r CMODE CNAME CLIMIT <<< "$(python3 -I -c 'import json,re; c=json.load(open(".kit/config.json")); k=c.get("kit",{}); print((k.get("claude_permission_mode") or "best").rstrip("!"), re.sub(r"[^a-z0-9]+","-",(c.get("project") or "board").lower()).strip("-") or "project", int((k.get("orchestrator") or {}).get("context_limit_k", 380)))' 2>/dev/null || echo "auto project 380")"
   # The orchestrator resets at CLIMIT k (kit_pre_compact.py + .kit/handover.py); Claude Code's own compaction only as
   # a safety net 70k past it, in case a hand-over ever fails.
   AC_ARGS=(--autocompact "$(( (CLIMIT + 70) * 1000 ))")
   CMODE="${KIT_CLAUDE_PERMISSION_MODE:-$CMODE}"
+  [ "$CMODE" = best ] && CMODE="$(python3 -I .kit/kit.py permission-mode 2>/dev/null || echo auto)"
   NAME_ARGS=()
   [ "$HAS_ORCH" -eq 1 ] && [ "$BOARD_ONLY" -eq 0 ] && NAME_ARGS=(-n "${CNAME}-orchestrator")
   LAUNCH=(claude --permission-mode "$CMODE" "${AC_ARGS[@]}" ${NAME_ARGS[@]+"${NAME_ARGS[@]}"} "$PROMPT")

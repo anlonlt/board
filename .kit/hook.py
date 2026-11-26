@@ -39,6 +39,7 @@ TABLE = [
     ("PostToolUse", "kit_notify.py", {"web": "ArtifactData"}, PLAIN, 50),
     ("PostToolUse", "kit_task_train.py", {"web": "TaskCreate|TaskUpdate", "cli": "TaskCreate|TaskUpdate"}, PLAIN, 130),
     ("PostToolUse", "kit_board_guard.py", {"web": "Bash|" + SESSION, "cli": "Bash"}, PLAIN, 50),
+    ("PreToolUse", "kit_activity.py", {"cli": "Bash|Edit|Write|MultiEdit"}, PLAIN, 25),
     ("PostToolUse", "kit_activity.py", {"cli": "Bash|Edit|Write|MultiEdit|SendMessage"}, PLAIN, 25),
     ("PostToolUse", "kit_wip.py", {"web": "Bash|Edit|Write|MultiEdit", "cli": "Bash|Edit|Write|MultiEdit",
                                    "agy": "run_command|edit_file|write_file"}, PLAIN, 25),

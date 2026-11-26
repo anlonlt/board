@@ -139,7 +139,14 @@ def main():
     cli = detect_cli(a.cli, k)
     slug = a.slug or slug_of(c)
     name = a.name or "%s-%s" % (slug, a.role)
-    mode = os.environ.get("KIT_CLAUDE_PERMISSION_MODE") or k.get("claude_permission_mode") or "auto"
+    mode = (os.environ.get("KIT_CLAUDE_PERMISSION_MODE") or k.get("claude_permission_mode") or "best").rstrip("!")
+    if mode == "best":                     # kit.py permission_mode: bypass once the owner accepted it himself, else auto
+        try:
+            r = subprocess.run([sys.executable, "-I", os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit.py"), "permission-mode"],
+                               capture_output=True, text=True, timeout=30)
+            mode = r.stdout.strip() or "auto"
+        except (OSError, subprocess.SubprocessError):
+            mode = "auto"
     model = ((k.get("claude_cli_roles") or {}).get(a.role) or {}).get("model") or ("haiku" if a.role == "clerk" else "inherit")
     gen = 2 if a.dry_run else next_gen(a.role)
     prompt = successor_prompt(a.role, gen, cli=cli)

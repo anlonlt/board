@@ -74,7 +74,7 @@ class Permissions(unittest.TestCase):
         (self.t / "CLAUDE.md").write_text("# Proj\n\nPush your branch; the maintainer merges.\nNever push main.\n")
         out = self.first()
         self.assertIs(self.kit()["trunk_push"], False)
-        self.assertEqual(self.kit()["claude_permission_mode"], "auto")
+        self.assertEqual(self.kit()["claude_permission_mode"], "best")             # every check off once he accepted it (kit.py permission-mode)
         self.assertIn("--trunk-push yes", out)
 
     def test_flag_still_turns_it_on(self):

@@ -167,7 +167,7 @@ with tempfile.TemporaryDirectory() as d:
     cards_cli = open(os.path.join(t_loc, ".claude", "agents", "kit-cards.md"), encoding="utf-8").read()
     clerk_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "clerk.md"), encoding="utf-8").read()
     check("the Claude Code CLI orchestrator starts a haiku clerk session and parts as named background sessions",
-          "claude --bg -n harmonize-clerk --model haiku --autocompact 120000 --permission-mode auto" in orch_cli
+          "claude --bg -n harmonize-clerk --model haiku --autocompact 120000 --permission-mode \"$(python3 -I .kit/kit.py permission-mode)\"" in orch_cli
           and '"train": "<project id>", "part": "<PART>"' in orch_cli and "380k" in orch_cli and "kit.py resume" in orch_cli
           and "kit.py launch <post id>" in orch_cli and "claude --bg -n harmonize-<part>" in orch_cli  # CL13
           and "session_id\":\"harmonize-orchestrator\"" in orch_cli and "welcome --runtime claude-cli" in orch_cli
