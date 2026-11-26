@@ -6067,7 +6067,9 @@ COMMANDS = [
     ("git copy", "kit.py landing | save | checkpoint", "which steps may reach the trunk; save work in progress to wip/<branch> or checkpoint on the step's branch (CL17)"),
     ("save the board", "kit.py keep", "the board here into git, committed and pushed (git is the record)"),
     ("read the board", "kit.py resume --role orchestrator|part|clerk|review [--post P]", "what that role needs and nothing else: a session starts from it alone (lessons, launch workflow, tests, how to report)"),
-    ("memory", "kit.py lessons [--role R] [--files F...] | lessons check", "the lessons a role needs / refuse untagged ones, ones only a project doc holds, a \"be careful\" remedy, and run every entry's check (test:, hook:, code:, refusal:): flags one whose test is gone or fails or whose code no longer exists, lists the unchecked (M7)"),
+    ("memory", "kit.py lessons [--role R] [--files F...] | lessons check [--ask]", "the lessons a role needs / refuse untagged ones, ones only a project doc holds, a \"be careful\" remedy, and run every entry's check (test:, hook:, code:, refusal:): flags one whose test is gone or fails or whose code no longer exists, lists the unchecked (M7); flags two live entries that contradict and a second claim of authority, and asks which wins (M8)"),
+    ("memory", "kit.py lessons replace <wins> <goes> | lesson add ... --replaces <id> | ledger observe ... --replaces <id>", "an entry replaces another: the old one goes to the archive with a pointer to its successor"),
+    ("memory", "kit.py lessons review [--post] [--days N] | lessons keep <id>", "entries unconfirmed for more than kit.memory.review_days, as a question post on the board (never deleted) / say one still holds"),
     ("memory", "kit.py lesson add <id> --roles R,.. --title T --text X [--files G,..] [--from \"doc id\"]", "a lesson into the memory, tagged with its roles"),
     ("read the board", "kit.py train <train> [--zoom <part>] [--brief | --sections [PART..] | --full PART..]", "a train's steps at three depths: two lines each; their seven fields; a step whole"),
     ("read the board", "kit.py post <id> [--head N]", "one post and its comments"),
@@ -6428,19 +6430,19 @@ def parse_lessons(text, source=""):
     repo attached, or the kit's own) and `check:` (what enforces it, M7: test:/hook:/code:/refusal:) lines, then the
     lesson itself."""
     out, cur = [], None
-    for line in text.splitlines():
+    for n, line in enumerate(text.splitlines(), 1):
         m = LESSON_HEAD.match(line)
         if m:
-            cur = {"id": m.group(1), "title": m.group(2), "roles": [], "files": [], "from": "", "where": "", "check": "", "text": [],
-                   "source": source, "_file": source}
+            cur = {"id": m.group(1), "title": m.group(2), "roles": [], "files": [], "from": "", "where": "", "check": "", "replaces": "",
+                   "replaced_by": "", "confirmed": "", "text": [], "source": source, "_file": source, "line": n}
             out.append(cur)
             continue
         if cur is None:
             continue
-        kv = re.match(r"^(roles|files|from|where|check)\s*:\s*(.*)$", line.strip(), re.I)
+        kv = re.match(r"^(roles|files|from|where|check|replaces|replaced_by|confirmed)\s*:\s*(.*)$", line.strip(), re.I)
         if kv and not cur["text"]:
             k, v = kv.group(1).lower(), kv.group(2).strip()
-            cur[k] = v if k in ("from", "where", "check") else [x.strip() for x in re.split(r"[,\s]+", v) if x.strip()]
+            cur[k] = [x.strip() for x in re.split(r"[,\s]+", v) if x.strip()] if k in ("roles", "files") else v
             continue
         if line.strip() or cur["text"]:
             cur["text"].append(line.rstrip())
@@ -6451,6 +6453,7 @@ def parse_lessons(text, source=""):
 
 
 def all_lessons():
+    """The live lessons: a lesson the archive holds as replaced is gone, even from an installed .kit/lessons.md (M8)."""
     out = []
     for p in _kit_lessons_paths():
         try:
@@ -6458,7 +6461,20 @@ def all_lessons():
                 out += parse_lessons(fh.read(), os.path.relpath(p, ROOT))
         except OSError:
             continue
-    return out
+    gone = {x["id"] for x in archived_lessons() if x.get("replaced_by")}
+    return [x for x in out if x["id"] not in gone]
+
+
+def _lessons_archive():
+    return os.path.join(_resolve_memory_dir(), "archive", "lessons.md")
+
+
+def archived_lessons():
+    try:
+        with open(_lessons_archive(), encoding="utf-8") as fh:
+            return parse_lessons(fh.read(), os.path.relpath(_lessons_archive(), ROOT))
+    except OSError:
+        return []
 
 
 def _touches(globs, files):
@@ -6583,7 +6599,15 @@ def _refused_lines():
     return out
 
 
-def lesson_add(lid, roles, title, text, files=(), frm="", check=""):
+def lesson_add(lid, roles, title, text, files=(), frm="", check="", replaces=""):
+    res = _lesson_add(lid, roles, title, text, files, frm, check)
+    if res.get("ok") and replaces:
+        r = memory_replace(res["lesson"], replaces)
+        res.update({"replaced": r} if r.get("ok") else {"error": r.get("error")})
+    return res
+
+
+def _lesson_add(lid, roles, title, text, files=(), frm="", check=""):
     """A lesson into the memory. It names its check (M7): without one it is written "unchecked" and the answer proposes
     one; a remedy that is only "be careful" with no check is refused."""
     roles = [r.strip().lower() for r in roles if r.strip()]
@@ -6639,6 +6663,243 @@ def _lesson_lines(les):
         out.append("- **%s** %s%s: %s%s" % (x["id"], x["title"], (" (files %s)" % ", ".join(x["files"])) if x["files"] else "",
                                             x["text"].replace("\n", " "), note(ROOT, x, cache) if note else ""))
     return out or ["- (none tagged for this role)"]
+
+
+# ---------------------------------------------------------------- M8: replacing and forgetting in memory
+MEMORY_REVIEW_DAYS = 90
+MEMORY_REVIEW_POST = "q-memory-to-review"
+
+
+def _memory_review_days():
+    mem = (_kit_config().get("kit") or {}).get("memory") or {}
+    try:
+        return int(mem.get("review_days", MEMORY_REVIEW_DAYS))
+    except (TypeError, ValueError):
+        return MEMORY_REVIEW_DAYS
+
+
+def _lesson_file(lid):
+    """(path, lines, start, end) of the file holding lesson `lid`'s section, or None."""
+    for p in _kit_lessons_paths():
+        try:
+            with open(p, encoding="utf-8") as fh:
+                lines = fh.read().split("\n")
+        except OSError:
+            continue
+        for i, line in enumerate(lines):
+            m = LESSON_HEAD.match(line)
+            if m and m.group(1) == lid:
+                j = next((k for k in range(i + 1, len(lines)) if LESSON_HEAD.match(lines[k])), len(lines))
+                return p, lines, i, j
+    return None
+
+
+def _write_lines(path, lines):
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(lines))
+
+
+def _set_lesson_key(lid, key, value):
+    """Put `key: value` among lesson `lid`'s meta lines (replacing one there). False: no file of the memory holds it."""
+    hit = _lesson_file(lid)
+    if not hit:
+        return False
+    p, lines, i, j = hit
+    k = i + 1
+    while k < j and re.match(r"^(roles|files|from|where|replaces|replaced_by|confirmed)\s*:", lines[k].strip(), re.I):
+        if lines[k].strip().lower().startswith(key + ":"):
+            lines[k] = "%s: %s" % (key, value)
+            _write_lines(p, lines)
+            return True
+        k += 1
+    lines.insert(k, "%s: %s" % (key, value))
+    _write_lines(p, lines)
+    return True
+
+
+def memory_replace(winner, loser):
+    """`winner` stays, `loser` leaves the memory for the archive with `replaced_by: winner` (a lesson or a ledger entry
+    either side). A lesson leaves its file (the installed .kit/lessons.md keeps its text but `all_lessons` skips it)."""
+    if not winner or not loser or winner == loser:
+        return {"error": "replace needs two different ids: the one that wins, then the one that goes"}
+    led, mdir = _load_ledger_mod(), _resolve_memory_dir()
+    ledger_ids = {e["id"] for e in led.load_entries(mdir)} if led else set()
+    lessons = {x["id"] for x in all_lessons()}
+    if winner not in ledger_ids | lessons:
+        return {"error": "%s: no live lesson or ledger entry has that id" % winner}
+    if loser in ledger_ids and winner in ledger_ids:
+        return led.replace(mdir, winner, loser)
+    if loser in ledger_ids:                                          # a lesson wins over a ledger row
+        entries = led.load_entries(mdir)
+        led._retire(mdir, entries, loser, winner)
+        led.save_entries(mdir, entries)
+    elif loser in lessons:
+        hit = _lesson_file(loser)
+        if not hit:
+            return {"error": "%s: its file was not found" % loser}
+        p, lines, i, j = hit
+        section = [l for l in lines[i:j]]
+        while section and not section[-1].strip():
+            section.pop()
+        section.insert(1, "replaced_by: %s" % winner)
+        installed = os.path.normpath(p) == os.path.normpath(os.path.join(ROOT, ".kit", "lessons.md")) and not _is_kit_source_repo(ROOT)
+        rest = lines[:i] + lines[j:]
+        if not installed and not any(l.strip() for l in rest) and \
+                os.path.realpath(p).startswith(os.path.realpath(_resolve_memory_dir()) + os.sep):
+            os.remove(p)                                             # a memory file that held only it
+        elif not installed:                                          # the kit's update would put it back: the archive hides it
+            _write_lines(p, rest)
+        arch = _lessons_archive()
+        os.makedirs(os.path.dirname(arch), exist_ok=True)
+        old = open(arch, encoding="utf-8").read().rstrip("\n") if os.path.isfile(arch) else \
+            "# Lessons archive (replaced, each with its successor)"
+        with open(arch, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(old + "\n\n" + "\n".join(section) + "\n")
+    else:
+        return {"error": "%s: no live lesson or ledger entry has that id" % loser}
+    if winner in lessons:
+        _set_lesson_key(winner, "replaces", loser)
+    else:
+        entries = led.load_entries(mdir)
+        for e in entries:
+            if e["id"] == winner:
+                e["replaces"] = loser
+        led.save_entries(mdir, entries)
+    return {"ok": True, "kept": winner, "archived": loser}
+
+
+def _blame_dates(path):
+    """{line number: commit date (YYYY-MM-DD)} for a file, from one `git blame`; {} outside git."""
+    r = subprocess.run(["git", "-C", ROOT, "blame", "--line-porcelain", "--", os.path.relpath(path, ROOT)],
+                       capture_output=True, text=True)
+    out, n, when = {}, 0, ""
+    for line in r.stdout.splitlines() if r.returncode == 0 else []:
+        m = re.match(r"^[0-9a-f]{40} \d+ (\d+)", line)
+        if m:
+            n = int(m.group(1))
+        elif line.startswith("committer-time "):
+            when = datetime.fromtimestamp(int(line.split()[1]), tz=timezone.utc).strftime("%Y-%m-%d")
+        elif line.startswith("\t"):
+            out[n] = when
+    return out
+
+
+def memory_items():
+    """Every live entry of the memory, lessons and ledger rows alike, as {id, text, files, theme, source, confirmed}:
+    `confirmed` is its `confirmed:` date, else the date its `from:` names, else the day git last touched its heading."""
+    out, blames = [], {}
+    for x in all_lessons():
+        when = x.get("confirmed") or (x["from"] if re.search(r"\d{4}-\d{2}-\d{2}", x.get("from") or "") else "")
+        if not when:
+            p = os.path.join(ROOT, x["source"])
+            if p not in blames:
+                blames[p] = _blame_dates(p)
+            when = blames[p].get(x.get("line") or 0, "")
+        out.append({"id": x["id"], "text": "%s. %s" % (x["title"], x["text"]), "files": x["files"], "theme": "",
+                    "source": x["source"], "confirmed": when, "kind": "lesson"})
+    led = _load_ledger_mod()
+    if led:
+        out += [dict(i, kind="ledger", source=os.path.relpath(i["source"], ROOT) if i["source"] else "")
+                for i in led.entry_items(led.load_entries(_resolve_memory_dir(), kit_root=ROOT))]
+    return out
+
+
+def _guide_paths():
+    """The guides and memory files that may say what ranks first: CLAUDE.md, AGENTS.md and the other top-level .md,
+    docs/ (not the prompts), the kit's own guides (kit/ in the kit's repo, .kit/ in a project), the memory's .md."""
+    ps = glob.glob(os.path.join(ROOT, "*.md"))
+    ps += [p for p in glob.glob(os.path.join(ROOT, "docs", "**", "*.md"), recursive=True)
+           if os.sep + "prompts" + os.sep not in p and os.sep + "posts" + os.sep not in p]
+    kit_dir = os.path.join(ROOT, "kit") if _is_kit_source_repo(ROOT) else os.path.join(ROOT, ".kit")
+    ps += glob.glob(os.path.join(kit_dir, "*.md")) + glob.glob(os.path.join(kit_dir, "skills", "**", "*.md"), recursive=True)
+    mdir = _resolve_memory_dir()
+    ps += [p for p in glob.glob(os.path.join(mdir, "**", "*.md"), recursive=True) if os.sep + "archive" + os.sep not in p]
+    return sorted(set(ps))
+
+
+def memory_conflicts():
+    """What the memory says twice in disagreement: [{kind, ids|where, why, ask}] (M8). `contradiction`: two live entries
+    on the same subject, opposite verbs or one setting with two values; `still-live`: an entry another names in
+    `replaces:`; `authority`: two docs each ranking first; `repeat`: one authority claimed in several files."""
+    led = _load_ledger_mod()
+    if not led:
+        return []
+    items = memory_items()
+    out = []
+    live = {i["id"] for i in items}
+    for x in all_lessons():
+        if x.get("replaces") and x["replaces"] in live:
+            out.append({"kind": "still-live", "ids": [x["id"], x["replaces"]],
+                        "why": "%s replaces %s, which is still live" % (x["id"], x["replaces"]),
+                        "ask": "python3 -I .kit/kit.py lessons replace %s %s" % (x["id"], x["replaces"])})
+    for c in led.contradictions(items):
+        out.append({"kind": "contradiction", "ids": [c["a"], c["b"]], "why": c["why"],
+                    "where": [c["a_source"], c["b_source"]],
+                    "ask": "which one wins? `python3 -I .kit/kit.py lessons replace %s %s` (%s wins) or `... replace %s %s`"
+                           % (c["a"], c["b"], c["a"], c["b"], c["a"])})
+    for c in led.authority_conflicts(led.authority_claims(_guide_paths(), root=ROOT)):
+        out.append({"kind": "authority" if c["kind"] == "conflict" else "repeat", "where": c["where"], "why": c["why"],
+                    "ask": "which one ranks first? Keep that claim in one file, the others point to it"})
+    return out
+
+
+def memory_stale(days=None):
+    days = _memory_review_days() if days is None else int(days)
+    led = _load_ledger_mod()
+    return days, (led.stale(memory_items(), days) if led else [])
+
+
+def memory_keep(eid):
+    """`eid` still holds: a lesson gets `confirmed: <today>`, a ledger row `confirmed_at`."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if any(x["id"] == eid for x in all_lessons()):
+        return {"ok": True, "entry": eid, "confirmed": today} if _set_lesson_key(eid, "confirmed", today) else \
+            {"error": "%s: its file was not found" % eid}
+    led = _load_ledger_mod()
+    return led.keep(_resolve_memory_dir(), eid) if led else {"error": "ledger.py not found"}
+
+
+def memory_review_post(days=None, db_path=None):
+    """The entries nobody confirmed for more than `days` days, as one question post on the board (kept, not doubled:
+    an open one is updated). Nothing is deleted: the default is to keep them."""
+    days, old = memory_stale(days)
+    if not old:
+        return {"ok": True, "post": None, "count": 0, "days": days}
+    body = ("%d memory entries nobody confirmed for more than %d days (kit config `kit.memory.review_days`). Nothing "
+            "leaves the memory unless you say so.\n\n" % (len(old), days)) + "\n".join(
+        "- **%s** (%s, %s): %s. Still true: `python3 -I .kit/kit.py lessons keep %s`; replaced: `python3 -I .kit/kit.py "
+        "lessons replace <new> %s`" % (i["id"], i["source"] or i["kind"], ("%d days" % i["age"]) if i["age"] is not None
+                                        else "never dated", _short(i["text"], 110), i["id"], i["id"]) for i in old)
+    title = "Memory to review: %d entries unconfirmed for %d+ days" % (len(old), days)
+    cur = _all_posts(db_path).get(MEMORY_REVIEW_POST)
+    if cur and str(cur.get("status") or "open") == "open":
+        ok = _board_write("update", "posts", MEMORY_REVIEW_POST, {"title": title, "body": body, "updated_at": _now_z()})
+        return {"ok": ok, "post": MEMORY_REVIEW_POST, "count": len(old), "days": days, "updated": True}
+    deadline = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+    g = _post_gate()
+    doc = {"title": title, "body": body, "kind": "question", "column": "question", "options": ["Keep them all", "Review each"],
+           "default_option": "Keep them all", "deadline": deadline, "status": "open", "priority": 2, "train": "memory",
+           "from": "orchestrator", "created_at": _now_z(), "needs": "direction"}
+    err = g.check_post("q", doc, None, _kit_config())[2] if g else None
+    if err:
+        return {"error": err}
+    ok = _board_write("set", "posts", MEMORY_REVIEW_POST, doc)
+    return {"ok": ok, "post": MEMORY_REVIEW_POST, "count": len(old), "days": days} if ok else \
+        {"error": "the board did not take it (is the board server running?)"}
+
+
+def memory_check_text(days=None):
+    """`kit.py lessons check`'s report: refused lessons, then what disagrees (each with the question it asks), then the
+    count of entries waiting for a review."""
+    out = ["REFUSED: " + e for e in lessons_check()]
+    for c in memory_conflicts():
+        label = {"contradiction": "CONTRADICTS", "still-live": "STILL LIVE", "authority": "AUTHORITY", "repeat": "SAID TWICE"}[c["kind"]]
+        out.append("%s: %s. %s" % (label, c["why"], c["ask"][:1].upper() + c["ask"][1:]))
+    days, old = memory_stale(days)
+    if old:
+        out.append("REVIEW: %d entries unconfirmed for more than %d days (%s): `python3 -I .kit/kit.py lessons review --post` "
+                   "lists them on the board" % (len(old), days, ", ".join(i["id"] for i in old[:8]) + (", ..." if len(old) > 8 else "")))
+    return out
 
 
 def _changed_files(root=ROOT, base=None):
@@ -7416,6 +7677,12 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         bad = _refused_lines()
         if bad:
             out += ["", "## Lessons refused (fix: they reach no role)"] + bad
+        try:
+            odd = [l for l in memory_check_text() if not l.startswith("REFUSED: ")]
+        except Exception as e:                       # a broken check never stops the orchestrator's resume
+            odd = ["- memory check failed: %s" % e]
+        if odd:
+            out += ["", "## Memory that disagrees or waits for a review (M8)"] + ["- " + l for l in odd[:8]]
     elif role == "part":
         g = _git_run("rev-parse", "--verify", "HEAD")
         if g.returncode != 0:
@@ -7877,12 +8144,18 @@ def main(argv=None):
     s.add_argument("--post", default=None, help="--role part|review: the step's post (default: this branch's)")
     s = sp.add_parser("lessons", help="the lessons a role needs (--role), or `check`: refuse untagged lessons and "
                       "lessons only a project doc holds")
-    s.add_argument("action", nargs="?", choices=["list", "check"], default="list"); s.add_argument("--role", choices=list(ROLES))
-    s.add_argument("--files", nargs="*", default=None)
+    s.add_argument("action", nargs="?", choices=["list", "check", "replace", "keep", "review"], default="list")
+    s.add_argument("ids", nargs="*", default=[], help="replace: the one that wins, then the one that goes; keep: the one still true")
+    s.add_argument("--role", choices=list(ROLES)); s.add_argument("--files", nargs="*", default=None)
+    s.add_argument("--days", type=int, default=None, help="check/review: unconfirmed for more than this (kit.memory.review_days)")
+    s.add_argument("--post", action="store_true", help="review: the list as one question post on the board")
+    s.add_argument("--ask", action="store_true", help="check: one question post: which one of each pair wins")
+    s.add_argument("--db", default=None)
     s = sp.add_parser("lesson", help="add a lesson to the memory, tagged with its roles")
     s.add_argument("action", choices=["add"]); s.add_argument("id"); s.add_argument("--roles", required=True)
     s.add_argument("--title", required=True); s.add_argument("--text", required=True)
     s.add_argument("--files", default=""); s.add_argument("--from", dest="frm", default="")
+    s.add_argument("--replaces", default="", help="the lesson or ledger entry this one replaces: it goes to the archive")
     s.add_argument("--check", default="", help="what enforces it: test:<file>[::Class.test] | hook:<name> | code:<file>[#text] | "
                    "refusal:<file>#<text> (`;` between several); without it the lesson is unchecked and a check is proposed")
     s = sp.add_parser("commands", help="the kit's commands: the topics, or those a word finds (`all`)")
@@ -8243,18 +8516,51 @@ def main(argv=None):
             res = memory_checks(run=True)
             bad = [r for r in res if r["status"] == "fail"]
             err += ["%s: its check fails or what it names is gone: %s" % (r["id"], r["why"]) for r in bad]
-            print("\n".join(["REFUSED: " + e for e in err]) if err else "OK: every lesson is in the memory, tagged with its roles, and every check passes")
+            odd = [l for l in memory_check_text(a.days) if not l.startswith("REFUSED: ")]
+            print("\n".join(["REFUSED: " + e for e in err] + odd) if err or odd else
+                  "OK: every lesson is in the memory, tagged with its roles, every check passes, nothing in it disagrees")
             for r in res:
                 if r["status"] == "unchecked":
                     print("UNCHECKED: %s since %s: nothing runs it (add `check:` naming its test, hook, refusal or code)" % (r["id"], r["since"]))
             if res:
                 print(memory_line())
-            return 1 if err else 0
+            if a.ask:
+                pairs = [c for c in memory_conflicts() if c["kind"] in ("contradiction", "authority")]
+                if pairs:
+                    deadline = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+                    body = "Two live rules that disagree: a session would meet both. Until you choose, both stay, flagged.\n\n" + \
+                        "\n".join("- %s. %s" % (c["why"], c["ask"]) for c in pairs)
+                    print(json.dumps(ask("Memory: %d pair(s) disagree, which one wins?" % len(pairs), body,
+                                         ["Leave both flagged", "I answer under the post"], "Leave both flagged", deadline,
+                                         needs="direction", train="memory", priority=2), ensure_ascii=False))
+            return 1 if err or [l for l in odd if not l.startswith("REVIEW:")] else 0
+        if a.action == "replace":
+            if len(a.ids) != 2:
+                print(json.dumps({"error": "lessons replace <the one that wins> <the one that goes>"}))
+                return 2
+            res = memory_replace(a.ids[0], a.ids[1])
+            print(json.dumps(res, ensure_ascii=False))
+            return 1 if res.get("error") else 0
+        if a.action == "keep":
+            res = [memory_keep(i) for i in a.ids] or [{"error": "lessons keep <id>...: the entries still true"}]
+            print(json.dumps(res if len(res) > 1 else res[0], ensure_ascii=False))
+            return 1 if any(r.get("error") for r in res) else 0
+        if a.action == "review":
+            if a.post:
+                res = memory_review_post(a.days, db_path=a.db)
+                print(json.dumps(res, ensure_ascii=False))
+                return 1 if res.get("error") else 0
+            days, old = memory_stale(a.days)
+            print("\n".join("- %s (%s, %s): %s" % (i["id"], i["source"] or i["kind"], ("%d days" % i["age"]) if i["age"] is not None
+                                                   else "never dated", _short(i["text"], 100)) for i in old)
+                  or "(nothing unconfirmed for more than %d days)" % days)
+            return 0
         les = lessons_for(a.role, a.files) if a.role else all_lessons()
         print("\n".join(_lesson_lines(les)))
         return 0
     if a.cmd == "lesson":
-        res = lesson_add(a.id, a.roles.split(","), a.title, a.text, [f for f in a.files.split(",") if f.strip()], a.frm, a.check)
+        res = lesson_add(a.id, a.roles.split(","), a.title, a.text, [f for f in a.files.split(",") if f.strip()], a.frm, a.check,
+                         replaces=a.replaces)
         print(json.dumps(res, ensure_ascii=False))
         return 1 if res.get("error") else 0
     if a.cmd == "commands":

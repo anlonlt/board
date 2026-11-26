@@ -85,6 +85,8 @@ DEFAULT_KIT = {
     "orchestrator": {"context_limit_k": 380},
     # Reviews (Claude Code CLI): each completed step, and every train_every completed steps of a train a cross review.
     "review": {"auto": "all", "train_every": 4},
+    # Memory (M8): an entry nobody confirmed for longer than this goes to a review list on the board, never deleted.
+    "memory": {"review_days": 90},
     # Above this a post body gets a nudge from `kit.py done` (never an error: the post is where the detail goes).
     "post_body_max": 1500,
     "clerk": {"wait_minutes": 5, "context_limit_k": 80, "orchestrator_idle_minutes": 30},
