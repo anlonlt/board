@@ -1,0 +1,70 @@
+{
+ "body": "Six concrete `agy` runtime bugs surfaced during the live `CL43` orchestrator run on `feat/streamline-doctor-memory` (`3746aa8`). Every item below includes exact file/line pointers, repro commands, and captured output.\n\n## 1. `stale_copy()` blocks local `agy` with Claude-Web `ArtifactData` gate\n- **Where:** `scripts/kit.py` / `.kit/kit.py` (`stale_copy()`, lines 1255–1277)\n- **Symptom:** Running `python3 -I .kit/kit.py resume --role orchestrator` or MCP `board_queue(runner=\"agy\")` in `/home/anon/board-streamline` (where `kit.mode == \"local\"` and `kit.artifact.url` is also set for attached Claude Code Web sessions) exits code 3 with:\n  ```\n  STALE: this copy of the Artifact board (https://claude.ai/artifact/Ek79P6H3WTPJjJVYPe9rsf) was never loaded here: run `python3 -I .kit/kit.py artifact pull`, make the ArtifactData calls it prints, then `python3 -I .kit/kit.py artifact load`; then this command again (KIT_STALE_OK=1 reads the old copy anyway).\n  ```\n- **Cause:** `stale_copy()` checks `if not attached_board()` without checking whether the active runtime is actually Claude Code Web (`ArtifactData` does not exist in `agy` or local CLI without the Artifact connector).\n- **Fix:** Skip the Artifact staleness gate when running in `agy` or local non-web mode (or when `kit.mode == \"local\"` and not in a Claude Web container), reading local SQLite / `board-mirror` instead.\n\n## 2. Empty `board.db` shadows `board-mirror` in `_load_board_docs()` (and `board_server.py` creates `board.db` before `bind()`)\n- **Where:** `scripts/kit.py` (`_load_board_docs()`, lines 3209–3239) and `kit/board/board_server.py` (`start_server()`, lines 3841 / 3973)\n- **Symptom:** `board_server.py --port 8765` failed with `OSError: [Errno 98] Address already in use` *after* creating an empty 0-doc `.kit/board_data/board.db`. Afterwards, `KIT_STALE_OK=1 python3 -I .kit/kit.py resume --role orchestrator` printed `No train has an open step.` and `board_queue(runner=\"agy\")` returned `0 open cards`, even though `../board-board-mirror/board/posts/cl43-the-live-line-and-loop-breaker-on-agy.json` was present and `kit.py post cl43-...` found it.\n- **Captured repro:**\n  ```bash\n  python3 -c \"import sqlite3; c=sqlite3.connect('/home/anon/board-streamline/.kit/board_data/board.db'); print(c.execute('SELECT count(*) FROM docs').fetchone()[0])\"\n  # -> 0\n  python3 -c \"import sys; sys.path.insert(0,'/home/anon/board-streamline/.kit'); import kit; posts,_=kit._load_board_docs('/home/anon/board-board-mirror'); print(len(posts))\"\n  # -> 0\n  ```\n- **Fix:** (a) In `_load_board_docs()`, if `board.db` has 0 docs (or is unseeded), fall back to the mirror worktree `m` (or merge/warn). (b) In `board_server.py`, avoid leaving an unseeded empty `board.db` behind when `bind()` fails.\n\n## 3. `.agents/mcp_config.json` hardcodes repo path & `board_queue(runner=\"agy\")` misses planned `info` steps\n- **Where:** `install.py` (`merge_agy_mcp()`, lines 636–645), `.agents/mcp_config.json`, `kit/board/mcp_stdio.py`, and `scripts/kit.py` (`queue`)\n- **Symptom:**\n  - `.agents/mcp_config.json` commits hardcoded absolute paths (`\"args\": [\"-I\", \"/home/anon/board/.kit/mcp_stdio.py\", \"--root\", \"/home/anon/board\"]`), so any git worktree (like `/home/anon/board-streamline`) points the MCP server at the wrong checkout.\n  - `board_queue(runner=\"agy\")` over JSON-RPC stdio returned `queue (runner=agy): 0 open cards` even with `KIT_STALE_OK=1` (missing `cl43`, which has `column: \"info\", status: \"planned\", runner: \"agy\"`).\n  - `board_inbox(runner=\"agy\")` fails with `Connection refused` when `board_server.py` isn't running, instead of falling back to mirror/SQLite like `board_queue`.\n- **Repro script:**\n  ```bash\n  KIT_STALE_OK=1 python3 -c \"\n  import subprocess, json\n  p = subprocess.Popen(['python3', '-I', '/home/anon/board-streamline/.kit/mcp_stdio.py', '--root', '/home/anon/board-streamline'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)\n  reqs = [\n    {'jsonrpc':'2.0','id':1,'method':'initialize','params':{'protocolVersion':'2024-11-05','capabilities':{},'clientInfo':{'name':'t','version':'0'}}},\n    {'jsonrpc':'2.0','id':2,'method':'tools/call','params':{'name':'board_queue','arguments':{'runner':'agy'}}},\n    {'jsonrpc':'2.0','id':3,'method':'tools/call','params':{'name':'board_inbox','arguments':{'runner':'agy'}}},\n  ]\n  print(p.communicate('\\n'.join(json.dumps(r) for r in reqs) + '\\n', timeout=15)[0])\n  \"\n  ```\n- **Fix:** Use relative paths (`-I`, `../.kit/mcp_stdio.py` or auto-resolve from CWD/git root) in `.agents/mcp_config.json`, include planned/in-progress train steps attributed to `runner` in `board_queue`, and verify `mcp_stdio.py` handles multi-request stdio batches cleanly.\n\n## 4. `kit_usage.py` / `usage.py` does not run or parse transcripts on `agy`\n- **Where:** `kit/hook.py` (lines 62–63) and `kit/usage.py` (lines 15–59)\n- **Symptom:** Zero usage rows recorded for `agy` sessions (`CL43` and orchestrator). `kit/hook.py` only wires `kit_usage.py` for `{\"web\": ANY, \"cli\": ANY}` (no `\"agy\"`), and `usage.py` only parses Claude Code `.jsonl` (`message.usage`) and `claude-*` model prices.\n- **Observed `agy` transcript schema** (`~/.gemini/antigravity-cli/brain/<conversationId>/.system_generated/logs/transcript.jsonl`):\n  ```json\n  {\"step_index\": 4, \"source\": \"MODEL\", \"type\": \"PLANNER_RESPONSE\", \"status\": \"DONE\", \"created_at\": \"2026-11-26T03:09:11Z\", \"model\": \"gemini-4-neon-high\", \"input_tokens\": 3400, \"cache_read_tokens\": 10979, \"output_tokens\": 619, \"tool_calls\": [{\"name\": \"read_file\", \"args\": {...}}]}\n  ```\n  Hook payloads pass `transcriptPath` and `conversationId` (and `modelName`).\n- **Fix:** Teach `usage.py` to parse `agy` `transcript.jsonl` / `transcript_full.jsonl` (`PLANNER_RESPONSE` token counts + `tool_calls` + `invoke_subagent` child transcripts), add Gemini/agy model pricing table (or configurable `usage.prices`), and wire `kit_usage.py` on `agy` `Stop` in `kit/hook.py`.\n\n## 5. `kit/up` passes `agy --mode auto`, which falls back to default mode on this account\n- **Where:** `kit/up` / `.kit/up` (lines 186 and 209)\n- **Symptom:** Live `agy` CLI run produced:\n  ```\n  warning: --mode auto is not available for this account; continuing in the default mode.\n  ```\n  So unattended runs launched via `board` / `harmonize` silently drop back to interactive approval prompts.\n- **Fix:** Probe/detect supported `agy` permission/unattended flags (or support `kit.agy_permission_mode` / `--dangerously-skip-permissions` fallback when `--mode auto` is unavailable) and document/test it.\n\n## 6. `kit_task_train` / orchestrator `agy` parity check + live `board --agy` smoke test\n- Confirm end-to-end that running the one-word launcher (`board --agy`) on `feat/streamline-doctor-memory` starts the board server, reconciles `board-mirror` cleanly, opens `agy` with `.agents/hooks.json` and `.agents/mcp_config.json` active, sees `CL43`/`CL44` via `kit.py resume --role orchestrator` and `board_queue(runner=\"agy\")`, and records a valid `kit-usage` row on `Stop`.\n\n## Reference Logs\n- Orchestrator transcript: `/home/anon/.gemini/antigravity-cli/brain/6026e625-a17e-4c07-91cc-73495b7797d3/.system_generated/logs/transcript.jsonl`\n- `CL43` part transcript (includes real `agy` hook probe & `events.jsonl` findings): `/home/anon/.gemini/antigravity-cli/brain/9ce0d26e-18ec-4bee-b2ea-b319fd06c2d2/.system_generated/logs/transcript.jsonl`",
+ "column": "info",
+ "created_at": "2026-11-26T03:37:00Z",
+ "from": "agy",
+ "part": "CL44",
+ "planned_by": "owner",
+ "runner": "agy",
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "scripts/kit.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "Skip Artifact STALE gate in local/agy runtimes (stale_copy)"
+  },
+  {
+   "files": [
+    "scripts/kit.py",
+    "kit/board/board_server.py"
+   ],
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "Fall back to board-mirror when board.db is empty and avoid creating empty board.db on failed bind"
+  },
+  {
+   "files": [
+    "install.py",
+    "kit/board/mcp_stdio.py",
+    "scripts/kit.py"
+   ],
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "Fix worktree-safe .agents/mcp_config.json paths and include runner-assigned planned steps in board_queue"
+  },
+  {
+   "files": [
+    "kit/usage.py",
+    "kit/hook.py"
+   ],
+   "from": "task",
+   "n": 4,
+   "status": "open",
+   "title": "Add agy transcript parsing, model prices, and Stop hook wiring to kit_usage.py / usage.py"
+  },
+  {
+   "files": [
+    "kit/up"
+   ],
+   "from": "task",
+   "n": 5,
+   "status": "open",
+   "title": "Handle unavailable `agy --mode auto` in kit/up without silently falling back to interactive mode"
+  },
+  {
+   "from": "task",
+   "n": 6,
+   "status": "open",
+   "title": "Run full test suite and one live local `board --agy` smoke test recording resume, MCP tools, and usage row"
+  }
+ ],
+ "task": "Fix the six agy runtime bugs surfaced during the live CL43 run on `feat/streamline-doctor-memory` (`3746aa8`):\n\n1. `scripts/kit.py` (`stale_copy()`): do not block local `agy` or local CLI sessions with the Claude-Web `STALE: Artifact board` gate when `kit.artifact.url` is set alongside `kit.mode: \"local\"`.\n2. `scripts/kit.py` (`_load_board_docs()`) & `kit/board/board_server.py`: fall back to `board-mirror` if `board.db` has 0 docs, and don't leave a 0-doc `board.db` behind when `board_server.py` fails to bind its port.\n3. `install.py` (`merge_agy_mcp()`), `kit/board/mcp_stdio.py`, and `scripts/kit.py`: make `.agents/mcp_config.json` worktree-safe (no hardcoded parent checkout path), include `runner`-assigned planned/in-progress train steps in `board_queue`, and handle offline fallback cleanly in `board_inbox`.\n4. `kit/usage.py` & `kit/hook.py`: parse `agy` `transcript.jsonl` (`PLANNER_RESPONSE` token counts + `tool_calls` + child subagents), support Gemini/agy models, and wire `kit_usage.py` into the `agy` `Stop` row of `TABLE`.\n5. `kit/up`: handle `agy --mode auto` unavailability cleanly instead of silently falling back to interactive mode.\n6. Run `python3 scripts/run_all_tests.py` (0 failures) plus a live local `board --agy` smoke test confirming `kit.py resume`, `board_queue(runner=\"agy\")`, and a recorded `kit-usage` row.",
+ "title": "Fix agy runtime gaps: Artifact STALE gate, empty board.db shadowing, worktree MCP config, agy usage ledger, and kit/up mode flag",
+ "train": "cli"
+}

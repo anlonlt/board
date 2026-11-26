@@ -1,9 +1,9 @@
 {
  "column": "info",
- "created_at": "2026-11-26T05:35:46Z",
+ "created_at": "2026-11-26T05:42:27Z",
  "rows": [
   {
-   "at": 37,
+   "at": 38,
    "key": "A",
    "name": "Cli",
    "note": "Next: The Trains view: task lists (A) or the old flow map (B)?",
@@ -47,6 +47,7 @@
     "Usage ledger: tokens, tools, agents per session, recorded without tokens",
     "Attaching repos on the web: install.py allows add_repo, kit attach, doctor warns",
     "Launch a board step without push access to the board (prompt carried in the start message)",
+    "The live line and the loop breaker on agy",
     "Design principles, complete, and no emoji Like",
     "The board travels in git, always current (mirror synced on every step)",
     "A crashed part is continued from its last checkpoint",
@@ -55,7 +56,7 @@
     "Install for several repos on the web: one environment with every repo, hooks at user level",
     "Review and adopt four kit changes made on a computer (patch in this post)",
     "Measure what the account's connectors cost on the web, and who decides that they load",
-    "The live line and the loop breaker on agy"
+    "Fix agy runtime gaps: Artifact STALE gate, empty board.db shadowing, worktree MCP confi..."
    ],
    "train": "P-cli"
   },
@@ -95,5 +96,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T05:35:46Z"
+ "updated_at": "2026-11-26T05:42:27Z"
 }
