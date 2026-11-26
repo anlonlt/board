@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:28:07Z",
+ "created_at": "2026-11-26T22:30:01Z",
  "rows": [
   {
    "at": 40,
@@ -157,11 +157,12 @@
    "state": "ready",
    "steps": [
     "A part reports to the orchestrator that started it, unless another claimed it",
-    "A part launched in the background knows its own step"
+    "A part launched in the background knows its own step",
+    "A session always starts on the newest code from GitHub, in every checkout"
    ],
    "train": "P-takeover"
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T22:28:07Z"
+ "updated_at": "2026-11-26T22:30:01Z"
 }
