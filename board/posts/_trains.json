@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:30:01Z",
+ "created_at": "2026-11-26T22:43:01Z",
  "rows": [
   {
    "also": [],
@@ -9,8 +9,6 @@
     "CL12",
     "CL14",
     "CL15",
-    "CL16",
-    "CL17",
     "CL18",
     "CL19",
     "CL20",
@@ -69,6 +67,7 @@
   {
    "also": [],
    "children": [
+    "CL16",
     "CL45",
     "CL46",
     "CL47",
@@ -78,7 +77,7 @@
    ],
    "parent": "",
    "part": "P-board-data",
-   "post": "cl45-a-web-session-reconciles-its-artifact-wi",
+   "post": "cl16-the-board-travels-in-git-always-current",
    "prompt": "",
    "session": "",
    "state": "idle",
@@ -142,13 +141,14 @@
   {
    "also": [],
    "children": [
+    "CL17",
     "CL49",
     "CL50",
     "CL53"
    ],
    "parent": "",
    "part": "P-takeover",
-   "post": "cl49-a-part-reaches-the-orchestrator-running",
+   "post": "cl17-a-crashed-part-is-continued-from-its-las",
    "prompt": "",
    "session": "",
    "state": "idle",
@@ -426,23 +426,23 @@
   {
    "also": [],
    "children": [],
-   "parent": "P-cli",
+   "parent": "P-board-data",
    "part": "CL16",
    "post": "cl16-the-board-travels-in-git-always-current",
    "prompt": "",
    "session": "session_01AE1HGjnr7WTDyCuCWMb6wL",
-   "state": "running",
+   "state": "idle",
    "store": []
   },
   {
    "also": [],
    "children": [],
-   "parent": "P-cli",
+   "parent": "P-takeover",
    "part": "CL17",
    "post": "cl17-a-crashed-part-is-continued-from-its-las",
    "prompt": "",
    "session": "session_01AE1HGiUM7AQsL6Y1N4AAQC",
-   "state": "running",
+   "state": "idle",
    "store": []
   },
   {
@@ -1089,5 +1089,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T22:30:01Z"
+ "updated_at": "2026-11-26T22:43:01Z"
 }

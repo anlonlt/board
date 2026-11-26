@@ -109,7 +109,7 @@
   "Cost in characters, measured here: resume for a part 15425, form 150, done 683 (unfilled form), sub 73, permission-mode 4, commands 226 (a topic: 235)",
   "A web part launched in the orchestrator's own words is now recognized as a part: 1 of 1 (this session; before: 0, no live line and no pieces from its task list)"
  ],
- "body": "The four changes from your computer are adopted on the web, with three small bugs fixed on the way. A web step now shows on your board what it is doing, like a step on your computer: the line is sent with each update the step already makes, so it moves every few minutes rather than every 15 seconds. You see it in the board once the board's page is refreshed to this version.\n\n### What each change costs (measured here, in characters)\n\n| Command | Characters | Note |\n|---|---|---|\n| resume, as a part | 15425 | the largest parts: what the train found so far 4890, how a part works 3353, lessons 2434; the pieces add 696 |\n| form | 150 | once at turn 1 |\n| done | 683 | here with an unfilled form; it refuses an open piece |\n| sub | 73 | one line of JSON per tick |\n| permission-mode | 4 | \"auto\" here |\n| commands | 226 | a topic: 235 |\n\nThe live line costs no model call and nothing in context on the web: the hook is silent; the document rides in the push the step already makes (one more write in its batch).\n\n### Review of the four commits, bug by bug\n\n1. **A product name was refused as a file name.** The new check on what you read first refused \"Node.js\" (and Vue.js, Next.js...) as if it were a file, and since it is now an error, not a note, a step could not end. Fixed: common product names pass; a real file name is still refused. Tested.\n2. **Two pieces could get the same number.** When a piece without a number came before one with a number, both became piece 1, so ticking \"1\" hit the wrong one. Fixed: an unnumbered piece takes a number nobody holds. Tested.\n3. **The help line for ticking a piece still showed the old form** (title only). It now says by number, and that dropping a piece the task names needs a reason.\n4. **A test assumed it did not run as root.** On the web every session is root, and Claude Code refuses the bypass mode as root, so the kit rightly says auto: the test now fakes a normal user, and checks the root case too.\n\nChecked and fine: the loop breaker (said once, at the 8th identical call), the hook that finds the project from a subfolder, the installer moving the old default to the new one once, the page tests closing their browser.\n\nSeen, not changed (small): the live line's first look at pieces can skip a file changed before the session's first command; two pieces of a task list that has two numbered lists (1 to 3, then 1 to 2) are read as prose, by design.\n\n### The live line on the web: how it works now\n\n```mermaid\nflowchart LR\n  A[web step's command] --> B[its hook: what it does now]\n  B --> C[the container's copy of the board]\n  C -->|each push the step already makes| D[the Artifact board]\n  D --> E[the page: line under the step]\n```\n\n- The hook now runs in web sessions too (it already ran here, by accident, because this repository is installed for the computer; now it is declared for both).\n- A web step launched with \"You are part ... --role part --post ...\" is now recognized as a part (before, only the kit's own launch words were): its hook found this step at once.\n- The push sends the line as one more document, created the first time and pinned to its version after that; it is never counted as unsent, so the Stop check does not nag about it.\n- The page reads the line on the board that holds the step (an attached board like this one); before, it looked at the main board's place and would have shown nothing. The page test plants a wrong-board line and proves it is not shown.\n\n### What a web session sees of permission-mode\n\n- It prints \"auto\" here: the session runs as root, and Claude Code refuses the bypass mode as root; nothing is recorded as accepted either.\n- On the web the mode is not taken from the kit at all: a web part is started by the orchestrator's session tool, which gives it the orchestrator's own mode; the kit's choice only applies to sessions it starts on a computer. Nothing in the web flow needs a change. The welcome text that still said \"auto\" now says what the mode is.",
+ "body": "Four kit changes, made and tested on a computer, are on branch feat/streamline-doctor-memory (95f0eab..309ba6c): a step's numbered pieces, a plain-words check on what he reads first, a live line saying what a running step is doing, a loop breaker, and every check off by default once he accepts it. Review them, run them for real on the web, and say what each costs.",
  "branch": "feat/streamline-doctor-memory",
  "breaks": "sed -i 's|\"db/activity\"|\"db/no-activity\"|' scripts/kit.py",
  "check": "python3 -m pytest -q tests/test_cl31_card_push.py tests/test_post_gate.py tests/test_unified_hooks.py -k \"live_line or cl41 or every_check or only_a_part or table_is\"",
@@ -138,6 +138,7 @@
   "output": "install OK; resume exit 0, 12014 chars, header \"# Resume: part B18\"; permission-mode: auto; commands lists 12 topics",
   "project": "anlonlt/harmonize (copy, never pushed)"
  },
+ "restored_from": "board-mirror 5d7db0d: an artifact load at 2026-11-26T20:23Z (CL44's part, on this computer) overwrote it with an older Artifact copy; fields only that copy had are kept",
  "review": "redirect",
  "review_commit": "309ba6ca1d8c580349db676d84d12d01d2aa9717",
  "review_id": "CR-cl41-review-and-adopt-four-local-commits",
@@ -145,11 +146,12 @@
  "session_id": "session_01AE1HGj3F2eiqu8hr8ZLBtc",
  "started_at": "2026-11-26T01:04:17Z",
  "status": "complete",
+ "status_fixed": "was \"planned\": the web session finished it; merged into feat/streamline-doctor-memory (a73fa1a) (owner's go, 2026-11-26)",
  "subtasks": [
   {
    "from": "task",
    "n": 1,
-   "status": "done",
+   "status": "open",
    "title": "Review the four commits for real bugs"
   },
   {
@@ -158,31 +160,31 @@
    ],
    "from": "task",
    "n": 2,
-   "status": "done",
+   "status": "open",
    "title": "Run the scoped tests (python3 scripts/run_all_tests.py), then --all once"
   },
   {
    "from": "task",
    "n": 3,
-   "status": "done",
+   "status": "open",
    "title": "Run the new commands for real here and measure each in characters"
   },
   {
    "from": "task",
    "n": 4,
-   "status": "done",
+   "status": "open",
    "title": "Make the live line work for a web part"
   },
   {
    "from": "task",
    "n": 5,
-   "status": "done",
+   "status": "open",
    "title": "Report what a web session sees of permission-mode (web ignores bypass) and whether anything here..."
   }
  ],
  "task": "Get the code: clone anlonlt/board, `git checkout feat/streamline-doctor-memory` (the four commits are 95f0eab..309ba6c), then `python3 -I install.py . --update --no-cmd`.\n\nWhat changed (each with its tests): `done` refuses open pieces and code in the verdict or lead; `kit_activity.py` writes activity/<post> (what it does now, no model call, at most every 15 s; a loop of 8 identical calls is said once); `kit.py permission-mode` (bypass once the owner accepted it, else auto); hooks find the project above a subfolder; page tests close their browser.\n\n1. Review the four commits for real bugs: say each with file:line, or none.\n2. Run the scoped tests (`python3 scripts/run_all_tests.py`), then `--all` once: numbers, and any failure that is not timing.\n3. Run the new commands for real here and measure each in characters: `resume --role part`, `form`, `done`, `sub`, `permission-mode`, `commands`.\n4. Make the live line work for a web part: its hook cannot reach a local board; find the way (ArtifactData through the push, or the board's own page), build it, test it.\n5. Report what a web session sees of `permission-mode` (web ignores bypass) and whether anything here needs a change for the web.",
  "title": "Review and adopt four kit changes made on a computer (patch in this post)",
  "train": "cli",
- "updated_at": "2026-11-26T01:36:28Z",
+ "updated_at": "2026-11-26T10:04:09Z",
  "verdict": "Adopted: no blocking bug, three small ones fixed, 61 of 62 suites green on the web (the last fails the same before the changes), and a web step's live line now reaches the Artifact board."
 }

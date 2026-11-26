@@ -3,7 +3,8 @@
  "column": "info",
  "created_at": "2026-11-20T02:50:36Z",
  "part": "orchestrator",
- "session_id": "session_01AE1HGgfX1UjBPPJLiaUHxW",
+ "restored_from": "board-mirror 5d7db0d: an artifact load at 2026-11-26T20:23Z (CL44's part, on this computer) overwrote it with an older Artifact copy; fields only that copy had are kept",
+ "session_id": "c79c7b98-8778-4409-9e12-6d66323ac46e",
  "title": "Ask the orchestrator",
- "updated_at": "2026-11-26T21:27:55Z"
+ "updated_at": "2026-11-26T07:49:31Z"
 }

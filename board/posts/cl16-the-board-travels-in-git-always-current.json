@@ -5,11 +5,13 @@
  "created_at": "2026-11-22T23:17:04Z",
  "from": "orchestrator",
  "launched_at": "2026-11-26T00:43:04Z",
+ "moved_from_train": "cli",
  "part": "CL16",
  "planned_by": "orchestrator",
+ "restored_from": "board-mirror 5d7db0d: an artifact load at 2026-11-26T20:23Z (CL44's part, on this computer) overwrote it with an older Artifact copy; fields only that copy had are kept",
  "session_id": "session_01AE1HGjnr7WTDyCuCWMb6wL",
- "status": "in progress",
+ "status": "planned",
  "title": "The board travels in git, always current (mirror synced on every step)",
- "train": "cli",
- "updated_at": "2026-11-26T00:43:04Z"
+ "train": "board-data",
+ "updated_at": "2026-11-26T10:04:09Z"
 }
