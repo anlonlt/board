@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:57:17Z",
+ "created_at": "2026-11-26T22:02:25Z",
  "rows": [
   {
    "at": 39,
@@ -141,7 +141,8 @@
     "Antigravity on the web: how far it runs the board kit, and its profile",
     "Gemini tasks: how far it runs the board kit, and its profile",
     "The kit suggests where a step runs, from the devices and platforms it remembers",
-    "On a computer, a part runs its own real-project check before Done"
+    "On a computer, a part runs its own real-project check before Done",
+    "Every rule that differs by platform says where it applies, checked by a test"
    ],
    "train": "P-runners"
   },
@@ -160,5 +161,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T21:57:17Z"
+ "updated_at": "2026-11-26T22:02:25Z"
 }
