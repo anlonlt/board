@@ -318,11 +318,6 @@ def save():
     head = out("rev-parse", "-q", "--verify", "HEAD")
     if mode == "off" or not name or not head:
         return 0, "save: nothing (%s)" % ("kit.wip is off" if mode == "off" else "no branch here")
-    pb = part_branch() if mode != "local" else ""
-    if pb:
-        rc, txt, fall = checkpoint_save(pb)
-        if not fall:
-            return said(rc, txt)
     left = []
     with tempfile.TemporaryDirectory(prefix="kit-wip-") as d:
         env = {"GIT_INDEX_FILE": os.path.join(d, "index")}
@@ -334,6 +329,14 @@ def save():
         tree = out("write-tree", env=env)
     if not tree:
         return 1, "save: FAILED: could not write the tree"
+    pb = part_branch() if mode != "local" else ""
+    if pb:
+        hits = secret_hits(push_base(head), tree)             # read here too, whatever kit.py this clone has
+        if hits:
+            return said(1, "save: nothing committed on %s; %s" % (pb, hits_text(hits)))
+        rc, txt, fall = checkpoint_save(pb)
+        if not fall:
+            return said(rc, txt)
     last = out("rev-parse", "-q", "--verify", "refs/" + name)
     if tree == out("rev-parse", "HEAD^{tree}") and out("branch", "-r", "--contains", head):
         return 0, "save: nothing (all of it is committed and on origin)"
