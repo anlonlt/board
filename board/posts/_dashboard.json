@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:56:53Z",
+ "created_at": "2026-11-26T21:57:17Z",
  "rows": [
   {
    "at": 39,
@@ -111,11 +111,11 @@
    "train": "P-demo"
   },
   {
-   "at": 0,
+   "at": 1,
    "key": "E",
    "name": "Memory",
-   "note": "Next: A map of any project, generated from its code",
-   "post": "m1-a-map-of-any-project-generated-from-its",
+   "note": "Next: Install draws the first map",
+   "post": "m2-install-draws-the-first-map",
    "state": "running",
    "steps": [
     "A map of any project, generated from its code",
@@ -160,5 +160,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T21:56:53Z"
+ "updated_at": "2026-11-26T21:57:17Z"
 }

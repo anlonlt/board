@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:56:53Z",
+ "created_at": "2026-11-26T21:57:17Z",
  "rows": [
   {
    "also": [],
@@ -114,7 +114,7 @@
    ],
    "parent": "",
    "part": "P-memory",
-   "post": "m1-a-map-of-any-project-generated-from-its",
+   "post": "m2-install-draws-the-first-map",
    "prompt": "",
    "session": "",
    "state": "running",
@@ -825,7 +825,7 @@
    "post": "m1-a-map-of-any-project-generated-from-its",
    "prompt": "",
    "session": "14f4e948-4a51-4209-a354-df2737018933",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1041,5 +1041,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T21:56:53Z"
+ "updated_at": "2026-11-26T21:57:17Z"
 }
