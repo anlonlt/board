@@ -4147,10 +4147,12 @@ def _launcher(explicit=None):
     if _is_web():
         return "web"
     have = lambda b: shutil.which(b) is not None  # noqa: E731
-    if (os.environ.get("AGY_PID") or _ancestor("agy")) and have("agy"):
+    if os.environ.get("AGY_PID") and have("agy"):
         return "agy"
     if (os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID")) and have("claude"):
         return "claude"
+    if _ancestor("agy") and have("agy"):
+        return "agy"
     pref = [explicit, os.environ.get("KIT_CLI"), (_kit_config().get("kit") or {}).get("cli")]
     for b in [str(x or "").strip().lower() for x in pref] + ["claude", "agy"]:
         if b in ("agy", "claude") and have(b):
