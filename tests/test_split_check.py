@@ -55,7 +55,7 @@ class SplitCheck(unittest.TestCase):
 class StepNew(unittest.TestCase):
     def setUp(self):
         self.wrote = []
-        self.p = [mock.patch.object(kit, "_all_posts", return_value={}),
+        self.p = [mock.patch.object(kit, "_all_posts", return_value={"_train-cli": {"kind": "train", "train": "cli", "goal": "g", "status": "open"}}),
                   mock.patch.object(kit, "_board_write", side_effect=lambda *a: self.wrote.append(a) or True),
                   mock.patch.object(kit, "_write_step_prompt", return_value=("docs/prompts/x.md", True))]
         for x in self.p:
@@ -72,7 +72,7 @@ class StepNew(unittest.TestCase):
     def test_kept_whole_with_a_reason_is_recorded(self):
         r = kit.step_new("cli", "CL44", "agy gaps", task=CL44, keep_whole="one live run tests them all")
         self.assertNotIn("error", r)
-        self.assertEqual(self.wrote[0][3]["kept_whole"], "one live run tests them all")
+        self.assertEqual([w for w in self.wrote if w[2] != "_train-cli"][0][3]["kept_whole"], "one live run tests them all")
 
     def test_a_focused_step_is_written(self):
         self.assertNotIn("error", kit.step_new("cli", "CL45", "hook reply", task=SMALL))

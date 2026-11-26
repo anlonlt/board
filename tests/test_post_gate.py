@@ -126,6 +126,8 @@ class Live(unittest.TestCase):
         self.addCleanup(lambda: (self.srv.kill(), self.srv.wait(), self.srv.stdout.close()))
         self.url = "http://127.0.0.1:%s" % self.srv.stdout.readline().strip()
         self.env = dict(env, KIT_BOARD_URL=self.url, KIT_BOARD_TOKEN=TOKEN, KIT_NO_LAUNCH="1")
+        # a train is one goal, written before its first step (tests/test_trains.py)
+        self.assertEqual(self.run_("kit.py", "trains", "new", "t", "--goal", "the fixture's steps").returncode, 0)
 
     def conf(self, c):
         (self.d / ".kit" / "config.json").write_text(json.dumps(dict({"project": "D"}, **c)))

@@ -4476,6 +4476,117 @@ def _step_board(train, posts, board=None):
     return (hits[0]["id"], dict(hits[0]["posts"])) if len(hits) == 1 else (None, None)
 
 
+TRAIN_MAX_STEPS = 12     # a train is one goal: past this many steps it is several (the owner, 2026-11-26: `cli` held 46)
+TRAIN_MAX_DAYS = 4       # a train open longer than this, with steps still open, says so to the orchestrator
+STALE_STEP_HOURS = 24    # a step "in progress" with no change for this long: its session is likely gone
+
+
+def train_record(posts, train):
+    """The train's own record, `_train-<id>`: {goal, status open|closed, why}; None for a train started before records."""
+    r = posts.get("_train-" + _norm_train(train))
+    return r if isinstance(r, dict) else None
+
+
+def trains_new(train, goal, db_path=None):
+    """`kit.py trains new <id> --goal "..."`: a train is one goal, said in one sentence, that it can finish."""
+    t = _norm_train(train)
+    if not t or not str(goal or "").strip():
+        return {"error": "a train needs an id and a goal (--goal \"what is true when it is finished\")"}
+    posts = _all_posts(db_path)
+    if not posts and BOARD_ERRORS:
+        return {"error": "cannot read the board: %s" % BOARD_ERRORS[-1]}
+    if train_record(posts, t):
+        return {"error": "train %s exists: %s" % (t, train_record(posts, t).get("goal"))}
+    doc = {"title": "Train %s" % t, "kind": "train", "train": t, "goal": str(goal).strip(), "status": "open",
+           "column": "info", "from": "orchestrator", "created_at": _now_z()}
+    if not _board_write("set", "posts", "_train-" + t, doc):
+        return {"error": "the board did not take train %s (is the board server running?)" % t}
+    return {"train": t, "goal": doc["goal"], "ok": True}
+
+
+def trains_close(train, why="", db_path=None):
+    """`kit.py trains close <id> --why "..."`: no new step goes on it; its open steps stay where they are."""
+    t = _norm_train(train)
+    posts = _all_posts(db_path)
+    if not posts and BOARD_ERRORS:
+        return {"error": "cannot read the board: %s" % BOARD_ERRORS[-1]}
+    rec = dict(train_record(posts, t) or {"title": "Train %s" % t, "kind": "train", "train": t, "goal": "",
+                                          "column": "info", "created_at": _now_z()})
+    rec.update({"status": "closed", "why_closed": str(why or ""), "closed_at": _now_z()})
+    if not _board_write("set", "posts", "_train-" + t, rec):
+        return {"error": "the board did not take the close of train %s" % t}
+    still = [q.get("part") or pid for pid, q in train_steps(posts, t) if _step_open(q)]
+    return {"train": t, "ok": True, "closed": True, "open_steps_kept": still}
+
+
+def _step_open(q):
+    st = str(q.get("status") or "").lower()
+    return not (st.startswith("complete") or st in ("done", "dropped", "removed") or str(q.get("column") or "") == "done"
+                or st.startswith("checked"))
+
+
+def train_check(posts, train):
+    """Why a new step may not go on this train ("" when it may): closed, or already as long as a train gets."""
+    t = _norm_train(train)
+    rec = train_record(posts, t)
+    if rec and str(rec.get("status")) == "closed":
+        return "train %s is closed (%s): start a train for this goal with `kit.py trains new <id> --goal \"...\"`" % (
+            t, rec.get("why_closed") or "its goal is met")
+    steps = train_steps(posts, t)
+    if not steps and not rec:
+        return ("train %s does not exist yet: start it with `kit.py trains new %s --goal \"what is true when it is "
+                "finished\"`, then this step" % (t, t))
+    if len(steps) >= TRAIN_MAX_STEPS:
+        return ("train %s has %d steps (a train is one goal, at most %d): close it (`kit.py trains close %s`) and start "
+                "one for this step's goal" % (t, len(steps), TRAIN_MAX_STEPS, t))
+    return ""
+
+
+def train_lines(posts, now=None):
+    """For the orchestrator's resume: trains past their size or age, and steps "in progress" nobody has touched."""
+    now = now or _now_z()
+    def age_h(ts):
+        try:
+            a = datetime.strptime(str(ts)[:19], "%Y-%m-%dT%H:%M:%S"); b = datetime.strptime(str(now)[:19], "%Y-%m-%dT%H:%M:%S")
+            return (b - a).total_seconds() / 3600
+        except ValueError:
+            return None
+    names = sorted({_norm_train(q.get("train")) for pid, q in posts.items() if isinstance(q, dict) and not pid.startswith("_")
+                    and str(q.get("train") or "").strip()})
+    out, stale = [], []
+    for t in names:
+        rec = train_record(posts, t)
+        steps = train_steps(posts, t)
+        opened = [q for _, q in steps if _step_open(q)]
+        if rec and str(rec.get("status")) == "closed":
+            continue
+        first = min((str(q.get("created_at") or "") for _, q in steps if q.get("created_at")), default="")
+        days = (age_h(first) or 0) / 24 if first else 0
+        why = []
+        if len(steps) > TRAIN_MAX_STEPS:
+            why.append("%d steps (at most %d)" % (len(steps), TRAIN_MAX_STEPS))
+        if opened and days > TRAIN_MAX_DAYS:
+            why.append("open %d days with %d steps still open" % (days, len(opened)))
+        if not rec:
+            why.append("no goal written")
+        if why and (len(steps) > TRAIN_MAX_STEPS or (opened and days > TRAIN_MAX_DAYS)):
+            out.append("- train `%s`: %s: close it (`kit.py trains close %s --why ...`) and start one train per goal "
+                       "for what is still open (`kit.py trains new`, then move those steps)" % (t, "; ".join(why), t))
+    for pid, q in sorted(posts.items()):
+        if pid.startswith("_") or not isinstance(q, dict) or "progress" not in str(q.get("status") or "").lower():
+            continue
+        h = age_h(q.get("updated_at") or q.get("started_at") or q.get("created_at"))
+        if h is not None and h > STALE_STEP_HOURS:
+            stale.append("- `%s` (%s): \"in progress\" with no change for %d h: is its session alive? If not: status "
+                         "stalled (continue it from its branch) or complete (its work landed)" % (pid, q.get("part") or pid, h))
+    res = []
+    if out:
+        res += ["", "## Trains that are several goals"] + out
+    if stale:
+        res += ["", "## Steps marked in progress that nobody is working on"] + stale
+    return res
+
+
 SPLIT_MAX_PIECES = 6     # more pieces than this in one step: split it (the owner, 2026-11-26: CL44 held 14 unrelated items)
 SPLIT_MAX_GROUPS = 2     # more separate groups of files than this: they can run as parallel steps
 
@@ -4525,12 +4636,14 @@ def split_check(pieces):
 
 
 def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None, cli=None,
-             board=None, keep_whole=None):
+             board=None, keep_whole=None, keep_train=None):
     """A train step: its post (adopted when the train already has one for that part, never duplicated) and its
     generated prompt. Returns {post, adopted, prompt, prompt_written, launch} or {error}. On an attached board (CL25)
     also {board, artifact_write}: the post is a file under .kit/run/artifact/out/repos/<id>/posts/, sent by the one
     ArtifactData call `artifact_write` names (the orchestrator guard lets that file through)."""
     posts = _all_posts(db_path)
+    if not posts and BOARD_ERRORS:
+        return {"error": "cannot read the board: %s" % BOARD_ERRORS[-1]}
     att, att_posts = _step_board(train, posts, board)
     if att:
         posts = att_posts
@@ -4549,6 +4662,10 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         if att:
             res["board"] = att
         return res
+    why_train = train_check(posts, train) if not keep_train else ""
+    if why_train:
+        return {"error": "step %s: %s. (A step that must go on this train anyway: --keep-train \"<why>\".)" % (part, why_train),
+                "train_full": True}
     why_split = split_check(task_pieces(task))
     if why_split and not keep_whole:
         return {"error": "step %s is several steps: %s\nPlan one `step new` per group, or keep it whole with --keep-whole "
@@ -4567,6 +4684,8 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         doc["parent"] = parent
     if why_split and keep_whole:
         doc["kept_whole"] = str(keep_whole)
+    if keep_train:
+        doc["kept_on_train"] = str(keep_train)
     if sources:
         doc["sources"] = list(sources)
     if review is False:
@@ -4581,7 +4700,9 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
     elif not _board_write("set", "posts", pid, doc):
         return {"error": "the board did not take step %s (is the board server running?)" % part}
     rel, made = _write_step_prompt(pid, doc, list(sources), cli=cli)
+    rec = train_record(posts, train)
     res = {"post": pid, "adopted": False, "pieces": len(doc.get("subtasks") or []), "prompt": rel, "prompt_written": made,
+           "train_goal": (rec or {}).get("goal") or "(none written: `kit.py trains new`)",
            "launch": _launch_line(part, rel, model, cli=cli) if rel else None}
     if att:
         res.update({"board": att, "artifact_write": write,
@@ -6898,7 +7019,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         gl = git_copy_lines(m, db_path)
         if gl:
             out += ["", "## The record is git, and it is behind"] + ["- " + x for x in gl]
-        out += split_lines(posts)
+        out += split_lines(posts) + train_lines(posts)
         out += start_lines(posts, comments, session or whoami())
         out += owner_lines() + autonomy_lines()
         out += [""] + _launch_workflow()
@@ -7395,6 +7516,9 @@ def main(argv=None):
     s = sp.add_parser("cards", help="rebuild \"Where we are\" and the trains if they differ from the posts; one line, "
                       "with the sessions to archive (no agent)")
     s.add_argument("--db", default=None)
+    s = sp.add_parser("trains", help="a train is one goal: new <id> --goal, close <id> --why, or list them")
+    s.add_argument("action", nargs="?", choices=["list", "new", "close"], default="list"); s.add_argument("train", nargs="?")
+    s.add_argument("--goal", default=""); s.add_argument("--why", default=""); s.add_argument("--db", default=None)
     s = sp.add_parser("capacity", help="the device's session cap (.kit/device.py): --gate exits 1 when no slot is free")
     s.add_argument("--gate", action="store_true"); s.add_argument("--json", action="store_true")
     s = sp.add_parser("launch", help="start a part: its post in progress + Trains row running, then claude --bg (CLI) "
@@ -7421,6 +7545,7 @@ def main(argv=None):
     s.add_argument("--source", action="append", default=[]); s.add_argument("--model")
     s.add_argument("--no-review", action="store_true"); s.add_argument("--db", default=None)
     s.add_argument("--keep-whole", default=None, help="why a step the split check flags must stay one part (recorded)")
+    s.add_argument("--keep-train", default=None, help="why a step goes on a train the train check refuses (recorded)")
     s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--board", default=None, help="an attached board's id (repos/<id>/ in the Artifact): the step goes "
                    "on its train (default: this board, or the one attached board that holds the train)")
@@ -7574,7 +7699,7 @@ def main(argv=None):
                 with open(a.task_file, encoding="utf-8") as fh:
                     task = fh.read()
             res = step_new(a.train, a.part, a.title or a.part, task=task, parent=a.parent, sources=a.source,
-                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board, keep_whole=a.keep_whole)
+                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board, keep_whole=a.keep_whole, keep_train=a.keep_train)
         elif a.action == "open":
             res = {"steps": step_open(a.db)}
         elif a.action == "find":
@@ -7757,6 +7882,23 @@ def main(argv=None):
         rc, line = cards(db_path=a.db)
         print(line)
         return rc
+    if a.cmd == "trains":
+        if a.action == "new":
+            res = trains_new(a.train, a.goal, db_path=a.db)
+        elif a.action == "close":
+            res = trains_close(a.train, a.why, db_path=a.db)
+        else:
+            posts = _all_posts(a.db)
+            if not posts and BOARD_ERRORS:
+                print(json.dumps({"error": "cannot read the board: %s" % BOARD_ERRORS[-1]}))
+                return 1
+            names = sorted({_norm_train(q.get("train")) for k, q in posts.items() if isinstance(q, dict) and str(q.get("train") or "").strip()})
+            res = {"trains": [{"train": t, "steps": len(train_steps(posts, t)),
+                               "open": sum(1 for _, q in train_steps(posts, t) if _step_open(q)),
+                               "goal": (train_record(posts, t) or {}).get("goal") or "",
+                               "status": (train_record(posts, t) or {}).get("status") or "open (no record)"} for t in names]}
+        print(json.dumps(res, ensure_ascii=False, indent=1))
+        return 1 if res.get("error") else 0
     if a.cmd == "capacity":
         d = _device()
         if d is None:
