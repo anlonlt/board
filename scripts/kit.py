@@ -7994,7 +7994,8 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         p = posts[pid]
         rel = "docs/prompts/%s.md" % pid
         took = take_step_branch(p)
-        mark_part_branch(pid, p)
+        if db_path is None:                               # a test's board never marks this clone
+            mark_part_branch(pid, p)
         files = sorted(set(_changed_files()) | {str(a).split(" §")[0].strip("` ") for a in _as_list(p.get("artifacts"))})
         out += took + ["# Resume: part %s (post `%s`)" % (p.get("part") or pid, pid),
                 "%s · train `%s` · status %s%s" % (p.get("title") or pid, p.get("train") or "?", p.get("status") or "?",
