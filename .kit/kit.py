@@ -4746,8 +4746,275 @@ def split_check(pieces):
                                                          "\n".join(rows)))
 
 
+# ---------------------------------------------------------------- R6: the queue, re-ranked at each new step
+# The owner, 2026-11-26: every new step is measured against every open step, for its place in the queue and for what can
+# run beside it; never ordered by date. On 11-26 M5 to M8 (features) were launched while CL51 waited, and CL51's bug then
+# overwrote 11 posts. Facts per pair: does one repair damage; does one wait on the other; do they share files or an area;
+# is one a bug in what the other builds. Order: damage first, then what unblocks the most, then bugs before features, date
+# only to break a tie. Two steps that share files or an area never run at the same time.
+QUEUE_DAMAGE = re.compile(r"\b(overwr(?:o|i)te\w*|overwrit\w*|data (?:loss|lost|at risk)|(?:lost|loses?|losing|dropp?(?:ed|s)?) "
+                          r"(?:data|posts?|comments?|work|rows?|cards?|answers?)|corrupt\w*|wiped?|wipes|erased?|erases|"
+                          r"deleted? (?:posts?|comments?|data|rows?)|wrong data|damage[sd]?|"
+                          r"(?:posts?|comments?|data|rows?|work|cards?|answers?) (?:were |was |are |is |got )?"
+                          r"(?:lost|overwritten|wiped|erased|deleted|dropped))\b", re.I)
+QUEUE_NOT = re.compile(r"\b(?:never|not|no|without|nor|cannot|can't|won't|doesn't|don't)\b(?:\s+\S+){0,2}\s*$", re.I)
+QUEUE_BLOCKS_ALL = re.compile(r"\b(?:every|all|each)\s+(?:other\s+)?steps?\b[^.]{0,60}\bwait|\bnothing\s+(?:reaches|lands|merges|"
+                              r"goes)\b[^.]{0,40}\buntil\b", re.I)
+QUEUE_BUG = re.compile(r"\b(bug|bugs|fix|fixe[sd]|broken|regress\w*|crash\w*|wrong|wrongly|leaks?)\b", re.I)
+QUEUE_PATH = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w-]+\.(?:py|js|json|md|html|sh|ts|css|toml|ya?ml))\b")
+
+
+def _q_text(q):
+    return "%s\n%s" % (q.get("title") or "", q.get("task") or q.get("body") or "")
+
+
+def _q_files(q):
+    """The files a step touches, by name (kit.py, .kit/kit.py and scripts/kit.py are one file: the kit copies it)."""
+    fs = set()
+    for x in q.get("subtasks") or []:
+        if isinstance(x, dict):
+            fs.update(str(f) for f in x.get("files") or [])
+    fs.update(str(f) for f in q.get("files") or [])
+    fs.update(QUEUE_PATH.findall(_q_text(q)))
+    return {os.path.basename(f.strip().strip("`")) for f in fs if f.strip()}
+
+
+def _q_paths(q):
+    fs = set()
+    for x in q.get("subtasks") or []:
+        if isinstance(x, dict):
+            fs.update(str(f) for f in x.get("files") or [])
+    fs.update(str(f) for f in q.get("files") or [])
+    fs.update(QUEUE_PATH.findall(_q_text(q)))
+    return {f.strip().strip("`") for f in fs if f.strip()}
+
+
+def _q_areas(q, areas=None):
+    """The areas of the map (M1: `map.areas` globs in .kit/config.json) a step's files fall in; without a map, none
+    (the shared files alone decide)."""
+    if areas is None:
+        areas = ((_kit_config().get("map") or {}).get("areas") or {}) if os.path.isfile(os.path.join(ROOT, ".kit", "config.json")) else {}
+    out = set()
+    for f in _q_paths(q):
+        for name, globs in (areas or {}).items():
+            if any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(os.path.basename(f), g) for g in ([globs] if isinstance(globs, str) else globs or [])):
+                out.add(str(name))
+    return out
+
+
+QUEUE_WAIT_BEFORE = (r"(?:after|builds? on|built on|on top of|waits? (?:on|for|behind)|waiting (?:on|for|behind)|once|needs|"
+                     r"requires|depends on|until|blocked by|behind)\s+(?:the\s+|step\s+|part\s+)?")
+QUEUE_WAIT_AFTER = r"(?:'s)?\s+(?:first|lands|landed|is done|must land|merges|is merged)\b"
+
+
+def _q_names(q, part):
+    """Does this step say it waits on that part ("waits on M1", "after CL51", "builds on M3", "once CL47 lands")? A mere
+    mention is history (CL51's task tells what CL44's part did), not a wait. A part has a digit and two characters."""
+    part = str(part or "")
+    if not re.search(r"\d", part) or len(part) < 2:
+        return False
+    p = r"(?<![\w-])%s(?![\w-])" % re.escape(part)
+    return re.search(QUEUE_WAIT_BEFORE + p + "|" + p + QUEUE_WAIT_AFTER, _q_text(q), re.I) is not None
+
+
+def _q_lead(q):
+    """The title and the task's first two sentences: what the step is for, not the history it tells."""
+    t = re.sub(r"\s+", " ", str(q.get("task") or q.get("body") or "")).strip()
+    return "%s. %s" % (q.get("title") or "", " ".join(re.split(r"(?<=[.!?])\s+", t)[:2]))
+
+
+def _q_damage(text):
+    """The first damage word the text says happened (not "never overwrites": a negation two words before it is none)."""
+    for m in QUEUE_DAMAGE.finditer(text):
+        if not QUEUE_NOT.search(text[max(0, m.start() - 40):m.start()]):
+            return m.group(0)
+    return ""
+
+
+def step_facts(pid, q, areas=None):
+    """The facts the queue reads about one step: damage, bug, files, areas, the parts it says it comes after."""
+    text = _q_lead(q)
+    kind = str(q.get("kind") or "").lower()
+    said = _q_damage(text) if kind != "feature" else ""
+    damage = bool(q.get("damage")) or bool(said)
+    bug = damage or kind == "bug" or (kind != "feature" and QUEUE_BUG.search(text) is not None)
+    after = q.get("after") or q.get("blocked_by") or []
+    after = [after] if isinstance(after, str) else list(after)
+    st = str(q.get("status") or "").lower()
+    return {"id": pid, "part": str(q.get("part") or pid), "damage": damage, "bug": bug, "files": _q_files(q),
+            "areas": _q_areas(q, areas), "after": [str(x) for x in after], "created": str(q.get("created_at") or ""),
+            "running": "progress" in st, "damage_why": str(q.get("damage") or said),
+            "blocks_all": QUEUE_BLOCKS_ALL.search(_q_text(q)) is not None}
+
+
+def step_pair(a, b, qa, qb):
+    """What two open steps are to each other, from facts: {first: id that must go first or None, why, shares: files,
+    areas: areas}. One waits on the other when it says so (after/blocked_by), names the other's part (it builds on it),
+    or is a feature on the files of the other's bug fix."""
+    first, why = None, ""
+    a_on_b = b["part"] in a["after"] or b["id"] in a["after"] or _q_names(qa, b["part"])
+    b_on_a = a["part"] in b["after"] or a["id"] in b["after"] or _q_names(qb, a["part"])
+    if a_on_b and b_on_a:                     # each names the other: the older one is what the newer builds on
+        a_on_b, b_on_a = a["created"] > b["created"], a["created"] <= b["created"]
+    shares = sorted(a["files"] & b["files"])
+    areas = sorted(a["areas"] & b["areas"])
+    if b_on_a:
+        first, why = a["id"], "%s builds on it (names %s)" % (b["part"], a["part"])
+    elif a_on_b:
+        first, why = b["id"], "%s builds on it (names %s)" % (a["part"], b["part"])
+    elif (shares or areas) and a["bug"] != b["bug"]:
+        bug, feat = (a, b) if a["bug"] else (b, a)
+        first, why = bug["id"], "a bug in what %s builds (%s)" % (feat["part"], ", ".join(shares or areas)[:60])
+    return {"first": first, "why": why, "shares": shares, "areas": areas}
+
+
+def queue_facts(posts, areas=None):
+    """(open steps, their facts, the hub): a file or area most open steps name (more than half, 4 steps or more: kit.py
+    here) is not shared by itself, as in the split check (different functions of one big file merge cleanly);
+    `kit.queue.strict_files: true` in .kit/config.json counts it too."""
+    open_ = {pid: q for pid, q in posts.items() if isinstance(q, dict) and not pid.startswith("_") and not q.get("removed")
+             and str(q.get("train") or "").strip() and _step_open(q)}
+    f = {pid: step_facts(pid, q, areas) for pid, q in open_.items()}
+    strict = bool(((_kit_config().get("kit") or {}).get("queue") or {}).get("strict_files")) if os.path.isfile(
+        os.path.join(ROOT, ".kit", "config.json")) else False
+    count = {}
+    for x in f.values():
+        for k in x["files"] | {"area " + a for a in x["areas"]}:
+            count[k] = count.get(k, 0) + 1
+    hub = set() if strict else {k for k, c in count.items() if len(f) >= 4 and c * 2 > len(f)}
+    for x in f.values():
+        x["files"] -= hub
+        x["areas"] -= {k[5:] for k in hub if k.startswith("area ")}
+    return open_, f, hub
+
+
+def queue_rank(posts, areas=None):
+    """Every open train step, ranked: [{id, part, place, why, running, can_start, waits}] (place 1 is launched first).
+    Re-ranked whole at each call: nothing is kept between two rankings."""
+    open_, f, _hub = queue_facts(posts, areas)
+    deps = {pid: {} for pid in open_}          # pid -> {id it waits on: why}
+    clash = {pid: {} for pid in open_}         # pid -> {id it cannot run beside: files/areas}
+    ids = sorted(open_)
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            p = step_pair(f[a], f[b], open_[a], open_[b])
+            if p["first"]:
+                later = b if p["first"] == a else a
+                deps[later][p["first"]] = p["why"]
+            if p["shares"] or p["areas"]:
+                clash[a][b] = clash[b][a] = ", ".join(p["shares"] + ["area " + x for x in p["areas"]])
+    waiters = {pid: set() for pid in open_}    # who waits on pid, directly or not
+    for pid in open_:
+        seen, todo = set(), list(deps[pid])
+        while todo:
+            x = todo.pop()
+            if x in seen:
+                continue
+            seen.add(x)
+            todo.extend(deps.get(x) or [])
+        for x in seen:
+            waiters[x].add(pid)
+    for pid in open_:                          # "every step since 11-24 waits behind it" (CL47): it unblocks them all
+        if f[pid]["blocks_all"]:
+            waiters[pid] |= set(open_) - {pid}
+    key = lambda pid: (0 if f[pid]["damage"] else 1, -len(waiters[pid]), 0 if f[pid]["bug"] else 1, f[pid]["created"], pid)  # noqa: E731
+    order, left = [], set(open_)
+    while left:
+        ready = [p for p in left if not (set(deps[p]) & left)] or list(left)    # a cycle: the best of what is left
+        nxt = min(ready, key=key)
+        order.append(nxt)
+        left.discard(nxt)
+    running = {p for p in open_ if f[p]["running"]}
+    rows, started = [], set(running)
+    for n, pid in enumerate(order, 1):
+        why = []
+        if f[pid]["damage"]:
+            why.append("repairs damage (%s)" % _short(f[pid]["damage_why"], 40))
+        before = [x for x in order[n:] if pid in deps[x]]
+        if before:
+            why.append("before %s: %s" % (", ".join(f[x]["part"] for x in before[:4]) + (" ..." if len(before) > 4 else ""),
+                                           deps[before[0]][pid]))
+        if deps[pid]:
+            why.append("after %s" % ", ".join(f[x]["part"] for x in deps[pid] if x in open_))
+        if f[pid]["blocks_all"]:
+            why.append("every other step waits behind it (its task says so)")
+        if not why:
+            why.append("bug before features" if f[pid]["bug"] else "feature, by date (no fact sets it apart)")
+        waits = []
+        if pid not in running:
+            waits += ["%s first (%s)" % (f[x]["part"], deps[pid][x]) for x in deps[pid] if x in open_]
+            waits += ["%s %s (shares %s)" % (f[x]["part"], "runs" if x in running else "goes first", clash[pid][x])
+                      for x in clash[pid] if x in started]
+        can = pid not in running and not waits
+        if can:
+            started.add(pid)                   # what can run beside it is measured against it from here on
+        rows.append({"id": pid, "part": f[pid]["part"], "place": n, "why": "; ".join(why), "running": pid in running,
+                     "can_start": can, "waits": waits, "damage": f[pid]["damage"], "bug": f[pid]["bug"]})
+    return rows
+
+
+def queue_lines(posts, areas=None, limit=40):
+    rows = queue_rank(posts, areas)
+    if not rows:
+        return ["No open step."]
+    out = []
+    for r in rows[:limit]:
+        tag = "running" if r["running"] else ("start now" if r["can_start"] else "waits: " + "; ".join(r["waits"])[:160])
+        out.append("%d. %s `%s` [%s] %s" % (r["place"], r["part"], r["id"], tag, r["why"]))
+    if len(rows) > limit:
+        out.append("(%d more)" % (len(rows) - limit))
+    return out
+
+
+def queue_text(posts, areas=None):
+    hub = queue_facts(posts, areas)[2]
+    return "\n".join(["# The queue (every open step against every other: damage first, then what unblocks the most, "
+                      "then bugs before features, date only for a tie; launch from the top)"] + queue_lines(posts, areas)
+                     + (["(Named by most open steps, not a clash by itself: %s; `kit.queue.strict_files` counts it.)"
+                         % ", ".join(sorted(hub))] if hub else [])) + "\n"
+
+
+def order_problem(posts, pid, areas=None):
+    """None, or why launching this step now is out of order: a step ranked before it could start now, it waits on an
+    open step, or it shares files with a running one. The step to launch instead is named."""
+    rows = queue_rank(posts, areas)
+    me = next((r for r in rows if r["id"] == pid), None)
+    if me is None or me["running"]:
+        return None
+    if me["waits"]:
+        return "%s waits: %s" % (me["part"], "; ".join(me["waits"]))
+    first = next((r for r in rows if r["place"] < me["place"] and r["can_start"]), None)
+    if first:
+        return "%s goes first (place %d, %s is %d): %s; launch `%s`" % (first["part"], first["place"], me["part"], me["place"],
+                                                                      first["why"], first["id"])
+    return None
+
+
+def pause_messages(posts, new_pid, areas=None):
+    """A new damage step: the running steps it would undo or redo (they build on it, or share its files) are asked to
+    pause at their next save point. [{post, part, session_id, message}]."""
+    q = posts.get(new_pid) or {}
+    open_, f, _hub = queue_facts(posts, areas)
+    fn = f.get(new_pid) or step_facts(new_pid, q, areas)
+    if not fn["damage"]:
+        return []
+    out = []
+    for pid, r in open_.items():
+        fr = f[pid]
+        if pid == new_pid or not fr["running"]:
+            continue
+        p = step_pair(fn, fr, q, r)
+        if p["first"] == new_pid or p["shares"] or p["areas"]:
+            why = p["why"] or "it shares %s" % ", ".join(p["shares"] + p["areas"])
+            out.append({"post": pid, "part": fr["part"], "session_id": str(r.get("session_id") or ""),
+                        "message": "Pause at your next save point (commit and push your branch, update your post): %s repairs "
+                                   "damage (%s) and %s. Continue when it is done; `kit.py queue` shows the order."
+                                   % (fn["part"], _short(fn["damage_why"], 50), why)})
+    return out
+
+
 def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None, cli=None,
-             board=None, keep_whole=None, keep_train=None):
+             board=None, keep_whole=None, keep_train=None, damage=None, after=(), kind=None):
     """A train step: its post (adopted when the train already has one for that part, never duplicated) and its
     generated prompt. Returns {post, adopted, prompt, prompt_written, launch} or {error}. On an attached board (CL25)
     also {board, artifact_write}: the post is a file under .kit/run/artifact/out/repos/<id>/posts/, sent by the one
@@ -4801,6 +5068,12 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         doc["sources"] = list(sources)
     if review is False:
         doc["review_auto"] = False
+    if damage:                                     # R6: what was lost or put at risk, and who found it
+        doc["damage"] = str(damage)
+    if after:
+        doc["after"] = [str(x) for x in after]
+    if kind in ("bug", "feature"):
+        doc["kind"] = kind
     write = None
     if att:
         fp = os.path.join(os.path.abspath(_art_dir()), "out", "repos", att, "posts", pid + ".json")
@@ -4815,6 +5088,14 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
     res = {"post": pid, "adopted": False, "pieces": len(doc.get("subtasks") or []), "prompt": rel, "prompt_written": made,
            "train_goal": (rec or {}).get("goal") or "(none written: `kit.py trains new`)",
            "launch": _launch_line(part, rel, model, cli=cli) if rel else None}
+    # R6: the new step against every open one: the whole queue re-ranked, and the running steps it would undo told to pause
+    ranked = dict(posts, **{pid: doc})
+    res["queue"] = queue_lines(ranked, limit=12)
+    pauses = pause_messages(ranked, pid)
+    if pauses:
+        res["pause"] = pauses
+        res["next_pause"] = ("for each `pause` entry: send_message (claude-code-remote) to its session_id (agy: send_message "
+                             "to its conversation) with its message; it pauses at its next save point")
     if att:
         res.update({"board": att, "artifact_write": write,
                     "next": "send the post: ArtifactData %s (no other way: a hand-written step post is refused)"
@@ -5232,7 +5513,7 @@ def step_holder(pid, p, me=None, people=(), alive=None, saved=None, session=None
 
 
 def launch(pid, url=None, token=None, web=None, session_id=None, model=None, reset=False, gate=True, cli=None, post_file=None,
-           take=False):
+           take=False, anyway=None):
     """`kit.py launch <post>`: the one way a part starts (CL13). Writes status in progress, session_id, launched_at
     and branch on its post and marks its Trains row running (the local copy; with an attached Artifact board, the
     batch that carries both there), then starts it: CLI, `claude --bg` inside a worktree made from the current branch;
@@ -5289,9 +5570,17 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         sess = session_id
         launch_mark(pid, None)
     else:
-        why = _prompt_problem(rel) or circle_gate(_launch_posts(post), pid, post, os.path.join(ROOT, rel))
+        lp = _launch_posts(post)
+        why = _prompt_problem(rel) or circle_gate(lp, pid, post, os.path.join(ROOT, rel))
         if why:
             return dict(out, ok=False, error=why)
+        # R6: launched from the top of the queue; out of order only with the reason recorded
+        late = None if (post.get("launched_at") or take) else order_problem(dict(lp, **{pid: post}), pid)
+        if late and not anyway:
+            return dict(out, ok=False, error="out of order: %s. (Launch it anyway: `kit.py launch %s --anyway \"<why>\"`, "
+                                             "recorded on its post.)" % (late, pid), queue=True)
+        if late:
+            out["out_of_order"] = late
         if web:
             if _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + base).returncode != 0 and base != "HEAD":
                 out["warning"] = "branch %s is not pushed: push it first, the new session clones it from GitHub" % base
@@ -5333,6 +5622,9 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
             sess = name
     now = _now_z()
     fields = {"status": "in progress", "session_id": sess, "branch": branch, "working_by": me, "updated_at": now}
+    if out.get("out_of_order"):
+        fields["launched_out_of_order"] = {"why": str(anyway), "was": out["out_of_order"], "at": now}
+        out["launched_out_of_order"] = fields["launched_out_of_order"]
     had = str(post.get("session_id") or "")
     if session_id and not take and had and had != session_id and not had.startswith("pending") and not marked:
         out["warning"] = "%s already named session %s: if it still runs, two are on this step; stop one" % (pid, had)
@@ -6334,6 +6626,9 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
     if not n_active:
         out.append("")
         out.append("No train has an open step.")
+    else:                                             # R6: launch from the top; every new step re-ranks it
+        out += ["", "## The queue (launch from the top; `kit.py queue` for all of it, a launch out of order is refused)"]
+        out += queue_lines(posts, limit=12)
     out.extend(_resume_extras(posts, comments, now=now, session=session))
     dl = device_line()
     if dl:
@@ -8371,6 +8666,7 @@ def main(argv=None):
     s.add_argument("--web", action="store_true", default=None); s.add_argument("--cli-run", dest="web", action="store_false")
     s.add_argument("--model", default=None); s.add_argument("--reset", action="store_true")
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
+    s.add_argument("--anyway", default=None, help="R6: launch out of the queue's order; the reason is recorded on the post")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s.add_argument("--post-file", default=None, help=argparse.SUPPRESS)
     sp.add_parser("permission-mode", help="the permission mode the kit starts Claude Code sessions in")
@@ -8390,6 +8686,10 @@ def main(argv=None):
     s.add_argument("--no-review", action="store_true"); s.add_argument("--db", default=None)
     s.add_argument("--keep-whole", default=None, help="why a step the split check flags must stay one part (recorded)")
     s.add_argument("--keep-train", default=None, help="why a step goes on a train the train check refuses (recorded)")
+    s.add_argument("--damage", default=None, help="R6: what was lost or put at risk, and who found it (a review, a done, "
+                   "the owner): the step goes to the top of the queue")
+    s.add_argument("--after", action="append", default=[], help="R6: a part this step waits on (it builds on its work)")
+    s.add_argument("--kind", choices=["bug", "feature"], default=None, help="R6: when the task's words do not say it")
     s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--board", default=None, help="an attached board's id (repos/<id>/ in the Artifact): the step goes "
                    "on its train (default: this board, or the one attached board that holds the train)")
@@ -8528,6 +8828,13 @@ def main(argv=None):
         print(portfolio_summary(config_path=a.portfolio_config, roots=a.roots), end="")
         return 0
     if a.cmd == "queue":
+        if not a.runner and not a.for_owner:          # R6: the steps, ranked, each place with its why
+            posts = _all_posts(a.db)
+            print(queue_text(posts), end="")
+            cards = queue_cards(m, db_path=a.db, unblocked_only=a.unblocked)
+            if not cards.endswith(": 0 open cards"):
+                print("\n# Cards for a runner or a person\n" + cards)
+            return 0
         print(queue_cards(m, runner=a.runner, for_owner=a.for_owner, db_path=a.db, unblocked_only=a.unblocked))
         return 0
     if a.cmd == "search":
@@ -8543,7 +8850,8 @@ def main(argv=None):
                 with open(a.task_file, encoding="utf-8") as fh:
                     task = fh.read()
             res = step_new(a.train, a.part, a.title or a.part, task=task, parent=a.parent, sources=a.source,
-                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board, keep_whole=a.keep_whole, keep_train=a.keep_train)
+                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board, keep_whole=a.keep_whole, keep_train=a.keep_train,
+                           damage=a.damage, after=a.after, kind=a.kind)
         elif a.action == "open":
             res = {"steps": step_open(a.db)}
         elif a.action == "find":
@@ -8769,7 +9077,7 @@ def main(argv=None):
         return 0
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset,
-                   post_file=a.post_file, take=a.take)
+                   post_file=a.post_file, take=a.take, anyway=a.anyway)
         print(field_text("launch", "orchestrator"), file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
         return 0 if r.get("ok") else 1
