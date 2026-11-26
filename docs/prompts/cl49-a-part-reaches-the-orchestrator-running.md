@@ -9,6 +9,7 @@ A part reports to the orchestrator that started it, on the device that started i
 2. The owner changes only by a claim: an orchestrator takes a part explicitly (`kit.py claim <post>`: it writes its own address on the post and tells the part), or a successor orchestrator on the same device, after a hand-over (session limit, reset), inherits every part its predecessor owned there. Taking over the board alone claims nothing.
 3. `kit.py resume --role part` prints where to report: the post's owner now; the part guides use it instead of a fixed name, in kit/part.template.md and kit/claude-cli/part.template.md.
 4. When the send fails or the owner names no live session, the part says so in its post (`orchestrator_unreached`), and every orchestrator's resume lists such parts so one can claim them.
+5. The same rule for reviews and the clerk: their guides also message the fixed `{{SLUG}}-orchestrator` (M1's review finished and its message went to the same dead sessions); they report to the orchestrator that launched them, unless another claimed the step.
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
