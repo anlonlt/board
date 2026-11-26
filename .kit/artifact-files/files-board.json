@@ -15,36 +15,36 @@
  },
  "docs": {
   ".kit+2F~BOARD.md": {
-   "sha": "2716d4e30699f3d846a0d5a6f05b398973fd518d8c8a7ce2adc5f9f7fbc35250",
-   "version": 5
+   "sha": "bce3b6625d342d27c0a16850601bd3bc49b56061dac16352f5cfc344293836f5",
+   "version": 6
   },
   ".kit+2F~board.html": {
-   "sha": "0aa52605f0a5c681b7b46339dd687ffce89f6b73fa73e3c51b5efdd771e6a794",
-   "version": 5
+   "sha": "89ad6df3197f9f0674baf05b6caca9baf74edcd93d8ab7f72a323e4d2ced330c",
+   "version": 6
   },
   ".kit+2F~claude-cli+2F~part.md": {
-   "sha": "1c9e1823d772b816b6a0e8732257cb8b48f1d54d4bb642c9ac8e78f65f9ed36d",
-   "version": 3
+   "sha": "260c87005fd5996f87452ab39a1a4a199b38e4076e00f7046587fa21b15e1971",
+   "version": 4
   },
   ".kit+2F~claude-cli+2F~takeover.md": {
    "sha": "d80abd018b630a43799fd04bc5de0222f88394c7807933121d98296bbf117ae8",
    "version": 2
   },
   ".kit+2F~lessons.md": {
-   "sha": "1d7cc97b4f490dfc35f80bce76e364b472e386cf83fa77b37422af773a478e93",
-   "version": 5
+   "sha": "cb21614a9fcfa0f4f629681ddc09dbf985b0d790258ac0f6722ce56f952f01a6",
+   "version": 6
   },
   ".kit+2F~part.md": {
-   "sha": "caed20d0897f4e22fe5437a611ca56c99447b974611dcecebc2562d3fb2b54ef",
-   "version": 2
+   "sha": "9412213b6ef268904aca4d53de4e5cd7f5a5e388e554927ca3bda6de8d0e1dd2",
+   "version": 3
   },
   "AGENTS.md": {
-   "sha": "1757e14f76d3910d05a9e9e4b6d0e40db91467125fcf70416d257e6c0a0adc66",
-   "version": 1
+   "sha": "c5f984b5b918280d7156e13102aad947f22129c15953fc81f9592a885f460c15",
+   "version": 2
   },
   "README.md": {
-   "sha": "d030fc939f15f4cb0bdf3e693ebb71186ceb3533ef5db600ad23206020567222",
-   "version": 5
+   "sha": "85495703e8cf5a3df2d337f4ced42559cff4e0a9b715887c100c7d0968c09a99",
+   "version": 6
   },
   "docs+2F~CL14.md": {
    "sha": "a5c2554fa9fcf41f1945f43aaf566ee9be1afb2c69c2fe2cc9283223c0a7066c",
@@ -59,8 +59,8 @@
    "version": 1
   },
   "docs+2F~KIT-SCRIPTS.md": {
-   "sha": "a0cb842c62baeb682adffd534a876b63cadfa82fc9c8bc29ecd9fa68f01be805",
-   "version": 2
+   "sha": "354a6171eed0aa54743fc1b97d034204ebdb885ab9ecc65e27bfcd91369b79d1",
+   "version": 3
   },
   "docs+2F~assets+2F~cl12+2F~after-411-lanes.png": {
    "sha": "ce871d353019c134676d5a5374ca87ab68886e7e5d81c794e436be254e31765c",
@@ -79,64 +79,64 @@
    "version": 1
   },
   "kit+2F~board+2F~BOARD.template.md": {
-   "sha": "d619ed0ba48005f1993f40e8b4a68732da709261673180a2e613b36589e19e6b",
-   "version": 7
+   "sha": "1f583d54815101810dee880c2bdf622aa736d324a502b6926032646f7c02c78c",
+   "version": 8
   },
   "kit+2F~board+2F~board.template.html": {
-   "sha": "62260cf438de66a368ea05db66b36adce507233c17a3f0af6c64424cf5702a96",
-   "version": 5
+   "sha": "4efff6265410b64c64f77a8caf94f87ea13fb72ee47771c46f5349425caafbfe",
+   "version": 7
   },
   "kit+2F~claude+2F~BOARD.template.md": {
-   "sha": "693c0c6b11fae4c985b5b2d2f8369dfb3287b2ffd969833814f3e7f8a87a5171",
-   "version": 1
+   "sha": "c7a8e130afcdd1e35601c4da771554d3090fc961a7ba8e36d85ee5c5b21eda36",
+   "version": 2
   },
   "kit+2F~claude+2F~SKILL.board.md": {
-   "sha": "47ea8d795f83947e8011652983e43557bb4f724d7d28485bebf2e62e73315582",
-   "version": 1
+   "sha": "69648f226b36c1120c7ee81bef9c93bda06f8810af1214340a6ad802a0556b24",
+   "version": 2
   },
   "kit+2F~claude+2F~clerk.template.md": {
-   "sha": "be965fa0dfb79efe6a607af33b1630209ad83fbba871862cd2b07fb756dcee97",
-   "version": 1
+   "sha": "961277ab5f74a526a9fed6ca9122121e98a2a57f6fdc158ab9df9ea7228fbb9f",
+   "version": 2
   },
   "kit+2F~claude+2F~consultant.template.md": {
-   "sha": "92ff6b5748698c9e156a4c7a6b667e6dfbe9035ffe6865b3e2687db7b6760d49",
-   "version": 1
+   "sha": "82fc2e48458dd75bf1a4b59c568c678784d45a495cfb0005450b2afaa9dc8f79",
+   "version": 2
   },
   "kit+2F~claude+2F~orchestrator.template.md": {
-   "sha": "0c1e04f0444a431367a54bfd88ec76a05f490a04812d979563b0a19dbc502e4f",
-   "version": 2
+   "sha": "32a6feede2a8b15a6c361684209026d83ddb936f3e01fd7e299b9e99c8b3ac61",
+   "version": 3
   },
   "kit+2F~claude-cli+2F~consultant.template.md": {
-   "sha": "1df323e2eb2b7d0acc67df670679a1a44d5c29bb3213f54a24d437810fa2f4e1",
-   "version": 2
+   "sha": "7190087ac1aba2c89b771aa44817283a01b514d0fc5b0ce6826070fcfda40448",
+   "version": 3
   },
   "kit+2F~claude-cli+2F~orchestrator.template.md": {
-   "sha": "9e9059866ee69ce78900f38e7630cc75ad677bca3989532abda30a4a269fcb6c",
-   "version": 2
+   "sha": "4cbfaf5cfeb4f7579ffe4b5be40f1f625fb8a2ffa31f5cb9ff02895e95586519",
+   "version": 3
   },
   "kit+2F~claude-cli+2F~part.template.md": {
-   "sha": "0916a36a0c7393f28b0e50573e297f6a4361e0720ffddd0d15016a832712a564",
-   "version": 3
+   "sha": "ad91b8fc2ead6c242ac12266dd49ee179cfce4ecbc893ce66e02cb6b430f17c1",
+   "version": 4
   },
   "kit+2F~claude-cli+2F~takeover.template.md": {
    "sha": "300fea006a383684a0ae536f89fa9e7d89fcfd5139e025523de6351c4a36a353",
    "version": 1
   },
   "kit+2F~consultant.template.md": {
-   "sha": "65d6c66a51fb1fe79b94cdca1bba633007de84ee873023843b8a8545034a88b7",
-   "version": 2
+   "sha": "d1b796c179b0ef38f8d7134cffc50e12d6ce59f9aa4f2a0bc5fa7af374c0b8aa",
+   "version": 3
   },
   "kit+2F~lessons.md": {
-   "sha": "1d7cc97b4f490dfc35f80bce76e364b472e386cf83fa77b37422af773a478e93",
-   "version": 5
+   "sha": "cb21614a9fcfa0f4f629681ddc09dbf985b0d790258ac0f6722ce56f952f01a6",
+   "version": 6
   },
   "kit+2F~part.template.md": {
-   "sha": "dd42a47cbc30480f640f2dd3a7c5b0f7ce975451228d472114a88faaa00c85f5",
-   "version": 1
+   "sha": "ae234547e897fe86aa02dfa50c29b11ead6ab211a3d9e9f4f4edee7c9e063ff9",
+   "version": 2
   },
   "kit+2F~skills+2F~board+2F~SKILL.md": {
-   "sha": "08d6d95b3ebc366f1c8ead2a7967735c102aac33a10788d1efdafebc0aa8aae9",
-   "version": 1
+   "sha": "0f665527b19f263b7f36ed722d51883a81cddcb0a4b55fb5696259a4973fdd74",
+   "version": 2
   },
   "kit+2F~skills+2F~memory+2F~SKILL.md": {
    "sha": "675e0aed481f388cc3c45d0351e6f986fcfd804548c1f83046899f63f07277d8",

@@ -360,19 +360,35 @@ class Live(unittest.TestCase):
         docs = api_req(self.url, "db/activity", token=TOKEN, gate="").get("docs") or []
         self.assertEqual([x["id"] for x in docs], [pid])                                           # nothing from the others
 
+    def test_review_cl41_names_and_numbers(self):
+        k = load("kit_cl41", "scripts/kit.py")
+        self.assertEqual(k.plain_notes({"verdict": "The board works in Node.js and on a phone.", "body": "x"}), [])  # a product's name
+        self.assertTrue(k.plain_notes({"verdict": "See kit.py for it.", "body": "x"}))                               # a file still is refused
+        ns = [x["n"] for x in k.pieces_of({"subtasks": [{"title": "a"}, {"title": "b", "n": 1}]})]
+        self.assertEqual(len(set(ns)), 2, ns)                                                                     # never two "1."
+
     def test_every_check_off_once_he_accepted_it(self):
         k = load("kit_mode", "scripts/kit.py")
         with tempfile.TemporaryDirectory() as home:
             old = {x: os.environ.get(x) for x in ("CLAUDE_CONFIG_DIR", "KIT_CLAUDE_PERMISSION_MODE")}
             os.environ.pop("KIT_CLAUDE_PERMISSION_MODE", None)
             os.environ["CLAUDE_CONFIG_DIR"] = home
+            real = getattr(os, "geteuid", None)
+            os.geteuid = lambda: 1000                                                              # a web container runs as root
             try:
                 self.assertEqual(k.permission_mode({}), "auto")                                   # not accepted by him: auto
                 Path(home, "settings.json").write_text(json.dumps({"skipDangerousModePermissionPrompt": True}))
                 self.assertEqual(k.permission_mode({}), "bypassPermissions")
+                os.geteuid = lambda: 0
+                self.assertEqual(k.permission_mode({}), "auto")                                   # Claude Code refuses bypass as root
+                os.geteuid = lambda: 1000
                 self.assertEqual(k.permission_mode({"claude_permission_mode": "auto!"}), "auto")   # his choice, kept
                 self.assertEqual(k.permission_mode({"claude_permission_mode": "acceptEdits"}), "acceptEdits")
             finally:
+                if real is None:
+                    del os.geteuid
+                else:
+                    os.geteuid = real
                 for x, v in old.items():
                     os.environ.pop(x, None) if v is None else os.environ.__setitem__(x, v)
 
@@ -384,6 +400,11 @@ class Live(unittest.TestCase):
         self.assertNotIn("subtasks", self.get("w1"))
         self.task("p", "TaskCreate", {"subject": "x"}, "1", role="")                                  # a part by its first prompt (the web sets no KIT_ROLE)
         self.assertEqual(len(self.get("w1")["subtasks"]), 1)
+        web = 'You are part W1 (runner claude-web). Run `python3 -I .kit/kit.py resume --role part --post w1` and do it.'
+        self.task("wp", "TaskCreate", {"subject": "y"}, "1", opener=web, role="")                     # CL41: a web part in the orchestrator's words
+        self.assertEqual(len(self.get("w1")["subtasks"]), 2)
+        self.task("wq", "TaskCreate", {"subject": "z"}, "1", opener="Tell me about --role part --post w1", role="")
+        self.assertEqual(len(self.get("w1")["subtasks"]), 2)                                         # not a part's opening: nothing
 
     def test_what_he_reads_first_is_for_him(self):
         sys.path.insert(0, str(ROOT / "scripts"))

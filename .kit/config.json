@@ -130,7 +130,7 @@
     "model": "haiku"
    }
   },
-  "claude_permission_mode": "auto",
+  "claude_permission_mode": "best",
   "setup": false,
   "parts": {
    "memory": true,

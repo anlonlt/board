@@ -10,7 +10,11 @@ const STUB = `(function () {
   const store = {
     "posts": { "P-main": { title: "Main post", column: "info", created_at: t(1) } },
     "comments": {},
-    "repos/songs/posts": { "P-song": { title: "Song post", column: "info", created_at: t(2), images: ["docs/song.png"] } },
+    "repos/songs/posts": { "P-song": { title: "Song post", column: "info", created_at: t(2), images: ["docs/song.png"] },
+                           "P-run": { title: "A running step", column: "info", status: "in progress", created_at: t(3) } },
+    /* CL41: a web part's live line, sent to the Artifact by its push: read on the board that holds the step */
+    "repos/songs/activity": { "P-run": { at: new Date().toISOString().slice(0, 19) + "Z", actions: 4, what: "Running the tests", state: "working" } },
+    "activity": { "P-run": { at: new Date().toISOString().slice(0, 19) + "Z", actions: 1, what: "Wrong board", state: "working" } },
     "kit_docs": { "_index": { assets: { "docs/main.png": "/_blob/" + "b".repeat(32) } } },   /* the primary has its own map, as Harmonize does */
     "repos/songs/kit_docs": { "_index": { assets: { "docs/song.png": "/_blob/" + "a".repeat(32) } } },
     "repos/songs/comments": {},
@@ -55,6 +59,8 @@ const STUB = `(function () {
   res.checks.pickedSongs = await pick('Songs board');
   await p.wait(500);
   res.checks.songsOnly = (await titles()) === 'Song post';
+  res.live = await p.evaluate(() => [...document.querySelectorAll('.kit-now')].filter(e => !e.hidden).map(e => e.textContent));
+  res.checks.liveLineFromItsBoard = res.live.some(t => /Running the tests · 4 actions/.test(t)) && !res.live.some(t => /Wrong board/.test(t));
   // a comment on the attached board's post names its board for the clerk: [repo songs] [post P-song]
   await p.evaluate(() => { const c = [...document.querySelectorAll('.card')].find(x => /Song post/.test(x.textContent)); (c.querySelector('.card-open') || c).click(); });
   await p.wait(400);

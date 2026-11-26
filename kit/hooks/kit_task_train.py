@@ -167,6 +167,7 @@ def on_update(root, st, ti):
 
 
 PART_POST = re.compile(r"docs/prompts/([\w.-]+)\.md")
+PART_POST_ARG = re.compile(r"--role part --post ([\w.-]+)")
 
 
 def part_post(data, st):
@@ -197,6 +198,9 @@ def part_post(data, st):
         if not first:
             return ""                                        # not in the transcript yet: asked again
         m = PART_POST.search(first) if first.lstrip().startswith(("Your prompt is docs/prompts/", "Your prompt follows")) else None
+        if m is None and first.lstrip().startswith("You are part "):
+            # CL41: a web part the orchestrator launched in its own words ("You are part CL41 ... resume --role part --post <id>")
+            m = PART_POST_ARG.search(first)
         st["part_post"] = m.group(1) if m and not m.group(1).startswith("CR-") else ""
     return st["part_post"]
 

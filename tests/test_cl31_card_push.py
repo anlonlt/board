@@ -91,6 +91,24 @@ class CardPush(unittest.TestCase):
         live_d["updated_at"] = "2026-11-23T20:30:00Z"
         return live_t, live_d
 
+    def test_the_live_line_rides_along_with_a_push(self):
+        """CL41: a web part's hook writes activity/<post> to this copy only; the push carries it to the Artifact (the page reads
+        it there): a create the first time, pinned to the version this copy sent after that, nothing when it did not change."""
+        kit.artifact_load(url=self.url, token=TOKEN)
+        act = {"at": "2026-11-26T01:00:00Z", "actions": 3, "what": "Running the tests", "state": "working", "pieces": [2]}
+        self.local("activity/cl41-x", act)
+        acts = lambda r: [e for p in r["batches"] for e in json.load(open(p)) if e["collection"].endswith("activity")]  # noqa: E731
+        first = acts(self.push())
+        self.assertEqual([(e["doc_id"], e.get("if_version")) for e in first], [("cl41-x", None)])
+        self.assertEqual(json.load(open(first[0]["file_path"]))["what"], "Running the tests")
+        for p in self.push()["batches"]:
+            kit.artifact_sent(p)
+        self.assertEqual(acts(self.push()), [])                                          # unchanged: not sent again
+        self.local("activity/cl41-x", dict(act, actions=9, state="stopped"))
+        again = acts(self.push())
+        self.assertEqual([(e["doc_id"], e.get("if_version")) for e in again], [("cl41-x", 1)])
+        self.assertEqual(kit.artifact_unsent(url=self.url, token=TOKEN)["changed"], 0)   # never counted as unsent
+
     def test_pin_from_a_fresh_get_keeps_the_live_cards(self):
         live_t, live_d = self.loaded_then_changed_both_sides()
         r = self.push()

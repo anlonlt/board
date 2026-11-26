@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Claude Code PreToolUse, PostToolUse and Stop, a part's session on a computer: what it is doing now, on its step, for the owner to see.
+"""Claude Code PreToolUse, PostToolUse and Stop, a part's session: what it is doing now, on its step, for the owner to see.
+On a computer the page reads it from the local board within seconds; on the web (CL41) the hook writes the same document to the
+container's local copy, and `kit.py artifact push`, which the part runs at each change of its post and its Stop check asks for,
+carries it to the Artifact (a hook cannot call ArtifactData).
 And, in every session, a loop breaker: the same call with the same input 8 times in a row is said once to the session (and shown on
 the step). That line is the only thing it ever says; nothing is refused.
 
@@ -26,7 +29,8 @@ LOOP = 8                                       # the same call this many times i
 
 
 KIT_WORDS = {"form": "Filling in its result", "done": "Checking its result", "resume": "Reading its task", "sub": "Ticking a piece",
-             "train": "Reading the train", "ask": "Asking you a question", "commands": "Looking up a kit command"}
+             "train": "Reading the train", "ask": "Asking you a question", "commands": "Looking up a kit command",
+             "artifact": "Sending its changes to the board"}
 READ = {"grep", "rg", "cat", "head", "tail", "less", "wc", "ls", "find", "awk", "sed", "nl", "diff", "tree"}
 
 

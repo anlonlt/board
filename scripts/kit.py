@@ -1348,6 +1348,21 @@ def artifact_push(url=None, token=None, out_dir=None):
             write_doc(fp, data)
             e["file_path"] = fp
             entries.append(e)
+    # CL41: what a running step's session does now (activity/<post>, kit_activity.py, no model call) rides along: a web part's
+    # hook writes it to this copy only, and the page reads it from the Artifact. Never pulled, never "unsent": a create the
+    # first time, then pinned to the version this copy last sent.
+    for row in _board_request(url, "db/activity", token=token).get("docs") or []:
+        did, data = row["id"], row.get("data") or {}
+        key = "activity/%s" % did
+        if not isinstance(data, dict) or _read_json(_base_path("activity", did)) == data:
+            continue
+        e = {"op": "set", "collection": _art_prefix() + "activity", "doc_id": did}
+        if key in st["versions"]:
+            e["if_version"] = int(st["versions"][key])
+        fp = os.path.join(os.path.abspath(out_dir), "docs", "%04d.json" % len(entries))
+        write_doc(fp, data)
+        e["file_path"] = fp
+        entries.append(e)
     # CL30 (the owner, 10:3x: "push must also send every file a post references"): the files of EVERY post and comment
     # here, not only of those sent now; the documents are mirrored by this push itself (no second command)
     files_text, mirror = _artifact_files(every, os.path.join(out_dir, "files"),
@@ -1694,7 +1709,7 @@ def _runtime_capability_lines(runtime, board_url, cmd, mem_rel):
     if runtime == "claude-cli":
         return [
             "- **Local board + phone access:** served by `board_server.py` at `%s` with Tailscale/PWA access (Android Private DNS / NextDNS users: use the direct Tailscale IP link if `*.ts.net` does not resolve)." % board_url,
-            "- **One-word launcher:** type `%s` in any terminal to start the board, print your link, and open Claude Code (`claude --permission-mode auto`) as the orchestrator, with `kit_guard.py` guarding every command (destructive commands stay blocked); `%s --agy` opens agy instead." % (cmd, cmd),
+            "- **One-word launcher:** type `%s` in any terminal to start the board, print your link, and open Claude Code (every check off once you accepted Claude Code's bypass mode yourself, else auto: `kit.py permission-mode`) as the orchestrator, with `kit_guard.py` guarding every command (destructive commands stay blocked); `%s --agy` opens agy instead." % (cmd, cmd),
             "- **Live forwarding & parallel workers:** a background listener wakes the orchestrator (0 tokens while waiting) on your comments, 👍 Likes, and tapped answers and passes them to the part that wrote the post; parts run as subagents in their own git worktrees.",
             "- **Warm Git sync:** `kit.py receive` / `kit.py publish` sync board state cleanly with other runtimes.",
         ]
@@ -3877,6 +3892,7 @@ def send_form(pid):
 
 
 _TECH = re.compile(r"`[^`\n]+`|\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b|[\w./-]*\w\.(?:py|js|cjs|mjs|ts|tsx|jsx|css|html|md|sh|json|yml|yaml|toml|kt)\b")
+_PRODUCT = re.compile(r"\b(?:Node|Next|Nuxt|Vue|Three|Chart|Express|Ember|Backbone|Socket|D3|P5|Pixi|Paper)\.js\b")   # CL41: a name, not a file
 _MEDIA = re.compile(r"`[^`\n]+\.(?:wav|mp3|ogg|m4a|flac|mp4|webm|png|jpe?g|gif|svg|webp)`", re.I)
 
 
@@ -3888,7 +3904,7 @@ def plain_notes(p):
     lead = re.sub(r"(?ms)^\s*```mermaid.*?^\s*```\s*$", "", lead)
     his = " ".join([str(p.get("title") or "")] + [str(a.get("quote") or "") for a in _as_list(p.get("asked")) if isinstance(a, dict)]).lower()
     for k, t in (("verdict", str(p.get("verdict") or "")), ("lead", lead)):
-        t = re.sub(r"!\[[^\]]*\]\([^)]*\)|\]\([^)]*\)|https?://\S+", " ", _MEDIA.sub(" ", t))
+        t = re.sub(r"!\[[^\]]*\]\([^)]*\)|\]\([^)]*\)|https?://\S+", " ", _PRODUCT.sub(" ", _MEDIA.sub(" ", t)))
         hit = [h for h in dict.fromkeys(_TECH.findall(t)) if h.strip("`").strip().lower() not in his]
         if hit:
             out.append("%s: he reads this first, and it names %s: say what that does for him in plain words, the name goes under a heading of the body"
@@ -5599,7 +5615,7 @@ COMMANDS = [
     ("read the board", "kit.py report / doctor [--fix]", "the board's size, columns, oldest question, missing files / full install, hook parity, conflict & sync health"),
     ("sessions", "kit.py permission-mode", "the mode the kit starts Claude Code sessions in: every check off once he accepted it, else auto"),
     ("read the board", "kit.py portfolio", "every project of this owner and where each stands"),
-    ("write the board", "kit.py sub <post> \"<piece>\" [--status doing|done|drop]", "one piece of a step, a line on its post (Claude Code's task list writes it by itself)"),
+    ("write the board", "kit.py sub <post> <number>... | \"<piece>\" [--status doing|done|drop] [--why \"...\"]", "a step's pieces by number (the task's numbered lines) or title, lines on its post; done refuses an open one; a piece the task names drops only with --why"),
     ("launch and finish", "kit.py form <post> [--doing \"...\"]", "a step's result as a file, half filled; `done` sends and checks it"),
     ("launch and finish", "kit.py whoami [name]", "this session's id for a post's session_id (web: session_<id>; else the name given)"),
     ("launch and finish", "kit.py branches [--delete]", "origin's branches fully on the trunk (finished parts), and with --delete removes them"),
@@ -6496,9 +6512,12 @@ def task_pieces(text):
 def pieces_of(p):
     """A step's pieces, each with the number that names it (kept for good: a piece that goes never renumbers the others)."""
     rows = [dict(x) for x in _as_list(p.get("subtasks")) if isinstance(x, dict) and x.get("title")]
+    used = {x["n"] for x in rows if isinstance(x.get("n"), int) and x["n"] > 0}
     for i, x in enumerate(rows):
-        if not x.get("n"):
-            x["n"] = max([i] + [y.get("n") or 0 for y in rows[:i]]) + 1
+        if not (isinstance(x.get("n"), int) and x["n"] > 0):
+            # CL41: never a number a later piece already holds (an unnumbered row before a numbered one made two "1.")
+            x["n"] = max([i] + [y["n"] for y in rows[:i]] + list(used)) + 1
+            used.add(x["n"])
     return rows
 
 

@@ -1,6 +1,6 @@
 /* artifact_repos.js — cross-repo boards in a claude.ai Artifact (the local server's --attach / "All boards").
 
-   One Artifact holds every board: the primary repo's at the root of the db (posts, comments, typing, kit_docs,
+   One Artifact holds every board: the primary repo's at the root of the db (posts, comments, typing, activity, kit_docs,
    kit_git, kit_artifacts) and each attached repo's under repos/<id>/<collection>, mirrored there by a Claude Code
    Web session with `kit_artifact_sync.py boards`. kit_repos/_index lists them: {repos: [{id, name, github}],
    primary: {name}, mirrored_at}. With no attached repo the page is unchanged (no switcher, the db untouched).
@@ -15,7 +15,7 @@
 (function () {
   "use strict";
   if (typeof window === "undefined" || window.__KIT_WRAP_DB__) return;
-  var COLLS = { posts: 1, comments: 1, typing: 1, kit_docs: 1, kit_git: 1, kit_artifacts: 1 };
+  var COLLS = { posts: 1, comments: 1, typing: 1, activity: 1, kit_docs: 1, kit_git: 1, kit_artifacts: 1 };
   var raw = null, wrapped = null, repos = [], primaryName = "", live = [], owners = {}, listeners = [];
   var active = "";
   try { active = new URLSearchParams(location.search).get("repo") || localStorage.getItem("kit_active_repo") || ""; } catch (e) {}
