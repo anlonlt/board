@@ -79,15 +79,15 @@
    "version": 1
   },
   "kit+2F~AGENTS.template.md": {
-   "sha": "5cb9e84c45f6368cca0aa3c2a125ca8e71722513719b5f865a139941d6a534fa",
+   "sha": "7b2225ff7e02c589089d4d07ddc67f036d3e83c687cc81ad01556694d1c95cc8",
    "version": 1
   },
   "kit+2F~ORCHESTRATOR.template.md": {
-   "sha": "36ced23debc72e53ead823102f7d402f037ab80edaad63055e4409b22f2d3def",
+   "sha": "9e70dbe60e2c88775d685cc46cf56492eea3de214c087257e032dd3eb02fead4",
    "version": 1
   },
   "kit+2F~arena+2F~orchestrator.template.md": {
-   "sha": "df5c95c4466a75e74f39d65c6d8804640273a282feee82dbfe1a8991c80c78a8",
+   "sha": "eee3659015081257265aa2ac1c9c64b30e4866380d557a4e69b35fe9de06d23e",
    "version": 1
   },
   "kit+2F~board+2F~BOARD.template.md": {
@@ -103,7 +103,7 @@
    "version": 2
   },
   "kit+2F~claude+2F~ORCHESTRATOR.template.md": {
-   "sha": "89ec5fa21a3ca6e6dd5e16219d27f1425fdc138a5373660f715646643f07a614",
+   "sha": "77fd6ea2bc56631878ebbd1a6fd0ff4180de776c3e17bb5dc668a7d685791064",
    "version": 1
   },
   "kit+2F~claude+2F~SKILL.board.md": {
@@ -127,7 +127,7 @@
    "version": 1
   },
   "kit+2F~claude-cli+2F~ORCHESTRATOR.template.md": {
-   "sha": "ceed16e68356d1d8c34b1cb11196678ad5af75d068e79e3806f21c63d12dca64",
+   "sha": "eb801ae25a2aded356c0dd06bf5be887c65883f55e2e13c7a214e62464ef8e27",
    "version": 1
   },
   "kit+2F~claude-cli+2F~consultant.template.md": {
@@ -159,7 +159,7 @@
    "version": 7
   },
   "kit+2F~orchestrator.template.md": {
-   "sha": "d6be4deeacbd1533d66466e94facb50a999035ed7e0cdcd44b7ce431f671ccd5",
+   "sha": "64c96d7b0ce53184a231d97d6f4195492bd2ab160d9f6dd2b1694e986aa31050",
    "version": 1
   },
   "kit+2F~part.template.md": {
@@ -179,7 +179,7 @@
    "version": 1
   },
   "step0+2F~survey-code.md": {
-   "sha": "932e38825144b8076eda2fb0015b0af6a2a476aeb58e481ec5a76d02f663fd90",
+   "sha": "6741ec431e08fb24d85cb6df44672b083a8072900dd9ea32c7e3676d43d42ee5",
    "version": 1
   },
   "tests+2F~fixtures+2F~cl33_awaits.md": {
