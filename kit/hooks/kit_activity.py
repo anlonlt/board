@@ -140,8 +140,8 @@ def main():
         return _say_agy(_pop_pending(root, data))
     name, ti = _tool_and_input(data)
     said = loop_check(root, data, ev, name, ti, claude)         # every session: silent unless the same call repeats
-    # CL44: an agy part subagent inherits KIT_ROLE=orchestrator from `kit/up`; let part_post() check its own prompt/KIT_POST.
-    if role not in ("", "part", "orchestrator") and not os.environ.get("KIT_POST"):
+    # CL44: an agy part subagent inherits KIT_ROLE=orchestrator from `kit/up`; let part_post() check its own prompt.
+    if role not in (("", "part") if claude else ("", "part", "orchestrator")):
         return _say(said, claude)
     run = os.path.join(root, ".kit", "run", "activity")
     sid = _sid(data)
