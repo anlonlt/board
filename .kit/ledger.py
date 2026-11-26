@@ -46,6 +46,7 @@ except ImportError:      # Windows
 KINDS = ("observation", "rule", "decision", "principle", "lesson", "field")
 MOMENTS = ("ask", "report", "launch", "review")
 STATUSES = ("active", "proposed", "subsumed", "replaced", "archived", "dropped")
+LIVE = ("active", "proposed")
 # Scope precedence: more specific scopes sort first when resolving overlaps.
 SCOPE_RANK = {"files": 4, "train": 3, "role": 2, "project": 1, "all": 0}
 STOP_WORDS = frozenset({
@@ -190,7 +191,9 @@ def parse_ledger(text, source=""):
                 "subsumes": [],
                 "subsumed_by": "",
                 "replaces": "",
+                "replaced_by": "",
                 "confirmed_by": "",
+                "confirmed_at": "",
                 "keeps": [],
                 "opens": "",
                 "not_for": "",
@@ -250,8 +253,12 @@ def render_ledger(entries):
             out.append("subsumed_by: %s" % e["subsumed_by"])
         if e.get("replaces"):
             out.append("replaces: %s" % e["replaces"])
+        if e.get("replaced_by"):
+            out.append("replaced_by: %s" % e["replaced_by"])
         if e.get("created_at"):
             out.append("created_at: %s" % e["created_at"])
+        if e.get("confirmed_at"):
+            out.append("confirmed_at: %s" % e["confirmed_at"])
         out.append("")
     return "\n".join(out)
 
@@ -365,10 +372,9 @@ def _observe(memory_dir, summary, quote, source, scope, theme, kind, enforced_by
     eid = entry_id or _next_id(entries, prefix)
     if any(e["id"] == eid for e in entries):
         return {"error": "entry %s already exists" % eid}
-    if replaces:
-        for e in entries:
-            if e["id"] == replaces and e["status"] == "active":
-                e["status"] = "replaced"
+    replaces = str(replaces or "").strip()
+    if replaces and not any(e["id"] == replaces and e["status"] in LIVE for e in entries):
+        return {"error": "replaces %s: no live entry has that id (`kit.py ledger show`)" % replaces}
     entry = {
         "id": eid,
         "kind": kind,
@@ -387,6 +393,9 @@ def _observe(memory_dir, summary, quote, source, scope, theme, kind, enforced_by
         "created_at": _now_iso(),
     }
     entries.append(entry)
+    if replaces:
+        _retire(memory_dir, entries, replaces, eid)
+        conflicts = [c for c in conflicts if c["id"] != replaces]
     path = save_entries(memory_dir, entries)
     return {"ok": True, "entry": entry, "conflicts": conflicts, "path": path}
 
@@ -714,11 +723,13 @@ def _confirm(memory_dir, pid, by, summary):
     old = target.get("replaces")
     for e in entries:
         if old and e["id"] == old and e["kind"] == target["kind"]:
-            e["status"] = "replaced"
+            pass                                                                    # retired below, to the archive
         elif old and e["kind"] == "field" and e["status"] in ("active", "proposed") and old in (e.get("subsumes") or []):
             e["subsumes"] = [pid if i == old else i for i in e["subsumes"]]        # the refined principle stays in its field
         elif old and e.get("subsumed_by") == old:
             e["subsumed_by"] = pid
+    if old and any(e["id"] == old and e["kind"] == target["kind"] for e in entries):
+        _retire(memory_dir, entries, old, pid)
     if target["kind"] == "field":                                                   # its members stay, opened by it
         return {"ok": True, "field": target, "subsumed": [], "path": save_entries(memory_dir, entries)}
     want = set(target.get("subsumes") or []) - set(target.get("keeps") or [])
@@ -889,8 +900,17 @@ def check_ledger(memory_dir, root=None, comments=None):
     """
     entries = load_entries(memory_dir, kit_root=root)
     by_id = {e["id"]: e for e in entries}
+    gone = {e["id"]: e for e in load_archive(memory_dir)}
     errors = []
     warnings = []
+    for e in entries:
+        old = e.get("replaces") or ""
+        if e["status"] in LIVE and old and (by_id.get(old) or {}).get("status") in LIVE and old != e["id"]:
+            errors.append("%s replaces %s, which is still live: `kit.py lessons replace %s %s` moves it to the archive"
+                          % (e["id"], old, e["id"], old))
+        if e["status"] == "replaced":
+            errors.append("%s is replaced but still in the ledger: `kit.py lessons replace %s %s` moves it to the archive"
+                          % (e["id"], e.get("replaced_by") or "<successor>", e["id"]))
     hook_dirs = []
     if root:
         for rel in (".kit/hooks", ".claude/hooks/kit", ".agents/hooks/kit", "kit/hooks", ".kit"):
@@ -924,7 +944,7 @@ def check_ledger(memory_dir, root=None, comments=None):
             if gone:
                 errors.append("%s: members not active: %s" % (e["id"], ", ".join(gone)))
         for k in (e.get("keeps") or []) if e["status"] == "active" else []:
-            if (by_id.get(k) or {}).get("status") not in ("active", "replaced"):
+            if (by_id.get(k) or {}).get("status") != "active" and (gone.get(k) or {}).get("status") != "replaced":
                 errors.append("%s: keeps %s, which is not active" % (e["id"], k))
         if e["status"] == "proposed" and e["kind"] == "principle":
             warnings.append("%s: proposed principle waiting on owner confirmation" % e["id"])
@@ -987,6 +1007,296 @@ def _init(memory_dir):
             pass
     save_entries(memory_dir, entries)
     return {"ok": True, "path": p, "imported": imported, "skipped": skipped}
+
+
+# ---------------------------------------------------------------- M8: replacing and forgetting
+# An entry that replaces another names it (`replaces: <id>`); the old one leaves the memory for the archive, with a pointer
+# to its successor, so a session never meets two rules that disagree. Then three checks with no model: two live entries
+# on the same subject that contradict each other, a second claim of authority in the guides, an entry nobody has
+# confirmed for longer than the kit config's days (a review list on the board, never a silent delete).
+
+def archive_path(memory_dir):
+    return os.path.join(memory_dir, "archive", "ledger.md")
+
+
+def load_archive(memory_dir):
+    p = archive_path(memory_dir)
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return parse_ledger(fh.read(), source=p)
+    except OSError:
+        return []
+
+
+def _retire(memory_dir, entries, old_id, new_id):
+    """Take `old_id` out of `entries` (the live ledger) and append it to the archive, replaced by `new_id`."""
+    old = next((e for e in entries if e["id"] == old_id), None)
+    if old is None:
+        return None
+    entries.remove(old)
+    old = dict(old, status="replaced", replaced_by=new_id)
+    arch = [e for e in load_archive(memory_dir) if e["id"] != old_id] + [old]
+    p = archive_path(memory_dir)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    text = render_ledger(arch).replace("# Memory Ledger", "# Memory archive (replaced entries, each with its successor)", 1)
+    fd, tmp = tempfile.mkstemp(prefix=".archive-", dir=os.path.dirname(p))
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    os.replace(tmp, p)
+    return old
+
+
+def replace(memory_dir, new_id, old_id):
+    """`new_id` wins: `old_id` goes to the archive with `replaced_by: new_id`, and `new_id` says `replaces: old_id`."""
+    with _locked(memory_dir):
+        entries = load_entries(memory_dir)
+        by = {e["id"]: e for e in entries}
+        if new_id == old_id:
+            return {"error": "an entry cannot replace itself"}
+        if (by.get(new_id) or {}).get("status") not in LIVE:
+            return {"error": "%s: no live entry has that id" % new_id}
+        if old_id not in by:
+            return {"error": "%s: no entry in the ledger has that id" % old_id}
+        by[new_id]["replaces"] = old_id
+        _retire(memory_dir, entries, old_id, new_id)
+        for e in entries:                                     # what pointed at the old one now points at its successor
+            if e.get("subsumed_by") == old_id:
+                e["subsumed_by"] = new_id
+            if old_id in (e.get("subsumes") or []) and e["kind"] == "field":
+                e["subsumes"] = [new_id if i == old_id else i for i in e["subsumes"]]
+        return {"ok": True, "kept": new_id, "archived": old_id, "path": save_entries(memory_dir, entries),
+                "archive": archive_path(memory_dir)}
+
+
+def keep(memory_dir, eid, when=None):
+    """The owner (or a check against reality) says `eid` still holds: its `confirmed_at` is now."""
+    with _locked(memory_dir):
+        entries = load_entries(memory_dir)
+        e = next((x for x in entries if x["id"] == eid and x["status"] in LIVE), None)
+        if e is None:
+            return {"error": "%s: no live entry has that id" % eid}
+        e["confirmed_at"] = when or _now_iso()
+        return {"ok": True, "entry": eid, "confirmed_at": e["confirmed_at"], "path": save_entries(memory_dir, entries)}
+
+
+def _when(text):
+    """The first date in a text (2026-11-23, 2026-11-23T10:00:00Z), as a UTC datetime; None when there is none."""
+    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", str(text or ""))
+    if not m:
+        return None
+    try:
+        return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def stale(items, days, now=None):
+    """The items (each {id, confirmed, ...}: `confirmed` its last confirmation or, failing one, its writing) unconfirmed
+    for more than `days` days, oldest first; an item with no date at all is listed too (nobody ever confirmed it)."""
+    now = now or datetime.now(timezone.utc)
+    out = []
+    for it in items:
+        d = _when(it.get("confirmed"))
+        age = None if d is None else (now - d).days
+        if age is None or age > int(days):
+            out.append(dict(it, age=age))
+    out.sort(key=lambda x: (x["age"] is not None, -(x["age"] or 0), x["id"]))
+    return out
+
+
+def entry_items(entries):
+    """Live ledger entries as the generic items the checks read: {id, text, files, theme, source, confirmed}."""
+    out = []
+    for e in entries:
+        if e.get("status") not in LIVE or e.get("kind") == "field":
+            continue
+        files = [s.split(":", 1)[1].strip() for g in scope_groups(e.get("scope")) for s in g if s.lower().startswith("files:")]
+        out.append({"id": e["id"], "text": e.get("summary", ""), "files": files, "theme": e.get("theme", ""),
+                    "source": e.get("_file", ""), "confirmed": e.get("confirmed_at") or e.get("created_at") or ""})
+    return out
+
+
+# -- two live entries that contradict each other
+NEG = re.compile(r"^(never|not|no|don't|dont|doesn't|cannot|can't|without|nor|ne|pas|jamais|aucun|sans)$")
+POS = frozenset({"always", "must", "do", "should", "only", "toujours", "doit"})
+OPPOSITE = (("add", "remove"), ("enable", "disable"), ("allow", "refuse"), ("allow", "forbid"), ("allow", "deny"),
+            ("keep", "drop"), ("keep", "delete"), ("show", "hide"), ("include", "exclude"), ("open", "close"),
+            ("first", "last"), ("before", "after"), ("push", "never-push"), ("ajouter", "supprimer"),
+            ("garder", "supprimer"), ("afficher", "masquer"), ("avant", "après"), ("premier", "dernier"))
+_OPP = {}
+for _a, _b in OPPOSITE:
+    _OPP.setdefault(_a, set()).add(_b)
+    _OPP.setdefault(_b, set()).add(_a)
+SETTING = re.compile(r"`?\b([a-z][a-z0-9]*(?:[_.][a-z0-9]+)+)`?\s*(?:=|:|to|is|à)\s*`?(-?[\w./%-]+)`?", re.I)
+MEASURE = re.compile(r"\b([a-z]{3,})\s+(?:is|are|of|at|to|=|est|de|à)?\s*(\d+(?:\.\d+)?)\s*(px|days?|hours?|minutes?|seconds?|%|ms|jours?|heures?)\b", re.I)
+
+
+def _stem(w):
+    w = w.lower()
+    for suf in ("ing", "ed", "es", "s"):
+        if len(w) > len(suf) + 2 and w.endswith(suf):
+            return w[:-len(suf)]
+    return w
+
+
+def _words(text):
+    return re.findall(r"[a-zà-ÿ0-9']+", str(text or "").lower())
+
+
+def _claims(text):
+    """{verb stem: polarity} of a text's directives: `never X` and `do not X` are -1, `always X`, `must X`, and a
+    sentence that starts with X are +1."""
+    out = {}
+    for sent in re.split(r"[.;:!?\n]+|\s[-–—]\s", str(text or "")):
+        w = _words(sent)
+        for i, t in enumerate(w):
+            if NEG.match(t) and i + 1 < len(w):
+                j = i + 2 if w[i + 1] in ("to", "be") and i + 2 < len(w) else i + 1
+                out[_stem(w[j])] = out.get(_stem(w[j]), 0) | 2          # bit 2: said negatively
+            elif t in POS and i + 1 < len(w) and not NEG.match(w[i + 1]):
+                out[_stem(w[i + 1])] = out.get(_stem(w[i + 1]), 0) | 1  # bit 1: said positively
+        if w and not NEG.match(w[0]) and w[0] not in POS:
+            out[_stem(w[0])] = out.get(_stem(w[0]), 0) | 1
+    return out
+
+
+def _settings(text):
+    out = {}
+    for k, v in SETTING.findall(str(text or "")):
+        out.setdefault(k.lower(), set()).add(v.lower().rstrip(".,"))
+    for noun, n, unit in MEASURE.findall(str(text or "")):
+        if noun.lower() not in STOP_WORDS:
+            out.setdefault("%s (%s)" % (_stem(noun), _stem(unit.lower())), set()).add(n)
+    return out
+
+
+def _same_subject(a, b, common=frozenset()):
+    """Why two items speak of the same thing ('' when they do not): a file they both name, their theme, or three
+    words of their own in common (words most entries use, like the project's name, do not count)."""
+    fa, fb = set(a.get("files") or []), set(b.get("files") or [])
+    shared = sorted(x for x in fa for y in fb if x == y or fnmatch.fnmatch(x, y) or fnmatch.fnmatch(y, x))
+    if shared:
+        return "both on %s" % shared[0]
+    if a.get("theme") and a.get("theme") == b.get("theme"):
+        return "both on theme %s" % a["theme"]
+    ka = {_stem(w) for w in _keywords(a.get("text"))} - set(common)
+    kb = {_stem(w) for w in _keywords(b.get("text"))} - set(common)
+    both = ka & kb
+    return ("both on %s" % ", ".join(sorted(both)[:4])) if len(both) >= 3 and len(both) * 5 >= len(ka | kb) else ""
+
+
+def _common_words(items):
+    """The words more than a third of the items use (at least 6 items): they name the project, not a subject."""
+    if len(items) < 6:
+        return frozenset()
+    df = {}
+    for it in items:
+        for w in {_stem(x) for x in _keywords(it.get("text"))}:
+            df[w] = df.get(w, 0) + 1
+    return frozenset(w for w, n in df.items() if n * 3 > len(items))
+
+
+def contradiction(a, b, common=frozenset()):
+    """Why two items contradict each other (None: they do not): the same subject, and opposite verbs on it, or one
+    setting with two values."""
+    subj = _same_subject(a, b, common)
+    if not subj:
+        return None
+    sa, sb = _settings(a.get("text")), _settings(b.get("text"))
+    for k in sorted(set(sa) & set(sb)):
+        if sa[k] and sb[k] and not (sa[k] & sb[k]):
+            return "%s: %s says %s = %s, %s says %s" % (subj, a["id"], k, "/".join(sorted(sa[k])), b["id"], "/".join(sorted(sb[k])))
+    ca, cb = _claims(a.get("text")), _claims(b.get("text"))
+    for v in sorted(set(ca) & set(cb)):
+        if len(v) < 3 or v in STOP_WORDS:
+            continue
+        if (ca[v] == 1 and cb[v] == 2) or (ca[v] == 2 and cb[v] == 1):
+            pos, neg = (a, b) if ca[v] == 1 else (b, a)
+            return "%s: %s says %s, %s says never %s" % (subj, pos["id"], v, neg["id"], v)
+    for v in sorted(ca):
+        for o in sorted(_OPP.get(v, ())):
+            if o in cb and ca[v] & 1 and cb[o] & 1:
+                return "%s: %s says %s, %s says %s" % (subj, a["id"], v, b["id"], o)
+    return None
+
+
+def contradictions(items):
+    """[{a, b, why}] for every pair of live items that contradict each other, each pair once."""
+    out, common = [], _common_words(items)
+    for i, a in enumerate(items):
+        for b in items[i + 1:]:
+            if a["id"] == b["id"]:
+                continue
+            why = contradiction(a, b, common)
+            if why:
+                out.append({"a": a["id"], "b": b["id"], "why": why, "a_source": a.get("source", ""), "b_source": b.get("source", "")})
+    return out
+
+
+# -- a second claim of authority
+AUTHORITY = re.compile(
+    r"(source of truth|single source|the one record|is the authority|authoritative|takes? precedence|ranks? first|"
+    r"comes? first|wins over|overrides? (?:every|all|any|the other)|supersedes|the reference|"
+    r"source de v[ée]rit[ée]|fait foi|fait autorit[ée]|prime sur|pr[ée]vaut|a (?:la )?priorit[ée]|en premier|"
+    r"r[ée]f[ée]rence unique|document de r[ée]f[ée]rence|seule r[ée]f[ée]rence|passe avant)", re.I)
+SELF = re.compile(r"\b(this (?:file|doc|document|guide|page)|here|ce (?:fichier|document|guide)|ici|celui-ci)\b", re.I)
+FILE_REF = re.compile(r"`?([\w./-]+\.(?:md|json|txt|py|yml|yaml))`?|\b(the board|le tableau|CLAUDE\.md|AGENTS\.md)\b", re.I)
+
+
+def authority_claims(paths, root=""):
+    """[{file, line, authority, text}]: each line of a guide or memory file that says something is the authority (ranks
+    first, the source of truth, takes precedence). `authority` is what it names: a file or the board, else the file the
+    line is in (a doc claiming first rank for itself)."""
+    out = []
+    for p in paths:
+        try:
+            with open(p, encoding="utf-8") as fh:
+                lines = fh.read().splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = os.path.relpath(p, root) if root else p
+        fence = False
+        for n, line in enumerate(lines, 1):
+            if line.lstrip().startswith("```"):
+                fence = not fence
+            if fence or not AUTHORITY.search(line):
+                continue
+            m = AUTHORITY.search(line)
+            near = line[max(0, m.start() - 120):m.end() + 60]
+            refs = [(x or y) for x, y in FILE_REF.findall(near)]
+            if SELF.search(near) or not refs:
+                who = rel
+            else:
+                who = min(refs, key=lambda r: abs(near.find(r) - (m.start() - max(0, m.start() - 120))))
+            who = who.lower().replace("le tableau", "the board")
+            out.append({"file": rel, "line": n, "authority": who, "text": _flat(line)[:200], "claim": m.group(1).lower()})
+    return out
+
+
+def authority_conflicts(claims):
+    """Authority said in one place only: [{kind, authority, where, why}]. Two different things each claimed first (two
+    docs each ranking first) is a `conflict`; the same authority claimed again in another file is a `repeat`."""
+    out = []
+    selfs = [c for c in claims if c["authority"] == c["file"].lower()]
+    by_file = {}
+    for c in selfs:
+        by_file.setdefault(c["file"], c)
+    if len(by_file) > 1:
+        where = ["%s:%d" % (c["file"], c["line"]) for c in by_file.values()]
+        out.append({"kind": "conflict", "authority": ", ".join(sorted(by_file)), "where": where,
+                    "why": "%d files each claim to rank first: %s" % (len(by_file), "; ".join(
+                        "%s:%d \"%s\"" % (c["file"], c["line"], c["text"][:90]) for c in by_file.values()))})
+    named = {}
+    for c in claims:
+        if c not in selfs:
+            named.setdefault(c["authority"], {}).setdefault(c["file"], c)
+    for who, files in sorted(named.items()):
+        if len(files) > 1:
+            where = ["%s:%d" % (c["file"], c["line"]) for c in files.values()]
+            out.append({"kind": "repeat", "authority": who, "where": where,
+                        "why": "%s is called the authority in %d files (%s): say it in one, point to it from the others"
+                               % (who, len(files), ", ".join(where))})
+    return out
 
 
 # ---------------------------------------------------------------- M7: every entry is checked against reality

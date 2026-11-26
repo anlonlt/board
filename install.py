@@ -85,6 +85,8 @@ DEFAULT_KIT = {
     "orchestrator": {"context_limit_k": 380},
     # Reviews (Claude Code CLI): each completed step, and every train_every completed steps of a train a cross review.
     "review": {"auto": "all", "train_every": 4},
+    # Memory (M8): an entry nobody confirmed for longer than this goes to a review list on the board, never deleted.
+    "memory": {"review_days": 90},
     # Above this a post body gets a nudge from `kit.py done` (never an error: the post is where the detail goes).
     "post_body_max": 1500,
     "clerk": {"wait_minutes": 5, "context_limit_k": 80, "orchestrator_idle_minutes": 30},
@@ -191,8 +193,7 @@ def present_runtimes(t):
 
 # Files the kit once installed and no longer does where this run did not put them (an update would otherwise leave the old
 # copy behind for ever): removed when unchanged since the kit wrote them, else KEPT and named.
-RETIRED = {".kit/agents/kit-cards.md": "the board server builds the cards; `kit.py cards` checks them",
-           ".claude/agents/kit-cards.md": "the board server builds the cards; `kit.py cards` checks them"}
+RETIRED = {".kit/agents/kit-cards.md": "the board server builds the cards; `kit.py cards` checks them"}
 
 
 class Installer:
@@ -1288,8 +1289,9 @@ def main(argv=None):
         if want_agy:
             ins.put(".agents/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
         if want_claude:
-            if claude_only:
-                ins.put(".claude/agents/kit-cards.md", cards_tpl)
+            # Claude Code on the web opens any repo on GitHub, computer installs included, and has no board server
+            # to build the cards: its orchestrator's guide uses this agent. On a computer nothing calls it.
+            ins.put(".claude/agents/kit-cards.md", rd("kit", "claude", "kit-cards.md"))
             ins.put(".claude/skills/board/SKILL.md", rd("kit", "claude", "SKILL.board.md") if claude_only else rd("kit", "skills", "board", "SKILL.md"))
     if parts["clerk"]:
         ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
