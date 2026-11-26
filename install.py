@@ -191,8 +191,7 @@ def present_runtimes(t):
 
 # Files the kit once installed and no longer does where this run did not put them (an update would otherwise leave the old
 # copy behind for ever): removed when unchanged since the kit wrote them, else KEPT and named.
-RETIRED = {".kit/agents/kit-cards.md": "the board server builds the cards; `kit.py cards` checks them",
-           ".claude/agents/kit-cards.md": "the board server builds the cards; `kit.py cards` checks them"}
+RETIRED = {".kit/agents/kit-cards.md": "the board server builds the cards; `kit.py cards` checks them"}
 
 
 class Installer:
@@ -1288,8 +1287,9 @@ def main(argv=None):
         if want_agy:
             ins.put(".agents/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
         if want_claude:
-            if claude_only:
-                ins.put(".claude/agents/kit-cards.md", cards_tpl)
+            # Claude Code on the web opens any repo on GitHub, computer installs included, and has no board server
+            # to build the cards: its orchestrator's guide uses this agent. On a computer nothing calls it.
+            ins.put(".claude/agents/kit-cards.md", rd("kit", "claude", "kit-cards.md"))
             ins.put(".claude/skills/board/SKILL.md", rd("kit", "claude", "SKILL.board.md") if claude_only else rd("kit", "skills", "board", "SKILL.md"))
     if parts["clerk"]:
         ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
