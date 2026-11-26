@@ -1,0 +1,13 @@
+{"note": "CL42 probe sessions, 2026-11-26 01:12Z, environment Harmonize, board at the given commit. Usage per distinct model call from list_events: [input, cache_read, cache_creation].",
+ "A_baseline": {"commit": "a1f898e", "runs": {
+   "A1": {"call1": [2, 63842, 16671], "call2": [2, 80513, 16169], "servers": "not asked"},
+   "A2": {"call1": [2, 68634, 11928], "call2": [2, 80562, 16284], "servers": 7},
+   "A3": {"call1": [2, 33746, 16715], "call2": [2, 38538, 58925], "servers": 7, "note": "cache miss; 24 tools at call 1"}}},
+ "B_denied_vercel": {"commit": "c3752bb", "runs": {
+   "B1": {"call1": [2, 68634, 11908], "call2": [2, 80542, 4754], "servers": 6},
+   "B2": {"call1": [2, 68634, 11890], "call2": [2, 80524, 4618], "servers": 6},
+   "B3": {"call1": [2, 68634, 11901], "call2": [2, 80535, 4624], "servers": 6}}},
+ "C_disable_connectors": {"commit": "695b890", "runs": {
+   "C1": {"call1": [2, 68634, 12264], "call2": [2, 80898, 15974], "servers": 7},
+   "C2": {"call1": [2, 68634, 11924], "call2": [2, 80558, 16142], "servers": 7},
+   "C3": {"call1": [2, 68634, 11921], "call2": [2, 80555, 16300], "servers": 7}}}}
