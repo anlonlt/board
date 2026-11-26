@@ -93,12 +93,24 @@ def main():
     out.append("END: finish with `python3 -I .kit/end_session.py`: %s" % (
         "it merges your work onto %s and pushes it, never forced (the owner's standing permission)" % trunk
         if k.get("trunk_push") else "it pushes your branch (the owner has not given the permission to push %s)" % trunk))
-    try:
-        b = subprocess.run(["git", "-C", root, "rev-list", "--count", "HEAD..@{u}"], capture_output=True, text=True, timeout=10)
-        if b.returncode == 0 and b.stdout.strip() not in ("", "0"):
-            out.append("CLONE: %s commits behind its remote: git pull --no-rebase first." % b.stdout.strip())
-    except (OSError, subprocess.SubprocessError):
-        pass
+    fresh = []                                     # CL53: the checkout on the newest code, said before anything else
+    kitpy = os.path.join(root, ".kit", "kit.py")
+    if os.path.isfile(kitpy):
+        try:
+            sid = str((data or {}).get("session_id") or "") if isinstance(data, dict) else ""
+            r = subprocess.run([sys.executable, "-I", kitpy, "fresh"] + (["--session", sid] if sid else []),
+                               capture_output=True, text=True, timeout=40, cwd=root)
+            fresh = [l for l in r.stdout.splitlines() if l.startswith("CHECKOUT: ")]
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        try:
+            b = subprocess.run(["git", "-C", root, "rev-list", "--count", "HEAD..@{u}"], capture_output=True, text=True, timeout=10)
+            if b.returncode == 0 and b.stdout.strip() not in ("", "0"):
+                fresh.append("CLONE: %s commits behind its remote: git pull --no-rebase first." % b.stdout.strip())
+        except (OSError, subprocess.SubprocessError):
+            pass
+    out[:0] = fresh
     mdir = memory_dir(data)
     mrel = os.path.relpath(mdir, root)
     if os.path.exists(os.path.join(mdir, "workflow.md")):
