@@ -78,6 +78,18 @@
    "sha": "08163f92391e1658bcb3b364ea3901aaa2659b76daeb60fa7b75ff1b64ca14c2",
    "version": 1
   },
+  "kit+2F~AGENTS.template.md": {
+   "sha": "5cb9e84c45f6368cca0aa3c2a125ca8e71722513719b5f865a139941d6a534fa",
+   "version": 1
+  },
+  "kit+2F~ORCHESTRATOR.template.md": {
+   "sha": "36ced23debc72e53ead823102f7d402f037ab80edaad63055e4409b22f2d3def",
+   "version": 1
+  },
+  "kit+2F~arena+2F~orchestrator.template.md": {
+   "sha": "df5c95c4466a75e74f39d65c6d8804640273a282feee82dbfe1a8991c80c78a8",
+   "version": 1
+  },
   "kit+2F~board+2F~BOARD.template.md": {
    "sha": "1f583d54815101810dee880c2bdf622aa736d324a502b6926032646f7c02c78c",
    "version": 8
@@ -89,6 +101,10 @@
   "kit+2F~claude+2F~BOARD.template.md": {
    "sha": "c7a8e130afcdd1e35601c4da771554d3090fc961a7ba8e36d85ee5c5b21eda36",
    "version": 2
+  },
+  "kit+2F~claude+2F~ORCHESTRATOR.template.md": {
+   "sha": "89ec5fa21a3ca6e6dd5e16219d27f1425fdc138a5373660f715646643f07a614",
+   "version": 1
   },
   "kit+2F~claude+2F~SKILL.board.md": {
    "sha": "69648f226b36c1120c7ee81bef9c93bda06f8810af1214340a6ad802a0556b24",
@@ -105,6 +121,14 @@
   "kit+2F~claude+2F~orchestrator.template.md": {
    "sha": "32a6feede2a8b15a6c361684209026d83ddb936f3e01fd7e299b9e99c8b3ac61",
    "version": 3
+  },
+  "kit+2F~claude+2F~part.template.md": {
+   "sha": "0f61c18371534b2180603a2ad8a7c95e66dcb0e77df23a573bac27992220c857",
+   "version": 1
+  },
+  "kit+2F~claude-cli+2F~ORCHESTRATOR.template.md": {
+   "sha": "ceed16e68356d1d8c34b1cb11196678ad5af75d068e79e3806f21c63d12dca64",
+   "version": 1
   },
   "kit+2F~claude-cli+2F~consultant.template.md": {
    "sha": "7190087ac1aba2c89b771aa44817283a01b514d0fc5b0ce6826070fcfda40448",
@@ -126,9 +150,17 @@
    "sha": "d1b796c179b0ef38f8d7134cffc50e12d6ce59f9aa4f2a0bc5fa7af374c0b8aa",
    "version": 3
   },
+  "kit+2F~generic+2F~orchestrator.template.md": {
+   "sha": "ff8e8dd6647252fa1233a461aa4946b020ece82c9b6ab36558c76a16e704e9a1",
+   "version": 1
+  },
   "kit+2F~lessons.md": {
    "sha": "cb21614a9fcfa0f4f629681ddc09dbf985b0d790258ac0f6722ce56f952f01a6",
    "version": 6
+  },
+  "kit+2F~orchestrator.template.md": {
+   "sha": "d6be4deeacbd1533d66466e94facb50a999035ed7e0cdcd44b7ce431f671ccd5",
+   "version": 1
   },
   "kit+2F~part.template.md": {
    "sha": "ae234547e897fe86aa02dfa50c29b11ead6ab211a3d9e9f4f4edee7c9e063ff9",
@@ -144,6 +176,14 @@
   },
   "step0+2F~survey-chat.md": {
    "sha": "a7b0536722f02018016f41a439b34dcdd25da8868b50002d14d1528d8624a6cf",
+   "version": 1
+  },
+  "step0+2F~survey-code.md": {
+   "sha": "932e38825144b8076eda2fb0015b0af6a2a476aeb58e481ec5a76d02f663fd90",
+   "version": 1
+  },
+  "tests+2F~fixtures+2F~cl33_awaits.md": {
+   "sha": "b3b6a1a737bf29717e188ce2a4934ad26c0042235fb0c034622b228b00c930f0",
    "version": 1
   },
   "tests+2F~fixtures+2F~cl33_harmonize_awaits.md": {
