@@ -1,0 +1,38 @@
+{
+ "body": "end_session says why a push to the trunk failed, never a reason it did not see.\n\nA Claude Code web session pushed to main; the kit's pre-push guard refused (CL41's review said redirect), and `kit/end_session.py` printed \"the trunk kept moving; run again\": it retries the push and, when every try fails, prints that one sentence whatever git said (kit/end_session.py, near its last lines).\n\n1. Print git's own refusal (the guard's reason, or the remote's) when the push fails, in kit/end_session.py.\n2. Retry only when the trunk really moved (the push was rejected as not a fast-forward and a fetch shows new commits); a refusal by the guard or the remote is said at once, with what to do, never retried.\n3. A test where the pre-push guard refuses: the guard's reason is printed and there is no retry; and one where the trunk moves once: it merges and pushes, in kit/test_end_session.py.\n",
+ "column": "info",
+ "created_at": "2026-11-26T21:24:54Z",
+ "from": "orchestrator",
+ "part": "CL46",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "kit/end_session.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "Print git's own refusal (the guard's reason, or the remote's) when the push fails, in..."
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "Retry only when the trunk really moved (the push was rejected as not a fast-forward and a fetch..."
+  },
+  {
+   "files": [
+    "kit/test_end_session.py"
+   ],
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "A test where the pre-push guard refuses"
+  }
+ ],
+ "task": "end_session says why a push to the trunk failed, never a reason it did not see.\n\nA Claude Code web session pushed to main; the kit's pre-push guard refused (CL41's review said redirect), and `kit/end_session.py` printed \"the trunk kept moving; run again\": it retries the push and, when every try fails, prints that one sentence whatever git said (kit/end_session.py, near its last lines).\n\n1. Print git's own refusal (the guard's reason, or the remote's) when the push fails, in kit/end_session.py.\n2. Retry only when the trunk really moved (the push was rejected as not a fast-forward and a fetch shows new commits); a refusal by the guard or the remote is said at once, with what to do, never retried.\n3. A test where the pre-push guard refuses: the guard's reason is printed and there is no retry; and one where the trunk moves once: it merges and pushes, in kit/test_end_session.py.\n",
+ "title": "end_session says why a push failed",
+ "train": "board-data"
+}

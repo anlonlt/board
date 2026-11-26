@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:11:43Z",
+ "created_at": "2026-11-26T21:24:56Z",
  "rows": [
   {
    "also": [],
@@ -69,7 +69,9 @@
   {
    "also": [],
    "children": [
-    "CL45"
+    "CL45",
+    "CL46",
+    "CL47"
    ],
    "parent": "",
    "part": "P-board-data",
@@ -942,8 +944,30 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-board-data",
+   "part": "CL46",
+   "post": "cl46-end-session-says-why-a-push-failed",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-board-data",
+   "part": "CL47",
+   "post": "cl47-cl41-s-redirect-resolved-so-the-trunk-ca",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T21:11:43Z"
+ "updated_at": "2026-11-26T21:24:56Z"
 }
