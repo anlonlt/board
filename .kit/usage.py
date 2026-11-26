@@ -107,12 +107,13 @@ def kit_conf(root):
 
 
 def price(model, conf=None):
-    table = dict(PRICES)
+    table = {k.lower(): v for k, v in PRICES.items()}
     for k, v in ((conf or {}).get("prices") or {}).items():
-        table[k] = tuple(v)
+        table[str(k).lower()] = tuple(v)
+    ml = str(model or "").strip().lower()
     best = ""
     for k in table:
-        if str(model or "").startswith(k) and len(k) > len(best):
+        if ml.startswith(k) and len(k) > len(best):
             best = k
     return table.get(best)
 

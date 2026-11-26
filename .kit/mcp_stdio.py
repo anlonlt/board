@@ -527,13 +527,29 @@ class MCPServer:
         }
 
 
+def _default_root():
+    """Worktree-safe root resolution: parent of .kit/ when run as .kit/mcp_stdio.py, else walk up from cwd."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if os.path.basename(here) == ".kit":
+        return os.path.dirname(here)
+    cur = os.path.abspath(os.getcwd())
+    for _ in range(6):
+        if os.path.isdir(os.path.join(cur, ".kit")):
+            return cur
+        up = os.path.dirname(cur)
+        if up == cur:
+            break
+        cur = up
+    return os.path.abspath(os.getcwd())
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Stdlib MCP stdio adapter for board kit")
-    ap.add_argument("--root", default=os.getcwd())
+    ap.add_argument("--root", default=None)
     ap.add_argument("--board-url", default=None)
     ap.add_argument("--token", default=None)
     a = ap.parse_args(argv)
-    srv = MCPServer(a.root, board_url=a.board_url, token=a.token)
+    srv = MCPServer(a.root or _default_root(), board_url=a.board_url, token=a.token)
     for line in sys.stdin:
         line = line.strip()
         if not line:

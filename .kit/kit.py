@@ -1327,7 +1327,10 @@ def artifact_blobs_text(r):
 
 def stale_copy():
     """CL30: '' when the scripts may read the local copy, else why not (an Artifact board whose copy was never loaded,
-    or loaded longer ago than kit.artifact.fresh_min, 15). $KIT_STALE_OK=1 reads it anyway."""
+    or loaded longer ago than kit.artifact.fresh_min, 15). $KIT_STALE_OK=1 reads it anyway.
+    CL44: local agy / local CLI sessions running against a local board server (`kit.mode == 'local'` with a non-claude.ai
+    board_url, outside Claude Code Web) are not blocked by the Claude-Web Artifact STALE gate unless KIT_ARTIFACT_URL is
+    explicitly forced."""
     if not attached_board() or os.environ.get("KIT_STALE_OK"):
         return ""
     k = _kit_config().get("kit") or {}
