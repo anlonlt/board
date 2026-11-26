@@ -1,9 +1,9 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:13:19Z",
+ "created_at": "2026-11-26T22:28:07Z",
  "rows": [
   {
-   "at": 39,
+   "at": 40,
    "key": "A",
    "name": "Cli",
    "note": "Next: The Trains view: task lists (A) or the old flow map (B)?",
@@ -49,14 +49,14 @@
     "Launch a board step without push access to the board (prompt carried in the start message)",
     "Review and adopt four kit changes made on a computer (patch in this post)",
     "Measure what the account's connectors cost on the web, and who decides that they load",
+    "Fix agy runtime gaps: Artifact STALE gate, empty board.db shadowing, worktree MCP confi...",
     "Design principles, complete, and no emoji Like",
     "The board travels in git, always current (mirror synced on every step)",
     "A crashed part is continued from its last checkpoint",
     "The Trains view: task lists (A) or the old flow map (B)?",
     "resume per role: what each role needs, the lessons and the workflow included",
     "Install for several repos on the web: one environment with every repo, hooks at user level",
-    "The live line and the loop breaker on agy",
-    "Fix agy runtime gaps: Artifact STALE gate, empty board.db shadowing, worktree MCP confi..."
+    "The live line and the loop breaker on agy"
    ],
    "train": "P-cli"
   },
@@ -163,5 +163,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T22:13:19Z"
+ "updated_at": "2026-11-26T22:28:07Z"
 }

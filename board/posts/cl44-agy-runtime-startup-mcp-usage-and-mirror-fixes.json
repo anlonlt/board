@@ -134,6 +134,7 @@
  "breaks": "revert",
  "check": "python3 -m unittest tests.test_cl44_agy_runtime",
  "column": "info",
+ "completed_at": "2026-11-26T22:28:06Z",
  "created_at": "2026-11-26T03:37:00Z",
  "from": "agy",
  "handoff": "Orchestrator: run the real-project check on anlonlt/harmonize (install.py --update, then `kit.py resume --cli agy` and `board_queue(runner=\"agy\")` there). Add a price for gemini-3.5-flash-lite to scripts/usage.py once it is known. Launchers set KIT_POST in a part's environment: this session was launched with KIT_POST naming M1's post, not CL44's; worth a look in kit.py launch.",
@@ -155,10 +156,18 @@
   "needs_real": true,
   "sha": "411c4ebe70968a89e2bb58db4716a11bf0163b28"
  },
+ "real_project": {
+  "command": "python3 -I ~/board-streamline/install.py <worktree> --update; python3 -I .kit/kit.py resume --role orchestrator; python3 -I .kit/kit.py doctor",
+  "output": "install --update: rc 0 in 3 s, every kit file updated (kit.py 5907 -> 8848 lines), one config value kept (claude_permission_mode). resume on a computer: rc 3, refused by the Artifact STALE gate ('this copy of the Artifact board was never loaded here'): Harmonize's config names an Artifact without kit.mode local, so CL44 item 1's exception does not apply; per the owner's rule a computer reads git's copy, never the Artifact (CL51 must cover the gate, not only done). doctor: 3 issues of Harmonize's own (a legacy scripts/kit.py shadowing .kit/kit.py, legacy Stop hook beside the kit's, archived awaits still referenced), and 'no board yet, git has one' (expected in a fresh worktree).",
+  "project": "anlonlt/harmonize main (0d020efb, 2026-11-24), in a throwaway worktree (removed after; nothing pushed; ~/harmonize's own changes untouched)",
+  "verdict": "continue for CL44 (its install and agy changes reach Harmonize cleanly); the STALE gate on a computer is CL51's"
+ },
+ "review_commit": "411c4ebe70968a89e2bb58db4716a11bf0163b28",
+ "review_started": "2026-11-26T22:28:07Z",
  "runner": "agy",
  "session_id": "9ef1a1ef-83ed-4c2e-9928-3ee330787aa8",
  "started_at": "2026-11-26T19:15:41Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "files": [
@@ -278,7 +287,7 @@
  "task": "Fix the six agy runtime bugs surfaced during the live CL43 run on `feat/streamline-doctor-memory` (`3746aa8`):\n\n1. `scripts/kit.py` (`stale_copy()`): do not block local `agy` or local CLI sessions with the Claude-Web `STALE: Artifact board` gate when `kit.artifact.url` is set alongside `kit.mode: \"local\"`.\n2. `scripts/kit.py` (`_load_board_docs()`) & `kit/board/board_server.py`: fall back to `board-mirror` if `board.db` has 0 docs, and don't leave a 0-doc `board.db` behind when `board_server.py` fails to bind its port.\n3. `install.py` (`merge_agy_mcp()`), `kit/board/mcp_stdio.py`, and `scripts/kit.py`: make `.agents/mcp_config.json` worktree-safe (no hardcoded parent checkout path), include `runner`-assigned planned/in-progress train steps in `board_queue`, and handle offline fallback cleanly in `board_inbox`.\n4. `kit/usage.py` & `kit/hook.py`: parse `agy` `transcript.jsonl` (`PLANNER_RESPONSE` token counts + `tool_calls` + child subagents), support Gemini/agy models, and wire `kit_usage.py` into the `agy` `Stop` row of `TABLE`.\n5. `kit/up`: handle `agy --mode auto` unavailability cleanly instead of silently falling back to interactive mode.\n6. Run `python3 scripts/run_all_tests.py` (0 failures) plus a live local `board --agy` smoke test confirming `kit.py resume`, `board_queue(runner=\"agy\")`, and a recorded `kit-usage` row.",
  "title": "Fix agy runtime gaps: Artifact STALE gate, empty board.db shadowing, worktree MCP config, agy usage ledger, and kit/up mode flag",
  "train": "cli",
- "updated_at": "2026-11-26T21:20:31Z",
+ "updated_at": "2026-11-26T22:28:08Z",
  "verdict": "All 12 CL44 agy fixes are on the branch with tests; the full suite passes and a live run against the board showed resume, the agy queue, the offline inbox and a usage row from a real agy transcript working.",
- "working_by": "owner"
+ "working_by": ""
 }
