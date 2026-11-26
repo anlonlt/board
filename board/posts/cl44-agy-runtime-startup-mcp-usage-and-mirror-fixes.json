@@ -49,7 +49,7 @@
    ],
    "from": "task",
    "n": 4,
-   "status": "open",
+   "status": "done",
    "title": "Add agy transcript parsing, model prices, and Stop hook wiring to kit_usage.py / usage.py"
   },
   {
@@ -58,7 +58,7 @@
    ],
    "from": "task",
    "n": 5,
-   "status": "open",
+   "status": "done",
    "title": "Handle unavailable `agy --mode auto` in kit/up without silently falling back to interactive mode"
   },
   {
@@ -71,5 +71,5 @@
  "task": "Fix the six agy runtime bugs surfaced during the live CL43 run on `feat/streamline-doctor-memory` (`3746aa8`):\n\n1. `scripts/kit.py` (`stale_copy()`): do not block local `agy` or local CLI sessions with the Claude-Web `STALE: Artifact board` gate when `kit.artifact.url` is set alongside `kit.mode: \"local\"`.\n2. `scripts/kit.py` (`_load_board_docs()`) & `kit/board/board_server.py`: fall back to `board-mirror` if `board.db` has 0 docs, and don't leave a 0-doc `board.db` behind when `board_server.py` fails to bind its port.\n3. `install.py` (`merge_agy_mcp()`), `kit/board/mcp_stdio.py`, and `scripts/kit.py`: make `.agents/mcp_config.json` worktree-safe (no hardcoded parent checkout path), include `runner`-assigned planned/in-progress train steps in `board_queue`, and handle offline fallback cleanly in `board_inbox`.\n4. `kit/usage.py` & `kit/hook.py`: parse `agy` `transcript.jsonl` (`PLANNER_RESPONSE` token counts + `tool_calls` + child subagents), support Gemini/agy models, and wire `kit_usage.py` into the `agy` `Stop` row of `TABLE`.\n5. `kit/up`: handle `agy --mode auto` unavailability cleanly instead of silently falling back to interactive mode.\n6. Run `python3 scripts/run_all_tests.py` (0 failures) plus a live local `board --agy` smoke test confirming `kit.py resume`, `board_queue(runner=\"agy\")`, and a recorded `kit-usage` row.",
  "title": "Fix agy runtime gaps: Artifact STALE gate, empty board.db shadowing, worktree MCP config, agy usage ledger, and kit/up mode flag",
  "train": "cli",
- "updated_at": "2026-11-26T08:48:07Z"
+ "updated_at": "2026-11-26T08:48:13Z"
 }
