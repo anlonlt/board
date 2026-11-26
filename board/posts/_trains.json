@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:44:44Z",
+ "created_at": "2026-11-26T22:44:46Z",
  "rows": [
   {
    "also": [],
@@ -86,6 +86,22 @@
   {
    "also": [],
    "children": [
+    "CL17",
+    "CL49",
+    "CL50",
+    "CL53"
+   ],
+   "parent": "",
+   "part": "P-takeover",
+   "post": "cl17-a-crashed-part-is-continued-from-its-las",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
     "D0",
     "D3",
     "D2",
@@ -136,22 +152,6 @@
    "prompt": "",
    "session": "",
    "state": "running",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [
-    "CL17",
-    "CL49",
-    "CL50",
-    "CL53"
-   ],
-   "parent": "",
-   "part": "P-takeover",
-   "post": "cl17-a-crashed-part-is-continued-from-its-las",
-   "prompt": "",
-   "session": "",
-   "state": "idle",
    "store": []
   },
   {
@@ -1089,5 +1089,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T22:44:44Z"
+ "updated_at": "2026-11-26T22:44:46Z"
 }

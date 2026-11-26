@@ -5,6 +5,7 @@
  "from": "orchestrator",
  "part": "CL52",
  "planned_by": "orchestrator",
+ "priority": 2,
  "runner": "claude-web",
  "status": "planned",
  "subtasks": [
@@ -33,5 +34,5 @@
  "task": "Tests clean up after themselves: /tmp held about 5,600 folders left by test runs (cl30-inst-*, tmp*, kit-tests-*, scratch boards), each with a project copy and its own board token, on a computer with little room.\n\n1. Count what each suite leaves in the temp folder (run it, compare before and after) and fix the suites that leave anything: TemporaryDirectory or cleanup on every path, failures included.\n2. run_all_tests.py runs suites with their own temp folder (TMPDIR under one run folder) and removes it at the end; what a suite left is named in its result line, like the files it writes to ~/.local/bin.\n3. One command removes the leftovers of past runs (only folders the test runs make, by their prefixes and age), with a dry run listing them first.\n",
  "title": "Tests clean up after themselves",
  "train": "board-data",
- "updated_at": "2026-11-26T22:13:20Z"
+ "updated_at": "2026-11-26T22:44:50Z"
 }
