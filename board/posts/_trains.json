@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:42:24Z",
+ "created_at": "2026-11-26T21:47:58Z",
  "rows": [
   {
    "also": [],
@@ -69,7 +69,11 @@
   {
    "also": [],
    "children": [
-    "CL45"
+    "CL45",
+    "CL46",
+    "CL47",
+    "CL48",
+    "CL51"
    ],
    "parent": "",
    "part": "P-board-data",
@@ -126,6 +130,20 @@
    "parent": "",
    "part": "P-runners",
    "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "CL49",
+    "CL50"
+   ],
+   "parent": "",
+   "part": "P-takeover",
+   "post": "cl49-a-part-reaches-the-orchestrator-running",
    "prompt": "",
    "session": "",
    "state": "idle",
@@ -838,8 +856,8 @@
    "part": "M5",
    "post": "m5-a-resume-prints-only-what-changed",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGkn9yVt5GC18jwJYPp",
+   "state": "running",
    "store": []
   },
   {
@@ -849,8 +867,8 @@
    "part": "M6",
    "post": "m6-the-usage-ledger-counts-cost-per-command",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGghTLsK8hDwkg9LrM1",
+   "state": "running",
    "store": []
   },
   {
@@ -871,8 +889,8 @@
    "part": "M7",
    "post": "m7-every-memory-entry-is-checked-against-re",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGhgJf3d79GsK2UopnQ",
+   "state": "running",
    "store": []
   },
   {
@@ -942,8 +960,74 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-board-data",
+   "part": "CL46",
+   "post": "cl46-end-session-says-why-a-push-failed",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-board-data",
+   "part": "CL47",
+   "post": "cl47-cl41-s-redirect-resolved-so-the-trunk-ca",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-board-data",
+   "part": "CL48",
+   "post": "cl48-a-test-never-writes-to-the-real-board",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-takeover",
+   "part": "CL49",
+   "post": "cl49-a-part-reaches-the-orchestrator-running",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-takeover",
+   "part": "CL50",
+   "post": "cl50-a-part-launched-in-the-background-knows",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-board-data",
+   "part": "CL51",
+   "post": "cl51-a-session-on-a-computer-never-writes-to",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T21:42:24Z"
+ "updated_at": "2026-11-26T21:47:58Z"
 }
