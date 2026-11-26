@@ -294,6 +294,22 @@ class Live(unittest.TestCase):
         self.run_("kit.py", "sub", pid, "One", "more")                                                   # a new one takes the next number
         self.assertEqual((self.get(pid)["subtasks"][3]["title"], rows()[3]), ("One more", (4, "open")))
 
+    def test_a_piece_done_that_not_checked_names_is_refused(self):
+        # CL42: piece 3 asked for "another repository, another environment, network off"; not_checked listed exactly those, piece done
+        k = load("kit_unchecked", "scripts/kit.py")
+        task = ("1. List the connectors with their number of tools\n2. Change one thing at a time (another repository, another environment, "
+                "network off) and say which decides\n3. Answer in this post")
+        p = {"id": "c42", "task": task, "subtasks": [dict(x, status="done") for x in k.task_pieces(task)],
+             "not_checked": ["network off, another repository, another environment (stored settings)", "exact tokens for each connector"]}
+        why = k.pieces_unchecked(p)
+        self.assertEqual(len(why), 1, why)
+        self.assertTrue(why[0].startswith("piece 2 is marked done") and "--status drop --why" in why[0], why)
+        p["subtasks"][1]["status"] = "dropped"                                     # said not done, with its reason: passes
+        self.assertEqual(k.pieces_unchecked(p), [])
+        p["subtasks"][1]["status"] = "done"
+        p["not_checked"] = ["the page on a phone", "nothing else"]                 # a limit that is no piece: passes
+        self.assertEqual(k.pieces_unchecked(p), [])
+
     def test_what_a_part_does_now_reaches_its_step_with_no_model_call(self):
         task = "Maps.\n\n1. docs/a.md : the sky\n2. Write `docs/b.md`\n3. Check them"
         pid = json.loads(self.run_("kit.py", "step", "new", "--train", "t", "--part", "M1", "--title", "maps", "--task", task).stdout.splitlines()[-1])["post"]

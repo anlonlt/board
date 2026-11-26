@@ -3929,6 +3929,7 @@ def done(pid, db_path=None, root=None):
     e_h, n_h = check_his_words(pid, p, db_path=db_path)
     err += e_h + plain_notes(p)
     warn += n_h
+    err += pieces_unchecked(p)                       # CL42: a piece done that not_checked says was not done
     left = pieces_open(p)
     if left:
         err.append("pieces still open: %s. Finished: `python3 -I .kit/kit.py sub %s %s --status done`; not needed: `--status drop --why \"...\"`" % (
@@ -6523,6 +6524,36 @@ def pieces_of(p):
 
 def pieces_open(p):
     return [x for x in pieces_of(p) if x.get("status") not in ("done", "dropped")]
+
+
+_PLAIN_WORDS = set("""that this with from what when where which while each every their there them they then than your have here
+other about into over under only also just more most some such both does done make made must were will would could should after
+before again once very much many like said says thing things time times part step post piece pieces run runs""".split())
+
+
+def _words(t):
+    return {w[:-1] if len(w) > 4 and w.endswith("s") and not w.endswith("ss") else w
+            for w in re.findall(r"[a-z]{4,}", str(t or "").lower())} - _PLAIN_WORDS
+
+
+def pieces_unchecked(p):
+    """A piece marked done that the post's own not_checked names (CL42: piece 3 asked for "another repository, another environment,
+    network off", and not_checked listed exactly those while the piece was done). Errors: finish it, or drop it with the reason."""
+    task = re.sub(r"(?ms)^\s*```.*?^\s*```\s*$", "", str(p.get("task") or ""))
+    lines = {int(n): t for n, t in re.findall(r"(?m)^(\d{1,2})[.)][ \t]+(\S.*)$", task)}
+    out = []
+    for x in pieces_of(p):
+        if x.get("status") != "done":
+            continue
+        mine = _words(lines.get(x["n"]) if x.get("from") == "task" and lines.get(x["n"]) else x.get("title"))
+        for nc in _as_list(p.get("not_checked")):
+            both = mine & _words(nc)
+            if len(both) >= 3 and len(both) >= 0.4 * len(mine):
+                out.append("piece %d is marked done, but not_checked says %r (both name: %s). Do it, or say it is not done: "
+                           "`python3 -I .kit/kit.py sub %s %d --status drop --why \"...\"`" % (
+                               x["n"], str(nc)[:90], ", ".join(sorted(both)[:5]), p.get("id") or "<post>", x["n"]))
+                break
+    return out
 
 
 def subtask(pid, title, status="open", was="", db_path=None, why="", known=False):

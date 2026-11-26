@@ -62,7 +62,7 @@
  ".kit/git_watch.py": "0573bbb27c983c40a7394b695944b92068f69f15611561ee384e4e2ac9a0b08c",
  ".kit/handover.py": "3a4d2e9236b704fb4c0d49f8151badf29a080594c989ff63fccd0d64acda5110",
  ".kit/hook.py": "2c1f20b0c9bfca910e8c39c78128375eafc380f1aef1992233432976b0d537f6",
- ".kit/hooks/kit_activity.py": "6fc2feee5835fc2f11af764bcb2529c5bcadbcb764b77b96e437b902b6e01021",
+ ".kit/hooks/kit_activity.py": "9c070bb9dc6d326622b932765fd8891ae2f86d467b90eaf2c1c4a89542105f15",
  ".kit/hooks/kit_board_guard.py": "727e4a3fe57ca314f2bc4c4ebc8f19c2bb76f52eb00a46791d0dc1cfd719b0f0",
  ".kit/hooks/kit_board_typing.py": "b96bc2ffa26ede4d87dcf018d67092f5c9fb8d07c196d4c6f88843340d4811a9",
  ".kit/hooks/kit_brief_guard.py": "01f933f35ae79415a65e17519897cbe3b8348f6fcc452667c56ec94475359a6b",
@@ -81,7 +81,7 @@
  ".kit/hooks/kit_web_save.py": "74229a81f846eb4ccb4bd8834d320e3adb605458ed49534cce1916eb0237bbf6",
  ".kit/hooks/kit_wip.py": "f3b9f3b4e4526021fc6eb267787edc7a063f82edec5caed739c080f30f6a2eb9",
  ".kit/hooks/test_hooks.py": "487824a6897aa64469b47a57ab7ef15101d9337f94be5bc6cb58cde3751281aa",
- ".kit/kit.py": "b420add30049b5d3322083a96d0c4cc215104003ff2157427fda0fd03273a96a",
+ ".kit/kit.py": "f8505469ec722ae3b444cc9d066cb97847c5866fe90e1e6afb06edd19c6929ae",
  ".kit/kit_artifact_sync.py": "64760e0f0ff2e3e3aca193ddcbbf501ec30474179b5ea838a4e34dc5b8b2ca67",
  ".kit/kit_cards.py": "f7352a5317a42f958167146364539996603f8f8926a12da71f36ef6d4fa07ca8",
  ".kit/kit_import.py": "7ee7050f20af4343885704ca613b86945472e9ceec08ec8e0fb47645578ba809",
@@ -104,5 +104,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "e1b282847457310ea4317ef717ebb9d4ae8a743a77201e154c53c23ac05e74a1",
- "_kit_commit": "309ba6c 2026-11-25T19:17:58-05:00"
+ "_kit_commit": "0703d5e 2026-11-25T21:04:01-05:00"
 }
