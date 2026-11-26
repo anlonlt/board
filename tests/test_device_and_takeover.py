@@ -30,7 +30,24 @@ def chromebook(running, avail=2300, env=None, store=None):
     return device.survey(env=env or {}, mem=mem, procs=[(1, 450, "claude")], running=running, store=store or {})
 
 
-class DeviceCap(unittest.TestCase):
+class NoRealJobs(unittest.TestCase):
+    """The gate counts the memory that real jobs on this machine reserved (a test run registers itself as one): these
+    cases read an empty jobs folder instead (XDG_CONFIG_HOME, which the guard's own copy of device.py reads too)."""
+
+    def setUp(self):
+        self._cfg = tempfile.TemporaryDirectory()
+        self._xdg = os.environ.get("XDG_CONFIG_HOME")
+        os.environ["XDG_CONFIG_HOME"] = self._cfg.name
+
+    def tearDown(self):
+        if self._xdg is None:
+            os.environ.pop("XDG_CONFIG_HOME", None)
+        else:
+            os.environ["XDG_CONFIG_HOME"] = self._xdg
+        self._cfg.cleanup()
+
+
+class DeviceCap(NoRealJobs):
     def test_meminfo_parsed(self):
         with tempfile.NamedTemporaryFile("w", delete=False) as fh:
             fh.write("MemTotal:        2845696 kB\nMemFree: 100 kB\nMemAvailable:    2359296 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n")
@@ -97,7 +114,7 @@ class SessionsAskedOnce(unittest.TestCase):
             self.assertIsNone(kit._alive_sessions())
 
 
-class GuardCap(unittest.TestCase):
+class GuardCap(NoRealJobs):
     def test_counts_only_real_launches(self):
         self.assertEqual(guard.session_launches('KIT_ROLE=part claude --bg -n a -w b "x"'), 1)
         self.assertEqual(guard.session_launches('python3 -I .kit/device.py --gate && KIT_ROLE=part claude --bg -n a "x"'), 1)

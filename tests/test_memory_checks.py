@@ -37,13 +37,14 @@ class Project(unittest.TestCase):
         (self.root / "src").mkdir()
         (self.root / "tests" / "test_rule.py").write_text(PASSING)
         (self.root / "src" / "cmd.py").write_text("def go():\n    raise SystemExit('REFUSED: write the post with kit.py form')\n")
-        (self.root / "kit" / "lessons.md").write_text(
+        (self.root / ".board" / "memory" / "lessons").mkdir(parents=True)
+        self.les = self.root / ".board" / "memory" / "lessons" / "kit.md"      # the project's own lessons
+        self.les.write_text(
             "# lessons\n\n"
             "## K1: tested\nroles: part\nfrom: CL1 2026-11-01\ncheck: test:tests/test_rule.py::T.test_holds\nThe text.\n\n"
             "## K2: code\nroles: part\ncheck: code:src/cmd.py#def go\nThe code does it.\n\n"
             "## K3: refusal\nroles: part\ncheck: refusal:src/cmd.py#REFUSED: write the post\nThe command refuses.\n\n"
             "## K4: nothing runs it\nroles: part, orchestrator\nfrom: CL4 2026-10-05\nRead the guide first.\n")
-        (self.root / ".board" / "memory" / "lessons").mkdir(parents=True)
         for k, v in (("ROOT", str(self.root)), ("CONFIG", {})):
             p = mock.patch.object(kit, k, v)
             p.start()
@@ -94,7 +95,7 @@ class ChecksRun(Project):
         self.assertIn("src/cmd.py no longer exists", self.checks(run=False)["K2"]["why"])
 
     def test_a_hook_check(self):
-        (self.root / "kit" / "lessons.md").write_text("## H1: hooked\nroles: part\ncheck: hook:kit_guard.py\nText.\n")
+        self.les.write_text("## H1: hooked\nroles: part\ncheck: hook:kit_guard.py\nText.\n")
         self.assertEqual(self.checks(run=False)["H1"]["status"], "fail")
         (self.root / "kit" / "hooks").mkdir()
         (self.root / "kit" / "hooks" / "kit_guard.py").write_text("")
@@ -195,6 +196,54 @@ class OrchestratorLine(Project):
 
     def test_tests_never_run_here_are_said_so(self):
         self.assertIn("1 whose tests have not run here", kit.memory_line())
+
+
+class AProjectLikeHarmonize(unittest.TestCase):
+    """The orchestrator's real run on Harmonize (2026-11-26): the kit's installed lessons (.kit/lessons.md) named the kit's
+    own tests, absent there (8 failing, exit 1), and .story/lessons/<date>-<slug>.md files were not counted."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / ".kit").mkdir()
+        (self.root / ".kit" / "lessons.md").write_text((ROOT / "kit" / "lessons.md").read_text())   # the kit's, as installed
+        les = self.root / ".story" / "lessons"
+        les.mkdir(parents=True)
+        (les / "2026-10-03-compact-red.md").write_text("# Compact went red\n\nSymptom: the story checker failed.\nCause: x.\n"
+                                                      "Remedy: the checker runs before compact.\ncheck: code:tools/story_checker.py\n")
+        (les / "2026-11-12-launch-twice.md").write_text("# A step launched twice\n\nSymptom: two sessions on one post.\nRemedy: launch claims the post.\n")
+        (self.root / "tools").mkdir()
+        (self.root / "tools" / "story_checker.py").write_text("")
+        for k, v in (("ROOT", str(self.root)), ("CONFIG", {})):
+            p = mock.patch.object(kit, k, v)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def cli(self, *argv):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = kit.main(list(argv))
+        return rc, buf.getvalue()
+
+    def test_the_kits_lessons_are_not_failed_here_and_the_story_lessons_count(self):
+        r = {x["id"]: x["status"] for x in kit.memory_checks(run=True)}
+        self.assertEqual({k for k, v in r.items() if v == "kit"}, {"K1", "K2", "K4", "K5", "K6", "K7", "K8", "K9"})
+        self.assertEqual(r["2026-10-03-compact-red"], "ok")
+        self.assertEqual(r["2026-11-12-launch-twice"], "unchecked")
+        self.assertNotIn("fail", r.values())
+        rc, out = self.cli("lessons", "check")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("UNCHECKED: 2026-11-12-launch-twice since 2026-11-12", out)
+        self.assertIn("Memory: 3 entries: 1 checked, 0 failing, 2 unchecked", out)        # K3 + the unchecked story lesson
+        self.assertIn("the kit's own 8 checked lessons are run in the kit's repo", out)
+        lines = "\n".join(kit._lesson_lines(kit.lessons_for("part")))
+        self.assertNotIn("FAILS", lines)
+
+    def test_a_story_lesson_whose_code_is_gone_fails(self):
+        (self.root / "tools" / "story_checker.py").unlink()
+        rc, out = self.cli("lessons", "check")
+        self.assertEqual(rc, 1)
+        self.assertIn("REFUSED: 2026-10-03-compact-red", out)
 
 
 class KitsOwnMemory(unittest.TestCase):

@@ -461,7 +461,9 @@ def fits(available_mb, reserved_mb, need_mb, headroom_mb, others_running):
 
 
 def jobs_dir():
-    return os.path.join(os.path.dirname(store_path()), "jobs")
+    # KIT_JOBS_DIR: the test runner gives its suites their own (empty) folder, so a gate a test calls never counts the
+    # memory the test run itself reserved
+    return os.environ.get("KIT_JOBS_DIR") or os.path.join(os.path.dirname(store_path()), "jobs")
 
 
 def _alive(pid):
