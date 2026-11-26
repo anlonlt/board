@@ -1,0 +1,32 @@
+{
+ "created_at": "2026-11-26T21:51:00Z",
+ "files": [
+  {
+   "id": "eee28f0374d75a5596d9bf1fdc158f22",
+   "name": "antigravity-web-adaptation.patch",
+   "size": 87515,
+   "type": "text/x-diff"
+  },
+  {
+   "id": "7541103a4744547fad1723df122e7486",
+   "name": "antigravity_web.py",
+   "size": 19514,
+   "type": "text/x-python"
+  },
+  {
+   "id": "15b2d4c4030f43b0916ec80a6e66399c",
+   "name": "test_antigravity_web.py",
+   "size": 13365,
+   "type": "text/x-python"
+  },
+  {
+   "id": "78fd34b9d9a1e49cfd93e1ac5e316248",
+   "name": "r1-review-bundle.md",
+   "size": 3353,
+   "type": "text/markdown"
+  }
+ ],
+ "from": "R1",
+ "post_id": "r1-antigravity-on-the-web-how-far-it-runs-t",
+ "text": "Attached Antigravity-on-the-web adaptation patch (branch part-r1-antigravity-web @ f186217), standalone adapter script, test suite, and review guide as blobs for another session to review."
+}

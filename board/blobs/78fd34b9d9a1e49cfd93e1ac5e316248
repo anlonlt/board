@@ -1,0 +1,46 @@
+# R1 Review Bundle — Antigravity on the Web Direct Kit Support & Adapter
+
+- **Branch:** `origin/part-r1-antigravity-web`
+- **Commit:** `f186217` (based on `feat/streamline-doctor-memory` @ `9b68e8d`)
+- **Board post:** `r1-antigravity-on-the-web-how-far-it-runs-t`
+
+## What changed
+1. **Direct kit support (`scripts/kit.py`, `kit/web_takeover.py`, synced to `.kit/`):**
+   - `is_antigravity_web()` / `_is_antigravity_web()` detection (`ANTIGRAVITY_APP_DATA_DIR`, `JULES_SESSION_ID`, `AGY_WEB`; Claude Code remote keeps precedence).
+   - `ensure_mirror_ref()` in `web_takeover.py` fetches `+refs/heads/<branch>:refs/remotes/origin/<branch>` explicitly so single-branch clones still resolve `origin/board-mirror`.
+   - `sync_db()` tracks `db_origin` (`host:first_seq@at`) and requires `latest_seq >= last_seq` before using delta mode, preventing fresh container DBs from silently dropping writes when another host's `db_seq` is higher/equal; also exports blobs in delta mode when `--with-blobs` is set.
+   - `_restore_mirror_blobs()` in `kit.py` + `reconcile()` restores missing `board/blobs/<hex>` and `.json` metadata from `origin/board-mirror` into local `.kit/board_data/blobs/`.
+   - `done()` accepts `KIT_BOARD_TRANSPORT=mirror` on non-Claude runners that lack `ArtifactData` (leaving default O53/CL28 guards untouched).
+   - `web_takeover.py save` adds `--allow-mirror-push` and `--with-blobs`, reconciling against `origin/board-mirror` first so concurrent writes are never clobbered.
+2. **Standalone adapter (`kit/antigravity_web.py`, installed to `.kit/antigravity_web.py` via `install.py`):**
+   - One-command workflow for `start`, `resume`, `tasklist`, `train`, `sub`, `comment`, `attach` (uploads `/_blob/<id>`, wires `files`, `artifacts`, body links, and optional comment), `done`, `save` (reconcile + `_dashboard` guard + `sync-db --full --with-blobs --commit` + push), and `status`.
+3. **Tests (`tests/test_antigravity_web.py`):**
+   - Covers runner detection, fresh-container `sync_db` regression, `_restore_mirror_blobs`, single-branch `ensure_refs`, and live ephemeral `board_server.py` blob upload/attach.
+
+## Verification results
+- `tests/test_antigravity_web.py`: 5/5 OK
+- `scripts/test_kit.py`: 0 failed
+- `tests/test_device_and_takeover.py`: 24/24 OK
+- `tests/test_cl32_roles.py`: 26/26 OK
+- `tests/test_new_install.py`: 7/7 OK
+- `test_install.py`: 0 failed
+- `test_install_bd11.py`: 0 failed
+- `kit/board/test_board_local.py`: 0 failed
+- `kit/board/test_kit_cards.py`: 0 failed
+- `kit/board/test_strings.py`: 0 failed
+- `kit/board/test_page_layout.js`: 0 failed
+- 24 additional suites via `python3 scripts/run_all_tests.py`: 24 passed (`tests/test_cl44_agy_runtime.py` passes 20/20 standalone; fails only inside `run_all_tests.py`'s `device.py` wrapper due to pre-existing `4f08baa` reservation interaction in `Bug12DeviceGateRecheck`).
+
+## How another session reviews / adopts this
+```bash
+# Option A: review directly from git branch
+git fetch origin part-r1-antigravity-web
+git diff feat/streamline-doctor-memory..origin/part-r1-antigravity-web
+
+# Option B: apply directly from the attached blob patch
+python3 -I .kit/board_cli.py asset read <PATCH_BLOB_ID> --out /tmp/antigravity-web-adaptation.patch
+git am /tmp/antigravity-web-adaptation.patch
+
+# Re-run the new tests
+python3 -m unittest -v tests/test_antigravity_web.py
+```

@@ -1,6 +1,7 @@
 {
- "cursor": "2026-11-26T21:48:13Z",
- "db_seq": 688,
+ "cursor": "2026-11-26T21:51:03Z",
+ "db_origin": "devbox:1@2026-11-26T21:20:10Z",
+ "db_seq": 368,
  "log": [
   {
    "at": "2026-11-20T02:51:15Z",
@@ -3905,6 +3906,17 @@
    "posts": 90,
    "posts_removed": 0,
    "posts_written": 2,
+   "removed": 0
+  },
+  {
+   "at": "2026-11-26T21:51:03Z",
+   "changed": 0,
+   "comments_read": 168,
+   "full": true,
+   "new": 1,
+   "posts": 90,
+   "posts_removed": 0,
+   "posts_written": 3,
    "removed": 0
   }
  ]
