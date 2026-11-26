@@ -206,7 +206,7 @@ class Parity(unittest.TestCase):
     def test_the_table_is_what_each_runtime_had(self):
         """The lines as they were written by hand before the table (53f23c4): no hook gained, lost or narrowed."""
         count = {rt: len(hook.rows(rt)) for rt in hook.RUNTIMES}
-        self.assertEqual(count, {"web": 30, "cli": 26, "agy": 20})  # cli 26: no cards reminder (its board server builds the cards);          # cli, web (CL41) and agy (CL43): + what a part does now (3; agy + PostInvocation loop delivery); each: + the work saved (2); web: + the board saved and the hand-over at Stop; 53f23c4's 21, 20, 15 (agy: guard's two tools on one row) + the task list's two; cli - the cards reminder (its board server builds the cards)
+        self.assertEqual(count, {"web": 30, "cli": 26, "agy": 23})          # cli 26 (no cards reminder: server builds cards), web 30 (CL41), agy 23 (CL43/CL44: + PostInvocation loop & memory JIT + PostToolUse update_steps + Stop kit_usage)
         self.assertEqual([r[2] for r in hook.rows("cli", "Stop")].count("kit_web_save.py"), 1)
         self.assertEqual([r[2] for r in hook.rows("cli", "Stop")].count("kit_pre_compact.py"), 1)
         self.assertTrue(all(g == (ev in ("PreToolUse", "TaskCompleted")) or f in ("kit_memory_jit.py", "kit_activity.py") for ev, f, _, g, _ in hook.TABLE))  # they inform, never refuse
@@ -460,7 +460,7 @@ class Install(unittest.TestCase):
                 for f in set(re.findall(r"hooks/kit/(kit_\w+\.py)", text)):
                     self.assertTrue((self.t / ".agents" / "hooks" / "kit" / f).is_file(), f)
                 if extra:
-                    self.assertNotIn("PostInvocation", text)
+                    self.assertNotIn("PreInvocation", text)  # board-only event; PostInvocation carries kit_memory_jit.py (memory)
 
 
 if __name__ == "__main__":

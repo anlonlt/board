@@ -169,6 +169,89 @@ if [ "$HAS_ORCH" -eq 1 ] && [ "$BOARD_ONLY" -eq 0 ]; then
   export CLAUDE_CODE_TASK_LIST_ID="${CLAUDE_CODE_TASK_LIST_ID:-$(basename "$ROOT")-orchestrator}"   # its successor opens the same task list
 fi
 
+AGY_MODE_ARGS=()
+resolve_agy_mode() {
+  local want="${KIT_AGY_MODE:-}"
+  if [ -z "$want" ] && [ -f ".kit/config.json" ]; then
+    want="$(python3 -I -c 'import json; print((json.load(open(".kit/config.json")).get("kit") or {}).get("agy_mode") or "")' 2>/dev/null || true)"
+  fi
+  [ -z "$want" ] && want="auto"
+  local help_txt
+  help_txt="$(agy --help 2>&1 || true)"
+  case "$want" in
+    accept-edits)
+      AGY_MODE_ARGS=(--mode accept-edits)
+      return 0
+      ;;
+    skip-permissions|bypass|dangerously-skip-permissions)
+      AGY_MODE_ARGS=(--dangerously-skip-permissions)
+      return 0
+      ;;
+    interactive|default)
+      AGY_MODE_ARGS=()
+      return 0
+      ;;
+    auto)
+      ;;
+    *)
+      echo "ERROR: unknown KIT_AGY_MODE / kit.agy_mode '${want}' (use auto, accept-edits, skip-permissions, or interactive)." >&2
+      exit 1
+      ;;
+  esac
+
+  local unavail=""
+  local has_mode_flag=0 has_auto=0 has_accept_edits=0 has_print_timeout=0
+  printf '%s\n' "$help_txt" | grep -q -- '--mode' && has_mode_flag=1
+  printf '%s\n' "$help_txt" | grep -Eq -- '--mode.*\bauto\b|\bauto\b.*--mode' && has_auto=1
+  printf '%s\n' "$help_txt" | grep -q -- 'accept-edits' && has_accept_edits=1
+  printf '%s\n' "$help_txt" | grep -q -- '--print-timeout' && has_print_timeout=1
+
+  if [ -z "$help_txt" ]; then
+    AGY_MODE_ARGS=(--mode auto)
+    return 0
+  fi
+  if [ "$has_mode_flag" -eq 0 ] || [ "$has_auto" -eq 0 ]; then
+    unavail="flag not supported by this agy binary"
+  else
+    local cache_file="${KIT_AGY_MODE_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/board-kit/agy-mode-auto}"
+    local bin_path bin_sig cached_state=""
+    bin_path="$(command -v agy 2>/dev/null || echo agy)"
+    bin_sig="$(python3 -I -c 'import os,sys; p=sys.argv[1]; st=os.stat(p); tok=os.path.expanduser("~/.gemini/antigravity-cli/antigravity-oauth-token"); ts=int(os.stat(tok).st_mtime) if os.path.exists(tok) else 0; print("%s:%d:%d:%d" % (p, int(st.st_mtime), st.st_size, ts))' "$bin_path" 2>/dev/null || echo "$bin_path")"
+    if [ "${KIT_AGY_AUTO_PROBE:-1}" != "0" ] && [ -f "$cache_file" ]; then
+      cached_state="$(python3 -I -c 'import json,sys,time; d=json.load(open(sys.argv[1])); print(d.get("state","") if d.get("sig")==sys.argv[2] and time.time()-float(d.get("at",0))<86400 else "")' "$cache_file" "$bin_sig" 2>/dev/null || true)"
+    fi
+    if [ "$cached_state" = "unavailable" ]; then
+      unavail="not available for this account (cached)"
+    elif [ "$cached_state" != "available" ] && [ "${KIT_AGY_AUTO_PROBE:-1}" != "0" ]; then
+      local probe_out="" to_cmd=""
+      command -v timeout >/dev/null 2>&1 && to_cmd="timeout 10"
+      if [ "$has_print_timeout" -eq 1 ]; then
+        probe_out="$($to_cmd agy --mode auto --print-timeout 1ms -p "ping" </dev/null 2>&1 || true)"
+      fi
+      if printf '%s\n' "$probe_out" | grep -Eiq '(--mode auto is (not available|unavailable)|unknown flag.*--mode|invalid.*mode.*auto)'; then
+        unavail="not available for this account"
+        mkdir -p "$(dirname "$cache_file")" 2>/dev/null || true
+        python3 -I -c 'import json,sys,time; open(sys.argv[1],"w").write(json.dumps({"sig":sys.argv[2],"state":"unavailable","at":time.time()}))' "$cache_file" "$bin_sig" 2>/dev/null || true
+      elif [ "$has_print_timeout" -eq 1 ] && [ -n "$probe_out" ]; then
+        mkdir -p "$(dirname "$cache_file")" 2>/dev/null || true
+        python3 -I -c 'import json,sys,time; open(sys.argv[1],"w").write(json.dumps({"sig":sys.argv[2],"state":"available","at":time.time()}))' "$cache_file" "$bin_sig" 2>/dev/null || true
+      fi
+    fi
+  fi
+
+  if [ -n "$unavail" ]; then
+    if [ "$has_accept_edits" -eq 1 ]; then
+      echo "kit/up: agy --mode auto is unavailable (${unavail}); using --mode accept-edits instead (set KIT_AGY_MODE=interactive for default mode or KIT_AGY_MODE=skip-permissions for full unattended mode)." >&2
+      AGY_MODE_ARGS=(--mode accept-edits)
+    else
+      echo "ERROR: agy --mode auto is unavailable (${unavail}) and --mode accept-edits is not supported. Set KIT_AGY_MODE=interactive (default interactive mode) or KIT_AGY_MODE=skip-permissions to launch anyway." >&2
+      exit 1
+    fi
+  else
+    AGY_MODE_ARGS=(--mode auto)
+  fi
+}
+
 if [ "$CLI" = "claude" ]; then
   # Unattended like `agy --mode auto`; kit_guard.py (PreToolUse on Bash) still blocks destructive commands.
   # The mode is kit.claude_permission_mode (default best: every check off once he accepted it, else auto): the clerk and parts use the same one.
@@ -183,7 +266,8 @@ if [ "$CLI" = "claude" ]; then
   [ "$HAS_ORCH" -eq 1 ] && [ "$BOARD_ONLY" -eq 0 ] && NAME_ARGS=(-n "${CNAME}-orchestrator")
   LAUNCH=(claude --permission-mode "$CMODE" "${AC_ARGS[@]}" ${NAME_ARGS[@]+"${NAME_ARGS[@]}"} "$PROMPT")
 else
-  LAUNCH=(agy --mode auto -i "$PROMPT")
+  resolve_agy_mode
+  LAUNCH=(agy ${AGY_MODE_ARGS[@]+"${AGY_MODE_ARGS[@]}"} -i "$PROMPT")
 fi
 if [ "$CLI" = "claude" ]; then
   # Background sessions (the clerk, the parts) never ask for folder trust: `claude --bg` refuses an untrusted
@@ -206,6 +290,6 @@ while :; do
   if [ "$CLI" = "claude" ]; then
     LAUNCH=(claude --permission-mode "$CMODE" "${AC_ARGS[@]}" ${NAME_ARGS[@]+"${NAME_ARGS[@]}"} "$NEXT_PROMPT")
   else
-    LAUNCH=(agy --mode auto -i "$NEXT_PROMPT")
+    LAUNCH=(agy ${AGY_MODE_ARGS[@]+"${AGY_MODE_ARGS[@]}"} -i "$NEXT_PROMPT")
   fi
 done

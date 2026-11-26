@@ -238,17 +238,22 @@ class MemoryJitHookAndDispatcher(unittest.TestCase):
         p_other = dict(p_claude, session_id="sess-jit-2-%d" % os.getpid(), tool_input={"file_path": str(self.root / "README.md")})
         self.assertIsNone(self._run_jit(p_other))
 
-        # agy payload
+        # agy payload (CL44 item 9): PreToolUse emits only {"decision": "allow"} (agy protojson rejects injectSteps
+        # on PreToolUse) and queues the JIT note for PostInvocation.
+        conv = "conv-jit-%d" % os.getpid()
         p_agy = {
             "cwd": str(self.root),
-            "conversationId": "conv-jit-%d" % os.getpid(),
+            "conversationId": conv,
             "hookEventName": "PreToolUse",
             "toolCall": {"name": "edit_file", "args": {"Path": str(self.root / "kit" / "board" / "board.template.html")}},
         }
         out_agy = self._run_jit(p_agy)
         self.assertIsNotNone(out_agy)
-        self.assertEqual(out_agy["decision"], "allow")
-        self.assertIn("Test phone width 411px", out_agy["injectSteps"][0]["systemMessage"]["systemMessage"])
+        self.assertEqual(out_agy, {"decision": "allow"})
+        out_post = self._run_jit({"cwd": str(self.root), "conversationId": conv, "hookEventName": "PostInvocation"})
+        self.assertIsNotNone(out_post)
+        self.assertIn("Test phone width 411px", out_post["injectSteps"][0]["systemMessage"]["systemMessage"])
+        self.assertIsNone(self._run_jit({"cwd": str(self.root), "conversationId": conv, "hookEventName": "PostInvocation"}))
 
 
     def test_jit_respects_the_role_and_is_silent_for_the_clerk(self):

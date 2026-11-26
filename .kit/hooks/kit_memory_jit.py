@@ -109,11 +109,51 @@ def lessons(root, mdir, rel_paths, role):
     return out
 
 
+def _pending_file(root, data):
+    sid = (data.get("conversationId") or data.get("conversation_id") or data.get("session_id")
+           or os.environ.get("KIT_SESSION_ID") or "agy")
+    h = hashlib.sha1((str(root) + "|" + str(sid)).encode("utf-8")).hexdigest()[:12]
+    return os.path.join(root, ".kit", "run", "memory-jit", "%s.json" % h)
+
+
+def _queue_pending(root, data, msg):
+    p = _pending_file(root, data)
+    try:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        try:
+            items = json.load(open(p, encoding="utf-8"))
+            if not isinstance(items, list):
+                items = []
+        except (OSError, ValueError):
+            items = []
+        if msg not in items:
+            items.append(msg)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(items, fh, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def _pop_pending(root, data):
+    p = _pending_file(root, data)
+    try:
+        items = json.load(open(p, encoding="utf-8"))
+        os.unlink(p)
+        return items if isinstance(items, list) else []
+    except (OSError, ValueError):
+        return []
+
+
 def handle(data):
     role = os.environ.get("KIT_ROLE", "").strip().lower() or None
     if role == "clerk":
         return None
     root = project_dir(data)
+    if str(data.get("hookEventName") or "") == "PostInvocation":
+        items = _pop_pending(root, data)
+        if not items:
+            return None
+        return {"injectSteps": [{"systemMessage": {"systemMessage": m}} for m in items]}
     raw_paths = _target_paths(data)
     if not raw_paths:
         return None
@@ -144,7 +184,9 @@ def handle(data):
     msg = "\n".join(lines)
     if is_claude_payload(data):
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": msg}}
-    return {"decision": "allow", "injectSteps": [{"systemMessage": {"systemMessage": msg}}]}
+    # CL44 (item 9): agy PreToolUse protojson rejects `injectSteps`; queue for PostInvocation and return decision only.
+    _queue_pending(root, data, msg)
+    return {"decision": "allow"}
 
 
 def main():

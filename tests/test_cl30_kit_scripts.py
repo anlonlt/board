@@ -182,7 +182,9 @@ class Gap3FreshCopyAndSentChanges(unittest.TestCase):
         self.art = self.p / ".kit" / "run" / "artifact"
 
     def kit_env(self):
-        return dict(os.environ, KIT_ARTIFACT_DIR=str(self.art), KIT_ARTIFACT_URL=ART, KIT_ARTIFACT_PREFIX="")
+        env = dict(os.environ, KIT_ARTIFACT_DIR=str(self.art), KIT_ARTIFACT_URL=ART, KIT_ARTIFACT_PREFIX="")
+        env.pop("KIT_STALE_OK", None)
+        return env
 
     def test_resume_refuses_a_copy_never_loaded_or_stale(self):
         cfg = self.p / ".kit" / "config.json"
@@ -201,6 +203,9 @@ class Gap3FreshCopyAndSentChanges(unittest.TestCase):
 
     def test_a_fresh_copy_passes_the_gate(self):
         k = load("kit_cl30_g3", ROOT / "scripts" / "kit.py")
+        prev_stale = os.environ.pop("KIT_STALE_OK", None)
+        if prev_stale is not None:
+            self.addCleanup(os.environ.__setitem__, "KIT_STALE_OK", prev_stale)
         os.environ.update(KIT_ARTIFACT_DIR=str(self.art), KIT_ARTIFACT_URL=ART)
         self.addCleanup(os.environ.pop, "KIT_ARTIFACT_DIR", None)
         self.addCleanup(os.environ.pop, "KIT_ARTIFACT_URL", None)

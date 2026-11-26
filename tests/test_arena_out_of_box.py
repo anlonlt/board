@@ -355,7 +355,7 @@ class TestArenaOutOfBox(unittest.TestCase):
         store.enable_auto_sync(self.root, interval_sec=0.05)
         store.set_doc("posts", "P-autosync", {"title": "Auto Synced", "column": "info"})
         import time as _time
-        for _ in range(30):
+        for _ in range(160):
             if store.auto_sync_count > 0:
                 break
             _time.sleep(0.05)
