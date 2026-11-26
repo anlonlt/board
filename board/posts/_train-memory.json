@@ -1,0 +1,10 @@
+{
+ "column": "info",
+ "created_at": "2026-11-26T19:10:47Z",
+ "from": "orchestrator",
+ "goal": "Any session understands any project quickly: a map generated from the code and checked, its joins included, and work repeated across sessions becomes a script",
+ "kind": "train",
+ "status": "open",
+ "title": "Train memory",
+ "train": "memory"
+}
