@@ -23,8 +23,8 @@
    "version": 9
   },
   ".kit+2F~claude-cli+2F~orchestrator.md": {
-   "sha": "bcfcab3726f3048c242e14c38c1244f197ec31b0c5ea2539f51c516f6bccc4a8",
-   "version": 3
+   "sha": "1cf6b885ba4ebd590b5d9be1d9c584d7149fb311c2e910e0ea7a74d94daa8247",
+   "version": 4
   },
   ".kit+2F~claude-cli+2F~part.md": {
    "sha": "dec2e7004fc2062992f7e4ec81b8c55dc060b31b3c8e6972738e7585b2951c4d",
@@ -39,8 +39,8 @@
    "version": 8
   },
   ".kit+2F~orchestrator.md": {
-   "sha": "488baf0d47121315b956c18c98d2e2337b793b6196c52fcc839495e4ba80057c",
-   "version": 3
+   "sha": "1685940735f2a750ace45067748025a06950e39f0d6eb76b1c16068fadb4c325",
+   "version": 4
   },
   ".kit+2F~part.md": {
    "sha": "94a618e40ae8121ce57ef12993220bd1da9ec60ae3c5a0834937d0d6f1b18138",
@@ -147,8 +147,8 @@
    "version": 3
   },
   "kit+2F~claude-cli+2F~orchestrator.template.md": {
-   "sha": "9dde5b1023b543c8b9bac26745eb07e3cf2b4dba598e05b26b05893b28d7f7b2",
-   "version": 6
+   "sha": "71bd7826e361588c9a0e41ed6c9da6efa87387d6f79a63f6514f6c5c81a22192",
+   "version": 7
   },
   "kit+2F~claude-cli+2F~part.template.md": {
    "sha": "22f50ced1a224a58deef91968ea06ea5c2703dc580852af9633359d56befabc2",
@@ -171,8 +171,8 @@
    "version": 8
   },
   "kit+2F~orchestrator.template.md": {
-   "sha": "9afbf0c478ef2af954c9dd4e889fdfd87b1be6e37cf6c4083c3734aefd007d80",
-   "version": 4
+   "sha": "3a88ef5419ca872789b4476c597a6c2885f2f67224bd679d6fe0ba4b434c6952",
+   "version": 5
   },
   "kit+2F~part.template.md": {
    "sha": "86f2abed9fea3f5c21c38a8cc83a438ccf648c8898b882684852d208c0963e1b",
