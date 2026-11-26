@@ -178,8 +178,32 @@ def gpus():
     return names
 
 
-def processes():
-    """[(pid, rss_mb, name)] of the agent sessions (claude / agy) running on this machine."""
+HELPER_ARGS = ("bg-spare", "bg-pty-host", "daemon run")   # Claude Code's own processes: warm spares, terminals, daemon
+
+
+def _cmdline(pid):
+    try:
+        with open("/proc/%s/cmdline" % pid, "rb") as fh:
+            return fh.read().replace(b"\0", b" ").decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def helpers_mb(procs=None):
+    """Memory held by Claude Code's helper processes (warm spare sessions for `claude --bg`, terminal hosts, the
+    daemon): not sessions, but RAM no session can use. Measured, never guessed."""
+    procs = processes(helpers=True) if procs is None else procs
+    return sum(r for pid, r, _ in procs if any(h in _cmdline(pid) for h in HELPER_ARGS))
+
+
+def processes(helpers=False):
+    """[(pid, rss_mb, name)] of the agent sessions (claude / agy) running on this machine; Claude Code's helper
+    processes (spares, terminal hosts, the daemon) are left out unless `helpers`."""
+    rows = [r for r in _processes() if helpers or not any(h in _cmdline(r[0]) for h in HELPER_ARGS)]
+    return rows
+
+
+def _processes():
     rows = []
     if os.path.isdir("/proc") and os.path.exists("/proc/self/status"):
         for pid in os.listdir("/proc"):
@@ -189,7 +213,19 @@ def processes():
                 with open("/proc/%s/comm" % pid, encoding="utf-8") as fh:
                     name = fh.read().strip()
                 if name not in SESSION_NAMES:
-                    continue
+                    # Claude Code's background sessions and spares run as its versioned binary (comm "2.1.332"):
+                    # recognise them by what they were started as
+                    argv0 = os.path.basename(_cmdline(pid).split(" ", 1)[0])
+                    if argv0 in SESSION_NAMES:
+                        name = argv0
+                    else:
+                        try:
+                            exe = os.readlink("/proc/%s/exe" % pid)
+                        except OSError:
+                            exe = ""
+                        if "/claude/versions/" not in exe:
+                            continue
+                        name = "claude"
                 with open("/proc/%s/status" % pid, encoding="utf-8") as fh:
                     rss = int((re.search(r"VmRSS:\s+(\d+)", fh.read()) or [0, 0])[1]) // 1024
                 rows.append((int(pid), rss, name))
@@ -235,12 +271,14 @@ def survey(env=None, mem=None, procs=None, running=None, store=None, meminfo_pat
     env = os.environ if env is None else env
     live_mem = mem is None
     mem = (memory(meminfo_path) if meminfo_path else memory()) if mem is None else mem
+    held = helpers_mb() if procs is None else 0
     procs = processes() if procs is None else procs
     store = load_store() if store is None else store
     cloud = is_cloud(env)
     per = per_session_mb(procs)
     total = mem.get("total_mb")
-    auto = None if cloud else (max(1, (total - BASE_MB) // per) if total else None)
+    # Claude Code's spares and helpers hold RAM no session can use: the cap is counted on what is left
+    auto = None if cloud else (max(1, (total - BASE_MB - held) // per) if total else None)
     cap, source = auto, ("cloud: each web session gets its own container" if cloud else
                          "measured" if total else "unknown: this OS did not report its RAM")
     override = env.get("KIT_MAX_SESSIONS") or store.get("max_sessions")
@@ -256,7 +294,7 @@ def survey(env=None, mem=None, procs=None, running=None, store=None, meminfo_pat
         "ram_total_mb": total, "ram_available_mb": mem.get("available_mb"),
         "swap_total_mb": mem.get("swap_total_mb"), "swap_free_mb": mem.get("swap_free_mb"),
         "gpus": gpus(), "per_session_mb": per, "base_mb": BASE_MB, "headroom_mb": HEADROOM_MB,
-        "auto_cap": auto, "max_sessions": cap, "cap_source": source,
+        "auto_cap": auto, "max_sessions": cap, "cap_source": source, "helpers_mb": held,
         "running": running_sessions(procs) if running is None else running,
         "measured_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
@@ -337,8 +375,10 @@ def _summary(s):
         return "Device: cloud session (no cap: each web session has its own container); %s running here." % s["running"]
     cap = s["max_sessions"]
     free = None if cap is None else max(0, cap - s["running"])
-    return "Device %s: holds %s sessions (%s; %s MB RAM, ~%d MB each), %d running, %s free slot%s; %s MB free now." % (
-        s["host"], "?" if cap is None else cap, s["cap_source"], s["ram_total_mb"] or "?", s["per_session_mb"],
+    held = s.get("helpers_mb") or 0
+    return "Device %s: holds %s sessions (%s; %s MB RAM%s, ~%d MB each), %d running, %s free slot%s; %s MB free now." % (
+        s["host"], "?" if cap is None else cap, s["cap_source"], s["ram_total_mb"] or "?",
+        ", %d MB held by Claude Code's spare processes" % held if held else "", s["per_session_mb"],
         s["running"], "?" if free is None else free, "" if free == 1 else "s", s["ram_available_mb"] or "?")
 
 

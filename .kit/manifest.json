@@ -55,7 +55,7 @@
  ".kit/clerk.md": "7a18ed588a9e0448755eb13da3c6aeabfd6de11d5a3ddfe87b1df7b7135e4eac",
  ".kit/clerk_pending.py": "f2e2ccb421100db0896206d9be49694df24500b47a2dbfb1d8ee304ab0d9e0bc",
  ".kit/consultant.md": "b13e0debfac54d7475cb417342883fb91c33c4caa63117d2c5b735435ba44a62",
- ".kit/device.py": "a8fc8ef3e5635c4f52e77d4dbb58c937455cb85cd517418c5844aa7232f1a245",
+ ".kit/device.py": "5a67babf0e3474377ff066f10e1218f65bb76fb0eb5d30bc94d0be3cf5924edd",
  ".kit/end_session.py": "4686f4ff79d1c7e0bad326fd608e358b419f462ca03ce59aae253bc929b6468d",
  ".kit/git_watch.py": "0573bbb27c983c40a7394b695944b92068f69f15611561ee384e4e2ac9a0b08c",
  ".kit/handover.py": "3a4d2e9236b704fb4c0d49f8151badf29a080594c989ff63fccd0d64acda5110",
@@ -102,5 +102,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "e1b282847457310ea4317ef717ebb9d4ae8a743a77201e154c53c23ac05e74a1",
- "_kit_commit": "d973a79 2026-11-26T12:39:01-05:00"
+ "_kit_commit": "568b8f5 2026-11-26T15:51:17-05:00"
 }

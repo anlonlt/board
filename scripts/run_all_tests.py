@@ -541,7 +541,26 @@ def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True, on_don
     return results, stopped
 
 
+def through_device(argv):
+    """Every run goes through the device's gate (`device.py run --kind tests`): it waits until a test run fits in the
+    memory free now and learns what a run takes, so no session puts the computer past what it holds. None when this
+    run already is the device's job, or there is no device script; else the exit code of the run it started."""
+    if os.environ.get("KIT_DEVICE_JOB") or "--list" in argv:
+        return None
+    dev = next((p for p in (os.path.join(REPO_ROOT, ".kit", "device.py"), os.path.join(REPO_ROOT, "scripts", "device.py"))
+                if os.path.isfile(p)), None)
+    if not dev:
+        return None
+    env = dict(os.environ, KIT_DEVICE_JOB="1")
+    return subprocess.run([sys.executable, "-I", dev, "run", "--kind", "tests", "--", sys.executable,
+                           os.path.abspath(__file__)] + list(argv), env=env).returncode
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    rc = through_device(argv)
+    if rc is not None:
+        return rc
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("words", nargs="*")
     ap.add_argument("--all", action="store_true")
