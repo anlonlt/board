@@ -148,6 +148,13 @@ class QueueRank(unittest.TestCase):
             self.assertIn("D1 goes first", r["out_of_order"])
             self.assertEqual(r["launched_out_of_order"]["why"], "the owner asked for it now")
 
+    def test_questions_on_a_train_are_not_steps(self):
+        posts = {"f": step("F1", "Feature", "A view."),
+                 "q": step("F5", "Which view?", "A or B?", kind="question", column="question"),
+                 "c": step("O56", "Which branch?", "main or cl41?", column="question"),
+                 "i": step("HL5", "An issue", "Seen twice.", kind="issue")}
+        self.assertEqual(self.order(posts), ["F1"])
+
     def test_a_new_step_re_ranks_the_whole_queue(self):
         posts = {"f": step("F1", "Feature", "A view.", created="2026-11-26T08:00:00Z")}
         self.assertEqual(self.order(posts), ["F1"])

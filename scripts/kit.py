@@ -4868,12 +4868,18 @@ def step_pair(a, b, qa, qb):
     return {"first": first, "why": why, "shares": shares, "areas": areas}
 
 
+def _q_is_step(q):
+    """A step, not a question, an issue or a report filed under a train (Harmonize's F5, VR5, HL5, O56 are questions)."""
+    return str(q.get("kind") or "").lower() not in ("question", "issue", "report", "awaits") and \
+        str(q.get("column") or "").lower() != "question"
+
+
 def queue_facts(posts, areas=None):
     """(open steps, their facts, the hub): a file or area most open steps name (more than half, 4 steps or more: kit.py
     here) is not shared by itself, as in the split check (different functions of one big file merge cleanly);
     `kit.queue.strict_files: true` in .kit/config.json counts it too."""
     open_ = {pid: q for pid, q in posts.items() if isinstance(q, dict) and not pid.startswith("_") and not q.get("removed")
-             and str(q.get("train") or "").strip() and _step_open(q)}
+             and str(q.get("train") or "").strip() and _step_open(q) and _q_is_step(q)}
     f = {pid: step_facts(pid, q, areas) for pid, q in open_.items()}
     strict = bool(((_kit_config().get("kit") or {}).get("queue") or {}).get("strict_files")) if os.path.isfile(
         os.path.join(ROOT, ".kit", "config.json")) else False
