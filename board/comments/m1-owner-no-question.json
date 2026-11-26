@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-26T22:34:40Z",
+ "from": "orchestrator",
+ "kind": "decision",
+ "post_id": "m1-a-map-of-any-project-generated-from-its",
+ "text": "## The owner's answer to the review's question (2026-11-26, in the orchestrator's terminal)\n\n> \"How the fuck am I supposed to know for m1's question. Isn't it supposed to be for agents to properly situate themselves? [...] I've communicated to you my idea already, so why is it still asking me??? Am I an AI?????\"\n\n**So:** the map is for agents; the owner is never asked to validate it. Its test is an agent's use: a fresh session given only the map finds where things are and the joins' bugs, against one without it (time, tokens, right answers). M2 and M3 go ahead on the format M1 built. Reviews of agent-facing work use that test, not \"when the owner last tried it\"."
+}
