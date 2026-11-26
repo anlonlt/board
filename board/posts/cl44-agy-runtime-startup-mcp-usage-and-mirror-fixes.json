@@ -66,10 +66,69 @@
    "n": 6,
    "status": "open",
    "title": "Run full test suite and one live local `board --agy` smoke test recording resume, MCP tools, and usage row"
+  },
+  {
+   "files": [
+    "kit/board/board_server.py",
+    "scripts/kit.py"
+   ],
+   "from": "comment",
+   "n": 7,
+   "status": "open",
+   "title": "Preserve unpushed local board-mirror commits during seed and reconcile (never delete mirror-only posts)"
+  },
+  {
+   "files": [
+    "kit/hook.py",
+    "kit/hooks/kit_task_train.py"
+   ],
+   "from": "comment",
+   "n": 8,
+   "status": "open",
+   "title": "Wire agy update_steps hook to tick board subtasks (kit.py sub)"
+  },
+  {
+   "files": [
+    "kit/hook.py",
+    "kit/hooks/kit_activity.py",
+    "kit/hooks/kit_memory_jit.py"
+   ],
+   "from": "comment",
+   "n": 9,
+   "status": "open",
+   "title": "Fix agy PreToolUse hook schema (no injectSteps on PreToolUse; live activity line on PostInvocation)"
+  },
+  {
+   "files": [
+    "scripts/kit.py",
+    "kit/hooks/kit_wip.py"
+   ],
+   "from": "comment",
+   "n": 10,
+   "status": "open",
+   "title": "Add kit.py checkpoint (CL17) so parts commit WIP on their branch after pieces / periodically"
+  },
+  {
+   "files": [
+    "scripts/kit.py"
+   ],
+   "from": "comment",
+   "n": 11,
+   "status": "open",
+   "title": "Make kit.py resume name the step branch, last checkpoint, and uncommitted worktree"
+  },
+  {
+   "files": [
+    "scripts/device.py"
+   ],
+   "from": "comment",
+   "n": 12,
+   "status": "open",
+   "title": "Recheck available RAM over ~30s in device.py gate() before refusing on startup spikes"
   }
  ],
  "task": "Fix the six agy runtime bugs surfaced during the live CL43 run on `feat/streamline-doctor-memory` (`3746aa8`):\n\n1. `scripts/kit.py` (`stale_copy()`): do not block local `agy` or local CLI sessions with the Claude-Web `STALE: Artifact board` gate when `kit.artifact.url` is set alongside `kit.mode: \"local\"`.\n2. `scripts/kit.py` (`_load_board_docs()`) & `kit/board/board_server.py`: fall back to `board-mirror` if `board.db` has 0 docs, and don't leave a 0-doc `board.db` behind when `board_server.py` fails to bind its port.\n3. `install.py` (`merge_agy_mcp()`), `kit/board/mcp_stdio.py`, and `scripts/kit.py`: make `.agents/mcp_config.json` worktree-safe (no hardcoded parent checkout path), include `runner`-assigned planned/in-progress train steps in `board_queue`, and handle offline fallback cleanly in `board_inbox`.\n4. `kit/usage.py` & `kit/hook.py`: parse `agy` `transcript.jsonl` (`PLANNER_RESPONSE` token counts + `tool_calls` + child subagents), support Gemini/agy models, and wire `kit_usage.py` into the `agy` `Stop` row of `TABLE`.\n5. `kit/up`: handle `agy --mode auto` unavailability cleanly instead of silently falling back to interactive mode.\n6. Run `python3 scripts/run_all_tests.py` (0 failures) plus a live local `board --agy` smoke test confirming `kit.py resume`, `board_queue(runner=\"agy\")`, and a recorded `kit-usage` row.",
  "title": "Fix agy runtime gaps: Artifact STALE gate, empty board.db shadowing, worktree MCP config, agy usage ledger, and kit/up mode flag",
  "train": "cli",
- "updated_at": "2026-11-26T08:48:13Z"
+ "updated_at": "2026-11-26T09:02:28Z"
 }
