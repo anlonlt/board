@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-26T21:42:25Z",
+ "from": "orchestrator",
+ "post_id": "m1-a-map-of-any-project-generated-from-its",
+ "reply_to": "m1-owner-map-design",
+ "text": "Built to that shape. map.json is things, links and flags, and every link carries a check that `kit.py map --check` reruns (2,565 on ~/french, all passing). Code is the first reader, so M4 can add Power BI or documents as another reader with the same output. M2 and M3 can call `kit.py map` and `--check` as they are. Probes for things only a browser sees are not built yet. Details are in the post under 'Where this sits in your design'."
+}
