@@ -66,16 +66,39 @@ class TestBoardToken(Sandbox):
         first = board_token.machine_token(self.env)
         self.assertTrue(first == board_token.machine_token(self.env), "a second call reuses the token, never mints a new one")
 
-    def test_existing_project_token_kept(self):
+    def test_a_project_token_that_differs_is_rewritten_to_the_machine_token(self):
         a = self.project("own")
         os.makedirs(os.path.join(a, ".kit", "board_data"))
         tp = os.path.join(a, ".kit", "board_data", "token")
         with open(tp, "w") as fh:
             fh.write("projectownvalue\n")
-        board_token.machine_token(self.env)   # a machine token exists too
+        m = board_token.machine_token(self.env)   # a machine token exists: it is THE token
         p, src = board_token.ensure(a, self.env)
-        self.assertEqual(src, "project")
-        self.assertTrue(read(p) == "projectownvalue", "the project's own token is unchanged")
+        self.assertEqual(src, "machine")
+        self.assertTrue(read(p) == m, "one token per machine: the project's copy is the machine's")
+        self.assertEqual(board_token.ensure(a, self.env)[1], "same")
+
+    def test_with_no_machine_token_the_first_project_token_becomes_it(self):
+        a, b = self.project("first"), self.project("second")
+        os.makedirs(os.path.join(a, ".kit", "board_data"))
+        with open(os.path.join(a, ".kit", "board_data", "token"), "w") as fh:
+            fh.write("thephonehasthis\n")
+        self.assertEqual(board_token.ensure(a, self.env)[1], "adopted")
+        self.assertTrue(board_token.machine_token(self.env) == "thephonehasthis")
+        p, _ = board_token.ensure(b, self.env)
+        self.assertTrue(read(p) == "thephonehasthis", "every other project takes the same token")
+
+    def test_use_makes_a_project_token_the_machine_token(self):
+        a, b = self.project("served"), self.project("other")
+        for d, v in ((a, "served-one"), (b, "other-one")):
+            os.makedirs(os.path.join(d, ".kit", "board_data"))
+            with open(os.path.join(d, ".kit", "board_data", "token"), "w") as fh:
+                fh.write(v + "\n")
+        board_token.machine_token(self.env)
+        self.assertTrue(board_token.use(a, self.env))
+        self.assertFalse(board_token.use(a, self.env))
+        board_token.ensure(b, self.env)
+        self.assertTrue(read(os.path.join(b, ".kit", "board_data", "token")) == "served-one")
 
     def test_empty_project_token_replaced(self):
         a = self.project("empty")
@@ -158,6 +181,78 @@ class TestBoardToken(Sandbox):
         self.assertEqual(r.stdout.strip(), "OK")
 
 
+class TestServedToken(Sandbox):
+    """The running server's token reaches every checkout of its repo, and only those (a separate checkout with its
+    own token file got 401: CL44's token fallback picked the main checkout's token, not the server's)."""
+
+    def repo(self, name):
+        r = os.path.join(self.d, name)
+        os.makedirs(os.path.join(r, ".kit", "board_data"))
+        subprocess.run(["git", "init", "-q", r], check=True)
+        subprocess.run(["git", "-C", r, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty",
+                        "-m", "init"], check=True)
+        return r
+
+    def write(self, root, tok):
+        with open(board_token.project_token_path(root), "w") as fh:
+            fh.write(tok + "\n")
+
+    def test_every_worktree_of_the_repo_gets_the_served_token_and_no_other_project(self):
+        a, c = self.repo("a"), self.repo("c")
+        b = os.path.join(self.d, "b")
+        subprocess.run(["git", "-C", a, "worktree", "add", "-q", "--detach", b], check=True)
+        os.makedirs(os.path.join(b, ".kit", "board_data"), exist_ok=True)
+        self.write(a, "tok-a"), self.write(b, "tok-b-own"), self.write(c, "tok-c")
+        self.assertEqual(board_token.read_token(b, self.env), "tok-b-own")       # no server: its own, as before
+        path = board_token.write_served(8765, "tok-a", a, self.env)
+        self.assertEqual(mode(path), 0o600)
+        self.assertEqual(board_token.read_token(b, self.env), "tok-a")           # the server's, not its own file
+        self.assertEqual(board_token.read_token(a, self.env), "tok-a")
+        self.assertEqual(board_token.read_token(c, self.env), "tok-c")           # another repo never gets it
+        self.assertEqual(board_token.read_token(b, dict(self.env, KIT_BOARD_TOKEN="explicit")), "explicit")
+        board_token.clear_served(8765, self.env)
+        self.assertFalse(os.path.exists(path))
+        self.assertEqual(board_token.read_token(b, self.env), "tok-b-own")
+
+    def test_a_dead_server_record_is_ignored(self):
+        a = self.repo("a")
+        self.write(a, "own")
+        import json
+        path = board_token.write_served(8765, "gone", a, self.env)
+        rec = json.load(open(path))
+        rec["pid"] = 2 ** 22 + 12345
+        open(path, "w").write(json.dumps(rec))
+        self.assertEqual(board_token.read_token(a, self.env), "own")
+
+    def test_the_server_writes_it_and_removes_it(self):
+        import json
+        import signal
+        import socket
+        import time
+        a = self.repo("a")
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        env = dict(os.environ, HOME=self.home)
+        env.pop("XDG_CONFIG_HOME", None)
+        p = subprocess.Popen([sys.executable, "-I", os.path.join(ROOT, "kit", "board", "board_server.py"), "--port",
+                              str(port), "--root", a, "--token", "srv-tok"], env=env, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        path = board_token.served_path(port, self.env)
+        try:
+            for _ in range(100):
+                if os.path.exists(path):
+                    break
+                time.sleep(0.1)
+            rec = json.load(open(path))
+            self.assertEqual((rec["token"] == "srv-tok", rec["pid"], rec["repo"]), (True, p.pid, os.path.realpath(a)))
+        finally:
+            p.send_signal(signal.SIGINT)
+            p.wait(timeout=20)
+        self.assertFalse(os.path.exists(path))
+
+
 class TestUpAndInstall(Sandbox):
     """`up` for both CLIs, and install.py, go through the same helper."""
 
@@ -167,7 +262,7 @@ class TestUpAndInstall(Sandbox):
         env.pop("KIT_BOARD_TOKEN", None)
         return env
 
-    def test_install_gives_new_project_the_machine_token_and_keeps_its_own(self):
+    def test_install_gives_every_project_the_machine_token(self):
         env = self.env_for()
         a, b = os.path.join(self.d, "inst-a"), os.path.join(self.d, "inst-b")
         for t in (a, b):
@@ -181,14 +276,14 @@ class TestUpAndInstall(Sandbox):
         self.assertTrue(os.path.isfile(ta) and read(ta) == read(machine), "install gave the project the machine token")
         self.assertNotIn(read(machine), r.stdout + r.stderr, "install printed the token")
         self.assertTrue(os.path.isfile(os.path.join(a, ".kit", "board_token.py")))
-        # b already has its own: install keeps it
+        # b has a token of its own: install makes it the machine's (one token per machine)
         os.makedirs(os.path.join(b, ".kit", "board_data"))
         with open(os.path.join(b, ".kit", "board_data", "token"), "w") as fh:
             fh.write("ownofb\n")
         r = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "install.py"), b, "--quick"],
                            capture_output=True, text=True, env=env, timeout=600)
         self.assertEqual(r.returncode, 0, r.stdout[-800:] + r.stderr[-800:])
-        self.assertTrue(read(os.path.join(b, ".kit", "board_data", "token")) == "ownofb")
+        self.assertTrue(read(os.path.join(b, ".kit", "board_data", "token")) == read(machine))
         self.assertFalse(subprocess.run(["git", "-C", a, "check-ignore", "-q", ".kit/board_data/token"]).returncode,
                          "the project token is git-ignored, never committed")
 
@@ -237,17 +332,17 @@ class TestUpAndInstall(Sandbox):
         self.assertEqual(read(rec_a), "same", "agy got KIT_BOARD_TOKEN = the board token")
         self.assertEqual(read(rec_b), "same", "claude got KIT_BOARD_TOKEN = the board token")
 
-    def test_up_keeps_project_token(self):
+    def test_up_gives_a_project_with_its_own_token_the_machine_token(self):
         p = self.project("up-own")
         os.makedirs(os.path.join(p, ".kit", "board_data"))
         with open(os.path.join(p, ".kit", "board_data", "token"), "w") as fh:
             fh.write("ownofup\n")
         r, rec = self._up("agy", p)
         self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        machine = os.path.join(self.home, ".config", "board-kit", "board_token")
+        self.assertTrue(read(machine) == "ownofup", "with no machine token yet, the project's own becomes it")
         self.assertTrue(read(os.path.join(p, ".kit", "board_data", "token")) == "ownofup")
         self.assertEqual(read(rec), "same")
-        self.assertFalse(os.path.exists(os.path.join(self.home, ".config", "board-kit", "board_token")),
-                         "a project with its own token does not mint a machine token")
 
 
 if __name__ == "__main__":

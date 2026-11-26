@@ -4026,6 +4026,24 @@ def _reload_argv():
     return cmd
 
 
+def _served_record(root, port, token):
+    """Write the token this server serves with for its repo (board_token.write_served); the module, or None."""
+    if not token:
+        return None
+    try:
+        import importlib.util
+        here = os.path.dirname(os.path.abspath(__file__))
+        spec = importlib.util.spec_from_file_location("kit_board_token_srv", os.path.join(here, "board_token.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.write_served(port, token, root)
+        return mod
+    except Exception as exc:  # a board that cannot record it still serves; checkouts fall back to their own token
+        print("board_server: could not record the served token (%s); other checkouts use their own token" % exc,
+              file=sys.stderr, flush=True)
+        return None
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Local board server for agy")
     ap.add_argument("--host", default="127.0.0.1")
@@ -4086,6 +4104,7 @@ def main(argv=None):
         info = seed_from_mirror(root, store, branch=a.mirror_branch, force=a.force_seed)
         print("seeded from %s: %d imported, %d skipped" % (info["ref"] or "(none)", info["imported"], info["skipped"]), flush=True)
     actual_port = srv.server_address[1]
+    served = _served_record(root, actual_port, tok)
     auto_reload = bool(a.auto_reload or os.environ.get("KIT_BOARD_AUTO_RELOAD", "").strip().lower() in ("1", "true", "yes", "on"))
     if a.funnel or (auto_reload and a.host.strip().lower() not in LOOPBACK_HOSTS):
         _ensure_funnel_async(actual_port, root)
@@ -4137,6 +4156,8 @@ def main(argv=None):
         stop_watch.set()
         srv.server_close()
         store.close()
+        if served:
+            served.clear_served(actual_port)
         for rinfo in (getattr(srv, "_extra_stores", None) or {}).values():
             try:
                 rinfo["store"].close()

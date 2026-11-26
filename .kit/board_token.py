@@ -5,10 +5,13 @@ pointed at another project or another CLI.
 
     python3 -I .kit/board_token.py ensure [--root DIR]   # the project's token, from the machine token if it has none
 
-Rules:
-  - a project that already has `.kit/board_data/token` (non-empty) keeps it, unchanged;
-  - otherwise it gets the machine token, `$XDG_CONFIG_HOME/board-kit/board_token` (default ~/.config/board-kit/),
-    created once (mode 600) when absent;
+Rules (one token, whatever the project, branch, worktree or CLI: entered once on a phone, never again):
+  - the machine token, `$XDG_CONFIG_HOME/board-kit/board_token` (default ~/.config/board-kit/), is THE token;
+  - a project's `.kit/board_data/token` is a copy of it: a different copy is rewritten (the owner's phone holds one
+    token per address, and every project serves on the same one);
+  - with no machine token yet, the first project's own token becomes it (a phone that already has it keeps working);
+    with none anywhere, one is made (mode 600);
+  - `use --root DIR` makes DIR's token the machine token (moving from several tokens to one: the one the phone has);
   - the project copy is written mode 600; nothing here prints or logs a token.
 
 The server's auth is unchanged: it still reads the token it is given (`--token` / KIT_BOARD_TOKEN), and the scripts
@@ -48,8 +51,9 @@ def _write_600(path, value):
     os.replace(tmp, path)
 
 
-def machine_token(env=None):
-    """The machine token, created once when absent. Two projects started at the same time agree: the first file wins."""
+def machine_token(env=None, adopt=None):
+    """The machine token, created once when absent (from `adopt`, a project's own token, when given). Two projects
+    started at the same time agree: the first file wins."""
     path = machine_token_path(env)
     tok = _read(path)
     if tok:
@@ -59,7 +63,7 @@ def machine_token(env=None):
         os.chmod(os.path.dirname(path), 0o700)
     except OSError:
         pass
-    new = secrets.token_hex(16)
+    new = (adopt or "").strip() or secrets.token_hex(16)
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)   # no race: only one creator
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -96,14 +100,84 @@ def _main_worktree_root(root):
     return None
 
 
+def _repo_of(root):
+    """The repository a folder belongs to (its main checkout), so every worktree of one repo agrees."""
+    root = os.path.abspath(root)
+    return os.path.realpath(_main_worktree_root(root) or root)
+
+
+def served_path(port, env=None):
+    return os.path.join(machine_dir(env), "served-%d.json" % int(port))
+
+
+def write_served(port, token, root, env=None):
+    """The running server records the token it serves with, for its repository: a checkout of the same repo (another
+    worktree, a part's, a fresh clone's install) then reaches it even when its own token file differs."""
+    if not token or not port:
+        return None
+    path = served_path(port, env)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        os.chmod(os.path.dirname(path), 0o700)
+    except OSError:
+        pass
+    import json
+    _write_600(path, json.dumps({"port": int(port), "token": token, "root": os.path.abspath(root),
+                                 "repo": _repo_of(root), "pid": os.getpid()}))
+    return path
+
+
+def clear_served(port, env=None):
+    """Removed by the server that wrote it, at exit (a reload's new process writes it again)."""
+    path = served_path(port, env)
+    try:
+        import json
+        with open(path, encoding="utf-8") as fh:
+            if json.load(fh).get("pid") == os.getpid():
+                os.remove(path)
+    except (OSError, ValueError):
+        pass
+
+
+def _alive(pid):
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except PermissionError:
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def served_token(root, env=None):
+    """The token of a running server on this machine that serves `root`'s repository, else None. Never another
+    project's: a token of a server for a different repo would write to the wrong board."""
+    import glob
+    import json
+    want = _repo_of(root)
+    for path in sorted(glob.glob(os.path.join(machine_dir(env), "served-*.json"))):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                rec = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if rec.get("repo") == want and rec.get("token") and _alive(rec.get("pid")):
+            return rec["token"]
+    return None
+
+
 def read_token(root, env=None):
     """Read the board token for `root` without ever creating a file:
-    KIT_BOARD_TOKEN -> <root>/.kit/board_data/token -> main worktree's token -> machine token."""
+    KIT_BOARD_TOKEN -> the running server's for this repo -> <root>/.kit/board_data/token -> main worktree's token
+    -> machine token."""
     env = os.environ if env is None else env
     tok = (env.get("KIT_BOARD_TOKEN") or "").strip()
     if tok:
         return tok
     if root:
+        tok = served_token(root, env)
+        if tok:
+            return tok
         tok = _read(project_token_path(root))
         if tok:
             return tok
@@ -117,13 +191,28 @@ def read_token(root, env=None):
 
 
 def ensure(root, env=None):
-    """The project's token path, filled from the machine token when the project has none. Returns (path, source)
-    where source is "project" (kept) or "machine" (copied)."""
+    """The project's token path, holding the machine token. Returns (path, source): "same" (already the machine's),
+    "adopted" (the project's own became the machine token: there was none), "machine" (written or rewritten)."""
     path = project_token_path(root)
-    if _read(path):
-        return path, "project"
-    _write_600(path, machine_token(env))
+    own = _read(path)
+    had_machine = bool(_read(machine_token_path(env)))
+    tok = machine_token(env, adopt=own)
+    if own == tok:
+        return path, ("same" if had_machine else "adopted")
+    _write_600(path, tok)
     return path, "machine"
+
+
+def use(root, env=None):
+    """Make `root`'s token the machine token (the one the owner's phone has); other projects take it at their next
+    ensure (`board`, install). Returns True when it changed."""
+    own = _read(project_token_path(root))
+    if not own:
+        raise SystemExit("no token in %s" % project_token_path(root))
+    if _read(machine_token_path(env)) == own:
+        return False
+    _write_600(machine_token_path(env), own)
+    return True
 
 
 def main(argv=None):
@@ -132,11 +221,17 @@ def main(argv=None):
     e = sub.add_parser("ensure", help="give the project a token (its own, else the machine's); prints only where it came from")
     e.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     e.add_argument("--quiet", action="store_true")
+    u = sub.add_parser("use", help="make this project's token the machine's (the one the phone has); prints no token")
+    u.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     a = ap.parse_args(argv)
     if a.cmd == "ensure":
         path, src = ensure(a.root)
         if not a.quiet:
-            print("board token: %s (%s)" % ("kept the project's own" if src == "project" else "the machine's", os.path.relpath(path, a.root)))
+            print("board token: %s (%s)" % ({"same": "the machine's", "adopted": "the project's, now the machine's",
+                                             "machine": "the machine's, written"}[src], os.path.relpath(path, a.root)))
+        return 0
+    if a.cmd == "use":
+        print("board token: this project's is the machine's%s" % ("" if use(a.root) else " (already)"))
         return 0
     return 1
 

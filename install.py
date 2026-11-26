@@ -1434,10 +1434,11 @@ def main(argv=None):
                 "</svg>\n"
             ))
     if parts["board"] and not claude_only and not a.dry_run:
-        # One board token per machine (CL11): a project with no token gets the machine's; its own token is kept.
+        # One board token per machine: the project's copy is the machine's (rewritten when it differs); with no
+        # machine token yet, the project's own becomes it. Entered once on a phone, never again.
         import board_token as _bt  # kit/board is on sys.path
         _tp, _src = _bt.ensure(t)
-        if _src == "machine":   # a project's own token is kept silently (a rerun changes nothing)
+        if _src == "machine":   # already the machine's: silent (a rerun changes nothing)
             ins.log.append("board token: the machine's (%s) in .kit/board_data/token, never printed" % _bt.machine_token_path())
     should_bootstrap = (a.bootstrap or a.demo or rt in ("arena", "generic")) and not a.no_bootstrap
     if should_bootstrap and parts["board"] and not claude_only and not a.dry_run:
