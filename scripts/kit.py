@@ -1258,6 +1258,11 @@ def stale_copy():
     if not attached_board() or os.environ.get("KIT_STALE_OK"):
         return ""
     k = _kit_config().get("kit") or {}
+    # CL44: in local mode (local agy or local CLI) with a local board server, kit.artifact.url may be set for web
+    # sessions or cross-sync; do not block local sessions with the Claude-Web Artifact pull/load STALE gate unless
+    # running in Claude Code Web (_is_web()) or KIT_ARTIFACT_URL is explicitly forced in the environment.
+    if str(k.get("mode") or "").strip().lower() == "local" and not _is_web() and not os.environ.get("KIT_ARTIFACT_URL"):
+        return ""
     try:
         cap = float(((k.get("artifact") if isinstance(k.get("artifact"), dict) else {}) or {}).get("fresh_min", 15))
     except (TypeError, ValueError):
@@ -2395,6 +2400,17 @@ def doctor(m, db_path=None, fix=False, root=None):
     return "\n".join(lines), (1 if issues else 0)
 
 
+_CLOSED_CARD_STATUSES = {"complete", "completed", "done", "dropped", "shipped", "merged", "closed", "abandoned", "superseded"}
+
+
+def _is_card_done(doc):
+    if not isinstance(doc, dict):
+        return False
+    if str(doc.get("column") or "").strip().lower() == "done":
+        return True
+    return str(doc.get("status") or "").strip().lower() in _CLOSED_CARD_STATUSES
+
+
 def _is_card_blocked(doc, posts):
     """Return True if doc declares blocked_by items that are not yet done in posts."""
     raw = doc.get("blocked_by")
@@ -2410,7 +2426,7 @@ def _is_card_blocked(doc, posts):
             # Also match by part id (case-insensitive)
             sl = s.lower()
             ref = next((p for p in posts.values() if str(p.get("part") or "").strip().lower() == sl), None)
-        if ref is None or ref.get("column") != "done":
+        if ref is None or not _is_card_done(ref):
             return True
     return False
 
@@ -2421,30 +2437,27 @@ def post_person(d):
 
 
 def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=False):
-    """List open cards attributed to a runner (e.g. lmarena, claude-chrome) or person/role from SQLite or mirror."""
+    """List open cards and planned/in-progress train steps attributed to a runner or person/role from SQLite, live server, or mirror."""
     rf = (runner or "").strip().lower()
     ff = (for_owner or "").strip().lower()
     posts = {}
     db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
-    if os.path.isfile(db):
-        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+    has_local_db = os.path.isfile(db)
+    has_mirror_dir = bool(m) and os.path.isdir(os.path.join(m, "board", "posts"))
+    # In a worktree with no local board.db and no checked-out mirror dir, prefer the live board server when reachable,
+    # then fall back to _load_board_docs (which reads local SQLite -> mirror worktree -> git board-mirror).
+    if db_path is None and not has_local_db and not has_mirror_dir and os.path.isfile(os.path.join(ROOT, ".kit", "config.json")):
         try:
-            for did, raw in conn.execute("SELECT doc_id, data FROM docs WHERE collection='posts'"):
-                if did.startswith("_"):
-                    continue
-                try:
-                    posts[did] = json.loads(raw)
-                except ValueError:
-                    pass
-        finally:
-            conn.close()
-    elif os.path.isdir(os.path.join(m, "board", "posts")):
-        for did, doc in load_dir(os.path.join(m, "board"), "posts").items():
-            if not did.startswith("_"):
-                posts[did] = doc
+            r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
+            posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or [] if not str(d.get("id") or "").startswith("_")}
+        except Exception:
+            posts = {}
+    if not posts:
+        loaded_posts, _ = _load_board_docs(m, db_path=db_path)
+        posts = {did: doc for did, doc in loaded_posts.items() if not str(did).startswith("_")}
     rows = []
     for pid, d in posts.items():
-        if d.get("removed") or d.get("column") == "done":
+        if d.get("removed") or _is_card_done(d):
             continue
         if unblocked_only and _is_card_blocked(d, posts):
             continue
@@ -2457,20 +2470,29 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
         if not rf and not ff and not pr and not pf:
             continue
         prio = int(d.get("priority") or 3)
-        rows.append((prio, pid, pr, pf, d.get("column") or "todo", str(d.get("title") or "(untitled)"), str(d.get("body") or "")))
+        col = str(d.get("column") or "todo")
+        st = str(d.get("status") or "").strip()
+        train = str(d.get("train") or "").strip()
+        part = str(d.get("part") or "").strip()
+        rows.append((prio, pid, pr, pf, col, st, train, part, str(d.get("title") or "(untitled)"), str(d.get("body") or "")))
     rows.sort(key=lambda x: (x[0], x[1]))
     if not rows:
         who = ("runner=%s" % runner if runner else "") + (" for=%s" % for_owner if for_owner else "")
         return "queue%s: 0 open cards" % ((" (" + who.strip() + ")") if who.strip() else "")
     out = []
-    for prio, pid, pr, pf, col, title, body in rows:
+    for prio, pid, pr, pf, col, st, train, part, title, body in rows:
         tags = []
         if pr:
             tags.append("@" + pr)
         if pf:
             tags.append("for:" + pf)
+        if train:
+            tags.append("train:" + train + ("/" + part if part else ""))
+        elif part:
+            tags.append(part)
+        col_label = "%s/%s" % (col, st) if (train and st) else col
         first = body.strip().splitlines()[0][:100] if body.strip() else ""
-        out.append("P%d [%s] %s (%s) — %s%s" % (prio, col, pid, " ".join(tags) or "unassigned", title, (" | " + first) if first else ""))
+        out.append("P%d [%s] %s (%s) — %s%s" % (prio, col_label, pid, " ".join(tags) or "unassigned", title, (" | " + first) if first else ""))
     return "\n".join(out) + "\n(%d card%s)" % (len(rows), "" if len(rows) == 1 else "s")
 
 
@@ -3207,24 +3229,29 @@ def portfolio_summary(config_path=None, roots=None):
 
 
 def _load_board_docs(m, db_path=None):
-    """Load posts and comments dicts from local SQLite DB, falling back to mirror worktree."""
+    """Load posts and comments dicts from local SQLite DB, falling back to mirror worktree (or local git board-mirror)
+    when board.db is missing or has 0 docs."""
     posts, comments = {}, {}
     db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
     if os.path.isfile(db):
-        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
         try:
-            for coll, did, raw in conn.execute("SELECT collection, doc_id, data FROM docs WHERE collection IN ('posts','comments')"):
-                try:
-                    doc = json.loads(raw)
-                except ValueError:
-                    continue
-                if coll == "posts":
-                    posts[did] = doc
-                else:
-                    comments[did] = doc
-        finally:
-            conn.close()
-        return posts, comments
+            conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+            try:
+                for coll, did, raw in conn.execute("SELECT collection, doc_id, data FROM docs WHERE collection IN ('posts','comments')"):
+                    try:
+                        doc = json.loads(raw)
+                    except ValueError:
+                        continue
+                    if coll == "posts":
+                        posts[did] = doc
+                    else:
+                        comments[did] = doc
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            posts, comments = {}, {}
+        if posts or comments:
+            return posts, comments
     for coll, target in (("posts", posts), ("comments", comments)):
         d = os.path.join(m, "board", coll)
         if not os.path.isdir(d):
@@ -3236,6 +3263,37 @@ def _load_board_docs(m, db_path=None):
                 target[fn[:-5]] = json.load(open(os.path.join(d, fn), encoding="utf-8"))
             except (OSError, ValueError):
                 pass
+    if posts or comments:
+        return posts, comments
+    # CL44: if local SQLite has 0 docs and no mirror worktree is checked out on disk, read local git board-mirror
+    # objects (offline, no network fetch) unless caller passed an explicit --db or suppressed mirror fallback.
+    if db_path is None and os.path.basename(str(m or "")) != "board-mirror-missing":
+        branch = str((CONFIG.get("mirror") or {}).get("branch") or BRANCH or "board-mirror")
+        try:
+            ref = next((r for r in (branch, "origin/" + branch)
+                        if subprocess.run(["git", "-C", ROOT, "rev-parse", "--verify", "--quiet", r],
+                                          capture_output=True, timeout=5).returncode == 0), None)
+            if ref:
+                arc = subprocess.run(["git", "-C", ROOT, "archive", "--format=tar", ref, "board"],
+                                     capture_output=True, timeout=15)
+                if arc.returncode == 0 and arc.stdout:
+                    import io
+                    import tarfile
+                    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
+                        for mem in tf.getmembers():
+                            parts = tar_name(mem.name).split("/")
+                            if not mem.isfile() or len(parts) != 3 or parts[0] != "board" or parts[1] not in ("posts", "comments") or not parts[2].endswith(".json"):
+                                continue
+                            try:
+                                data = json.loads(tf.extractfile(mem).read().decode("utf-8"))
+                            except (ValueError, UnicodeDecodeError, AttributeError):
+                                continue
+                            if isinstance(data, dict) and isinstance(data.get("data"), dict) and set(data) <= {"id", "data", "version", "updated_at"}:
+                                data = data["data"]
+                            if isinstance(data, dict):
+                                (posts if parts[1] == "posts" else comments)[parts[2][:-5]] = data
+        except (OSError, subprocess.SubprocessError):
+            pass
     return posts, comments
 
 
@@ -4208,9 +4266,8 @@ def _board_write(cmd, coll, doc_id, data, env=None):
 
 def _all_posts(db_path=None):
     posts, _ = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=db_path)
-    if not posts and not db_path and os.path.isfile(os.path.join(ROOT, ".kit", "config.json")) and \
-            not os.path.isfile(os.path.join(ROOT, ".kit", "board_data", "board.db")):
-        try:                                      # a part's worktree has no database: the board server holds it
+    if not posts and not db_path and os.path.isfile(os.path.join(ROOT, ".kit", "config.json")):
+        try:                                      # a part's worktree (or empty local DB): the board server holds it
             r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
             posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or []}
         except Exception:

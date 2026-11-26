@@ -47,7 +47,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCHEMA = 1
 BRANCH = "kit-usage"
 
-# $ per million tokens: input, output, cache read (claude-api skill, cached 2026-11-03). Longest prefix wins.
+# $ per million tokens: input, output, cache read (claude-api skill, cached 2026-11-03; Gemini / agy list prices). Longest prefix wins.
 PRICES = {
     "claude-fable-5-2": (8.0, 40.0, 0.20), "claude-mythos-5-2": (8.0, 40.0, 0.20),
     "claude-fable-5-1": (10.0, 50.0, 1.00), "claude-fable-5": (10.0, 50.0, 1.00),
@@ -56,12 +56,27 @@ PRICES = {
     "claude-sonnet-5-5": (2.0, 10.0, 0.10), "claude-sonnet-5": (2.0, 10.0, 0.20),
     "claude-sonnet-4-6": (3.0, 15.0, 0.30), "claude-haiku-5-5": (0.10, 0.50, 0.01),
     "claude-haiku-4-5": (1.0, 5.0, 0.10),
+    # Gemini / agy models (CL44; override any via kit.usage.prices in .kit/config.json)
+    "gemini-4-neon": (2.0, 12.0, 0.20),
+    "gemini-4-carbon": (2.0, 12.0, 0.20),
+    "gemini-4-argon": (1.25, 10.0, 0.125),
+    "gemini-4-hydrogen": (1.25, 10.0, 0.125),
+    "gemini-pro-orchestrator": (2.0, 12.0, 0.20),
+    "gemini-3.8-flash": (0.50, 3.0, 0.05),
+    "gemini-3-pro": (2.0, 12.0, 0.20),
+    "gemini-3-flash": (0.50, 3.0, 0.05),
+    "gemini-2.5-pro": (1.25, 10.0, 0.3125),
+    "gemini-2.5-flash-lite": (0.10, 0.40, 0.025),
+    "gemini-2.5-flash": (0.30, 2.50, 0.075),
+    "gemini-2.0-flash-lite": (0.075, 0.30, 0.01875),
+    "gemini-2.0-flash": (0.10, 0.40, 0.025),
+    "gpt-oss-120b": (0.50, 2.0, 0.05),
 }
 # Long-prompt tiers: above this many prompt tokens (input + cache read + cache write) a call bills at these prices.
 TIERS = {"claude-haiku-5-5": (100000, (0.50, 2.50, 0.05))}
 WRITE_5M, WRITE_1H = 1.25, 2.0
 SEND_TOOLS = re.compile(r"(^SendMessage$|send_message$)")
-AGENT_TOOLS = ("Agent", "Task")
+AGENT_TOOLS = ("Agent", "Task", "invoke_subagent")
 RECEIVED = ("<cross-session-message", "<other-session", "<teammate-message")
 NOTICE = ("[SYSTEM NOTIFICATION", "<task-notification", "[Request interrupted", "<system-reminder>",
           "Caveat: The messages below", "<local-command")
@@ -145,20 +160,164 @@ def _text(content):
     return "\n".join(out)
 
 
+def _agy_arg(v):
+    """Unwrap agy transcript tool_calls arg values (often JSON-encoded strings like '\"git status\"')."""
+    if isinstance(v, str) and len(v) >= 2 and v[0] == '"' and v[-1] == '"':
+        try:
+            return json.loads(v)
+        except ValueError:
+            return v
+    return v
+
+
+def _agy_session_id_from_path(path):
+    """Extract conversation UUID from .../<uuid>/.system_generated/logs/transcript*.jsonl when present."""
+    ab = os.path.abspath(path)
+    base = os.path.basename(ab)
+    if base in ("transcript.jsonl", "transcript_full.jsonl"):
+        logs_dir = os.path.dirname(ab)
+        sys_dir = os.path.dirname(logs_dir)
+        conv_dir = os.path.dirname(sys_dir)
+        if os.path.basename(logs_dir) == "logs" and os.path.basename(sys_dir) == ".system_generated":
+            cand = os.path.basename(conv_dir)
+            if cand and cand not in (".", ".."):
+                return cand
+    return base[:-6] if base.endswith(".jsonl") else base
+
+
+def _file_uri_to_path(uri):
+    if not uri:
+        return None
+    s = str(uri).strip()
+    if s.startswith("file://"):
+        import urllib.parse
+        return urllib.parse.unquote(urllib.parse.urlparse(s).path)
+    return s
+
+
+def _parse_agy_subagent_result(txt):
+    """Extract (conversationId, log_path) from agy's 'Created the following subagent: {...}' tool output."""
+    if "Created the following subagent:" not in txt:
+        return None, None
+    after = txt.split("Created the following subagent:", 1)[1]
+    start = after.find("{")
+    if start >= 0:
+        depth_b = 0
+        for idx in range(start, len(after)):
+            ch = after[idx]
+            if ch == "{":
+                depth_b += 1
+            elif ch == "}":
+                depth_b -= 1
+                if depth_b == 0:
+                    try:
+                        obj = json.loads(after[start:idx + 1])
+                        if isinstance(obj, dict):
+                            cid = obj.get("conversationId") or obj.get("conversation_id")
+                            uri = obj.get("logAbsoluteUri") or obj.get("transcript") or obj.get("transcriptPath")
+                            return (str(cid) if cid else None), _file_uri_to_path(uri)
+                    except ValueError:
+                        break
+                    break
+    mc = re.search(r'"conversationId"\s*:\s*"([^"]+)"', after)
+    mu = re.search(r'"logAbsoluteUri"\s*:\s*"([^"]+)"', after)
+    return (mc.group(1) if mc else None), (_file_uri_to_path(mu.group(1)) if mu else None)
+
+
+_AGY_TYPES = {"PLANNER_RESPONSE", "USER_INPUT", "SYSTEM_MESSAGE", "GENERIC", "CHECKPOINT", "TASK_BOUNDARY"}
+
+
 def parse_transcript(path, conf=None, depth=0):
-    """One Claude Code transcript -> one row (its subagents' transcripts included, depth 1)."""
+    """One Claude Code or agy transcript -> one row (its subagents' transcripts included, depth 1)."""
     calls, tools, tool_name, kit_cmds = {}, Counter(), {}, Counter()
     board = Counter()
-    times, branches, prompts = [], Counter(), []
+    times, branches, prompts, msg_prompts = [], Counter(), [], []
     sent = sent_chars = received = owner_turns = notices = compactions = 0
     session_id = cwd = version = entrypoint = None
+    is_agy = False
+    agy_sub_meta = []
+    agy_children = []
+    seen_agy_children = set()
     with open(path, encoding="utf-8", errors="replace") as fh:
-        for line in fh:
+        for line_no, line in enumerate(fh):
             try:
                 e = json.loads(line)
             except ValueError:
                 continue
             if not isinstance(e, dict):
+                continue
+            etype = e.get("type")
+            if etype in _AGY_TYPES or ("step_index" in e and "created_at" in e and "message" not in e):
+                is_agy = True
+                session_id = session_id or e.get("conversationId") or e.get("conversation_id") or e.get("sessionId")
+                t = _ts(e.get("created_at")) if e.get("created_at") else None
+                if t:
+                    times.append(t)
+                if etype == "PLANNER_RESPONSE":
+                    mid = "step:%s" % e.get("step_index", line_no)
+                    model = e.get("model")
+                    if model != "<synthetic>" and any(
+                        k in e for k in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens",
+                                         "cache_read_input_tokens", "cache_creation_input_tokens")
+                    ):
+                        calls[mid] = (model, {
+                            "input_tokens": int(e.get("input_tokens") or 0),
+                            "output_tokens": int(e.get("output_tokens") or 0),
+                            "cache_read_input_tokens": int(e.get("cache_read_tokens") or e.get("cache_read_input_tokens") or 0),
+                            "cache_creation_input_tokens": int(e.get("cache_write_tokens") or e.get("cache_creation_input_tokens") or 0),
+                        })
+                    for tc in e.get("tool_calls") or []:
+                        if not isinstance(tc, dict):
+                            continue
+                        name = tc.get("name") or "?"
+                        raw_args = tc.get("args") if isinstance(tc.get("args"), dict) else {}
+                        inp = {k: _agy_arg(v) for k, v in raw_args.items()}
+                        tools[name] += 1
+                        if SEND_TOOLS.search(name):
+                            sent += 1
+                            sent_chars += len(str(inp.get("Message") or inp.get("message") or ""))
+                        elif name == "run_command":
+                            cmd_str = str(inp.get("CommandLine") or inp.get("command") or "")
+                            if TEST_CMD.search(cmd_str):
+                                board["tests_run"] += 1
+                            for script, sub in KIT_CMD.findall(cmd_str):
+                                kit_cmds[(script[:-3] + (" " + sub if sub else ""))] += 1
+                                if script == "board_cli.py":
+                                    board["cli"] += 1
+                        elif name == "invoke_subagent":
+                            agy_sub_meta.append({
+                                "type": inp.get("TypeName") or inp.get("type"),
+                                "description": inp.get("Role") or inp.get("role"),
+                            })
+                        elif name == "call_mcp_tool" and str(inp.get("ServerName") or "") == "board-kit":
+                            tname = str(inp.get("ToolName") or "")
+                            if tname in ("board_post", "board_reply", "board_step_new", "board_step_update"):
+                                board["writes"] += 1
+                            else:
+                                board["reads"] += 1
+                elif etype == "USER_INPUT":
+                    txt = re.sub(r"</?USER_REQUEST>", "", str(e.get("content") or "")).strip()
+                    if txt:
+                        owner_turns += 1
+                        if len(prompts) < 3:
+                            prompts.append(txt[:300])
+                elif etype == "SYSTEM_MESSAGE":
+                    txt = str(e.get("content") or "")
+                    m_msg = re.search(r"\[Message\][^\n]*?\bcontent=(.*)", txt, re.S)
+                    if m_msg:
+                        received += 1
+                        body = re.sub(r"</SYSTEM_MESSAGE>.*", "", m_msg.group(1), flags=re.S).strip()
+                        if body and len(msg_prompts) < 3:
+                            msg_prompts.append(body[:300])
+                    elif txt.strip():
+                        notices += 1
+                elif etype == "GENERIC" and depth == 0:
+                    txt = str(e.get("content") or "")
+                    cid, cpath = _parse_agy_subagent_result(txt)
+                    if cid and cid not in seen_agy_children:
+                        seen_agy_children.add(cid)
+                        meta = agy_sub_meta[len(agy_children)] if len(agy_children) < len(agy_sub_meta) else {}
+                        agy_children.append((cid, cpath, meta))
                 continue
             session_id = session_id or e.get("sessionId")
             cwd = cwd or e.get("cwd")
@@ -255,9 +414,11 @@ def parse_transcript(path, conf=None, depth=0):
         gap = (b - a).total_seconds()
         if gap < 300:
             active += gap
+    resolved_sid = session_id or (_agy_session_id_from_path(path) if is_agy else os.path.basename(path)[:-6])
     row = {
-        "schema": SCHEMA, "source": "transcript", "session_id": session_id or os.path.basename(path)[:-6],
-        "cwd": cwd, "project": os.path.basename(cwd or ""), "cc_version": version, "entrypoint": entrypoint,
+        "schema": SCHEMA, "source": "transcript", "session_id": resolved_sid,
+        "cwd": cwd, "project": os.path.basename(cwd or ""), "cc_version": version,
+        "entrypoint": entrypoint or ("agy" if is_agy else None),
         "branch": branches.most_common(1)[0][0] if branches else None,
         "model": models.most_common(1)[0][0] if models else None, "models": dict(models),
         "started": times[0].isoformat() if times else None, "ended": times[-1].isoformat() if times else None,
@@ -267,7 +428,7 @@ def parse_transcript(path, conf=None, depth=0):
         "owner_turns": owner_turns, "received": received, "notices": notices, "sent": sent, "sent_chars": sent_chars,
         "tool_calls": sum(tools.values()), "tools": dict(tools.most_common()), "kit_cmds": dict(kit_cmds.most_common()),
         "board": {k: v for k, v in board.items() if k != "tests_run"}, "tests_run": board.get("tests_run", 0),
-        "compactions": compactions, "first_prompt": prompts[0] if prompts else "",
+        "compactions": compactions, "first_prompt": prompts[0] if prompts else (msg_prompts[0] if msg_prompts else ""),
     }
     subs = []
     if depth == 0:
@@ -283,6 +444,15 @@ def parse_transcript(path, conf=None, depth=0):
                          "description": meta.get("description"), "model": sub["model"],
                          "api_calls": sub["api_calls"], "tokens": sub["tokens"], "cost_usd": sub["cost_usd"],
                          "tool_calls": sub["tool_calls"], "tools": sub["tools"], "context_peak": sub["context_peak"]})
+        abs_self = os.path.abspath(path)
+        for cid, cpath, meta in agy_children:
+            if not cpath or not os.path.isfile(cpath) or os.path.abspath(cpath) == abs_self:
+                continue
+            sub = parse_transcript(cpath, conf, depth=1)
+            subs.append({"agent": cid, "type": meta.get("type"), "description": meta.get("description"),
+                         "model": sub["model"], "api_calls": sub["api_calls"], "tokens": sub["tokens"],
+                         "cost_usd": sub["cost_usd"], "tool_calls": sub["tool_calls"], "tools": sub["tools"],
+                         "context_peak": sub["context_peak"]})
     row["subagents"] = subs
     row["agents_spawned"] = sum(tools.get(n, 0) for n in AGENT_TOOLS)
     allc = [row["cost_usd"]] + [s["cost_usd"] for s in subs]
@@ -569,9 +739,18 @@ def work_by_trailer(repos, refs=("--all",)):
     return out
 
 
-def record(root, transcript, role=None, part=None, title=None, conf=None):
+def record(root, transcript, role=None, part=None, title=None, conf=None, session_id=None):
     conf = kit_conf(root) if conf is None else conf
     row = parse_transcript(transcript, conf)
+    if session_id and row.get("session_id") in (None, "", "transcript", "transcript_full"):
+        row["session_id"] = str(session_id)
+    if not row.get("cwd"):
+        row["cwd"] = os.path.abspath(root)
+        row["project"] = os.path.basename(row["cwd"])
+    if not row.get("branch"):
+        rc, br = git(root, "rev-parse", "--abbrev-ref", "HEAD")
+        if rc == 0 and br and br != "HEAD":
+            row["branch"] = br
     rid = str(os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID") or "")
     # only when the transcript is this very session's (a test or a backfill run inside a cloud session is not)
     if rid.startswith("cse_") and os.environ.get("CLAUDE_CODE_SESSION_ID") == row.get("session_id"):
@@ -835,14 +1014,16 @@ def hook(stdin_text, root=None):
         data = json.loads(stdin_text or "{}")
     except ValueError:
         data = {}
-    tp = data.get("transcript_path") or data.get("transcriptPath")
-    root = root or project_root(data.get("cwd"))
+    cid = data.get("conversationId") or data.get("conversation_id") or data.get("session_id")
+    tp = data.get("transcript_path") or data.get("transcriptPath") or (own_transcript(cid) if cid else None)
+    wps = data.get("workspacePaths") if isinstance(data.get("workspacePaths"), list) else []
+    root = root or project_root(data.get("cwd") or (wps[0] if wps else None))
     if not tp or not os.path.isfile(tp):
         return None
     conf = kit_conf(root)
     if conf.get("record", True) is False:
         return None
-    row = record(root, tp, conf=conf)
+    row = record(root, tp, conf=conf, session_id=cid)
     event = str(data.get("hook_event_name") or data.get("hookEventName") or "")
     if push_allowed(root, conf):
         stamp = os.path.join(run_dir(root), ".pushed")
@@ -889,12 +1070,16 @@ def push_locked(root):
 # ---------------------------------------------------------------- a session records itself, whatever its settings
 
 def own_transcript(session_id=None):
-    """This session's transcript: ~/.claude/projects/*/<CLAUDE_CODE_SESSION_ID>.jsonl (the newest if several)."""
-    sid = session_id or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    """This session's transcript: Claude Code (~/.claude/projects/*/<sid>.jsonl) or agy
+    (~/.gemini/antigravity-cli/brain/<sid>/.system_generated/logs/transcript.jsonl)."""
+    sid = session_id or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("AGY_CONVERSATION_ID") or os.environ.get("KIT_SESSION_ID")
     if not sid or not re.fullmatch(r"[A-Za-z0-9._-]+", sid):
         return None
-    base = os.path.join(os.path.expanduser("~"), ".claude", "projects")
-    found = glob.glob(os.path.join(base, "*", sid + ".jsonl"))
+    home = os.path.expanduser("~")
+    found = glob.glob(os.path.join(home, ".claude", "projects", "*", sid + ".jsonl"))
+    agy_tp = os.path.join(home, ".gemini", "antigravity-cli", "brain", sid, ".system_generated", "logs", "transcript.jsonl")
+    if os.path.isfile(agy_tp):
+        found.append(agy_tp)
     return max(found, key=os.path.getmtime) if found else None
 
 

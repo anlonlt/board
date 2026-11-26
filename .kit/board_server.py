@@ -3767,80 +3767,123 @@ def resolve_attached(root_dir, item):
                        "repos/%s and run `kit.py artifact load`" % (raw or "(none named)", up, gh or aid, aid))
 
 
+def _cleanup_empty_db(db_path):
+    """Remove a newly created 0-doc SQLite DB (and its WAL/SHM sidecars) on failed startup."""
+    for suffix in ("", "-wal", "-shm"):
+        p = db_path + suffix
+        try:
+            if os.path.exists(p):
+                os.unlink(p)
+        except OSError:
+            pass
+
+
 def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None, embed_mode=False, preview=False, default_watcher=None, auto_sync_interval=0.0, auto_sync_push=False, attach=None):
     if host.strip().lower() not in LOOPBACK_HOSTS and not token and not preview:
         raise ValueError("refusing to bind to non-loopback host %r without --token / KIT_BOARD_TOKEN" % host)
+    # Bind the listening socket BEFORE creating BoardStore so a failed bind (e.g. port already in use)
+    # never creates or leaves behind a 0-doc board.db that shadows board-mirror.
+    srv = BoardHTTPServer((host, port), None)
     data_dir = os.path.join(root_dir, ".kit", "board_data")
-    store = BoardStore(data_dir)
-    if auto_sync_interval and float(auto_sync_interval) > 0:
-        store.enable_auto_sync(root_dir, interval_sec=float(auto_sync_interval), push=auto_sync_push)
-        if port:
-            store._auto_sync_url = "http://127.0.0.1:%d" % int(port)
-            store._auto_sync_token = token or ""
+    db_path = os.path.join(data_dir, "board.db")
+    db_existed = os.path.exists(db_path)
+    store = None
     extra_stores = {}
-    attach_specs = dict(attach or {})
-    cfg_path = os.path.join(root_dir, ".kit", "config.json")
     try:
-        cfg_data = json.load(open(cfg_path, encoding="utf-8"))
-    except (OSError, ValueError):
-        cfg_data = {}
-    unresolved = {}
-    for item in (cfg_data.get("portfolio") or []):
-        aid, apath, why = resolve_attached(root_dir, item)
-        if aid and aid not in attach_specs:
-            if apath:
-                attach_specs[aid] = apath
-            else:
-                unresolved[aid] = why
-    for aid, why in unresolved.items():
-        print("board_server: attached board %r NOT attached: %s" % (aid, why), file=sys.stderr, flush=True)
-    for aid, apath in attach_specs.items():
-        ap_abs = os.path.abspath(apath)
-        if os.path.isdir(ap_abs):
-            ast = BoardStore(os.path.join(ap_abs, ".kit", "board_data"))
-            if not ast.list_docs("posts").get("docs"):
+        store = BoardStore(data_dir)
+        if auto_sync_interval and float(auto_sync_interval) > 0:
+            store.enable_auto_sync(root_dir, interval_sec=float(auto_sync_interval), push=auto_sync_push)
+            actual_port = srv.server_address[1]
+            if actual_port:
+                store._auto_sync_url = "http://127.0.0.1:%d" % int(actual_port)
+                store._auto_sync_token = token or ""
+        attach_specs = dict(attach or {})
+        cfg_path = os.path.join(root_dir, ".kit", "config.json")
+        try:
+            cfg_data = json.load(open(cfg_path, encoding="utf-8"))
+        except (OSError, ValueError):
+            cfg_data = {}
+        unresolved = {}
+        for item in (cfg_data.get("portfolio") or []):
+            aid, apath, why = resolve_attached(root_dir, item)
+            if aid and aid not in attach_specs:
+                if apath:
+                    attach_specs[aid] = apath
+                else:
+                    unresolved[aid] = why
+        for aid, why in unresolved.items():
+            print("board_server: attached board %r NOT attached: %s" % (aid, why), file=sys.stderr, flush=True)
+        for aid, apath in attach_specs.items():
+            ap_abs = os.path.abspath(apath)
+            if os.path.isdir(ap_abs):
+                ast = BoardStore(os.path.join(ap_abs, ".kit", "board_data"))
+                if not ast.list_docs("posts").get("docs"):
+                    try:
+                        sinfo = seed_from_mirror(ap_abs, ast)
+                        if sinfo.get("imported"):
+                            print("board_server: auto-seeded attached repo %r from %s (%d docs)" % (aid, sinfo["ref"], sinfo["imported"]), flush=True)
+                    except Exception:
+                        pass
+                if auto_sync_interval and float(auto_sync_interval) > 0:
+                    # CL32: never push another repo's board-mirror from here: this clone does not own that board (an
+                    # orchestrator's Harmonize clone pushed seeded posts to anlonlt/board's board-mirror on 11-23 22:04)
+                    ast.enable_auto_sync(ap_abs, interval_sec=float(auto_sync_interval), push=False)
+                aname = aid
                 try:
-                    sinfo = seed_from_mirror(ap_abs, ast)
-                    if sinfo.get("imported"):
-                        print("board_server: auto-seeded attached repo %r from %s (%d docs)" % (aid, sinfo["ref"], sinfo["imported"]), flush=True)
-                except Exception:
+                    aname = json.load(open(os.path.join(ap_abs, ".kit", "config.json"), encoding="utf-8")).get("project") or aid
+                except (OSError, ValueError):
                     pass
-            if auto_sync_interval and float(auto_sync_interval) > 0:
-                # CL32: never push another repo's board-mirror from here: this clone does not own that board (an
-                # orchestrator's Harmonize clone pushed seeded posts to anlonlt/board's board-mirror on 11-23 22:04)
-                ast.enable_auto_sync(ap_abs, interval_sec=float(auto_sync_interval), push=False)
-            aname = aid
+                extra_stores[aid] = {"name": aname, "root": ap_abs, "store": ast}
+        if preview:
+            if not token:
+                print(
+                    "board_server: WARNING: --preview disables authentication! "
+                    "Anyone who can reach http://%s:%d can read and write this board." % (host, srv.server_address[1]),
+                    file=sys.stderr,
+                    flush=True,
+                )
+            if not store.get_doc("posts", "_orchestrator").get("exists"):
+                store.set_doc("posts", "_orchestrator", {
+                    "title": "Ask the orchestrator",
+                    "column": "info",
+                    "part": "orchestrator",
+                    "priority": 3,
+                    "created_at": utc_now(),
+                    "body": "Write here for anything that is not about one post.",
+                })
+            if default_watcher is None:
+                default_watcher = "agent"
+        if default_watcher:
+            store.set_watch(default_watcher, True)
+        if notify_url is None:
+            notify_url = (NOTIFY.topic(root_dir, cfg_data.get("kit") or {}) if NOTIFY else cfg_data.get("kit", {}).get("notify_url")) or None
+        srv.RequestHandlerClass = make_handler(root_dir, store, token=token, notify_url=notify_url, embed_mode=embed_mode, extra_stores=extra_stores)
+        srv._extra_stores = extra_stores
+        return srv, store
+    except Exception:
+        try:
+            srv.server_close()
+        except Exception:
+            pass
+        for info in extra_stores.values():
             try:
-                aname = json.load(open(os.path.join(ap_abs, ".kit", "config.json"), encoding="utf-8")).get("project") or aid
-            except (OSError, ValueError):
+                info["store"].close()
+            except Exception:
                 pass
-            extra_stores[aid] = {"name": aname, "root": ap_abs, "store": ast}
-    if preview:
-        if not token:
-            print(
-                "board_server: WARNING: --preview disables authentication! "
-                "Anyone who can reach http://%s:%d can read and write this board." % (host, port),
-                file=sys.stderr,
-                flush=True,
-            )
-        if not store.get_doc("posts", "_orchestrator").get("exists"):
-            store.set_doc("posts", "_orchestrator", {
-                "title": "Ask the orchestrator",
-                "column": "info",
-                "part": "orchestrator",
-                "priority": 3,
-                "created_at": utc_now(),
-                "body": "Write here for anything that is not about one post.",
-            })
-        if default_watcher is None:
-            default_watcher = "agent"
-    if default_watcher:
-        store.set_watch(default_watcher, True)
-    if notify_url is None:
-        notify_url = (NOTIFY.topic(root_dir, cfg_data.get("kit") or {}) if NOTIFY else cfg_data.get("kit", {}).get("notify_url")) or None
-    srv = BoardHTTPServer((host, port), make_handler(root_dir, store, token=token, notify_url=notify_url, embed_mode=embed_mode, extra_stores=extra_stores))
-    srv._extra_stores = extra_stores
-    return srv, store
+        if store is not None:
+            empty = False
+            try:
+                cnt = store.conn.execute("SELECT COUNT(*) FROM docs").fetchone()
+                empty = bool(cnt and cnt[0] == 0)
+            except Exception:
+                pass
+            try:
+                store.close()
+            except Exception:
+                pass
+            if not db_existed and empty:
+                _cleanup_empty_db(db_path)
+        raise
 
 
 def _file_sig(path):

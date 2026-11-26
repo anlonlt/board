@@ -795,6 +795,8 @@ def main(argv=None):
                 pd = pdoc.get("data") or {}
                 if pd.get("removed") or pd.get("column") == "done":
                     continue
+                if str(pd.get("status") or "").strip().lower() in ("complete", "completed", "done", "dropped", "shipped", "merged", "closed", "abandoned", "superseded"):
+                    continue
                 pr = str(pd.get("runner") or "").strip().lower()
                 pf = str(pd.get("for") or pd.get("assignee") or pd.get("assigned_to") or "").strip().lower()
                 if rf and pr != rf:
