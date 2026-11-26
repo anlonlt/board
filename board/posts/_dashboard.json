@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:26:46Z",
+ "created_at": "2026-11-26T21:32:57Z",
  "rows": [
   {
    "at": 39,
@@ -86,7 +86,8 @@
    "steps": [
     "A web session reconciles its Artifact with GitHub at its start",
     "end_session says why a push failed",
-    "CL41's redirect resolved, so the trunk can move"
+    "CL41's redirect resolved, so the trunk can move",
+    "A test never writes to the real board"
    ],
    "train": "P-board-data"
   },
@@ -144,5 +145,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T21:26:46Z"
+ "updated_at": "2026-11-26T21:32:57Z"
 }

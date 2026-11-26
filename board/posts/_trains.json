@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:25:07Z",
+ "created_at": "2026-11-26T21:32:57Z",
  "rows": [
   {
    "also": [],
@@ -71,7 +71,8 @@
    "children": [
     "CL45",
     "CL46",
-    "CL47"
+    "CL47",
+    "CL48"
    ],
    "parent": "",
    "part": "P-board-data",
@@ -966,8 +967,19 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-board-data",
+   "part": "CL48",
+   "post": "cl48-a-test-never-writes-to-the-real-board",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T21:25:07Z"
+ "updated_at": "2026-11-26T21:32:57Z"
 }
