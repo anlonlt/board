@@ -78,6 +78,18 @@
    "sha": "08163f92391e1658bcb3b364ea3901aaa2659b76daeb60fa7b75ff1b64ca14c2",
    "version": 1
   },
+  "kit+2F~AGENTS.template.md": {
+   "sha": "7b2225ff7e02c589089d4d07ddc67f036d3e83c687cc81ad01556694d1c95cc8",
+   "version": 1
+  },
+  "kit+2F~ORCHESTRATOR.template.md": {
+   "sha": "9e70dbe60e2c88775d685cc46cf56492eea3de214c087257e032dd3eb02fead4",
+   "version": 1
+  },
+  "kit+2F~arena+2F~orchestrator.template.md": {
+   "sha": "eee3659015081257265aa2ac1c9c64b30e4866380d557a4e69b35fe9de06d23e",
+   "version": 1
+  },
   "kit+2F~board+2F~BOARD.template.md": {
    "sha": "d619ed0ba48005f1993f40e8b4a68732da709261673180a2e613b36589e19e6b",
    "version": 7
@@ -88,6 +100,10 @@
   },
   "kit+2F~claude+2F~BOARD.template.md": {
    "sha": "693c0c6b11fae4c985b5b2d2f8369dfb3287b2ffd969833814f3e7f8a87a5171",
+   "version": 1
+  },
+  "kit+2F~claude+2F~ORCHESTRATOR.template.md": {
+   "sha": "77fd6ea2bc56631878ebbd1a6fd0ff4180de776c3e17bb5dc668a7d685791064",
    "version": 1
   },
   "kit+2F~claude+2F~SKILL.board.md": {
@@ -105,6 +121,10 @@
   "kit+2F~claude+2F~orchestrator.template.md": {
    "sha": "0c1e04f0444a431367a54bfd88ec76a05f490a04812d979563b0a19dbc502e4f",
    "version": 2
+  },
+  "kit+2F~claude-cli+2F~ORCHESTRATOR.template.md": {
+   "sha": "eb801ae25a2aded356c0dd06bf5be887c65883f55e2e13c7a214e62464ef8e27",
+   "version": 1
   },
   "kit+2F~claude-cli+2F~consultant.template.md": {
    "sha": "1df323e2eb2b7d0acc67df670679a1a44d5c29bb3213f54a24d437810fa2f4e1",
@@ -130,6 +150,10 @@
    "sha": "1d7cc97b4f490dfc35f80bce76e364b472e386cf83fa77b37422af773a478e93",
    "version": 5
   },
+  "kit+2F~orchestrator.template.md": {
+   "sha": "64c96d7b0ce53184a231d97d6f4195492bd2ab160d9f6dd2b1694e986aa31050",
+   "version": 1
+  },
   "kit+2F~part.template.md": {
    "sha": "dd42a47cbc30480f640f2dd3a7c5b0f7ce975451228d472114a88faaa00c85f5",
    "version": 1
@@ -144,6 +168,10 @@
   },
   "step0+2F~survey-chat.md": {
    "sha": "a7b0536722f02018016f41a439b34dcdd25da8868b50002d14d1528d8624a6cf",
+   "version": 1
+  },
+  "step0+2F~survey-code.md": {
+   "sha": "6741ec431e08fb24d85cb6df44672b083a8072900dd9ea32c7e3676d43d42ee5",
    "version": 1
   },
   "tests+2F~fixtures+2F~cl33_harmonize_awaits.md": {
