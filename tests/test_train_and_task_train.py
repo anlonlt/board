@@ -102,7 +102,18 @@ class TrainAndResume(unittest.TestCase):
                         else os.environ.__setitem__("KIT_ARTIFACT_DIR", old))
         call = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "board_resume", "arguments": {"cli": "agy"}}}
         if self.kit.attached_board():
-            stale = srv.handle(call)
+            # CL44 item 1: a local session (kit.mode local) reads the local board, the gate is the web's
+            local = srv.handle(call)
+            self.assertNotIn("never loaded", local["result"]["content"][0]["text"])
+            old_remote = os.environ.get("CLAUDE_CODE_REMOTE")
+            os.environ["CLAUDE_CODE_REMOTE"] = "true"
+            try:
+                stale = srv.handle(call)
+            finally:
+                if old_remote is None:
+                    os.environ.pop("CLAUDE_CODE_REMOTE", None)
+                else:
+                    os.environ["CLAUDE_CODE_REMOTE"] = old_remote
             self.assertTrue(stale["result"]["isError"])
             self.assertIn("never loaded", stale["result"]["content"][0]["text"])
         from datetime import datetime, timezone
