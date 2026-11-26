@@ -3525,13 +3525,47 @@ def _post_sig(q):
     return _base36(h) + "." + _base36(n_units)
 
 
+def _mirror_git_docs(root_dir, ref):
+    """Read board/posts, board/comments, board/seen tar bytes and their last-commit UTC timestamps from a git ref."""
+    arc = subprocess.run(
+        ["git", "-C", root_dir, "archive", "--format=tar", ref, "board"],
+        capture_output=True,
+        timeout=180,
+    )
+    if arc.returncode != 0 or not arc.stdout:
+        return None, {}
+    ts = {}
+    log = subprocess.run(
+        ["git", "-C", root_dir, "log", "--format=@%cI", "--name-only", ref, "--", "board/posts", "board/comments", "board/seen"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    ).stdout
+    cur = ""
+    for line in log.splitlines():
+        if line.startswith("@"):
+            raw = line[1:].strip()
+            try:
+                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                cur = dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                cur = raw
+            continue
+        p = line.strip()
+        if p.endswith(".json") and p not in ts:
+            ts[p] = cur
+    return arc.stdout, ts
+
+
 def seed_from_mirror(root_dir, store, branch=None, force=False):
     """Import board/posts/*.json and board/comments/*.json from git mirror branch into SQLite.
 
-    Reads directly from git objects (origin/<branch>, falling back to <branch>) in one `git archive`
-    packfile fetch without modifying the working tree. Existing docs in SQLite are preserved unless
-    force=True. Also imports board/seen.json if present and seeds data/users/owner/board-seen for
-    imported historical posts so they do not appear unread on first boot.
+    Reads directly from git objects (the newest of local <branch> and origin/<branch>; when diverged,
+    merges both keeping the newer commit per file) in `git archive` without modifying the working tree.
+    Existing docs in SQLite are preserved unless force=True. Also imports board/seen.json if present and
+    seeds data/users/owner/board-seen for imported historical posts so they do not appear unread on first boot.
     """
     import io
     import tarfile
@@ -3548,74 +3582,105 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
 
     # Explicit refspec ensures single-branch clones populate refs/remotes/origin/<branch>.
     git("fetch", "-q", "origin", "%s:refs/remotes/origin/%s" % (branch, branch))
-    ref = None
-    for cand in ("origin/" + branch, branch):
-        if git("rev-parse", "--verify", "--quiet", cand).returncode == 0:
-            ref = cand
-            break
-    if not ref:
+    remote_ref = "refs/remotes/origin/" + branch
+    local_ref = "refs/heads/" + branch
+    has_remote = git("rev-parse", "--verify", "--quiet", remote_ref).returncode == 0
+    has_local = git("rev-parse", "--verify", "--quiet", local_ref).returncode == 0
+    if not has_remote and not has_local:
         return {"ref": None, "imported": 0, "skipped": 0}
-    arc = subprocess.run(
-        ["git", "-C", root_dir, "archive", "--format=tar", ref, "board"],
-        capture_output=True,
-        timeout=180,
-    )
-    if arc.returncode != 0 or not arc.stdout:
-        return {"ref": ref, "imported": 0, "skipped": 0}
+    refs = []
+    if has_remote and has_local:
+        r_sha = git("rev-parse", remote_ref).stdout.strip()
+        l_sha = git("rev-parse", local_ref).stdout.strip()
+        if r_sha == l_sha:
+            refs = [("origin/" + branch, remote_ref)]
+        elif git("merge-base", "--is-ancestor", remote_ref, local_ref).returncode == 0:
+            # Local mirror branch has unpushed commits strictly ahead of origin: read local!
+            refs = [(branch, local_ref)]
+        elif git("merge-base", "--is-ancestor", local_ref, remote_ref).returncode == 0:
+            refs = [("origin/" + branch, remote_ref)]
+        else:
+            # Diverged: combine both refs, keeping the newer commit timestamp per document.
+            refs = [("origin/" + branch, remote_ref), (branch, local_ref)]
+    elif has_remote:
+        refs = [("origin/" + branch, remote_ref)]
+    else:
+        refs = [(branch, local_ref)]
 
+    ref_label = "+".join(lbl for lbl, _ in refs)
+    combined_docs = {}  # (coll, doc_id) -> (data, ts_str)
     imported = skipped = blobs_restored = 0
     sync_cursor = ""
     mirror_seen = {}
     imported_posts = {}
     referenced_blobs = set()
-    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
-        for member in tf.getmembers():
-            if not member.isfile():
-                continue
-            name = tar_name(member.name)
-            parts = name.split("/")
-            if len(parts) == 3 and parts[0] == "board" and parts[1] == "blobs":
-                bfn = parts[2]
-                if re.fullmatch(r"[a-fA-F0-9]{16,64}(\.json)?", bfn):
-                    dst = os.path.join(store.blob_dir, bfn)
-                    if force or not os.path.exists(dst):
-                        fobj = tf.extractfile(member)
-                        if fobj is not None:
-                            with open(dst, "wb") as out_fh:
-                                out_fh.write(fobj.read())
-                            if not bfn.endswith(".json"):
-                                blobs_restored += 1
-                continue
-            if not member.name.endswith(".json"):
-                continue
-            fobj = tf.extractfile(member)
-            if fobj is None:
-                continue
-            raw_bytes = fobj.read()
-            try:
-                raw_text = raw_bytes.decode("utf-8")
-                data = json.loads(raw_text)
-            except (UnicodeDecodeError, ValueError):
-                continue
-            for bid in re.findall(r"/_blob/([a-fA-F0-9]{16,64})", raw_text):
-                referenced_blobs.add(bid)
-            if name == "board/sync.json" and isinstance(data, dict):
-                sync_cursor = str(data.get("cursor") or "")
-                continue
-            if name in ("board/seen.json", "board/seen/owner.json") and isinstance(data, dict):
-                seen_map = data.get("posts") if isinstance(data.get("posts"), dict) else data
-                _merge_board_seen_posts(mirror_seen, seen_map)
-                continue
-            if len(parts) != 3 or parts[0] != "board" or parts[1] not in ("posts", "comments"):
-                continue
-            coll, doc_id = parts[1], parts[2][:-5]
-            if not force and store.get_doc(coll, doc_id).get("exists"):
-                skipped += 1
-                continue
-            store.set_doc(coll, doc_id, data)
-            imported += 1
-            if coll == "posts":
-                imported_posts[doc_id] = data
+    any_archive = False
+
+    for _, gref in refs:
+        tar_bytes, ts_map = _mirror_git_docs(root_dir, gref)
+        if not tar_bytes:
+            continue
+        any_archive = True
+        with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:*") as tf:
+            for member in tf.getmembers():
+                if not member.isfile():
+                    continue
+                name = tar_name(member.name)
+                parts = name.split("/")
+                if len(parts) == 3 and parts[0] == "board" and parts[1] == "blobs":
+                    bfn = parts[2]
+                    if re.fullmatch(r"[a-fA-F0-9]{16,64}(\.json)?", bfn):
+                        dst = os.path.join(store.blob_dir, bfn)
+                        if force or not os.path.exists(dst):
+                            fobj = tf.extractfile(member)
+                            if fobj is not None:
+                                with open(dst, "wb") as out_fh:
+                                    out_fh.write(fobj.read())
+                                if not bfn.endswith(".json"):
+                                    blobs_restored += 1
+                    continue
+                if not member.name.endswith(".json"):
+                    continue
+                fobj = tf.extractfile(member)
+                if fobj is None:
+                    continue
+                raw_bytes = fobj.read()
+                try:
+                    raw_text = raw_bytes.decode("utf-8")
+                    data = json.loads(raw_text)
+                except (UnicodeDecodeError, ValueError):
+                    continue
+                for bid in re.findall(r"/_blob/([a-fA-F0-9]{16,64})", raw_text):
+                    referenced_blobs.add(bid)
+                if name == "board/sync.json" and isinstance(data, dict):
+                    sc = str(data.get("cursor") or "")
+                    if sc > sync_cursor:
+                        sync_cursor = sc
+                    continue
+                if name in ("board/seen.json", "board/seen/owner.json") and isinstance(data, dict):
+                    seen_map = data.get("posts") if isinstance(data.get("posts"), dict) else data
+                    _merge_board_seen_posts(mirror_seen, seen_map)
+                    continue
+                if len(parts) != 3 or parts[0] != "board" or parts[1] not in ("posts", "comments"):
+                    continue
+                coll, doc_id = parts[1], parts[2][:-5]
+                key = (coll, doc_id)
+                mts = ts_map.get(name, "")
+                if key not in combined_docs or (mts and mts >= combined_docs[key][1]):
+                    combined_docs[key] = (data, mts)
+
+    if not any_archive:
+        return {"ref": ref_label, "imported": 0, "skipped": 0}
+
+    for (coll, doc_id), (data, _) in sorted(combined_docs.items()):
+        if not force and store.get_doc(coll, doc_id).get("exists"):
+            skipped += 1
+            continue
+        store.set_doc(coll, doc_id, data)
+        imported += 1
+        if coll == "posts":
+            imported_posts[doc_id] = data
+    ref = ref_label
 
     # Preserve/seed notification read state so historical mirror posts don't flood as unread.
     cur_seen = store.get_doc("data/users/owner", "board-seen")

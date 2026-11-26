@@ -19,7 +19,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "send_message|run_command|edit_file|write_file",
+        "matcher": "send_message|run_command|update_steps|edit_file|write_file",
         "hooks": [
           {
             "type": "command",

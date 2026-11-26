@@ -37,7 +37,8 @@ TABLE = [
     ("PostToolUse", "kit_brief_guard.py", {"web": "Bash", "cli": "Bash", "agy": "run_command"}, PLAIN, 50),
     ("PostToolUse", "kit_cards_reminder.py", {"web": "ArtifactData|" + SESSION}, PLAIN, 50),
     ("PostToolUse", "kit_notify.py", {"web": "ArtifactData"}, PLAIN, 50),
-    ("PostToolUse", "kit_task_train.py", {"web": "TaskCreate|TaskUpdate", "cli": "TaskCreate|TaskUpdate"}, PLAIN, 130),
+    ("PostToolUse", "kit_task_train.py", {"web": "TaskCreate|TaskUpdate", "cli": "TaskCreate|TaskUpdate",
+                                          "agy": "update_steps"}, PLAIN, 130),
     ("PostToolUse", "kit_board_guard.py", {"web": "Bash|" + SESSION, "cli": "Bash"}, PLAIN, 50),
     ("PreToolUse", "kit_activity.py", {"web": "Bash|Edit|Write|MultiEdit", "cli": "Bash|Edit|Write|MultiEdit",
                                        "agy": "run_command|edit_file|write_file"}, PLAIN, 25),
@@ -55,6 +56,7 @@ TABLE = [
     ("PreInvocation", "kit_board_typing.py", {"agy": ANY}, PLAIN, 50),
     ("PostInvocation", "kit_say_it_once.py", {"agy": ANY}, PLAIN, 50),
     ("PostInvocation", "kit_activity.py", {"agy": ANY}, PLAIN, 25),
+    ("PostInvocation", "kit_memory_jit.py", {"agy": ANY}, PLAIN, 25),
     ("Stop", "kit_board_guard.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("Stop", "kit_stop.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
     ("Stop", "kit_pre_compact.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
@@ -343,8 +345,13 @@ def merge_claude(event, results):
     return 0, json.dumps(res, ensure_ascii=False) if res else "", ""
 
 
+AGY_INJECT_EVENTS = ("SessionStart", "PreInvocation", "PostInvocation")
+
+
 def merge_agy(event, results):
-    """(exit code, stdout, stderr) in agy's contract: one JSON object, a decision and the steps to inject."""
+    """(exit code, stdout, stderr) in agy's contract: one JSON object matching the event's protojson schema.
+    CL44 (item 9): agy rejects `injectSteps` on PreToolUse/PostToolUse/Stop via protojson; only emit `injectSteps`
+    on events whose schema accepts it (SessionStart, PreInvocation, PostInvocation)."""
     objs, errs, rc = [], [], 0
     for f, guard, code, out, err, why in results:
         if why and guard:
@@ -372,9 +379,10 @@ def merge_agy(event, results):
         why = _join(str(o.get("reason") or "") for o in said if o["decision"] != "allow")
         if why:
             res["reason"] = why
-    steps = [s for o in objs for s in (o.get("injectSteps") or [])]
-    if steps:
-        res["injectSteps"] = steps
+    if event in AGY_INJECT_EVENTS:
+        steps = [s for o in objs for s in (o.get("injectSteps") or [])]
+        if steps:
+            res["injectSteps"] = steps
     return rc, json.dumps(res, ensure_ascii=False), _join(errs)
 
 

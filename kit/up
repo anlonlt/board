@@ -206,6 +206,10 @@ resolve_agy_mode() {
   printf '%s\n' "$help_txt" | grep -q -- 'accept-edits' && has_accept_edits=1
   printf '%s\n' "$help_txt" | grep -q -- '--print-timeout' && has_print_timeout=1
 
+  if [ -z "$help_txt" ]; then
+    AGY_MODE_ARGS=(--mode auto)
+    return 0
+  fi
   if [ "$has_mode_flag" -eq 0 ] || [ "$has_auto" -eq 0 ]; then
     unavail="flag not supported by this agy binary"
   else

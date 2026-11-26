@@ -134,7 +134,19 @@ def default_token():
         return os.environ["KIT_BOARD_TOKEN"].strip()
     tp = os.path.join(ROOT, ".kit", "board_data", "token")
     try:
-        return open(tp, encoding="utf-8").read().strip() or None
+        with open(tp, encoding="utf-8") as fh:
+            tok = fh.read().strip()
+        if tok:
+            return tok
+    except OSError:
+        pass
+    # CL44: in a fresh git worktree, .kit/board_data/token (gitignored) does not exist yet; fall back to the
+    # machine token (~/.config/board-kit/board_token) so hooks (kit_activity) and board_cli authenticate cleanly.
+    xdg = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    mtp = os.path.join(xdg, "board-kit", "board_token")
+    try:
+        with open(mtp, encoding="utf-8") as fh:
+            return fh.read().strip() or None
     except OSError:
         return None
 

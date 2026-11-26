@@ -364,5 +364,355 @@ class Bug5KitUpAgyModeHandling(unittest.TestCase):
             self.assertIn("--mode auto", invoked[0])
 
 
+class Bug7MirrorLoss(unittest.TestCase):
+    def test_local_only_mirror_post_survives_seed_and_reconcile(self):
+        bs = _load("bs_cl44_b7", ROOT / "kit" / "board" / "board_server.py")
+        kit = _load("kit_cl44_b7", ROOT / "scripts" / "kit.py")
+        import threading
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td)
+            origin = p / "origin.git"
+            repo = p / "repo"
+            mirror = p / "mirror"
+            subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+            subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+            g = lambda cwd, *a: subprocess.run(
+                ["git", "-C", str(cwd), "-c", "user.name=t", "-c", "user.email=t@t"] + list(a),
+                check=True, capture_output=True, text=True,
+            )
+            (repo / ".kit").mkdir()
+            (repo / ".kit" / "config.json").write_text(json.dumps({"project": "T", "mirror": {"branch": "board-mirror"}}))
+            (repo / "README.md").write_text("hi\n")
+            g(repo, "add", ".")
+            g(repo, "commit", "-qm", "init")
+            g(repo, "remote", "add", "origin", str(origin))
+            g(repo, "push", "-q", "-u", "origin", "main")
+
+            # Create board-mirror orphan branch + worktree with base post and push to origin
+            empty_tree = g(repo, "hash-object", "-t", "tree", "/dev/null").stdout.strip()
+            init_c = g(repo, "commit-tree", empty_tree, "-m", "init mirror").stdout.strip()
+            g(repo, "branch", "board-mirror", init_c)
+            g(repo, "worktree", "add", "-q", str(mirror), "board-mirror")
+            (mirror / "board" / "posts").mkdir(parents=True)
+            (mirror / "board" / "comments").mkdir(parents=True)
+            (mirror / "board" / "posts" / "p-origin.json").write_text(json.dumps({
+                "title": "On origin", "column": "info", "created_at": "2026-11-26T01:00:00Z",
+            }))
+            g(mirror, "add", "board")
+            g(mirror, "commit", "-qm", "origin post")
+            g(mirror, "push", "-q", "-u", "origin", "board-mirror")
+
+            # Add a second post ONLY to the local board-mirror branch (unpushed!)
+            (mirror / "board" / "posts" / "p-local-only.json").write_text(json.dumps({
+                "title": "Local only post", "column": "info", "created_at": "2026-11-26T02:00:00Z",
+            }))
+            g(mirror, "add", "board")
+            g(mirror, "commit", "-qm", "local only post")
+
+            # Start fresh board server from empty board.db and seed_from_mirror
+            srv, store = bs.start_server(str(repo), host="127.0.0.1", port=0, preview=True)
+            try:
+                info = bs.seed_from_mirror(str(repo), store, branch="board-mirror")
+                self.assertGreaterEqual(info["imported"], 2)
+                self.assertTrue(store.get_doc("posts", "p-local-only")["exists"])
+                self.assertTrue(store.get_doc("posts", "p-origin")["exists"])
+
+                port = srv.server_address[1]
+                th = threading.Thread(target=srv.serve_forever, daemon=True)
+                th.start()
+                old_root = kit.ROOT
+                try:
+                    kit.ROOT = str(repo)
+                    rec = kit.reconcile(str(mirror), url=f"http://127.0.0.1:{port}", branch="board-mirror", db_path=store.db_path)
+                    self.assertEqual(rec["git"], "pushed")
+                finally:
+                    kit.ROOT = old_root
+                # Both posts stay on the board AND in git (including origin/board-mirror)
+                self.assertTrue(store.get_doc("posts", "p-local-only")["exists"])
+                self.assertTrue((mirror / "board" / "posts" / "p-local-only.json").is_file())
+                ls = subprocess.run(["git", "-C", str(origin), "ls-tree", "-r", "--name-only", "board-mirror"],
+                                    capture_output=True, text=True, check=True).stdout
+                self.assertIn("board/posts/p-local-only.json", ls)
+            finally:
+                srv.shutdown()
+                srv.server_close()
+                store.close()
+
+
+class Bug8AgyUpdateStepsToBoard(unittest.TestCase):
+    def test_update_steps_ticks_pieces_via_kit_sub(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td)
+            (p / ".kit").mkdir()
+            (p / ".kit" / "config.json").write_text(json.dumps({"project": "P"}))
+            log_file = p / "sub-calls.log"
+            # Fake .kit/kit.py that logs `sub` calls
+            (p / ".kit" / "kit.py").write_text(
+                "import json, sys\n"
+                "open(%r, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
+                "print(json.dumps({'post': 'cl44-x', 'done': 1, 'of': 2}))\n" % str(log_file)
+            )
+            # Fake .kit/board_cli.py returning 2 subtasks
+            (p / ".kit" / "board_cli.py").write_text(
+                "import json\n"
+                "print(json.dumps({'exists': True, 'data': {'subtasks': ["
+                "{'n': 1, 'title': 'Skip Artifact STALE gate in local mode', 'status': 'open'},"
+                "{'n': 2, 'title': 'Fall back to board-mirror when board.db is empty', 'status': 'open'}"
+                "]}}))\n"
+            )
+            payload = {
+                "hookEventName": "PostToolUse",
+                "conversationId": "conv-cl44-8",
+                "cwd": str(p),
+                "toolCall": {
+                    "name": "update_steps",
+                    "args": {
+                        "steps": [
+                            {"title": "1. Fix Artifact STALE gate", "status": "done"},
+                            {"title": "Fall back to board-mirror empty db", "status": "in_progress"},
+                        ]
+                    },
+                },
+            }
+            env = dict(os.environ, KIT_POST="cl44-x")
+            r = subprocess.run(
+                [sys.executable, "-I", str(ROOT / "kit" / "hooks" / "kit_task_train.py")],
+                input=json.dumps(payload), capture_output=True, text=True, env=env, cwd=td, timeout=30,
+            )
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(r.stdout.strip(), "", "agy PostToolUse must never emit injectSteps")
+            calls = [json.loads(line) for line in log_file.read_text().splitlines()]
+            self.assertEqual(len(calls), 2, calls)
+            self.assertEqual(calls[0][:5], ["sub", "cl44-x", "1", "--status", "done"])
+            self.assertEqual(calls[1][:5], ["sub", "cl44-x", "2", "--status", "doing"])
+
+
+class Bug9AgyPreToolUseSchemaAndActivity(unittest.TestCase):
+    AGY_SCHEMAS = {
+        "PreToolUse": {"decision", "reason"},
+        "PostToolUse": {"decision", "reason"},
+        "Stop": {"decision", "reason"},
+        "PreInvocation": {"decision", "reason", "injectSteps"},
+        "PostInvocation": {"decision", "reason", "injectSteps"},
+        "SessionStart": {"decision", "reason", "injectSteps"},
+    }
+
+    def test_pre_tool_use_never_emits_inject_steps_and_delivers_on_post_invocation(self):
+        hk = _load("hook_cl44_b9", ROOT / "kit" / "hook.py")
+        # Direct merge_agy schema enforcement check
+        for ev in ("PreToolUse", "PostToolUse", "Stop"):
+            rc, out, _ = hk.merge_agy(ev, [("fake.py", False, 0,
+                                            json.dumps({"decision": "allow", "injectSteps": [{"systemMessage": {"systemMessage": "hi"}}]}),
+                                            "", "")])
+            self.assertEqual(rc, 0)
+            obj = json.loads(out)
+            self.assertTrue(set(obj) <= self.AGY_SCHEMAS[ev], (ev, obj))
+            self.assertNotIn("injectSteps", obj)
+
+        # End-to-end kit_memory_jit via hook.py: PreToolUse returns allow without injectSteps; PostInvocation delivers it
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td)
+            (p / ".kit" / "hooks").mkdir(parents=True)
+            (p / ".kit" / "config.json").write_text(json.dumps({"project": "P"}))
+            (p / ".kit" / "ledger.py").write_text((ROOT / "kit" / "ledger.py").read_text())
+            (p / ".kit" / "hook.py").write_text((ROOT / "kit" / "hook.py").read_text())
+            for f in (ROOT / "kit" / "hooks").glob("*.py"):
+                (p / ".kit" / "hooks" / f.name).write_text(f.read_text())
+            (p / ".kit" / "lessons.md").write_text(
+                "## K99: Check board server\nroles: all\nfiles: kit/board/board_server.py\n\nNever leave empty db.\n"
+            )
+            env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE", "KIT_"))}
+            pre_payload = {
+                "hookEventName": "PreToolUse",
+                "conversationId": "conv-jit-9",
+                "cwd": str(p),
+                "workspacePaths": [str(p)],
+                "toolCall": {"name": "edit_file", "args": {"Path": str(p / "kit" / "board" / "board_server.py")}},
+            }
+            r1 = subprocess.run([sys.executable, "-I", str(p / ".kit" / "hook.py"), "agy", "PreToolUse"],
+                                input=json.dumps(pre_payload), capture_output=True, text=True, env=env, cwd=td, timeout=30)
+            self.assertEqual(r1.returncode, 0, r1.stderr)
+            d1 = json.loads(r1.stdout)
+            self.assertTrue(set(d1) <= self.AGY_SCHEMAS["PreToolUse"], d1)
+            self.assertNotIn("injectSteps", d1)
+
+            post_inv = {
+                "hookEventName": "PostInvocation",
+                "conversationId": "conv-jit-9",
+                "cwd": str(p),
+                "workspacePaths": [str(p)],
+            }
+            r2 = subprocess.run([sys.executable, "-I", str(p / ".kit" / "hook.py"), "agy", "PostInvocation"],
+                                input=json.dumps(post_inv), capture_output=True, text=True, env=env, cwd=td, timeout=30)
+            self.assertEqual(r2.returncode, 0, r2.stderr)
+            d2 = json.loads(r2.stdout)
+            self.assertTrue(set(d2) <= self.AGY_SCHEMAS["PostInvocation"], d2)
+            self.assertIn("K99", json.dumps(d2.get("injectSteps") or []))
+
+    def test_board_cli_default_token_falls_back_to_machine_token_in_worktree(self):
+        bcli = _load("bcli_cl44_b9", ROOT / "kit" / "board" / "board_cli.py")
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td)
+            xdg = p / "xdg"
+            (xdg / "board-kit").mkdir(parents=True)
+            (xdg / "board-kit" / "board_token").write_text("machine-secret-tok\n")
+            wt = p / "wt"
+            wt.mkdir()
+            old_root = bcli.ROOT
+            old_xdg = os.environ.get("XDG_CONFIG_HOME")
+            old_tok = os.environ.pop("KIT_BOARD_TOKEN", None)
+            try:
+                bcli.ROOT = str(wt)
+                os.environ["XDG_CONFIG_HOME"] = str(xdg)
+                self.assertEqual(bcli.default_token(), "machine-secret-tok")
+            finally:
+                bcli.ROOT = old_root
+                if old_xdg is None:
+                    os.environ.pop("XDG_CONFIG_HOME", None)
+                else:
+                    os.environ["XDG_CONFIG_HOME"] = old_xdg
+                if old_tok is not None:
+                    os.environ["KIT_BOARD_TOKEN"] = old_tok
+
+
+class Bug10AutoCheckpoint(unittest.TestCase):
+    def test_checkpoint_commits_on_step_branch_skips_secrets_and_refuses_trunk(self):
+        kit = _load("kit_cl44_b10", ROOT / "scripts" / "kit.py")
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td)
+            g = lambda *a: subprocess.run(
+                ["git", "-C", str(p), "-c", "user.name=t", "-c", "user.email=t@t"] + list(a),
+                check=True, capture_output=True, text=True,
+            )
+            g("init", "-q", "-b", "main")
+            (p / ".kit").mkdir()
+            (p / ".kit" / "config.json").write_text(json.dumps({"kit": {"main_branch": "main", "guard": {"never_add": [".env"]}}}))
+            (p / "a.txt").write_text("base\n")
+            g("add", ".")
+            g("commit", "-qm", "base")
+            old_root = kit.ROOT
+            try:
+                kit.ROOT = str(p)
+                (p / "a.txt").write_text("changed on main\n")
+                r_main = kit.checkpoint(post="cl44-x", message="nope")
+                self.assertFalse(r_main["ok"])
+                self.assertFalse(r_main["committed"])
+
+                g("checkout", "-qb", "cl44")
+                (p / ".env").write_text("SECRET=1\n")
+                r_ck = kit.checkpoint(post="cl44-x", message="piece 1 done")
+                self.assertTrue(r_ck["ok"] and r_ck["committed"], r_ck)
+                self.assertEqual(r_ck["branch"], "cl44")
+                files = g("show", "--name-only", "--format=", "HEAD").stdout.splitlines()
+                self.assertIn("a.txt", files)
+                self.assertNotIn(".env", files)
+            finally:
+                kit.ROOT = old_root
+
+
+class Bug11ResumeNamesWorkLocations(unittest.TestCase):
+    def test_resume_names_branch_last_checkpoint_and_dirty_worktree(self):
+        kit = _load("kit_cl44_b11", ROOT / "scripts" / "kit.py")
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td)
+            repo = p / "repo"
+            wt = p / "subagent-Part--CL44-self-old"
+            g = lambda cwd, *a: subprocess.run(
+                ["git", "-C", str(cwd), "-c", "user.name=t", "-c", "user.email=t@t"] + list(a),
+                check=True, capture_output=True, text=True,
+            )
+            subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+            (repo / ".kit").mkdir()
+            (repo / ".kit" / "config.json").write_text(json.dumps({"kit": {"main_branch": "main"}}))
+            (repo / "base.txt").write_text("base\n")
+            g(repo, "add", ".")
+            g(repo, "commit", "-qm", "base")
+
+            # Step branch with a checkpoint commit
+            g(repo, "checkout", "-qb", "cl44")
+            (repo / "fix.py").write_text("x = 1\n")
+            g(repo, "add", "fix.py")
+            g(repo, "commit", "-qm", "checkpoint(CL44): piece 1 done")
+            g(repo, "checkout", "-q", "main")
+
+            # Separate agy worktree with uncommitted work
+            g(repo, "worktree", "add", "-q", "-b", "subagent-Part--CL44-self-old", str(wt), "main")
+            (wt / "wip.py").write_text("uncommitted\n")
+
+            posts = {
+                "cl44-test": {
+                    "title": "Fix agy gaps", "train": "cli", "part": "CL44",
+                    "column": "info", "status": "in progress", "session_id": "prev-sess",
+                }
+            }
+            old_root = kit.ROOT
+            try:
+                kit.ROOT = str(repo)
+                tl, _ = kit._train_lines(posts, alive=set())
+                txt_tl = "\n".join(tl)
+                self.assertIn("branch `cl44`", txt_tl)
+                self.assertIn("checkpoint(CL44): piece 1 done", txt_tl)
+                self.assertIn("subagent-Part--CL44-self-old", txt_tl)
+                self.assertIn("wip.py", txt_tl)
+
+                cl = "\n".join(kit.continues_lines(posts["cl44-test"], session="new-sess", pid="cl44-test"))
+                self.assertIn("branch `cl44`", cl)
+                self.assertIn("wip.py", cl)
+            finally:
+                kit.ROOT = old_root
+
+
+class Bug12DeviceGateRecheck(unittest.TestCase):
+    def _write_meminfo(self, path, total_mb, avail_mb):
+        Path(path).write_text(
+            "MemTotal:        %d kB\nMemAvailable:    %d kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n"
+            % (total_mb * 1024, avail_mb * 1024)
+        )
+
+    def test_low_then_high_meminfo_passes_within_window(self):
+        dev = _load("dev_cl44_b12", ROOT / "scripts" / "device.py")
+        with tempfile.TemporaryDirectory() as td:
+            mi = Path(td) / "meminfo"
+            self._write_meminfo(mi, 4096, 574)
+            s = dev.survey(env={}, procs=[(1, 450, "agy")], running=1, store={}, meminfo_path=str(mi))
+            sleeps = []
+
+            def fake_sleep(dt):
+                sleeps.append(dt)
+                if len(sleeps) >= 2:
+                    self._write_meminfo(mi, 4096, 1960)
+
+            ok, why = dev.gate(s, wait_s=30, interval_s=3, sleep=fake_sleep)
+            self.assertTrue(ok, why)
+            self.assertEqual(len(sleeps), 2)
+            self.assertIn("1960", why)
+            self.assertIn("574", why)
+
+    def test_persistent_low_meminfo_refuses_after_window_with_readings(self):
+        dev = _load("dev_cl44_b12b", ROOT / "scripts" / "device.py")
+        with tempfile.TemporaryDirectory() as td:
+            mi = Path(td) / "meminfo"
+            self._write_meminfo(mi, 4096, 574)
+            s = dev.survey(env={}, procs=[(1, 450, "agy")], running=1, store={}, meminfo_path=str(mi))
+            sleeps = []
+            ok, why = dev.gate(s, wait_s=9, interval_s=3, sleep=lambda dt: sleeps.append(dt))
+            self.assertFalse(ok)
+            self.assertEqual(sum(sleeps), 9)
+            self.assertIn("waited 9s", why)
+            self.assertIn("readings: 574, 574, 574, 574 MB", why)
+
+    def test_cap_refusal_is_immediate_without_waiting(self):
+        dev = _load("dev_cl44_b12c", ROOT / "scripts" / "device.py")
+        with tempfile.TemporaryDirectory() as td:
+            mi = Path(td) / "meminfo"
+            self._write_meminfo(mi, 2779, 574)
+            s = dev.survey(env={}, procs=[(1, 450, "agy")], running=3, store={}, meminfo_path=str(mi))
+            sleeps = []
+            ok, why = dev.gate(s, wait_s=30, interval_s=3, sleep=lambda dt: sleeps.append(dt))
+            self.assertFalse(ok)
+            self.assertEqual(sleeps, [], "session-cap refusal must never sleep")
+            self.assertIn("holds 3", why)
+
+
 if __name__ == "__main__":
     unittest.main()

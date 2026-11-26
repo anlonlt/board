@@ -760,6 +760,8 @@ def record(root, transcript, role=None, part=None, title=None, conf=None, sessio
         row["is_orchestrator"] = True
     r, p = classify(row, title)
     env_role = os.environ.get("KIT_ROLE") if os.environ.get("KIT_ROLE") in ("orchestrator", "clerk", "review", "part") else None
+    if env_role == "orchestrator" and r == "part" and p and not row.get("is_orchestrator"):
+        env_role = None                                # agy part subagents inherit KIT_ROLE=orchestrator from kit/up
     row["role"], row["part"] = role or env_role or r, part or p
     # the work is counted in the project the row is recorded for: a transcript's cwd moves (/home/user after a second
     # repo was attached) and need not be a repository at all
