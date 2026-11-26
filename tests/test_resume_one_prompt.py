@@ -147,6 +147,8 @@ class Project(unittest.TestCase):
         posts = {"p1": {"part": "P1", "title": "t", "train": "T", "status": "planned"}, "_orchestrator": {"session_id": "o"}}
         with mock.patch.object(kit, "_load_board_docs", return_value=(posts, {})), \
                 mock.patch.object(kit, "resume", return_value="R\n"), mock.patch.object(kit, "git_copy_lines", return_value=["BEHIND"]):
+            subprocess.run(["git", "-C", kit.ROOT, "init", "-q"], check=True)          # a part stops where git does not work
+            subprocess.run(["git", "-C", kit.ROOT, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x"], check=True)
             for role in ("orchestrator", "part", "review"):
                 self.assertIn("What the owner can do here", kit.resume_role("m", role, post="p1"), role)
             self.assertIn("BEHIND", kit.resume_role("m", "orchestrator"))

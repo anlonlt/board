@@ -469,6 +469,20 @@ def tar_name(n):
     return n
 
 
+class PartStop(Exception):
+    """A part cannot start safely (git or the board unreadable here): resume says why and exits non-zero, never a
+    task printed as if all were well (the owner, 2026-11-26: an agy part's sandbox hid git and the board, resume
+    printed the task and exited 0, and the part redid saved work)."""
+
+
+BOARD_ERRORS = []   # why the last read of the board server failed (empty when it answered)
+
+
+def _sandbox_hint():
+    return ("On agy: run this same command again with BypassSandbox: true (its sandbox hides the main checkout's .git and "
+            "the board). If it still fails, do not start: message the orchestrator with this message.")
+
+
 class Conflict(Exception):
     pass
 
@@ -4213,8 +4227,8 @@ def _all_posts(db_path=None):
         try:                                      # a part's worktree has no database: the board server holds it
             r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
             posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or []}
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001 - kept, never swallowed: resume --role part stops on it
+            BOARD_ERRORS.append("the board server refused or failed: %s" % e)
     return posts
 
 
@@ -4413,7 +4427,8 @@ def _write_step_prompt(pid, doc, sources, cli=None):
     head, sep, _ = tpl.partition(HOW_HEAD)
     if sep:
         first, _, rest = head.partition("\n")
-        head = "%s\n\nRun `python3 -I .kit/kit.py resume --role part --post <POST_ID>`: it prints this and how a part works here.\n%s" % (first, rest)
+        head = ("%s\n\nRun `python3 -I .kit/kit.py resume --role part --post <POST_ID>`: it prints this and how a part works here. "
+                "If it fails or prints STOP, do not start: do what it says.\n%s" % (first, rest))
     tpl = _fill_part(head.rstrip() + "\n", pid, dict(doc, sources=list(sources)))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
@@ -6692,7 +6707,17 @@ def take_step_branch(p):
     if have("origin/" + br):
         _git_run("fetch", "-q", "origin", br, timeout=60)
     refs = [x for x in ("origin/" + br, br) if have(x)]
-    missing = [x for x in refs if _git_run("merge-base", "--is-ancestor", x, "HEAD").returncode != 0]
+    if not refs:
+        return ["## FIRST: your post names branch `%s`, and this checkout has no such branch (nor origin/%s)" % (br, br),
+                "- if the step was started before, its work is there: find it (`git fetch origin %s`, another clone, the "
+                "orchestrator) before you write anything; a new step: create it with `git checkout -b %s`" % (br, br), ""]
+    missing = []
+    for x in refs:
+        r = _git_run("merge-base", "--is-ancestor", x, "HEAD")
+        if r.returncode not in (0, 1):
+            raise PartStop("git could not compare `%s` with this checkout: %s %s" % (x, (r.stderr or "").strip()[:300], _sandbox_hint()))
+        if r.returncode == 1:
+            missing.append(x)
     if not missing:
         return []
     ref = missing[0] if len(missing) == 1 or _git_run("merge-base", "--is-ancestor", missing[1], missing[0]).returncode == 0 else missing[1]
@@ -6806,11 +6831,17 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         if bad:
             out += ["", "## Lessons refused (fix: they reach no role)"] + bad
     elif role == "part":
+        g = _git_run("rev-parse", "--verify", "HEAD")
+        if g.returncode != 0:
+            raise PartStop("git does not work in this checkout (%s): %s %s" % (ROOT, (g.stderr or g.stdout).strip()[:300], _sandbox_hint()))
         pid = _my_post(posts, post)
         if not pid:
-            if post and os.path.isfile(os.path.join(ROOT, "docs", "prompts", post + ".md")):
-                return "\n".join(part_prompt(post, {})) + ("\n\n## The board here\nno post `%s` on it: load it (above), or `python3 -I "
-                                                          ".kit/web_takeover.py` where none runs; then this command again\n" % post)
+            if post:
+                why = ("; ".join(BOARD_ERRORS[-2:]) + ". " + _sandbox_hint()) if BOARD_ERRORS else (
+                    "the board answered but holds no post `%s`: load it (`python3 -I .kit/web_takeover.py` where no board "
+                    "runs), or ask the orchestrator which post is yours" % post)
+                raise PartStop("cannot read your post `%s`, so you would start without its branch, its saved work and its "
+                               "comments: %s" % (post, why))
             return ("No post found for this session: `kit.py resume --role part --post <your post id>` (your prompt names "
                     "it), or KIT_POST=<id>.\n")
         p = posts[pid]
@@ -7595,7 +7626,12 @@ def main(argv=None):
         sess = a.session or (os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
                              if os.environ.get("KIT_ROLE") == "orchestrator" else None)
         if a.role:
-            print(resume_role(m, a.role, post=a.post, db_path=a.db, cli=a.cli, session=sess), end="")
+            try:
+                print(resume_role(m, a.role, post=a.post, db_path=a.db, cli=a.cli, session=sess), end="")
+            except PartStop as e:
+                print("STOP: do not start the work. %s" % e)
+                print("STOP: %s" % e, file=sys.stderr)
+                return 4
         else:
             print(resume(m, db_path=a.db, cli=a.cli, session=sess), end="")
         return 0
