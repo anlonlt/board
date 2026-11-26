@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:44:46Z",
+ "created_at": "2026-11-26T22:45:07Z",
  "rows": [
   {
    "also": [],
@@ -86,6 +86,24 @@
   {
    "also": [],
    "children": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6"
+   ],
+   "parent": "",
+   "part": "P-runners",
+   "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
+   "prompt": "",
+   "session": "",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
     "CL17",
     "CL49",
     "CL50",
@@ -132,23 +150,6 @@
    "parent": "",
    "part": "P-memory",
    "post": "m2-install-draws-the-first-map",
-   "prompt": "",
-   "session": "",
-   "state": "running",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [
-    "R1",
-    "R2",
-    "R3",
-    "R4",
-    "R5"
-   ],
-   "parent": "",
-   "part": "P-runners",
-   "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
    "prompt": "",
    "session": "",
    "state": "running",
@@ -1086,8 +1087,19 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-runners",
+   "part": "R6",
+   "post": "r6-the-next-step-is-the-most-important-one",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T22:44:46Z"
+ "updated_at": "2026-11-26T22:45:07Z"
 }

@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:44:46Z",
+ "created_at": "2026-11-26T22:45:07Z",
  "rows": [
   {
    "at": 0,
@@ -95,6 +95,23 @@
   {
    "at": 0,
    "key": "D",
+   "name": "Runners",
+   "note": "Next: Antigravity on the web: how far it runs the board kit, and its profile",
+   "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
+   "state": "running",
+   "steps": [
+    "Antigravity on the web: how far it runs the board kit, and its profile",
+    "Gemini tasks: how far it runs the board kit, and its profile",
+    "The kit suggests where a step runs, from the devices and platforms it remembers",
+    "On a computer, a part runs its own real-project check before Done",
+    "Every rule that differs by platform says where it applies, checked by a test",
+    "The next step is the most important one, never the oldest"
+   ],
+   "train": "P-runners"
+  },
+  {
+   "at": 0,
+   "key": "E",
    "name": "Takeover",
    "note": "Next: A crashed part is continued from its last checkpoint",
    "post": "cl17-a-crashed-part-is-continued-from-its-las",
@@ -109,7 +126,7 @@
   },
   {
    "at": 6,
-   "key": "E",
+   "key": "F",
    "name": "Demo",
    "note": "Next: Try replying or tapping 👍",
    "post": "demo-todo",
@@ -127,7 +144,7 @@
   },
   {
    "at": 1,
-   "key": "F",
+   "key": "G",
    "name": "Memory",
    "note": "Next: Install draws the first map",
    "post": "m2-install-draws-the-first-map",
@@ -145,24 +162,8 @@
     "A bug fixed three times, or a rule the owner repeats once, becomes a check"
    ],
    "train": "P-memory"
-  },
-  {
-   "at": 0,
-   "key": "G",
-   "name": "Runners",
-   "note": "Next: Antigravity on the web: how far it runs the board kit, and its profile",
-   "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
-   "state": "running",
-   "steps": [
-    "Antigravity on the web: how far it runs the board kit, and its profile",
-    "Gemini tasks: how far it runs the board kit, and its profile",
-    "The kit suggests where a step runs, from the devices and platforms it remembers",
-    "On a computer, a part runs its own real-project check before Done",
-    "Every rule that differs by platform says where it applies, checked by a test"
-   ],
-   "train": "P-runners"
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T22:44:46Z"
+ "updated_at": "2026-11-26T22:45:07Z"
 }

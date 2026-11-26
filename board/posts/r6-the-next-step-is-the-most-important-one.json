@@ -1,0 +1,47 @@
+{
+ "body": "The next step is the most important one, never the oldest. The kit sorts steps by train, then by the date they were made (scripts/kit.py, the train view and resume); only questions have a priority. On 2026-11-26 the web orchestrator launched M5 to M8 (features) while CL51 waited (a local session writing to the Artifact): CL51's bug then overwrote 11 posts of the board. The owner set the order by hand that day: P1 damage and what blocks everything, P2 bugs, P3 features.\n\n1. A step has a priority (1 damage or data at risk; 1 also what blocks other steps or the trunk; 2 a bug; 3 a feature): `step new --priority`, asked when missing; a step that fixes damage found by a review or a done is 1 by itself. In scripts/kit.py.\n2. One queue across every train: the orchestrator's resume and `kit.py queue` list the open steps by priority, then by how many steps each one unblocks (waits on), then by date; \"what runs next\" is its top, on every platform.\n3. A launch of a P3 step while a P1 step waits and could run is refused with the P1 named (`--anyway \"<why>\"` records the reason on the post).\n4. Tests on a fixture board: a newer P1 comes before an older P3; a step others wait on comes before its peers; the refused launch names the P1.\n",
+ "column": "info",
+ "created_at": "2026-11-26T22:45:06Z",
+ "from": "orchestrator",
+ "part": "R6",
+ "planned_by": "orchestrator",
+ "priority": 1,
+ "runner": "claude-web",
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "scripts/kit.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "A step has a priority (1 damage or data at risk"
+  },
+  {
+   "files": [
+    "kit.py"
+   ],
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "One queue across every train"
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "A launch of a P3 step while a P1 step waits and could run is refused with the P1 named (--anyway..."
+  },
+  {
+   "from": "task",
+   "n": 4,
+   "status": "open",
+   "title": "Tests on a fixture board"
+  }
+ ],
+ "task": "The next step is the most important one, never the oldest. The kit sorts steps by train, then by the date they were made (scripts/kit.py, the train view and resume); only questions have a priority. On 2026-11-26 the web orchestrator launched M5 to M8 (features) while CL51 waited (a local session writing to the Artifact): CL51's bug then overwrote 11 posts of the board. The owner set the order by hand that day: P1 damage and what blocks everything, P2 bugs, P3 features.\n\n1. A step has a priority (1 damage or data at risk; 1 also what blocks other steps or the trunk; 2 a bug; 3 a feature): `step new --priority`, asked when missing; a step that fixes damage found by a review or a done is 1 by itself. In scripts/kit.py.\n2. One queue across every train: the orchestrator's resume and `kit.py queue` list the open steps by priority, then by how many steps each one unblocks (waits on), then by date; \"what runs next\" is its top, on every platform.\n3. A launch of a P3 step while a P1 step waits and could run is refused with the P1 named (`--anyway \"<why>\"` records the reason on the post).\n4. Tests on a fixture board: a newer P1 comes before an older P3; a step others wait on comes before its peers; the refused launch names the P1.\n",
+ "title": "The next step is the most important one, never the oldest",
+ "train": "runners",
+ "updated_at": "2026-11-26T22:45:07Z"
+}
