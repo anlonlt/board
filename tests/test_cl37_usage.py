@@ -389,6 +389,11 @@ class Ledger(unittest.TestCase):
                     break
                 _t.sleep(0.1)
             self.assertEqual(ls.stdout.split(), ["usage/2026-11-20.jsonl"])
+            lock = os.path.join(root, ".kit", "run", "usage", ".push.lock")
+            for _ in range(100):                     # let the detached push finish before the folder goes
+                if not os.path.exists(lock):
+                    break
+                _t.sleep(0.1)
 
     def test_hook_never_breaks_on_garbage(self):
         r = subprocess.run([sys.executable, "-I", str(SCRIPT), "hook"], input="{not json", capture_output=True,
@@ -502,6 +507,91 @@ class Compare(unittest.TestCase):
             r = subprocess.run([sys.executable, "-I", str(SCRIPT), "--root", project(d), "compare", "--before", "nope"],
                                capture_output=True, text=True)
             self.assertNotEqual(r.returncode, 0)
+
+
+class M6Commands(unittest.TestCase):
+    """M6: each tool result's size grouped by command, what it costs staying in the context, top commands per role,
+    and runs of commands repeated in 3 sessions or more (candidates for a script)."""
+
+    def test_each_result_counted_under_its_command_with_its_carry(self):
+        with tempfile.TemporaryDirectory() as d:
+            row = usage.parse_transcript(fixture(d))
+            c = row["commands"]
+            # t1: 400 chars -> 100 tokens, after call 1 of 3: 2 calls follow it, at opus-5-5's cache read $0.20/M
+            self.assertEqual(c["ArtifactData list"], {"n": 1, "chars": 400, "tokens": 100, "carry_tokens": 200,
+                                                      "carry_usd": round(200 * 0.2 / 1e6, 6)})
+            self.assertEqual((c["board_cli.py update"]["tokens"], c["board_cli.py update"]["carry_tokens"]), (10, 20))
+            self.assertEqual([x[0] for x in row["cmd_seq"]], ["ArtifactData list", "board_cli.py update"])
+
+    def test_a_compaction_ends_the_carry(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = fixture(d, sub=False)
+            with open(p) as fh:
+                lines = fh.read().splitlines()
+            i = next(k for k, ln in enumerate(lines) if '"uuid": "a2"' in ln)
+            lines.insert(i, json.dumps({"type": "system", "subtype": "compact_boundary", "timestamp": "2026-11-20T10:02:30.000Z"}))
+            with open(p, "w") as fh:
+                fh.write("\n".join(lines) + "\n")
+            row = usage.parse_transcript(p)
+            self.assertEqual(row["commands"]["ArtifactData list"]["carry_tokens"], 0)   # dropped before call 2
+
+    def test_commands_by_kind(self):
+        k = usage.bash_key
+        self.assertEqual(k("cd /w && python3 -I .kit/kit.py resume --role orchestrator"), "kit.py resume")
+        self.assertEqual(k("python3 -I .kit/kit.py post x"), "kit.py post")
+        self.assertEqual(k("python3 scripts/run_all_tests.py --all"), "tests")
+        self.assertEqual(k("cd /w && git -C /w status -sb | head"), "git status")
+        self.assertEqual(k("FOO=1 grep -n x y"), "sh:grep")
+        self.assertEqual(k("python3 - <<'EOF'\nprint(1)\nEOF"), "py:stdin")
+        self.assertEqual(usage.cmd_key("Read", {"file_path": "/a"}), "Read")
+        self.assertEqual(usage.cmd_key("mcp__claude-code-remote__send_message", {}), "mcp:send_message")
+
+    def rows(self):
+        def r(sid, role, keys, t="2026-11-25T00:00:00+00:00"):
+            seq = [[k, 0.01] for k in keys]
+            cmds = {}
+            for k in keys:
+                d = cmds.setdefault(k, {"n": 0, "chars": 0, "tokens": 0, "carry_tokens": 0, "carry_usd": 0.0})
+                d["n"] += 1
+                d["chars"] += 4000
+                d["tokens"] += 1000
+                d["carry_tokens"] += 10000 if k == "kit.py resume" else 1000
+                d["carry_usd"] += 0.05 if k == "kit.py resume" else 0.01
+            return {"session_id": sid, "source": "transcript", "role": role, "started": t, "commands": cmds,
+                    "cmd_seq": seq, "tokens": {"input": 0, "output": 0, "cache_read": 100000, "cache_write": 0}}
+        rs = "kit.py resume"
+        return [r("o1", "orchestrator", [rs, "git status", "kit.py post", "Read"], "2026-11-20T00:00:00+00:00"),
+                r("o2", "orchestrator", ["Read", rs, "git status", "kit.py post"]),
+                r("o3", "orchestrator", [rs, "git status", "kit.py post", "tests"]),
+                r("p1", "part", ["Read", "tests", "Read", "tests"]),
+                r("p2", "part", ["Read", "tests"])]
+
+    def test_repeated_runs_of_commands_are_script_candidates(self):
+        seqs = usage.repeated_sequences(self.rows())
+        self.assertEqual(seqs[0]["seq"], ["kit.py resume", "git status", "kit.py post"])
+        self.assertEqual((seqs[0]["sessions"], seqs[0]["times"], seqs[0]["carry_usd"]), (3, 3, 0.09))
+        # its parts are not listed again; Read > tests is in 2 sessions only
+        self.assertFalse(any(x["seq"] == ["kit.py resume", "git status"] for x in seqs))
+        self.assertFalse(any(x["seq"] == ["Read", "tests"] for x in seqs))
+
+    def test_show_commands_top_per_role_and_resume_share(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "rows.jsonl")
+            with open(f, "w") as fh:
+                fh.write("".join(json.dumps(x) + "\n" for x in self.rows()))
+            out = subprocess.run([sys.executable, "-I", str(SCRIPT), "--root", d, "show", "--only", "--rows", f,
+                                  "--commands"], capture_output=True, text=True, check=True).stdout
+            self.assertIn("## orchestrator (3 sessions", out)
+            self.assertIn("resumes: 10.0% of this role's tokens", out)          # 30k carried of 300k
+            orch = out.split("## orchestrator")[1].split("## part")[0]
+            table = [ln for ln in orch.splitlines() if ln.startswith("| ") and not ln.startswith("| command")]
+            self.assertTrue(table[0].startswith("| kit.py resume |"), table)      # the top command by cost
+            self.assertIn("| kit.py resume > git status > kit.py post | 3 | 3 | 0.090 |", out)
+            cmp = subprocess.run([sys.executable, "-I", str(SCRIPT), "--root", d, "compare", "--only", "--rows", f,
+                                  "--before", "2026-11-21", "--after", "2026-11-21", "--commands",
+                                  "--role", "orchestrator"], capture_output=True, text=True, check=True).stdout
+            self.assertIn("## orchestrator (sessions with commands: before 1, after 2)", cmp)
+            self.assertIn("| kit.py resume | 0.05 | 0.05 | +0% |", cmp)
 
 
 class Ccr(unittest.TestCase):
