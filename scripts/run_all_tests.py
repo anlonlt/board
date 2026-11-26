@@ -604,6 +604,10 @@ def main(argv=None):
         return 0
     env = {k: v for k, v in os.environ.items() if k not in SESSION_VARS}
     env["KIT_NO_FUNNEL"] = "1"
+    # CL48: a test run: every write to a board, a board's git copy or a remote outside a temp folder is refused
+    # (kit/test_guard.py; the Tide Clock install test reached the real board-mirror on 11-20)
+    env["KIT_TEST"] = "1"
+    env["KIT_TEST_GUARD"] = os.path.join(REPO_ROOT, "kit", "test_guard.py")   # for a test's hand-made copy of a script
     env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     # Every launcher a test install writes goes to a temp dir; the real ~/.local/bin is watched.
     tmp_bin = tempfile.mkdtemp(prefix="kit-test-bin-")
