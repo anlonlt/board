@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:02:25Z",
+ "created_at": "2026-11-26T22:05:07Z",
  "rows": [
   {
    "also": [],
@@ -110,7 +110,8 @@
     "M3",
     "M7",
     "M8",
-    "M9"
+    "M9",
+    "M10"
    ],
    "parent": "",
    "part": "P-memory",
@@ -1050,8 +1051,19 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-memory",
+   "part": "M10",
+   "post": "m10-a-kind-of-bug-fixed-three-times-becomes",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T22:02:25Z"
+ "updated_at": "2026-11-26T22:05:07Z"
 }
