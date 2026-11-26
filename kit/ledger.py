@@ -345,6 +345,13 @@ def observe(memory_dir, summary, quote="", source="", scope="project", theme="",
         return {"error": err}
     if entry_id and not ID_RE.match(str(entry_id)):
         return {"error": "bad id %r" % entry_id}
+    why = check_error(enforced_by)
+    if why:
+        return {"error": why}
+    vague = vague_remedy("%s %s" % (summary, because), enforced_by) if kind in ("lesson", "rule") else ""
+    if vague:
+        return {"error": "the remedy is %r: name what keeps it from coming back (--enforced-by test:<file>[::Class.test], "
+                         "hook:<name>, code:<file>[#text], refusal:<file>#<text>)" % vague}
     with _locked(memory_dir):
         return _observe(memory_dir, summary, quote, source, scope, theme, kind, enforced_by, because, rejected,
                         replaces, entry_id)
@@ -504,24 +511,32 @@ def open_fields(memory_dir, role, files=None, moment=None, kit_root=None, train=
     return out
 
 
-def field_lines(opened):
+def field_lines(opened, root=None):
     out = []
     for f, rows in opened:
         out += ["", "## Field `%s`: %s%s" % (f.get("theme") or f["id"], f["summary"], (" (not for: %s)" % f["not_for"]) if f.get("not_for") else "")]
-        out += _grouped(rows)
+        out += _grouped(rows, root)
     return out
 
 
-def _grouped(rows):
+def _note(root, r, cache):
+    """M7: why a row is not certain (unchecked since <date>, or its check fails), or ''."""
+    return check_note(root, r, cache) if root else ""
+
+
+def _grouped(rows, root=None):
     """Principles first, each with the exact rows it keeps under it, then the rest."""
+    cache = read_checks_cache(root) if root else {}
     ids = {r["id"]: r for r in rows}
     kept = {k for r in rows if r["kind"] == "principle" for k in r.get("keeps") or [] if k in ids}
     out = []
     for r in rows:
         if r["kind"] == "principle":
-            out.append("- **%s**: %s%s" % (r["id"], r["summary"], (" Not for: %s." % r["not_for"].rstrip(".")) if r.get("not_for") else ""))
-            out += ["  - exactly: **%s**: %s" % (k, ids[k]["summary"]) for k in r.get("keeps") or [] if k in ids]
-    out += ["- **%s**: %s%s" % (r["id"], r["summary"], (" (`%s`)" % r["source"]) if r["kind"] == "lesson" and r.get("source") else "")
+            out.append("- **%s**: %s%s%s" % (r["id"], r["summary"], (" Not for: %s." % r["not_for"].rstrip(".")) if r.get("not_for") else "",
+                                             _note(root, r, cache)))
+            out += ["  - exactly: **%s**: %s%s" % (k, ids[k]["summary"], _note(root, ids[k], cache)) for k in r.get("keeps") or [] if k in ids]
+    out += ["- **%s**: %s%s%s" % (r["id"], r["summary"], (" (`%s`)" % r["source"]) if r["kind"] == "lesson" and r.get("source") else "",
+                                  _note(root, r, cache))
             for r in rows if r["kind"] != "principle" and r["id"] not in kept]
     return out
 
@@ -822,10 +837,12 @@ def format_resume(memory_dir, role, train=None, files=None, kit_root=None, skip_
     data = for_resume(memory_dir, role, train=train, files=files, kit_root=kit_root,
                       skip_file_scoped=skip_file_scoped)
     lines = []
+    root = kit_root
+    cache = read_checks_cache(root) if root else {}
     if data["principles"]:
         lines.append("")
         lines.append("## Distilled Principles (User Model)")
-        lines += _grouped(data["principles"] + [r for r in data["active"] if any(r["id"] in (p.get("keeps") or []) for p in data["principles"])])
+        lines += _grouped(data["principles"] + [r for r in data["active"] if any(r["id"] in (p.get("keeps") or []) for p in data["principles"])], root)
         kept = {k for p in data["principles"] for k in p.get("keeps") or []}
         data["active"] = [r for r in data["active"] if r["id"] not in kept]
     if data["decisions"]:
@@ -838,12 +855,13 @@ def format_resume(memory_dir, role, train=None, files=None, kit_root=None, skip_
             if d.get("rejected"):
                 extra.append("rejected: %s" % d["rejected"])
             tail = (" [%s]" % "; ".join(extra)) if extra else ""
-            lines.append("- **%s**: %s%s" % (d["id"], d["summary"], tail))
+            lines.append("- **%s**: %s%s%s" % (d["id"], d["summary"], tail, _note(root, d, cache)))
     if data["active"]:
         lines.append("")
         lines.append("## Active Rules & Observations (un-subsumed)")
         for r in data["active"]:                # the rule alone: its words and source stay in the ledger (`kit.py ledger show`)
-            lines.append("- **%s**: %s%s" % (r["id"], r["summary"], (" (`%s`)" % r["source"]) if r["kind"] == "lesson" and r.get("source") else ""))
+            lines.append("- **%s**: %s%s%s" % (r["id"], r["summary"], (" (`%s`)" % r["source"]) if r["kind"] == "lesson" and r.get("source") else "",
+                                               _note(root, r, cache)))
     if data.get("closed_fields"):
         lines += ["", "## Fields (a script opens each when you touch its files or reach its moment; until then nothing to read)"]
         lines += ["- %s (%d): %s; opens at %s" % (f.get("theme") or f["id"], n, f["summary"], f["opens"]) for f, n in data["closed_fields"]]
@@ -969,3 +987,248 @@ def _init(memory_dir):
             pass
     save_entries(memory_dir, entries)
     return {"ok": True, "path": p, "imported": imported, "skipped": skipped}
+
+
+# ---------------------------------------------------------------- M7: every entry is checked against reality
+# A lesson (`check:` line) or a ledger row (`enforced_by:`) names what enforces it, `;` between several:
+#   test:<path>[::<Class>[.<method>]]   a test (python unittest, or a .js run with node): it must exist and pass
+#   hook:<name>                         a hook file in the installed hooks
+#   code:<path>[#<text>]                the code that implements it: the file (a glob) exists, and holds <text>
+#   refusal:<path>#<text>               the refusal a command prints: <text> is still in that file
+# An entry with none is "unchecked since <date>" wherever it is given to a session, never presented as certain.
+CHECK_KINDS = ("test", "hook", "code", "refusal")
+CHECKED_KINDS = ("lesson", "decision", "rule", "principle", "observation")
+VAGUE_REMEDY = re.compile(r"(?i)\b(be (?:more |extra )?careful|pay (?:more |close )?attention|remember to|try to remember|"
+                          r"keep in mind|don'?t forget|do not forget|double[- ]check|be vigilant|stay alert|take care to)\b")
+CHECKS_CACHE = os.path.join(".kit", "run", "memory-checks.json")
+HOOK_DIRS = (".kit/hooks", ".claude/hooks/kit", ".agents/hooks/kit", "kit/hooks", ".kit")
+
+
+def check_specs(value):
+    """[(kind, target)] from a `check:` / `enforced_by:` value; `review` (or nothing) is none."""
+    out = []
+    for part in re.split(r"\s*;\s*", str(value or "").strip()):
+        k, _, t = part.partition(":")
+        k = k.strip().lower()
+        if k in CHECK_KINDS and t.strip():
+            out.append((k, t.strip()))
+    return out
+
+
+def check_error(value):
+    """Why a `check:` value is malformed, or ''."""
+    v = str(value or "").strip()
+    if not v or v.lower() == "review":
+        return ""
+    for part in re.split(r"\s*;\s*", v):
+        k, _, t = part.partition(":")
+        if k.strip().lower() not in CHECK_KINDS or not t.strip():
+            return "check %r: each part is one of %s followed by `:` and its target" % (part, ", ".join(k + ":" for k in CHECK_KINDS))
+        if k.strip().lower() == "refusal" and "#" not in t:
+            return "check %r: a refusal names its text: refusal:<file>#<the words it prints>" % part
+    return ""
+
+
+def vague_remedy(text, check=""):
+    """The "be careful" words when a lesson's remedy is only that (no check names what enforces it), else ''."""
+    if check_specs(check):
+        return ""
+    m = VAGUE_REMEDY.search(str(text or ""))
+    return m.group(0) if m else ""
+
+
+def _globbed(root, pat):
+    import glob as _g
+    return sorted(_g.glob(os.path.join(root, pat))) if any(c in pat for c in "*?[") else (
+        [os.path.join(root, pat)] if os.path.exists(os.path.join(root, pat)) else [])
+
+
+def _read(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _test_cmd(root, path, name):
+    import sys as _sys
+    if path.endswith(".js"):
+        return ["node", path]
+    code = ("import importlib.util,sys,unittest;sys.path.insert(0,'.');p,n=sys.argv[1],sys.argv[2];"
+            "s=importlib.util.spec_from_file_location('m7_check',p);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);"
+            "L=unittest.defaultTestLoader;t=L.loadTestsFromName(n,m) if n else L.loadTestsFromModule(m);"
+            "r=unittest.TextTestRunner(stream=sys.stderr,verbosity=0).run(t);"
+            "sys.exit(0 if r.wasSuccessful() and r.testsRun else 1)")
+    return [_sys.executable, "-I", "-c", code, path, name or ""]
+
+
+def run_check(root, kind, target, run=True, timeout=600):
+    """{status: ok|fail|gone|present, why}: `gone` when what it names no longer exists, `present` when a test exists
+    but was not run (run=False)."""
+    import subprocess
+    if kind == "hook":
+        dirs = [os.path.join(root, d) for d in HOOK_DIRS if os.path.isdir(os.path.join(root, d))]
+        if any(os.path.isfile(os.path.join(d, target)) for d in dirs):
+            return {"status": "ok", "why": ""}
+        return {"status": "gone", "why": "hook %s is in no hooks folder" % target}
+    if kind in ("code", "refusal"):
+        pat, _, needle = target.partition("#")
+        files = _globbed(root, pat.strip())
+        if not files:
+            return {"status": "gone", "why": "%s no longer exists" % pat.strip()}
+        if needle.strip() and not any(needle.strip() in (_read(f) or "") for f in files):
+            return {"status": "gone", "why": "%s no longer holds %r" % (pat.strip(), needle.strip())}
+        return {"status": "ok", "why": ""}
+    path, _, name = target.partition("::")
+    path, name = path.strip(), name.strip()
+    full = os.path.join(root, path)
+    if not os.path.isfile(full):
+        return {"status": "gone", "why": "test %s no longer exists" % path}
+    if name:
+        src = _read(full) or ""
+        for piece in name.split("."):
+            if not re.search(r"(?m)^\s*(?:def|class)\s+%s\b" % re.escape(piece), src):
+                return {"status": "gone", "why": "%s has no %s any more" % (path, piece)}
+    if not run:
+        return {"status": "present", "why": ""}
+    try:
+        r = subprocess.run(_test_cmd(root, path, name), cwd=root, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"status": "fail", "why": "%s ran over %ds" % (target, timeout)}
+    except OSError as e:
+        return {"status": "fail", "why": "%s could not run: %s" % (target, e)}
+    if r.returncode == 0:
+        return {"status": "ok", "why": ""}
+    tail = [l for l in (r.stderr or r.stdout or "").strip().splitlines() if l.strip()][-1:] or ["exit %d" % r.returncode]
+    return {"status": "fail", "why": "%s fails: %s" % (target, tail[0][:160])}
+
+
+def entry_check_value(entry):
+    """What an entry names as its check: a lesson's `check:`, a ledger row's `enforced_by:`."""
+    return entry.get("check") if "check" in entry else entry.get("enforced_by")
+
+
+def check_entry(root, entry, run=True, cache=None):
+    """{id, status: ok|fail|unchecked, checks, why, since}. A test not run here takes the cached run's result."""
+    specs = check_specs(entry_check_value(entry))
+    if not specs:
+        return {"id": entry["id"], "status": "unchecked", "checks": [], "why": "", "since": entry_date(root, entry)}
+    whys, stale = [], False
+    for kind, target in specs:
+        r = run_check(root, kind, target, run=run)
+        if r["status"] == "present":
+            prev = ((cache or {}).get("entries") or {}).get(entry["id"]) or {}
+            if prev.get("status") == "fail" and prev.get("check") == entry_check_value(entry):
+                whys.append(prev.get("why") or "%s failed when last run" % target)
+            elif prev.get("status") != "ok":
+                stale = True
+            continue
+        if r["status"] != "ok":
+            whys.append(r["why"])
+    status = "fail" if whys else "ok"
+    return {"id": entry["id"], "status": status, "checks": ["%s:%s" % s for s in specs], "why": "; ".join(whys),
+            "since": "", "not_run": stale}
+
+
+def entry_date(root, entry):
+    """The day an entry was written: its created_at, a date in its `from:`, else the day git added its heading line,
+    else its file's date."""
+    for v in (entry.get("created_at"), entry.get("from")):
+        m = re.search(r"\d{4}-\d{2}-\d{2}", str(v or ""))
+        if m:
+            return m.group(0)
+    src = entry.get("_file") or entry.get("source") or ""
+    path = src if os.path.isabs(src) else os.path.join(root, src)
+    if os.path.isfile(path):
+        import subprocess
+        head = "## %s" % entry["id"]
+        text = _read(path) or ""
+        for n, line in enumerate(text.splitlines(), 1):
+            if line.startswith(head):
+                r = subprocess.run(["git", "-C", root, "blame", "-L", "%d,%d" % (n, n), "--porcelain", "--", path],
+                                   capture_output=True, text=True)
+                m = re.search(r"(?m)^committer-time (\d+)", r.stdout or "")
+                if r.returncode == 0 and m and not re.search(r"(?m)^0{40}", r.stdout):
+                    return datetime.fromtimestamp(int(m.group(1)), timezone.utc).strftime("%Y-%m-%d")
+                break
+        return datetime.fromtimestamp(os.path.getmtime(path), timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def read_checks_cache(root):
+    try:
+        with open(os.path.join(root, CHECKS_CACHE), encoding="utf-8") as fh:
+            d = json.load(fh)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_checks_cache(root, results, values):
+    p = os.path.join(root, CHECKS_CACHE)
+    try:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        d = {"at": _now_iso(), "entries": {r["id"]: {"status": r["status"], "why": r["why"], "check": values.get(r["id"], "")}
+                                         for r in results}}
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(d, fh, indent=1, sort_keys=True)
+    except OSError:
+        pass
+
+
+def check_note(root, entry, cache=None):
+    """What follows an entry where a session is given it: '' when its check holds, else why it is not certain."""
+    r = check_entry(root, entry, run=False, cache=cache if cache is not None else read_checks_cache(root))
+    if r["status"] == "unchecked":
+        return " (unchecked since %s: nothing runs it, not certain)" % r["since"]
+    if r["status"] == "fail":
+        return " (its check FAILS: %s; not certain)" % r["why"]
+    return ""
+
+
+def memory_line(results, cache_at=""):
+    """The one line the orchestrator's resume carries."""
+    n = len(results)
+    ok = [r for r in results if r["status"] == "ok"]
+    bad = [r for r in results if r["status"] == "fail"]
+    un = [r for r in results if r["status"] == "unchecked"]
+    stale = [r for r in ok if r.get("not_run")]
+    tail = ""
+    if stale:
+        tail = "; %d whose tests have not run here" % len(stale)
+    elif cache_at:
+        tail = "; tests as of %s" % cache_at[:16].replace("T", " ")
+    return ("Memory: %d entries: %d checked, %d failing%s, %d unchecked%s: `python3 -I .kit/kit.py lessons check` runs them"
+            % (n, len(ok) + len(bad), len(bad), (" (%s)" % ", ".join(r["id"] for r in bad)) if bad else "", len(un), tail))
+
+
+def propose_check(root, title, text, files=()):
+    """A check for a new lesson: the test whose name shares most words with it (a file it names first), else its code."""
+    import glob as _g
+    words = _keywords("%s %s" % (title, text))
+    best, score = "", 0
+    tests = sorted(set(_g.glob(os.path.join(root, "tests", "test_*.py")) + _g.glob(os.path.join(root, "kit", "**", "test_*.py"), recursive=True)))
+    for t in tests:
+        src = _read(t) or ""
+        stem = set(os.path.splitext(os.path.basename(t))[0].split("_")[1:]) - STOP_WORDS
+        named = 2 if any(os.path.splitext(os.path.basename(f))[0] in src for f in files) else 0
+        cls = ""
+        for line in src.splitlines():
+            mc = re.match(r"^class\s+(\w+)", line)
+            if mc:
+                cls = mc.group(1)
+            mt = re.match(r"^\s+def\s+(test_\w+)", line)
+            if not mt:
+                continue
+            tw = set(mt.group(1).split("_")[1:]) - STOP_WORDS
+            s = len(tw & words) + len(stem & words) + named
+            if s > score:
+                best, score = "test:%s::%s" % (os.path.relpath(t, root), (cls + "." if cls else "") + mt.group(1)), s
+    if score >= 1:
+        return best
+    for g in files:
+        hits = _globbed(root, g)
+        if hits:
+            return "code:%s" % os.path.relpath(hits[0], root)
+    return ""
