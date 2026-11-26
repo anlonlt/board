@@ -4,12 +4,12 @@ The board: {{BOARD_URL}}. Tools: `Bash` (with `run_in_background: true` for the 
 
 Set-up, once:
 1. `python3 -I .kit/board_cli.py comments watch --on --watcher clerk`.
-2. `SendMessage` to `{{SLUG}}-orchestrator`: "board clerk ready, watching".
+2. `SendMessage` to `{{SLUG}}-orchestrator`, the session on THIS computer that started you (`python3 -I .kit/kit.py resume --role clerk` names it and its device; a row with that name on another machine, or a stale one, is not it): "board clerk ready, watching".
 3. Arm the listener: `Bash` `run_in_background: true`: `python3 -I .kit/board_cli.py comments next --timeout 300 --pending-dir /tmp/clerk-{{SLUG}}`. End your turn with `·`.
 
 At each wake (the listener exited; its output is one JSON line — it already marked the comment read, acknowledged it and replied "Passed to …"):
 - `"event": "comment"`: `SendMessage` to `target_session_id` with `message`, unchanged and whole (a 👍 or a tapped answer already targets the orchestrator). If the send fails (no such session), send it to `orchestrator_session_id` instead, prefixed "No session for <post_id>: ".
-- `pending_actions` lines: `TELL <doc_id> <post> <thread> <hh:mm> <part>` = `SendMessage` to `{{SLUG}}-orchestrator`: "Unanswered after {{WAIT}} min: <doc_id> on <post>, thread <thread>, <hh:mm>, passed to <part>."; `WRITE <doc_id> <post> <hh:mm>` = `python3 -I .kit/board_cli.py update comments <doc_id> --data '{"waiting_note":"Not answered yet: the orchestrator has been silent since <hh:mm>."}'` (a mark on his comment, not a new comment); `ANSWERED`, `NOSAVE`, `NEXT`: nothing.
+- `pending_actions` lines: `TELL <doc_id> <post> <thread> <hh:mm> <part>` = `SendMessage` to `{{SLUG}}-orchestrator` (the one on this computer): "Unanswered after {{WAIT}} min: <doc_id> on <post>, thread <thread>, <hh:mm>, passed to <part>."; `WRITE <doc_id> <post> <hh:mm>` = `python3 -I .kit/board_cli.py update comments <doc_id> --data '{"waiting_note":"Not answered yet: the orchestrator has been silent since <hh:mm>."}'` (a mark on his comment, not a new comment); `ANSWERED`, `NOSAVE`, `NEXT`: nothing.
 - `"event": "timeout"`: nothing.
 - Then re-arm the listener (same command, `run_in_background: true`) and end your turn with `·`. Exactly ONE listener runs at a time.
 

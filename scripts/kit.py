@@ -2195,6 +2195,207 @@ def whoami(name=""):
     return os.environ.get("KIT_SESSION_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or name or ""
 
 
+# CL49: a part reports to the orchestrator that started it, on the device that started it, unless another claimed it.
+# A fixed name (`<slug>-orchestrator`) matched dead sessions on another computer; the post now records its owner.
+OWNER_KEYS = ("orchestrator", "orchestrator_name", "orchestrator_device")
+REVIEW_OWNER_KEYS = ("review_orchestrator", "review_orchestrator_name", "review_orchestrator_device")
+
+
+def my_device():
+    """The device this session runs on: `web` for a Claude Code cloud session (send_message reaches it by its id from
+    anywhere), else KIT_DEVICE, else the host name."""
+    if os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID"):
+        return "web"
+    if os.environ.get("KIT_DEVICE"):
+        return os.environ["KIT_DEVICE"]
+    import socket
+    return socket.gethostname() or "unknown"
+
+
+def orchestrator_here():
+    """This orchestrator's address as a post records it: {orchestrator: its id (whoami), orchestrator_name: the session
+    name a CLI SendMessage takes, orchestrator_device}. Empty when no id is known (never a made-up one)."""
+    slug = _slug(_kit_config().get("project") or "project")
+    dev = my_device()
+    name = "" if dev == "web" else "%s-orchestrator" % slug
+    addr = whoami(name)
+    if not addr:
+        return {}
+    return {"orchestrator": addr, "orchestrator_name": name or addr, "orchestrator_device": dev}
+
+
+def step_owner(p, posts=None, review=False):
+    """Who a step's part (review=True: its review) reports to: {address, name, device, how}. The post's own record
+    (written by `launch`, `review` or `claim`); a post from before CL49 has none: the board's `_orchestrator`."""
+    p = p if isinstance(p, dict) else {}
+    if review and p.get("review_orchestrator"):
+        return {"address": str(p["review_orchestrator"]), "name": str(p.get("review_orchestrator_name") or p["review_orchestrator"]),
+                "device": str(p.get("review_orchestrator_device") or ""), "how": "it launched the review"}
+    if p.get("orchestrator"):
+        return {"address": str(p["orchestrator"]), "name": str(p.get("orchestrator_name") or p["orchestrator"]),
+                "device": str(p.get("orchestrator_device") or ""),
+                "how": "it claimed the step" if p.get("claimed_at") else "it launched the step"}
+    o = (posts or {}).get("_orchestrator") if isinstance(posts, dict) else None
+    o = o if isinstance(o, dict) else {}
+    sid = str(o.get("session_id") or "")
+    return {"address": sid, "name": sid, "device": str(o.get("device") or ""),
+            "how": "no owner on the post (launched before CL49): the board's orchestrator" if sid else "nobody named"}
+
+
+def report_lines(pid, p, posts=None, review=False):
+    """`resume`'s "Where you report": the step's owner now, how to reach that one session, and what to do when it fails."""
+    o = step_owner(p, posts, review=review)
+    who = "your review" if review else "your step"
+    if not o["address"]:
+        return ["", "## Where you report", "- No orchestrator owns %s and the board names none: `python3 -I .kit/kit.py unreached %s "
+                "--why \"no owner named\"`, then say so in your post; do not wait." % (who, pid)]
+    dev, here = o["device"], my_device()
+    if dev == "web" or o["address"].startswith(("session_", "cse_")):
+        how = "`send_message` (claude-code-remote) with `session_id` `%s`" % o["address"]
+    elif dev and dev != here:
+        how = ("`SendMessage` to `%s`, only the row of device `%s` (a Remote Control row of that machine); a row of another "
+               "machine with the same name is NOT it" % (o["name"], dev))
+    else:
+        how = ("`SendMessage` to `%s`, the session on this computer (`%s`); a row of another machine, or a cloud row, with the "
+               "same name is NOT it" % (o["name"], here))
+    return ["", "## Where you report",
+            "- The orchestrator that owns %s: `%s`%s, device `%s` (%s)." % (
+                who, o["address"], (" (session name `%s`)" % o["name"]) if o["name"] != o["address"] else "", dev or "not recorded", o["how"]),
+            "- Reach it with %s: `Done. Check post %s.`" % (how, pid),
+            "- The send fails, or no live session matches (ListAgents shows none on that device, or only stale ones): "
+            "`python3 -I .kit/kit.py unreached %s --why \"<what failed>\"`; your post then says so and every orchestrator's resume "
+            "lists it to claim. Do not wait, do not send to a look-alike." % pid]
+
+
+def _owner_write(pid, fields, url=None, token=None, drop=()):
+    """Merge `fields` into a post of the local board (`drop`: written as null, which reads as absent); with an attached
+    Artifact board, the batch too."""
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    try:
+        data = _local_update(url, token, "posts", pid, dict(fields, **{k: None for k in drop}))
+    except Exception as e:
+        return {"ok": False, "post": pid, "error": "cannot write the board at %s: %s" % (url, e)}
+    if data is None:
+        return {"ok": False, "post": pid, "error": "no post %s on this board" % pid}
+    out = {"ok": True, "post": pid, "data": data}
+    if attached_board():
+        try:
+            r = artifact_push(url=url, token=token)
+            out.update({"batches": r["batches"], "need_pin": r["need_pin"]})
+        except Exception as e:
+            out["push_error"] = str(e)
+    return out
+
+
+def claim(pid, url=None, token=None):
+    """`kit.py claim <post>`: this orchestrator takes a step explicitly (CL49): writes its own address on the post (the
+    part's and the review's owner) and says what to tell the part. Taking over the board alone claims nothing."""
+    me = orchestrator_here()
+    if not me:
+        return {"ok": False, "post": pid, "error": "no session id here (kit.py whoami prints none): a claim needs your address"}
+    fields = dict(me, claimed_at=_now_z(), review_orchestrator=me["orchestrator"],
+                  review_orchestrator_name=me["orchestrator_name"], review_orchestrator_device=me["orchestrator_device"])
+    r = _owner_write(pid, fields, url=url, token=token, drop=("orchestrator_unreached",))
+    if r.get("ok"):
+        sid = str(r["data"].get("session_id") or "")
+        r["tell"] = ("message the part%s: \"%s on %s claimed post %s: report to it from now on (`kit.py resume --role part` "
+                     "names it).\"" % ((" (session `%s`)" % sid) if sid and not sid.startswith("pending") else "",
+                                        me["orchestrator"], me["orchestrator_device"], pid))
+    return r
+
+
+def unreached(pid, why="", url=None, token=None):
+    """`kit.py unreached <post>`: the part could not reach its owner (the send failed, or no live session matches): its
+    post says so (`orchestrator_unreached`), and every orchestrator's resume lists it to claim (CL49)."""
+    try:
+        d = _board_request(url or local_board_url(), "doc/posts/" + urllib.parse.quote(pid, safe=""), token=_resolve_board_token(token))
+        p = d.get("data") if isinstance(d.get("data"), dict) else {}
+        o = _board_request(url or local_board_url(), "doc/posts/_orchestrator", token=_resolve_board_token(token)).get("data")
+    except Exception:
+        p, o = {}, None
+    o = step_owner(p, {"_orchestrator": o} if isinstance(o, dict) else None)
+    note = {"at": _now_z(), "to": o["address"], "device": o["device"], "why": str(why or "the send failed")[:300]}
+    return _owner_write(pid, {"orchestrator_unreached": note}, url=url, token=token)
+
+
+def owner_text(cmd, r):
+    if not r.get("ok"):
+        return "Not %s: %s\n" % ("claimed" if cmd == "claim" else "written", r.get("error"))
+    d = r["data"]
+    if cmd == "claim":
+        out = ["claimed: %s is yours (%s on %s)" % (r["post"], d.get("orchestrator"), d.get("orchestrator_device")), r.get("tell", "")]
+    else:
+        u = d.get("orchestrator_unreached") or {}
+        out = ["written: %s could not reach %s (%s); every orchestrator's resume lists it to claim" % (
+            r["post"], u.get("to") or "its orchestrator", u.get("why"))]
+    for b in r.get("batches") or []:
+        out.append("`ArtifactData` `batch` %s, then `python3 -I .kit/kit.py artifact sent %s`" % (b, b))
+    if r.get("push_error"):
+        out.append("artifact push failed (%s): run `kit.py artifact push`" % r["push_error"])
+    return "\n".join(x for x in out if x) + "\n"
+
+
+def unreached_lines(posts):
+    """Every orchestrator's resume: the open steps whose part could not reach its owner, to claim (CL49)."""
+    out = []
+    for pid, p in sorted((posts or {}).items()):
+        if pid.startswith("_") or not isinstance(p, dict) or not isinstance(p.get("orchestrator_unreached"), dict):
+            continue
+        if str(p.get("status") or "").lower() in ("dropped",) or p.get("removed"):
+            continue
+        u = p["orchestrator_unreached"]
+        out.append("- `%s` (%s): could not reach `%s`%s at %s (%s): `python3 -I .kit/kit.py claim %s`, then message its part" % (
+            pid, p.get("part") or pid, u.get("to") or "?", (" on " + u["device"]) if u.get("device") else "", u.get("at") or "?",
+            u.get("why") or "?", pid))
+    return ["", "## Parts that could not reach their orchestrator (claim one to answer it)"] + out if out else []
+
+
+HANDOVER_FROM = os.path.join(".kit", "run", "handover-from.json")
+
+
+def inherit_lines(posts, url=None, token=None):
+    """A successor orchestrator on the same device, after a hand-over (handover.py wrote who it replaces), inherits every
+    part its predecessor owned there (CL49): their posts get its address. Another device's parts are never taken."""
+    path = os.path.join(ROOT, HANDOVER_FROM)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            h = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    me = orchestrator_here()
+    old, dev = str(h.get("from") or ""), str(h.get("device") or "")
+    if not me or not old or old == me["orchestrator"]:
+        return []
+    if dev != me["orchestrator_device"]:
+        return ["", "## Hand-over", "- %s names a predecessor on device `%s`, not this one (`%s`): nothing inherited" % (
+            HANDOVER_FROM, dev, me["orchestrator_device"])]
+    took, failed = [], []
+    for pid, p in sorted((posts or {}).items()):
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("_board"):
+            continue
+        f = {}
+        if str(p.get("orchestrator") or "") == old and str(p.get("orchestrator_device") or "") == dev:
+            f.update(me)
+        if str(p.get("review_orchestrator") or "") == old and str(p.get("review_orchestrator_device") or "") == dev:
+            f.update(review_orchestrator=me["orchestrator"], review_orchestrator_name=me["orchestrator_name"],
+                     review_orchestrator_device=me["orchestrator_device"])
+        if not f:
+            continue
+        r = _owner_write(pid, dict(f, inherited_from=old), url=url, token=token)
+        (took if r.get("ok") else failed).append(pid)
+    if not failed:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    return ["", "## Hand-over: the parts your predecessor owned here are yours",
+            "- from `%s` on `%s`: %s%s" % (old, dev, ", ".join("`%s`" % x for x in took) or "none open",
+                                          ("; NOT written (run resume again): " + ", ".join(failed)) if failed else "")]
+
+
 def _is_kit_source_repo(root):
     return os.path.isfile(os.path.join(root, "install.py")) and os.path.isdir(os.path.join(root, "kit", "hooks"))
 
@@ -4269,7 +4470,12 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
     if tpl is None:
         return 1, "no %s (reinstall the kit)" % tpl_path
     orch_doc = _get_post("_orchestrator", db_path=db_path) or {}
-    orch_id = str(orch_doc.get("session_id") or ("%s-orchestrator" % slug))
+    # CL49: the review reports to the orchestrator that launched it (this session), unless another claims the step
+    launcher = orchestrator_here()
+    orch_id = launcher.get("orchestrator") or step_owner(_get_post(pid, db_path=db_path) if pid else {},
+                                                         {"_orchestrator": orch_doc}, review=True)["address"] or ("%s-orchestrator" % slug)
+    if launcher.get("orchestrator_name") and launcher["orchestrator_name"] != orch_id:
+        orch_id = "%s (session name `%s`, device `%s`)" % (orch_id, launcher["orchestrator_name"], launcher["orchestrator_device"])
     for key, val in (("<SCOPE>", scope), ("<SESSION>", session), ("<REVIEW_ID>", rid), ("<POST_ID>", pid),
                      ("<PART>", part), ("<PROJECT_ID>", project or "(none)"), ("<ORCH_ID>", orch_id)):
         tpl = tpl.replace(key, val)
@@ -4315,6 +4521,10 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
         fh.write(tpl)
     if os.environ.get("KIT_NO_LAUNCH"):
         return 0, "review %s prompt written (KIT_NO_LAUNCH: not started)" % rid
+    if launcher and pid and not pid.startswith("_"):     # CL49: who this review reports to, on the step's post
+        _board_write("update", "posts", pid, {"review_orchestrator": launcher["orchestrator"],
+                                              "review_orchestrator_name": launcher["orchestrator_name"],
+                                              "review_orchestrator_device": launcher["orchestrator_device"]})
     if run == "web":
         return 0, start
     if run is None:
@@ -4497,7 +4707,7 @@ def _fill_part(tpl, pid, doc):
     vals = {"<PART>": str(doc.get("part") or pid), "<TITLE>": str(doc.get("title") or pid), "<TRAIN>": str(doc.get("train") or ""), "<POST_ID>": pid,
             "<AFTER>": (", after `%s`" % doc["parent"]) if doc.get("parent") else "",
             "<TASK>": str(doc.get("task") or doc.get("body") or "").strip() or str(doc.get("title") or pid), "<SOURCES>": src,
-            "<ORCH_ID>": str(orch_doc.get("session_id") or "<orchestrator conversationId>"),
+            "<ORCH_ID>": step_owner(doc, {"_orchestrator": orch_doc})["address"] or "<orchestrator conversationId>",
             # CL38: the session_id a part writes is its real session (a web part: `session_<id>`), worked out by the
             # part's own shell at turn 1; the `<project>-<part>` name only where no session id exists (O54/O55)
             "<SESSION>": "'\"$(python3 -I .kit/kit.py whoami %s-%s)\"'" % (_slug(c.get("project") or "project"), _slug(str(doc.get("part") or pid), 24))}
@@ -5333,6 +5543,12 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
             sess = name
     now = _now_z()
     fields = {"status": "in progress", "session_id": sess, "branch": branch, "working_by": me, "updated_at": now}
+    owner = orchestrator_here()       # CL49: the part reports to this session, on this device, unless another claims it
+    if owner:
+        fields.update(owner)
+        out["orchestrator"] = owner
+    else:
+        out["warning_owner"] = "no session id here (kit.py whoami): the post names no owner; the part reports to `_orchestrator`"
     had = str(post.get("session_id") or "")
     if session_id and not take and had and had != session_id and not had.startswith("pending") and not marked:
         out["warning"] = "%s already named session %s: if it still runs, two are on this step; stop one" % (pid, had)
@@ -5341,6 +5557,8 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     out["session_id"] = sess
     if isinstance(given, dict):
         return dict(out, trains=False)
+    if owner and post.get("orchestrator_unreached"):
+        fields["orchestrator_unreached"] = None      # a fresh launch is reached by its launcher
     _local_update(url, token, "posts", pid, fields)
     tr = _local_update(url, token, "posts", "_trains", lambda t: _trains_mark(t, pid, dict(post, **fields), sess, rel))
     out["session_id"] = sess
@@ -6098,6 +6316,8 @@ COMMANDS = [
     ("write the board", "board_cli.py reply <post> <comment> --text T", "answer the owner's comment in the owner's thread (marks it read)"),
     ("write the board", "kit_cards.py (agent kit-cards)", "rebuild the Where we are card and the Trains card, never by hand"),
     ("launch and finish", "kit.py launch <post>", "start a part: post in progress, Trains row running, then claude --bg or the create_session call"),
+    ("launch and finish", "kit.py claim <post>", "take a step explicitly: your address on its post; its part and review report to you (CL49)"),
+    ("launch and finish", "kit.py unreached <post> --why W", "a part (or review) could not reach its orchestrator: the post says so, every orchestrator's resume lists it"),
     ("launch and finish", "kit.py capacity / device.py run -- <cmd>", "the device's session cap / run a heavy job when it fits in memory"),
     ("launch and finish", "kit.py done <post>", "check a step's post: format, artifacts, check passes, breaks makes it fail"),
     ("launch and finish", "kit.py review <post> | --train T", "start the review of a step or a train"),
@@ -7842,6 +8062,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
             out += ["", "## The record is git, and it is behind"] + ["- " + x for x in gl]
         out += split_lines(posts) + train_lines(posts)
         out += start_lines(posts, comments, session or whoami())
+        out += inherit_lines(posts) + unreached_lines(posts)
         out += owner_lines() + autonomy_lines()
         out += [""] + _launch_workflow()
         out += ["", "## Parts: their context and the save points",
@@ -7897,7 +8118,13 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 out.append("- %s: %s" % (k, "; ".join(map(str, _as_list(p[k])))[:400]))
         if len(out) and out[-1] == "## Your post now":
             out.append("- (nothing yet)")
-        out.append("- your Done goes to the orchestrator, `%s`" % ((posts.get("_orchestrator") or {}).get("session_id") or "named by no post yet"))
+        o = step_owner(p, posts)
+        out.append("- your Done goes to the orchestrator that owns your step, `%s`%s (see Where you report)" % (
+            o["address"] or "named by no post yet", (" on `%s`" % o["device"]) if o["device"] else ""))
+        if isinstance(p.get("orchestrator_unreached"), dict):
+            out.append("- orchestrator_unreached: %s (%s): wait for a claim; a message from the new owner names it" % (
+                p["orchestrator_unreached"].get("at"), p["orchestrator_unreached"].get("why")))
+        out += report_lines(pid, p, posts)
         out += held_lines(pid, p, session or whoami())
         out += continues_lines(p, session or whoami(), pid=pid)
         out += subtask_lines(dict(p, id=post))
@@ -7929,10 +8156,15 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         if lands_after_review():
             out += ["", "## When you are done", "- your branch reaches the trunk after its review: `end_session.py` pushes it, never onto the trunk"]
     elif role == "clerk":
-        orch = (posts.get("_orchestrator") or {}).get("session_id") or "(none on _orchestrator)"
+        od = posts.get("_orchestrator") or {}
+        orch = od.get("session_id") or "(none on _orchestrator)"
+        here = orchestrator_here()   # CL49: the clerk reports to the orchestrator that started it, on its own device
         out += ["# Resume: the clerk (comment routing only)", "",
                 "A comment on a post goes to the session that post names; none or not reachable: to the orchestrator.",
-                "", "## Session ids", "- orchestrator: %s" % orch]
+                "", "## Session ids", "- orchestrator: %s%s" % (orch, (" (device `%s`)" % od["device"]) if od.get("device") else ""),
+                "- reach it on this device (`%s`) only: a row with the same name on another machine, or a stale one, is not it; "
+                "the send fails: reply in the comment's thread \"Not passed: no orchestrator reached\" (`board_cli.py comments reply`) and go on" % (
+                    here.get("orchestrator_device") or my_device())]
         for pid, p in sorted(posts.items()):
             if pid.startswith("_") or not isinstance(p, dict) or not p.get("session_id"):
                 continue
@@ -7963,6 +8195,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "- Its post says: %s" % (json.dumps(rp, ensure_ascii=False)[:500] if rp else "NO real-project result")]
         ft = field_text("review", "review", p.get("train"))
         out += ["", ft] if ft else []
+        out += report_lines(pid, p, posts, review=True)
         out += owner_lines()
         out += ["", "## Lessons for a review"] + _lesson_lines(lessons_for("review"))
         out += _principle_lines("review", p.get("train"))
@@ -8373,6 +8606,12 @@ def main(argv=None):
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s.add_argument("--post-file", default=None, help=argparse.SUPPRESS)
+    s = sp.add_parser("claim", help="this orchestrator takes a step: its address on the post, the part and its review report to it (CL49)")
+    s.add_argument("post"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
+    s.add_argument("--json", action="store_true")
+    s = sp.add_parser("unreached", help="a part's report did not reach its orchestrator: its post says so, every resume lists it (CL49)")
+    s.add_argument("post"); s.add_argument("--why", default=""); s.add_argument("--board-url", default=None)
+    s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     sp.add_parser("permission-mode", help="the permission mode the kit starts Claude Code sessions in")
     s = sp.add_parser("sub", help="a step's pieces, lines on its post: by number or title"); s.add_argument("post"); s.add_argument("title", nargs="+")
     s.add_argument("--why", default="", help="why a piece the task names is dropped"); s.add_argument("--known", action="store_true", help=argparse.SUPPRESS)
@@ -8767,6 +9006,13 @@ def main(argv=None):
             return 2
         print(adopt_text(r), end="")
         return 0
+    if a.cmd in ("claim", "unreached"):
+        r = (claim(a.post, url=a.board_url, token=a.token) if a.cmd == "claim"
+             else unreached(a.post, why=a.why, url=a.board_url, token=a.token))
+        print(json.dumps({k: v for k, v in r.items() if k != "data"}, ensure_ascii=False, indent=1) if a.json else owner_text(a.cmd, r), end="")
+        if a.json:
+            print()
+        return 0 if r.get("ok") else 1
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset,
                    post_file=a.post_file, take=a.take)

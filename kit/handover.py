@@ -125,6 +125,29 @@ def next_gen(role):
     return gen
 
 
+def predecessor(name, env=None):
+    """CL49: who this hand-over replaces, as kit.py's whoami and my_device say it: {from, device, name}."""
+    env = os.environ if env is None else env
+    rid = env.get("CLAUDE_CODE_REMOTE_SESSION_ID") or ""
+    if rid:
+        sid, dev = ("session_" + rid.split("_", 1)[1]) if rid.startswith("cse_") else rid, "web"
+    else:
+        import socket
+        sid = env.get("KIT_SESSION_ID") or env.get("CLAUDE_CODE_SESSION_ID") or name
+        dev = env.get("KIT_DEVICE") or socket.gethostname() or "unknown"
+    return {"from": sid, "device": dev, "name": name, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+
+
+def record_predecessor(name, env=None):
+    """The successor orchestrator's resume reads this and inherits, on this device only, every part its predecessor owned
+    (kit.py inherit_lines): the parts keep reaching the orchestrator running now."""
+    path = os.path.join(ROOT, ".kit", "run", "handover-from.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(predecessor(name, env), fh)
+    return path
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--role", choices=["orchestrator", "clerk"], required=True)
@@ -150,6 +173,8 @@ def main():
     model = ((k.get("claude_cli_roles") or {}).get(a.role) or {}).get("model") or ("haiku" if a.role == "clerk" else "inherit")
     gen = 2 if a.dry_run else next_gen(a.role)
     prompt = successor_prompt(a.role, gen, cli=cli)
+    if a.role == "orchestrator" and not a.dry_run:
+        record_predecessor(name)
 
     if cli == "web":
         # CL26: a script cannot start a cloud session, and killing CLAUDE_PID would end this one with no successor.
