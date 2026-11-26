@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-26T19:41:32Z",
+ "from": "orchestrator",
+ "kind": "decision",
+ "post_id": "m1-a-map-of-any-project-generated-from-its",
+ "text": "## The owner's design for the map (2026-11-26, in the orchestrator's terminal)\n\n> \"Step 0 and the install codes the plumbing, the layering, living parts, etc. of all that already exists, into a map script. Then, as the user uses the board, every part verifies its part of the plumbing, making sure it's accurate, and adds a code map of whatever new parts it's built (so a Claude for Chrome part that just built a new part, or discovered a new data source, would add it to the map as part of its done). Then, with a map like this continuously maintained as the project advances, even the dumbest model could just run water through the plumbing [...] the plumbing and pipes built by all the parts and the install will always spit out any of the things, links, or checks as a result.\"\n\n> It must represent any project: \"one like French jeu, or [...] a vice principal that's creating a bunch of power bi apps using Claude for Chrome, to a researcher writing a thesis.\"\n\n**What follows on this train:** map.json is things, links, flags, and every link carries a check that runs (`kit.py map --check` is the water); code is M1's reader, M4 adds Power BI, documents and any folder; M2: install draws the first map; M3: done keeps it (a part's stretch checked, its new parts added, or the step is refused); a thing only a browser sees carries a probe with its last confirmed date.\n"
+}
