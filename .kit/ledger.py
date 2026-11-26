@@ -1235,11 +1235,15 @@ def contradictions(items):
 
 # -- a second claim of authority
 AUTHORITY = re.compile(
-    r"(source of truth|single source|the one record|is the authority|authoritative|takes? precedence|ranks? first|"
-    r"comes? first|wins over|overrides? (?:every|all|any|the other)|supersedes|the reference|"
-    r"source de v[ée]rit[ée]|fait foi|fait autorit[ée]|prime sur|pr[ée]vaut|a (?:la )?priorit[ée]|en premier|"
-    r"r[ée]f[ée]rence unique|document de r[ée]f[ée]rence|seule r[ée]f[ée]rence|passe avant)", re.I)
-SELF = re.compile(r"\b(this (?:file|doc|document|guide|page)|here|ce (?:fichier|document|guide)|ici|celui-ci)\b", re.I)
+    r"(single source of truth|source of truth|the one record|is the authority|authoritative|takes? precedence over|"
+    r"ranks? first|wins over|overrides? (?:every|all|any|the other)|supersedes|"
+    r"source de v[ée]rit[ée]|fait foi|fait autorit[ée]|prime sur|pr[ée]vaut sur|r[ée]f[ée]rence unique|seule r[ée]f[ée]rence|"
+    r"document de r[ée]f[ée]rence)", re.I)
+# a claim of authority about documents, not prose: Harmonize's music docs say "the reference pitch", "the tonic comes first"
+DOC_NOUN = re.compile(r"\b(docs?|documents?|files?|guides?|rules?|readme|memory|lessons?|ledger|board|prompts?|"
+                      r"fichiers?|r[èe]gles?|m[ée]moire|consignes?)\b|\.md\b", re.I)
+SELF = re.compile(r"\b(this (?:file|doc|document|guide|page)|ce (?:fichier|document|guide)|le pr[ée]sent (?:fichier|document)|"
+                  r"celui-ci)\b", re.I)
 FILE_REF = re.compile(r"`?([\w./-]+\.(?:md|json|txt|py|yml|yaml))`?|\b(the board|le tableau|CLAUDE\.md|AGENTS\.md)\b", re.I)
 
 
@@ -1263,9 +1267,13 @@ def authority_claims(paths, root=""):
                 continue
             m = AUTHORITY.search(line)
             near = line[max(0, m.start() - 120):m.end() + 60]
+            if not DOC_NOUN.search(near):
+                continue                                            # music, physics, a recipe: not about documents
             refs = [(x or y) for x, y in FILE_REF.findall(near)]
-            if SELF.search(near) or not refs:
+            if SELF.search(near):
                 who = rel
+            elif not refs:
+                continue                                            # names no document: nothing to compare
             else:
                 who = min(refs, key=lambda r: abs(near.find(r) - (m.start() - max(0, m.start() - 120))))
             who = who.lower().replace("le tableau", "the board")

@@ -6826,6 +6826,7 @@ def _lesson_add(lid, roles, title, text, files=(), frm="", check=""):
         body.append("from: %s" % frm)
     if check:
         body.append("check: %s" % check)
+    body.append("confirmed: %s" % datetime.now(timezone.utc).strftime("%Y-%m-%d"))     # M8: dated from the day it is written
     body += ["", text.strip(), ""]
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(body))
@@ -6978,6 +6979,8 @@ def memory_items():
             if p not in blames:
                 blames[p] = _blame_dates(p)
             when = blames[p].get(x.get("line") or 0, "")
+            if not when and os.path.isfile(p):                       # not committed yet: the day the file was written
+                when = datetime.fromtimestamp(os.path.getmtime(p), tz=timezone.utc).strftime("%Y-%m-%d")
         out.append({"id": x["id"], "text": "%s. %s" % (x["title"], x["text"]), "files": x["files"], "theme": "",
                     "source": x["source"], "confirmed": when, "kind": "lesson"})
     led = _load_ledger_mod()
