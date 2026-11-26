@@ -31,7 +31,37 @@ from datetime import datetime, timedelta, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+def _test_guard():
+    """CL48: in a test run (KIT_TEST set) a write to a board, a mirror or a remote outside a temp folder is refused
+    (kit/test_guard.py, every git command checked first); None outside a test run."""
+    if not os.environ.get("KIT_TEST"):
+        return None
+    if sys.modules.get("kit_test_guard"):
+        return sys.modules["kit_test_guard"]
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    for f in [os.path.join(d, "test_guard.py") for d in (here, os.path.join(here, "..", "kit"), os.path.join(here, ".."))] + \
+            [os.environ.get("KIT_TEST_GUARD") or ""]:     # a test's hand-made copy of a few scripts: the runner's
+        if f and os.path.isfile(f):
+            spec = importlib.util.spec_from_file_location("kit_test_guard", f)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["kit_test_guard"] = mod
+            spec.loader.exec_module(mod)
+            mod.install()
+            return mod
+    raise SystemExit("KIT_TEST: REFUSED: test_guard.py is not next to %s: a test run writes nothing without it" % __file__)
+
+
+_TEST_GUARD = _test_guard()
+
+
 _SHIM_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "shim.js")
+
+
+def _data_in_temp(store):
+    """CL48: whether this is a test run's board, its data under a temp folder. A client in a test run (KIT_TEST) writes
+    only to a board whose /_api/health says so; a board outside a test run always says no; the path is never shown."""
+    return bool(_TEST_GUARD and _TEST_GUARD.under_temp(store.data_dir))
 
 
 def tar_name(n):
@@ -177,6 +207,8 @@ class BoardStore:
 
     def __init__(self, data_dir):
         self.data_dir = os.path.abspath(data_dir)
+        if _TEST_GUARD:     # CL48: a test run opens a board under a temp folder only, never the project's real one
+            _TEST_GUARD.check_path(self.data_dir, "a board's data in")
         self.blob_dir = os.path.join(self.data_dir, "blobs")
         os.makedirs(self.blob_dir, exist_ok=True)
         self.db_path = os.path.join(self.data_dir, "board.db")
@@ -2051,7 +2083,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             parsed = urllib.parse.urlsplit(self.path)
             path = parsed.path
             if path == "/_api/health":
-                raw = json.dumps({"ok": True, "pid": os.getpid(), "auth": bool(token), "embed_mode": bool(embed_mode)}).encode("utf-8")
+                raw = json.dumps({"ok": True, "pid": os.getpid(), "auth": bool(token), "embed_mode": bool(embed_mode),
+                                  "temp": _data_in_temp(store)}).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self._send_security_headers()
@@ -2311,7 +2344,8 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             qs = urllib.parse.parse_qs(parsed.query)
 
             if path == "/_api/health":
-                self._send_json(200, {"ok": True, "pid": os.getpid(), "auth": bool(token), "embed_mode": bool(embed_mode)})
+                self._send_json(200, {"ok": True, "pid": os.getpid(), "auth": bool(token), "embed_mode": bool(embed_mode),
+                                      "temp": _data_in_temp(store)})
                 return
 
             if path.startswith("/_invite/") and path.endswith(".md"):
