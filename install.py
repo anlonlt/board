@@ -871,6 +871,31 @@ def merge_claude_settings(t, dry, log, board=True, spec=None):
                 fh.write("\n")
 
 
+FRESH_CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.kit/kit.py" fresh'
+
+
+def merge_fresh_line(t, dry, log):
+    """CL53b: a Claude Code project whose SessionStart is its own script (Harmonize's session-start.sh) never runs the
+    kit's hook, so its sessions started on old code without a word. Its settings get one SessionStart line of the kit's:
+    `kit.py fresh` (the CHECKOUT line, or nothing). Not added where the kit's SessionStart hook already runs."""
+    p = os.path.join(t, ".claude", "settings.json")
+    if not os.path.isfile(p):
+        return
+    with open(p, encoding="utf-8") as fh:
+        s = json.load(fh)
+    groups = (s.get("hooks") or {}).get("SessionStart") or []
+    cmds = [str(h.get("command") or "") for g in groups for h in (g.get("hooks") or [])]
+    if any(c == FRESH_CMD or "kit_session_start.py" in c or ("/.kit/hook.py" in c and "SessionStart" in c) for c in cmds):
+        return
+    s.setdefault("hooks", {}).setdefault("SessionStart", []).append(
+        {"hooks": [{"type": "command", "command": FRESH_CMD, "timeout": 45}]})
+    log.append(".claude/settings.json: SessionStart runs `kit.py fresh` (CL53: its own session-start script does not run the kit's hook)")
+    if not dry:
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(s, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+
+
 def under_tempdir(t):
     """True when t is inside the system temp folder (tempfile.gettempdir(), /tmp, $TMPDIR)."""
     import tempfile
@@ -1627,6 +1652,8 @@ def main(argv=None):
         if message_guard and not any(x[2] == MESSAGE_GUARD and x[0] == "PreToolUse" for x in spec):
             spec.append(("PreToolUse", SEND_TOOLS, MESSAGE_GUARD))
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], spec)
+    if ".kit/kit.py" in ins.touched and (want_claude or "claude" in present):
+        merge_fresh_line(t, a.dry_run, ins.log)
     if new_hooks.get(RUNTIME_HOOK_DIRS["agy"]):
         ins.log.append(".agents/hooks/kit/: new kit hook(s) %s copied; run --update with --runtime agy to wire them in "
                        ".agents/hooks.json" % ", ".join(new_hooks[RUNTIME_HOOK_DIRS["agy"]]))

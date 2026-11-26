@@ -4854,8 +4854,8 @@ STALE_BRANCH_DAYS = 2      # ~/harmonize sat two days on a merged branch while i
 
 
 def checkout_fresh(root=None, trunk=None, fetch=True, move=True, days=None, now=None):
-    """Fetch origin; say in one line when this checkout is behind its trunk, or on a branch merged or stale; move it
-    forward by itself when that loses nothing (clean, and on the trunk or a branch merged into it). Returns
+    """Fetch origin; say in one line when this checkout is behind its trunk, or on a stale branch; move it forward by
+    itself only when that loses nothing: clean, on the trunk itself, with no commit of its own (CR-cl53). Returns
     (lines, blocked): `blocked` is True when it stays behind and the session has something to do first."""
     root = root or ROOT
     k = _kit_config().get("kit") or {}
@@ -4893,26 +4893,18 @@ def checkout_fresh(root=None, trunk=None, fetch=True, move=True, days=None, now=
         if dirty:
             return ["CHECKOUT: %s is behind: %s. Not moved: it has uncommitted changes; commit or stash them, then "
                     "`git checkout %s && git merge --ff-only origin/%s`." % (here, what, trunk, trunk)], True
-        if not move:
-            return ["CHECKOUT: %s is behind: %s." % (here, what)], True
-        steps = []
         if branch != trunk:
-            if g("rev-parse", "-q", "--verify", "refs/heads/" + trunk)[0]:
-                steps.append(("checkout", "-q", "-b", trunk, "--track", "origin/" + trunk))
-            else:
-                if int(g("rev-list", "--count", "%s..refs/heads/%s" % (up, trunk))[1] or 0):
-                    return ["CHECKOUT: %s is merged into %s, but your local %s has commits not on origin: not moved; "
-                            "`git checkout %s && git pull --no-rebase`, then push. Behind: %s." % (here, trunk, trunk, trunk, what)], True
-                steps.append(("checkout", "-q", trunk))
-        steps.append(("merge", "-q", "--ff-only", up))
-        for st in steps:
-            rc, _, err = g(*st)
-            if rc:
-                return ["CHECKOUT: %s is behind (%s) and could not be moved (`git %s`: %s): do it by hand." % (
-                    here, what, " ".join(st), (err.splitlines() or ["?"])[-1][:160])], True
-        if branch == trunk:
-            return ["CHECKOUT: moved %s forward: %s." % (trunk, what)], False
-        return ["CHECKOUT: %s was merged into %s: switched to %s and moved it forward: %s." % (here, trunk, trunk, what)], False
+            # CR-cl53: no commit of its own is not "merged": a part's new worktree branch or a review's detached HEAD
+            # looks the same, and switching it would put its work on the trunk. Only the trunk moves by itself.
+            return ["CHECKOUT: %s is behind: %s; it has no commit of its own: `git checkout %s && git merge --ff-only "
+                    "origin/%s` if it is done (not switched: it may be a new branch)." % (here, what, trunk, trunk)], False
+        if not move or "/.claude/worktrees/" in os.path.abspath(root).replace(os.sep, "/") + "/":
+            return ["CHECKOUT: %s is behind: %s." % (here, what)], True
+        rc, _, err = g("merge", "-q", "--ff-only", up)
+        if rc:
+            return ["CHECKOUT: %s is behind (%s) and could not be moved (`git merge --ff-only origin/%s`: %s): do it by "
+                    "hand." % (here, what, trunk, (err.splitlines() or ["?"])[-1][:160])], True
+        return ["CHECKOUT: moved %s forward: %s." % (trunk, what)], False
     last = int(g("log", "-1", "--format=%ct", "HEAD")[1] or now)
     trunk_last = int(g("log", "-1", "--format=%ct", up)[1] or 0)
     age = int((now - last) // 86400)
@@ -6192,7 +6184,7 @@ COMMANDS = [
     ("write the board", "kit.py sub <post> <number>... | \"<piece>\" [--status doing|done|drop] [--why \"...\"]", "a step's pieces by number (the task's numbered lines) or title, lines on its post; done refuses an open one; a piece the task names drops only with --why"),
     ("launch and finish", "kit.py form <post> [--doing \"...\"]", "a step's result as a file, half filled; `done` sends and checks it"),
     ("launch and finish", "kit.py whoami [name]", "this session's id for a post's session_id (web: session_<id>; else the name given)"),
-    ("git copy", "kit.py fresh [--again]", "fetch origin: say when it is behind its trunk or on a merged or stale branch, move it when clean and merged (CL53; the SessionStart hook and the first resume run it once a session)"),
+    ("git copy", "kit.py fresh [--again]", "fetch origin: say when it is behind its trunk or on a stale branch, move the trunk forward when clean (CL53; the SessionStart hook and the first resume run it once a session)"),
     ("launch and finish", "kit.py branches [--delete]", "origin's branches fully on the trunk (finished parts), and with --delete removes them"),
     ("launch and finish", "kit.py web-env [ask] [--id env_...]", "several repos on the web (CL39): the create_environment call (every repo, hooks at user level), its question post, its id for the hand-over"),
     ("launch and finish", "kit.py attach <owner/repo>", "attach another repo (web: the add_repo call, clone next to this project, register, record in the portfolio)"),
@@ -8432,8 +8424,8 @@ def main(argv=None):
     s.add_argument("--on-step-branch", action="store_true")
     sp.add_parser("keep", help="the board here into git: committed and pushed")
     s = sp.add_parser("guide", help="a case of the orchestrator's guide (no case: their list)"); s.add_argument("case", nargs="?", default=None)
-    s = sp.add_parser("fresh", help="CL53: fetch origin; say when this checkout is behind its trunk or on a merged or stale "
-                      "branch, and move it forward when that loses nothing (once a session; --again: now)")
+    s = sp.add_parser("fresh", help="CL53: fetch origin; say when this checkout is behind its trunk or on a stale branch, "
+                      "and move the trunk forward when that loses nothing (once a session; --again: now)")
     s.add_argument("--session", default=None); s.add_argument("--again", action="store_true")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--session", default=None, help="your session id: resume flags an _orchestrator post naming another")
@@ -8523,7 +8515,13 @@ def main(argv=None):
     elif os.path.exists(os.path.join(ROOT, ".kit", "config.json")):  # an installed kit: <project>/.kit/kit.py
         configure(os.path.join(ROOT, ".kit", "config.json"))
     if a.cmd == "fresh":
-        lines, _ = checkout_fresh() if a.again and not _is_web() else checkout_fresh_once(session=a.session)
+        sess = a.session
+        if not sess and not sys.stdin.isatty():      # a SessionStart line of its own: Claude Code's payload on stdin
+            try:
+                sess = str((json.loads(sys.stdin.read() or "{}") or {}).get("session_id") or "") or None
+            except (ValueError, OSError, AttributeError):
+                sess = None
+        lines, _ = checkout_fresh() if a.again and not _is_web() else checkout_fresh_once(session=sess)
         if lines:
             print("\n".join(lines))
         return 0

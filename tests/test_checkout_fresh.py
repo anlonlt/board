@@ -93,14 +93,26 @@ class CheckoutFresh(unittest.TestCase):
         again, blocked = kit.checkout_fresh_once(session="s2")             # repeated while it still asks something
         self.assertTrue(blocked); self.assertIn("uncommitted", again[0])
 
-    def test_a_merged_branch_switches_to_the_trunk(self):
-        """The harmonize case: a branch fully on main, main moved on since."""
+    def test_a_branch_with_no_commit_of_its_own_is_told_never_switched(self):
+        """CR-cl53: a merged branch (the harmonize case) and a part's new branch look the same; neither is switched."""
         git(self.d, "checkout", "-qb", "agy-board-install")
-        newest = self.main_moves()
-        lines, _ = kit.checkout_fresh_once(session="s3")
-        self.assertEqual(git(self.d, "symbolic-ref", "--short", "HEAD"), "main")
-        self.assertEqual(self.head(), newest)
-        self.assertIn("branch agy-board-install was merged into main: switched to main", lines[0])
+        old = self.head()
+        self.main_moves()
+        lines, blocked = kit.checkout_fresh_once(session="s3")
+        self.assertEqual(git(self.d, "symbolic-ref", "--short", "HEAD"), "agy-board-install")
+        self.assertEqual(self.head(), old); self.assertFalse(blocked)
+        self.assertIn("branch agy-board-install is behind: 2 newer commits on origin/main", lines[0])
+        self.assertIn("it has no commit of its own: `git checkout main", lines[0])
+
+    def test_a_detached_head_is_told_never_switched(self):
+        """A review's worktree: a detached HEAD on an older trunk commit."""
+        git(self.d, "checkout", "-q", "--detach", "main")
+        old = self.head()
+        self.main_moves(1)
+        lines, _ = kit.checkout_fresh_once(session="s3b")
+        self.assertEqual(self.head(), old)
+        self.assertEqual(subprocess.run(["git", "-C", self.d, "symbolic-ref", "-q", "HEAD"]).returncode, 1)
+        self.assertIn("a detached HEAD is behind", lines[0])
 
     def test_a_stale_branch_with_its_own_commits_is_warned_not_moved(self):
         git(self.d, "checkout", "-qb", "old-work")
@@ -130,6 +142,23 @@ class CheckoutFresh(unittest.TestCase):
         with mock.patch.dict(os.environ, {"CLAUDE_CODE_REMOTE": "true"}):
             self.assertEqual(kit.checkout_fresh_once(session="s7"), ([], False))
         self.assertEqual(self.head(), old)
+
+    def test_install_adds_fresh_where_session_start_is_the_project_s_own(self):
+        """CR-cl53: Harmonize's SessionStart is its own session-start.sh; install gives it a `kit.py fresh` line, once,
+        and none where the kit's SessionStart hook already runs."""
+        sys.path.insert(0, str(ROOT))
+        import install
+        st = Path(self.d, ".claude", "settings.json"); st.parent.mkdir()
+        own = {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "bash .claude/session-start.sh"}]}]}}
+        st.write_text(json.dumps(own))
+        log = []
+        install.merge_fresh_line(self.d, False, log); install.merge_fresh_line(self.d, False, log)
+        cmds = [h["command"] for g in json.loads(st.read_text())["hooks"]["SessionStart"] for h in g["hooks"]]
+        self.assertEqual(cmds, ["bash .claude/session-start.sh", install.FRESH_CMD]); self.assertEqual(len(log), 1)
+        kit_line = {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": install.DISPATCH["claude"] % ("cli", "SessionStart")}]}]}}
+        st.write_text(json.dumps(kit_line))
+        install.merge_fresh_line(self.d, False, log)
+        self.assertEqual(json.loads(st.read_text()), kit_line)
 
     def test_session_start_and_resume_say_it_first(self):
         """The installed kit end to end: the SessionStart hook moves the checkout and its first line says so; a
