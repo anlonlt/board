@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T21:51:03Z",
+ "created_at": "2026-11-26T21:56:53Z",
  "rows": [
   {
    "also": [],
@@ -125,7 +125,8 @@
    "children": [
     "R1",
     "R2",
-    "R3"
+    "R3",
+    "R4"
    ],
    "parent": "",
    "part": "P-runners",
@@ -1026,8 +1027,19 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-runners",
+   "part": "R4",
+   "post": "r4-on-a-computer-a-part-runs-its-own-real-p",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T21:51:03Z"
+ "updated_at": "2026-11-26T21:56:53Z"
 }
