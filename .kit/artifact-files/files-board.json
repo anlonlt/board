@@ -22,6 +22,10 @@
    "sha": "0aa52605f0a5c681b7b46339dd687ffce89f6b73fa73e3c51b5efdd771e6a794",
    "version": 5
   },
+  ".kit+2F~claude-cli+2F~orchestrator.md": {
+   "sha": "",
+   "version": 3
+  },
   ".kit+2F~claude-cli+2F~part.md": {
    "sha": "1c9e1823d772b816b6a0e8732257cb8b48f1d54d4bb642c9ac8e78f65f9ed36d",
    "version": 3
@@ -33,6 +37,10 @@
   ".kit+2F~lessons.md": {
    "sha": "1d7cc97b4f490dfc35f80bce76e364b472e386cf83fa77b37422af773a478e93",
    "version": 5
+  },
+  ".kit+2F~orchestrator.md": {
+   "sha": "",
+   "version": 3
   },
   ".kit+2F~part.md": {
    "sha": "caed20d0897f4e22fe5437a611ca56c99447b974611dcecebc2562d3fb2b54ef",
@@ -122,6 +130,10 @@
    "sha": "0c1e04f0444a431367a54bfd88ec76a05f490a04812d979563b0a19dbc502e4f",
    "version": 2
   },
+  "kit+2F~claude+2F~part.template.md": {
+   "sha": "",
+   "version": 1
+  },
   "kit+2F~claude-cli+2F~ORCHESTRATOR.template.md": {
    "sha": "eb801ae25a2aded356c0dd06bf5be887c65883f55e2e13c7a214e62464ef8e27",
    "version": 1
@@ -145,6 +157,10 @@
   "kit+2F~consultant.template.md": {
    "sha": "65d6c66a51fb1fe79b94cdca1bba633007de84ee873023843b8a8545034a88b7",
    "version": 2
+  },
+  "kit+2F~generic+2F~orchestrator.template.md": {
+   "sha": "",
+   "version": 1
   },
   "kit+2F~lessons.md": {
    "sha": "1d7cc97b4f490dfc35f80bce76e364b472e386cf83fa77b37422af773a478e93",
@@ -172,6 +188,10 @@
   },
   "step0+2F~survey-code.md": {
    "sha": "6741ec431e08fb24d85cb6df44672b083a8072900dd9ea32c7e3676d43d42ee5",
+   "version": 1
+  },
+  "tests+2F~fixtures+2F~cl33_awaits.md": {
+   "sha": "",
    "version": 1
   },
   "tests+2F~fixtures+2F~cl33_harmonize_awaits.md": {
