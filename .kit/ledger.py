@@ -1427,9 +1427,27 @@ def entry_check_value(entry):
     return entry.get("check") if "check" in entry else entry.get("enforced_by")
 
 
+KIT_SHIPPED = ("kit/lessons.md", ".kit/lessons.md", "kit/ledger.md", ".kit/ledger.md")
+
+
+def is_kit_repo(root):
+    return os.path.isfile(os.path.join(root, "install.py")) and os.path.isdir(os.path.join(root, "kit", "hooks"))
+
+
+def kit_shipped(root, entry):
+    """An entry the kit ships (its lessons.md, its ledger.md): in a project its checks name the kit's own tests, which
+    the kit's suite runs in the kit's repo, not here."""
+    src = str(entry.get("_file") or "")
+    rel = os.path.relpath(src, root) if os.path.isabs(src) else src
+    return rel.replace(os.sep, "/") in KIT_SHIPPED and not is_kit_repo(root)
+
+
 def check_entry(root, entry, run=True, cache=None):
-    """{id, status: ok|fail|unchecked, checks, why, since}. A test not run here takes the cached run's result."""
+    """{id, status: ok|fail|unchecked|kit, checks, why, since}. A test not run here takes the cached run's result;
+    `kit`: the kit ships it and checks it in its own repo (not counted in a project)."""
     specs = check_specs(entry_check_value(entry))
+    if specs and kit_shipped(root, entry):
+        return {"id": entry["id"], "status": "kit", "checks": ["%s:%s" % s for s in specs], "why": "", "since": ""}
     if not specs:
         return {"id": entry["id"], "status": "unchecked", "checks": [], "why": "", "since": entry_date(root, entry)}
     whys, stale = [], False
@@ -1452,7 +1470,7 @@ def check_entry(root, entry, run=True, cache=None):
 def entry_date(root, entry):
     """The day an entry was written: its created_at, a date in its `from:`, else the day git added its heading line,
     else its file's date."""
-    for v in (entry.get("created_at"), entry.get("from")):
+    for v in (entry.get("created_at"), entry.get("from"), os.path.basename(str(entry.get("_file") or ""))):
         m = re.search(r"\d{4}-\d{2}-\d{2}", str(v or ""))
         if m:
             return m.group(0)
@@ -1507,6 +1525,8 @@ def check_note(root, entry, cache=None):
 
 def memory_line(results, cache_at=""):
     """The one line the orchestrator's resume carries."""
+    kit = [r for r in results if r["status"] == "kit"]
+    results = [r for r in results if r["status"] != "kit"]
     n = len(results)
     ok = [r for r in results if r["status"] == "ok"]
     bad = [r for r in results if r["status"] == "fail"]
@@ -1517,6 +1537,8 @@ def memory_line(results, cache_at=""):
         tail = "; %d whose tests have not run here" % len(stale)
     elif cache_at:
         tail = "; tests as of %s" % cache_at[:16].replace("T", " ")
+    if kit:
+        tail += "; the kit's own %d checked lessons are run in the kit's repo, not here" % len(kit)
     return ("Memory: %d entries: %d checked, %d failing%s, %d unchecked%s: `python3 -I .kit/kit.py lessons check` runs them"
             % (n, len(ok) + len(bad), len(bad), (" (%s)" % ", ".join(r["id"] for r in bad)) if bad else "", len(un), tail))
 
