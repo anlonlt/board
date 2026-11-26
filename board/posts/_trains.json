@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T20:01:28Z",
+ "created_at": "2026-11-26T20:24:02Z",
  "rows": [
   {
    "also": [],
@@ -9,6 +9,7 @@
     "CL12",
     "CL14",
     "CL15",
+    "CL16",
     "CL18",
     "CL19",
     "CL20",
@@ -62,19 +63,6 @@
    "prompt": "",
    "session": "",
    "state": "done",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [
-    "CL16"
-   ],
-   "parent": "",
-   "part": "P-board-data",
-   "post": "cl16-the-board-travels-in-git-always-current",
-   "prompt": "",
-   "session": "",
-   "state": "idle",
    "store": []
   },
   {
@@ -401,12 +389,12 @@
   {
    "also": [],
    "children": [],
-   "parent": "P-board-data",
+   "parent": "P-cli",
    "part": "CL16",
    "post": "cl16-the-board-travels-in-git-always-current",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGjnr7WTDyCuCWMb6wL",
+   "state": "running",
    "store": []
   },
   {
@@ -897,5 +885,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T20:01:28Z"
+ "updated_at": "2026-11-26T20:24:02Z"
 }

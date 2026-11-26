@@ -1,9 +1,9 @@
 {
  "column": "info",
- "created_at": "2026-11-26T20:01:28Z",
+ "created_at": "2026-11-26T20:24:27Z",
  "rows": [
   {
-   "at": 42,
+   "at": 39,
    "key": "A",
    "name": "Cli",
    "note": "Next: The Trains view: task lists (A) or the old flow map (B)?",
@@ -40,20 +40,22 @@
     "kit compact keeps a project's story checker green",
     "every agent uses the kit's scripts, enforced by hooks",
     "kit artifact push never overwrites a newer live card (_dashboard, _trains)",
-    "resume per role: what each role needs, the lessons and the workflow included",
     "compact posts every open awaits point and open issue as a board post before archiving",
     "memory flow: one design for lessons, the rules ledger, principles and his words, so not...",
     "Why the owner doesn't see agents' board writes until he reopens, and one list of what w...",
     "A part's result lives in its post: post bodies render diagrams and pictures, no docs fi...",
     "Usage ledger: tokens, tools, agents per session, recorded without tokens",
     "Attaching repos on the web: install.py allows add_repo, kit attach, doctor warns",
-    "Install for several repos on the web: one environment with every repo, hooks at user level",
     "Launch a board step without push access to the board (prompt carried in the start message)",
     "Review and adopt four kit changes made on a computer (patch in this post)",
     "Measure what the account's connectors cost on the web, and who decides that they load",
-    "The live line and the loop breaker on agy",
     "Design principles, complete, and no emoji Like",
+    "The board travels in git, always current (mirror synced on every step)",
+    "A crashed part is continued from its last checkpoint",
     "The Trains view: task lists (A) or the old flow map (B)?",
+    "resume per role: what each role needs, the lessons and the workflow included",
+    "Install for several repos on the web: one environment with every repo, hooks at user level",
+    "The live line and the loop breaker on agy",
     "Fix agy runtime gaps: Artifact STALE gate, empty board.db shadowing, worktree MCP confi..."
    ],
    "train": "P-cli"
@@ -75,20 +77,8 @@
    "train": "P-release"
   },
   {
-   "at": 0,
-   "key": "C",
-   "name": "Board data",
-   "note": "Next: The board travels in git, always current (mirror synced on every step)",
-   "post": "cl16-the-board-travels-in-git-always-current",
-   "state": "ready",
-   "steps": [
-    "The board travels in git, always current (mirror synced on every step)"
-   ],
-   "train": "P-board-data"
-  },
-  {
    "at": 6,
-   "key": "D",
+   "key": "C",
    "name": "Demo",
    "note": "Next: Try replying or tapping 👍",
    "post": "demo-todo",
@@ -106,7 +96,7 @@
   },
   {
    "at": 0,
-   "key": "E",
+   "key": "D",
    "name": "Memory",
    "note": "Next: A map of any project, generated from its code",
    "post": "m1-a-map-of-any-project-generated-from-its",
@@ -123,20 +113,8 @@
     "The workflow on the map: what lives outside the repo, with checks"
    ],
    "train": "P-memory"
-  },
-  {
-   "at": 0,
-   "key": "F",
-   "name": "Takeover",
-   "note": "Next: A crashed part is continued from its last checkpoint",
-   "post": "cl17-a-crashed-part-is-continued-from-its-las",
-   "state": "ready",
-   "steps": [
-    "A crashed part is continued from its last checkpoint"
-   ],
-   "train": "P-takeover"
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T20:01:28Z"
+ "updated_at": "2026-11-26T20:24:27Z"
 }

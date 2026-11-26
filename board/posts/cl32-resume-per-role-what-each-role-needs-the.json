@@ -36,10 +36,9 @@
   "project": "anlonlt/harmonize (origin/main 667c2087), run by O53"
  },
  "session_id": "session_01AE1HGj64wNW2VqtikzfGg4",
- "status": "complete",
- "status_fixed": "was \"in progress\": its work landed (c034a74 and 4 more CL32 commits) and its verdict is written (owner's go, 2026-11-26)",
+ "status": "in progress",
  "title": "resume per role: what each role needs, the lessons and the workflow included",
  "train": "cli",
- "updated_at": "2026-11-26T10:04:09Z",
+ "updated_at": "2026-11-23T23:36:43Z",
  "verdict": "Each role now starts from `kit.py resume --role <role>`, lessons are in the memory by role, and O53's launch gaps are fixed. It is not yet run on the real Harmonize, which this session could not reach."
 }

@@ -1,13 +1,15 @@
 {
  "body": "Goal: a part that crashes (CLI crash, OOM, closed laptop) is continued by a fresh session, here or elsewhere, from where it stopped, without the owner re-explaining. Today CL8, CL9, CL10, CL12, CL14 show \"in progress, session not running\" after the two crashes, and their progress exists only in uncommitted worktrees and dead transcripts.\n\nDo:\n- Parts checkpoint: `.kit/claude-cli/part.md` (and the agy part prompt) makes a part keep a short checklist in its post (done / doing / next, updated as each sub-task ends; the post IS the part's task list, no hook mirroring of sub-steps) and commit + push its branch at each checkpoint (`kit.py checkpoint <post>`: commits the worktree as WIP on the part's branch, pushes, stamps the post with branch + commit + time).\n- `kit.py resume` shows, for each in-progress step whose session is not running: its branch, last checkpoint, the checklist's next item, and the relaunch command (a new part on that branch, prompt = the step's prompt + \"continue from the checklist in your post; your branch has your work\"). On the same machine, also offer `claude --resume <session id>` when the transcript still exists.\n- The orchestrator relaunches crashed parts within the device cap (CL15) instead of asking, unless the step was waiting on the owner.\n\nBars: a test that kills a part mid-step and a relaunched part continues from the checkpoint (branch has the work, post has the checklist); resume output lists the relaunch line. Mirror .kit/ changes into kit/.\nHolds: WIP commits stay on the part's branch, never on the trunk.\n",
+ "branch": "cl17",
  "column": "info",
  "created_at": "2026-11-22T23:17:04Z",
  "from": "orchestrator",
- "moved_from_train": "cli",
+ "launched_at": "2026-11-26T00:43:04Z",
  "part": "CL17",
  "planned_by": "orchestrator",
- "status": "planned",
+ "session_id": "session_01AE1HGiUM7AQsL6Y1N4AAQC",
+ "status": "in progress",
  "title": "A crashed part is continued from its last checkpoint",
- "train": "takeover",
- "updated_at": "2026-11-26T10:04:09Z"
+ "train": "cli",
+ "updated_at": "2026-11-26T00:43:04Z"
 }
