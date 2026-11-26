@@ -1,0 +1,43 @@
+{
+ "body": "A Claude Code web session reconciles its Artifact with GitHub at its start, the same way `board` reconciles the local board with GitHub on a computer: each post and comment, the newer copy wins, nothing lost on either side.\n\nToday the pieces exist (`kit.py artifact pull`, `load`, `kit.py reconcile` against board-mirror, `artifact push`), but nothing runs them together, so a web session found its Artifact missing the posts made on the computer (the memory train's M5 to M8, the runners train) and called the git copy out of date.\n\n1. `kit.py artifact reconcile`: pull and load the Artifact, reconcile with origin/board-mirror (newer wins, per document), push what changed both ways (the Artifact batch, and board-mirror), and print one line: what came from GitHub, what went to it.\n2. It runs by itself at a web session's start (the web's session-start hook or resume on the web), never in a local session (a local session reconciles its own board).\n3. A document changed on both sides since the last reconcile is never overwritten silently: both versions are kept and the board shows the conflict.\n4. A test with an Artifact copy and a board-mirror that each hold a post the other lacks, and one changed on both.\n",
+ "column": "info",
+ "created_at": "2026-11-26T21:11:43Z",
+ "from": "orchestrator",
+ "part": "CL45",
+ "planned_by": "orchestrator",
+ "runner": "claude-web",
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "kit.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "kit.py artifact reconcile"
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "It runs by itself at a web session's start (the web's session-start hook or resume on the web),..."
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "A document changed on both sides since the last reconcile is never overwritten silently"
+  },
+  {
+   "from": "task",
+   "n": 4,
+   "status": "open",
+   "title": "A test with an Artifact copy and a board-mirror that each hold a post the other lacks, and one..."
+  }
+ ],
+ "task": "A Claude Code web session reconciles its Artifact with GitHub at its start, the same way `board` reconciles the local board with GitHub on a computer: each post and comment, the newer copy wins, nothing lost on either side.\n\nToday the pieces exist (`kit.py artifact pull`, `load`, `kit.py reconcile` against board-mirror, `artifact push`), but nothing runs them together, so a web session found its Artifact missing the posts made on the computer (the memory train's M5 to M8, the runners train) and called the git copy out of date.\n\n1. `kit.py artifact reconcile`: pull and load the Artifact, reconcile with origin/board-mirror (newer wins, per document), push what changed both ways (the Artifact batch, and board-mirror), and print one line: what came from GitHub, what went to it.\n2. It runs by itself at a web session's start (the web's session-start hook or resume on the web), never in a local session (a local session reconciles its own board).\n3. A document changed on both sides since the last reconcile is never overwritten silently: both versions are kept and the board shows the conflict.\n4. A test with an Artifact copy and a board-mirror that each hold a post the other lacks, and one changed on both.\n",
+ "title": "A web session reconciles its Artifact with GitHub at its start",
+ "train": "board-data",
+ "updated_at": "2026-11-26T21:11:49Z"
+}

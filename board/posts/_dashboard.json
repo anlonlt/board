@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T20:29:33Z",
+ "created_at": "2026-11-26T21:11:43Z",
  "rows": [
   {
    "at": 39,
@@ -77,8 +77,20 @@
    "train": "P-release"
   },
   {
-   "at": 6,
+   "at": 0,
    "key": "C",
+   "name": "Board data",
+   "note": "Next: A web session reconciles its Artifact with GitHub at its start",
+   "post": "cl45-a-web-session-reconciles-its-artifact-wi",
+   "state": "ready",
+   "steps": [
+    "A web session reconciles its Artifact with GitHub at its start"
+   ],
+   "train": "P-board-data"
+  },
+  {
+   "at": 6,
+   "key": "D",
    "name": "Demo",
    "note": "Next: Try replying or tapping 👍",
    "post": "demo-todo",
@@ -96,7 +108,7 @@
   },
   {
    "at": 0,
-   "key": "D",
+   "key": "E",
    "name": "Memory",
    "note": "Next: A map of any project, generated from its code",
    "post": "m1-a-map-of-any-project-generated-from-its",
@@ -116,7 +128,7 @@
   },
   {
    "at": 0,
-   "key": "E",
+   "key": "F",
    "name": "Runners",
    "note": "Next: Antigravity on the web: how far it runs the board kit, and its profile",
    "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
@@ -130,5 +142,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T20:29:33Z"
+ "updated_at": "2026-11-26T21:11:43Z"
 }
