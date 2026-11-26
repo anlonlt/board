@@ -1,0 +1,1954 @@
+From f18621763f14f18acc9d23ab088442d3471ab617 Mon Sep 17 00:00:00 2001
+From: anlonlt <300212835+anlonlt@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 21:50:35 +0000
+Subject: [PATCH] R1: direct kit support and adapter script for Antigravity on
+ the web
+
+---
+ .kit/antigravity_web.py       | 515 ++++++++++++++++++++++++++++++++++
+ .kit/kit.py                   |  91 +++++-
+ .kit/web_takeover.py          |  59 +++-
+ install.py                    |   2 +
+ kit/antigravity_web.py        | 515 ++++++++++++++++++++++++++++++++++
+ kit/web_takeover.py           |  59 +++-
+ scripts/kit.py                |  91 +++++-
+ tests/test_antigravity_web.py | 264 +++++++++++++++++
+ 8 files changed, 1562 insertions(+), 34 deletions(-)
+ create mode 100755 .kit/antigravity_web.py
+ create mode 100755 kit/antigravity_web.py
+ create mode 100644 tests/test_antigravity_web.py
+
+diff --git a/.kit/antigravity_web.py b/.kit/antigravity_web.py
+new file mode 100755
+index 0000000..c611952
+--- /dev/null
++++ b/.kit/antigravity_web.py
+@@ -0,0 +1,515 @@
++#!/usr/bin/env python3
++"""Antigravity on the web runner adapter for the Board Kit (R1).
++
++Bridges dedicated cloud Linux VMs (no local board LAN/Tailscale, no Claude ArtifactData MCP,
++no runtime hooks, single-branch default clones) to the board's git copy (`board-mirror`),
++local `board_server.py`, tasklists/trains, subtasks, comments, and `/_blob/<id>` attachments.
++
++Commands:
++    python3 -I .kit/antigravity_web.py start [--post <id>] [--doing "<line>"] [--session <id>]
++    python3 -I .kit/antigravity_web.py resume [--role part|orchestrator|review] [--post <id>]
++    python3 -I .kit/antigravity_web.py tasklist [--train <name>] [--zoom <part>|--brief]
++    python3 -I .kit/antigravity_web.py train <name> [--zoom <part>|--sections <part>|--full <part>|--brief]
++    python3 -I .kit/antigravity_web.py sub <post> <n...> [--status done|open|drop] [--why "..."]
++    python3 -I .kit/antigravity_web.py comment <post> --from <who> --text "<text>" [--id <cid>]
++    python3 -I .kit/antigravity_web.py attach <post> <file...> [--comment "<text>"] [--from <who>] [--no-body-links]
++    python3 -I .kit/antigravity_web.py done <post>
++    python3 -I .kit/antigravity_web.py save [--no-blobs] [--no-push]
++    python3 -I .kit/antigravity_web.py status [--json]
++"""
++import argparse
++import datetime
++import importlib.util
++import json
++import mimetypes
++import os
++import re
++import subprocess
++import sys
++import urllib.request
++
++HERE = os.path.dirname(os.path.abspath(__file__))
++ROOT = os.path.dirname(HERE) if os.path.basename(HERE) in (".kit", "kit") else HERE
++KIT = os.path.join(ROOT, ".kit") if os.path.isdir(os.path.join(ROOT, ".kit")) else HERE
++
++
++def _load(name, path):
++    spec = importlib.util.spec_from_file_location(name, path)
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    return mod
++
++
++def _wt():
++    for cand in (os.path.join(KIT, "web_takeover.py"), os.path.join(ROOT, "kit", "web_takeover.py")):
++        if os.path.isfile(cand):
++            return _load("kit_web_takeover_aw", cand)
++    raise SystemExit("antigravity_web: web_takeover.py not found")
++
++
++def _cfg():
++    for cand in (os.path.join(KIT, "config.json"), os.path.join(ROOT, ".kit", "config.json")):
++        if os.path.isfile(cand):
++            try:
++                with open(cand, encoding="utf-8") as fh:
++                    return json.load(fh)
++            except (OSError, ValueError):
++                pass
++    return {}
++
++
++def _sh(args, cwd=ROOT, timeout=180, env=None):
++    merged_env = dict(os.environ)
++    if env:
++        merged_env.update(env)
++    try:
++        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd, env=merged_env)
++        return r.returncode, r.stdout, r.stderr
++    except (OSError, subprocess.SubprocessError) as e:
++        return 1, "", str(e)
++
++
++def _kit_script(name):
++    for cand in (
++        os.path.join(KIT, name),
++        os.path.join(ROOT, ".kit", name),
++        os.path.join(ROOT, "scripts", name),
++        os.path.join(ROOT, "kit", "board", name),
++    ):
++        if os.path.isfile(cand):
++            return cand
++    raise SystemExit("antigravity_web: %s not found" % name)
++
++
++def _mirror_branch():
++    return (_cfg().get("mirror") or {}).get("branch") or "board-mirror"
++
++
++def _main_branch():
++    return (_cfg().get("kit") or {}).get("main_branch") or "main"
++
++
++def _mirror_path():
++    p = (_cfg().get("mirror") or {}).get("path") or "../board-mirror"
++    return os.path.normpath(os.path.join(ROOT, p))
++
++
++def _utc_now():
++    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
++
++
++def ensure_refs(branches=None, cwd=ROOT):
++    """Fetch required branches explicitly so single-branch clones still resolve origin/<branch>."""
++    targets = list(branches or (_mirror_branch(), _main_branch(), "kit-usage"))
++    results = {}
++    for br in targets:
++        rc, _, err = _sh(
++            ["git", "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (br, br)],
++            cwd=cwd,
++            timeout=120,
++        )
++        results[br] = (rc == 0, err.strip())
++    return results
++
++
++def ensure_board_running():
++    wt = _wt()
++    wt.git_identity()
++    ensure_refs((_mirror_branch(),))
++    msg = wt.start_board()
++    wt.ensure_mirror_worktree()
++    return msg
++
++
++def _board_cli(*args, env=None):
++    return _sh([sys.executable, "-I", _kit_script("board_cli.py")] + list(args), env=env)
++
++
++def _kit_py(*args, env=None):
++    return _sh([sys.executable, "-I", _kit_script("kit.py")] + list(args), env=env)
++
++
++def _check_dashboard_non_empty():
++    """Safety guard: refuse exporting an empty _dashboard over a non-empty one on origin/board-mirror."""
++    br = _mirror_branch()
++    rc, remote_raw, _ = _sh(["git", "show", "origin/%s:board/posts/_dashboard.json" % br])
++    if rc != 0 or not remote_raw.strip():
++        return True, ""
++    try:
++        remote_rows = json.loads(remote_raw).get("rows") or []
++    except ValueError:
++        remote_rows = []
++    if not remote_rows:
++        return True, ""
++    rc2, local_raw, _ = _board_cli("get", "posts", "_dashboard")
++    if rc2 != 0:
++        return True, ""
++    try:
++        local_doc = json.loads(local_raw)
++        local_rows = (local_doc.get("data") or {}).get("rows") or []
++    except ValueError:
++        return False, "local _dashboard JSON unreadable while origin/%s has %d rows" % (br, len(remote_rows))
++    if not local_rows:
++        return False, "refusing to overwrite non-empty _dashboard (%d rows on origin/%s) with empty local rows" % (
++            len(remote_rows), br
++        )
++    return True, ""
++
++
++def cmd_start(a):
++    refs = ensure_refs()
++    fetched = [b for b, (ok, _) in refs.items() if ok]
++    print("refs fetched: %s" % (", ".join(fetched) or "none"))
++    print(ensure_board_running())
++    rc, out, err = _kit_py("reconcile", "--no-push")
++    if out.strip():
++        print(out.strip().splitlines()[-1])
++    elif err.strip():
++        print("reconcile: " + err.strip()[-200:])
++    if a.post and a.doing:
++        env = {"KIT_SESSION_ID": a.session} if a.session else None
++        rc_f, out_f, err_f = _kit_py("form", a.post, "--doing", a.doing, env=env)
++        if out_f.strip():
++            print(out_f.strip())
++        if rc_f != 0 and err_f.strip():
++            print(err_f.strip(), file=sys.stderr)
++            return rc_f
++    if a.post:
++        rc_r, out_r, err_r = _kit_py("resume", "--role", "part", "--post", a.post)
++    else:
++        rc_r, out_r, err_r = _kit_py("resume")
++    if out_r:
++        print(out_r, end="" if out_r.endswith("\n") else "\n")
++    if rc_r != 0 and err_r:
++        print(err_r, file=sys.stderr)
++    return rc_r
++
++
++def cmd_resume(a):
++    ensure_refs((_mirror_branch(),))
++    args = ["resume"]
++    if a.role:
++        args += ["--role", a.role]
++    if a.post:
++        args += ["--post", a.post]
++    rc, out, err = _kit_py(*args)
++    if out:
++        print(out, end="" if out.endswith("\n") else "\n")
++    if err:
++        print(err, file=sys.stderr)
++    return rc
++
++
++def cmd_tasklist(a):
++    ensure_refs((_mirror_branch(),))
++    if a.train:
++        args = ["train", a.train]
++        if a.zoom:
++            args += ["--zoom", a.zoom]
++        elif a.sections:
++            args += ["--sections", a.sections]
++        elif a.full:
++            args += ["--full", a.full]
++        elif a.brief:
++            args.append("--brief")
++        rc, out, err = _kit_py(*args)
++    else:
++        rc, out, err = _kit_py("resume")
++    if out:
++        print(out, end="" if out.endswith("\n") else "\n")
++    if err:
++        print(err, file=sys.stderr)
++    return rc
++
++
++def cmd_sub(a):
++    ensure_board_running()
++    args = ["sub", a.post] + list(a.numbers) + ["--status", a.status]
++    if a.why:
++        args += ["--why", a.why]
++    rc, out, err = _kit_py(*args)
++    if out:
++        print(out, end="" if out.endswith("\n") else "\n")
++    if err:
++        print(err, file=sys.stderr)
++    return rc
++
++
++def cmd_comment(a):
++    ensure_board_running()
++    cid = a.id or ("aw-" + re.sub(r"[^a-z0-9]+", "-", a.post.lower())[:20].strip("-") + "-" + datetime.datetime.now(datetime.timezone.utc).strftime("%H%M%S"))
++    payload = {
++        "post_id": a.post,
++        "from": a.sender,
++        "text": a.text,
++        "created_at": _utc_now(),
++    }
++    rc, out, err = _board_cli("set", "comments", cid, "--data", json.dumps(payload, ensure_ascii=False))
++    if out:
++        print(out, end="" if out.endswith("\n") else "\n")
++    if err:
++        print(err, file=sys.stderr)
++    return rc
++
++
++def upload_and_attach(post_id, file_paths, comment_text="", sender="R1", add_body_links=True):
++    """Upload files as `/_blob/<id>` assets and wire them onto post_id (`files`, `artifacts`, body links)."""
++    ensure_board_running()
++    uploaded = []
++    for path in file_paths:
++        if not os.path.isfile(path):
++            raise SystemExit("antigravity_web attach: file not found: %s" % path)
++        rc, out, err = _board_cli("asset", "upload", path)
++        if rc != 0:
++            raise SystemExit("antigravity_web attach: upload failed for %s: %s" % (path, (err or out).strip()))
++        res = json.loads(out)
++        bid = str(res.get("id") or "").strip()
++        if not re.fullmatch(r"[0-9a-f]{32}", bid):
++            raise SystemExit("antigravity_web attach: unexpected blob response for %s: %s" % (path, out.strip()))
++        ctype = res.get("contentType") or mimetypes.guess_type(path)[0] or "application/octet-stream"
++        uploaded.append({
++            "id": bid,
++            "url": "/_blob/" + bid,
++            "name": os.path.basename(path),
++            "type": ctype,
++            "size": int(res.get("size") or os.path.getsize(path)),
++        })
++
++    rc, out, err = _board_cli("get", "posts", post_id)
++    if rc != 0:
++        raise SystemExit("antigravity_web attach: cannot read post %s: %s" % (post_id, (err or out).strip()))
++    doc = json.loads(out)
++    if not doc.get("exists"):
++        raise SystemExit("antigravity_web attach: post %s does not exist on local board" % post_id)
++    ver = doc["version"]
++    data = doc.get("data") or {}
++
++    files = list(data.get("files") or [])
++    by_name = {f.get("name"): i for i, f in enumerate(files) if isinstance(f, dict)}
++    for item in uploaded:
++        entry = {"id": item["id"], "name": item["name"], "type": item["type"], "size": item["size"]}
++        if item["name"] in by_name:
++            files[by_name[item["name"]]] = entry
++        else:
++            files.append(entry)
++
++    artifacts = list(data.get("artifacts") or [])
++    for item in uploaded:
++        if item["url"] not in artifacts:
++            artifacts.append(item["url"])
++
++    patch = {"files": files, "artifacts": artifacts}
++    if add_body_links:
++        body = str(data.get("body") or "")
++        section_lines = ["### Attached review blobs"] + [
++            "- [%s](%s) (`%s`, %d bytes)" % (f["name"], "/_blob/" + f["id"], f["type"], int(f.get("size") or 0))
++            for f in files if isinstance(f, dict) and f.get("id")
++        ]
++        section = "\n".join(section_lines)
++        if re.search(r"(?m)^### Attached review blobs\s*$", body):
++            body = re.sub(r"(?ms)^### Attached review blobs\s*\n.*?(?=^### |\Z)", section + "\n\n", body).rstrip()
++        else:
++            body = body.rstrip() + "\n\n" + section
++        patch["body"] = body
++
++    rc2, out2, err2 = _board_cli("update", "posts", post_id, "--if-version", str(ver), "--data", json.dumps(patch, ensure_ascii=False))
++    if rc2 != 0:
++        raise SystemExit("antigravity_web attach: post update failed: %s" % (err2 or out2).strip())
++
++    comment_res = None
++    if comment_text:
++        cid = "aw-blobs-" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
++        c_payload = {
++            "post_id": post_id,
++            "from": sender,
++            "text": comment_text,
++            "files": [{"id": u["id"], "name": u["name"], "type": u["type"], "size": u["size"]} for u in uploaded],
++            "created_at": _utc_now(),
++        }
++        rc3, out3, err3 = _board_cli("set", "comments", cid, "--data", json.dumps(c_payload, ensure_ascii=False))
++        if rc3 != 0:
++            raise SystemExit("antigravity_web attach: comment failed: %s" % (err3 or out3).strip())
++        comment_res = json.loads(out3)
++
++    return {"post": post_id, "uploaded": uploaded, "comment": comment_res}
++
++
++def cmd_attach(a):
++    res = upload_and_attach(
++        a.post,
++        a.files,
++        comment_text=a.comment or "",
++        sender=a.sender,
++        add_body_links=not a.no_body_links,
++    )
++    print(json.dumps(res, ensure_ascii=False, indent=2))
++    return 0
++
++
++def cmd_done(a):
++    ensure_board_running()
++    rc, out, err = _kit_py("done", a.post, env={"KIT_BOARD_TRANSPORT": "mirror"})
++    if out:
++        print(out, end="" if out.endswith("\n") else "\n")
++    if err:
++        print(err, file=sys.stderr)
++    return rc
++
++
++def cmd_save(a):
++    wt = _wt()
++    wt.git_identity()
++    ensure_refs((_mirror_branch(),))
++    wt.ensure_mirror_worktree()
++    m = _mirror_path()
++    br = _mirror_branch()
++
++    if wt.healthy(wt.port()):
++        rc_r, out_r, err_r = _kit_py("reconcile", "--no-push")
++        if out_r.strip():
++            print(out_r.strip().splitlines()[-1])
++        elif rc_r != 0 and err_r.strip():
++            print("save: reconcile warning: " + err_r.strip()[-200:], file=sys.stderr)
++
++    ok_dash, why_dash = _check_dashboard_non_empty()
++    if not ok_dash:
++        print("save: ABORTED: " + why_dash, file=sys.stderr)
++        return 1
++
++    if _sh(["git", "-C", m, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (br, br)])[0] == 0:
++        _sh(["git", "-C", m, "reset", "--hard", "origin/%s" % br])
++
++    sync_args = ["sync-db", "--full", "--commit"]
++    if not a.no_blobs:
++        sync_args.append("--with-blobs")
++    rc_s, out_s, err_s = _kit_py(*sync_args)
++    if out_s.strip():
++        print(out_s.strip())
++    if rc_s != 0:
++        print("save: sync-db FAILED: " + (err_s or out_s).strip()[-400:], file=sys.stderr)
++        return rc_s
++
++    if a.no_push:
++        print("save: committed locally in %s (--no-push)" % m)
++        return 0
++
++    rc_a, ahead, _ = _sh(["git", "-C", m, "rev-list", "--count", "origin/%s..HEAD" % br])
++    if rc_a == 0 and ahead.strip() == "0":
++        print("save: origin/%s is already up to date" % br)
++        return 0
++
++    rc_p, out_p, err_p = _sh(["git", "-C", m, "push", "origin", "HEAD:%s" % br])
++    if rc_p != 0:
++        rc_m, _, _ = _sh(["git", "-C", m, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", br])
++        if rc_m == 0:
++            rc_p, out_p, err_p = _sh(["git", "-C", m, "push", "origin", "HEAD:%s" % br])
++        else:
++            _sh(["git", "-C", m, "merge", "--abort"])
++    if rc_p != 0:
++        print("save: PUSH FAILED: " + (err_p or out_p).strip()[-400:], file=sys.stderr)
++        return 1
++    rc_sha, sha, _ = _sh(["git", "-C", m, "rev-parse", "--short", "HEAD"])
++    print("save: pushed %s to origin/%s" % (sha.strip() if rc_sha == 0 else "HEAD", br))
++    return 0
++
++
++def cmd_status(a):
++    wt = _wt()
++    br = _mirror_branch()
++    rc_m, m_sha, _ = _sh(["git", "rev-parse", "--short", "origin/%s" % br])
++    rc_b, cur_br, _ = _sh(["git", "branch", "--show-current"])
++    blob_dir = os.path.join(KIT, "board_data", "blobs")
++    blobs = [f for f in os.listdir(blob_dir) if re.fullmatch(r"[0-9a-f]{32}", f)] if os.path.isdir(blob_dir) else []
++    info = {
++        "runner": "antigravity-web" if wt.is_antigravity_web() else ("claude-web" if wt.is_web() else "local"),
++        "antigravity_web": wt.is_antigravity_web(),
++        "board_port": wt.port(),
++        "board_healthy": wt.healthy(wt.port()),
++        "branch": cur_br.strip() if rc_b == 0 else "",
++        "mirror_branch": br,
++        "mirror_ref": m_sha.strip() if rc_m == 0 else None,
++        "mirror_worktree": os.path.exists(os.path.join(_mirror_path(), ".git")),
++        "local_blobs": len(blobs),
++    }
++    if a.json:
++        print(json.dumps(info, ensure_ascii=False, indent=2))
++    else:
++        print("runner=%s board=%s(:%d) branch=%s mirror=%s blobs=%d" % (
++            info["runner"], "up" if info["board_healthy"] else "down", info["board_port"],
++            info["branch"] or "?", info["mirror_ref"] or "missing", info["local_blobs"],
++        ))
++    return 0
++
++
++def main(argv=None):
++    ap = argparse.ArgumentParser(prog="antigravity_web.py", description="Board Kit adapter for Antigravity on the web")
++    sp = ap.add_subparsers(dest="cmd", required=True)
++
++    p_start = sp.add_parser("start", help="Fetch board-mirror, boot local board, reconcile, and print resume")
++    p_start.add_argument("--post", help="Part post id to resume")
++    p_start.add_argument("--doing", help="One-line Turn 1 status to claim the post via kit.py form")
++    p_start.add_argument("--session", help="Session/conversation ID to record on the post")
++    p_start.set_defaults(fn=cmd_start)
++
++    p_res = sp.add_parser("resume", help="Fetch board-mirror ref and run kit.py resume")
++    p_res.add_argument("--role", choices=("part", "orchestrator", "review", "clerk"))
++    p_res.add_argument("--post")
++    p_res.set_defaults(fn=cmd_resume)
++
++    p_tl = sp.add_parser("tasklist", help="Show the board tasklist or a train's tasklist")
++    p_tl.add_argument("--train", help="Train id (omit for full resume tasklist)")
++    p_tl.add_argument("--zoom")
++    p_tl.add_argument("--sections")
++    p_tl.add_argument("--full")
++    p_tl.add_argument("--brief", action="store_true")
++    p_tl.set_defaults(fn=cmd_tasklist)
++
++    p_tr = sp.add_parser("train", help="Inspect a train's tasklist and steps")
++    p_tr.add_argument("train", help="Train id")
++    p_tr.add_argument("--zoom")
++    p_tr.add_argument("--sections")
++    p_tr.add_argument("--full")
++    p_tr.add_argument("--brief", action="store_true")
++    p_tr.set_defaults(fn=cmd_tasklist)
++
++    p_sub = sp.add_parser("sub", help="Tick a post's numbered subtasks")
++    p_sub.add_argument("post")
++    p_sub.add_argument("numbers", nargs="+")
++    p_sub.add_argument("--status", default="done", choices=("done", "open", "doing", "drop"))
++    p_sub.add_argument("--why", default="")
++    p_sub.set_defaults(fn=cmd_sub)
++
++    p_cmt = sp.add_parser("comment", help="Add a comment to a post")
++    p_cmt.add_argument("post")
++    p_cmt.add_argument("--from", dest="sender", required=True)
++    p_cmt.add_argument("--text", required=True)
++    p_cmt.add_argument("--id", default="")
++    p_cmt.set_defaults(fn=cmd_comment)
++
++    p_att = sp.add_parser("attach", help="Upload files as /_blob/<id> and attach them to a post")
++    p_att.add_argument("post")
++    p_att.add_argument("files", nargs="+")
++    p_att.add_argument("--comment", default="", help="Optional comment carrying the attached blobs")
++    p_att.add_argument("--from", dest="sender", default="R1")
++    p_att.add_argument("--no-body-links", action="store_true")
++    p_att.set_defaults(fn=cmd_attach)
++
++    p_done = sp.add_parser("done", help="Run kit.py done using mirror transport")
++    p_done.add_argument("post")
++    p_done.set_defaults(fn=cmd_done)
++
++    p_save = sp.add_parser("save", help="Reconcile, export full board + blobs, and push origin/board-mirror")
++    p_save.add_argument("--no-blobs", action="store_true")
++    p_save.add_argument("--no-push", action="store_true")
++    p_save.set_defaults(fn=cmd_save)
++
++    p_st = sp.add_parser("status", help="Show runner, board, mirror, and blob status")
++    p_st.add_argument("--json", action="store_true")
++    p_st.set_defaults(fn=cmd_status)
++
++    args = ap.parse_args(argv)
++    return int(args.fn(args) or 0)
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/.kit/kit.py b/.kit/kit.py
+index 9891bf8..af7b6b8 100755
+--- a/.kit/kit.py
++++ b/.kit/kit.py
+@@ -219,6 +219,17 @@ def _export_blobs_to_mirror(db_path, m, max_bytes=5 * 1024 * 1024):
+     return copied
+ 
+ 
++def _db_origin(conn):
++    """Lightweight origin stamp for a local SQLite board.db so two machines/containers never confuse seq numbers."""
++    import socket
++    try:
++        row = conn.execute("SELECT seq, at FROM changes ORDER BY seq ASC LIMIT 1").fetchone()
++    except Exception:
++        row = None
++    first = ("%s@%s" % (row[0], row[1])) if row else "empty"
++    return "%s:%s" % (socket.gethostname(), first)
++
++
+ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
+     """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full)."""
+     import sqlite3
+@@ -234,7 +245,17 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
+     try:
+         latest_seq = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM changes").fetchone()[0]
+         min_seq = conn.execute("SELECT COALESCE(MIN(seq), 0) FROM changes").fetchone()[0]
+-        can_delta = (not full) and bool(st.get("cursor")) and last_seq > 0 and (min_seq == 0 or last_seq >= min_seq - 1)
++        cur_origin = _db_origin(conn)
++        prev_origin = str(st.get("db_origin") or "")
++        same_db = (not prev_origin) or (prev_origin == cur_origin)
++        can_delta = (
++            (not full)
++            and bool(st.get("cursor"))
++            and last_seq > 0
++            and same_db
++            and latest_seq >= last_seq
++            and (min_seq == 0 or last_seq >= min_seq - 1)
++        )
+         if not can_delta:
+             # CL44 (item 7): a full sync never deletes a mirror file that git added or changed unless the board
+             # explicitly deleted it (its changes log). Missing files not deleted by the board are kept and imported.
+@@ -273,6 +294,7 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
+                 _export_blobs_to_mirror(db, m)
+             st2 = read_state(m)
+             st2["db_seq"] = latest_seq
++            st2["db_origin"] = cur_origin
+             write_doc(os.path.join(m, "board", "sync.json"), st2)
+             return res
+ 
+@@ -319,8 +341,11 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
+                     doc = json.loads(r[0])
+                     if old_s.get(user) != doc:
+                         write_doc(os.path.join(sdir, user + ".json"), doc)
++        if with_blobs:
++            _export_blobs_to_mirror(db, m)
+         st["cursor"] = now
+         st["db_seq"] = latest_seq
++        st["db_origin"] = cur_origin
+         st["log"].append({"at": now, "full": False, "db_seq": latest_seq, "posts": len(old_p) - pr,
+                           "posts_written": pw, "posts_removed": pr, "comments_read": len(rows),
+                           "new": new, "changed": changed, "removed": removed})
+@@ -777,6 +802,40 @@ def _utc(ts):
+     return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+ 
+ 
++def _restore_mirror_blobs(repo, ref, db_path):
++    """Restore missing board/blobs/<id>[.json] files from git ref into local board_data/blobs/."""
++    import io
++    import tarfile
++    blob_dir = os.path.join(os.path.dirname(os.path.abspath(db_path)), "blobs")
++    arc = subprocess.run(["git", "-C", repo, "archive", "--format=tar", ref, "board/blobs"], capture_output=True, timeout=180)
++    if arc.returncode != 0 or not arc.stdout:
++        return 0
++    restored = 0
++    os.makedirs(blob_dir, exist_ok=True)
++    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
++        for mem in tf.getmembers():
++            parts = tar_name(mem.name).split("/")
++            if not mem.isfile() or len(parts) != 3 or parts[0] != "board" or parts[1] != "blobs":
++                continue
++            fn = parts[2]
++            if not re.fullmatch(r"[a-fA-F0-9]{16,64}(?:\.json)?", fn):
++                continue
++            dst = os.path.join(blob_dir, fn)
++            if os.path.exists(dst):
++                continue
++            src = tf.extractfile(mem)
++            if src is None:
++                continue
++            data = src.read()
++            tmp = dst + ".tmp"
++            with open(tmp, "wb") as fh:
++                fh.write(data)
++            os.replace(tmp, dst)
++            if not fn.endswith(".json"):
++                restored += 1
++    return restored
++
++
+ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
+     """The board here against its git copy (origin/<branch>), document by document; the more recent copy wins.
+ 
+@@ -814,6 +873,11 @@ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
+         if not has_remote or git(repo, "merge-base", "--is-ancestor", remote_ref, local_ref).returncode == 0:
+             head = local_head
+     db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
++    n_blobs = 0
++    if has_remote:
++        n_blobs += _restore_mirror_blobs(repo, remote_ref, db)
++    if has_local and local_head != remote_head:
++        n_blobs += _restore_mirror_blobs(repo, local_ref, db)
+     local_t = {}
+     if os.path.isfile(db):
+         conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+@@ -879,13 +943,17 @@ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
+             if r.returncode != 0:
+                 git(m, "merge", "--abort")
+         if os.path.isfile(db):
+-            sync_db(m, db_path=db, at=zstamp(datetime.now(timezone.utc)), full=True)
++            has_blobs = os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(db)), "blobs"))
++            sync_db(m, db_path=db, at=zstamp(datetime.now(timezone.utc)), full=True, with_blobs=has_blobs)
+             if git(m, "status", "--porcelain", "board").stdout.strip():
+                 commit(m, "kit reconcile: local and git, the newer copy of each post", branch=branch)
+         r = git(m, "push", "-q", "origin", "HEAD:" + branch)
+         pushed = "pushed" if r.returncode == 0 else "push refused: " + (r.stdout + r.stderr).strip()[-200:]
+-    return {"status": "reconciled with origin/%s" % branch, "from_git": n_git, "added": n_add, "kept_here": n_here,
+-            "git": pushed or "git copy not updated here"}
++    res = {"status": "reconciled with origin/%s" % branch, "from_git": n_git, "added": n_add, "kept_here": n_here,
++           "git": pushed or "git copy not updated here"}
++    if n_blobs:
++        res["blobs_restored"] = n_blobs
++    return res
+ 
+ 
+ # ---------------------------------------------------------------- Artifact mode (a claude.ai Artifact board)
+@@ -4081,7 +4149,8 @@ def done(pid, db_path=None, root=None):
+     warn += pending_real         # CL32/CL38: a real project too, run by the orchestrator (pending)
+     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
+     strip = lambda d: {k: v for k, v in (d or {}).items() if k not in ("proof", "updated_at")}  # noqa: E731
+-    if attached_board() and strip(_read_json(_base_path("posts", pid))) != strip(p):
++    mirror_transport = str(os.environ.get("KIT_BOARD_TRANSPORT") or "").strip().lower() == "mirror"
++    if attached_board() and not mirror_transport and strip(_read_json(_base_path("posts", pid))) != strip(p):
+         # CL28: a part updated its post on the local copy only and said "Done": the live board (the Artifact) still
+         # showed it planned, with none of its results (the owner: "How come you said you posted when you didn't?")
+         err.append("the post is not on the board yet (%s): its local copy differs from what the Artifact last had. Run "
+@@ -4098,8 +4167,10 @@ def done(pid, db_path=None, root=None):
+                                                            "branch": _git_run("symbolic-ref", "--short", "-q", "HEAD").stdout.strip(),
+                                                            "needs_real": bool(pending_real)}}, env={"KIT_GATE": "done"}):
+             warn.append("proof: the board did not take it (is the board server running?): the step cannot be completed without it")
+-        elif attached_board():
++        elif attached_board() and not mirror_transport:
+             warn.append("proof: written here; send it: `python3 -I .kit/kit.py artifact push`")
++        elif mirror_transport:
++            warn.append("proof: written here; send it: `python3 -I .kit/antigravity_web.py save`")
+     lines = (["NOT READY: %s" % pid] if err else ["OK: %s follows the post format" % pid])
+     lines += ["  fix: " + e for e in err] + ["  note: " + w for w in warn]
+     if not err:
+@@ -4849,6 +4920,14 @@ def _is_web():
+     return str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes")
+ 
+ 
++def _is_antigravity_web():
++    if _is_web():
++        return False
++    if str(os.environ.get("AGY_WEB") or "").lower() in ("1", "true", "yes"):
++        return True
++    return bool(os.environ.get("ANTIGRAVITY_APP_DATA_DIR") or os.environ.get("JULES_SESSION_ID"))
++
++
+ def _git_run(*args, cwd=None, timeout=60):
+     return subprocess.run(["git", "-C", cwd or ROOT] + list(args), capture_output=True, text=True, timeout=timeout)
+ 
+diff --git a/.kit/web_takeover.py b/.kit/web_takeover.py
+index 8350d96..acdc75e 100755
+--- a/.kit/web_takeover.py
++++ b/.kit/web_takeover.py
+@@ -69,6 +69,22 @@ def is_web():
+                for v in ("CLAUDE_CODE_REMOTE", "KIT_REMOTE", "AGY_REMOTE"))
+ 
+ 
++def is_antigravity_web():
++    """True inside Antigravity on the web (dedicated cloud devbox VM, no Claude ArtifactData MCP)."""
++    if str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes"):
++        return False
++    if str(os.environ.get("AGY_WEB") or "").lower() in ("1", "true", "yes"):
++        return True
++    return bool(os.environ.get("ANTIGRAVITY_APP_DATA_DIR") or os.environ.get("JULES_SESSION_ID"))
++
++
++def ensure_mirror_ref(branch=None):
++    """Fetch origin/<branch> explicitly so single-branch clones (e.g. Antigravity web) still see board-mirror."""
++    b = branch or mirror_branch()
++    rc, _ = sh(["git", "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (b, b)], timeout=120)
++    return rc == 0
++
++
+ def git_identity():
+     """Commits fail without one (the cause of a two-day-stale mirror on 2026-11-22): borrow the last author's."""
+     if sh(["git", "config", "user.email"])[1]:
+@@ -141,6 +157,7 @@ def start_board():
+ 
+ 
+ def ensure_mirror_worktree():
++    ensure_mirror_ref()
+     if os.path.exists(os.path.join(mirror_path(), ".git")):
+         return
+     sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "init"])
+@@ -186,6 +203,7 @@ def continuation(resume_text, trunk="<trunk>"):
+ def cmd_start():
+     git_identity()
+     rc, out = sh(["git", "fetch", "--all", "--prune", "-q"], timeout=300)
++    ensure_mirror_ref()
+     print("git fetch: %s" % ("ok" if rc == 0 else "FAILED: " + out[-300:]))
+     rc, br = sh(["git", "branch", "--show-current"])
+     print("Branch: %s" % br)
+@@ -203,46 +221,62 @@ def cmd_start():
+     return 0
+ 
+ 
+-def cmd_save(quiet=False):
++def cmd_save(quiet=False, allow_mirror_push=False, with_blobs=False):
+     git_identity()
+     if not healthy(port()) and not os.path.exists(os.path.join(KIT, "board_data", "board.db")):
+         if not quiet:
+             print("save: no board here (run `python3 -I .kit/web_takeover.py` first).")
+         return 0
++    allow = allow_mirror_push or str(os.environ.get("KIT_ALLOW_MIRROR_PUSH") or "").lower() in ("1", "true", "yes")
+     own, why = owns_board()
++    if not own and allow and "attached to the Artifact board" in why:
++        # Non-Claude cloud runners (e.g. Antigravity on the web) have no ArtifactData tool; reconcile against
++        # origin/board-mirror first so newer remote posts are preserved, then push cleanly to board-mirror.
++        own = True
+     if not own:
+         if not quiet:
+             print("save: not pushed: %s. This session's board is its own project's." % why)
+         return 0
+     ensure_mirror_worktree()
+-    rc, out = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "sync-db", "--commit"], timeout=180)
++    m = mirror_path()
++    br = mirror_branch()
++    if healthy(port()):
++        # Pull newer remote board docs into the local DB before exporting so concurrent writes are never clobbered.
++        sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "reconcile", "--no-push"], timeout=180)
++        if sh(["git", "-C", m, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (br, br)], timeout=120)[0] == 0:
++            sh(["git", "-C", m, "reset", "--hard", "origin/%s" % br])
++    sync_args = [sys.executable, "-I", os.path.join(KIT, "kit.py"), "sync-db", "--commit"]
++    if allow:
++        sync_args.append("--full")
++    if with_blobs or os.path.isdir(os.path.join(KIT, "board_data", "blobs")):
++        sync_args.append("--with-blobs")
++    rc, out = sh(sync_args, timeout=180)
+     if rc != 0:
+         print("save: sync-db FAILED: %s" % out[-400:])
+         return 1
+-    m = mirror_path()
+-    rc, ahead = sh(["git", "-C", m, "rev-list", "--count", "origin/%s..HEAD" % mirror_branch()])
++    rc, ahead = sh(["git", "-C", m, "rev-list", "--count", "origin/%s..HEAD" % br])
+     if rc != 0:                                              # the first save: the remote has no copy yet
+         ahead = sh(["git", "-C", m, "rev-list", "--count", "HEAD"])[1]
+     if rc == 0 and ahead.strip() == "0":
+         if not quiet:
+-            print("save: the board is already in git (origin/%s)." % mirror_branch())
++            print("save: the board is already in git (origin/%s)." % br)
+         return 0
+-    rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % mirror_branch()], timeout=120)
++    rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % br], timeout=120)
+     if rc != 0:
+         # Both sides wrote (web + computer): merge; a conflicting hunk keeps this side (board/sync.json, the sync log,
+         # always conflicts). A per-post merge by updated_at is CL16's.
+-        rc2, out2 = sh(["git", "-C", m, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", mirror_branch()],
++        rc2, out2 = sh(["git", "-C", m, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", br],
+                        timeout=120)
+         if rc2 != 0:
+             sh(["git", "-C", m, "merge", "--abort"])
+         if rc2 == 0:
+-            rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % mirror_branch()], timeout=120)
++            rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % br], timeout=120)
+     if rc != 0:
+         print("save: PUSH OF %s REFUSED: %s\nThe board's changes are committed in %s but not on GitHub. If this web "
+               "session may only push its own branch, tell the owner: the board cannot leave this session." % (
+-                  mirror_branch(), out[-400:], m))
++                  br, out[-400:], m))
+         return 1
+-    print("save: the board is in git (origin/%s, %s commit%s pushed)." % (mirror_branch(), ahead, "" if ahead == "1" else "s"))
++    print("save: the board is in git (origin/%s, %s commit%s pushed)." % (br, ahead, "" if ahead == "1" else "s"))
+     return 0
+ 
+ 
+@@ -257,7 +291,10 @@ def main(argv):
+         cmd_save(quiet=True)
+         return 0
+     if argv and argv[0] == "save":
+-        return cmd_save()
++        return cmd_save(
++            allow_mirror_push="--allow-mirror-push" in argv,
++            with_blobs="--with-blobs" in argv,
++        )
+     return cmd_start()
+ 
+ 
+diff --git a/install.py b/install.py
+index 4449a4f..1585fb4 100644
+--- a/install.py
++++ b/install.py
+@@ -1184,12 +1184,14 @@ def main(argv=None):
+         ins.put(".kit/handover.py", rd("kit", "handover.py"))   # its web successor starts in the environment
+     if claude_only:
+         ins.put(".kit/web_takeover.py", rd("kit", "web_takeover.py"))
++        ins.put(".kit/antigravity_web.py", rd("kit", "antigravity_web.py"))
+         ins.put(".kit/device.py", rd("scripts", "device.py"))
+     if not claude_only:
+         ins.put(".kit/git_watch.py", rd("kit", "git_watch.py"))
+         ins.put(".kit/up", rd("kit", "up"))
+         ins.put(".kit/handover.py", rd("kit", "handover.py"))
+         ins.put(".kit/web_takeover.py", rd("kit", "web_takeover.py"))
++        ins.put(".kit/antigravity_web.py", rd("kit", "antigravity_web.py"))
+         ins.put(".kit/device.py", rd("scripts", "device.py"))
+         ins.put(".kit/step0_scan.py", rd("scripts", "step0_scan.py"))
+         ins.put(".kit/twrp_wizard.py", rd("scripts", "twrp_wizard.py"))
+diff --git a/kit/antigravity_web.py b/kit/antigravity_web.py
+new file mode 100755
+index 0000000..c611952
+--- /dev/null
++++ b/kit/antigravity_web.py
+@@ -0,0 +1,515 @@
++#!/usr/bin/env python3
++"""Antigravity on the web runner adapter for the Board Kit (R1).
++
++Bridges dedicated cloud Linux VMs (no local board LAN/Tailscale, no Claude ArtifactData MCP,
++no runtime hooks, single-branch default clones) to the board's git copy (`board-mirror`),
++local `board_server.py`, tasklists/trains, subtasks, comments, and `/_blob/<id>` attachments.
++
++Commands:
++    python3 -I .kit/antigravity_web.py start [--post <id>] [--doing "<line>"] [--session <id>]
++    python3 -I .kit/antigravity_web.py resume [--role part|orchestrator|review] [--post <id>]
++    python3 -I .kit/antigravity_web.py tasklist [--train <name>] [--zoom <part>|--brief]
++    python3 -I .kit/antigravity_web.py train <name> [--zoom <part>|--sections <part>|--full <part>|--brief]
++    python3 -I .kit/antigravity_web.py sub <post> <n...> [--status done|open|drop] [--why "..."]
++    python3 -I .kit/antigravity_web.py comment <post> --from <who> --text "<text>" [--id <cid>]
++    python3 -I .kit/antigravity_web.py attach <post> <file...> [--comment "<text>"] [--from <who>] [--no-body-links]
++    python3 -I .kit/antigravity_web.py done <post>
++    python3 -I .kit/antigravity_web.py save [--no-blobs] [--no-push]
++    python3 -I .kit/antigravity_web.py status [--json]
++"""
++import argparse
++import datetime
++import importlib.util
++import json
++import mimetypes
++import os
++import re
++import subprocess
++import sys
++import urllib.request
++
++HERE = os.path.dirname(os.path.abspath(__file__))
++ROOT = os.path.dirname(HERE) if os.path.basename(HERE) in (".kit", "kit") else HERE
++KIT = os.path.join(ROOT, ".kit") if os.path.isdir(os.path.join(ROOT, ".kit")) else HERE
++
++
++def _load(name, path):
++    spec = importlib.util.spec_from_file_location(name, path)
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    return mod
++
++
++def _wt():
++    for cand in (os.path.join(KIT, "web_takeover.py"), os.path.join(ROOT, "kit", "web_takeover.py")):
++        if os.path.isfile(cand):
++            return _load("kit_web_takeover_aw", cand)
++    raise SystemExit("antigravity_web: web_takeover.py not found")
++
++
++def _cfg():
++    for cand in (os.path.join(KIT, "config.json"), os.path.join(ROOT, ".kit", "config.json")):
++        if os.path.isfile(cand):
++            try:
++                with open(cand, encoding="utf-8") as fh:
++                    return json.load(fh)
++            except (OSError, ValueError):
++                pass
++    return {}
++
++
++def _sh(args, cwd=ROOT, timeout=180, env=None):
++    merged_env = dict(os.environ)
++    if env:
++        merged_env.update(env)
++    try:
++        r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd, env=merged_env)
++        return r.returncode, r.stdout, r.stderr
++    except (OSError, subprocess.SubprocessError) as e:
++        return 1, "", str(e)
++
++
++def _kit_script(name):
++    for cand in (
++        os.path.join(KIT, name),
++        os.path.join(ROOT, ".kit", name),
++        os.path.join(ROOT, "scripts", name),
++        os.path.join(ROOT, "kit", "board", name),
++    ):
++        if os.path.isfile(cand):
++            return cand
++    raise SystemExit("antigravity_web: %s not found" % name)
++
++
++def _mirror_branch():
++    return (_cfg().get("mirror") or {}).get("branch") or "board-mirror"
++
++
++def _main_branch():
++    return (_cfg().get("kit") or {}).get("main_branch") or "main"
++
++
++def _mirror_path():
++    p = (_cfg().get("mirror") or {}).get("path") or "../board-mirror"
++    return os.path.normpath(os.path.join(ROOT, p))
++
++
++def _utc_now():
++    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
++
++
++def ensure_refs(branches=None, cwd=ROOT):
++    """Fetch required branches explicitly so single-branch clones still resolve origin/<branch>."""
++    targets = list(branches or (_mirror_branch(), _main_branch(), "kit-usage"))
++    results = {}
++    for br in targets:
++        rc, _, err = _sh(
++            ["git", "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (br, br)],
++            cwd=cwd,
++            timeout=120,
++        )
++        results[br] = (rc == 0, err.strip())
++    return results
++
++
++def ensure_board_running():
++    wt = _wt()
++    wt.git_identity()
++    ensure_refs((_mirror_branch(),))
++    msg = wt.start_board()
++    wt.ensure_mirror_worktree()
++    return msg
++
++
++def _board_cli(*args, env=None):
++    return _sh([sys.executable, "-I", _kit_script("board_cli.py")] + list(args), env=env)
++
++
++def _kit_py(*args, env=None):
++    return _sh([sys.executable, "-I", _kit_script("kit.py")] + list(args), env=env)
++
++
++def _check_dashboard_non_empty():
++    """Safety guard: refuse exporting an empty _dashboard over a non-empty one on origin/board-mirror."""
++    br = _mirror_branch()
++    rc, remote_raw, _ = _sh(["git", "show", "origin/%s:board/posts/_dashboard.json" % br])
++    if rc != 0 or not remote_raw.strip():
++        return True, ""
++    try:
++        remote_rows = json.loads(remote_raw).get("rows") or []
++    except ValueError:
++        remote_rows = []
++    if not remote_rows:
++        return True, ""
++    rc2, local_raw, _ = _board_cli("get", "posts", "_dashboard")
++    if rc2 != 0:
++        return True, ""
++    try:
++        local_doc = json.loads(local_raw)
++        local_rows = (local_doc.get("data") or {}).get("rows") or []
++    except ValueError:
++        return False, "local _dashboard JSON unreadable while origin/%s has %d rows" % (br, len(remote_rows))
++    if not local_rows:
++        return False, "refusing to overwrite non-empty _dashboard (%d rows on origin/%s) with empty local rows" % (
++            len(remote_rows), br
++        )
++    return True, ""
++
++
++def cmd_start(a):
++    refs = ensure_refs()
++    fetched = [b for b, (ok, _) in refs.items() if ok]
++    print("refs fetched: %s" % (", ".join(fetched) or "none"))
++    print(ensure_board_running())
++    rc, out, err = _kit_py("reconcile", "--no-push")
++    if out.strip():
++        print(out.strip().splitlines()[-1])
++    elif err.strip():
++        print("reconcile: " + err.strip()[-200:])
++    if a.post and a.doing:
++        env = {"KIT_SESSION_ID": a.session} if a.session else None
++        rc_f, out_f, err_f = _kit_py("form", a.post, "--doing", a.doing, env=env)
++        if out_f.strip():
++            print(out_f.strip())
++        if rc_f != 0 and err_f.strip():
++            print(err_f.strip(), file=sys.stderr)
++            return rc_f
++    if a.post:
++        rc_r, out_r, err_r = _kit_py("resume", "--role", "part", "--post", a.post)
++    else:
++        rc_r, out_r, err_r = _kit_py("resume")
++    if out_r:
++        print(out_r, end="" if out_r.endswith("\n") else "\n")
++    if rc_r != 0 and err_r:
++        print(err_r, file=sys.stderr)
++    return rc_r
++
++
++def cmd_resume(a):
++    ensure_refs((_mirror_branch(),))
++    args = ["resume"]
++    if a.role:
++        args += ["--role", a.role]
++    if a.post:
++        args += ["--post", a.post]
++    rc, out, err = _kit_py(*args)
++    if out:
++        print(out, end="" if out.endswith("\n") else "\n")
++    if err:
++        print(err, file=sys.stderr)
++    return rc
++
++
++def cmd_tasklist(a):
++    ensure_refs((_mirror_branch(),))
++    if a.train:
++        args = ["train", a.train]
++        if a.zoom:
++            args += ["--zoom", a.zoom]
++        elif a.sections:
++            args += ["--sections", a.sections]
++        elif a.full:
++            args += ["--full", a.full]
++        elif a.brief:
++            args.append("--brief")
++        rc, out, err = _kit_py(*args)
++    else:
++        rc, out, err = _kit_py("resume")
++    if out:
++        print(out, end="" if out.endswith("\n") else "\n")
++    if err:
++        print(err, file=sys.stderr)
++    return rc
++
++
++def cmd_sub(a):
++    ensure_board_running()
++    args = ["sub", a.post] + list(a.numbers) + ["--status", a.status]
++    if a.why:
++        args += ["--why", a.why]
++    rc, out, err = _kit_py(*args)
++    if out:
++        print(out, end="" if out.endswith("\n") else "\n")
++    if err:
++        print(err, file=sys.stderr)
++    return rc
++
++
++def cmd_comment(a):
++    ensure_board_running()
++    cid = a.id or ("aw-" + re.sub(r"[^a-z0-9]+", "-", a.post.lower())[:20].strip("-") + "-" + datetime.datetime.now(datetime.timezone.utc).strftime("%H%M%S"))
++    payload = {
++        "post_id": a.post,
++        "from": a.sender,
++        "text": a.text,
++        "created_at": _utc_now(),
++    }
++    rc, out, err = _board_cli("set", "comments", cid, "--data", json.dumps(payload, ensure_ascii=False))
++    if out:
++        print(out, end="" if out.endswith("\n") else "\n")
++    if err:
++        print(err, file=sys.stderr)
++    return rc
++
++
++def upload_and_attach(post_id, file_paths, comment_text="", sender="R1", add_body_links=True):
++    """Upload files as `/_blob/<id>` assets and wire them onto post_id (`files`, `artifacts`, body links)."""
++    ensure_board_running()
++    uploaded = []
++    for path in file_paths:
++        if not os.path.isfile(path):
++            raise SystemExit("antigravity_web attach: file not found: %s" % path)
++        rc, out, err = _board_cli("asset", "upload", path)
++        if rc != 0:
++            raise SystemExit("antigravity_web attach: upload failed for %s: %s" % (path, (err or out).strip()))
++        res = json.loads(out)
++        bid = str(res.get("id") or "").strip()
++        if not re.fullmatch(r"[0-9a-f]{32}", bid):
++            raise SystemExit("antigravity_web attach: unexpected blob response for %s: %s" % (path, out.strip()))
++        ctype = res.get("contentType") or mimetypes.guess_type(path)[0] or "application/octet-stream"
++        uploaded.append({
++            "id": bid,
++            "url": "/_blob/" + bid,
++            "name": os.path.basename(path),
++            "type": ctype,
++            "size": int(res.get("size") or os.path.getsize(path)),
++        })
++
++    rc, out, err = _board_cli("get", "posts", post_id)
++    if rc != 0:
++        raise SystemExit("antigravity_web attach: cannot read post %s: %s" % (post_id, (err or out).strip()))
++    doc = json.loads(out)
++    if not doc.get("exists"):
++        raise SystemExit("antigravity_web attach: post %s does not exist on local board" % post_id)
++    ver = doc["version"]
++    data = doc.get("data") or {}
++
++    files = list(data.get("files") or [])
++    by_name = {f.get("name"): i for i, f in enumerate(files) if isinstance(f, dict)}
++    for item in uploaded:
++        entry = {"id": item["id"], "name": item["name"], "type": item["type"], "size": item["size"]}
++        if item["name"] in by_name:
++            files[by_name[item["name"]]] = entry
++        else:
++            files.append(entry)
++
++    artifacts = list(data.get("artifacts") or [])
++    for item in uploaded:
++        if item["url"] not in artifacts:
++            artifacts.append(item["url"])
++
++    patch = {"files": files, "artifacts": artifacts}
++    if add_body_links:
++        body = str(data.get("body") or "")
++        section_lines = ["### Attached review blobs"] + [
++            "- [%s](%s) (`%s`, %d bytes)" % (f["name"], "/_blob/" + f["id"], f["type"], int(f.get("size") or 0))
++            for f in files if isinstance(f, dict) and f.get("id")
++        ]
++        section = "\n".join(section_lines)
++        if re.search(r"(?m)^### Attached review blobs\s*$", body):
++            body = re.sub(r"(?ms)^### Attached review blobs\s*\n.*?(?=^### |\Z)", section + "\n\n", body).rstrip()
++        else:
++            body = body.rstrip() + "\n\n" + section
++        patch["body"] = body
++
++    rc2, out2, err2 = _board_cli("update", "posts", post_id, "--if-version", str(ver), "--data", json.dumps(patch, ensure_ascii=False))
++    if rc2 != 0:
++        raise SystemExit("antigravity_web attach: post update failed: %s" % (err2 or out2).strip())
++
++    comment_res = None
++    if comment_text:
++        cid = "aw-blobs-" + datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
++        c_payload = {
++            "post_id": post_id,
++            "from": sender,
++            "text": comment_text,
++            "files": [{"id": u["id"], "name": u["name"], "type": u["type"], "size": u["size"]} for u in uploaded],
++            "created_at": _utc_now(),
++        }
++        rc3, out3, err3 = _board_cli("set", "comments", cid, "--data", json.dumps(c_payload, ensure_ascii=False))
++        if rc3 != 0:
++            raise SystemExit("antigravity_web attach: comment failed: %s" % (err3 or out3).strip())
++        comment_res = json.loads(out3)
++
++    return {"post": post_id, "uploaded": uploaded, "comment": comment_res}
++
++
++def cmd_attach(a):
++    res = upload_and_attach(
++        a.post,
++        a.files,
++        comment_text=a.comment or "",
++        sender=a.sender,
++        add_body_links=not a.no_body_links,
++    )
++    print(json.dumps(res, ensure_ascii=False, indent=2))
++    return 0
++
++
++def cmd_done(a):
++    ensure_board_running()
++    rc, out, err = _kit_py("done", a.post, env={"KIT_BOARD_TRANSPORT": "mirror"})
++    if out:
++        print(out, end="" if out.endswith("\n") else "\n")
++    if err:
++        print(err, file=sys.stderr)
++    return rc
++
++
++def cmd_save(a):
++    wt = _wt()
++    wt.git_identity()
++    ensure_refs((_mirror_branch(),))
++    wt.ensure_mirror_worktree()
++    m = _mirror_path()
++    br = _mirror_branch()
++
++    if wt.healthy(wt.port()):
++        rc_r, out_r, err_r = _kit_py("reconcile", "--no-push")
++        if out_r.strip():
++            print(out_r.strip().splitlines()[-1])
++        elif rc_r != 0 and err_r.strip():
++            print("save: reconcile warning: " + err_r.strip()[-200:], file=sys.stderr)
++
++    ok_dash, why_dash = _check_dashboard_non_empty()
++    if not ok_dash:
++        print("save: ABORTED: " + why_dash, file=sys.stderr)
++        return 1
++
++    if _sh(["git", "-C", m, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (br, br)])[0] == 0:
++        _sh(["git", "-C", m, "reset", "--hard", "origin/%s" % br])
++
++    sync_args = ["sync-db", "--full", "--commit"]
++    if not a.no_blobs:
++        sync_args.append("--with-blobs")
++    rc_s, out_s, err_s = _kit_py(*sync_args)
++    if out_s.strip():
++        print(out_s.strip())
++    if rc_s != 0:
++        print("save: sync-db FAILED: " + (err_s or out_s).strip()[-400:], file=sys.stderr)
++        return rc_s
++
++    if a.no_push:
++        print("save: committed locally in %s (--no-push)" % m)
++        return 0
++
++    rc_a, ahead, _ = _sh(["git", "-C", m, "rev-list", "--count", "origin/%s..HEAD" % br])
++    if rc_a == 0 and ahead.strip() == "0":
++        print("save: origin/%s is already up to date" % br)
++        return 0
++
++    rc_p, out_p, err_p = _sh(["git", "-C", m, "push", "origin", "HEAD:%s" % br])
++    if rc_p != 0:
++        rc_m, _, _ = _sh(["git", "-C", m, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", br])
++        if rc_m == 0:
++            rc_p, out_p, err_p = _sh(["git", "-C", m, "push", "origin", "HEAD:%s" % br])
++        else:
++            _sh(["git", "-C", m, "merge", "--abort"])
++    if rc_p != 0:
++        print("save: PUSH FAILED: " + (err_p or out_p).strip()[-400:], file=sys.stderr)
++        return 1
++    rc_sha, sha, _ = _sh(["git", "-C", m, "rev-parse", "--short", "HEAD"])
++    print("save: pushed %s to origin/%s" % (sha.strip() if rc_sha == 0 else "HEAD", br))
++    return 0
++
++
++def cmd_status(a):
++    wt = _wt()
++    br = _mirror_branch()
++    rc_m, m_sha, _ = _sh(["git", "rev-parse", "--short", "origin/%s" % br])
++    rc_b, cur_br, _ = _sh(["git", "branch", "--show-current"])
++    blob_dir = os.path.join(KIT, "board_data", "blobs")
++    blobs = [f for f in os.listdir(blob_dir) if re.fullmatch(r"[0-9a-f]{32}", f)] if os.path.isdir(blob_dir) else []
++    info = {
++        "runner": "antigravity-web" if wt.is_antigravity_web() else ("claude-web" if wt.is_web() else "local"),
++        "antigravity_web": wt.is_antigravity_web(),
++        "board_port": wt.port(),
++        "board_healthy": wt.healthy(wt.port()),
++        "branch": cur_br.strip() if rc_b == 0 else "",
++        "mirror_branch": br,
++        "mirror_ref": m_sha.strip() if rc_m == 0 else None,
++        "mirror_worktree": os.path.exists(os.path.join(_mirror_path(), ".git")),
++        "local_blobs": len(blobs),
++    }
++    if a.json:
++        print(json.dumps(info, ensure_ascii=False, indent=2))
++    else:
++        print("runner=%s board=%s(:%d) branch=%s mirror=%s blobs=%d" % (
++            info["runner"], "up" if info["board_healthy"] else "down", info["board_port"],
++            info["branch"] or "?", info["mirror_ref"] or "missing", info["local_blobs"],
++        ))
++    return 0
++
++
++def main(argv=None):
++    ap = argparse.ArgumentParser(prog="antigravity_web.py", description="Board Kit adapter for Antigravity on the web")
++    sp = ap.add_subparsers(dest="cmd", required=True)
++
++    p_start = sp.add_parser("start", help="Fetch board-mirror, boot local board, reconcile, and print resume")
++    p_start.add_argument("--post", help="Part post id to resume")
++    p_start.add_argument("--doing", help="One-line Turn 1 status to claim the post via kit.py form")
++    p_start.add_argument("--session", help="Session/conversation ID to record on the post")
++    p_start.set_defaults(fn=cmd_start)
++
++    p_res = sp.add_parser("resume", help="Fetch board-mirror ref and run kit.py resume")
++    p_res.add_argument("--role", choices=("part", "orchestrator", "review", "clerk"))
++    p_res.add_argument("--post")
++    p_res.set_defaults(fn=cmd_resume)
++
++    p_tl = sp.add_parser("tasklist", help="Show the board tasklist or a train's tasklist")
++    p_tl.add_argument("--train", help="Train id (omit for full resume tasklist)")
++    p_tl.add_argument("--zoom")
++    p_tl.add_argument("--sections")
++    p_tl.add_argument("--full")
++    p_tl.add_argument("--brief", action="store_true")
++    p_tl.set_defaults(fn=cmd_tasklist)
++
++    p_tr = sp.add_parser("train", help="Inspect a train's tasklist and steps")
++    p_tr.add_argument("train", help="Train id")
++    p_tr.add_argument("--zoom")
++    p_tr.add_argument("--sections")
++    p_tr.add_argument("--full")
++    p_tr.add_argument("--brief", action="store_true")
++    p_tr.set_defaults(fn=cmd_tasklist)
++
++    p_sub = sp.add_parser("sub", help="Tick a post's numbered subtasks")
++    p_sub.add_argument("post")
++    p_sub.add_argument("numbers", nargs="+")
++    p_sub.add_argument("--status", default="done", choices=("done", "open", "doing", "drop"))
++    p_sub.add_argument("--why", default="")
++    p_sub.set_defaults(fn=cmd_sub)
++
++    p_cmt = sp.add_parser("comment", help="Add a comment to a post")
++    p_cmt.add_argument("post")
++    p_cmt.add_argument("--from", dest="sender", required=True)
++    p_cmt.add_argument("--text", required=True)
++    p_cmt.add_argument("--id", default="")
++    p_cmt.set_defaults(fn=cmd_comment)
++
++    p_att = sp.add_parser("attach", help="Upload files as /_blob/<id> and attach them to a post")
++    p_att.add_argument("post")
++    p_att.add_argument("files", nargs="+")
++    p_att.add_argument("--comment", default="", help="Optional comment carrying the attached blobs")
++    p_att.add_argument("--from", dest="sender", default="R1")
++    p_att.add_argument("--no-body-links", action="store_true")
++    p_att.set_defaults(fn=cmd_attach)
++
++    p_done = sp.add_parser("done", help="Run kit.py done using mirror transport")
++    p_done.add_argument("post")
++    p_done.set_defaults(fn=cmd_done)
++
++    p_save = sp.add_parser("save", help="Reconcile, export full board + blobs, and push origin/board-mirror")
++    p_save.add_argument("--no-blobs", action="store_true")
++    p_save.add_argument("--no-push", action="store_true")
++    p_save.set_defaults(fn=cmd_save)
++
++    p_st = sp.add_parser("status", help="Show runner, board, mirror, and blob status")
++    p_st.add_argument("--json", action="store_true")
++    p_st.set_defaults(fn=cmd_status)
++
++    args = ap.parse_args(argv)
++    return int(args.fn(args) or 0)
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/kit/web_takeover.py b/kit/web_takeover.py
+index 8350d96..acdc75e 100644
+--- a/kit/web_takeover.py
++++ b/kit/web_takeover.py
+@@ -69,6 +69,22 @@ def is_web():
+                for v in ("CLAUDE_CODE_REMOTE", "KIT_REMOTE", "AGY_REMOTE"))
+ 
+ 
++def is_antigravity_web():
++    """True inside Antigravity on the web (dedicated cloud devbox VM, no Claude ArtifactData MCP)."""
++    if str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes"):
++        return False
++    if str(os.environ.get("AGY_WEB") or "").lower() in ("1", "true", "yes"):
++        return True
++    return bool(os.environ.get("ANTIGRAVITY_APP_DATA_DIR") or os.environ.get("JULES_SESSION_ID"))
++
++
++def ensure_mirror_ref(branch=None):
++    """Fetch origin/<branch> explicitly so single-branch clones (e.g. Antigravity web) still see board-mirror."""
++    b = branch or mirror_branch()
++    rc, _ = sh(["git", "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (b, b)], timeout=120)
++    return rc == 0
++
++
+ def git_identity():
+     """Commits fail without one (the cause of a two-day-stale mirror on 2026-11-22): borrow the last author's."""
+     if sh(["git", "config", "user.email"])[1]:
+@@ -141,6 +157,7 @@ def start_board():
+ 
+ 
+ def ensure_mirror_worktree():
++    ensure_mirror_ref()
+     if os.path.exists(os.path.join(mirror_path(), ".git")):
+         return
+     sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "init"])
+@@ -186,6 +203,7 @@ def continuation(resume_text, trunk="<trunk>"):
+ def cmd_start():
+     git_identity()
+     rc, out = sh(["git", "fetch", "--all", "--prune", "-q"], timeout=300)
++    ensure_mirror_ref()
+     print("git fetch: %s" % ("ok" if rc == 0 else "FAILED: " + out[-300:]))
+     rc, br = sh(["git", "branch", "--show-current"])
+     print("Branch: %s" % br)
+@@ -203,46 +221,62 @@ def cmd_start():
+     return 0
+ 
+ 
+-def cmd_save(quiet=False):
++def cmd_save(quiet=False, allow_mirror_push=False, with_blobs=False):
+     git_identity()
+     if not healthy(port()) and not os.path.exists(os.path.join(KIT, "board_data", "board.db")):
+         if not quiet:
+             print("save: no board here (run `python3 -I .kit/web_takeover.py` first).")
+         return 0
++    allow = allow_mirror_push or str(os.environ.get("KIT_ALLOW_MIRROR_PUSH") or "").lower() in ("1", "true", "yes")
+     own, why = owns_board()
++    if not own and allow and "attached to the Artifact board" in why:
++        # Non-Claude cloud runners (e.g. Antigravity on the web) have no ArtifactData tool; reconcile against
++        # origin/board-mirror first so newer remote posts are preserved, then push cleanly to board-mirror.
++        own = True
+     if not own:
+         if not quiet:
+             print("save: not pushed: %s. This session's board is its own project's." % why)
+         return 0
+     ensure_mirror_worktree()
+-    rc, out = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "sync-db", "--commit"], timeout=180)
++    m = mirror_path()
++    br = mirror_branch()
++    if healthy(port()):
++        # Pull newer remote board docs into the local DB before exporting so concurrent writes are never clobbered.
++        sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "reconcile", "--no-push"], timeout=180)
++        if sh(["git", "-C", m, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (br, br)], timeout=120)[0] == 0:
++            sh(["git", "-C", m, "reset", "--hard", "origin/%s" % br])
++    sync_args = [sys.executable, "-I", os.path.join(KIT, "kit.py"), "sync-db", "--commit"]
++    if allow:
++        sync_args.append("--full")
++    if with_blobs or os.path.isdir(os.path.join(KIT, "board_data", "blobs")):
++        sync_args.append("--with-blobs")
++    rc, out = sh(sync_args, timeout=180)
+     if rc != 0:
+         print("save: sync-db FAILED: %s" % out[-400:])
+         return 1
+-    m = mirror_path()
+-    rc, ahead = sh(["git", "-C", m, "rev-list", "--count", "origin/%s..HEAD" % mirror_branch()])
++    rc, ahead = sh(["git", "-C", m, "rev-list", "--count", "origin/%s..HEAD" % br])
+     if rc != 0:                                              # the first save: the remote has no copy yet
+         ahead = sh(["git", "-C", m, "rev-list", "--count", "HEAD"])[1]
+     if rc == 0 and ahead.strip() == "0":
+         if not quiet:
+-            print("save: the board is already in git (origin/%s)." % mirror_branch())
++            print("save: the board is already in git (origin/%s)." % br)
+         return 0
+-    rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % mirror_branch()], timeout=120)
++    rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % br], timeout=120)
+     if rc != 0:
+         # Both sides wrote (web + computer): merge; a conflicting hunk keeps this side (board/sync.json, the sync log,
+         # always conflicts). A per-post merge by updated_at is CL16's.
+-        rc2, out2 = sh(["git", "-C", m, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", mirror_branch()],
++        rc2, out2 = sh(["git", "-C", m, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", br],
+                        timeout=120)
+         if rc2 != 0:
+             sh(["git", "-C", m, "merge", "--abort"])
+         if rc2 == 0:
+-            rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % mirror_branch()], timeout=120)
++            rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % br], timeout=120)
+     if rc != 0:
+         print("save: PUSH OF %s REFUSED: %s\nThe board's changes are committed in %s but not on GitHub. If this web "
+               "session may only push its own branch, tell the owner: the board cannot leave this session." % (
+-                  mirror_branch(), out[-400:], m))
++                  br, out[-400:], m))
+         return 1
+-    print("save: the board is in git (origin/%s, %s commit%s pushed)." % (mirror_branch(), ahead, "" if ahead == "1" else "s"))
++    print("save: the board is in git (origin/%s, %s commit%s pushed)." % (br, ahead, "" if ahead == "1" else "s"))
+     return 0
+ 
+ 
+@@ -257,7 +291,10 @@ def main(argv):
+         cmd_save(quiet=True)
+         return 0
+     if argv and argv[0] == "save":
+-        return cmd_save()
++        return cmd_save(
++            allow_mirror_push="--allow-mirror-push" in argv,
++            with_blobs="--with-blobs" in argv,
++        )
+     return cmd_start()
+ 
+ 
+diff --git a/scripts/kit.py b/scripts/kit.py
+index 9891bf8..af7b6b8 100644
+--- a/scripts/kit.py
++++ b/scripts/kit.py
+@@ -219,6 +219,17 @@ def _export_blobs_to_mirror(db_path, m, max_bytes=5 * 1024 * 1024):
+     return copied
+ 
+ 
++def _db_origin(conn):
++    """Lightweight origin stamp for a local SQLite board.db so two machines/containers never confuse seq numbers."""
++    import socket
++    try:
++        row = conn.execute("SELECT seq, at FROM changes ORDER BY seq ASC LIMIT 1").fetchone()
++    except Exception:
++        row = None
++    first = ("%s@%s" % (row[0], row[1])) if row else "empty"
++    return "%s:%s" % (socket.gethostname(), first)
++
++
+ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
+     """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full)."""
+     import sqlite3
+@@ -234,7 +245,17 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
+     try:
+         latest_seq = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM changes").fetchone()[0]
+         min_seq = conn.execute("SELECT COALESCE(MIN(seq), 0) FROM changes").fetchone()[0]
+-        can_delta = (not full) and bool(st.get("cursor")) and last_seq > 0 and (min_seq == 0 or last_seq >= min_seq - 1)
++        cur_origin = _db_origin(conn)
++        prev_origin = str(st.get("db_origin") or "")
++        same_db = (not prev_origin) or (prev_origin == cur_origin)
++        can_delta = (
++            (not full)
++            and bool(st.get("cursor"))
++            and last_seq > 0
++            and same_db
++            and latest_seq >= last_seq
++            and (min_seq == 0 or last_seq >= min_seq - 1)
++        )
+         if not can_delta:
+             # CL44 (item 7): a full sync never deletes a mirror file that git added or changed unless the board
+             # explicitly deleted it (its changes log). Missing files not deleted by the board are kept and imported.
+@@ -273,6 +294,7 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
+                 _export_blobs_to_mirror(db, m)
+             st2 = read_state(m)
+             st2["db_seq"] = latest_seq
++            st2["db_origin"] = cur_origin
+             write_doc(os.path.join(m, "board", "sync.json"), st2)
+             return res
+ 
+@@ -319,8 +341,11 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
+                     doc = json.loads(r[0])
+                     if old_s.get(user) != doc:
+                         write_doc(os.path.join(sdir, user + ".json"), doc)
++        if with_blobs:
++            _export_blobs_to_mirror(db, m)
+         st["cursor"] = now
+         st["db_seq"] = latest_seq
++        st["db_origin"] = cur_origin
+         st["log"].append({"at": now, "full": False, "db_seq": latest_seq, "posts": len(old_p) - pr,
+                           "posts_written": pw, "posts_removed": pr, "comments_read": len(rows),
+                           "new": new, "changed": changed, "removed": removed})
+@@ -777,6 +802,40 @@ def _utc(ts):
+     return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+ 
+ 
++def _restore_mirror_blobs(repo, ref, db_path):
++    """Restore missing board/blobs/<id>[.json] files from git ref into local board_data/blobs/."""
++    import io
++    import tarfile
++    blob_dir = os.path.join(os.path.dirname(os.path.abspath(db_path)), "blobs")
++    arc = subprocess.run(["git", "-C", repo, "archive", "--format=tar", ref, "board/blobs"], capture_output=True, timeout=180)
++    if arc.returncode != 0 or not arc.stdout:
++        return 0
++    restored = 0
++    os.makedirs(blob_dir, exist_ok=True)
++    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
++        for mem in tf.getmembers():
++            parts = tar_name(mem.name).split("/")
++            if not mem.isfile() or len(parts) != 3 or parts[0] != "board" or parts[1] != "blobs":
++                continue
++            fn = parts[2]
++            if not re.fullmatch(r"[a-fA-F0-9]{16,64}(?:\.json)?", fn):
++                continue
++            dst = os.path.join(blob_dir, fn)
++            if os.path.exists(dst):
++                continue
++            src = tf.extractfile(mem)
++            if src is None:
++                continue
++            data = src.read()
++            tmp = dst + ".tmp"
++            with open(tmp, "wb") as fh:
++                fh.write(data)
++            os.replace(tmp, dst)
++            if not fn.endswith(".json"):
++                restored += 1
++    return restored
++
++
+ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
+     """The board here against its git copy (origin/<branch>), document by document; the more recent copy wins.
+ 
+@@ -814,6 +873,11 @@ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
+         if not has_remote or git(repo, "merge-base", "--is-ancestor", remote_ref, local_ref).returncode == 0:
+             head = local_head
+     db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
++    n_blobs = 0
++    if has_remote:
++        n_blobs += _restore_mirror_blobs(repo, remote_ref, db)
++    if has_local and local_head != remote_head:
++        n_blobs += _restore_mirror_blobs(repo, local_ref, db)
+     local_t = {}
+     if os.path.isfile(db):
+         conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+@@ -879,13 +943,17 @@ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
+             if r.returncode != 0:
+                 git(m, "merge", "--abort")
+         if os.path.isfile(db):
+-            sync_db(m, db_path=db, at=zstamp(datetime.now(timezone.utc)), full=True)
++            has_blobs = os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(db)), "blobs"))
++            sync_db(m, db_path=db, at=zstamp(datetime.now(timezone.utc)), full=True, with_blobs=has_blobs)
+             if git(m, "status", "--porcelain", "board").stdout.strip():
+                 commit(m, "kit reconcile: local and git, the newer copy of each post", branch=branch)
+         r = git(m, "push", "-q", "origin", "HEAD:" + branch)
+         pushed = "pushed" if r.returncode == 0 else "push refused: " + (r.stdout + r.stderr).strip()[-200:]
+-    return {"status": "reconciled with origin/%s" % branch, "from_git": n_git, "added": n_add, "kept_here": n_here,
+-            "git": pushed or "git copy not updated here"}
++    res = {"status": "reconciled with origin/%s" % branch, "from_git": n_git, "added": n_add, "kept_here": n_here,
++           "git": pushed or "git copy not updated here"}
++    if n_blobs:
++        res["blobs_restored"] = n_blobs
++    return res
+ 
+ 
+ # ---------------------------------------------------------------- Artifact mode (a claude.ai Artifact board)
+@@ -4081,7 +4149,8 @@ def done(pid, db_path=None, root=None):
+     warn += pending_real         # CL32/CL38: a real project too, run by the orchestrator (pending)
+     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
+     strip = lambda d: {k: v for k, v in (d or {}).items() if k not in ("proof", "updated_at")}  # noqa: E731
+-    if attached_board() and strip(_read_json(_base_path("posts", pid))) != strip(p):
++    mirror_transport = str(os.environ.get("KIT_BOARD_TRANSPORT") or "").strip().lower() == "mirror"
++    if attached_board() and not mirror_transport and strip(_read_json(_base_path("posts", pid))) != strip(p):
+         # CL28: a part updated its post on the local copy only and said "Done": the live board (the Artifact) still
+         # showed it planned, with none of its results (the owner: "How come you said you posted when you didn't?")
+         err.append("the post is not on the board yet (%s): its local copy differs from what the Artifact last had. Run "
+@@ -4098,8 +4167,10 @@ def done(pid, db_path=None, root=None):
+                                                            "branch": _git_run("symbolic-ref", "--short", "-q", "HEAD").stdout.strip(),
+                                                            "needs_real": bool(pending_real)}}, env={"KIT_GATE": "done"}):
+             warn.append("proof: the board did not take it (is the board server running?): the step cannot be completed without it")
+-        elif attached_board():
++        elif attached_board() and not mirror_transport:
+             warn.append("proof: written here; send it: `python3 -I .kit/kit.py artifact push`")
++        elif mirror_transport:
++            warn.append("proof: written here; send it: `python3 -I .kit/antigravity_web.py save`")
+     lines = (["NOT READY: %s" % pid] if err else ["OK: %s follows the post format" % pid])
+     lines += ["  fix: " + e for e in err] + ["  note: " + w for w in warn]
+     if not err:
+@@ -4849,6 +4920,14 @@ def _is_web():
+     return str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes")
+ 
+ 
++def _is_antigravity_web():
++    if _is_web():
++        return False
++    if str(os.environ.get("AGY_WEB") or "").lower() in ("1", "true", "yes"):
++        return True
++    return bool(os.environ.get("ANTIGRAVITY_APP_DATA_DIR") or os.environ.get("JULES_SESSION_ID"))
++
++
+ def _git_run(*args, cwd=None, timeout=60):
+     return subprocess.run(["git", "-C", cwd or ROOT] + list(args), capture_output=True, text=True, timeout=timeout)
+ 
+diff --git a/tests/test_antigravity_web.py b/tests/test_antigravity_web.py
+new file mode 100644
+index 0000000..6c20e52
+--- /dev/null
++++ b/tests/test_antigravity_web.py
+@@ -0,0 +1,264 @@
++#!/usr/bin/env python3
++"""Tests for Antigravity-on-the-web direct kit support, blob mirror sync, and antigravity_web.py adapter."""
++import hashlib
++import importlib.util
++import json
++import os
++import shutil
++import socket
++import sqlite3
++import subprocess
++import sys
++import tempfile
++import time
++import unittest
++from unittest import mock
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++
++
++def _load(name, rel):
++    path = os.path.join(ROOT, rel)
++    spec = importlib.util.spec_from_file_location(name, path)
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    return mod
++
++
++wt = _load("kit_wt_aw_test", "kit/web_takeover.py")
++kit = _load("kit_core_aw_test", "scripts/kit.py")
++aw = _load("kit_aw_test", "kit/antigravity_web.py")
++
++
++def _git(cwd, *args):
++    r = subprocess.run(["git", "-C", cwd] + list(args), capture_output=True, text=True)
++    if r.returncode != 0:
++        raise AssertionError("git %s failed in %s: %s" % (" ".join(args), cwd, r.stderr or r.stdout))
++    return r.stdout.strip()
++
++
++def _free_port():
++    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
++        s.bind(("127.0.0.1", 0))
++        return s.getsockname()[1]
++
++
++class DetectionTests(unittest.TestCase):
++    def test_is_antigravity_web_env_variants(self):
++        base = {k: v for k, v in os.environ.items()
++                if k not in ("CLAUDE_CODE_REMOTE", "ANTIGRAVITY_APP_DATA_DIR", "JULES_SESSION_ID", "AGY_WEB")}
++        with mock.patch.dict(os.environ, base, clear=True):
++            self.assertFalse(wt.is_antigravity_web())
++            self.assertFalse(kit._is_antigravity_web())
++
++        for extra in ({"ANTIGRAVITY_APP_DATA_DIR": "/home/antigravity/.gemini/jetski"},
++                      {"JULES_SESSION_ID": "abc-123"},
++                      {"AGY_WEB": "1"}):
++            env = dict(base, **extra)
++            with mock.patch.dict(os.environ, env, clear=True):
++                self.assertTrue(wt.is_antigravity_web(), extra)
++                self.assertTrue(kit._is_antigravity_web(), extra)
++
++        # Claude Code remote takes precedence over Antigravity detection
++        env = dict(base, CLAUDE_CODE_REMOTE="true", ANTIGRAVITY_APP_DATA_DIR="/tmp/x")
++        with mock.patch.dict(os.environ, env, clear=True):
++            self.assertFalse(wt.is_antigravity_web())
++            self.assertFalse(kit._is_antigravity_web())
++
++
++class SyncDbAndMirrorBlobTests(unittest.TestCase):
++    def test_sync_db_fresh_container_does_not_drop_writes_when_seq_smaller_or_equal(self):
++        tmp = tempfile.mkdtemp(prefix="test-aw-syncdb-")
++        try:
++            mirror = os.path.join(tmp, "mirror")
++            os.makedirs(os.path.join(mirror, "board", "posts"), exist_ok=True)
++            os.makedirs(os.path.join(mirror, "board", "comments"), exist_ok=True)
++            # Simulate a mirror synced previously by another host at db_seq=322
++            with open(os.path.join(mirror, "board", "posts", "r1.json"), "w", encoding="utf-8") as fh:
++                json.dump({"title": "R1", "status": "planned", "body": "old"}, fh)
++            with open(os.path.join(mirror, "board", "sync.json"), "w", encoding="utf-8") as fh:
++                json.dump({"cursor": "2026-11-26T21:16:43Z", "db_seq": 322, "db_origin": "other-host:1@2026-11-20T00:00:00Z", "log": []}, fh)
++
++            db_dir = os.path.join(tmp, "board_data")
++            os.makedirs(os.path.join(db_dir, "blobs"), exist_ok=True)
++            db_path = os.path.join(db_dir, "board.db")
++            conn = sqlite3.connect(db_path)
++            conn.execute("CREATE TABLE docs (collection TEXT, doc_id TEXT, version INTEGER, data TEXT, updated_at TEXT, PRIMARY KEY (collection, doc_id))")
++            conn.execute("CREATE TABLE changes (seq INTEGER PRIMARY KEY AUTOINCREMENT, collection TEXT, doc_id TEXT, op TEXT, version INTEGER, at TEXT)")
++            conn.execute(
++                "INSERT INTO docs VALUES ('posts', 'r1', 2, ?, '2026-11-26T21:20:00Z')",
++                (json.dumps({"title": "R1", "status": "in progress", "body": "updated from devbox"}),),
++            )
++            conn.execute("INSERT INTO changes(collection, doc_id, op, version, at) VALUES ('posts', 'r1', 'set', 2, '2026-11-26T21:20:00Z')")
++            conn.commit()
++            conn.close()
++
++            # Add a local blob too
++            bid = hashlib.md5(b"hello-blob").hexdigest()
++            with open(os.path.join(db_dir, "blobs", bid), "wb") as fh:
++                fh.write(b"hello-blob")
++            with open(os.path.join(db_dir, "blobs", bid + ".json"), "w", encoding="utf-8") as fh:
++                json.dump({"id": bid, "name": "hello.txt", "contentType": "text/plain", "size": 10}, fh)
++
++            # Plain sync_db (without full=True) must detect origin/seq mismatch and fall back to full sync
++            pw, pr, new, changed, removed = kit.sync_db(mirror, db_path=db_path, at="2026-11-26T21:21:00Z", with_blobs=True)
++            self.assertEqual(pw, 1)
++            with open(os.path.join(mirror, "board", "posts", "r1.json"), encoding="utf-8") as fh:
++                saved = json.load(fh)
++            self.assertEqual(saved["body"], "updated from devbox")
++            self.assertTrue(os.path.isfile(os.path.join(mirror, "board", "blobs", bid)))
++            self.assertTrue(os.path.isfile(os.path.join(mirror, "board", "blobs", bid + ".json")))
++        finally:
++            shutil.rmtree(tmp, ignore_errors=True)
++
++    def test_restore_mirror_blobs_from_git_ref(self):
++        tmp = tempfile.mkdtemp(prefix="test-aw-blobs-")
++        try:
++            repo = os.path.join(tmp, "repo")
++            os.makedirs(os.path.join(repo, "board", "blobs"), exist_ok=True)
++            _git(repo, "init", "-b", "board-mirror")
++            _git(repo, "config", "user.name", "Test")
++            _git(repo, "config", "user.email", "test@example.com")
++
++            bid = hashlib.md5(b"script-payload").hexdigest()
++            with open(os.path.join(repo, "board", "blobs", bid), "wb") as fh:
++                fh.write(b"script-payload")
++            with open(os.path.join(repo, "board", "blobs", bid + ".json"), "w", encoding="utf-8") as fh:
++                json.dump({"id": bid, "name": "adapter.py", "contentType": "text/x-python", "size": 14}, fh)
++            # Non-hex filename must be ignored
++            with open(os.path.join(repo, "board", "blobs", "README.txt"), "w", encoding="utf-8") as fh:
++                fh.write("ignore me")
++            _git(repo, "add", ".")
++            _git(repo, "commit", "-m", "add mirror blob")
++
++            db_path = os.path.join(tmp, "local_board", "board.db")
++            os.makedirs(os.path.dirname(db_path), exist_ok=True)
++            restored = kit._restore_mirror_blobs(repo, "board-mirror", db_path)
++            self.assertEqual(restored, 1)
++            blob_dir = os.path.join(tmp, "local_board", "blobs")
++            with open(os.path.join(blob_dir, bid), "rb") as fh:
++                self.assertEqual(fh.read(), b"script-payload")
++            with open(os.path.join(blob_dir, bid + ".json"), encoding="utf-8") as fh:
++                self.assertEqual(json.load(fh)["name"], "adapter.py")
++            self.assertFalse(os.path.exists(os.path.join(blob_dir, "README.txt")))
++            # Second call is a no-op (existing blobs not overwritten)
++            self.assertEqual(kit._restore_mirror_blobs(repo, "board-mirror", db_path), 0)
++        finally:
++            shutil.rmtree(tmp, ignore_errors=True)
++
++    def test_single_branch_clone_ensure_refs_fetches_board_mirror(self):
++        tmp = tempfile.mkdtemp(prefix="test-aw-single-")
++        try:
++            bare = os.path.join(tmp, "origin.git")
++            seed = os.path.join(tmp, "seed")
++            clone = os.path.join(tmp, "clone")
++            _git(tmp, "init", "--bare", bare)
++            _git(tmp, "clone", bare, seed)
++            _git(seed, "config", "user.name", "Test")
++            _git(seed, "config", "user.email", "test@example.com")
++            with open(os.path.join(seed, "README.md"), "w", encoding="utf-8") as fh:
++                fh.write("hello\n")
++            _git(seed, "add", "README.md")
++            _git(seed, "commit", "-m", "init")
++            _git(seed, "branch", "-M", "feat-work")
++            _git(seed, "push", "-u", "origin", "feat-work")
++
++            # Create orphan board-mirror on origin
++            _git(seed, "checkout", "--orphan", "board-mirror")
++            _git(seed, "rm", "-rf", ".")
++            os.makedirs(os.path.join(seed, "board", "posts"), exist_ok=True)
++            with open(os.path.join(seed, "board", "posts", "p1.json"), "w", encoding="utf-8") as fh:
++                json.dump({"title": "Post 1"}, fh)
++            _git(seed, "add", ".")
++            _git(seed, "commit", "-m", "mirror init")
++            _git(seed, "push", "origin", "board-mirror")
++
++            # Single-branch clone (just like Antigravity on the web)
++            _git(tmp, "clone", "--single-branch", "--branch", "feat-work", bare, clone)
++            # Without explicit refspec, origin/board-mirror does not exist
++            r0 = subprocess.run(["git", "-C", clone, "rev-parse", "--verify", "origin/board-mirror"], capture_output=True)
++            self.assertNotEqual(r0.returncode, 0)
++
++            res = aw.ensure_refs(("board-mirror",), cwd=clone)
++            self.assertTrue(res["board-mirror"][0], res)
++            out = _git(clone, "show", "origin/board-mirror:board/posts/p1.json")
++            self.assertEqual(json.loads(out)["title"], "Post 1")
++        finally:
++            shutil.rmtree(tmp, ignore_errors=True)
++
++    def test_upload_and_attach_blobs_on_ephemeral_board(self):
++        tmp = tempfile.mkdtemp(prefix="test-aw-attach-")
++        proc = None
++        try:
++            kit_dir = os.path.join(tmp, ".kit")
++            os.makedirs(os.path.join(kit_dir, "board_data"), exist_ok=True)
++            port = _free_port()
++            tok = "testtoken1234567890abcdef1234567"
++            with open(os.path.join(kit_dir, "board_data", "token"), "w", encoding="utf-8") as fh:
++                fh.write(tok)
++            with open(os.path.join(kit_dir, "config.json"), "w", encoding="utf-8") as fh:
++                json.dump({"board_url": "http://127.0.0.1:%d" % port}, fh)
++
++            proc = subprocess.Popen(
++                [sys.executable, "-I", os.path.join(ROOT, "kit/board/board_server.py"),
++                 "--host", "127.0.0.1", "--port", str(port), "--root", tmp, "--token", tok,
++                 "--auto-sync-interval", "0"],
++                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
++            )
++            url = "http://127.0.0.1:%d" % port
++            for _ in range(50):
++                try:
++                    import urllib.request
++                    with urllib.request.urlopen(url + "/_api/health", timeout=1) as r:
++                        if json.loads(r.read().decode()).get("ok"):
++                            break
++                except Exception:
++                    time.sleep(0.1)
++            else:
++                self.fail("ephemeral board_server did not become healthy")
++
++            env = dict(os.environ, KIT_BOARD_URL=url, KIT_BOARD_TOKEN=tok)
++            bcli = os.path.join(ROOT, "kit/board/board_cli.py")
++            r_set = subprocess.run(
++                [sys.executable, "-I", bcli, "set", "posts", "r1-test", "--data",
++                 json.dumps({"title": "R1 Test", "column": "info", "body": "Lead line\n\n### Details\nBody text", "created_at": "2026-11-26T21:00:00Z"})],
++                capture_output=True, text=True, env=env, cwd=tmp,
++            )
++            self.assertEqual(r_set.returncode, 0, r_set.stderr)
++
++            f1 = os.path.join(tmp, "sample.patch")
++            f2 = os.path.join(tmp, "helper.py")
++            with open(f1, "w", encoding="utf-8") as fh:
++                fh.write("diff --git a/x b/x\n")
++            with open(f2, "w", encoding="utf-8") as fh:
++                fh.write("print('hi')\n")
++
++            with mock.patch.dict(os.environ, env, clear=False), \
++                 mock.patch.object(aw, "ensure_board_running", return_value="ok"), \
++                 mock.patch.object(aw, "ROOT", tmp), \
++                 mock.patch.object(aw, "KIT", kit_dir), \
++                 mock.patch.object(aw, "_kit_script", side_effect=lambda n: bcli if n == "board_cli.py" else os.path.join(ROOT, "scripts", n)):
++                res = aw.upload_and_attach("r1-test", [f1, f2], comment_text="Attached review blobs", sender="R1")
++
++            self.assertEqual(len(res["uploaded"]), 2)
++            self.assertIsNotNone(res["comment"])
++
++            r_get = subprocess.run([sys.executable, "-I", bcli, "get", "posts", "r1-test"], capture_output=True, text=True, env=env, cwd=tmp)
++            post = json.loads(r_get.stdout)["data"]
++            self.assertEqual([x["name"] for x in post["files"]], ["sample.patch", "helper.py"])
++            self.assertEqual(len(post["artifacts"]), 2)
++            self.assertTrue(all(a.startswith("/_blob/") for a in post["artifacts"]))
++            self.assertIn("### Attached review blobs", post["body"])
++            self.assertIn("[sample.patch](/_blob/", post["body"])
++        finally:
++            if proc:
++                proc.terminate()
++                try:
++                    proc.wait(timeout=5)
++                except subprocess.TimeoutExpired:
++                    proc.kill()
++            shutil.rmtree(tmp, ignore_errors=True)
++
++
++if __name__ == "__main__":
++    unittest.main()
+-- 
+2.56.1
+
