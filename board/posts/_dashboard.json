@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T19:41:04Z",
+ "created_at": "2026-11-26T20:01:04Z",
  "rows": [
   {
    "at": 42,
@@ -117,7 +117,9 @@
     "Map readers beyond code: Power BI, documents, any folder",
     "A resume prints only what changed",
     "The usage ledger counts cost per command",
-    "Done keeps the map: each part checks its stretch and adds what it built"
+    "Done keeps the map: each part checks its stretch and adds what it built",
+    "Every memory entry is checked against reality",
+    "Replacing and forgetting in memory"
    ],
    "train": "P-memory"
   },
@@ -135,5 +137,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-26T19:41:04Z"
+ "updated_at": "2026-11-26T20:01:04Z"
 }

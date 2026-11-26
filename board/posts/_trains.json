@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T19:41:04Z",
+ "created_at": "2026-11-26T20:01:04Z",
  "rows": [
   {
    "also": [],
@@ -101,7 +101,9 @@
     "M4",
     "M5",
     "M6",
-    "M3"
+    "M3",
+    "M7",
+    "M8"
    ],
    "parent": "",
    "part": "P-memory",
@@ -858,8 +860,30 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-memory",
+   "part": "M7",
+   "post": "m7-every-memory-entry-is-checked-against-re",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-memory",
+   "part": "M8",
+   "post": "m8-replacing-and-forgetting-in-memory",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T19:41:04Z"
+ "updated_at": "2026-11-26T20:01:04Z"
 }
