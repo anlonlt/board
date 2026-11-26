@@ -1,17 +1,42 @@
 {
- "body": "A running step now shows what its session is doing (\"Writing carte-ciel.md · 9 actions\"), and a session that repeats the same call 8 times is told once. Both work for Claude Code on a computer; make them work for agy parts too.",
+ "artifacts": [
+  "kit/hooks/kit_activity.py",
+  "kit/hooks/kit_task_train.py",
+  "kit/hook.py",
+  "kit/hooks/test_hooks.py",
+  "tests/test_post_gate.py",
+  "tests/test_unified_hooks.py",
+  "test_install.py"
+ ],
+ "bars": [
+  "tests.test_post_gate: 43/43 OK (including agy live activity & loop-breaker test)",
+  "tests.test_unified_hooks: 20/20 OK (parity agy 60 cases, web/cli 200 cases, 20 agy rows)",
+  "kit/hooks/test_hooks.py: 0 failed; test_install.py: 50/50 ok; test_install_present_runtimes: 4/4 OK; test_kit_copies_current: OK",
+  "Live agy 1.5.17 run against board_server.py recorded actions 0->11, loop: 8, state: stopped, and model quoted the injected loop breaker verbatim"
+ ],
+ "body": "# CL43: Live Activity Line and Loop Breaker on `agy`\n\n- **Branch:** `cl43` (worktree `/home/anon/board-cl43`)\n- **Commit:** `3902d1e` (`CL43: live activity line and loop breaker on agy`)\n- **Files changed (12):** `kit/hook.py`, `kit/hooks/kit_activity.py`, `kit/hooks/kit_task_train.py`, `kit/hooks/test_hooks.py`, synced `.kit/` copies + `.kit/manifest.json` (via `python3 -I install.py . --update`), `test_install.py`, `tests/test_post_gate.py`, `tests/test_unified_hooks.py`.\n\n## 1. Real `agy` Hook Payload & Output Contract (Verified Live on `agy` 1.5.17)\n\nInspected `~/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/hooks.md`, existing agy hooks, our live subagent transcript, and ran a real `agy` 1.5.17 hook probe in `/tmp/agy-probe` capturing stdin JSON across all 6 lifecycle events (`SessionStart`, `PreInvocation`, `PreToolUse`, `PostToolUse`, `PostInvocation`, `Stop`):\n\n- **Common stdin fields (camelCase):** `hookEventName`, `conversationId`, `cwd`, `workspacePaths`, `transcriptPath`, `artifactDirectoryPath`, `modelName`, `lastUserInput`.\n- **Tool events (`PreToolUse`, `PostToolUse`):** `stepIdx`, `toolCall: {\"id\": \"...\", \"name\": \"<tool>\", \"args\": {...}}`, plus `error` on `PostToolUse`.\n  - `run_command`: `args = {\"CommandLine\": \"...\", \"toolSummary\": \"...\", \"WaitMsBeforeAsync\": 5000, ...}`\n  - `write_file`: `args = {\"Path\": \"...\", \"Content\": \"...\"}`\n  - `edit_file`: `args = {\"Path\": \"...\", \"Target\": \"...\", \"Replacement\": \"...\"}`\n  - `send_message`: `args = {\"Recipient\": \"...\", \"Message\": \"...\"}`\n- **Post discovery without `KIT_POST`:**\n  - `agy -p`: `transcriptPath` step 0 is `type: \"USER_INPUT\"` with `content` wrapped in `<USER_REQUEST>\\n...\\n</USER_REQUEST>`.\n  - `invoke_subagent` (how `kit.py` launches agy parts): `transcriptPath` step 0 is `type: \"SYSTEM_MESSAGE\"` with `[Message] ... content=Your prompt is <path>/docs/prompts/<post>.md: ...` (paths may be relative or absolute).\n  - Fallback: `lastUserInput` when no transcript file exists yet.\n- **Loop-breaker stdout contract (critical live finding):**\n  - `agy` `PostToolUse` expects `{}` and **ignores `injectSteps`** (probe token `PROBE_POST_TOOL_INJECT_TOKEN_999` returned from `PostToolUse` was NOT received by the model).\n  - `agy` `PostInvocation` **injects `injectSteps`** (probe token `PROBE_POST_INVOC_INJECT_TOKEN_888` returned from `PostInvocation` WAS injected as `\"The following system message was injected by a PostInvocation hook: ...\"` and read by the model).\n\n## 2. Changes to `kit_activity.py`, `kit_task_train.py`, and `kit/hook.py`\n\n- **`kit/hooks/kit_task_train.py` (`_first_prompt` / `part_post`):**\n  - Reads `transcriptPath` or `transcript_path`, parses Claude Code `user`, agy `USER_INPUT` (unwrapping `<USER_REQUEST>`), and agy subagent `SYSTEM_MESSAGE` (`[Message] ... content=...`), falling back to `lastUserInput`.\n  - Matches both relative (`docs/prompts/<id>.md`) and absolute (`/.../docs/prompts/<id>.md`) part launch prompts while continuing to ignore reviews (`CR-*`), clerk/orchestrator prompts, and human prose mentioning prompt paths.\n- **`kit/hooks/kit_activity.py`:**\n  - Accepts both Claude Code (`hook_event_name`, `session_id`, `tool_name`, `tool_input`) and agy (`hookEventName`, `conversationId`/`conversation_id`, `toolCall.name`, `toolCall.args`).\n  - `what_of`: `run_command` uses `toolSummary` (up to 90 chars) else `bash_words(CommandLine)`; `write_file` emits `\"Writing <basename>\"`, `edit_file` emits `\"Editing <basename>\"`, `send_message` emits `\"Sending a message\"`.\n  - `changed_pieces`: checks `Path` / `TargetFile` / `file_path` / `notebook_path` / `path`.\n  - Preserves all limits: no model call; detached `board_cli.py set activity <post>`; at most 1 write per 15 s (immediate on `Stop`, piece change, or loop detection); stdout silent except on the 8th consecutive identical call.\n  - Loop breaker delivery: Claude Code emits `hookSpecificOutput.additionalContext` on `PostToolUse`; agy records `\"pending\"` in `.kit/run/activity/loop-<cid>.json` on `PostToolUse` (while writing `loop: 8` to `activity/<post>` immediately and keeping `PostToolUse` stdout empty) and pops/emits `{\"injectSteps\": [{\"systemMessage\": {\"systemMessage\": \"...\"}}]}` once on `PostInvocation` (preserving `\"pending\"` across same-invocation repeats until `PostInvocation` consumes it).\n- **`kit/hook.py` (`TABLE`) & `.kit/` sync:**\n  - Wired `kit_activity.py` for `\"agy\"` on `PreToolUse` (`run_command|edit_file|write_file`), `PostToolUse` (`run_command|edit_file|write_file|send_message`), `PostInvocation` (`ANY`), and `Stop` (`ANY`).\n  - Existing unified `.agents/hooks.json` matchers already cover all four events and tools; non-unified installs emit 20 agy handlers (was 16).\n  - Synced `.kit/hook.py`, `.kit/hooks/kit_activity.py`, `.kit/hooks/kit_task_train.py`, `.kit/hooks/test_hooks.py`, and `.kit/manifest.json` via `python3 -I install.py . --update`.\n\n## 3. Verification & Test Results\n\nAll hook, parity, post-gate, copy-sync, card-push, and installer suites pass with 0 failures:\n\n- `python3 -m unittest tests.test_post_gate -v`: **43/43 OK** (includes new `test_what_an_agy_part_does_now_reaches_its_step_with_no_model_call` covering subagent/CLI/`lastUserInput` post discovery, `toolSummary` + `bash_words` fallback, `write_file`/`edit_file` piece moves, 15 s throttling, subfolder `cwd`, `PreToolUse`, `Stop`, loop breaker via `PostToolUse` + `PostInvocation`, and non-part silence).\n- `python3 -m unittest tests.test_unified_hooks -v`: **20/20 OK** (`parity agy: 60 cases, 8 stopped, 19 with text`; `parity web/cli: 200 cases, 39 stopped, 74 with text`; `TABLE` count `{\"web\": 30, \"cli\": 27, \"agy\": 20}`).\n- `python3 -I kit/hooks/test_hooks.py`: **0 failed** (includes new agy `kit_activity.py` 8-repeat `PostToolUse` -> `PostInvocation` check).\n- `python3 -I test_install.py </dev/null`: **50/50 ok, 0 failed** (checks 20 agy handlers merged into `.agents/hooks.json`).\n- `python3 -m unittest tests.test_install_present_runtimes -v </dev/null`: **4/4 OK**.\n- `python3 -m unittest tests.test_kit_copies_current tests.test_cl31_card_push -v`: **all OK** (confirms `.kit/` byte-copies match `kit/`).\n- `python3 -m unittest tests.test_train_and_task_train -v`: **25/25 OK** (note: `test_review_prompt_is_filled_and_started_once` detects `_ancestor(\"agy\")` when run unsandboxed under an agy parent process and passes inside the sandbox).\n\n## 4. Live Real `agy` Part Run & Board Snapshots\n\nInstalled the updated kit (`install.py --runtime agy --cli agy --unified-hooks`) into `/tmp/cl43-live`, started a real `board_server.py` on `http://127.0.0.1:32795`, seeded step `cl43-demo-step`, and ran a real `agy` 1.5.17 session (`--model \"Gemini 3.8 Flash (Low)\" -p \"Your prompt is docs/prompts/cl43-demo-step.md: read it and do it.\"`) with **no `KIT_POST` and no `KIT_ROLE` environment variables**, polling `GET /_api/db/activity/cl43-demo-step` every 2 s:\n\n```text\nAGY_STARTED pid=13687 at=2026-11-26T04:20:36Z\nt= 58.9s 2026-11-26T04:21:35Z -> {\"at\": \"2026-11-26T04:21:30Z\", \"actions\": 0, \"what\": \"Writing sky.md\", \"state\": \"working\", \"pieces\": []}\nt= 81.1s 2026-11-26T04:21:57Z -> {\"at\": \"2026-11-26T04:21:55Z\", \"actions\": 2, \"what\": \"Wait and verify sky.md\", \"state\": \"working\", \"pieces\": []}\nt= 99.3s 2026-11-26T04:22:15Z -> {\"at\": \"2026-11-26T04:22:10Z\", \"actions\": 3, \"what\": \"Loop check\", \"state\": \"working\", \"pieces\": []}\nt=111.9s 2026-11-26T04:22:28Z -> {\"at\": \"2026-11-26T04:22:26Z\", \"actions\": 5, \"what\": \"Loop check\", \"state\": \"working\", \"pieces\": []}\nt=128.1s 2026-11-26T04:22:44Z -> {\"at\": \"2026-11-26T04:22:41Z\", \"actions\": 7, \"what\": \"Loop check\", \"state\": \"working\", \"pieces\": []}\nt=146.7s 2026-11-26T04:23:02Z -> {\"at\": \"2026-11-26T04:22:59Z\", \"actions\": 9, \"what\": \"Loop check\", \"state\": \"working\", \"pieces\": []}\nt=161.8s 2026-11-26T04:23:18Z -> {\"at\": \"2026-11-26T04:23:14Z\", \"actions\": 11, \"what\": \"Loop check\", \"state\": \"working\", \"pieces\": [], \"loop\": 8}\nt=176.5s 2026-11-26T04:23:32Z -> {\"at\": \"2026-11-26T04:23:28Z\", \"actions\": 11, \"what\": \"Loop check\", \"state\": \"stopped\", \"pieces\": []}\nAGY_EXIT rc=0\n```\n\nOn the 8th consecutive identical `run_command` (`actions: 11`), `loop: 8` appeared immediately on `activity/cl43-demo-step`, and the real `agy` session received the injected `PostInvocation` system message, stopped repeating, and quoted it verbatim:\n\n> \"The same run_command call, with the same input, 8 times in a row: it is not getting anywhere. Change the approach, or stop and say in your post what blocks you.\"\n\n## 5. Notes / Not Checked\n\n- In the live `agy` run above, `pieces` stayed `[]` because the harness seeded `cl43-demo-step` via `PUT /_api/db/posts/cl43-demo-step` without `kit.py step new`, so `.kit/run/pieces/cl43-demo-step.json` was not generated; agy `pieces` tracking (`write_file` / `edit_file` `Path` and `run_command` mtime -> `pieces: [2]`, then `pieces: [1]`) is verified end-to-end against a real local `board_server.py` in `tests/test_post_gate.py::Live::test_what_an_agy_part_does_now_reaches_its_step_with_no_model_call`.\n- Full 62-suite `python3 scripts/run_all_tests.py` stopped early on an unrelated pre-existing suite (`tests/test_arena_out_of_box.py::test_clerk_atomic_route_seen_pending_and_auto_sync_db`, `store.auto_sync_count == 0` under parallel load); all CL43-relevant suites were run directly and passed with 0 failures.\n- `docs/prompts/cl43-the-live-line-and-loop-breaker-on-agy.md` was left untracked and no report file was committed (per K9).",
+ "branch": "cl43",
  "column": "info",
+ "commit": "3902d1e",
  "created_at": "2026-11-26T00:19:30Z",
  "from": "claude-cli",
+ "not_checked": [
+  "Live agy pieces non-empty transition when step is created via kit.py step new (verified via tests/test_post_gate.py against real board_server.py; live demo harness seeded via PUT)",
+  "Full 62-suite run_all_tests.py stopped on pre-existing parallel flake in tests/test_arena_out_of_box.py"
+ ],
  "part": "CL43",
  "planned_by": "owner",
+ "restored_from": "board-mirror 5d7db0d: an artifact load at 2026-11-26T20:23Z (CL44's part, on this computer) overwrote it with an older Artifact copy; restored on the owner's word",
+ "review": "continue",
+ "review_id": "cr-cl43-review",
  "runner": "agy",
- "status": "planned",
+ "session_id": "9ce0d26e-18ec-4bee-b2ea-b319fd06c2d2",
+ "status": "complete",
  "subtasks": [
   {
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "Find how an agy part's hook payload names its tool and input (run_command, edit_file, write_file)..."
   },
   {
@@ -20,7 +45,7 @@
    ],
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "Adapt kit_activity.py to them, with the same limits"
   },
   {
@@ -29,17 +54,19 @@
    ],
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "Wire it in the agy rows of the TABLE and test it the way tests/test_post_gate.py tests the Claude..."
   },
   {
    "from": "task",
    "n": 4,
-   "status": "open",
+   "status": "done",
    "title": "Run one real agy part and record what the board showed, every few seconds"
   }
  ],
  "task": "The code is on branch feat/streamline-doctor-memory (309ba6c): `kit/hooks/kit_activity.py`, its rows in `kit/hook.py` TABLE, the page's `kit-now` line.\n\n1. Find how an agy part's hook payload names its tool and input (run_command, edit_file, write_file) and its post.\n2. Adapt `kit_activity.py` to them, with the same limits: no model call, at most one write every 15 s, nothing said but the loop line.\n3. Wire it in the agy rows of the TABLE and test it the way tests/test_post_gate.py tests the Claude Code one.\n4. Run one real agy part and record what the board showed, every few seconds.",
  "title": "The live line and the loop breaker on agy",
- "train": "cli"
+ "train": "cli",
+ "updated_at": "2026-11-26T05:07:42Z",
+ "verdict": "Live activity line and 8-repeat loop breaker now work on agy parts (no model call, 15 s throttle, PostInvocation delivery); commit 3902d1e on branch cl43 passed independent review (continue)."
 }

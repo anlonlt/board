@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-26T22:50:25Z",
+ "created_at": "2026-11-26T22:51:22Z",
  "rows": [
   {
    "also": [],
@@ -688,7 +688,7 @@
    "post": "cl32-resume-per-role-what-each-role-needs-the",
    "prompt": "",
    "session": "session_01AE1HGj64wNW2VqtikzfGg4",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -765,7 +765,7 @@
    "post": "cl39-install-for-several-repos-on-the-web-one",
    "prompt": "",
    "session": "session_01AE1HGhF48HBSYir6H2xWYZ",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -808,8 +808,8 @@
    "part": "CL43",
    "post": "cl43-the-live-line-and-loop-breaker-on-agy",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "9ce0d26e-18ec-4bee-b2ea-b319fd06c2d2",
+   "state": "done",
    "store": []
   },
   {
@@ -1113,5 +1113,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-26T22:50:25Z"
+ "updated_at": "2026-11-26T22:51:22Z"
 }

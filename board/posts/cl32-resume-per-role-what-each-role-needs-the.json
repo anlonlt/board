@@ -35,10 +35,12 @@
   "output": "install: 15 .kit files + .kit/lessons.md; orchestrator 43 lines/5,099 chars; part 26, review 20, clerk 8 lines; lessons check refused 32a, 35a, not 51a (fixed adf0f7e); launch: 'no board at 127.0.0.1:8766' (fixed adf0f7e); rerun on adf0f7e pending; recheck at adf0f7e: lessons check refuses 51a + 18 others, no agy wording, clone server never pushes; cl33 launch print not reached (stale pull)",
   "project": "anlonlt/harmonize (origin/main 667c2087), run by O53"
  },
+ "restored_from": "board-mirror 5d7db0d: an artifact load at 2026-11-26T20:23Z (CL44's part, on this computer) overwrote it with an older Artifact copy; restored on the owner's word",
  "session_id": "session_01AE1HGj64wNW2VqtikzfGg4",
- "status": "in progress",
+ "status": "complete",
+ "status_fixed": "was \"in progress\": its work landed (c034a74 and 4 more CL32 commits) and its verdict is written (owner's go, 2026-11-26)",
  "title": "resume per role: what each role needs, the lessons and the workflow included",
  "train": "cli",
- "updated_at": "2026-11-23T23:36:43Z",
+ "updated_at": "2026-11-26T10:04:09Z",
  "verdict": "Each role now starts from `kit.py resume --role <role>`, lessons are in the memory by role, and O53's launch gaps are fixed. It is not yet run on the real Harmonize, which this session could not reach."
 }
