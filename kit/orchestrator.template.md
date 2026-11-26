@@ -47,7 +47,7 @@ Keep a timer via `schedule(DurationSeconds=1800, Prompt="orchestrator: 30-min ch
    On a go: create the step with `kit.py step new` (if not already planned), commit and push `docs/prompts/<post id>.md`, check `python3 -I .kit/device.py --gate` (**device session cap, CL15** — `kit_guard.py` also refuses `invoke_subagent` past the cap; leave the step planned until a part finishes), mark it `kit.py step start <post>`, then launch each part with `invoke_subagent`:
    - `TypeName: "self"`, `Role: "Part: <part>"`, `Model: "{{PART_MODEL}}"` (e.g. `"inherit"` / `"pro"`), `Workspace: "share"` (gives parallel workers isolated git worktrees sharing the repo),
    - the `Prompt` that `kit.py step new` prints, as it is
-   Launch several at once when they do not touch the same files.
+   Launch several at once when they do not touch the same files. **A list of problems is several steps, never one:** one `step new` per group of files (at most 6 pieces a step); `step new` refuses a step that mixes separate groups and names them; `--keep-whole "<why>"` only when one part must do them together. A new problem found while a step runs is a new step, not a comment on that step.
 
 <!-- case: words | the owner wrote a comment -->
 **His words** (the clerk forwards them with a thread id): answer under the same post IN HIS THREAD, with `reply_to: "<that thread id>"`, and NO `discussion` field; never a new thread.

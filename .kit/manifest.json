@@ -47,7 +47,7 @@
  ".kit/claude-cli/ORCHESTRATOR.md": "a987decab6b4084e94a2d7ede595b8616f0307fd39084347c4233fab99f36460",
  ".kit/claude-cli/clerk.md": "d1464cced04909c046226185ee45307582d81e52f4262973410f6c3da9b3b88e",
  ".kit/claude-cli/consultant.md": "eb2a156df2d6af6d0c976873837e1a62d480f8fb2e47f0ad19e9b3be528f737f",
- ".kit/claude-cli/orchestrator.md": "2da9024a908007d5d3180cda5b1cf8ce4e2d414096d44fe96c20819e19788948",
+ ".kit/claude-cli/orchestrator.md": "dd47c3e42702496c490ea80f08ee0590568b8b3ff4fd3290753f44f205721bf8",
  ".kit/claude-cli/part.md": "dec2e7004fc2062992f7e4ec81b8c55dc060b31b3c8e6972738e7585b2951c4d",
  ".kit/claude-cli/takeover.md": "d80abd018b630a43799fd04bc5de0222f88394c7807933121d98296bbf117ae8",
  ".kit/claude-web/orchestrator.md": "ba8dc9240c850145f1df5600199fc9988a47db4cf8d44ca2802d4f5c7d9a5ca0",
@@ -79,7 +79,7 @@
  ".kit/hooks/kit_web_save.py": "74229a81f846eb4ccb4bd8834d320e3adb605458ed49534cce1916eb0237bbf6",
  ".kit/hooks/kit_wip.py": "f3b9f3b4e4526021fc6eb267787edc7a063f82edec5caed739c080f30f6a2eb9",
  ".kit/hooks/test_hooks.py": "778123d6f729d1363c6ddad76c18cdb44cbe4fc4b6e9b2275211b1c62f53e654",
- ".kit/kit.py": "be46ab51297d64ca598c4853a8ee76507b48432f8248bfca3c9f1f356effe3eb",
+ ".kit/kit.py": "b5d16959118d705de1a76e26c8361688f3f3a64ee79f2adc798f9a87cedd4c31",
  ".kit/kit_artifact_sync.py": "64760e0f0ff2e3e3aca193ddcbbf501ec30474179b5ea838a4e34dc5b8b2ca67",
  ".kit/kit_cards.py": "f7352a5317a42f958167146364539996603f8f8926a12da71f36ef6d4fa07ca8",
  ".kit/kit_import.py": "7ee7050f20af4343885704ca613b86945472e9ceec08ec8e0fb47645578ba809",
@@ -88,7 +88,7 @@
  ".kit/lessons.md": "cb21614a9fcfa0f4f629681ddc09dbf985b0d790258ac0f6722ce56f952f01a6",
  ".kit/mcp_stdio.py": "dcd62e459f3b87beed4b275e6c388f8a601f4734e577bbc53d0f64d66618fcb9",
  ".kit/notify.py": "24f915809b3953b89bcd488fb0f5d46018bcc33a0c9c69e034db3292c9fef750",
- ".kit/orchestrator.md": "16bb0458f65d872a3a1695bbd16d8bd696897219722f968da1afd45541d1cfca",
+ ".kit/orchestrator.md": "4c5b9c7f1c32eb60f3712c5830025f0ce40b130c6580ed66ff9c20677137ab0a",
  ".kit/part.md": "94a618e40ae8121ce57ef12993220bd1da9ec60ae3c5a0834937d0d6f1b18138",
  ".kit/post_gate.py": "2d3cb425861779d8d90a7da4ce98e8efd422246e45e9ab910326c746eed78ec7",
  ".kit/runner.md": "71d6c50e8b088f539254f1435631e00cd5cc9a3da3cc280f929de414b4cf0a7d",
@@ -102,5 +102,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "e1b282847457310ea4317ef717ebb9d4ae8a743a77201e154c53c23ac05e74a1",
- "_kit_commit": "106bba6 2026-11-26T03:48:51-05:00"
+ "_kit_commit": "bd6791b 2026-11-26T04:01:35-05:00"
 }

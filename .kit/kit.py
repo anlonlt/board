@@ -4476,8 +4476,56 @@ def _step_board(train, posts, board=None):
     return (hits[0]["id"], dict(hits[0]["posts"])) if len(hits) == 1 else (None, None)
 
 
+SPLIT_MAX_PIECES = 6     # more pieces than this in one step: split it (the owner, 2026-11-26: CL44 held 14 unrelated items)
+SPLIT_MAX_GROUPS = 2     # more separate groups of files than this: they can run as parallel steps
+
+
+def split_groups(pieces):
+    """The pieces in groups that share files ([[piece n, ...], ...]). A file most pieces name (a hub such as kit.py, when
+    4+ pieces) joins nothing: different functions of one big file merge cleanly. A piece naming no file (run the tests, the
+    live check) is the whole step's, not a group."""
+    ps = [x for x in pieces or [] if isinstance(x, dict)]
+    count = {}
+    for x in ps:
+        for fl in set(x.get("files") or []):
+            count[fl] = count.get(fl, 0) + 1
+    hub = {fl for fl, c in count.items() if len(ps) >= 4 and c * 2 > len(ps)}
+    groups = []                                    # [(set of files, [n])]
+    for x in ps:
+        fs = set(x.get("files") or []) - hub
+        if not fs:
+            continue
+        hit = [g for g in groups if g[0] & fs]
+        merged = (set(fs), [x.get("n")])
+        for g in hit:
+            merged[0].update(g[0]); merged[1][:0] = g[1]
+            groups.remove(g)
+        groups.append(merged)
+    return [sorted(n for n in g[1] if n is not None) for g in groups], hub
+
+
+def split_check(pieces):
+    """Why a step should be several steps ("" when it is fine): too many pieces, or pieces in separate groups of files
+    that parallel parts could take side by side. The proposal names the groups."""
+    ps = [x for x in pieces or [] if isinstance(x, dict)]
+    if not ps:
+        return ""
+    groups, hub = split_groups(ps)
+    if len(ps) <= SPLIT_MAX_PIECES and len(groups) <= SPLIT_MAX_GROUPS:
+        return ""
+    title = {x.get("n"): str(x.get("title") or "")[:50] for x in ps}
+    files = {x.get("n"): set(x.get("files") or []) - hub for x in ps}
+    rows = ["  - pieces %s: %s%s" % (", ".join(map(str, g)), "; ".join(title[n] for n in g[:3]) + ("; ..." if len(g) > 3 else ""),
+                                     (" (%s)" % ", ".join(sorted(set().union(*[files[n] for n in g]))[:4])) if any(files[n] for n in g) else "")
+            for g in groups]
+    return ("%d pieces in %d separate groups of files (at most %d pieces and %d groups a step): one step per group, run "
+            "side by side where memory allows%s:\n%s" % (len(ps), len(groups), SPLIT_MAX_PIECES, SPLIT_MAX_GROUPS,
+                                                         (" (shared by most, ignored: %s)" % ", ".join(sorted(hub))) if hub else "",
+                                                         "\n".join(rows)))
+
+
 def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None, cli=None,
-             board=None):
+             board=None, keep_whole=None):
     """A train step: its post (adopted when the train already has one for that part, never duplicated) and its
     generated prompt. Returns {post, adopted, prompt, prompt_written, launch} or {error}. On an attached board (CL25)
     also {board, artifact_write}: the post is a file under .kit/run/artifact/out/repos/<id>/posts/, sent by the one
@@ -4501,6 +4549,10 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         if att:
             res["board"] = att
         return res
+    why_split = split_check(task_pieces(task))
+    if why_split and not keep_whole:
+        return {"error": "step %s is several steps: %s\nPlan one `step new` per group, or keep it whole with --keep-whole "
+                         "\"<why these must be one part>\" (recorded on the post)." % (part, why_split), "split": True}
     title = re.sub(r"^\s*%s\b[\s:.-]*" % re.escape(part), "", title or part, flags=re.I) or title or part
     base = "%s-%s" % (_slug(part, 12), _slug(title))
     pid, n = base, 2
@@ -4513,6 +4565,8 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         doc["subtasks"] = task_pieces(task)
     if parent:
         doc["parent"] = parent
+    if why_split and keep_whole:
+        doc["kept_whole"] = str(keep_whole)
     if sources:
         doc["sources"] = list(sources)
     if review is False:
@@ -6457,6 +6511,20 @@ def situation(posts, comments, session=None, platform=None):
     return out + (["takeover"] if named or not out else [])
 
 
+def split_lines(posts):
+    """Open steps the split check flags (written before it, or grown by comments since): split before launching more."""
+    out = []
+    for pid, p in sorted(posts.items()):
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("kept_whole") or p.get("removed"):
+            continue
+        if str(p.get("status") or "").lower() in ("complete", "done", "dropped") or str(p.get("column") or "") == "done":
+            continue
+        why = split_check(p.get("subtasks"))
+        if why:
+            out.append("- `%s` (%s): %s" % (pid, p.get("part") or pid, why.replace("\n", "\n  ")))
+    return ["", "## Steps that are several steps (split them: `kit.py step new` per group, then trim the step)"] + out if out else []
+
+
 def start_lines(posts, comments, session=None):
     p = orchestrator_guide()
     if not p:
@@ -6830,6 +6898,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         gl = git_copy_lines(m, db_path)
         if gl:
             out += ["", "## The record is git, and it is behind"] + ["- " + x for x in gl]
+        out += split_lines(posts)
         out += start_lines(posts, comments, session or whoami())
         out += owner_lines() + autonomy_lines()
         out += [""] + _launch_workflow()
@@ -7351,6 +7420,7 @@ def main(argv=None):
     s.add_argument("--task", default=""); s.add_argument("--task-file"); s.add_argument("--parent")
     s.add_argument("--source", action="append", default=[]); s.add_argument("--model")
     s.add_argument("--no-review", action="store_true"); s.add_argument("--db", default=None)
+    s.add_argument("--keep-whole", default=None, help="why a step the split check flags must stay one part (recorded)")
     s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--board", default=None, help="an attached board's id (repos/<id>/ in the Artifact): the step goes "
                    "on its train (default: this board, or the one attached board that holds the train)")
@@ -7504,7 +7574,7 @@ def main(argv=None):
                 with open(a.task_file, encoding="utf-8") as fh:
                     task = fh.read()
             res = step_new(a.train, a.part, a.title or a.part, task=task, parent=a.parent, sources=a.source,
-                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board)
+                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board, keep_whole=a.keep_whole)
         elif a.action == "open":
             res = {"steps": step_open(a.db)}
         elif a.action == "find":
