@@ -460,7 +460,7 @@ class Install(unittest.TestCase):
                 for f in set(re.findall(r"hooks/kit/(kit_\w+\.py)", text)):
                     self.assertTrue((self.t / ".agents" / "hooks" / "kit" / f).is_file(), f)
                 if extra:
-                    self.assertNotIn("PostInvocation", text)
+                    self.assertNotIn("PreInvocation", text)  # board-only event; PostInvocation carries kit_memory_jit.py (memory)
 
 
 if __name__ == "__main__":
