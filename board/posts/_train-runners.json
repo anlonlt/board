@@ -1,0 +1,10 @@
+{
+ "column": "info",
+ "created_at": "2026-11-26T20:28:04Z",
+ "from": "orchestrator",
+ "goal": "Every step runs where it fits best: each platform's profile is known from a test, and the kit suggests the runner from the devices and platforms it remembers",
+ "kind": "train",
+ "status": "open",
+ "title": "Train runners",
+ "train": "runners"
+}
