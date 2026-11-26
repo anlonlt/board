@@ -189,5 +189,16 @@
     "allow": [
       "mcp__claude-code-remote__add_repo"
     ]
-  }
+  },
+  "deniedMcpServers": [
+    {
+      "serverName": "992a93b1-470f-4dd6-95ed-36e07669d518"
+    },
+    {
+      "serverName": "claude.ai Vercel"
+    },
+    {
+      "serverName": "Vercel"
+    }
+  ]
 }
