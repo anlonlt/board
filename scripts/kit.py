@@ -236,12 +236,35 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
         min_seq = conn.execute("SELECT COALESCE(MIN(seq), 0) FROM changes").fetchone()[0]
         can_delta = (not full) and bool(st.get("cursor")) and last_seq > 0 and (min_seq == 0 or last_seq >= min_seq - 1)
         if not can_delta:
+            # CL44 (item 7): a full sync never deletes a mirror file that git added or changed unless the board
+            # explicitly deleted it (its changes log). Missing files not deleted by the board are kept and imported.
+            try:
+                deleted = {(c, i) for c, i in conn.execute(
+                    "SELECT DISTINCT collection, doc_id FROM changes WHERE op='delete' AND collection IN ('posts','comments')"
+                ).fetchall()}
+            except sqlite3.Error:
+                deleted = set()
             tmp = tempfile.mkdtemp(prefix="kit-sync-db-")
+            imported_from_mirror = 0
             try:
                 for coll in ("posts", "comments"):
                     os.makedirs(os.path.join(tmp, coll), exist_ok=True)
+                    db_docs = {}
                     for doc_id, raw in conn.execute("SELECT doc_id, data FROM docs WHERE collection=?", (coll,)):
-                        write_doc(os.path.join(tmp, coll, doc_id + ".json"), json.loads(raw))
+                        doc = json.loads(raw)
+                        db_docs[doc_id] = doc
+                        write_doc(os.path.join(tmp, coll, doc_id + ".json"), doc)
+                    old_mirror = load_dir(m + "/board", coll)
+                    for doc_id, mdoc in old_mirror.items():
+                        if doc_id not in db_docs and (coll, doc_id) not in deleted:
+                            write_doc(os.path.join(tmp, coll, doc_id + ".json"), mdoc)
+                            conn.execute(
+                                "INSERT OR IGNORE INTO docs(collection, doc_id, version, data, updated_at) VALUES (?, ?, 1, ?, ?)",
+                                (coll, doc_id, json.dumps(mdoc, ensure_ascii=False), now),
+                            )
+                            imported_from_mirror += 1
+                if imported_from_mirror:
+                    conn.commit()
                 res = sync(m, tmp, now, full=True)
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
@@ -734,12 +757,29 @@ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
     token = _resolve_board_token(token)
     branch = branch or BRANCH
     repo = m if os.path.isdir(os.path.join(m, ".git")) or os.path.isfile(os.path.join(m, ".git")) else ROOT
-    ref = "refs/remotes/origin/" + branch
-    git(repo, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:%s" % (branch, ref))
-    if git(repo, "rev-parse", "--verify", "--quiet", ref).returncode != 0:
+    remote_ref = "refs/remotes/origin/" + branch
+    local_ref = "refs/heads/" + branch
+    git(repo, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:%s" % (branch, remote_ref))
+    has_remote = git(repo, "rev-parse", "--verify", "--quiet", remote_ref).returncode == 0
+    has_local = git(repo, "rev-parse", "--verify", "--quiet", local_ref).returncode == 0
+    if not has_remote and not has_local:
         return {"status": "no git copy (origin/%s)" % branch, "from_git": 0, "added": 0, "kept_here": 0}
-    head = _git_checked(repo, "rev-parse", ref).strip()
-    remote = _git_board_docs(repo, ref)
+    remote_head = _git_checked(repo, "rev-parse", remote_ref).strip() if has_remote else ""
+    local_head = _git_checked(repo, "rev-parse", local_ref).strip() if has_local else ""
+    head = remote_head or local_head
+    # CL44 (item 7): read the newest of BOTH origin/<branch> and local <branch>, never origin alone, so unpushed
+    # commits on the local mirror branch are preserved and brought onto the board instead of being overwritten.
+    remote = _git_board_docs(repo, remote_ref) if has_remote else {}
+    if has_local and local_head != remote_head:
+        for k, (ldata, lgt) in _git_board_docs(repo, local_ref).items():
+            if k not in remote:
+                remote[k] = (ldata, lgt)
+            elif k[0] == "seen":
+                remote[k] = (merge_board_seen(remote[k][0], ldata), max(remote[k][1], lgt))
+            elif lgt and (not remote[k][1] or lgt > remote[k][1]):
+                remote[k] = (ldata, lgt)
+        if not has_remote or git(repo, "merge-base", "--is-ancestor", remote_ref, local_ref).returncode == 0:
+            head = local_head
     db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
     local_t = {}
     if os.path.isfile(db):
@@ -1254,10 +1294,20 @@ def artifact_blobs_text(r):
 
 def stale_copy():
     """CL30: '' when the scripts may read the local copy, else why not (an Artifact board whose copy was never loaded,
-    or loaded longer ago than kit.artifact.fresh_min, 15). $KIT_STALE_OK=1 reads it anyway."""
+    or loaded longer ago than kit.artifact.fresh_min, 15). $KIT_STALE_OK=1 reads it anyway.
+    CL44: local agy / local CLI sessions running against a local board server (`kit.mode == 'local'` with a non-claude.ai
+    board_url, outside Claude Code Web) are not blocked by the Claude-Web Artifact STALE gate unless KIT_ARTIFACT_URL is
+    explicitly forced."""
     if not attached_board() or os.environ.get("KIT_STALE_OK"):
         return ""
-    k = _kit_config().get("kit") or {}
+    c = _kit_config()
+    k = c.get("kit") or {}
+    if not _is_web() and not os.environ.get("KIT_ARTIFACT_URL"):
+        mode = str(k.get("mode") or "").strip().lower()
+        rt = str(k.get("runtime") or "").strip().lower()
+        burl = str(c.get("board_url") or "")
+        if mode == "local" and rt != "claude" and "claude.ai/" not in burl:
+            return ""
     try:
         cap = float(((k.get("artifact") if isinstance(k.get("artifact"), dict) else {}) or {}).get("fresh_min", 15))
     except (TypeError, ValueError):
@@ -2421,34 +2471,55 @@ def post_person(d):
 
 
 def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=False):
-    """List open cards attributed to a runner (e.g. lmarena, claude-chrome) or person/role from SQLite or mirror."""
+    """List open cards (including runner-assigned planned/in-progress train steps) attributed to a runner or person/role."""
     rf = (runner or "").strip().lower()
     ff = (for_owner or "").strip().lower()
     posts = {}
-    db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
-    if os.path.isfile(db):
-        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
-        try:
-            for did, raw in conn.execute("SELECT doc_id, data FROM docs WHERE collection='posts'"):
-                if did.startswith("_"):
-                    continue
-                try:
-                    posts[did] = json.loads(raw)
-                except ValueError:
-                    pass
-        finally:
-            conn.close()
-    elif os.path.isdir(os.path.join(m, "board", "posts")):
-        for did, doc in load_dir(os.path.join(m, "board"), "posts").items():
-            if not did.startswith("_"):
-                posts[did] = doc
+    if db_path is None:
+        # Try local board.db first (if non-empty), else live local board server (works from git worktrees), else mirror.
+        local_db = os.path.join(ROOT, ".kit", "board_data", "board.db")
+        if os.path.isfile(local_db):
+            posts, _ = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=local_db)
+        if not posts:
+            try:
+                res = _board_request(local_board_url(), "db/posts", token=_resolve_board_token(None))
+                for row in res.get("docs") or []:
+                    did = row.get("id")
+                    data = row.get("data")
+                    if did and isinstance(data, dict):
+                        posts[did] = data
+            except Exception:
+                posts = {}
+        if not posts:
+            posts, _ = _load_board_docs(m, db_path=None)
+    else:
+        posts, _ = _load_board_docs(m, db_path=db_path)
+
+    # Inherit runner from _trains rows if a step post omits it, and track active train step states.
+    train_runners = {}
+    trains_doc = posts.get("_trains")
+    if isinstance(trains_doc, dict):
+        for trow in trains_doc.get("rows") or []:
+            if not isinstance(trow, dict):
+                continue
+            tpid = str(trow.get("post") or "").strip()
+            trun = str(trow.get("runner") or "").strip()
+            if tpid and trun:
+                train_runners[tpid] = trun
+
+    done_statuses = {"complete", "completed", "done", "dropped"}
     rows = []
     for pid, d in posts.items():
+        if pid.startswith("_") or not isinstance(d, dict):
+            continue
         if d.get("removed") or d.get("column") == "done":
+            continue
+        st = str(d.get("status") or "").strip().lower()
+        if st in done_statuses:
             continue
         if unblocked_only and _is_card_blocked(d, posts):
             continue
-        pr = str(d.get("runner") or "").strip()
+        pr = str(d.get("runner") or train_runners.get(pid) or "").strip()
         pf = post_person(d)
         if rf and pr.lower() != rf:
             continue
@@ -2457,18 +2528,23 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
         if not rf and not ff and not pr and not pf:
             continue
         prio = int(d.get("priority") or 3)
-        rows.append((prio, pid, pr, pf, d.get("column") or "todo", str(d.get("title") or "(untitled)"), str(d.get("body") or "")))
+        rows.append((prio, pid, pr, pf, d.get("column") or "todo", st, str(d.get("train") or "").strip(),
+                     str(d.get("part") or "").strip(), str(d.get("title") or "(untitled)"), str(d.get("body") or "")))
     rows.sort(key=lambda x: (x[0], x[1]))
     if not rows:
         who = ("runner=%s" % runner if runner else "") + (" for=%s" % for_owner if for_owner else "")
         return "queue%s: 0 open cards" % ((" (" + who.strip() + ")") if who.strip() else "")
     out = []
-    for prio, pid, pr, pf, col, title, body in rows:
+    for prio, pid, pr, pf, col, st, tr, part, title, body in rows:
         tags = []
         if pr:
             tags.append("@" + pr)
         if pf:
             tags.append("for:" + pf)
+        if tr:
+            tags.append("train:" + tr + ("/" + part if part else ""))
+        if st in ("planned", "in progress", "in_progress"):
+            tags.append(st)
         first = body.strip().splitlines()[0][:100] if body.strip() else ""
         out.append("P%d [%s] %s (%s) — %s%s" % (prio, col, pid, " ".join(tags) or "unassigned", title, (" | " + first) if first else ""))
     return "\n".join(out) + "\n(%d card%s)" % (len(rows), "" if len(rows) == 1 else "s")
@@ -3207,24 +3283,28 @@ def portfolio_summary(config_path=None, roots=None):
 
 
 def _load_board_docs(m, db_path=None):
-    """Load posts and comments dicts from local SQLite DB, falling back to mirror worktree."""
+    """Load posts and comments dicts from local SQLite DB, falling back to mirror worktree (or git mirror) if missing or empty."""
     posts, comments = {}, {}
     db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
     if os.path.isfile(db):
-        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
         try:
-            for coll, did, raw in conn.execute("SELECT collection, doc_id, data FROM docs WHERE collection IN ('posts','comments')"):
-                try:
-                    doc = json.loads(raw)
-                except ValueError:
-                    continue
-                if coll == "posts":
-                    posts[did] = doc
-                else:
-                    comments[did] = doc
-        finally:
-            conn.close()
-        return posts, comments
+            conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+            try:
+                for coll, did, raw in conn.execute("SELECT collection, doc_id, data FROM docs WHERE collection IN ('posts','comments')"):
+                    try:
+                        doc = json.loads(raw)
+                    except ValueError:
+                        continue
+                    if coll == "posts":
+                        posts[did] = doc
+                    else:
+                        comments[did] = doc
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            posts, comments = {}, {}
+        if posts or comments:
+            return posts, comments
     for coll, target in (("posts", posts), ("comments", comments)):
         d = os.path.join(m, "board", coll)
         if not os.path.isdir(d):
@@ -3236,6 +3316,21 @@ def _load_board_docs(m, db_path=None):
                 target[fn[:-5]] = json.load(open(os.path.join(d, fn), encoding="utf-8"))
             except (OSError, ValueError):
                 pass
+    if posts or comments:
+        return posts, comments
+    # Last fallback when neither board.db nor a checked-out mirror worktree has docs (e.g. a fresh git worktree):
+    # read the newest of local board-mirror and origin/board-mirror from git objects without touching the working tree.
+    if not db_path and not str(m or "").endswith("board-mirror-missing"):
+        for ref in ("refs/heads/" + BRANCH, "refs/remotes/origin/" + BRANCH):
+            if git(ROOT, "rev-parse", "--verify", "--quiet", ref).returncode == 0:
+                gdocs = _git_board_docs(ROOT, ref)
+                for (kind, key), (doc, _) in gdocs.items():
+                    if kind == "posts":
+                        posts[key] = doc
+                    elif kind == "comments":
+                        comments[key] = doc
+                if posts or comments:
+                    return posts, comments
     return posts, comments
 
 

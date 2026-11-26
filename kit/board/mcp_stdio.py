@@ -218,6 +218,159 @@ class MCPServer:
             out.extend(["--token", self.token])
         return out
 
+    def _offline_inbox(self, args):
+        """CL44: clean offline fallback for board_inbox when the local board HTTP server is unreachable.
+        Reads unread owner comments, likes, option answers, and runner/for_owner assigned posts from local SQLite
+        (if non-empty), mirror worktree, or git board-mirror."""
+        import sqlite3
+        import io
+        import tarfile
+
+        posts, comments = {}, {}
+        db = os.path.join(self.root, ".kit", "board_data", "board.db")
+        if os.path.isfile(db):
+            try:
+                conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
+                try:
+                    for coll, did, raw in conn.execute(
+                        "SELECT collection, doc_id, data FROM docs WHERE collection IN ('posts','comments')"
+                    ):
+                        try:
+                            doc = json.loads(raw)
+                        except ValueError:
+                            continue
+                        if coll == "posts":
+                            posts[did] = doc
+                        else:
+                            comments[did] = doc
+                finally:
+                    conn.close()
+            except Exception:
+                posts, comments = {}, {}
+        if not posts and not comments:
+            cfg = {}
+            try:
+                cfg = json.load(open(os.path.join(self.root, ".kit", "config.json"), encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+            mcfg = cfg.get("mirror") if isinstance(cfg.get("mirror"), dict) else {}
+            mrel = mcfg.get("path") or "../board-mirror"
+            mpath = mrel if os.path.isabs(mrel) else os.path.normpath(os.path.join(self.root, mrel))
+            for coll, target in (("posts", posts), ("comments", comments)):
+                d = os.path.join(mpath, "board", coll)
+                if not os.path.isdir(d):
+                    continue
+                for fn in sorted(os.listdir(d)):
+                    if not fn.endswith(".json"):
+                        continue
+                    try:
+                        target[fn[:-5]] = json.load(open(os.path.join(d, fn), encoding="utf-8"))
+                    except (OSError, ValueError):
+                        pass
+            if not posts and not comments:
+                branch = mcfg.get("branch") or "board-mirror"
+                for ref in ("refs/heads/" + branch, "refs/remotes/origin/" + branch):
+                    try:
+                        arc = subprocess.run(
+                            ["git", "-C", self.root, "archive", "--format=tar", ref, "board"],
+                            capture_output=True, timeout=30,
+                        )
+                    except (OSError, subprocess.SubprocessError):
+                        break
+                    if arc.returncode == 0 and arc.stdout:
+                        try:
+                            with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
+                                for mem in tf.getmembers():
+                                    parts = mem.name.lstrip("./").split("/")
+                                    if not mem.isfile() or len(parts) != 3 or parts[1] not in ("posts", "comments") or not parts[2].endswith(".json"):
+                                        continue
+                                    try:
+                                        doc = json.loads(tf.extractfile(mem).read().decode("utf-8"))
+                                    except (ValueError, UnicodeDecodeError, AttributeError):
+                                        continue
+                                    if isinstance(doc, dict):
+                                        (posts if parts[1] == "posts" else comments)[parts[2][:-5]] = doc
+                        except Exception:
+                            pass
+                        if posts or comments:
+                            break
+
+        since = args.get("since")
+        out_comments, likes, answers = [], [], []
+        for cid, d in sorted(comments.items()):
+            if not isinstance(d, dict):
+                continue
+            by = str(d.get("by") or "")
+            person = ("@%s, a collaborator (not the owner)" % by) if (by and by not in ("owner", "guest")) else (
+                "a viewer (not the owner)" if d.get("from") == "viewer" else ""
+            )
+            if d.get("from") != "owner" and not person:
+                continue
+            if d.get("read") is True:
+                continue
+            if since and str(d.get("created_at") or "") < str(since):
+                continue
+            item = {
+                "id": cid,
+                "post_id": d.get("post_id"),
+                "created_at": d.get("created_at"),
+                "thread_id": d.get("thread_id"),
+                "reply_to": d.get("reply_to"),
+            }
+            if person:
+                item["author"] = person
+            if d.get("like") is True:
+                item["comment_id"] = d.get("comment_id")
+                likes.append(item)
+            elif d.get("answer"):
+                item["answer"] = d.get("answer")
+                answers.append(item)
+            else:
+                item["text"] = d.get("text") or ""
+                out_comments.append(item)
+
+        out = {
+            "total": len(out_comments) + len(likes) + len(answers),
+            "comments": out_comments,
+            "likes": likes,
+            "answers": answers,
+            "watcher_status": "offline",
+            "pending_threads": 0,
+            "offline": True,
+        }
+        if args.get("runner") or args.get("for_owner"):
+            rf = str(args.get("runner") or "").strip().lower()
+            ff = str(args.get("for_owner") or "").strip().lower()
+            done_statuses = {"complete", "completed", "done", "dropped"}
+            assigned = []
+            for pid, pd in posts.items():
+                if pid.startswith("_") or not isinstance(pd, dict):
+                    continue
+                if pd.get("removed") or pd.get("column") == "done":
+                    continue
+                if str(pd.get("status") or "").strip().lower() in done_statuses:
+                    continue
+                pr = str(pd.get("runner") or "").strip().lower()
+                pf = str(pd.get("for") or pd.get("assignee") or pd.get("assigned_to") or "").strip().lower()
+                if rf and pr != rf:
+                    continue
+                if ff and pf != ff:
+                    continue
+                assigned.append({
+                    "id": pid,
+                    "title": pd.get("title") or "",
+                    "column": pd.get("column") or "todo",
+                    "priority": pd.get("priority") or 3,
+                    "runner": pd.get("runner") or "",
+                    "for": pd.get("for") or pd.get("assignee") or pd.get("assigned_to") or "",
+                    "status": pd.get("status") or "",
+                    "body": str(pd.get("body") or "")[:300],
+                })
+            assigned.sort(key=lambda x: (int(x["priority"] or 9), x["id"]))
+            out["assigned_posts"] = assigned
+            out["assigned_total"] = len(assigned)
+        return True, json.dumps(out, ensure_ascii=False)
+
     def call_tool(self, name, args):
         args = args or {}
         if name == "board_inbox":
@@ -228,7 +381,10 @@ class MCPServer:
                 cmd.extend(["--runner", str(args["runner"])])
             if args.get("for_owner"):
                 cmd.extend(["--for", str(args["for_owner"])])
-            return self._run_py(self.cli_py, cmd)
+            ok, out = self._run_py(self.cli_py, cmd)
+            if not ok and any(tok in out for tok in ("cannot reach board server", "Connection refused", "URLError", "timed out")):
+                return self._offline_inbox(args)
+            return ok, out
         if name == "board_queue":
             cmd = ["queue"]
             if args.get("runner"):
@@ -347,13 +503,29 @@ class MCPServer:
         }
 
 
+def _default_root():
+    """Worktree-safe root resolution: parent of .kit/ when run as .kit/mcp_stdio.py, else walk up from cwd."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if os.path.basename(here) == ".kit":
+        return os.path.dirname(here)
+    cur = os.path.abspath(os.getcwd())
+    for _ in range(6):
+        if os.path.isdir(os.path.join(cur, ".kit")):
+            return cur
+        up = os.path.dirname(cur)
+        if up == cur:
+            break
+        cur = up
+    return os.path.abspath(os.getcwd())
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Stdlib MCP stdio adapter for board kit")
-    ap.add_argument("--root", default=os.getcwd())
+    ap.add_argument("--root", default=None)
     ap.add_argument("--board-url", default=None)
     ap.add_argument("--token", default=None)
     a = ap.parse_args(argv)
-    srv = MCPServer(a.root, board_url=a.board_url, token=a.token)
+    srv = MCPServer(a.root or _default_root(), board_url=a.board_url, token=a.token)
     for line in sys.stdin:
         line = line.strip()
         if not line:

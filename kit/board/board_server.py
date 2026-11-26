@@ -3525,13 +3525,50 @@ def _post_sig(q):
     return _base36(h) + "." + _base36(n_units)
 
 
+def _mirror_git_docs(root_dir, ref):
+    """Read board/posts, board/comments, board/seen and their last-commit UTC timestamps from a git ref."""
+    import io
+    import tarfile
+
+    arc = subprocess.run(
+        ["git", "-C", root_dir, "archive", "--format=tar", ref, "board"],
+        capture_output=True,
+        timeout=180,
+    )
+    if arc.returncode != 0 or not arc.stdout:
+        return None, {}
+    ts = {}
+    log = subprocess.run(
+        ["git", "-C", root_dir, "log", "--format=@%cI", "--name-only", ref, "--", "board/posts", "board/comments", "board/seen"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    ).stdout
+    cur = ""
+    for line in log.splitlines():
+        if line.startswith("@"):
+            raw = line[1:].strip()
+            try:
+                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                cur = dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                cur = raw
+            continue
+        p = line.strip()
+        if p.endswith(".json") and p not in ts:
+            ts[p] = cur
+    return arc.stdout, ts
+
+
 def seed_from_mirror(root_dir, store, branch=None, force=False):
     """Import board/posts/*.json and board/comments/*.json from git mirror branch into SQLite.
 
-    Reads directly from git objects (origin/<branch>, falling back to <branch>) in one `git archive`
-    packfile fetch without modifying the working tree. Existing docs in SQLite are preserved unless
-    force=True. Also imports board/seen.json if present and seeds data/users/owner/board-seen for
-    imported historical posts so they do not appear unread on first boot.
+    Reads directly from git objects (the newest of local <branch> and origin/<branch>; when diverged,
+    merges both keeping the newer commit per file) in `git archive` without modifying the working tree.
+    Existing docs in SQLite are preserved unless force=True. Also imports board/seen.json if present and
+    seeds data/users/owner/board-seen for imported historical posts so they do not appear unread on first boot.
     """
     import io
     import tarfile
@@ -3548,74 +3585,105 @@ def seed_from_mirror(root_dir, store, branch=None, force=False):
 
     # Explicit refspec ensures single-branch clones populate refs/remotes/origin/<branch>.
     git("fetch", "-q", "origin", "%s:refs/remotes/origin/%s" % (branch, branch))
-    ref = None
-    for cand in ("origin/" + branch, branch):
-        if git("rev-parse", "--verify", "--quiet", cand).returncode == 0:
-            ref = cand
-            break
-    if not ref:
+    remote_ref = "refs/remotes/origin/" + branch
+    local_ref = "refs/heads/" + branch
+    has_remote = git("rev-parse", "--verify", "--quiet", remote_ref).returncode == 0
+    has_local = git("rev-parse", "--verify", "--quiet", local_ref).returncode == 0
+    if not has_remote and not has_local:
         return {"ref": None, "imported": 0, "skipped": 0}
-    arc = subprocess.run(
-        ["git", "-C", root_dir, "archive", "--format=tar", ref, "board"],
-        capture_output=True,
-        timeout=180,
-    )
-    if arc.returncode != 0 or not arc.stdout:
-        return {"ref": ref, "imported": 0, "skipped": 0}
+    refs = []
+    if has_remote and has_local:
+        r_sha = git("rev-parse", remote_ref).stdout.strip()
+        l_sha = git("rev-parse", local_ref).stdout.strip()
+        if r_sha == l_sha:
+            refs = [("origin/" + branch, remote_ref)]
+        elif git("merge-base", "--is-ancestor", remote_ref, local_ref).returncode == 0:
+            # Local mirror branch has unpushed commits strictly ahead of origin: read local!
+            refs = [(branch, local_ref)]
+        elif git("merge-base", "--is-ancestor", local_ref, remote_ref).returncode == 0:
+            refs = [("origin/" + branch, remote_ref)]
+        else:
+            # Diverged: combine both refs, keeping the newer commit timestamp per document.
+            refs = [("origin/" + branch, remote_ref), (branch, local_ref)]
+    elif has_remote:
+        refs = [("origin/" + branch, remote_ref)]
+    else:
+        refs = [(branch, local_ref)]
 
+    ref_label = "+".join(lbl for lbl, _ in refs)
+    combined_docs = {}  # (coll, doc_id) -> (data, ts_str)
     imported = skipped = blobs_restored = 0
     sync_cursor = ""
     mirror_seen = {}
     imported_posts = {}
     referenced_blobs = set()
-    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
-        for member in tf.getmembers():
-            if not member.isfile():
-                continue
-            name = tar_name(member.name)
-            parts = name.split("/")
-            if len(parts) == 3 and parts[0] == "board" and parts[1] == "blobs":
-                bfn = parts[2]
-                if re.fullmatch(r"[a-fA-F0-9]{16,64}(\.json)?", bfn):
-                    dst = os.path.join(store.blob_dir, bfn)
-                    if force or not os.path.exists(dst):
-                        fobj = tf.extractfile(member)
-                        if fobj is not None:
-                            with open(dst, "wb") as out_fh:
-                                out_fh.write(fobj.read())
-                            if not bfn.endswith(".json"):
-                                blobs_restored += 1
-                continue
-            if not member.name.endswith(".json"):
-                continue
-            fobj = tf.extractfile(member)
-            if fobj is None:
-                continue
-            raw_bytes = fobj.read()
-            try:
-                raw_text = raw_bytes.decode("utf-8")
-                data = json.loads(raw_text)
-            except (UnicodeDecodeError, ValueError):
-                continue
-            for bid in re.findall(r"/_blob/([a-fA-F0-9]{16,64})", raw_text):
-                referenced_blobs.add(bid)
-            if name == "board/sync.json" and isinstance(data, dict):
-                sync_cursor = str(data.get("cursor") or "")
-                continue
-            if name in ("board/seen.json", "board/seen/owner.json") and isinstance(data, dict):
-                seen_map = data.get("posts") if isinstance(data.get("posts"), dict) else data
-                _merge_board_seen_posts(mirror_seen, seen_map)
-                continue
-            if len(parts) != 3 or parts[0] != "board" or parts[1] not in ("posts", "comments"):
-                continue
-            coll, doc_id = parts[1], parts[2][:-5]
-            if not force and store.get_doc(coll, doc_id).get("exists"):
-                skipped += 1
-                continue
-            store.set_doc(coll, doc_id, data)
-            imported += 1
-            if coll == "posts":
-                imported_posts[doc_id] = data
+    any_archive = False
+
+    for _, gref in refs:
+        tar_bytes, ts_map = _mirror_git_docs(root_dir, gref)
+        if not tar_bytes:
+            continue
+        any_archive = True
+        with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:*") as tf:
+            for member in tf.getmembers():
+                if not member.isfile():
+                    continue
+                name = tar_name(member.name)
+                parts = name.split("/")
+                if len(parts) == 3 and parts[0] == "board" and parts[1] == "blobs":
+                    bfn = parts[2]
+                    if re.fullmatch(r"[a-fA-F0-9]{16,64}(\.json)?", bfn):
+                        dst = os.path.join(store.blob_dir, bfn)
+                        if force or not os.path.exists(dst):
+                            fobj = tf.extractfile(member)
+                            if fobj is not None:
+                                with open(dst, "wb") as out_fh:
+                                    out_fh.write(fobj.read())
+                                if not bfn.endswith(".json"):
+                                    blobs_restored += 1
+                    continue
+                if not member.name.endswith(".json"):
+                    continue
+                fobj = tf.extractfile(member)
+                if fobj is None:
+                    continue
+                raw_bytes = fobj.read()
+                try:
+                    raw_text = raw_bytes.decode("utf-8")
+                    data = json.loads(raw_text)
+                except (UnicodeDecodeError, ValueError):
+                    continue
+                for bid in re.findall(r"/_blob/([a-fA-F0-9]{16,64})", raw_text):
+                    referenced_blobs.add(bid)
+                if name == "board/sync.json" and isinstance(data, dict):
+                    sc = str(data.get("cursor") or "")
+                    if sc > sync_cursor:
+                        sync_cursor = sc
+                    continue
+                if name in ("board/seen.json", "board/seen/owner.json") and isinstance(data, dict):
+                    seen_map = data.get("posts") if isinstance(data.get("posts"), dict) else data
+                    _merge_board_seen_posts(mirror_seen, seen_map)
+                    continue
+                if len(parts) != 3 or parts[0] != "board" or parts[1] not in ("posts", "comments"):
+                    continue
+                coll, doc_id = parts[1], parts[2][:-5]
+                key = (coll, doc_id)
+                mts = ts_map.get(name, "")
+                if key not in combined_docs or (mts and mts >= combined_docs[key][1]):
+                    combined_docs[key] = (data, mts)
+
+    if not any_archive:
+        return {"ref": ref_label, "imported": 0, "skipped": 0}
+
+    for (coll, doc_id), (data, _) in sorted(combined_docs.items()):
+        if not force and store.get_doc(coll, doc_id).get("exists"):
+            skipped += 1
+            continue
+        store.set_doc(coll, doc_id, data)
+        imported += 1
+        if coll == "posts":
+            imported_posts[doc_id] = data
+    ref = ref_label
 
     # Preserve/seed notification read state so historical mirror posts don't flood as unread.
     cur_seen = store.get_doc("data/users/owner", "board-seen")
@@ -3770,77 +3838,108 @@ def resolve_attached(root_dir, item):
 def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=None, embed_mode=False, preview=False, default_watcher=None, auto_sync_interval=0.0, auto_sync_push=False, attach=None):
     if host.strip().lower() not in LOOPBACK_HOSTS and not token and not preview:
         raise ValueError("refusing to bind to non-loopback host %r without --token / KIT_BOARD_TOKEN" % host)
+    # CL44: bind the HTTP socket BEFORE creating BoardStore so a port-in-use failure never leaves behind an empty
+    # 0-doc board.db that would shadow board-mirror or skip --seed-from-mirror on the next launch.
+    srv = BoardHTTPServer((host, port), None)
     data_dir = os.path.join(root_dir, ".kit", "board_data")
-    store = BoardStore(data_dir)
-    if auto_sync_interval and float(auto_sync_interval) > 0:
-        store.enable_auto_sync(root_dir, interval_sec=float(auto_sync_interval), push=auto_sync_push)
-        if port:
-            store._auto_sync_url = "http://127.0.0.1:%d" % int(port)
-            store._auto_sync_token = token or ""
+    db_path = os.path.join(data_dir, "board.db")
+    db_existed = os.path.isfile(db_path)
+    store = None
     extra_stores = {}
-    attach_specs = dict(attach or {})
-    cfg_path = os.path.join(root_dir, ".kit", "config.json")
     try:
-        cfg_data = json.load(open(cfg_path, encoding="utf-8"))
-    except (OSError, ValueError):
-        cfg_data = {}
-    unresolved = {}
-    for item in (cfg_data.get("portfolio") or []):
-        aid, apath, why = resolve_attached(root_dir, item)
-        if aid and aid not in attach_specs:
-            if apath:
-                attach_specs[aid] = apath
-            else:
-                unresolved[aid] = why
-    for aid, why in unresolved.items():
-        print("board_server: attached board %r NOT attached: %s" % (aid, why), file=sys.stderr, flush=True)
-    for aid, apath in attach_specs.items():
-        ap_abs = os.path.abspath(apath)
-        if os.path.isdir(ap_abs):
-            ast = BoardStore(os.path.join(ap_abs, ".kit", "board_data"))
-            if not ast.list_docs("posts").get("docs"):
+        store = BoardStore(data_dir)
+        actual_port = srv.server_address[1]
+        if auto_sync_interval and float(auto_sync_interval) > 0:
+            store.enable_auto_sync(root_dir, interval_sec=float(auto_sync_interval), push=auto_sync_push)
+            if actual_port:
+                store._auto_sync_url = "http://127.0.0.1:%d" % int(actual_port)
+                store._auto_sync_token = token or ""
+        attach_specs = dict(attach or {})
+        cfg_path = os.path.join(root_dir, ".kit", "config.json")
+        try:
+            cfg_data = json.load(open(cfg_path, encoding="utf-8"))
+        except (OSError, ValueError):
+            cfg_data = {}
+        unresolved = {}
+        for item in (cfg_data.get("portfolio") or []):
+            aid, apath, why = resolve_attached(root_dir, item)
+            if aid and aid not in attach_specs:
+                if apath:
+                    attach_specs[aid] = apath
+                else:
+                    unresolved[aid] = why
+        for aid, why in unresolved.items():
+            print("board_server: attached board %r NOT attached: %s" % (aid, why), file=sys.stderr, flush=True)
+        for aid, apath in attach_specs.items():
+            ap_abs = os.path.abspath(apath)
+            if os.path.isdir(ap_abs):
+                ast = BoardStore(os.path.join(ap_abs, ".kit", "board_data"))
+                if not ast.list_docs("posts").get("docs"):
+                    try:
+                        sinfo = seed_from_mirror(ap_abs, ast)
+                        if sinfo.get("imported"):
+                            print("board_server: auto-seeded attached repo %r from %s (%d docs)" % (aid, sinfo["ref"], sinfo["imported"]), flush=True)
+                    except Exception:
+                        pass
+                if auto_sync_interval and float(auto_sync_interval) > 0:
+                    # CL32: never push another repo's board-mirror from here: this clone does not own that board (an
+                    # orchestrator's Harmonize clone pushed seeded posts to anlonlt/board's board-mirror on 11-23 22:04)
+                    ast.enable_auto_sync(ap_abs, interval_sec=float(auto_sync_interval), push=False)
+                aname = aid
                 try:
-                    sinfo = seed_from_mirror(ap_abs, ast)
-                    if sinfo.get("imported"):
-                        print("board_server: auto-seeded attached repo %r from %s (%d docs)" % (aid, sinfo["ref"], sinfo["imported"]), flush=True)
-                except Exception:
+                    aname = json.load(open(os.path.join(ap_abs, ".kit", "config.json"), encoding="utf-8")).get("project") or aid
+                except (OSError, ValueError):
                     pass
-            if auto_sync_interval and float(auto_sync_interval) > 0:
-                # CL32: never push another repo's board-mirror from here: this clone does not own that board (an
-                # orchestrator's Harmonize clone pushed seeded posts to anlonlt/board's board-mirror on 11-23 22:04)
-                ast.enable_auto_sync(ap_abs, interval_sec=float(auto_sync_interval), push=False)
-            aname = aid
+                extra_stores[aid] = {"name": aname, "root": ap_abs, "store": ast}
+        if preview:
+            if not token:
+                print(
+                    "board_server: WARNING: --preview disables authentication! "
+                    "Anyone who can reach http://%s:%d can read and write this board." % (host, actual_port),
+                    file=sys.stderr,
+                    flush=True,
+                )
+            if not store.get_doc("posts", "_orchestrator").get("exists"):
+                store.set_doc("posts", "_orchestrator", {
+                    "title": "Ask the orchestrator",
+                    "column": "info",
+                    "part": "orchestrator",
+                    "priority": 3,
+                    "created_at": utc_now(),
+                    "body": "Write here for anything that is not about one post.",
+                })
+            if default_watcher is None:
+                default_watcher = "agent"
+        if default_watcher:
+            store.set_watch(default_watcher, True)
+        if notify_url is None:
+            notify_url = (NOTIFY.topic(root_dir, cfg_data.get("kit") or {}) if NOTIFY else cfg_data.get("kit", {}).get("notify_url")) or None
+        srv.RequestHandlerClass = make_handler(root_dir, store, token=token, notify_url=notify_url, embed_mode=embed_mode, extra_stores=extra_stores)
+        srv._extra_stores = extra_stores
+        return srv, store
+    except BaseException:
+        srv.server_close()
+        for rinfo in extra_stores.values():
             try:
-                aname = json.load(open(os.path.join(ap_abs, ".kit", "config.json"), encoding="utf-8")).get("project") or aid
-            except (OSError, ValueError):
+                rinfo["store"].close()
+            except Exception:
                 pass
-            extra_stores[aid] = {"name": aname, "root": ap_abs, "store": ast}
-    if preview:
-        if not token:
-            print(
-                "board_server: WARNING: --preview disables authentication! "
-                "Anyone who can reach http://%s:%d can read and write this board." % (host, port),
-                file=sys.stderr,
-                flush=True,
-            )
-        if not store.get_doc("posts", "_orchestrator").get("exists"):
-            store.set_doc("posts", "_orchestrator", {
-                "title": "Ask the orchestrator",
-                "column": "info",
-                "part": "orchestrator",
-                "priority": 3,
-                "created_at": utc_now(),
-                "body": "Write here for anything that is not about one post.",
-            })
-        if default_watcher is None:
-            default_watcher = "agent"
-    if default_watcher:
-        store.set_watch(default_watcher, True)
-    if notify_url is None:
-        notify_url = (NOTIFY.topic(root_dir, cfg_data.get("kit") or {}) if NOTIFY else cfg_data.get("kit", {}).get("notify_url")) or None
-    srv = BoardHTTPServer((host, port), make_handler(root_dir, store, token=token, notify_url=notify_url, embed_mode=embed_mode, extra_stores=extra_stores))
-    srv._extra_stores = extra_stores
-    return srv, store
+        if store is not None:
+            try:
+                cnt = store.conn.execute("SELECT COUNT(*) FROM docs").fetchone()[0]
+            except Exception:
+                cnt = 1
+            try:
+                store.close()
+            except Exception:
+                pass
+            if not db_existed and cnt == 0:
+                for suf in ("", "-wal", "-shm"):
+                    try:
+                        os.remove(db_path + suf)
+                    except OSError:
+                        pass
+        raise
 
 
 def _file_sig(path):

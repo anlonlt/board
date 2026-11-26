@@ -62,7 +62,7 @@ TABLE = [
     ("Stop", "kit_wip.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 25),
     ("Stop", "kit_web_save.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 130),
     ("Stop", "kit_say_it_once.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
-    ("Stop", "kit_usage.py", {"web": ANY, "cli": ANY}, PLAIN, 100),      # CL37: the usage ledger (no model call)
+    ("Stop", "kit_usage.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 100),  # CL37/CL44: the usage ledger (no model call)
     ("SessionEnd", "kit_usage.py", {"web": ANY, "cli": ANY}, PLAIN, 100),
     ("PreCompact", "kit_pre_compact.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
 ]
