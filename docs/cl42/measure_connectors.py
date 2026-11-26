@@ -2,6 +2,7 @@
 
 extract <transcript.jsonl> <out.json>: per-call context (input + cache read + cache creation)
   and, per MCP server, the tools it brought and the characters it adds (deferred names + instructions).
+probes <probes.json>: mean 2nd-call context per variant (baseline / deniedMcpServers Vercel / disableClaudeAiConnectors); exit 1 unless denying Vercel saves > 10,000 tokens.
 check <out.json>: recompute the totals from the saved extract and print them; exit 1 if they disagree.
 """
 import collections, json, re, sys
@@ -51,5 +52,18 @@ def check(out):
     print('OK' if ok else 'MISMATCH')
     sys.exit(0 if ok else 1)
 
+def probes(path):
+    d = json.load(open(path)); means = {}
+    for k, v in d.items():
+        if k == 'note':
+            continue
+        c2 = [sum(r['call2']) for r in v['runs'].values()]
+        c1 = [sum(r['call1']) for r in v['runs'].values()]
+        means[k] = sum(c2) / len(c2)
+        print(f"{k}: call 1 {c1}, call 2 {c2}, call 2 mean {means[k]:,.0f} ({len(c2)} runs)")
+    saved = means['A_baseline'] - means['B_denied_vercel']
+    print(f"deniedMcpServers Vercel saves {saved:,.0f}; disableClaudeAiConnectors saves {means['A_baseline'] - means['C_disable_connectors']:,.0f}")
+    sys.exit(0 if saved > 10000 else 1)
+
 if __name__ == '__main__':
-    {'extract': lambda: extract(sys.argv[2], sys.argv[3]), 'check': lambda: check(sys.argv[2])}[sys.argv[1]]()
+    {'probes': lambda: probes(sys.argv[2]), 'extract': lambda: extract(sys.argv[2], sys.argv[3]), 'check': lambda: check(sys.argv[2])}[sys.argv[1]]()
