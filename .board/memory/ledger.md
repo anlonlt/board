@@ -210,3 +210,154 @@ scope: project
 enforced_by: review
 because: owner 2026-11-27: CL59 carried CL16, CL61 merged origin/m12; both held back by the other part
 created_at: 2026-11-27T08:58:54Z
+
+## F20 (fix, active): The stop check (CL30) counts every post with no sync base as unsent: sessions told to resend ~360-490 posts they never touched (CL76's part, this orchestrator 9-14 times)
+scope: project
+enforced_by: review
+theme: stale-board-copie
+source: CL73
+created_at: 2026-11-27T09:15:12Z
+
+## F21 (fix, active): CL59's branch carried CL16's unlanded commits; CL59 held ~5 h
+scope: project
+enforced_by: review
+theme: branch-carries-other-step
+source: CL78
+created_at: 2026-11-27T09:15:13Z
+
+## F22 (fix, active): kit.py done refuses whenever main moved: CL60 merged main 3 times, CL61 twice, CL62, M3, CL72, CL71 each again after other landings
+scope: project
+enforced_by: review
+theme: merge-loop-main-moved
+source: CL78
+created_at: 2026-11-27T09:15:13Z
+
+## F23 (fix, active): Every landing conflicted every open branch in .kit/manifest.json and .kit/artifact-files/files-board.json
+scope: project
+enforced_by: review
+theme: conflict-generated-file
+source: CL71
+created_at: 2026-11-27T09:15:13Z
+
+## F24 (fix, active): R6 compared steps only by names/after/shared files; its 7 tests used those links; missed two steps on the same subject (M14 vs CL75)
+scope: project
+enforced_by: review
+theme: literal-task-not-intent
+source: CL76
+created_at: 2026-11-27T09:15:14Z
+
+## F25 (fix, active): M5 cut the orchestrator's repeat resume; nobody extended it to parts, which still read their task twice
+scope: project
+enforced_by: review
+theme: literal-task-not-intent
+source: CL77
+created_at: 2026-11-27T09:15:14Z
+
+## F26 (fix, active): CL71 fixed generated files and land, not done's must-merge-main rule (same goal)
+scope: project
+enforced_by: review
+theme: literal-task-not-intent
+source: CL78
+created_at: 2026-11-27T09:15:14Z
+
+## F27 (fix, active): Orchestrator 4 planned CL75 (needs M14's numbers) with no link to running M14; owner caught it
+scope: project
+enforced_by: review
+theme: orchestrator-error
+source: R9
+created_at: 2026-11-27T09:15:15Z
+
+## F28 (fix, active): Orchestrator 4 overwrote CL60 and CL61 real_project (both BROKEN ON HARMONIZE) with a lighter no-regression run; restored after
+scope: project
+enforced_by: review
+theme: orchestrator-error
+source: CL76
+created_at: 2026-11-27T09:15:15Z
+
+## F29 (fix, active): Orchestrator 4 answered the owner's M-line question meant for the Antigravity orchestrator and marked it read; undone
+scope: project
+enforced_by: review
+theme: orchestrator-error
+source: CL66
+created_at: 2026-11-27T09:15:15Z
+
+## F30 (fix, active): Orchestrator 4 never wrote the review-scope step it proposed; owner assumed it existed
+scope: project
+enforced_by: review
+theme: orchestrator-error
+source: CL75
+created_at: 2026-11-27T09:15:16Z
+
+## F31 (fix, active): Orchestrator 4 started orchestrator 5 without source_url: no checkout, could not land anything
+scope: project
+enforced_by: review
+theme: orchestrator-error
+source: handover.py
+created_at: 2026-11-27T09:15:16Z
+
+## F32 (fix, active): Orchestrator 4 created a duplicate post id (cl78-...-a) by updating a wrong id; marked removed
+scope: project
+enforced_by: review
+theme: orchestrator-error
+source: board_cli
+created_at: 2026-11-27T09:15:16Z
+
+## F33 (fix, active): M12's review redirect (03:00) sat ~6 h unlaunched under 'launch nothing without go'; CL61 blocked behind it
+scope: project
+enforced_by: review
+theme: redirect-not-acted
+source: CL74
+created_at: 2026-11-27T09:15:16Z
+
+## F34 (fix, active): CL59's review redirect (hold for CL16) never split out; push fix unused all day
+scope: project
+enforced_by: review
+theme: redirect-not-acted
+source: CL73
+created_at: 2026-11-27T09:15:17Z
+
+## F35 (fix, active): 35 of 43 reviews said continue after rerunning what done proves; 25 logged reviews cost $82.96, 12 found something new
+scope: project
+enforced_by: review
+theme: reviews-repeat-done
+source: CL75
+created_at: 2026-11-27T09:15:17Z
+
+## F36 (fix, active): Every Done, review start, verdict and redirect relayed through the orchestrator; delays whenever it was busy or refused create_session
+scope: project
+enforced_by: review
+theme: relay-overhead
+source: CL74
+created_at: 2026-11-27T09:15:17Z
+
+## F37 (fix, active): create_session refused by the classifier for reviews (CL71, M14) and for add_repo Harmonize, until the owner said so in chat
+scope: project
+enforced_by: review
+theme: session-refused
+source: CL74
+created_at: 2026-11-27T09:15:17Z
+
+## F38 (fix, active): Launch prompt points to docs/prompts/<post>.md and to resume, which prints the same task; plus false alarms about the part's own session and branch
+scope: project
+enforced_by: review
+theme: part-reads-twice
+source: CL77
+created_at: 2026-11-27T09:15:17Z
+
+## F39 (fix, active): Owner ordered no review/no tests; pre-push guard and kit_guard refuse pushing CL76+CL78 to main or even to a branch (--no-verify refused)
+scope: project
+enforced_by: review
+theme: guard-blocks-owner-order
+source: CL75
+created_at: 2026-11-27T09:15:18Z
+
+## F40 (fix, active): ledger fix_kinds counts only hand-written fix entries; land refusals and redirects never reached it, so repeats were never raised
+scope: project
+enforced_by: review
+theme: repeat-counter-manual
+source: CL78
+created_at: 2026-11-27T09:15:18Z
+## F20 (fix, active): the post is not on the board yet (https://claude.ai/artifact/Ek79P6H3WTPJjJVYPe9rsf): its local copy differs from what the Artifact last had. Run `python3 -I .kit/kit.py artifact push`, make the Artif
+theme: stale board copy
+source: cl78-a-part-s-branch-holds-only-its-own-work
+created_at: 2026-11-27T09:10:18Z

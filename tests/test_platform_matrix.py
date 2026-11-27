@@ -498,6 +498,7 @@ class DoneMatrix(unittest.TestCase):
         kit.check_asked = lambda p, db_path=None: ([], [])
         kit.check_his_words = lambda pid, p, db_path=None: ([], [])
         kit.check_done = lambda p, root=None, body_max=1500: ([], [])
+        kit.check_intent = lambda p, root=None: []        # CL76's gate has its own tests (test_intent_first)
         kit.plain_notes = lambda p: []
         kit.real_project_areas = lambda root=None, base=None: ["resume"]
         kit.consumers = lambda extra=None: [{"github": "anlonlt/harmonize", "name": "harmonize"}]
@@ -525,7 +526,7 @@ class DoneMatrix(unittest.TestCase):
                     rp_mode = kit.PLATFORM_RULES["real_project_run"][pl]
                     # Artifact push gate applies iff artifact_steps; missing real_project refuses iff real_project_run == "part"
                     self.assertEqual(rc, 1 if (art or rp_mode == "part") else 0, (pl, out))
-                    self.assertEqual("artifact push" in out, art, (pl, out))
+                    self.assertEqual("artifact sync" in out, art, (pl, out))
                     # real_project wording matches PLATFORM_RULES['real_project_run']
                     self.assertEqual("a part never attaches a repo (CL38)" in out, rp_mode == "orchestrator", (pl, out))
                     self.assertEqual("pending: the orchestrator runs it" in out, rp_mode == "orchestrator", (pl, out))

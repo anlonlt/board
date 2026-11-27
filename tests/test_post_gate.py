@@ -31,9 +31,15 @@ FULL = {"kit": {"autonomy": {"level": "full_auto"}}}
 BAL = {"kit": {"autonomy": {"level": "balanced"}}}
 BOOT = ("import sys; sys.path.insert(0, sys.argv[1])\nfrom board_server import start_server\n"
         "s, store = start_server(sys.argv[2], port=0, token='%s')\nprint(s.server_port, flush=True)\ns.serve_forever()\n" % TOKEN)
+# CL76: a demo step written the new way: his intent first, a test naming each case and a stress variant
+DEMO_INTENT = {"goal": "\"the demo works\"", "real": "none: a demo", "at": "2000-01-01T00:00:00Z",
+               "cases": [{"id": "I1", "text": "a", "outside": False, "not_covered": None},
+                         {"id": "I2", "text": "b", "outside": False, "not_covered": None},
+                         {"id": "I3", "text": "c", "outside": True, "not_covered": None}]}
+DEMO_TEST = "# I1 stress I1 I2 stress I2 I3 stress I3\n"
 STEP = {"title": "s", "part": "S1", "train": "t", "column": "info", "status": "in progress", "body": "b", "verdict": "It adds.", "bars": ["4 of 4 sums"],
         "artifacts": ["calc.py"], "not_checked": ["floats"], "check": "python3 -c \"import calc; assert calc.add(2, 2) == 4\"",
-        "breaks": "python3 -c \"p='calc.py'; open(p,'w').write(open(p).read().replace('a + b', 'a - b'))\"", "handoff": "h"}
+        "breaks": "python3 -c \"p='calc.py'; open(p,'w').write(open(p).read().replace('a + b', 'a - b'))\"", "handoff": "h", "intent": DEMO_INTENT, "started_at": "2000-01-01T00:00:00Z"}
 
 
 class Lanes(unittest.TestCase):
@@ -118,6 +124,7 @@ class Live(unittest.TestCase):
                 shutil.copy(str(ROOT / rel), str(self.d / ".kit" / Path(rel).name))
         self.conf({"kit": {"autonomy": {"level": "full_auto"}, "review": {"auto": "off"}}})
         (self.d / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+        (self.d / "test_calc.py").write_text(DEMO_TEST)
         env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE", "KIT_", "AGY"))}
         for a in (["init", "-q", "-b", "main"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "1"]):
             subprocess.run(["git", "-C", str(self.d)] + a, check=True, capture_output=True)
@@ -217,7 +224,7 @@ class Live(unittest.TestCase):
         self.assertIn("- his1: L'addition, \"vite\" s'il te pla\u00eet", text)                         # his words, as he wrote them
         r = self.run_("kit.py", "done", "f1")
         self.assertEqual(r.returncode, 1)
-        self.assertEqual(r.stdout.count("still has <fill"), 8, r.stdout)                             # each blank, in one answer
+        self.assertEqual(r.stdout.count("still has <fill"), 9, r.stdout)                             # each blank, in one answer
         self.assertNotIn("verdict", self.get("f1"))                                                  # nothing half sent
         import re
         say = {"lead": "L'addition marche, c'est pr\u00eat.", "verdict": "Elle additionne.", "bars": "- 4 of 4 sums (asked his1)\n- 2 of 2 signs\n  read twice",
@@ -225,8 +232,11 @@ class Live(unittest.TestCase):
                "body": "### How\n## not a field\nIt's `calc.py`, d'accord."}
         for k, v in say.items():
             text = re.sub(r"(?ms)^## %s\n.*?(?=^## \w+$|\Z)" % k, lambda m: "## %s\n%s\n\n" % (k, v), text, count=1)
+        text = re.sub(r"(?ms)^## intent\n.*?(?=^## \w+$|\Z)", lambda m: "## intent\ngoal: \"vite\"\n- I1: a\n- I2: b\n- I3 [outside]: c\nreal: none: demo\n\n", text, count=1)
         f.write_text(text)
+        self.assertEqual(self.run_("kit.py", "intent", "f1").returncode, 0)                          # CL76: his intent, before the code
         (self.d / "calc.py").write_text((self.d / "calc.py").read_text() + "# touched\n")
+        (self.d / "test_f1.py").write_text(DEMO_TEST)                                                # the step's own test of his cases
         subprocess.run(["git", "-C", str(self.d), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "c"], check=True)
         r = self.run_("kit.py", "done", "f1")
         p = self.get("f1")
