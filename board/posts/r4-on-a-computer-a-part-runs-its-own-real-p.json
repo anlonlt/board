@@ -1,10 +1,33 @@
 {
- "body": "Inspecting PLATFORM_RULES, check_real_project, part guides, lesson K2, and origin/main changes",
+ "artifacts": [
+  "kit/board/post_gate.py",
+  "kit/claude-cli/part.template.md",
+  "kit/claude/part.template.md",
+  "kit/lessons.md",
+  "kit/part.template.md",
+  "scripts/kit.py",
+  "tests/test_launch_runtime.py",
+  "tests/test_platform_matrix.py"
+ ],
+ "bars": [
+  "2 of 2 computer runners (`cli` and `agy`) switched to `part` in `PLATFORM_RULES[\"real_project_run\"]` and pinned in `EXPECTED_PLATFORM_RULES` (16 of 16 rows × 5 of 5 platforms verified)",
+  "3 of 3 part guide templates (`kit/part.template.md`, `kit/claude-cli/part.template.md`, `kit/claude/part.template.md`) and 1 of 1 lesson (`K2` in `kit/lessons.md`) updated and tested to state which platform runs the real-project check",
+  "16 of 16 tests passing in `tests/test_platform_matrix.py` (verifying `cli`/`agy` refuse missing or incomplete `real_project` with instructions, pass once recorded, and `web` keeps `pending: the orchestrator runs it`), plus 83 of 86 repository suites passing via `scripts/run_all_tests.py --keep-going` (0 R4 regressions; 3 unrelated pre-existing trunk failures)",
+  "1 of 1 real-project dry run dogfooded on a scratch copy of `anlonlt/harmonize` (install update with `--no-cmd`, `kit.py resume`, and `check_real_project` under `agy` returning `rule: part` with the local refusal)"
+ ],
+ "body": "On a computer, a part session now runs its own check on the consuming project before finishing instead of waiting for the orchestrator. Only web sessions still leave that check pending for the orchestrator, because a launched web session cannot attach another repository.\n\n### What changed\n- **`scripts/kit.py` (`PLATFORM_RULES[\"real_project_run\"]`):** flipped `\"cli\"` and `\"agy\"` from `\"computer\"` to `\"part\"`, keeping `\"web\": \"orchestrator\"` and `\"arena\"`/`\"generic\": \"computer\"`.\n- **`scripts/kit.py` (`check_real_project`, `done`, `resume_role`, `launch`, `launch_text`):**\n  - `check_real_project` in `\"part\"` mode tells the part to run the changed command on the consuming project in a scratch local clone or read-only (never push) and record `{\"project\", \"command\", \"output\"}` via `python3 -I .kit/board_cli.py update posts <post> --data '{\"real_project\": ...}'` before Done.\n  - `done()` already treats `real_project_run == \"part\"` findings as blocking `err` (`NOT READY` / `fix: real_project:`), while keeping `\"orchestrator\"` (web) as a `warn` (`note: real_project: ... pending: the orchestrator runs it`).\n  - `resume_role(\"part\")` adds an explicit `\"part\"` branch telling CLI/agy parts that `kit.py done` refuses without `real_project`; `launch()` / `launch_text()` record `real_project_run` so computer launches no longer tell the orchestrator `their real-project run is yours (CL38)`.\n- **Part guides & lesson K2:** updated `kit/part.template.md`, `kit/claude-cli/part.template.md`, `kit/claude/part.template.md`, `kit/lessons.md` (K2), and the comment in `kit/board/post_gate.py`, then synced `.kit/` copies via `python3 -I install.py . --update --no-cmd` (preserving `cmd: \"board\"` in `.kit/config.json` and orchestrator guides).\n\n### Verification\n- `tests/test_platform_matrix.py` (16/16 passed): updated `EXPECTED_PLATFORM_RULES[\"real_project_run\"]`, verified `DoneMatrix` across all 5 platforms with missing, incomplete, and complete `real_project`, verified `web` keeps `pending: the orchestrator runs it`, verified `ResumeMatrix` and `LaunchAndStepNewMatrix`, and added `test_part_guides_and_k2_document_real_project_by_platform`.\n- Full test run (`python3 -I .kit/device.py run --kind tests -- python3 scripts/run_all_tests.py --keep-going`): 83/86 suites passed (52 passed + 31 from the prior run; 4 Playwright/browser JS suites skipped cleanly; 3 unrelated pre-existing failures on `origin/main` noted in `not_checked`).\n- Dogfooded on a scratch copy of `anlonlt/harmonize` in `/tmp/r4-harmonize-dryrun` (never pushed, deleted afterward) and live against our own post before and after setting `real_project`.",
  "branch": "r4",
+ "breaks": "python3 -c 'p=\"scripts/kit.py\"; s=open(p).read(); assert \"\\\"cli\\\": \\\"part\\\",\" in s; open(p,\"w\").write(s.replace(\"\\\"cli\\\": \\\"part\\\",\", \"\\\"cli\\\": \\\"computer\\\",\", 1))'",
+ "check": "python3 -m unittest tests.test_platform_matrix tests.test_cl32_roles tests.test_cl28_brief tests.test_cl36_post_body tests.test_cl51_computer_artifact tests.test_kit_copies_current -v",
  "column": "info",
  "created_at": "2026-11-26T21:56:53Z",
  "differs": "Builds on R5's central PLATFORM_RULES table and branches on top of origin/main + origin/r7 so R7 and R4 can be reviewed together. Unlike R5 (centralized platform detection, kept real_project_run='computer') and R7 (wired kit.py launch to PLATFORM_RULES and agy), R4 switches real_project_run for local computer runners (cli/agy) to 'part', enforces real_project in kit.py done on a computer, updates part templates and lesson K2, and adds tests.",
  "from": "orchestrator",
+ "handoff": "`PLATFORM_RULES[\"real_project_run\"]` is now `\"part\"` for `cli` and `agy`, `\"orchestrator\"` for `web`, and `\"computer\"` for `arena`/`generic` (pinned in `EXPECTED_PLATFORM_RULES`). Any future part on a computer whose branch touches `compact`, `install`, `resume`, `hooks`, or `artifact` must run the changed command against the consuming project in a scratch local clone or read-only (never pushing) and record `{\"project\", \"command\", \"output\"}` in its post's `real_project` before `kit.py done` will pass. Branch `r4` is based on `origin/main` + `origin/r7` so R7 and R4 can share a common review.",
+ "not_checked": [
+  "4 browser JS suites (`test_page_layout.js`, `test_page_speed.js`, `test_page_ux.js`, `test_page_body.js`) and the browser portion of `test_strings.py` skipped because no Playwright/Chromium is installed on this machine",
+  "3 unrelated pre-existing failures on `origin/main` left untouched (outside R4 scope): `tests/test_cl54_prompt_from_post.py` (`step_new` asserts `kit.py launch` under `agy` where launcher is `invoke_subagent`), `tests/test_install_present_runtimes.py` (expects pre-CL53/memory-jit Claude hook list), and `tests/test_run_all_tests.py` (git notes test)"
+ ],
  "orchestrator": "702b0528-ed8c-482b-a8d8-9ffbbcdd8029",
  "orchestrator_device": "penguin",
  "orchestrator_name": "Antigravity orchestrator",
@@ -45,5 +68,6 @@
  "task": "On a computer, a part runs its own real-project check before Done; only on the web does the orchestrator run it. The rule \"a part never attaches a repo, the orchestrator runs the real-project check\" (K2, CL38, CL39) comes from the web: a launched web session cannot attach another repo, and only the web orchestrator's environment holds every repo. On a computer every project is a folder: M1's part read ~/french itself, and the orchestrator ran Harmonize's map in 13 s. Yet `kit.py done` says \"pending: the orchestrator runs it\" on every platform (check_real_project in scripts/kit.py), so CL44 and M1 waited on the orchestrator for a run they could have done.\n\n1. `kit.py done` on a computer (CLI or agy): the part runs the changed command on the consuming project itself, in a scratch clone or read-only, never pushing to it, and writes {\"project\", \"command\", \"output\"} in real_project; done refuses Done until it is there. On the web, it stays the orchestrator's (pending), as now.\n2. The part guides and the lesson K2 say which platform does what, in kit/part.template.md, kit/claude-cli/part.template.md and the lessons.\n3. Tests: a local done with real_project missing is refused with how to run it; a web done keeps \"pending: the orchestrator runs it\".\n",
  "title": "On a computer, a part runs its own real-project check before Done",
  "train": "runners",
- "updated_at": "2026-11-27T08:04:36Z"
+ "updated_at": "2026-11-27T08:05:14Z",
+ "verdict": "Computer parts now run and record their own real-project check before finishing, while web parts keep leaving it pending for the orchestrator."
 }
