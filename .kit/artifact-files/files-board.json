@@ -51,13 +51,8 @@
    "version": 7
   },
   ".kit+2F~claude-cli+2F~part.md": {
-<<<<<<< HEAD
-   "sha": "fa61a1349918b11191347f9523126d106aabf85100f01434e3bd069c7758d913",
-   "version": 9
-=======
    "sha": "94c452cdf864afc166b67d19f8526eb102c3ce9cd383b6381942164a7338f487",
    "version": 10
->>>>>>> origin/main
   },
   ".kit+2F~claude-cli+2F~takeover.md": {
    "sha": "d80abd018b630a43799fd04bc5de0222f88394c7807933121d98296bbf117ae8",
@@ -72,13 +67,8 @@
    "version": 7
   },
   ".kit+2F~part.md": {
-<<<<<<< HEAD
-   "sha": "7af4fa43ab52c2d0057d77dcd39383369154af59151a9156bce023a2e3fa7fde",
-   "version": 8
-=======
    "sha": "05cb12f087c1160e6114837e1623b0d87bac1a30376c303dd2a967e1eb12cb4c",
    "version": 9
->>>>>>> origin/main
   },
   "AGENTS.md": {
    "sha": "c5f984b5b918280d7156e13102aad947f22129c15953fc81f9592a885f460c15",
@@ -173,13 +163,8 @@
    "version": 8
   },
   "kit+2F~claude+2F~part.template.md": {
-<<<<<<< HEAD
-   "sha": "09092642464ee950632c23a7b6cfc4a8e8fd96432d5c3862bc732bbd08b54ab3",
-   "version": 5
-=======
    "sha": "56c5781c9216e26f0f9a80a8f4af3a09aa3791f8cc01a1c4629a62d8fd196c52",
    "version": 6
->>>>>>> origin/main
   },
   "kit+2F~claude-cli+2F~ORCHESTRATOR.template.md": {
    "sha": "4ece8a733e17e0d82fa73fb27da55336904659e41ad870c9186b5f2f8839db57",
@@ -198,13 +183,8 @@
    "version": 10
   },
   "kit+2F~claude-cli+2F~part.template.md": {
-<<<<<<< HEAD
-   "sha": "1085552c2494bab85e9f657facd8836352cb94b64220fc91a720800f8ed99c29",
-   "version": 9
-=======
    "sha": "8e473fd7069bfa7a4f1791fd078396b8384e28c522737816ea8809900f5f485e",
    "version": 10
->>>>>>> origin/main
   },
   "kit+2F~claude-cli+2F~takeover.template.md": {
    "sha": "300fea006a383684a0ae536f89fa9e7d89fcfd5139e025523de6351c4a36a353",
@@ -227,13 +207,8 @@
    "version": 8
   },
   "kit+2F~part.template.md": {
-<<<<<<< HEAD
-   "sha": "0d06c0b083322432fe446c2e23e7594f863e932412f1fdd711aef18b0cb5758f",
-   "version": 7
-=======
    "sha": "a01c920de6e7592065a8aedea24cafa039ab09b2b72c18cdb8d77b78e82fdecb",
    "version": 8
->>>>>>> origin/main
   },
   "kit+2F~skills+2F~board+2F~SKILL.md": {
    "sha": "0f665527b19f263b7f36ed722d51883a81cddcb0a4b55fb5696259a4973fdd74",
