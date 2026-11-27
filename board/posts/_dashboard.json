@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T02:36:12Z",
+ "created_at": "2026-11-27T02:43:03Z",
  "rows": [
   {
    "at": 4,
@@ -8,7 +8,7 @@
    "name": "Board data",
    "note": "Next: The board travels in git, always current (mirror synced on every step)",
    "post": "cl16-the-board-travels-in-git-always-current",
-   "state": "ready",
+   "state": "running",
    "steps": [
     "A web session reconciles its Artifact with GitHub at its start",
     "CL41's redirect resolved, so the trunk can move",
@@ -83,7 +83,7 @@
    "name": "Memory",
    "note": "Next: Install draws the first map",
    "post": "m2-install-draws-the-first-map",
-   "state": "ready",
+   "state": "running",
    "steps": [
     "A map of any project, generated from its code",
     "A resume prints only what changed",
@@ -141,7 +141,7 @@
    "name": "Takeover",
    "note": "Next: A crashed part is continued from its last checkpoint",
    "post": "cl17-a-crashed-part-is-continued-from-its-las",
-   "state": "ready",
+   "state": "running",
    "steps": [
     "A part reports to the orchestrator that started it, unless another claimed it",
     "A session always starts on the newest code from GitHub, in every checkout",
@@ -172,5 +172,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T02:36:12Z"
+ "updated_at": "2026-11-27T02:43:03Z"
 }

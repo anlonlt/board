@@ -43,10 +43,17 @@
   "output": "kit.limits.message_chars: 600 -> 200; done_message_chars: 240 -> 200; .claude/settings.json: 4 kit hook/permission lines merged in (existing lines kept): add_repo allow, kit_say_it_once.py on PreToolUse send_message|SendMessage only, CL37's usage hooks; its own say_it_once.py on PreToolUse/Stop/UserPromptSubmit/PostToolUse unchanged; the payload: REFUSED ... (limit 200), rc=2",
   "project": "anlonlt/harmonize (clone e410d31, fresh copy /tmp/cl38/r3/hz, never pushed)"
  },
+ "review": "continue",
+ "review_id": "CR-cl38-attaching-repos-on-the-web-install-py-al",
+ "review_orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "review_orchestrator_device": "web",
+ "review_orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "review_session": "session_01AE1HGhkvEUZcGXVDSarrUk",
+ "review_started": "2026-11-27T02:36:35Z",
  "session_id": "session_01AE1HGm4GLpDYDS9nBPA9AN",
  "status": "done",
  "title": "Attaching repos on the web: install.py allows add_repo, kit attach, doctor warns",
  "train": "cli",
- "updated_at": "2026-11-24T03:49:21Z",
+ "updated_at": "2026-11-27T02:41:26Z",
  "verdict": "Installs allow add_repo; kit.py attach and doctor work. Launched parts never attach: the orchestrator runs the real-project check. Messages between sessions are capped at 200 characters. Done needs the trunk merged."
 }

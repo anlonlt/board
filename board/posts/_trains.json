@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T02:41:54Z",
+ "created_at": "2026-11-27T02:43:03Z",
  "rows": [
   {
    "also": [],
@@ -19,7 +19,7 @@
    "post": "cl16-the-board-travels-in-git-always-current",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "running",
    "store": []
   },
   {
@@ -91,7 +91,7 @@
    "post": "m2-install-draws-the-first-map",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "running",
    "store": []
   },
   {
@@ -143,7 +143,7 @@
    "post": "cl17-a-crashed-part-is-continued-from-its-las",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "running",
    "store": []
   },
   {
@@ -438,8 +438,8 @@
    "part": "CL16",
    "post": "cl16-the-board-travels-in-git-always-current",
    "prompt": "",
-   "session": "session_01AE1HGjnr7WTDyCuCWMb6wL",
-   "state": "idle",
+   "session": "session_01AE1HGjUyLjArKFESowYgiB",
+   "state": "running",
    "store": []
   },
   {
@@ -449,8 +449,8 @@
    "part": "CL17",
    "post": "cl17-a-crashed-part-is-continued-from-its-las",
    "prompt": "",
-   "session": "session_01AE1HGiUM7AQsL6Y1N4AAQC",
-   "state": "idle",
+   "session": "session_01AE1HGmDCcNCZJKbZFJoqKv",
+   "state": "running",
    "store": []
   },
   {
@@ -1069,8 +1069,8 @@
    "part": "M10",
    "post": "m10-a-kind-of-bug-fixed-three-times-becomes",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGjJUZaP5MmWsTMwbP4",
+   "state": "running",
    "store": []
   },
   {
@@ -1179,11 +1179,11 @@
    "part": "M12",
    "post": "m12-the-orchestrator-hands-over-at-its-conte",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGigXaY4ApaiTBfLGWF",
+   "state": "running",
    "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T02:41:54Z"
+ "updated_at": "2026-11-27T02:43:03Z"
 }

@@ -53,11 +53,13 @@
   "output": "$ python3 -I install.py /home/user/harmonize --update   -> rc 0, 0 files KEPT\n$ grep -c 'never a `docs/*.md` file for your text|A repo `docs/*.md` file is never used' .kit/BOARD.md .kit/part.md .kit/claude-cli/part.md\n.kit/BOARD.md:1  .kit/part.md:1  .kit/claude-cli/part.md:1\n$ KIT_STALE_OK=1 python3 -I .kit/kit.py resume --role part --post cl36-... | sed -n '/How you report Done/,$p'\n## How you report Done\n0. Your result lives in your post body: the text under `##` sections, pictures as `![what](path.png)`, diagrams as ```mermaid or ```svg blocks (the page draws them); never a `docs/*.md` file for your text (`done` refuses a body made of its section embeds; CL36).\n$ KIT_INSTALL=/home/user/harmonize node kit/board/test_page_body.js   -> all passed (16 ok); on Harmonize's install before the update: 6 FAIL\n$ render_all.js: 193 existing post bodies (Harmonize's 196 posts + this board's 57; 193 have a body), old renderer vs new -> 193 identical, 0 render errors",
   "project": "Harmonize (anlonlt/harmonize, a clone at /home/user/harmonize, never pushed)"
  },
+ "review": "redirect",
+ "review_id": "CR-cl36-a-part-s-result-lives-in-its-post-post-b",
  "session_id": "session_01AE1HGgWQaEwXFhugH9vfbc",
  "shot": "node kit/board/test_page_body.js",
  "status": "complete",
  "title": "A part's result lives in its post: post bodies render diagrams and pictures, no docs file for text",
  "train": "cli",
- "updated_at": "2026-11-24T01:56:26Z",
+ "updated_at": "2026-11-27T02:41:26Z",
  "verdict": "Post bodies now draw Mermaid, SVG and inline pictures with the document viewer's renderer, the guides say a part's text lives in its post, and kit.py done refuses a body made of docs-file section embeds."
 }
