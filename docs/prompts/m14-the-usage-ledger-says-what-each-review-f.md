@@ -16,3 +16,6 @@ Each review row gets two fields, filled from the review's own board comment (CR-
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+M6: M6 counts each session's cost per command; M14 adds what a review session found (verdict, found-new) to its row, so cost per useful review shows.
