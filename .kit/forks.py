@@ -8,7 +8,7 @@ takeover case passing).
 
 Folding: what the fork adds is read out of its source as kit settings (its context limits, its rule sentences); the
 fork's line leaves settings.json and the kit's hook is wired in its place. A fork with anything the kit's hook cannot
-take as a setting (code that runs commands, a test the kit does not make, a string that is no rule) is REFUSED with
+take as a setting (code that runs commands or tests the kit's hook does not make) is REFUSED with
 what differs, and nothing of it changes. `kit.forks.keep` {path: reason} keeps one on purpose: it stays wired and every
 update and `kit.py doctor` name it with that reason (never kept silently).
 
@@ -34,7 +34,6 @@ JOBS = (
 KIT_MARKS = ("/hooks/kit/", "/.kit/hook.py", "/.kit/hooks/", "/.kit/kit.py", "/.kit/user_hooks.py")
 ROLES = ("orchestrator", "clerk")
 # Words a rule sentence has: what a session must or must not do
-RULE_WORDS = re.compile(r"\b(never|no|not|don't|do not|must|always|only|without|instead)\b", re.I)
 
 
 def is_kit_line(cmd):
@@ -145,7 +144,15 @@ HANDOVER_CALLS = {"open", "load", "loads", "dumps", "dump", "print", "exit", "ge
                   "rstrip", "lstrip", "sorted", "reversed", "bool", "float", "tuple", "next", "iter", "close", "fromkeys",
                   "encode", "decode", "now", "isoformat", "strftime", "utcnow", "time", "remove", "unlink", "touch",
                   "Path", "exists", "is_file", "read_text", "write_text", "update", "copy", "pop", "count", "index",
-                  "isdigit", "splitlines", "hexdigest", "sha256", "md5", "hash", "round", "abs", "type", "repr", "id"}
+                  "isdigit", "splitlines", "hexdigest", "sha256", "md5", "hash", "round", "abs", "type", "repr", "id",
+                  "insert", "path", "environ", "stat", "getmtime", "isdir", "listdir", "walk", "glob", "realpath", "relpath",
+                  "exc_info", "stderr", "flush", "Exception", "ValueError", "OSError", "KeyError", "TypeError", "loads",
+                  "reader", "lines", "rfind", "find", "partition", "rpartition", "zfill", "ljust", "rjust", "casefold"}
+# Its own way of reading the role or the context (is_orchestrator(), role_of(), tokens_used()...): the kit's hook reads
+# them itself (M12's one role function), so a fork's reading is what the fold replaces, never a difference
+ROLE_READING = re.compile(r"(?i)role|orchestrator|clerk|part|session|transcript|token|context|usage|limit|threshold")
+HEADER = re.compile(r"(?i)^(?:handover required|hand[ -]?over(?: now| required)?)\b[^:]*:\s*")
+NUMBERS = re.compile(r"%[-\d.]*[sdfi]|%\(\w+\)[sdfi]|\{[\w.:]*\}")
 NOT_A_RULE = re.compile(r"^[\w./$%{}()\[\]:*+?|\\^-]*$")   # a key, a path, a pattern, a format: plumbing, not a message
 
 
@@ -164,7 +171,7 @@ def fold_handover(src, kit_text, lang="py"):
             strs, calls = _strings_py(src)
         except SyntaxError as e:
             return settings, ["its Python does not parse (%s)" % e]
-        runs = sorted(c for c in calls if c and c not in HANDOVER_CALLS)
+        runs = sorted(c for c in calls if c and c not in HANDOVER_CALLS and not ROLE_READING.search(c))
         if runs:
             differs.append("runs code the kit's hook does not: %s()" % ", ".join(runs))
     else:   # a shell fork: only echo/printf/cat/jq/test lines are a message; anything else runs a command
@@ -180,22 +187,25 @@ def fold_handover(src, kit_text, lang="py"):
                     differs.append("runs a command the kit's hook does not: %s" % ln[:80])
     kit_words = _words(kit_text)
     rules = {r: [] for r in ROLES}
+    dropped = []
     for s in strs:
         if len(s) < 25 or NOT_A_RULE.match(s.strip()):
             continue
         role = "clerk" if re.search(r"\bclerk\b", s, re.I) and not re.search(r"\borchestrator\b", s, re.I) else "orchestrator"
         for sent in _sentences(s):
-            sent = re.sub(r"(?i)^handover required[^:]*:\s*", "", sent)   # its own header: the kit says it
-            if len(sent) < 20 or _said_by_kit(sent, kit_words):
+            sent = HEADER.sub("", sent)                     # its own header ("HAND OVER NOW: ..."): the kit says its own
+            if len(sent.split()) < 4 or _said_by_kit(sent, kit_words):
                 continue
-            if RULE_WORDS.search(sent):
-                if sent not in rules[role]:
-                    rules[role].append(sent)
-            else:
-                differs.append("says what the kit's hook does not, and it is no rule: %r" % sent[:100])
+            if NUMBERS.search(sent):                        # "your context is at %dk (limit %dk)": the kit says its numbers
+                dropped.append(sent)
+                continue
+            if sent not in rules[role]:
+                rules[role].append(sent)                    # an instruction to the session: the project's rule now
     for role in ROLES:
         if rules[role]:
             settings["kit.%s.handover_rules" % role] = rules[role]
+    if dropped:
+        settings["_dropped"] = dropped
     return settings, differs
 
 

@@ -42,27 +42,30 @@ import os
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from roles import is_orchestrator  # noqa: E402  (Harmonize's own role reading, as in its real file)
+
 ORCH_LIMIT = 300_000
 CLERK_LIMIT = 80_000
 
 
-def role_of(path):
+def tokens_of(path):
+    used = 0
     with open(path) as fh:
         for line in fh:
-            e = json.loads(line)
-            if e.get("type") == "user":
-                text = str(e.get("message", {}).get("content", "")).lower()
-                return "clerk" if "clerk" in text else ("orchestrator" if "orchestrator" in text else None)
-    return None
+            u = json.loads(line).get("message", {}).get("usage") or {}
+            used = sum(int(u.get(k) or 0) for k in ("input_tokens", "cache_read_input_tokens")) or used
+    return used
 
 
 def main():
     data = json.load(sys.stdin)
-    role = role_of(data.get("transcript_path", ""))
-    if role == "orchestrator":
-        print(json.dumps({"decision": "block", "reason": "HANDOVER REQUIRED: write .story/state/orchestrator.md, "
-                          "commit and push. %s"}))
-    elif role == "clerk":
+    tp = data.get("transcript_path", "")
+    used = tokens_of(tp)
+    if is_orchestrator(tp) and used >= ORCH_LIMIT:
+        print(json.dumps({"decision": "block", "reason": "HAND OVER NOW: your context is at %%dk (limit %%dk). "
+                          "Write .story/state/orchestrator.md, commit and push. %s" %% (used // 1000, ORCH_LIMIT // 1000)}))
+    elif used >= CLERK_LIMIT and "clerk" in tp:
         print(json.dumps({"decision": "block", "reason": "HANDOVER REQUIRED: the clerk never re-arms its listener past 80k."}))
 
 
@@ -142,6 +145,8 @@ class FoldAtUpdate(unittest.TestCase):
         self.assertEqual(k["orchestrator"]["context_limit_k"], 300, "its orchestrator limit, a setting now")
         self.assertEqual(k["clerk"]["context_limit_k"], 80, "the clerk at 80k")
         self.assertIn(TIMERS, k["orchestrator"]["handover_rules"], "no fallback timers, a setting now")
+        self.assertFalse(any("context is at" in x or "HAND OVER" in x for x in k["orchestrator"]["handover_rules"]),
+                         "its header and numbers are the kit's to say, never a rule")
         self.assertIn("the clerk never re-arms its listener past 80k.", k["clerk"]["handover_rules"])
         self.assertNotIn("SHADOW", doctor(self.t))
         # the fork's own cases, against the kit's hook

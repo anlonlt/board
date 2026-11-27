@@ -923,8 +923,12 @@ def fold_forks(t, c, dry, log):
             refused.append("%s (%s, %s) shadows the kit's %s and cannot be folded: %s" % (
                 f["path"], f["job"], "/".join(f["events"]), f["kit"], "; ".join(differs)))
             continue
+        dropped = settings.pop("_dropped", [])
         for key, value in settings.items():
             forks.set_dotted(c, key, value)
+        if dropped:
+            log.append("fork %s: not kept as rules, the kit's hook says its own numbers here: %s" % (
+                f["path"], " | ".join(dropped)))
         n = forks.unwire(s, f)
         log.append("fork folded: %s (%s) -> the kit's %s; %s; %d line(s) out of .claude/settings.json (the file stays, "
                    "unused: delete it when you like)" % (f["path"], f["job"], f["kit"], ", ".join(
