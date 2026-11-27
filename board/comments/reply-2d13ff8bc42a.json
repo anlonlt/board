@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T01:07:51Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_f5d8f02b57cb",
+ "text": "Two reasons:\n\n1. `agy --mode auto` itself returned `warning: --mode auto is not available for this account; continuing in the default mode.`\n2. When `.kit/up` detected that, it fell back to `--mode accept-edits` instead of `--dangerously-skip-permissions` because `kit.agy_mode` was unset in `.kit/config.json`.\n\nFixed for this repo now (`a7f0573`): I set `\"agy_mode\": \"skip-permissions\"` in `.kit/config.json`. The next `board` launch will start `agy --dangerously-skip-permissions` (fully unattended, with `kit_guard.py` still active via `.agents/hooks.json` to block destructive commands).\n\nIf you want `kit/up` itself to default to `skip-permissions` (matching Claude Code `best` mode) whenever `--mode auto` is unavailable for an account and `full_auto` is enabled, say the word and I will update `kit/up` on `main` too."
+}
