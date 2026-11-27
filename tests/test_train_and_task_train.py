@@ -412,7 +412,11 @@ class TaskTrainHook(unittest.TestCase):
                         {"task": {"id": "1"}})
         self.assertIn("post pl4-fit-the-model created", msg)
         self.assertIn('python3 -I .kit/kit.py launch pl4-fit-the-model', msg)  # CL13: one launch command
-        prompt = rd(os.path.join(self.proj, "docs", "prompts", "pl4-fit-the-model.md"))
+        path = os.path.join(self.proj, "docs", "prompts", "pl4-fit-the-model.md")
+        self.assertFalse(os.path.exists(path), "CL54: step new writes the post only; the prompt is generated at launch")
+        self.assertIn("written once, on the post", msg)
+        self.kit_json("step", "prompt", "pl4-fit-the-model", "--db", self.db)        # what launch runs first
+        prompt = rd(path)
         self.assertIn("Demo, part PL4: fit the model. Train `planner`, after `PL2`.", prompt)
         self.assertIn("## The task\nfit it", prompt)
         self.assertNotIn("## How you work", prompt)                                # the kit's, printed by resume, never copied in git
@@ -542,6 +546,7 @@ class TaskTrainHook(unittest.TestCase):
                                             "metadata": {"train": "planner", "part": "PL5", "sources": ["c-123"]}},
                         {"task": {"id": "1"}})
         self.assertIn("pl5-later", msg)
+        self.kit_json("step", "prompt", "pl5-later", "--db", self.db)                 # CL54: generated from the post
         self.assertIn("board_cli.py get comments c-123", rd(os.path.join(self.proj, "docs", "prompts", "pl5-later.md")))
         self.call(sid, "TaskCreate", {"subject": "PL2", "description": "",
                                       "metadata": {"train": "planner", "part": "PL2"}}, {"task": {"id": "2"}})

@@ -109,10 +109,10 @@ def on_create(root, st, ti, tr):
     sent = (" It is on the attached board %s: first %s." % (res["board"], res["next"])) if res.get("artifact_write") else ""
     n = res.get("pieces") or 0
     sent = (" Its %d numbered lines are its pieces: he sees them, and the part cannot end while one is open." % n if n else "") + sent
-    return ("Task %s is train %s step %s: post %s created (planned), prompt %s written from your description%s.%s "
-            "To launch: commit and push it, TaskUpdate %s in_progress, then: %s") % (
-        tid, train, part, res["post"], res["prompt"], "" if res.get("prompt_written") else " (it existed: kept)", sent,
-        tid, res["launch"])
+    return ("Task %s is train %s step %s: post %s created (planned), its task written once, on the post%s. Its prompt %s is "
+            "generated from the post at launch and committed (CL54): to change the task, edit the post only. "
+            "To launch: TaskUpdate %s in_progress, then: %s") % (
+        tid, train, part, res["post"], sent, res["prompt"], tid, res["launch"])
 
 
 def on_completed_event(root, st, data):
