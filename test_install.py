@@ -148,7 +148,8 @@ with tempfile.TemporaryDirectory() as d:
     check("`local` maps the agy hooks onto Claude Code tools (Bash, SendMessage), no Artifact or other cloud-session matchers",
           ("PreToolUse", "Bash") in loc_matchers and ("PreToolUse", say_pre) in loc_matchers
           and ("PostToolUse", "SendMessage|Bash") in loc_matchers and ("PreCompact", None) in loc_matchers
-          and not any(m and ("Artifact" in m or ("claude-code-remote" in m and m != say_pre)) for _, m in loc_matchers))
+          and not any(m and ((("Artifact" in m) and (ev, m) != ("PreToolUse", "ArtifactData"))   # M11: the board guard
+                              or ("claude-code-remote" in m and m != say_pre)) for ev, m in loc_matchers))
     st_loc_all = json.load(open(os.path.join(t_loc, ".claude", "settings.json")))
     check("the Claude Code CLI install: context reset (.kit/handover.py, Stop hook) and the task list as the train (hook + task tools on)",
           os.path.isfile(os.path.join(t_loc, ".kit", "handover.py"))

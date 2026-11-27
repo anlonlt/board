@@ -11,18 +11,6 @@
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash|Edit|Write|MultiEdit|mcp__claude-code-remote__send_message|SendMessage",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.kit/hook.py\" cli PreToolUse",
-            "timeout": 35
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "hooks": [
@@ -86,6 +74,18 @@
             "type": "command",
             "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.kit/hook.py\" cli PostToolUse",
             "timeout": 140
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|mcp__claude-code-remote__send_message|SendMessage|ArtifactData",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.kit/hook.py\" cli PreToolUse",
+            "timeout": 35
           }
         ]
       }

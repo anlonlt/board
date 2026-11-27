@@ -356,6 +356,37 @@ class GuardReviewCases(unittest.TestCase):
         self.assertEqual(self.hook({"action": "get", "collection": "repos/board/posts", "doc_id": "cl45"}), 0)
 
 
+class GuardWiredOnEveryRuntime(unittest.TestCase):
+    """M11: this kit's own repo is installed for a computer (`hook.py cli`) and works its Artifact board on the web:
+    its ArtifactData calls never reached the guard (a raw list passed live on 11-27). Now the dispatcher runs it."""
+
+    def test_cli_dispatch_refuses_a_raw_list(self):
+        s = importlib.util.spec_from_file_location("kit_hook_m11", str(ROOT / "kit" / "hook.py"))
+        h = importlib.util.module_from_spec(s)
+        s.loader.exec_module(h)
+        self.assertIn("ArtifactData", h.tools("cli", "PreToolUse").split("|"))
+        with tempfile.TemporaryDirectory() as d:
+            kit = os.path.join(d, ".kit")
+            os.makedirs(os.path.join(kit, "hooks"))
+            for f in ("hook.py",):
+                with open(os.path.join(kit, f), "w") as fh:
+                    fh.write((ROOT / "kit" / f).read_text())
+            for f in os.listdir(ROOT / "kit" / "hooks"):
+                if f.endswith(".py"):
+                    with open(os.path.join(kit, "hooks", f), "w") as fh:
+                        fh.write((ROOT / "kit" / "hooks" / f).read_text())
+            env = {k: v for k, v in os.environ.items() if k not in ("KIT_ROLE", "KIT_ARTIFACT_DIR")}
+            env.update(CLAUDE_PROJECT_DIR=d, KIT_ROLE="part")
+            ti = {"action": "list", "url": ART, "collection": "repos/board/posts", "query": {"limit": 1000},
+                  "out_dir": os.path.join(kit, "run", "artifact", "in")}
+            r = subprocess.run([sys.executable, "-I", os.path.join(kit, "hook.py"), "cli", "PreToolUse"], env=env,
+                               capture_output=True, text=True, timeout=60,
+                               input=json.dumps({"hook_event_name": "PreToolUse", "tool_name": "ArtifactData",
+                                                 "tool_input": ti, "session_id": "m11", "cwd": d}))
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertIn("kit.py artifact pull", r.stdout + r.stderr)
+
+
 class PushAndSentRecords(unittest.TestCase):
     def test_pending_written_by_push_and_cleared_when_nothing_is_out(self):
         with tempfile.TemporaryDirectory() as d:
