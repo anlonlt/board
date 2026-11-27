@@ -6100,7 +6100,7 @@ def step_facts(pid, q, areas=None):
     st = str(q.get("status") or "").lower()
     return {"id": pid, "part": str(q.get("part") or pid), "damage": damage, "bug": bug, "files": _q_files(q),
             "areas": _q_areas(q, areas), "after": [str(x) for x in after], "created": str(q.get("created_at") or ""),
-            "running": "progress" in st, "damage_why": str(q.get("damage") or said),
+            "running": "progress" in st, "damage_why": str(q.get("damage") or said), "held": step_hold(q),
             "blocks_all": QUEUE_BLOCKS_ALL.search(_q_text(q)) is not None}
 
 
@@ -6204,15 +6204,16 @@ def queue_rank(posts, areas=None):
         if not why:
             why.append("bug before features" if f[pid]["bug"] else "feature, by date (no fact sets it apart)")
         waits = []
-        if pid not in running:
+        if pid not in running and not f[pid]["held"]:
             waits += ["%s first (%s)" % (f[x]["part"], deps[pid][x]) for x in deps[pid] if x in open_]
             waits += ["%s %s (shares %s)" % (f[x]["part"], "runs" if x in running else "goes first", clash[pid][x])
                       for x in clash[pid] if x in started]
-        can = pid not in running and not waits
+        can = pid not in running and not waits and not f[pid]["held"]   # CL62: a held step starts nothing, blocks nothing
         if can:
             started.add(pid)                   # what can run beside it is measured against it from here on
         rows.append({"id": pid, "part": f[pid]["part"], "place": n, "why": "; ".join(why), "running": pid in running,
-                     "can_start": can, "waits": waits, "damage": f[pid]["damage"], "bug": f[pid]["bug"]})
+                     "can_start": can, "waits": waits, "damage": f[pid]["damage"], "bug": f[pid]["bug"],
+                     "held": f[pid]["held"]})
     return rows
 
 
@@ -6222,7 +6223,8 @@ def queue_lines(posts, areas=None, limit=40):
         return ["No open step."]
     out = []
     for r in rows[:limit]:
-        tag = "running" if r["running"] else ("start now" if r["can_start"] else "waits: " + "; ".join(r["waits"])[:160])
+        tag = "running" if r["running"] else ("held: " + r["held"][:120] if r.get("held") else
+                                              "start now" if r["can_start"] else "waits: " + "; ".join(r["waits"])[:160])
         out.append("%d. %s `%s` [%s] %s" % (r["place"], r["part"], r["id"], tag, r["why"]))
     if len(rows) > limit:
         out.append("(%d more)" % (len(rows) - limit))
@@ -6257,6 +6259,149 @@ def order_problem(posts, pid, areas=None):
         return "%s goes first (place %d, %s is %d): %s; launch `%s`" % (first["part"], first["place"], me["part"], me["place"],
                                                                       first["why"], first["id"])
     return None
+
+
+# CL62: "start now" is enforced, not read. Orchestrator 2 on the web read [start now] for M2, M3, M4 at 02:28, followed
+# a stale hand-over line ("M2 and M3 wait on M1", M1 had landed at 02:19) and launched them at 03:09 when the owner
+# asked. The orchestrator's Stop is refused once while a start-now step is neither launched nor held with a reason.
+def step_hold(q):
+    """Why this step is held ("" when it is not): `kit.py hold` records {why, at, by} in `held`; a status "held: ..."
+    written by hand counts too."""
+    h = q.get("held") if isinstance(q, dict) else None
+    if isinstance(h, dict) and str(h.get("why") or "").strip():
+        return str(h["why"]).strip()
+    if isinstance(h, str) and h.strip():
+        return h.strip()
+    st = str((q or {}).get("status") or "")
+    if STEP_HELD.match(st):
+        return st.split(":", 1)[1].strip() if ":" in st else st.strip()
+    return ""
+
+
+def split_owners(posts, me=""):
+    """{post id or part (lower case): the other orchestrator that owns it} from the split recorded on `_orchestrator`:
+    `split: {<orchestrator address>: [<post id or part>, ...]}`. What this orchestrator (`me`) owns is not in it."""
+    o = (posts or {}).get("_orchestrator")
+    sp = o.get("split") if isinstance(o, dict) else None
+    out = {}
+    for who, items in (sp.items() if isinstance(sp, dict) else []):
+        if me and str(who) == str(me):
+            continue
+        for x in _as_list(items):
+            out[str(x).strip().lower()] = str(who)
+    return out
+
+
+def _launch_marked(pid, root=None):
+    return os.path.isfile(os.path.join(root or ROOT, ".kit", "run", "launch", pid + ".json"))
+
+
+def start_now_unlaunched(posts, me=None, areas=None, root=None):
+    """The queue's [start now] steps that this orchestrator has neither launched nor held: [{id, part, place, why}].
+    Launched: running on the board, or `kit.py launch` marked it here (the board copy may lag). Held: `kit.py hold`.
+    A step the split on `_orchestrator` gives another orchestrator counts as held for this one."""
+    me = orchestrator_here().get("orchestrator", "") if me is None else me
+    others = split_owners(posts, me)
+    out = []
+    for r in queue_rank(posts, areas):
+        if not r["can_start"] or r["running"] or r.get("held"):
+            continue
+        if r["id"].lower() in others or r["part"].lower() in others or _launch_marked(r["id"], root):
+            continue
+        out.append({"id": r["id"], "part": r["part"], "place": r["place"], "why": r["why"]})
+    return out
+
+
+def start_now_refusal(rows):
+    """The Stop hook's text for these unlaunched start-now steps: the list and the exact commands ("" when none)."""
+    if not rows:
+        return ""
+    out = ["Before you stop (CL62): the queue says start now and you have neither launched nor held these:"]
+    for r in rows:
+        out.append("- %s `%s` (place %d, %s): `python3 -I .kit/kit.py launch %s`" % (r["part"], r["id"], r["place"],
+                                                                                  _short(r["why"], 80), r["id"]))
+    out.append("Launch each (on the web `launch` prints the create_session call, then `launch <post> --session-id <id>`), "
+               "or hold it with the reason the owner will read: `python3 -I .kit/kit.py hold <post> --why \"...\"`. "
+               "A hand-over line or your own plan never overrides the queue.")
+    return "\n".join(out)
+
+
+def hold(pid, why="", release=False, url=None, token=None):
+    """`kit.py hold <post> --why "..."`: the orchestrator does not launch this start-now step yet, and says why. It is
+    recorded on the post (`held`, status "held: <why>", shown on the board, in resume and the queue); `--release` undoes it."""
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    try:
+        d = _board_request(url, "doc/posts/" + urllib.parse.quote(pid, safe=""), token=token)
+        p = d.get("data") if isinstance(d.get("data"), dict) else None
+    except Exception as e:
+        return {"ok": False, "post": pid, "error": "cannot read the board at %s: %s" % (url, e)}
+    if p is None:
+        return {"ok": False, "post": pid, "error": "no post %s on this board" % pid}
+    if release:
+        prev = str(p.get("held_prev_status") or "planned")
+        return _owner_write(pid, {"status": prev}, url=url, token=token, drop=("held", "held_prev_status"))
+    why = re.sub(r"\s+", " ", str(why or "")).strip()
+    if len(why) < 8:
+        return {"ok": False, "post": pid, "error": "a hold needs its reason, in words the owner reads: --why \"...\""}
+    st = str(p.get("status") or "planned")
+    fields = {"held": {"why": why[:300], "at": _now_z(), "by": orchestrator_here().get("orchestrator", "")},
+              "status": "held: " + why[:120]}
+    if not STEP_HELD.match(st):
+        fields["held_prev_status"] = st
+    return _owner_write(pid, fields, url=url, token=token)
+
+
+HANDOVER_WAIT = re.compile(r"((?:[A-Z]{1,4}\d+[a-z]?)(?:\s*(?:,|and|&|\+)\s*(?:[A-Z]{1,4}\d+[a-z]?))*)\s+(?:still\s+)?"
+                           r"(?:waits?|waiting|are waiting|is waiting|stay(?:s)? behind|blocked)\s+(?:on|for|behind|by)\s+"
+                           r"([A-Z]{1,4}\d+[a-z]?)\b")
+
+
+def _hhmm(z):
+    m = re.search(r"T(\d\d:\d\d)", str(z or ""))
+    return m.group(1) if m else str(z or "?")
+
+
+def stale_handover_lines(posts, comments, limit=40, hours=48, areas=None):
+    """CL62: a hand-over line never overrides the queue. Each "X waits on Y" in the orchestrators' comments under
+    `_orchestrator` (the last `hours` before the newest, at most `limit`) is compared with the board; a claim whose Y
+    has landed (or is complete) is printed, first. A claim that still holds prints nothing."""
+    notes = sorted((c for c in (comments or {}).values() if isinstance(c, dict) and c.get("post_id") == "_orchestrator"
+                    and str(c.get("from") or c.get("author") or "").lower() not in ("owner", "you", "")),
+                   key=lambda c: str(c.get("created_at") or ""))[-limit:]
+    if notes:
+        try:
+            newest = iso(str(notes[-1].get("created_at")))
+            notes = [c for c in notes if (newest - iso(str(c.get("created_at")))).total_seconds() <= hours * 3600]
+        except Exception:
+            pass
+    by_part = {}
+    for pid, p in (posts or {}).items():
+        if isinstance(p, dict) and not pid.startswith("_") and p.get("part"):
+            by_part.setdefault(str(p["part"]).lower(), (pid, p))
+    rank = {r["part"].lower(): r for r in queue_rank(posts, areas)}
+    out, seen = [], set()
+    for c in reversed(notes):
+        for m in HANDOVER_WAIT.finditer(str(c.get("text") or c.get("body") or "")):
+            on = m.group(2)
+            hit = by_part.get(on.lower())
+            if not hit:
+                continue
+            _pid, y = hit
+            if _step_open(y) and not y.get("landed"):
+                continue                                    # the claim still holds
+            gone = ("landed %s" % _hhmm(y.get("landed_at") or y.get("completed_at") or y.get("updated_at"))) if y.get("landed") \
+                else "%s %s" % (str(y.get("status") or "done").split(":")[0], _hhmm(y.get("completed_at") or y.get("updated_at")))
+            for x in re.findall(r"[A-Z]{1,4}\d+[a-z]?", m.group(1)):
+                if (x, on) in seen:
+                    continue
+                seen.add((x, on))
+                r = rank.get(x.lower())
+                now = ("start now: `python3 -I .kit/kit.py launch %s`" % r["id"]) if r and r["can_start"] else \
+                    ("running" if r and r["running"] else ("held: " + r["held"]) if r and r.get("held") else
+                     ("waits: " + "; ".join(r["waits"])[:120]) if r else "not an open step")
+                out.append("- %s waits on %s (said %s): %s %s, %s" % (x, on, _hhmm(c.get("created_at")), on, gone, now))
+    return ["## First: hand-over lines the board contradicts (the queue wins)"] + out if out else []
 
 
 def pause_messages(posts, new_pid, areas=None):
@@ -7967,7 +8112,7 @@ COMMANDS = [
     ("read the board", "kit.py since <ISO>", "what changed on the board since a time"),
     ("read the board", "kit.py session <post>", "the session a post names, and what it left"),
     ("read the board", "kit.py search <words>", "find posts and comments by words"),
-    ("read the board", "kit.py queue [--runner R]", "the steps waiting for a runner"),
+    ("read the board", "kit.py queue [--runner R] [--gate]", "the steps waiting for a runner / --gate: the start-now steps not launched nor held (the orchestrator's Stop refuses on them, CL62)"),
     ("launch and finish", "kit.py link <post> [--hours H]", "the one link an outside AI (a runner card, LMArena, another account's app) gets for a post: its invite, scoped to the post: attach files to it (its drop box) and write its result, first (CL56)"),
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor [--fix]", "the board's size, columns, oldest question, missing files / full install, hook parity, conflict & sync health"),
@@ -7990,6 +8135,7 @@ COMMANDS = [
     ("write the board", "kit_cards.py (agent kit-cards)", "rebuild the Where we are card and the Trains card, never by hand"),
     ("launch and finish", "kit.py launch <post>", "start a part: post in progress, Trains row running, then claude --bg or the create_session call"),
     ("launch and finish", "kit.py claim <post>", "take a step explicitly: your address on its post; its part and review report to you (CL49)"),
+    ("launch and finish", "kit.py hold <post> --why W [--release]", "a start-now step not launched yet, with the reason the owner reads (on the post, in resume and the queue, CL62)"),
     ("launch and finish", "kit.py unreached <post> --why W", "a part (or review) could not reach its orchestrator: the post says so, every orchestrator's resume lists it"),
     ("launch and finish", "kit.py capacity / device.py run -- <cmd>", "the device's session cap / run a heavy job when it fits in memory"),
     ("launch and finish", "kit.py done <post>", "check a step's post: format, artifacts, check passes, breaks makes it fail"),
@@ -8013,6 +8159,7 @@ COMMANDS = [
     ("measure", "kit.py usage show --commands [--role R] [--transcripts GLOB] / compare ... --commands", "cost per command: each result's size and its carry (tokens x calls after it, cache read price), top commands per role, runs of commands repeated in 3+ sessions as script candidates (M6)"),
     ("measure", "kit.py usage record|show|push|import-ccr", "one session's usage row from its transcript (the Stop/SessionEnd hook does it, no model call) / the rows / onto the ledger branch kit-usage / rows from saved get_session records"),
     ("read the code", "kit.py map [--root DIR] [--out DIR] [--config F] [--check]", "a map of any project generated from its code (M1): overview.md in one screen, a card per area and feature, joins.md (UI fields sent vs schema accepted, handler, tables, tests; dropped fields, write routes with no CSRF/auth, uncalled handlers, files over 1,500 lines), map.json things/links/flags; --check fails when the code changed or a link check fails"),
+    ("tests", "run_all_tests.py [--all] | --clean [--yes] [--older H]", "the kit's tests, each suite in its own temp folder that fails it if anything is left there (CL52) / the folders past test runs left in the temp folder: a dry run, --yes removes them"),
     ("index", "kit.py commands [word|all]", "the topics / the commands a word finds / every one"),
 ]
 
@@ -10062,6 +10209,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         pass
     out = []
     if role == "orchestrator":
+        stale = stale_handover_lines(posts, comments)
+        if stale:                                     # CL62: before anything else, a hand-over never overrides the queue
+            out += stale + [""]
         first, then = alarm_lines()
         if first:                                     # M10: his rule said twice, a kind fixed three times: first
             out += ["## First: what keeps coming back (a check to plan, never another patch or memory line)"] + first + [""]
@@ -10592,6 +10742,7 @@ def main(argv=None):
     s = sp.add_parser("portfolio"); s.add_argument("--config", dest="portfolio_config", default=None); s.add_argument("--roots", nargs="*", default=[])
     s = sp.add_parser("link", help="CL56: the one link an outside AI gets for a post (its invite: drop box, result)"); s.add_argument("post"); s.add_argument("--hours", type=float, default=72); s.add_argument("--url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None); s.add_argument("--unblocked", action="store_true", help="Exclude cards with unresolved blocked_by dependencies")
+    s.add_argument("--gate", action="store_true", help="CL62: the start-now steps this orchestrator neither launched nor held (exit 1 when any), with the commands")
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s.add_argument("--brief", action="store_true", help="two lines a step and the current one (the default)")
@@ -10677,6 +10828,9 @@ def main(argv=None):
     s = sp.add_parser("claim", help="this orchestrator takes a step: its address on the post, the part and its review report to it (CL49)")
     s.add_argument("post"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s.add_argument("--json", action="store_true")
+    s = sp.add_parser("hold", help="CL62: do not launch this start-now step yet, and say why (on the post, in resume, to the owner)")
+    s.add_argument("post"); s.add_argument("--why", default=""); s.add_argument("--release", action="store_true")
+    s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("unreached", help="a part's report did not reach its orchestrator: its post says so, every resume lists it (CL49)")
     s.add_argument("post"); s.add_argument("--why", default=""); s.add_argument("--board-url", default=None)
     s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
@@ -10872,6 +11026,20 @@ def main(argv=None):
         return 0
     if a.cmd == "portfolio":
         print(portfolio_summary(config_path=a.portfolio_config, roots=a.roots), end="")
+        return 0
+    if a.cmd == "queue" and a.gate:                     # CL62: what the orchestrator's Stop hook asks
+        txt = start_now_refusal(start_now_unlaunched(_all_posts(a.db)))
+        print(txt or "OK: every start-now step is launched or held.")
+        return 1 if txt else 0
+    if a.cmd == "hold":
+        r = hold(a.post, why=a.why, release=a.release, url=a.board_url, token=a.token)
+        if not r.get("ok"):
+            print("Not held: %s" % r.get("error"))
+            return 1
+        print("released: %s goes back in the queue" % a.post if a.release else
+              "held: %s (%s); resume, the queue and the board show it" % (a.post, (r["data"].get("held") or {}).get("why")))
+        for b in r.get("batches") or []:
+            print("`ArtifactData` `batch` %s, then `python3 -I .kit/kit.py artifact sent %s`" % (b, b))
         return 0
     if a.cmd == "link":
         r = outside_link(a.post, a.url, a.token, hours=a.hours)

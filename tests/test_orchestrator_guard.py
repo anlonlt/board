@@ -12,6 +12,8 @@ import time
 import unittest
 import uuid
 from pathlib import Path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import temp_cleanup  # noqa: E402,F401  CL52: the folders this file makes go at exit
 
 HOOK = Path(__file__).resolve().parent.parent / "kit" / "hooks" / "kit_orchestrator_guard.py"
 
@@ -20,7 +22,7 @@ class Project(unittest.TestCase):
     """A project with the launch marks, and the guard run on it; no test of its own, so a class built on it repeats none."""
 
     def setUp(self):
-        self.proj = tempfile.mkdtemp()
+        self.proj = os.path.join(tempfile.mkdtemp(), "proj")   # CL52: a clone made next to it stays in the temp folder
         os.makedirs(os.path.join(self.proj, ".kit"))
         # CL30: a part starts only after `kit.py launch <post>`, which leaves this mark for each prompt below
         for pid in ("cl22", "cl24-orchestrator-guard-gaps", "cl9-x"):
