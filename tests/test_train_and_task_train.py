@@ -77,13 +77,13 @@ class TrainAndResume(unittest.TestCase):
         self.assertIn("*Handoff:* use out/model.bin", txt)
 
     def test_resume_lists_active_trains_and_live_sessions(self):
-        out = self.kit.resume(self.tmp, db_path=self.db, alive={"other-session"})
+        out = self.kit.resume(self.tmp, db_path=self.db, alive={"other-session"}, cli="claude")
         self.assertIn("## Train planner (1/3 done)", out)
         self.assertNotIn("Train old", out)  # every step done: not active
         self.assertIn("[~] PL2 `PL2-b` second · in progress · session demo-pl2 (not running)", out)
         self.assertIn("[ ] PL3 `PL3-c` third · planned, not launched", out)
         self.assertIn("Rebuild your task list", out)
-        out2 = self.kit.resume(self.tmp, db_path=self.db, alive={"demo-pl2"})
+        out2 = self.kit.resume(self.tmp, db_path=self.db, alive={"demo-pl2"}, cli="claude")
         self.assertIn("session demo-pl2 (running)", out2)
         out_agy = self.kit.resume(self.tmp, db_path=self.db, alive={"demo-pl2"}, cli="agy")
         self.assertIn("Resume in agy", out_agy)

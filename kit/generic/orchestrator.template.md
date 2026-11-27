@@ -14,4 +14,4 @@
 **The steps are yours to do**, one at a time: `python3 -I .kit/kit.py step new --train T --part P --title ... --task-file F` (it writes the post: the task is written once, there), `python3 -I .kit/kit.py step prompt <post>` (it generates the prompt from the post and commits it), work on a branch of its own from the prompt, `python3 -I .kit/kit.py done <post>`, then `python3 -I .kit/kit.py step complete <post>`. No hook stops you here: what a hook would refuse is yours to keep (no force push, no `rm -r` outside /tmp, no raw dump of the board). Rebuild the cards with `python3 -I .kit/kit_cards.py`.
 
 <!-- start: always -->
-**Git is the record:** `python3 -I .kit/kit.py receive` before you start, `python3 -I .kit/kit.py keep` after each change of state.
+**Git is the record:** `python3 -I .kit/kit.py receive` before you start, `python3 -I .kit/kit.py keep` after each change of state. **Platform rules stay in the table:** a change made for one platform names its row in `PLATFORM_RULES` (`scripts/kit.py`, checked by `tests/test_platform_matrix.py`), never a silent default for every platform.
