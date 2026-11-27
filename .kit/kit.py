@@ -5022,6 +5022,8 @@ def read_form(text):
         skip = ("docs/prompts/", ".kit/", ".claude/", ".agents/")
         f["artifacts"] = [x for x in f["artifacts"] if x != "auto"] + [
             x for x in _changed_files() if not x.startswith(skip) and x not in f["artifacts"] and os.path.isfile(os.path.join(ROOT, x))]
+    if got.get("fixes") and not _BLANK.search(got["fixes"]):     # M10, optional: `<kind>: <what was broken>`
+        f["fixes"] = re.sub(r"\s+", " ", got["fixes"]).strip()
     f["verdict"] = re.sub(r"\s+", " ", f["verdict"])
     f["body"] = got["lead"] + "\n\n" + got["body"]
     asked = [re.match(r"([\w.-]+):\s*(.+)", x, re.S) for x in items(got["asked"]) if not x.startswith("(nothing")]
@@ -5117,6 +5119,16 @@ def done(pid, db_path=None, root=None):
     err += e_h + plain_notes(p)
     warn += n_h
     err += pieces_unchecked(p)                       # CL42: a piece done that not_checked says was not done
+    err += record_step_fix(p, pid)                   # M10: a step that fixes a bug is one fix of its kind
+    try:
+        sc = scan_fix_commits(root=root)
+    except Exception as ex:                          # never hidden: said, and done goes on
+        sc = {"error": str(ex)}
+    if sc.get("error"):
+        warn.append("fix commits not read: %s" % sc["error"])
+    for u in sc.get("unnamed") or []:
+        warn.append("commit %s says it fixes a bug without its kind: add `Fix-kind: <kind>` to its message, or `fixes:` to the form (%s)" % (u["commit"], u["subject"][:60]))
+    err += decision_breaks(_changed_files(root))     # M10: a step never breaks the owner's decision silently
     left = pieces_open(p)
     if left:
         err.append("pieces still open: %s. Finished: `python3 -I .kit/kit.py sub %s %s --status done`; not needed: `--status drop --why \"...\"`" % (
@@ -7960,6 +7972,45 @@ def _resume_snapshot(posts, comments, alive=None):
     return {"posts": ps, "comments": cs, "open": opn, "alive": sorted(alive) if alive is not None else None}
 
 
+# CL58: the orchestrator's resume sections that posts, comments and sessions do not hold, so a change in one shows in
+# a delta (CL39's web environment record printed "nothing new"). Checked and left out: train_lines (it ages with the
+# clock: every delta would show it), owner_lines and autonomy_lines (config text, no action), audit_lines and
+# memory_line (reports, not something to act on), split/start/inherit lines (from posts and comments: covered).
+RESUME_SECTIONS = (("web_env", "Web environment (several repos)"),
+                   ("land", "Work not on the trunk yet (it lands after its review)"),
+                   ("unreached", "Parts that could not reach their orchestrator (to claim)"),
+                   ("git_copy", "The record is git, and it is behind"))
+
+
+def _resume_sections(m, posts, comments, db_path=None):
+    """{key: [lines]} of RESUME_SECTIONS as the whole orchestrator resume would print them; a section that fails is
+    left out (never lose the delta over one)."""
+    out = {}
+    makers = {"web_env": lambda: [x for x in [web_env_state(posts, comments)[1]] if x],
+              "land": lambda: land_lines(posts),
+              "unreached": lambda: unreached_lines(posts),
+              "git_copy": lambda: ["- " + x for x in git_copy_lines(m, db_path)]}
+    for key, _ in RESUME_SECTIONS:
+        try:
+            out[key] = [str(x) for x in (makers[key]() or []) if str(x).strip()]
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+def resume_section_lines(old, new):
+    """The RESUME_SECTIONS whose text changed between two snapshots, each printed whole as it is now."""
+    os_, ns = old.get("sections"), new.get("sections")
+    if not isinstance(os_, dict) or not isinstance(ns, dict):
+        return []                                       # a snapshot from before CL58: nothing to compare
+    out = []
+    for key, head in RESUME_SECTIONS:
+        if key not in os_ or key not in ns or os_[key] == ns[key]:
+            continue
+        out += ["", "## %s" % head] + (ns[key] or ["- (cleared since)"])
+    return out
+
+
 def _resume_docs(m, db_path=None):
     """The host's posts and comments, and each attached board's under `repo:<id>/` (so a change there shows too)."""
     posts, comments = _load_board_docs(m, db_path=db_path)
@@ -8030,7 +8081,7 @@ def resume_delta_lines(old, new, since_hhmm, me=None):
     if gone_open:
         his.append("- answered since: %s" % ", ".join(gone_open))
     still = sorted(set(new.get("open") or []) & set(old.get("open") or []))
-    out = []
+    out = resume_section_lines(old, new)
     for head, rows in (("Steps", steps), ("Sessions", sess), ("Questions", qs), ("The owner's comments", his),
                        ("Other writers", others)):
         if rows:
@@ -8053,6 +8104,8 @@ def resume_delta(m, role=None, session=None, db_path=None, cli=None, full=False,
     if alive is None:
         alive = None if _active_cli(cli) == "agy" else _alive_sessions()
     snap = _resume_snapshot(posts, comments, alive)
+    if role == "orchestrator":
+        snap["sections"] = _resume_sections(m, posts, comments, db_path=db_path)
     try:
         with open(path, encoding="utf-8") as fh:
             old = json.load(fh)
@@ -8252,6 +8305,15 @@ def memory_checks(run=False):
     if run:
         led.write_checks_cache(ROOT, res, {e["id"]: led.entry_check_value(e) or "" for e in ents})
     return res
+
+
+def alarm_lines():
+    """M10: (first, then) lines for the orchestrator's resume; a broken ledger is said, never hidden."""
+    try:
+        r = _led_call("alarm_lines", _resolve_memory_dir(), kit_root=ROOT)
+    except Exception as e:
+        return ["- the ledger's fix kinds and rules could not be read: %s" % e], []
+    return r or ([], [])
 
 
 def memory_line():
@@ -8783,6 +8845,99 @@ def _map_cmd(a):
             argv += [flag, val]
     argv += (["--check"] if a.check else []) + (["--no-generators"] if a.no_generators else [])
     return kit_map.main(argv)
+
+
+def scan_fix_commits(since=None, root=ROOT):
+    """M10: the commits that say which kind of bug they fix (`Fix-kind: <kind>` in the message) go into the ledger, once
+    each; {ok, recorded, unnamed}: `unnamed` the commits that say they fix a bug without naming its kind. `since`: a ref
+    (default: this branch's own commits, from where it left the trunk)."""
+    led = _load_ledger_mod()
+    if led is None or not hasattr(led, "commit_fixes"):
+        return {"error": "ledger.py has no fix kinds (an old copy)"}
+    base = since
+    if not base:
+        trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+        for ref in ("origin/" + trunk, trunk):
+            r = subprocess.run(["git", "-C", root, "merge-base", "HEAD", ref], capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout.strip():
+                base = r.stdout.strip()
+                break
+    if not base:
+        return {"ok": True, "recorded": [], "unnamed": [], "why": "no trunk to start from: --since <ref>"}
+    r = subprocess.run(["git", "-C", root, "log", "--format=%H%x1f%B%x1e", "%s..HEAD" % base], capture_output=True, text=True)
+    if r.returncode != 0:
+        return {"error": "git log %s..HEAD: %s" % (base, (r.stderr or "").strip()[:200])}
+    named, unnamed = led.commit_fixes(r.stdout)
+    rec = []
+    for sha, kind, subject in named:
+        res = led.record_fix(_resolve_memory_dir(), kind, subject, "commit " + sha[:9])
+        if res.get("error"):
+            return res
+        if not res.get("existing"):
+            rec.append(res["entry"]["id"])
+    return {"ok": True, "recorded": rec, "unnamed": [{"commit": sha[:9], "subject": subj[:100]} for sha, subj in unnamed]}
+
+
+def record_step_fix(p, pid):
+    """M10: `done` for a step that fixes a bug: its post's `fixes` (`<kind>: <what was broken>`) is one fix of that
+    kind in the ledger. [] or the errors."""
+    v = str(p.get("fixes") or "").strip()
+    if not v or v.lower() in ("none", "no", "-", "(none)"):
+        return []
+    kind, _, what = v.partition(":")
+    if not what.strip():
+        return ["fixes: `<kind>: <what was broken>` (the kind a short theme: platform leak, silent error, two copies out of sync)"]
+    res = _led_call("record_fix", _resolve_memory_dir(), kind, what.strip(), pid)
+    return [res["error"]] if isinstance(res, dict) and res.get("error") else []
+
+
+def decision_breaks(files, root=ROOT):
+    """M10: the owner's decisions over the files this branch changes whose check fails now: done refuses the step."""
+    led = _load_ledger_mod()
+    if led is None or not hasattr(led, "decisions_for_files"):
+        return []
+    out = []
+    for d in led.decisions_for_files(_resolve_memory_dir(), files, kit_root=root):
+        if not d["check"]:
+            continue
+        r = led.check_entry(root, d, run=True)
+        if r["status"] == "fail":
+            out.append("the owner's decision %s (%s) does not hold with this branch: %s. Make it hold, or ask him (`kit.py ask`) before changing it"
+                       % (d["id"], d["summary"][:120], r["why"][:200]))
+    return out
+
+
+def plan_design(theme, post="", train="", db_path=None):
+    """M10: the step for a kind fixed three times (or a rule he said twice): `post` names one already planned, else
+    `train` makes it (`step new`); its fixes and rules then name it and the kind stops being raised."""
+    led = _load_ledger_mod()
+    if led is None or not hasattr(led, "fix_kinds"):
+        return {"error": "ledger.py has no fix kinds (an old copy)"}
+    mdir, th = _resolve_memory_dir(), led.kind_key(theme)
+    if not th:
+        return {"error": "design needs the kind: `kit.py ledger design \"<kind>\" --post <step>|--train <train>`"}
+    made = None
+    if not post:
+        if not train:
+            return {"error": "design: --post <the step planned for it> or --train <train> (it makes the step)"}
+        k = next((x for x in led.fix_kinds(mdir, kit_root=ROOT) if x["kind"] == th and x["count"]), None)
+        r = next((x for x in led.owner_rules(mdir, kit_root=ROOT) if x["theme"] == th), None)
+        if k:
+            title, task = "Design: make the %s kind of bug impossible" % th, led.design_task(k)
+        elif r:
+            title = "Check: %s" % r["summary"][:60]
+            task = ("The owner said it %d time(s): %s. Nothing enforces it: make it a check (a hook, a refusal, a test) that fails "
+                    "when it is broken, never another memory line." % (r["count"], "; ".join('"%s"' % q for q in r["quotes"])))
+        else:
+            return {"error": "no open fix or rule of kind %r (`kit.py ledger kinds`)" % th}
+        made = step_new(train, "D-" + _slug(th, 20), title, task=task, db_path=db_path)
+        if made.get("error"):
+            return made
+        post = made.get("post")
+    res = led.mark_designed(mdir, th, post)
+    if made:
+        res["step"] = made
+    return res
 
 
 def _load_ledger_mod():
@@ -9459,6 +9614,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         pass
     out = []
     if role == "orchestrator":
+        first, then = alarm_lines()
+        if first:                                     # M10: his rule said twice, a kind fixed three times: first
+            out += ["## First: what keeps coming back (a check to plan, never another patch or memory line)"] + first + [""]
         out.append(resume(m, db_path=db_path, alive=alive, cli=cli, session=session, now=now).rstrip("\n"))
         st, txt = web_env_state(posts, comments)
         if txt:                                       # CL39: several repos on the web
@@ -9489,6 +9647,8 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         ml = memory_line()
         if ml:
             out += ["", ml]
+        if then:
+            out += ["", "## His rules and decisions with no check yet (plan each check now)"] + then[:8]
         out += _principle_lines("orchestrator")
         pref = os.path.join(_resolve_memory_dir(), "preferences.md")
         if os.path.isfile(pref):
@@ -9958,7 +10118,10 @@ def main(argv=None):
     s = sp.add_parser("reads"); s.add_argument("--at")
     s = sp.add_parser("doctor"); s.add_argument("--db", default=None); s.add_argument("--fix", action="store_true", help="repair missing add_repo, hook drift, and stale sibling portfolio paths")
     s = sp.add_parser("ledger", help="3-layer memory ledger: show|observe|decide|distil|propose|confirm|check|init")
-    s.add_argument("action", choices=["show", "observe", "decide", "distil", "propose", "field", "broke", "moves", "open", "confirm", "check", "init"])
+    s.add_argument("action", choices=["show", "observe", "decide", "distil", "propose", "field", "broke", "moves", "open", "confirm", "check", "init",
+                                       "fix", "kinds", "design", "scan"])
+    s.add_argument("--post", default="", help="design: the step planned for that kind (else --train makes it)"); s.add_argument("--train", default="")
+    s.add_argument("--since", default="", help="scan: the commits after this ref (default: this branch's own)")
     s.add_argument("--keeps", default="", help="propose: exact rows that stay, under the principle"); s.add_argument("--not-for", dest="not_for", default="")
     s.add_argument("--refines", default="", help="the principle or field this one hardens"); s.add_argument("--opens", default="", help="field: start, files:<glob>, moment:<m>")
     s.add_argument("--moment", default=""); s.add_argument("--ask", action="store_true", help="moves: one question post for all that is proposed"); s.add_argument("--deadline", default="")
@@ -10220,6 +10383,15 @@ def main(argv=None):
             res = led.observe(mdir, summary, quote=a.quote, source=a.source, scope=a.scope or "project", theme=a.theme,
                               kind=kind, enforced_by=a.enforced_by, because=a.because, rejected=a.rejected,
                               replaces=a.replaces)
+        elif a.action == "fix":                          # M10: one fix, its kind
+            res = led.record_fix(mdir, a.theme or a.kind if a.kind != "observation" else a.theme, a.summary or a.target or "", a.source, quote=a.quote)
+        elif a.action == "kinds":
+            res = {"fixes": led.fix_kinds(mdir, kit_root=ROOT), "rules": led.owner_rules(mdir, kit_root=ROOT),
+                   "decisions": [{"id": d["id"], "summary": d["summary"], "check": d["check"], "files": d["files"]} for d in led.decisions(mdir, kit_root=ROOT)]}
+        elif a.action == "scan":
+            res = scan_fix_commits(since=a.since or None)
+        elif a.action == "design":
+            res = plan_design(a.target or a.theme, post=a.post, train=a.train, db_path=a.db)
         elif a.action == "distil":
             res = {"clusters": led.distil_candidates(mdir, min_cluster=a.min_cluster)}
         elif a.action == "propose":

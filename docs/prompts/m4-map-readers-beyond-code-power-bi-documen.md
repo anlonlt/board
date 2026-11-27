@@ -14,3 +14,6 @@ Bars: per fixture, the flags found out of the faults planted in it.
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+M4: builds on M1 (a map generated from code); M1 reads code only, M4 adds readers for Power BI, documents and any folder to the same map.
