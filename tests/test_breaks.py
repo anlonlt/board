@@ -24,11 +24,19 @@ def git(cwd, *args):
                           cwd=cwd, capture_output=True, text=True, check=True)
 
 
+# CL76: a demo step written the new way: his intent first, a test naming each case and a stress variant
+DEMO_INTENT = {"goal": "\"the demo works\"", "real": "none: a demo", "at": "2000-01-01T00:00:00Z",
+               "cases": [{"id": "I1", "text": "a", "outside": False, "not_covered": None},
+                         {"id": "I2", "text": "b", "outside": False, "not_covered": None},
+                         {"id": "I3", "text": "c", "outside": True, "not_covered": None}]}
+DEMO_TEST = "# I1 stress I1 I2 stress I2 I3 stress I3\n"
+
+
 def post(**kw):
     p = {"title": "demo", "part": "DM1", "train": "demo", "column": "info",
          "verdict": "add() adds two numbers.", "bars": ["4 of 4 sums right"], "artifacts": ["calc.py"],
          "not_checked": ["floats"], "check": CAN_FAIL, "breaks": PLANT, "handoff": "use calc.add",
-         "body": "For you: nothing to do."}
+         "body": "For you: nothing to do.", "intent": DEMO_INTENT, "started_at": "2000-01-01T00:00:00Z"}
     p.update(kw)
     return p
 
@@ -43,6 +51,8 @@ class DemoStep(unittest.TestCase):
         shutil.copy(KIT, os.path.join(self.repo, ".kit", "kit.py"))
         with open(os.path.join(self.repo, "calc.py"), "w") as fh:
             fh.write("def add(a, b):\n    return a + b\n")
+        with open(os.path.join(self.repo, "test_calc.py"), "w") as fh:
+            fh.write(DEMO_TEST)
         git(self.repo, "init", "-q")
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "demo")

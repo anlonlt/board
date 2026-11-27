@@ -498,6 +498,7 @@ class DoneMatrix(unittest.TestCase):
         kit.check_asked = lambda p, db_path=None: ([], [])
         kit.check_his_words = lambda pid, p, db_path=None: ([], [])
         kit.check_done = lambda p, root=None, body_max=1500: ([], [])
+        kit.check_intent = lambda p, root=None: []        # CL76's gate has its own tests (test_intent_first)
         kit.plain_notes = lambda p: []
         kit.real_project_areas = lambda root=None, base=None: ["resume"]
         kit.consumers = lambda extra=None: [{"github": "anlonlt/harmonize", "name": "harmonize"}]

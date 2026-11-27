@@ -5135,7 +5135,7 @@ def check_trunk_merged(root=ROOT):
 
 
 # ---------------------------------------------------------------- the form: a step's result, filled in and sent by `done`
-FORM_PARTS = ("lead", "verdict", "bars", "asked", "artifacts", "not_checked", "check", "breaks", "handoff", "body")
+FORM_PARTS = ("lead", "verdict", "bars", "asked", "intent", "artifacts", "not_checked", "check", "breaks", "handoff", "body")
 FORM_LISTS = ("bars", "artifacts", "not_checked")
 _BLANK = re.compile(r"<fill[^>]*>")
 
@@ -5171,6 +5171,7 @@ def form(pid, doing="", db_path=None):
         "verdict": "<fill: ONE plain sentence that answers the task, at most 240 characters>",
         "bars": "- <fill: one measured number a line, with its denominator or reference: 41 of 50 takes> %s" % ids,
         "asked": "\n".join(asked) or "(nothing of his named as this step's source)",
+        "intent": INTENT_FILL,
         "artifacts": "- auto",
         "not_checked": "- <fill: what you did NOT check, or: nothing left unchecked>",
         "check": "<fill: one command that passes only if the task is done%s>" % ("" if test.startswith("(") else "; the project's tests: " + test),
@@ -5207,6 +5208,8 @@ def read_form(text):
             x for x in _changed_files() if not x.startswith(skip) and x not in f["artifacts"] and os.path.isfile(os.path.join(ROOT, x))]
     if got.get("fixes") and not _BLANK.search(got["fixes"]):     # M10, optional: `<kind>: <what was broken>`
         f["fixes"] = re.sub(r"\s+", " ", got["fixes"]).strip()
+    if got.get("intent") and not _BLANK.search(got["intent"]):   # CL76: parsed here, judged by `done` (check_intent)
+        f["intent"] = parse_intent(got["intent"])
     f["verdict"] = re.sub(r"\s+", " ", f["verdict"])
     f["body"] = got["lead"] + "\n\n" + got["body"]
     asked = [re.match(r"([\w.-]+):\s*(.+)", x, re.S) for x in items(got["asked"]) if not x.startswith("(nothing")]
@@ -5234,6 +5237,8 @@ def send_form(pid):
     f, err = read_form(text)
     if err:
         return err
+    if f.get("intent"):
+        f["intent"] = stamp_intent(f["intent"], (_get_post(pid) or {}).get("intent"))
     if not _board_write("update", "posts", pid, f):
         return ["form: the board did not take it (is the board server running?)"]
     with open(path + ".sent", "w", encoding="utf-8") as fh:
@@ -5326,6 +5331,232 @@ def check_map(root):
     return errors, notes
 
 
+# ---------------------------------------------------------------- CL76: intent first, tested from the intent
+# The owner, 2026-11-27: "Every part needs to extrapolate, needs to stress test the shit out of things, needs to get the
+# idea of what I'm saying." R6 tested what it built (links by names, `after`, shared files) and missed the plain case he
+# meant (two steps on one subject naming nothing in common). So a part writes, on its post and before any code, his goal
+# in his words and at least 3 cases beyond the literal task, one of them marked [outside] (its likely mechanism would not
+# cover it); its tests name each case (`I1`) and a stress variant of it (`stress I1`); `done` refuses what is missing.
+INTENT_MIN_CASES = 3
+INTENT_FILL = ("<fill, before any code (send it with `kit.py intent <post>`): his goal in his own words, then at least 3 cases "
+               "beyond the literal task that he would expect to work, one marked [outside] (your likely mechanism would NOT "
+               "cover it), then the real-data case:\n"
+               "goal: \"<his words>\"\n- I1: <case>\n- I2: <case>\n- I3 [outside]: <case>\n- I4: <case> | not covered: <why the plan "
+               "leaves it>\nreal: <the live board, the real project... or none: why>\n"
+               "Your tests name each case (I1) and a stress or out-of-pattern variant of it (stress I1)>")
+_INTENT_CASE = re.compile(r"^[-*]\s*(I\d+)\s*(\[outside\])?\s*[:.)-]\s*(.+)$", re.I)
+
+
+def parse_intent(text):
+    """{goal, cases: [{id, text, outside, not_covered}], real} of a form's `## intent` (lenient: `done` judges it)."""
+    goal, real, cases = "", "", []
+    for line in str(text or "").splitlines():
+        s = line.strip()
+        m = _INTENT_CASE.match(s)
+        if m:
+            body = m.group(3).strip()
+            nc = re.search(r"(?:^|\|)\s*not covered\s*:\s*(.*)$", body, re.I)
+            cases.append({"id": m.group(1).upper(), "text": body[:nc.start()].strip(" |") if nc else body,
+                          "outside": bool(m.group(2)), "not_covered": nc.group(1).strip() if nc else None})
+        elif re.match(r"(?i)goal\s*:", s):
+            goal = s.split(":", 1)[1].strip()
+        elif re.match(r"(?i)real\s*:", s):
+            real = s.split(":", 1)[1].strip()
+        elif cases and s and not s.startswith(("-", "*")):
+            cases[-1]["text"] += " " + s                          # a case written over two lines
+    return {"goal": goal, "cases": cases, "real": real}
+
+
+def stamp_intent(new, old):
+    """The intent with its dates: `at` is when an intent was first on the post (kept across edits), `updated_at` the last change."""
+    old = old if isinstance(old, dict) else {}
+    keep = lambda d: {k: d.get(k) for k in ("goal", "cases", "real")}  # noqa: E731
+    out = dict(new)
+    out["at"] = old.get("at") or _now_z()
+    out["updated_at"] = old.get("updated_at") or out["at"]
+    if old and keep(old) != keep(new):
+        out["updated_at"] = _now_z()
+    return out
+
+
+def _step_base(root):
+    g = lambda *a: subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=60)  # noqa: E731
+    trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+    try:
+        if g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == trunk:
+            return None
+        for ref in ("origin/" + trunk, trunk):
+            r = g("merge-base", "HEAD", ref)
+            if r.returncode == 0 and r.stdout.strip():
+                return r.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return None
+
+
+_NOT_CODE = ("docs/", ".kit/", ".board/", ".claude/", ".agents/")
+
+
+def _since_base(root, since):
+    """A part that works on the trunk itself: its base is the parent of its first commit after `since` (the step's start);
+    HEAD when it has committed nothing since."""
+    start = _iso_utc(since)
+    if not start:
+        return None
+    # strictly after the start: a trunk commit made in the very second the step started is not the step's
+    r = _git_run("rev-list", "--first-parent", "--reverse", "--since=%s" % (start + timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S +0000"), "HEAD", cwd=root)
+    first = (r.stdout or "").split()
+    if r.returncode != 0:
+        return None
+    if not first:
+        h = _git_run("rev-parse", "HEAD", cwd=root)
+        return h.stdout.strip() if h.returncode == 0 else None
+    par = _git_run("rev-parse", "-q", "--verify", first[0] + "^", cwd=root)
+    if par.returncode != 0:                              # the repo's first commit is the step's: compare with nothing
+        e = _git_run("hash-object", "-t", "tree", "/dev/null", cwd=root)
+        return e.stdout.strip() if e.returncode == 0 else None
+    return par.stdout.strip()
+
+
+def step_tests_added(root, since=None):
+    """The lines this step ADDED to test files (its commits since the trunk, uncommitted and untracked files): a case id
+    already on the trunk, in the post or in a file that is not a test does not count. On the trunk itself, its commits since
+    `since` (when it started). None when neither tells where the step began."""
+    is_test = lambda n: "test" in os.path.basename(n).lower() and not n.startswith(_NOT_CODE)  # noqa: E731
+    out = []
+    if _git_run("rev-parse", "--is-inside-work-tree", cwd=root).returncode != 0:
+        # a project outside git: no history to tell old tests from new, so every test file there is read
+        for dp, dns, fns in os.walk(root):
+            dns[:] = [x for x in dns if not x.startswith(".") and x not in ("node_modules", "__pycache__")]
+            for fn in fns:
+                rel = os.path.relpath(os.path.join(dp, fn), root)
+                if is_test(rel) and fn.endswith((".py", ".js", ".ts", ".sh", ".mjs", ".cjs", ".kt", ".java", ".rb", ".go", ".rs")):
+                    with open(os.path.join(dp, fn), encoding="utf-8", errors="replace") as fh:
+                        out.append(fh.read())
+        return "\n".join(out)
+    base = _step_base(root) or _since_base(root, since)
+    if not base:
+        return None
+    g = lambda *a: subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=60)  # noqa: E731
+    try:
+        diff = g("diff", "-U0", base, "--", ".").stdout            # commits and the working tree, against the trunk's base
+        cur = None
+        for line in diff.splitlines():
+            if line.startswith("+++ "):
+                cur = line[6:] if line.startswith("+++ b/") else None
+            elif cur and is_test(cur) and line.startswith("+") and not line.startswith("+++"):
+                out.append(line[1:])
+        for n in g("ls-files", "--others", "--exclude-standard").stdout.splitlines():
+            if is_test(n) and os.path.isfile(os.path.join(root, n)):
+                with open(os.path.join(root, n), encoding="utf-8", errors="replace") as fh:
+                    out.append(fh.read())
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return "\n".join(out)
+
+
+def first_code_commit_at(root, since=None):
+    """When this step first committed code (not docs/, .kit/, .board/): the oldest of its own commits, or None."""
+    base = _step_base(root) or _since_base(root, since)
+    if not base:
+        return None
+    r = _git_run("log", "--first-parent", "--no-merges", "--format=%cI", "%s..HEAD" % base, "--", ".",
+                 *[":!%s" % d.rstrip("/") for d in _NOT_CODE], cwd=root)
+    dates = [d.strip() for d in (r.stdout or "").splitlines() if d.strip()]
+    return dates[-1] if dates else None
+
+
+def _iso_utc(s):
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def check_intent(p, root=ROOT, added=None, code_at=None):
+    """CL76: errors for a post whose intent is missing, thin, written after the code, or not tested. `added`: the test
+    lines the step added (read from git when None); `code_at`: its first code commit's date (read from git when None)."""
+    pid = p.get("_id") or "<post>"
+    how = ("write `## intent` in the form (`.kit/run/form/%s.md`): his goal in his words, at least %d cases beyond the literal task "
+           "(I1, I2, ...; one marked [outside]: what your mechanism would not cover) and `real:`; then `python3 -I .kit/kit.py "
+           "intent %s`" % (pid, INTENT_MIN_CASES, pid))
+    it = p.get("intent") if isinstance(p.get("intent"), dict) else None
+    if not it or not (it.get("goal") or it.get("cases")):
+        return ["intent: missing: the post never said what he meant beyond the literal task, so nothing tested it. " + how]
+    err = []
+    cases = [c for c in _as_list(it.get("cases")) if isinstance(c, dict) and c.get("id")]
+    if not str(it.get("goal") or "").strip():
+        err.append("intent: no `goal:` line (his goal in his own words, from the task, the train goal and his comments)")
+    if len(cases) < INTENT_MIN_CASES:
+        err.append("intent: %d case(s); at least %d that he would expect to work beyond the literal task" % (len(cases), INTENT_MIN_CASES))
+    if cases and not any(c.get("outside") for c in cases):
+        err.append("intent: no case marked [outside]: name one your likely mechanism would NOT cover (R6 tested only the "
+                   "links it built and missed the plain case)")
+    if not str(it.get("real") or "").strip():
+        err.append("intent: no `real:` line (the real data case: the live board, the real project; or `none: <why>`)")
+    ids = [c["id"] for c in cases]
+    dup = sorted({i for i in ids if ids.count(i) > 1})
+    if dup:
+        err.append("intent: case id(s) used twice: %s" % ", ".join(dup))
+    since = p.get("started_at") or p.get("launched_at")
+    first = code_at if code_at is not None else first_code_commit_at(root, since)
+    at, fc = _iso_utc(it.get("at")), _iso_utc(first)
+    if at and fc and fc < at:
+        err.append("intent: written %s, after the step's first code commit (%s): the intent comes first, before any code" % (
+            it.get("at"), first))
+    if added is None:
+        added = step_tests_added(root, since)
+    if added is None:
+        return err + ["intent: no trunk to compare with and no start date on the post: the tests this step added cannot be "
+                      "read, so no case is proved tested (work on a branch of the trunk)"]
+    tested = [c for c in cases if not c.get("not_covered")]
+    if cases and not tested:
+        err.append("intent: every case is `not covered`: the plan covers none of what he meant; test at least one")
+    untested, unstressed = [], []
+    for c in cases:
+        if c.get("not_covered") == "":
+            err.append("intent: %s says `not covered` without a reason: say why the plan leaves it, or test it" % c["id"])
+            continue
+        if c.get("not_covered"):
+            continue
+        cid = re.escape(c["id"])
+        if not re.search(r"\b%s\b" % cid, added):
+            untested.append(c)
+        elif not re.search(r"\bstress\W{0,3}%s\b" % cid, added, re.I):
+            unstressed.append(c)
+    for c in untested:
+        err.append("intent: %s has no test (%s): no test this step added names %s; a test for it, or `| not covered: <why>` "
+                   "on its line" % (c["id"], str(c.get("text") or "")[:90], c["id"]))
+    for c in unstressed:
+        err.append("intent: %s has no stress test: add an adversarial or out-of-pattern variant named `stress %s` (from his "
+                   "intent, not from your code's mechanism)" % (c["id"], c["id"]))
+    return err
+
+
+def post_intent(pid, db_path=None):
+    """`kit.py intent <post>`: the form's `## intent` onto the post now, before any code (`done` refuses an intent written after)."""
+    path = form_path(pid)
+    if not os.path.isfile(path):
+        return 1, "no form for %s: `python3 -I .kit/kit.py form %s` first" % (pid, pid)
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    m = re.search(r"(?ms)^## intent[ \t]*\n(.*?)(?=^## \w+[ \t]*$|\Z)", text)
+    if not m or _BLANK.search(m.group(1)) or not m.group(1).strip():
+        return 1, "the form has no filled `## intent` yet: %s" % INTENT_FILL
+    p = _get_post(pid, db_path=db_path)
+    if not p:
+        return 1, "no post %s on the board" % pid
+    it = stamp_intent(parse_intent(m.group(1)), p.get("intent"))
+    bad = [e for e in check_intent(dict(p, _id=pid, intent=it), added="", code_at="") if "has no test" not in e and "stress test" not in e]
+    if not _board_write("update", "posts", pid, {"intent": it}):
+        return 1, "intent: the board did not take it (is the board server running?)"
+    lines = ["intent: on post %s (%d cases, first written %s)%s" % (pid, len(it["cases"]), it["at"], (
+        "; send it: `python3 -I .kit/kit.py artifact push`" if artifact_here() else ""))]
+    lines += ["  fix: " + e for e in bad]
+    lines.append("Next: tests that name each case (I1) and a stress variant (stress I1); `done` checks them.")
+    return (1 if bad else 0), "\n".join(lines)
+
+
 def done(pid, db_path=None, root=None):
     p = _get_post(pid, db_path=db_path)
     if not p:
@@ -5343,6 +5574,7 @@ def done(pid, db_path=None, root=None):
     e_h, n_h = check_his_words(pid, p, db_path=db_path)
     err += e_h + plain_notes(p)
     warn += n_h
+    err += check_intent(dict(p, _id=pid), root=root)  # CL76: his intent first, every case tested and stressed
     err += pieces_unchecked(p)                       # CL42: a piece done that not_checked says was not done
     err += record_step_fix(p, pid)                   # M10: a step that fixes a bug is one fix of its kind
     try:
@@ -5449,8 +5681,21 @@ def review_sample(bars, seed=None):
 
 
 def review_brief(p, seed=None):
-    """What a step review rechecks, written into its prompt: his words (`asked`) and the sampled bars."""
+    """What a step review rechecks, written into its prompt: first whether it does what he meant (his intent and its
+    cases, CL76), then his words (`asked`) and the sampled bars."""
     lines = []
+    it = p.get("intent") if isinstance(p.get("intent"), dict) else {}
+    cases = [c for c in _as_list(it.get("cases")) if isinstance(c, dict) and c.get("id")]
+    lines.append("Ask FIRST, before any rerun of the tests: does it do what he meant? Try these cases as he would, the [outside] "
+                 "ones first, and one of your own that nothing below names; a miss is `redirect` whatever the tests say.")
+    if it.get("goal"):
+        lines.append("- his goal: %s" % str(it["goal"]).strip())
+    lines += ["- %s%s: %s%s" % (c["id"], " [outside]" if c.get("outside") else "", str(c.get("text") or "").strip(),
+                                (" (not covered: %s)" % c["not_covered"]) if c.get("not_covered") else "") for c in cases]
+    if it.get("real"):
+        lines.append("- real data: %s" % str(it["real"]).strip())
+    if not cases:
+        lines.append("- (no intent written on the post: judge it against his words and the task's purpose, not its tests)")
     asked = [a for a in _as_list(p.get("asked")) if isinstance(a, dict)]
     if asked:
         lines.append("His words that started this step (judge the work against them, not against the post's summary):")
@@ -8536,6 +8781,7 @@ COMMANDS = [
     ("launch and finish", "kit.py hold <post> --why W [--release]", "a start-now step not launched yet, with the reason the owner reads (on the post, in resume and the queue, CL62)"),
     ("launch and finish", "kit.py unreached <post> --why W", "a part (or review) could not reach its orchestrator: the post says so, every orchestrator's resume lists it"),
     ("launch and finish", "kit.py capacity / device.py run -- <cmd>", "the device's session cap / run a heavy job when it fits in memory"),
+    ("launch and finish", "kit.py intent <post>", "before any code: his goal and at least 3 cases beyond the literal task (one [outside]) from the form onto the post; done refuses a case with no test or no stress test"),
     ("launch and finish", "kit.py done <post>", "check a step's post: format, artifacts, check passes, breaks makes it fail"),
     ("launch and finish", "kit.py review <post> | --train T", "start the review of a step or a train"),
     ("launch and finish", "kit.py pair <post>", "a blind before/after picture pair for a visual step"),
@@ -11259,6 +11505,7 @@ def main(argv=None):
     s = sp.add_parser("form", help="a step's result as a file, half filled: fill it, `done` sends and checks it"); s.add_argument("post")
     s.add_argument("--doing", default="", help="turn 1: the step is in progress, in this session's name"); s.add_argument("--db", default=None)
     s = sp.add_parser("done"); s.add_argument("post"); s.add_argument("--db", default=None)
+    s = sp.add_parser("intent", help="CL76: the form's `## intent` onto the post, before any code"); s.add_argument("post"); s.add_argument("--db", default=None)
     s = sp.add_parser("pair"); s.add_argument("post"); s.add_argument("--answer", default=None); s.add_argument("--db", default=None)
     s = sp.add_parser("sections"); s.add_argument("--db", default=None)
     s = sp.add_parser("step", help="the train is the task list: new | start | complete | drop")
@@ -11532,6 +11779,10 @@ def main(argv=None):
         return 0 if res.get("ok") else 1
     if a.cmd == "form":
         rc, msg = form(a.post, doing=a.doing, db_path=a.db)
+        print(msg)
+        return rc
+    if a.cmd == "intent":
+        rc, msg = post_intent(a.post, db_path=a.db)
         print(msg)
         return rc
     if a.cmd == "done":
