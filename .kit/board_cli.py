@@ -494,7 +494,7 @@ def main(argv=None):
     pim = sub.add_parser("import", help="Import posts/comments from a JSON export bundle or front-matter Markdown file")
     pim.add_argument("path")
 
-    psh = sub.add_parser("share", help="Manage card-scoped external AI share links (/_share/<token>)")
+    psh = sub.add_parser("share", help="Manage card-scoped links for an outside AI (/_invite/<token>.md: the card, its drop box, its result)")
     shsub = psh.add_subparsers(dest="shcmd", required=True)
     shc = shsub.add_parser("create")
     shc.add_argument("post_id")
@@ -986,7 +986,7 @@ def main(argv=None):
                 "max_submissions": a.max_submissions,
                 "files": attached,
             })
-            res["url"] = base + res.get("path", "")
+            res["url"] = base + (res.get("invite") or res.get("path", ""))   # CL56: the one link an outside AI gets
             print(json.dumps(res, ensure_ascii=False))
             return 0
         if a.shcmd == "list":

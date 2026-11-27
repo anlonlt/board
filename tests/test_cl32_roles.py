@@ -341,8 +341,9 @@ class Roles(unittest.TestCase):
     def run_role(self, role, post=None):
         with mock.patch.object(kit, "_load_board_docs", return_value=(json.loads(json.dumps(self.POSTS)), {})), \
                 mock.patch.object(kit, "_attached_boards", return_value=([], [])), \
+                mock.patch.object(kit, "mark_part_branch"), \
                 mock.patch.object(kit, "resume", return_value="# Resume (from the board; nothing else carries over)\n"):
-            return kit.resume_role(None, role, post=post)
+            return kit.resume_role(None, role, post=post)     # CL50: mark_part_branch would mark this checkout as cl32-x
 
     def test_clerk_gets_routing_and_session_ids_only(self):
         out = self.run_role("clerk")

@@ -151,7 +151,15 @@ def main():
             st = json.load(fh)
     except (OSError, ValueError):
         st = {"since": time.time(), "actions": 0, "written": 0, "pieces": []}
-    post = os.environ.get("KIT_POST") or st.get("post")
+    post = st.get("post")
+    if os.environ.get("KIT_POST"):
+        try:                                     # CL50: the worktree's recorded step first; KIT_POST when it agrees
+            import kit_task_train
+            post, note = kit_task_train.own_step(root, lambda: kit_task_train._part_post_from_branch(root))
+        except Exception:
+            post, note = os.environ["KIT_POST"], ""
+        if note:
+            said = (said + " " + note).strip() if said else note
     if post is None:
         try:
             import kit_task_train
