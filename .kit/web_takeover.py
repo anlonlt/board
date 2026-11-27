@@ -21,6 +21,30 @@ import sys
 import time
 import urllib.request
 
+def _test_guard():
+    """CL48: in a test run (KIT_TEST set) a write to a board, a mirror or a remote outside a temp folder is refused
+    (kit/test_guard.py, every git command checked first); None outside a test run."""
+    if not os.environ.get("KIT_TEST"):
+        return None
+    if sys.modules.get("kit_test_guard"):
+        return sys.modules["kit_test_guard"]
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    for f in [os.path.join(d, "test_guard.py") for d in (here, os.path.join(here, "..", "kit"), os.path.join(here, ".."))] + \
+            [os.environ.get("KIT_TEST_GUARD") or ""]:     # a test's hand-made copy of a few scripts: the runner's
+        if f and os.path.isfile(f):
+            spec = importlib.util.spec_from_file_location("kit_test_guard", f)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["kit_test_guard"] = mod
+            spec.loader.exec_module(mod)
+            mod.install()
+            return mod
+    raise SystemExit("KIT_TEST: REFUSED: test_guard.py is not next to %s: a test run writes nothing without it" % __file__)
+
+
+_TEST_GUARD = _test_guard()
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KIT = os.path.join(ROOT, ".kit")
 RUN = os.path.join(KIT, "run")
@@ -101,6 +125,17 @@ def owns_board():
     if proj and os.path.realpath(proj) != os.path.realpath(ROOT):
         return False, "this clone (%s) is not this session's project (%s)" % (ROOT, proj)
     return True, ""
+
+
+def artifact_board():
+    """The claude.ai Artifact this board lives in (kit.artifact.url, or a claude.ai board_url), '' for a git-only board."""
+    c = cfg()
+    a = (c.get("kit") or {}).get("artifact")
+    for u in ((a or {}).get("url") if isinstance(a, dict) else "", os.environ.get("KIT_ARTIFACT_URL"), c.get("board_url"),
+              (c.get("kit") or {}).get("artifact_url")):
+        if u and "claude.ai/" in str(u):
+            return str(u)
+    return ""
 
 
 def start_board():
@@ -193,8 +228,18 @@ def cmd_start():
     ensure_mirror_worktree()
     # the board here against git: what the computer saved before it stopped (or crashed) comes in, newer copy wins
     own, why = owns_board()
-    rc, rec = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "reconcile"] + ([] if own else ["--no-push"]), timeout=240)
-    print(rec.splitlines()[-1] if rec else "reconcile: no output")
+    if artifact_board():
+        # CL45: an Artifact board is reconciled with git by `kit.py artifact reconcile` once its pull is made (the
+        # ArtifactData calls are this session's): a git reconcile here first would put git's copies in before the
+        # Artifact's, and the documents only git had would never reach the Artifact
+        print("Board vs git: after the pull below, `python3 -I .kit/kit.py artifact reconcile` (the Artifact against "
+              "origin/%s, both ways, newer wins, a both-sides change kept twice)." % mirror_branch())
+        rc, pull = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "artifact", "pull"], timeout=60)
+        print(pull)
+    else:
+        rc, rec = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "reconcile"] + ([] if own else ["--no-push"]),
+                     timeout=240)
+        print(rec.splitlines()[-1] if rec else "reconcile: no output")
     rc, res = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "resume"], timeout=180)
     print()
     print(res)

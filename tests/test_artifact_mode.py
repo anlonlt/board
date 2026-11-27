@@ -88,7 +88,7 @@ class ArtifactMode(unittest.TestCase):
 
     def test_cli(self):
         out = subprocess.run([sys.executable, "-I", str(ROOT / "scripts" / "kit.py"), "artifact", "pull"],
-                             capture_output=True, text=True, env=dict(os.environ)).stdout
+                             capture_output=True, text=True, env=dict(os.environ, CLAUDE_CODE_REMOTE="true")).stdout  # CL51: web only
         self.assertIn("`ArtifactData` `list`", out)
         self.assertIn("artifact load", out)
 
