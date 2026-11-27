@@ -1898,6 +1898,13 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 "```",
                 "*(Set `\"mode\": \"child_post\"` and `\"title\": \"...\"` to create a linked result card instead of a comment; pass an optional `\"idempotency_key\": \"<slug>\"` to update the same child card across re-runs without duplicates.)*",
                 "",
+                "### Files (a patch, a script, a report): the post's drop box",
+                "Attach each file to this card, never paste it into the text: POST JSON to `%s` (one file a call):" % (submit_url[:-len("/submit")] + "/artifacts"),
+                "```json",
+                json.dumps({"from": "lmarena", "path": "<file name, e.g. fix.patch>", "content": "<the file's text>",
+                            "summary": "<one line: what it is>"}, indent=2),
+                "```",
+                "",
             ])
         lines.extend([
             "### Option B — Copy-paste Markdown card (for 1-click import)",
@@ -3088,6 +3095,37 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         def do_POST(self):
             parsed = urllib.parse.urlsplit(self.path)
             path = parsed.path
+            if path.startswith("/_share/") and path.endswith("/artifacts"):
+                # The post's drop box (b52f5b6, the owner's design), reached with the link "Link for AI" gives: files
+                # for this link's post only, never another; the same limits as any upload to the drop box.
+                stok_a = urllib.parse.unquote(path[len("/_share/"):-len("/artifacts")]).strip("/")
+                sh_a = store.get_share(stok_a)
+                if not sh_a:
+                    self._send_json(404, {"error": "share_not_found"})
+                    return
+                if sh_a["revoked"] or sh_a["expires_at"] < utc_now():
+                    self._send_json(410, {"error": "share_expired_or_revoked"})
+                    return
+                if not sh_a["allow_write"]:
+                    self._send_json(403, {"error": "share_read_only"})
+                    return
+                try:
+                    body = self._read_json()
+                except PayloadTooLarge as e:
+                    self._send_json(413, {"error": str(e), "code": "too_large"})
+                    return
+                except ValueError:
+                    self._send_json(400, {"error": "invalid json"})
+                    return
+                res_s, aerr_s = store.save_artifact(sh_a["post_id"], body.get("path"), body.get("content", ""),
+                                                       summary=body.get("summary", ""), by_user="share:" + str(body.get("from") or "ai"),
+                                                       agent_meta=body.get("agent_meta"))
+                if aerr_s:
+                    self._send_json(413 if aerr_s == "too_large" else 400, {"error": aerr_s})
+                    return
+                self._send_json(200, res_s)
+                return
+
             if path.startswith("/_share/") and path.endswith("/submit"):
                 stok = urllib.parse.unquote(path[len("/_share/"):-len("/submit")]).strip("/")
                 sh = store.get_share(stok)

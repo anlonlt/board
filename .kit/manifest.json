@@ -43,7 +43,7 @@
  ".kit/access.py": "235a7cf461eac4f4b863c7a217473949c7b8a3c4f52f9a59fee5e7b6f1280f84",
  ".kit/board.html": "c8f6d56c646e0558ebc065bad96eda6006203dc289710bfd8a2c89eb38343d15",
  ".kit/board_cli.py": "d743cde8ca5dedee17c4869401a33efaa3b6da03a37ce9ab34e3bec9f5bab9c9",
- ".kit/board_server.py": "c6da1661db5f14b7073cb40531edb736a30f06d3fd356fae2509582455cd429b",
+ ".kit/board_server.py": "12c22bdb680a373c440df4a99f62e426ba19ce276102e45f7e3432acbcb2fe99",
  ".kit/board_token.py": "637e13c9140b8d9abb8378292d7287baaf7c978cfce566123fb9a8eb2bd93ea6",
  ".kit/claude-cli/ORCHESTRATOR.md": "a987decab6b4084e94a2d7ede595b8616f0307fd39084347c4233fab99f36460",
  ".kit/claude-cli/clerk.md": "d1464cced04909c046226185ee45307582d81e52f4262973410f6c3da9b3b88e",
@@ -103,5 +103,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "e1b282847457310ea4317ef717ebb9d4ae8a743a77201e154c53c23ac05e74a1",
- "_kit_commit": "fa0e22a 2026-11-26T17:15:27-05:00"
+ "_kit_commit": "941e242 2026-11-26T19:08:21-05:00"
 }
