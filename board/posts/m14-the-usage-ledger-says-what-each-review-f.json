@@ -7,6 +7,8 @@
  "from": "orchestrator",
  "kept_on_train": "the ledger's train (M6 counts cost per command); the train split is pending",
  "kind": "feature",
+ "landed": "bcaff4e919401fc400c87d6af15bfda5cb2c2fb0",
+ "landed_at": "2026-11-27T09:27:43Z",
  "launched_at": "2026-11-27T08:25:06Z",
  "launched_out_of_order": {
   "at": "2026-11-27T08:25:06Z",
@@ -24,7 +26,7 @@
  "task": "The usage ledger (scripts/usage.py, `kit.py usage record|show|compare`) records each review session's cost but not what it found: 25 review rows, $81.42, none say whether the review was worth it. The owner asked for the ledger to show it.\n\nEach review row gets two fields, filled from the review's own board comment (CR-<post>[-N]) and the step's post, never by a model call:\n- `verdict`: continue | redirect | stop (parsed from the review comment's first line).\n- `found_new`: yes | no, and `found` (one line): yes when the review named a problem that the part's post and `kit.py done` did not (a redirect, or a continue whose comment lists a gap/bug under its findings); no when it only re-ran the step's check and break and sampled a bar that the post already reported.\n\n`kit.py usage show --role review` prints them per row, and a summary line: reviews n, cost $, found_new k of n, cost per review that found something. Backfill the 25 existing rows from the board's CR- comments (`usage import`-style, no transcripts needed). Test: seeded rows + CR comments (one redirect, one continue that only repeats the tests, one continue with a real gap) give verdicts and found_new yes/no/yes, and the summary line; it fails on main.\n",
  "title": "The usage ledger says what each review found: verdict and found-new per review row, cost per useful review",
  "train": "memory",
- "updated_at": "2026-11-27T08:25:19Z",
+ "updated_at": "2026-11-27T09:27:47Z",
  "work_branch": "main",
  "working_by": "owner"
 }
