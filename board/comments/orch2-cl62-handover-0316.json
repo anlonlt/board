@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T03:16:00Z",
+ "from": "orchestrator",
+ "post_id": "cl62-the-orchestrator-cannot-end-a-turn-with",
+ "text": "Owner, 2026-11-27 03:15 in chat: \"shouldn't that be the handover's fault then? Why was there a handover instead of it just asking you to run the resume command?\" Added to CL62: the hand-over (kit.py guide hand-over / the hand-over comment) holds only what the board does not (the owner's chat decisions, a half-done action); any step-state claim (waits on, next, blocked by) is refused when written, since resume computes it from the board. Resume shows the hand-over after the queue, never as a plan."
+}

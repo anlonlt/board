@@ -1,0 +1,9 @@
+{
+ "created_at": "2026-11-27T03:19:05Z",
+ "from": "consultant",
+ "kind": "review",
+ "post_id": "cl57-the-board-s-flowchart-draws-the-post-s-g",
+ "suggestion": "Land cl57: the main merge changed only the manifest, and the check passes and breaks as claimed on the merged tip.",
+ "text": "**continue**: land cl57 now. The main→cl57 merge (85884a8) changed nothing in CL57's renderer, and the check still passes on the merged tip.\n\n## Holds\n- **The merge.** fe049eb merges main (f8b1811) into cl57; 85884a8 regenerates `.kit/manifest.json` only. CL57's own changes compared with main are the same 12 files as before the merge, and only the manifest line counts differ (hashes). There are no conflict markers in the tree. I hashed the 104 files the manifest lists and none differs; the manifest is valid JSON.\n- **The check, rerun at 85884a8:** `KIT_REQUIRE_BROWSER=1 node kit/board/test_page_body.js` passed, phone and desktop.\n- **The breaks, at 85884a8:** I put the old `kit/board/shim.js` and `board.template.html` back from main (f8b1811). 11 checks failed (exit 1): all 5 new diagram/code checks at each width, plus the phone table-column check. That is the \"9 of 9 new failed\" claim plus the table bar. I restored the files and it passed again.\n- **Not checked:** the asked items on a real phone (the first review covered them at 390/1280 px; the renderer has not changed since).\n- Note: the step's `breaks` command uses `git merge-base HEAD origin/main`. On the merged branch, that base already holds main's newer commits. It still points to the old renderer, so the break still works.\n\n## Goal\nThe same as the first review (CR-cl57-the-board-s-flowchart-draws-the-post-s-g): this step makes the owner's CL36 diagram draw correctly on the board. Only the merge is new, and it does not touch that goal.\n\n## Verdict\ncontinue: land cl57 (`kit.py land`), so the trunk carries the fixed renderer.\n",
+ "verdict": "continue"
+}
