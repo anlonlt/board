@@ -4673,6 +4673,48 @@ def git_copy_has(pid, p, strip, m=None):
             % (BRANCH, (txt or "nothing")[-200:])]
 
 
+def _step_changed(root):
+    """M3: the files this step changed: its commits since it left the trunk, and what is not committed yet. None when
+    there is no trunk to compare with (a repo with no trunk ref, the trunk itself)."""
+    g = lambda *a: subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=60)  # noqa: E731
+    trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+    try:
+        if g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == trunk:
+            return None
+        base = ""
+        for ref in ("origin/" + trunk, trunk):
+            r = g("merge-base", "HEAD", ref)
+            if r.returncode == 0 and r.stdout.strip():
+                base = r.stdout.strip()
+                break
+        if not base:
+            return None
+        names = g("diff", "--name-only", base, "HEAD").stdout.splitlines()
+        names += g("diff", "--name-only", "HEAD").stdout.splitlines()
+        names += g("ls-files", "--others", "--exclude-standard").stdout.splitlines()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return sorted({n.strip() for n in names if n.strip()})
+
+
+def check_map(root):
+    """M3: Done keeps the map. Rebuild it, rerun every link's check (refused on one that fails, the link named),
+    refuse a file this step changed that is not on the map and an added thing with no check. (errors, notes)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    try:
+        import kit_map  # noqa: E402
+    except ImportError:
+        return [], ["map: kit_map.py is not next to kit.py: the map was not checked (`python3 -I install.py . --update`)"]
+    changed = _step_changed(root)
+    errors, notes, secs = kit_map.stretch(root, changed or [])
+    errors = ["map: " + e for e in errors]
+    notes = ["map: " + n for n in notes]
+    notes.append("map: checked in %.1f s%s" % (secs, "" if changed is not None else " (no trunk to compare with: changed files not checked)"))
+    return errors, notes
+
+
 def done(pid, db_path=None, root=None):
     p = _get_post(pid, db_path=db_path)
     if not p:
@@ -4698,6 +4740,9 @@ def done(pid, db_path=None, root=None):
     pending_real = check_real_project(p, root=root)
     warn += pending_real         # CL32/CL38: a real project too, run by the orchestrator (pending)
     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
+    e_m, n_m = check_map(root)                       # M3: the part's stretch of the map, and what it built on it
+    err += e_m
+    warn += n_m
     strip = lambda d: {k: v for k, v in (d or {}).items() if k not in ("proof", "updated_at")}  # noqa: E731
     if not artifact_here():
         # CL51: on a computer the board is the local one and git carries it: the post is on the local board (read
