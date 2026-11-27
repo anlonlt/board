@@ -904,9 +904,38 @@ def under_tempdir(t):
     return any(real == r or real.startswith(r.rstrip(os.sep) + os.sep) for r in roots)
 
 
+def is_git_worktree(t):
+    """True when t is a linked git worktree (an ephemeral part/agent checkout, not the main checkout)."""
+    for p in (os.path.abspath(t), os.path.realpath(t)):
+        norm = p.replace(os.sep, "/") + "/"
+        if "/.gemini/antigravity-cli/worktrees/" in norm or "/.claude/worktrees/" in norm:
+            return True
+    if os.path.isfile(os.path.join(t, ".git")):
+        return True
+    try:
+        r = subprocess.run(
+            ["git", "-C", t, "rev-parse", "--git-dir", "--git-common-dir"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            lines = [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+            if len(lines) >= 2:
+                git_dir = os.path.realpath(os.path.join(t, lines[0]))
+                common_dir = os.path.realpath(os.path.join(t, lines[1]))
+                if git_dir != common_dir:
+                    return True
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return False
+
+
 def install_cmd(t, cmd_name, dry, log, extra_args=""):
     """Install a one-word launcher in ~/.local/bin/<cmd_name> (override dir with $KIT_BIN_DIR)."""
     if not cmd_name or "/" in cmd_name or " " in cmd_name:
+        return
+    if not os.environ.get("KIT_BIN_DIR") and is_git_worktree(t):
+        # A part's linked git worktree is ephemeral; overwriting ~/.local/bin/<cmd> breaks the launcher once removed.
+        log.append("SKIPPED command `%s`: %s is a git worktree (set KIT_BIN_DIR to install its launcher)" % (cmd_name, t))
         return
     if not os.environ.get("KIT_BIN_DIR") and under_tempdir(t):
         # A trial install in /tmp would point the real `board` at a folder that disappears.
@@ -919,7 +948,8 @@ def install_cmd(t, cmd_name, dry, log, extra_args=""):
     content = "#!/usr/bin/env bash\n%s\nexec %s%s \"$@\"\n" % (marker, json.dumps(os.path.join(t, ".kit", "up")), suffix)
     if os.path.exists(dst):
         try:
-            cur = open(dst, encoding="utf-8").read()
+            with open(dst, encoding="utf-8") as fh:
+                cur = fh.read()
         except OSError:
             cur = ""
         if cur == content:
