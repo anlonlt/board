@@ -24,3 +24,6 @@ Folded in (owner's go, 2026-11-27): CL65 and CL70, same goal: a reviewed step re
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+CL71: builds on CL48 (test runs) and CL59 (part pushes), but touches neither: it takes the generated manifest and files map out of git, makes land count a reviewed commit on main (not the branch tip) and record a re-review's commit, and fixes the two tests red on main in a web container.
