@@ -1046,17 +1046,46 @@ def _scoped_pull_lines(board, d, pre, post):
     return "\n".join(lines) + "\n"
 
 
+PULL_CALL = re.compile(r"`ArtifactData` `(list|query)`, `url` \S+, `collection: \"([^\"]+)\"`, `query: \{(?:where: (\[\[.*?\]\]), )?"
+                       r"limit: (\d+)\}`")
+
+
 def _pull_record(text):
-    """M11: the whole-collection calls this pull printed, for the guard (kit_orchestrator_guard.py lets a `list` or
-    broad `query` of posts or comments through only when a pull printed it, 30 minutes)."""
-    calls = [{"action": a, "collection": c} for a, c in
-             re.findall(r"`ArtifactData` `(list|query)`, `url` \S+, `collection: \"([^\"]+)\"`", text)]
+    """M11: each whole-collection call this pull printed, whole (action, collection, where, limit), for the guard:
+    kit_orchestrator_guard.py lets each through once, in the next 30 minutes (version 2 of the record)."""
+    calls = []
+    for a, c, w, lim in PULL_CALL.findall(text):
+        try:
+            where = json.loads(w) if w else None
+        except ValueError:
+            continue
+        calls.append({"action": a, "collection": c, "where": where, "limit": int(lim)})
     try:
         os.makedirs(_art_dir(), exist_ok=True)
-        write_doc(os.path.join(_art_dir(), "pull.json"), {"at": time.time(), "calls": calls})
+        write_doc(os.path.join(_art_dir(), "pull.json"), {"v": 2, "at": time.time(), "calls": calls})
     except OSError:
         pass
     return text
+
+
+def _pending_record(r):
+    """M11 (CR-m11): the documents the batches of this push name (and those it asks to pin), so the guard lets only
+    `get` of them through until `artifact sent` records the last batch; removed when nothing is out."""
+    pre = _art_prefix()
+    ids = ["%s%s" % (pre, k) for k in r.get("need_pin") or []]
+    for b in r.get("batches") or []:
+        for e in _read_json(b) or []:
+            if isinstance(e, dict):
+                ids.append("%s/%s" % (e.get("collection"), e.get("doc_id")))
+    p = os.path.join(_art_dir(), "pending.json")
+    try:
+        if ids:
+            write_doc(p, {"at": time.time(), "ids": sorted(set(ids))})
+        elif os.path.exists(p):
+            os.remove(p)
+    except OSError:
+        pass
+    return r
 
 
 def artifact_pull(full=False, post=None):
@@ -4329,6 +4358,9 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
         scope = ("The step `%s` (part %s, train `%s`) is complete: review it AND the question its train serves, not only "
                  "this step." % (pid, part, project))
         scope = scope + review_brief(dict(p, _id=pid))
+        if attached_board():   # M11 (CR-m11): a review's first pull reads only the step's documents, never the whole board
+            scope += (" The board, on the web: `python3 -I .kit/kit.py artifact pull --post %s` (only this step's documents, "
+                      "by id), the calls it prints, `python3 -I .kit/kit.py artifact load`." % pid)
         br = str((p.get("proof") or {}).get("branch") or p.get("branch") or "")
         if br and lands_after_review():
             scope += (" Its work is on branch `%s`%s, not on the trunk: read and run it there (`git fetch origin %s && git worktree add "
@@ -8857,10 +8889,12 @@ def main(argv=None):
                     print("NOT MERGED (rows without a key changed on both sides; this copy kept, its pin will refuse): " + u)
                 print(artifact_blobs_text(r), end="")
             elif a.action == "push":
-                print(artifact_push_text(artifact_push(url=a.board_url, token=a.token)), end="")
+                print(artifact_push_text(_pending_record(artifact_push(url=a.board_url, token=a.token))), end="")
             elif a.action == "sent":
                 print("recorded: %d writes" % sum(artifact_sent(p) for p in a.args))
                 if not glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")):      # the last batch: git, the record
+                    with contextlib.suppress(OSError):
+                        os.remove(os.path.join(_art_dir(), "pending.json"))       # M11: nothing out, reads open again
                     print(keep(m)[0])
             elif a.action == "pin":
                 rep = []

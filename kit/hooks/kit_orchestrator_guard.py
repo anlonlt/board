@@ -6,7 +6,8 @@ prompts, although the kit scripts all of it for a fraction of the tokens (the ow
 taken the time to script everything for token efficiency"). Rules in a guide were skipped; this hook refuses, for
 the orchestrator only, the three gestures that bypass the kit, and says the kit's way:
   - a `list` or broad `query` of posts or comments (also an attached board's repos/<id>/...), except the kit's own
-    pull (a call `kit.py artifact pull` printed in the last 30 minutes, M11) and a targeted lookup (a `where`, limit <= 5): use
+    pull (each call `kit.py artifact pull` printed, whole, once, in the last 30 minutes, M11) and a targeted lookup;
+    while a batch of `kit.py artifact push` is out (not recorded sent), only `get` of the documents it names passes (a `where`, limit <= 5): use
     `kit.py artifact pull` / `load`, then `kit.py resume`, `post <id>`, `open`, `since <time>`;
   - a `set` of a step post (not a `_` card, not `_orchestrator`): plan it with TaskCreate {train, part}: the
     task-train hook writes the post and its prompt; a batch from `kit.py artifact push` (.kit/run/artifact/out) passes;
@@ -256,33 +257,89 @@ def _hand_write(w, root):
 
 
 PULL_FRESH_S = 30 * 60
+PULL_V = 2
 
 
-def pulled(ti, root):
-    """M11: this whole-collection read is one `kit.py artifact pull` printed (its record .kit/run/artifact/pull.json,
-    under 30 minutes old, names its action and collection) and it saves under that copy's .kit/run/artifact. An
-    out_dir there alone no longer passes: a hand-made list copied it (11-26: 31 lists in 12 of 12 part sessions)."""
-    out = str(ti.get("out_dir") or "")
+def _art_bases(root):
     bases = [os.path.join(r, ".kit", "run", "artifact") for r in kit_roots(root)]
     if os.environ.get("KIT_ARTIFACT_DIR"):
         bases.insert(0, os.environ["KIT_ARTIFACT_DIR"])
-    for base in bases:
+    return bases
+
+
+def _same_call(c, ti):
+    """A printed call (pull.json) and this one: the same action, collection, `where` and `limit` (a cursor aside)."""
+    q = ti.get("query") if isinstance(ti.get("query"), dict) else {}
+    return (c.get("action") == ti.get("action") and c.get("collection") == ti.get("collection")
+            and (c.get("where") or None) == (q.get("where") or None) and c.get("limit") == q.get("limit"))
+
+
+def pulled(ti, root):
+    """M11: this whole-collection read is one `kit.py artifact pull` printed, whole (its record .kit/run/artifact/
+    pull.json, version 2, under 30 minutes old: action, collection, where, limit), saved under that copy's
+    .kit/run/artifact, and not used yet: each printed call passes once (CR-m11: a record of {action, collection}
+    let any broad query of that collection through for 30 minutes). The next pages of a printed list (its `cursor`)
+    pass after it. Used calls are marked in the record."""
+    out = str(ti.get("out_dir") or "")
+    q = ti.get("query") if isinstance(ti.get("query"), dict) else {}
+    for base in _art_bases(root):
         if not under(out, base):
             continue
-        rec = _read(os.path.join(base, "pull.json")) or {}
+        p = os.path.join(base, "pull.json")
+        rec = _read(p) or {}
         try:
-            fresh = time.time() - float(rec.get("at") or 0) <= PULL_FRESH_S
+            fresh = rec.get("v") == PULL_V and time.time() - float(rec.get("at") or 0) <= PULL_FRESH_S
         except (TypeError, ValueError):
             fresh = False
-        if fresh and any(isinstance(c, dict) and c.get("action") == ti.get("action")
-                         and c.get("collection") == ti.get("collection") for c in rec.get("calls") or []):
+        if not fresh:
+            continue
+        for c in rec.get("calls") or []:
+            if not isinstance(c, dict) or not _same_call(c, ti):
+                continue
+            if q.get("cursor"):
+                if c.get("used"):
+                    return True                   # the next page of a list the pull printed
+                continue
+            if c.get("used"):
+                continue
+            c["used"] = time.time()
+            try:
+                with open(p, "w", encoding="utf-8") as fh:
+                    json.dump(rec, fh)
+            except OSError:
+                pass
             return True
     return False
+
+
+def pending_batch(root):
+    """M11 (CR-m11): a batch `kit.py artifact push` built that is not recorded sent yet (its record
+    .kit/run/artifact/pending.json, 30 minutes): {ids: ["<collection>/<doc_id>", ...]}, else None. While it is out,
+    a refused batch is followed only by `get` of the documents it names (then `artifact pin`), never a list."""
+    for base in _art_bases(root):
+        rec = _read(os.path.join(base, "pending.json"))
+        if not isinstance(rec, dict):
+            continue
+        try:
+            if time.time() - float(rec.get("at") or 0) <= PULL_FRESH_S and rec.get("ids"):
+                return rec
+        except (TypeError, ValueError):
+            pass
+    return None
 
 
 def board_verdict(ti, root, orch):
     """CL30: the board rules for every session (the orchestrator, parts, the clerk, reviews)."""
     act = str(ti.get("action") or "")
+    pend = pending_batch(root) if act in ("list", "query", "get") else None
+    if pend:
+        key = "%s/%s" % (ti.get("collection"), ti.get("doc_id"))
+        if act == "get" and key in pend["ids"]:
+            return None
+        return ("a %s while a batch of `kit.py artifact push` is out (%s): after a refused batch read only the "
+                "documents it names, each by `get` (%s), then `python3 -I .kit/kit.py artifact pin <collection>/<id>=<N>` "
+                "and push again; a sent batch: `kit.py artifact sent <batch>` first." % (
+                    act, key if act == "get" else ti.get("collection"), ", ".join(pend["ids"][:6])))
     if act in ("list", "query") and BOARD_COLL.match(str(ti.get("collection") or "")):
         if pulled(ti, root):
             return None

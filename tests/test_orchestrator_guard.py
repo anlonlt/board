@@ -36,8 +36,9 @@ class Project(unittest.TestCase):
         """M11: what `kit.py artifact pull` printed (its record), so the guard lets those whole-collection reads pass."""
         d = os.path.join(root or self.proj, ".kit", "run", "artifact")
         os.makedirs(d, exist_ok=True)
-        json.dump({"at": time.time() if at is None else at,
-                   "calls": [{"action": a, "collection": c} for a, c in calls]}, open(os.path.join(d, "pull.json"), "w"))
+        json.dump({"v": 2, "at": time.time() if at is None else at,
+                   "calls": [{"action": a, "collection": c, "where": None, "limit": None} for a, c in calls]},
+                  open(os.path.join(d, "pull.json"), "w"))
 
     def run_hook(self, tool, ti, role="orchestrator", prompt=None):
         env = {k: v for k, v in os.environ.items() if k not in ("KIT_ROLE", "HARMONIZE_ROLE")}

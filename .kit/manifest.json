@@ -70,17 +70,17 @@
  ".kit/hooks/kit_guard.py": "70e767f62a8b06749a25dc2f551e07434e0747418668a6355e71623a93840f22",
  ".kit/hooks/kit_memory_jit.py": "3fd9978d98789328d436e110464837f3c4357d96544aa75a0418b7e4e2577a19",
  ".kit/hooks/kit_notify.py": "142269e891ffc58881e3670bd213d14139f8e5f345186f8249a7739604989feb",
- ".kit/hooks/kit_orchestrator_guard.py": "a6581102228de28da86cf9ddb4a2552897d6e5f4a0d314bedcc4116678f1c5da",
+ ".kit/hooks/kit_orchestrator_guard.py": "707d9c5eccfc59e84055a20f1d8a20d720504103463af5dfdb2e304a95f2e25a",
  ".kit/hooks/kit_pre_compact.py": "c551faed424640d90abbaf91d89bbcb0f3b56be696c0882cef8161d69c8ae213",
  ".kit/hooks/kit_say_it_once.py": "6bb08ed6e02c0a3b3eb74abff64c504275e3657544f95557ad4b71285d501a1e",
- ".kit/hooks/kit_session_start.py": "20ca75c9b3164aa4600823b35ff4c7137ae8b8b4105be739edeb3b9b2a45dde2",
+ ".kit/hooks/kit_session_start.py": "d212ae1eea29e01de41c89e0bfa5a98d74d2a3dbfb8bce243023de6d7c6fdf91",
  ".kit/hooks/kit_stop.py": "30d8613fa8e400f3bba20e455a24af2fdedd2398552f7317753a3e128d955d89",
  ".kit/hooks/kit_task_train.py": "365379244945bd5a3c897eb435f6d4107e1d8aff95400db5aa91779eab54a564",
  ".kit/hooks/kit_usage.py": "845684c0c636ae58813f7efb5b0dea399432a36eccd1791ffffa4eb1e7071077",
  ".kit/hooks/kit_web_save.py": "74229a81f846eb4ccb4bd8834d320e3adb605458ed49534cce1916eb0237bbf6",
  ".kit/hooks/kit_wip.py": "8d7adaa25bfbc9dd1e265d59fb036f12fb45bd7137b63ada457d5bf5651b7158",
  ".kit/hooks/test_hooks.py": "778123d6f729d1363c6ddad76c18cdb44cbe4fc4b6e9b2275211b1c62f53e654",
- ".kit/kit.py": "5bc221fafd723dad41dd838f9e8b8a9068e3a14068d6b7a9ea122c595ff378b3",
+ ".kit/kit.py": "9a3d919387a042a30a7294d85bf7dc47b33e4448768ff591e54632c4eae95ddb",
  ".kit/kit_artifact_sync.py": "64760e0f0ff2e3e3aca193ddcbbf501ec30474179b5ea838a4e34dc5b8b2ca67",
  ".kit/kit_cards.py": "f7352a5317a42f958167146364539996603f8f8926a12da71f36ef6d4fa07ca8",
  ".kit/kit_import.py": "7ee7050f20af4343885704ca613b86945472e9ceec08ec8e0fb47645578ba809",
@@ -104,5 +104,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "76f3d5c40b33c5475ac2f34e82ba7fc81b527e89cdcd40e70c673f8355cec79d",
- "_kit_commit": "01b49ab 2026-11-26T23:36:54+00:00"
+ "_kit_commit": "63308a1 2026-11-26T23:55:29+00:00"
 }

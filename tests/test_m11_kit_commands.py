@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -289,6 +290,100 @@ class GuardBeforeTheCall(unittest.TestCase):
             self.assertEqual(self.hook(proj, q)[0], 0)
             self.assertEqual(self.hook(proj, {"action": "get", "url": ART, "collection": "repos/board/posts",
                                               "doc_id": "m11-x"})[0], 0)          # one document by id: always
+
+
+class GuardReviewCases(unittest.TestCase):
+    """CR-m11 (redirect): each printed call passes once, whole; a broad query is not a printed `where` query; while a
+    batch of `artifact push` is out only `get` of its ids passes; the review's own script's rows 2 and 3 refused."""
+    HOOK = ROOT / "kit" / "hooks" / "kit_orchestrator_guard.py"
+    C = "repos/board/comments"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.proj = os.path.join(self.tmp.name, "repo")
+        self.art = os.path.join(self.proj, ".kit", "run", "artifact")
+        self.inn = os.path.join(self.art, "in")
+        os.makedirs(self.inn)
+
+    def rec(self, name, doc):
+        with open(os.path.join(self.art, name), "w") as fh:
+            json.dump(doc, fh)
+
+    def hook(self, ti, role="part"):
+        env = {k: v for k, v in os.environ.items() if k not in ("KIT_ROLE", "KIT_ARTIFACT_DIR")}
+        env.update(CLAUDE_PROJECT_DIR=self.proj, KIT_ROLE=role)
+        return subprocess.run([sys.executable, "-I", str(self.HOOK)], capture_output=True, text=True, env=env, timeout=30,
+                              input=json.dumps({"hook_event_name": "PreToolUse", "tool_name": "ArtifactData",
+                                                "tool_input": ti, "session_id": "m11"})).returncode
+
+    def test_each_printed_call_passes_once_whole(self):
+        lst = {"action": "list", "collection": self.C, "query": {"limit": 1000}, "out_dir": self.inn}
+        self.rec("pull.json", {"v": 2, "at": time.time(), "calls": [
+            {"action": "list", "collection": self.C, "where": None, "limit": 1000}]})
+        self.assertEqual(self.hook(lst), 0)                                    # the pull's own call
+        self.assertEqual(self.hook(dict(lst, query={"limit": 1000, "cursor": "c2"})), 0)   # its next page
+        self.assertEqual(self.hook(lst), 2)                                    # the same list again: refused
+        for role in ("orchestrator", "review", "clerk"):
+            self.assertEqual(self.hook(lst, role), 2, role)
+
+    def test_a_post_pull_opens_no_broad_query(self):
+        """The review's row 2: after `pull --post` (one query by post_id), a query of comments with no where."""
+        self.rec("pull.json", {"v": 2, "at": time.time(), "calls": [
+            {"action": "query", "collection": self.C, "where": [["post_id", "==", "m11-x"]], "limit": 1000}]})
+        self.assertEqual(self.hook({"action": "query", "collection": self.C, "query": {"limit": 1000}, "out_dir": self.inn}), 2)
+        self.assertEqual(self.hook({"action": "query", "collection": self.C, "out_dir": self.inn,
+                                    "query": {"where": [["post_id", "==", "other"]], "limit": 1000}}), 2)
+        self.assertEqual(self.hook({"action": "query", "collection": self.C, "out_dir": self.inn,
+                                    "query": {"where": [["post_id", "==", "m11-x"]], "limit": 1000}}), 0)
+
+    def test_a_record_without_the_whole_call_is_not_trusted(self):
+        """The review's script writes {action, collection} only (an older kit's record): rows 2 and 3 refused."""
+        self.rec("pull.json", {"at": time.time(), "calls": [{"action": "list", "collection": self.C},
+                                                           {"action": "query", "collection": self.C}]})
+        self.assertEqual(self.hook({"action": "query", "collection": self.C, "query": {"limit": 1000}, "out_dir": self.inn}), 2)
+        self.assertEqual(self.hook({"action": "list", "collection": self.C, "query": {"limit": 1000}, "out_dir": self.inn}), 2)
+
+    def test_after_a_refused_batch_only_get_of_its_ids(self):
+        lst = {"action": "list", "collection": self.C, "query": {"limit": 1000}, "out_dir": self.inn}
+        self.rec("pull.json", {"v": 2, "at": time.time(), "calls": [
+            {"action": "list", "collection": self.C, "where": None, "limit": 1000}]})
+        self.rec("pending.json", {"at": time.time(), "ids": ["repos/board/posts/m11-x", "repos/board/posts/_trains"]})
+        self.assertEqual(self.hook(lst), 2)                                    # even a printed list waits
+        self.assertEqual(self.hook({"action": "get", "collection": "repos/board/posts", "doc_id": "m11-x"}), 0)
+        self.assertEqual(self.hook({"action": "get", "collection": "repos/board/posts", "doc_id": "cl45"}), 2)
+        os.remove(os.path.join(self.art, "pending.json"))                     # `artifact sent`: nothing out
+        self.assertEqual(self.hook({"action": "get", "collection": "repos/board/posts", "doc_id": "cl45"}), 0)
+
+
+class PushAndSentRecords(unittest.TestCase):
+    def test_pending_written_by_push_and_cleared_when_nothing_is_out(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["KIT_ARTIFACT_DIR"] = d
+            self.addCleanup(os.environ.pop, "KIT_ARTIFACT_DIR", None)
+            k = load_kit(d)
+            b = os.path.join(d, "batch-01.json")
+            with open(b, "w") as fh:
+                json.dump([{"op": "set", "collection": "repos/board/posts", "doc_id": "m11-x"}], fh)
+            k._pending_record({"batches": [b], "need_pin": ["posts/_trains"]})
+            got = json.load(open(os.path.join(d, "pending.json")))["ids"]
+            self.assertEqual(got, ["posts/_trains", "repos/board/posts/m11-x"])          # no prefix configured here
+            k._pending_record({"batches": [], "need_pin": []})
+            self.assertFalse(os.path.exists(os.path.join(d, "pending.json")))
+
+    def test_pull_records_each_call_whole(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["KIT_ARTIFACT_DIR"] = d
+            self.addCleanup(os.environ.pop, "KIT_ARTIFACT_DIR", None)
+            k = load_kit(d)
+            k._pull_record('- `ArtifactData` `query`, `url` U, `collection: "repos/board/comments"`, `query: {where: '
+                           '[["post_id", "==", "m11-x"]], limit: 1000}`, `out_dir: "x"`.\n- `ArtifactData` `list`, `url` U, '
+                           '`collection: "repos/board/posts"`, `query: {limit: 1000}`, `out_dir: "x"`; while ...')
+            rec = json.load(open(os.path.join(d, "pull.json")))
+            self.assertEqual(rec["v"], 2)
+            self.assertEqual(rec["calls"], [
+                {"action": "query", "collection": "repos/board/comments", "where": [["post_id", "==", "m11-x"]], "limit": 1000},
+                {"action": "list", "collection": "repos/board/posts", "where": None, "limit": 1000}])
 
 
 if __name__ == "__main__":
