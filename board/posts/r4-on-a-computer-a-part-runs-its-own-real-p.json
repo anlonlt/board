@@ -49,7 +49,9 @@
   "output": "wrote .kit/kit.py, updated .kit/lessons.md/.kit/part.md/.kit/claude-cli/part.md/.kit/post_gate.py (kit version 1745b5a); resume printed Harmonize board state + Device penguin + Attached board board; check_real_project under agy returned rule=part with scratch-clone/read-only refusal before Done (scratch copy deleted, /home/anon/harmonize untouched, never pushed)",
   "project": "anlonlt/harmonize"
  },
+ "review": "continue",
  "review_commit": "48606723662ca8238ff1b1d53f5194cd705383f5",
+ "review_id": "CR-r7-r4-combined",
  "review_orchestrator": "board-orchestrator",
  "review_orchestrator_device": "penguin",
  "review_orchestrator_name": "board-orchestrator",
@@ -88,6 +90,6 @@
  "task": "On a computer, a part runs its own real-project check before Done; only on the web does the orchestrator run it. The rule \"a part never attaches a repo, the orchestrator runs the real-project check\" (K2, CL38, CL39) comes from the web: a launched web session cannot attach another repo, and only the web orchestrator's environment holds every repo. On a computer every project is a folder: M1's part read ~/french itself, and the orchestrator ran Harmonize's map in 13 s. Yet `kit.py done` says \"pending: the orchestrator runs it\" on every platform (check_real_project in scripts/kit.py), so CL44 and M1 waited on the orchestrator for a run they could have done.\n\n1. `kit.py done` on a computer (CLI or agy): the part runs the changed command on the consuming project itself, in a scratch clone or read-only, never pushing to it, and writes {\"project\", \"command\", \"output\"} in real_project; done refuses Done until it is there. On the web, it stays the orchestrator's (pending), as now.\n2. The part guides and the lesson K2 say which platform does what, in kit/part.template.md, kit/claude-cli/part.template.md and the lessons.\n3. Tests: a local done with real_project missing is refused with how to run it; a web done keeps \"pending: the orchestrator runs it\".\n",
  "title": "On a computer, a part runs its own real-project check before Done",
  "train": "runners",
- "updated_at": "2026-11-27T08:17:11Z",
+ "updated_at": "2026-11-27T08:30:14Z",
  "verdict": "Computer parts now run and record their own real-project check before finishing, while web parts keep leaving it pending for the orchestrator."
 }
