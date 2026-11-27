@@ -15,3 +15,6 @@ Owner, 2026-11-27 (screenshot of CL17's session): "How did it have so many faile
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+CL59: builds on CL16 (the board travels in git) and CL45 (web reconcile); neither lets a part push only its own post nor stops a pull deadlocking on waiting batches. CL59 adds both.
