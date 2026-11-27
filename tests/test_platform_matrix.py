@@ -383,7 +383,7 @@ class DoneMatrix(unittest.TestCase):
                     art = kit.PLATFORM_RULES["artifact_steps"][pl]
                     # Artifact push gate applies iff artifact_steps is True
                     self.assertEqual(rc, 1 if art else 0, (pl, out))
-                    self.assertEqual("artifact push" in out, art, (pl, out))
+                    self.assertEqual("artifact sync" in out, art, (pl, out))
                     # real_project wording matches PLATFORM_RULES['real_project_run']
                     rp_mode = kit.PLATFORM_RULES["real_project_run"][pl]
                     self.assertEqual("a part never attaches a repo (CL38)" in out, rp_mode == "orchestrator", (pl, out))
