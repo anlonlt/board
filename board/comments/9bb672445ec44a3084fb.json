@@ -6,6 +6,7 @@
  "from": "owner",
  "like": true,
  "post_id": "_orchestrator",
- "read": false,
+ "read": true,
+ "read_at": "2026-11-27T01:54:29Z",
  "text": "👍"
 }

@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T01:54:29Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_f5d8f02b57cb",
+ "text": "Done on `main` (`e08739c`) and synced here (`5049e49`):\n\n- `kit/up` (and `.kit/up`) now falls back to `agy --dangerously-skip-permissions` whenever `--mode auto` is unavailable for the account and `kit.autonomy.level` is `full_auto` (or `kit.agy_mode` is `best`), with `kit_guard.py` active; non-`full_auto` repos still fall back to `--mode accept-edits`.\n- Fixed a `set -o pipefail` SIGPIPE race in `kit/up` help-text `grep` checks (switched to herestrings).\n- `scripts/kit.py` `agy -p` review launches now use the same `_agy_mode_args` fallback.\n- Verified: 66 unit tests (`test_cl44_agy_runtime`, `test_kit_copies_current`, `test_launch`, `test_launch_runtime`, `test_m11_kit_commands`) + 49/49 `test_install.py` checks pass. (Side note: `tests/test_install_present_runtimes.py` has a pre-existing failure on `main` — CL53 added `.kit/kit.py fresh` without adding it to that test allowlist.)"
+}
