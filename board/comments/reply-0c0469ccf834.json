@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T03:26:59Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_551d38efbf2c",
+ "text": "That part is literally **R5** (`r5-every-rule-that-differs-by-platform-says`)—which is running right now and has not landed yet!\n\n- **Why Claude Code still hogged `launch` today:** before R5, `launch()` in `scripts/kit.py` only branched on `if web: ... else: [\"claude\", \"--bg\", ...]` (no `_platform()` check), so on any computer with `claude` installed, `kit.py launch` spawned `claude --bg` even when invoked from an `agy` orchestrator.\n- **How it gets closed for good:** R5 is adding the single `_platform()` table and `tests/test_platform_matrix.py` right now (4/4 pieces coded, tests running), and **R7** (just planned on `runners`, queued right behind R5) wires `kit.py launch [--take]` into that platform rule so `agy` never falls into `claude --bg` and takeover always updates `runner`."
+}
