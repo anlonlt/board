@@ -31,7 +31,7 @@ PIECES = [{"n": 1, "title": "write the parser", "status": "open"},
 class CrashedPartContinues(Base):
     def setUp(self):
         super().setUp()
-        self.repo = make_repo(self.tmp / "repo", {"project": "Board", "board_url": "http://127.0.0.1:8765",
+        self.repo = make_repo(self.tmp / "repo", {"project": "Board", "board_url": self.url,
                                                   "kit": {"runtime": "local"}})
         self.origin = self.tmp / "origin.git"
         subprocess.run(["git", "init", "-q", "--bare", str(self.origin)], check=True)
