@@ -85,7 +85,8 @@ class PresentRuntimes(unittest.TestCase):
         st = json.loads((self.t / ".claude" / "settings.json").read_text())
         cmds = [h["command"] for ev in st["hooks"].values() for g in ev for h in g["hooks"]]
         self.assertTrue(cmds and all(any(g in c for g in ("kit_brief_guard.py", "kit_board_guard.py", "kit_task_train.py",
-                                                          "kit_usage.py", "kit_say_it_once.py", "kit_memory_jit.py", "kit_wip.py", "kit_activity.py"))
+                                                          "kit_usage.py", "kit_say_it_once.py", "kit_memory_jit.py", "kit_wip.py", "kit_activity.py",
+                                                          '/.kit/kit.py" fresh'))   # CL53's SessionStart line, the kit's too
                                      for c in cmds), cmds)
         self.assertEqual(st["env"]["CLAUDE_CODE_ENABLE_TODO_TOOLS"], "1")
         cfg = json.loads((self.t / ".kit" / "config.json").read_text())

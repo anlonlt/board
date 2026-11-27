@@ -1792,7 +1792,6 @@ def main(argv=None):
               "not reach this project through them. They stay wired as they are until you fold them by hand or keep them "
               "on purpose with kit.forks.keep {\"<path>\": \"<why>\"} in .kit/config.json:\n  %s" % (
                   len(fork_refused), "\n  ".join(fork_refused)))
-        return 3
     return 0
 
 

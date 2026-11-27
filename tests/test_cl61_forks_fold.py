@@ -7,7 +7,7 @@ reached Harmonize: its fork decided.
 
 1. `install.py --update` lists each project hook doing a kit hook's job and folds it: what it adds becomes kit settings
    (its limits, its rules: "no fallback timers", the clerk at 80k), its line leaves settings.json, the kit's hook is
-   wired in its place. A fork it cannot fold is REFUSED with what differs (exit 3), its lines untouched; kept on purpose
+   wired in its place. A fork it cannot fold is REFUSED with what differs (printed, doctor flags it), its lines untouched; kept on purpose
    only with kit.forks.keep, named every time.
 2. The fork's own test cases pass against the kit's hook after the fold; M12's takeover case blocks there.
 3. `kit.py doctor` flags a project hook that shadows a kit hook.
@@ -164,8 +164,9 @@ class FoldAtUpdate(unittest.TestCase):
         self.plant(ODD)
         before = self.settings()
         r = install(self.t, "--update")
-        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)   # the rest of the update still lands
         self.assertIn("REFUSED (CL61)", r.stdout)
+        self.assertIn("SHADOW", doctor(self.t), "doctor keeps naming it")
         self.assertIn("runs code the kit's hook does not: run()", r.stdout)
         self.assertIn(FORK_LINE, self.cmds("Stop"), "nothing of it changed")
         self.assertNotIn("handover_rules", json.dumps(self.config()))
