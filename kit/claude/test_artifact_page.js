@@ -106,7 +106,7 @@ const STUB = `(function () {
   await p.wait(400);
   res.cl36 = await p.evaluate(() => { const b = document.getElementById('p-body'); if (!b) return 'no body';
     const pic = b.querySelector('img.md-img');
-    return { mermaid: b.querySelectorAll('.kit-mmd-box .kit-mmd-row').length, pic: pic ? pic.getAttribute('src') : '', svg: !!b.querySelector('.kit-svg-box img') }; });
+    return { mermaid: b.querySelectorAll('.kit-mmd-box [data-edge]').length, pic: pic ? pic.getAttribute('src') : '', svg: !!b.querySelector('.kit-svg-box img') }; });
   if (!(res.cl36 && res.cl36.mermaid === 1 && /^\/_blob\/0123456789abcdef/.test(res.cl36.pic) && res.cl36.svg)) syn.errors.push('CL36: post body diagrams/pictures not drawn: ' + JSON.stringify(res.cl36));
   // Check disarmed SharePoint + Gmail links (no href attribute)
   res.disarmed = await p.evaluate(() => [...document.querySelectorAll('#p-body a[data-mcp-href]')].map(a => ({ adapter: a.getAttribute('data-mcp-adapter'), hasHref: a.hasAttribute('href') })));

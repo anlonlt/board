@@ -16,7 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-import tempfile as _tf; os.environ["XDG_CONFIG_HOME"] = _tf.mkdtemp(prefix="kit-xdg-")
+import tempfile as _tf, atexit as _ax, shutil as _sh; os.environ["XDG_CONFIG_HOME"] = _tf.mkdtemp(prefix="kit-xdg-"); _ax.register(_sh.rmtree, os.environ["XDG_CONFIG_HOME"], True)  # CL52: removed at exit
 
 ROOT = Path(__file__).resolve().parent.parent
 ENV = dict(os.environ, KIT_NO_FUNNEL="1")

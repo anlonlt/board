@@ -11,12 +11,28 @@
   "docs/cl36/post-body.png": {
    "sha": "c758cb189307daff22507277456b89aee9e0bf119b163c37868d38a8d089b6bf",
    "url": "/_blob/b2d63ce870cacc72888e9cb5353e8472"
+  },
+  "docs/cl57/after-desktop.png": {
+   "url": "/_blob/f93c3bbb08d9e82a3e6a5d01db65abde",
+   "sha": "e6404dd449f961b62dd85c0636a004c50bc770a8811449ec2ba6da7fbec77f8c"
+  },
+  "docs/cl57/after-phone.png": {
+   "url": "/_blob/d04d805932c403a2df00d1764ef317bf",
+   "sha": "2097af2c4851a67cfc353a7d5b2ceca06d96f2dfda0b813f949a4b7a4dee1b0c"
+  },
+  "docs/cl57/before-desktop.png": {
+   "url": "/_blob/214c47e1f3e701dc8fd435da206291b5",
+   "sha": "172516c85261e19dca9663ca64f61d009b484052b8fe35ad42c281653b59af66"
+  },
+  "docs/cl57/before-phone.png": {
+   "url": "/_blob/1073d5e84c73c5024233c7ee08ff9aba",
+   "sha": "62528afcb08b37ad11db81c56782dfc39027a76594a68caded6d11a5017bff77"
   }
  },
  "docs": {
   ".board+2F~memory+2F~ledger.md": {
-   "sha": "443481a59ae59a4ae10a1adc50e9d06b0931ba89c4a2b7624350421a593d14ae",
-   "version": 1
+   "sha": "8afab636260623b9f2020ae0ce2a304e0a938fdfc636a1a5fb4c267b53e60b4a",
+   "version": 2
   },
   ".kit+2F~BOARD.md": {
    "sha": "f0b746a07a268e6be02157445370cff94d233137a87e47c2acf7b99318b37e09",
@@ -27,16 +43,16 @@
    "version": 2
   },
   ".kit+2F~board.html": {
-   "sha": "c8f6d56c646e0558ebc065bad96eda6006203dc289710bfd8a2c89eb38343d15",
-   "version": 9
+   "sha": "499576b3c691b2ca70caa340fcb226aed207a0859454fb4a9911d4441bdb2fb5",
+   "version": 11
   },
   ".kit+2F~claude-cli+2F~orchestrator.md": {
-   "sha": "2ad2da57a368a2390ea168e0d4adc0ce43a349c657e9a30b3b9f174e1515b7fb",
-   "version": 6
+   "sha": "833f186d7998c8bd568cf85df58d5be1757ed26042d416b8b681e13bd2c0253d",
+   "version": 7
   },
   ".kit+2F~claude-cli+2F~part.md": {
-   "sha": "1a9b03495a80c65244586fce1fcccab236b35f5b92861d5af538b3ea1d87bd95",
-   "version": 8
+   "sha": "94c452cdf864afc166b67d19f8526eb102c3ce9cd383b6381942164a7338f487",
+   "version": 10
   },
   ".kit+2F~claude-cli+2F~takeover.md": {
    "sha": "d80abd018b630a43799fd04bc5de0222f88394c7807933121d98296bbf117ae8",
@@ -47,12 +63,12 @@
    "version": 8
   },
   ".kit+2F~orchestrator.md": {
-   "sha": "b47087aae9c533b72474878eba01854eb5c752dbf229a0cb5600bf2f5efcc4ea",
+   "sha": "41a1f8714f1d78524d51d9a96ec94474b35cc3e834a190e6d39374b2349fb56e",
    "version": 7
   },
   ".kit+2F~part.md": {
-   "sha": "29f0b722cc23ccb7c927a0f89cf380539282199bb8547a22f075f69d6c2b74c5",
-   "version": 7
+   "sha": "05cb12f087c1160e6114837e1623b0d87bac1a30376c303dd2a967e1eb12cb4c",
+   "version": 9
   },
   "AGENTS.md": {
    "sha": "c5f984b5b918280d7156e13102aad947f22129c15953fc81f9592a885f460c15",
@@ -95,12 +111,12 @@
    "version": 1
   },
   "docs+2F~prompts+2F~r1-antigravity-on-the-web-how-far-it-runs-t.md": {
-   "sha": "e1696f88994eadd40c568e88f7a289ef9198f6e8d77bd58f1ee3da6fe60af118",
-   "version": 5
+   "sha": "9131c8921b61e1c03bdf28e9c9d70401963e214f5f221d675f21f6e68a01cbeb",
+   "version": 6
   },
   "docs+2F~prompts+2F~r2-gemini-tasks-how-far-it-runs-the-board-k.md": {
-   "sha": "660c582030d0578a327966f12847a49924fc009df2222bfbf11bf9ea82f12991",
-   "version": 1
+   "sha": "a0214c716a2b87351d335b9e3b9ee1895bd55a881d8a2c4bc9262b01bfed1d46",
+   "version": 2
   },
   "kit+2F~AGENTS.template.md": {
    "sha": "5cb9e84c45f6368cca0aa3c2a125ca8e71722513719b5f865a139941d6a534fa",
@@ -111,16 +127,16 @@
    "version": 4
   },
   "kit+2F~arena+2F~orchestrator.template.md": {
-   "sha": "df5c95c4466a75e74f39d65c6d8804640273a282feee82dbfe1a8991c80c78a8",
-   "version": 1
+   "sha": "039f0be055e65994e9998d645869bd11437d424152c73012f2cfe0a9ea3dbc9a",
+   "version": 2
   },
   "kit+2F~board+2F~BOARD.template.md": {
    "sha": "0caacf59bd649dc82244c7974ba8252c72d0358895efd98435c4046af791539f",
    "version": 9
   },
   "kit+2F~board+2F~board.template.html": {
-   "sha": "6498b70bbafb3d95db22b5cafa7d5b7c73be246669939a56c11ab45ef5879d5d",
-   "version": 10
+   "sha": "058cee0d64a7e6c162b407d3c5d076af8295897ab38344920589fee795b42ba2",
+   "version": 12
   },
   "kit+2F~claude+2F~BOARD.template.md": {
    "sha": "dc0bb18a126fa70540edaf79296b4923a780715d04cf12d8283ae1e13c48eff5",
@@ -143,16 +159,16 @@
    "version": 4
   },
   "kit+2F~claude+2F~orchestrator.template.md": {
-   "sha": "74e5d61aa9be8c75a440f39e6c515352cf605d1347ca3826c5eb1f736143cacc",
-   "version": 7
+   "sha": "e6d18cd2b64c2619ca405e679ab2464e91c5f0ea4ab125d044d9f814510fc3a1",
+   "version": 8
   },
   "kit+2F~claude+2F~part.template.md": {
-   "sha": "4bc3137af9f2fa8eeaf5ef8ead90b89f8161bc01dee1b4674071cdf658ab6fd6",
-   "version": 4
+   "sha": "56c5781c9216e26f0f9a80a8f4af3a09aa3791f8cc01a1c4629a62d8fd196c52",
+   "version": 6
   },
   "kit+2F~claude-cli+2F~ORCHESTRATOR.template.md": {
-   "sha": "9e486179a0e1c71e4b8e67789c37d28c14bc6e4c31bc323243e6d228a7b05a0e",
-   "version": 4
+   "sha": "4ece8a733e17e0d82fa73fb27da55336904659e41ad870c9186b5f2f8839db57",
+   "version": 5
   },
   "kit+2F~claude-cli+2F~clerk.template.md": {
    "sha": "59b4e1bbd694497cb67688491769fa00159bd697c0a03b0ca1e29c2076810a72",
@@ -163,12 +179,12 @@
    "version": 4
   },
   "kit+2F~claude-cli+2F~orchestrator.template.md": {
-   "sha": "a7e394e1d815d0df3e6c61c0c7b85005ac94f5233c0c0669111b3aa266a11eb1",
-   "version": 9
+   "sha": "56a32426799f6056263f7038ed72dda167a36287297b622f1f5e5b7a2be36080",
+   "version": 10
   },
   "kit+2F~claude-cli+2F~part.template.md": {
-   "sha": "987bef766546d7d132936aff02be63b8bac98aebe81400688aa2b26a788cae8c",
-   "version": 8
+   "sha": "8e473fd7069bfa7a4f1791fd078396b8384e28c522737816ea8809900f5f485e",
+   "version": 10
   },
   "kit+2F~claude-cli+2F~takeover.template.md": {
    "sha": "300fea006a383684a0ae536f89fa9e7d89fcfd5139e025523de6351c4a36a353",
@@ -179,20 +195,20 @@
    "version": 4
   },
   "kit+2F~generic+2F~orchestrator.template.md": {
-   "sha": "ff8e8dd6647252fa1233a461aa4946b020ece82c9b6ab36558c76a16e704e9a1",
-   "version": 1
+   "sha": "f88652a33d0cc3b5899a443931eded11d9d3850769f9b0a678e900d1a3e8605b",
+   "version": 3
   },
   "kit+2F~lessons.md": {
    "sha": "bf8caff727a820056bfc7203eaa38098cea636afd575bd3843fbc11b73c67f7c",
    "version": 8
   },
   "kit+2F~orchestrator.template.md": {
-   "sha": "69b4b1abc2f5230c42fdef927fd799186f1bf7fb51681a8a2823d75dc8fd4d6a",
+   "sha": "06389e877fce421e97a060554116f9b0d72bf36e7546537d58eba842d6ff9d51",
    "version": 8
   },
   "kit+2F~part.template.md": {
-   "sha": "398854c3f4f7dbc76d80f923665783ccfc3116108d7ab6a5399ed3411c1b617b",
-   "version": 6
+   "sha": "a01c920de6e7592065a8aedea24cafa039ab09b2b72c18cdb8d77b78e82fdecb",
+   "version": 8
   },
   "kit+2F~skills+2F~board+2F~SKILL.md": {
    "sha": "0f665527b19f263b7f36ed722d51883a81cddcb0a4b55fb5696259a4973fdd74",
@@ -217,6 +233,26 @@
   "tests+2F~fixtures+2F~cl33_harmonize_awaits.md": {
    "sha": "c58b8c2259d4a2dd9a1ff0b02aea4ff37570feb6f5a764c42226506885f2157b",
    "version": 1
+  },
+  "tests+2F~fixtures+2F~cl36_post_body.md": {
+   "sha": "1f7b1090b7a1e23e1e80609eab4ee42714a327b177b1dab19e6c73fc645efc44",
+   "version": 1
+  },
+  "docs+2F~cl57+2F~after-desktop.png": {
+   "version": 1,
+   "sha": "e6404dd449f961b62dd85c0636a004c50bc770a8811449ec2ba6da7fbec77f8c"
+  },
+  "docs+2F~cl57+2F~after-phone.png": {
+   "version": 1,
+   "sha": "2097af2c4851a67cfc353a7d5b2ceca06d96f2dfda0b813f949a4b7a4dee1b0c"
+  },
+  "docs+2F~cl57+2F~before-desktop.png": {
+   "version": 1,
+   "sha": "172516c85261e19dca9663ca64f61d009b484052b8fe35ad42c281653b59af66"
+  },
+  "docs+2F~cl57+2F~before-phone.png": {
+   "version": 1,
+   "sha": "62528afcb08b37ad11db81c56782dfc39027a76594a68caded6d11a5017bff77"
   }
  }
 }

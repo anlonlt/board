@@ -114,7 +114,8 @@ class Launch(unittest.TestCase):
         with mock.patch.multiple(kit, _board_request=req, _resolve_board_token=lambda t: None, _prompt_problem=lambda r: None,
                                  _launch_posts=lambda p: {}, circle_gate=lambda *a: None, launch_mark=lambda *a, **k: None,
                                  _local_update=lambda *a: wrote.append(a[3:]) or {}, attached_board=lambda: None,
-                                 _alive_sessions=lambda: set(), _saved_mins=lambda b: None):
+                                 _alive_sessions=lambda: set(), _saved_mins=lambda b: None,
+                                 sync_step_prompt=lambda *a, **k: {}):      # CL54: no prompt written in the real repo
             return kit.launch("P1", web=True, **kw), wrote
 
     def test_a_second_launch_of_a_running_step_is_refused_and_writes_nothing(self):
