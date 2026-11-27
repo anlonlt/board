@@ -168,7 +168,7 @@ def on_update(root, st, ti):
 
 PART_POST = re.compile(r"docs/prompts/([\w.-]+)\.md")
 PART_POST_ARG = re.compile(r"--role part --post ([\w.-]+)")
-PART_OPEN = re.compile(r"^\s*Your prompt (?:is (?:\S*/)?docs/prompts/|follows)")
+PART_OPEN = re.compile(r"""^\s*Your prompt (?:is [`"']?(?:\S*/)?docs/prompts/|follows)""")
 AGY_USER_REQ = re.compile(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", re.S)
 AGY_SUBAGENT_MSG = re.compile(r"\[Message\][^\n]*?\bcontent=(.*?)(?:\n</SYSTEM_MESSAGE>|\Z)", re.S)
 
