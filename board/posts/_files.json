@@ -13,6 +13,22 @@
    "docs/cl36/post-body.png": {
     "sha": "c758cb189307daff22507277456b89aee9e0bf119b163c37868d38a8d089b6bf",
     "url": "/_blob/b2d63ce870cacc72888e9cb5353e8472"
+   },
+   "docs/cl57/after-desktop.png": {
+    "sha": "e6404dd449f961b62dd85c0636a004c50bc770a8811449ec2ba6da7fbec77f8c",
+    "url": "/_blob/f93c3bbb08d9e82a3e6a5d01db65abde"
+   },
+   "docs/cl57/after-phone.png": {
+    "sha": "2097af2c4851a67cfc353a7d5b2ceca06d96f2dfda0b813f949a4b7a4dee1b0c",
+    "url": "/_blob/d04d805932c403a2df00d1764ef317bf"
+   },
+   "docs/cl57/before-desktop.png": {
+    "sha": "172516c85261e19dca9663ca64f61d009b484052b8fe35ad42c281653b59af66",
+    "url": "/_blob/214c47e1f3e701dc8fd435da206291b5"
+   },
+   "docs/cl57/before-phone.png": {
+    "sha": "62528afcb08b37ad11db81c56782dfc39027a76594a68caded6d11a5017bff77",
+    "url": "/_blob/1073d5e84c73c5024233c7ee08ff9aba"
    }
   },
   "docs": {
@@ -90,6 +106,22 @@
    },
    "docs+2F~cl36+2F~post-body.png": {
     "sha": "c758cb189307daff22507277456b89aee9e0bf119b163c37868d38a8d089b6bf",
+    "version": 1
+   },
+   "docs+2F~cl57+2F~after-desktop.png": {
+    "sha": "e6404dd449f961b62dd85c0636a004c50bc770a8811449ec2ba6da7fbec77f8c",
+    "version": 1
+   },
+   "docs+2F~cl57+2F~after-phone.png": {
+    "sha": "2097af2c4851a67cfc353a7d5b2ceca06d96f2dfda0b813f949a4b7a4dee1b0c",
+    "version": 1
+   },
+   "docs+2F~cl57+2F~before-desktop.png": {
+    "sha": "172516c85261e19dca9663ca64f61d009b484052b8fe35ad42c281653b59af66",
+    "version": 1
+   },
+   "docs+2F~cl57+2F~before-phone.png": {
+    "sha": "62528afcb08b37ad11db81c56782dfc39027a76594a68caded6d11a5017bff77",
     "version": 1
    },
    "docs+2F~prompts+2F~cl9b-cheap-breaks-revert-asked-pair-sample.md": {
@@ -227,5 +259,5 @@
   }
  },
  "title": "Files map (the kit's)",
- "updated_at": "2026-11-27T07:52:28Z"
+ "updated_at": "2026-11-27T07:56:07Z"
 }

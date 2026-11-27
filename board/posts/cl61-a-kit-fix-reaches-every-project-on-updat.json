@@ -51,10 +51,12 @@
   "sha": "27a79ea4d9dafe3fac2ef11b9812bddf4973d80c"
  },
  "real_project": {
-  "command": "python3 -I <kit worktree of origin/cl61>/install.py <harmonize copy> --update --web-multi no (exit 0); then in the copy: KIT_STALE_OK=1 python3 -I .kit/kit.py doctor",
-  "output": "BROKEN ON HARMONIZE. install: exit 0, but 'REFUSED (CL61): 5 project hook(s) do a kit hook's job and cannot be folded': session-start.sh, say_it_once.py, stop.sh ('takes no setting from a project's own ... hook yet'), pre-compact.sh (runs git status/pgrep: real project code), and .claude/hooks/context_handover.py, the step's own case: 'runs code the kit's hook does not: insert, is_orchestrator(); says what the kit's hook does not, and it is no rule: HAND OVER NOW: your context is at %dk (limit %dk)...'. The 'insert' is the import line sys.path.insert(0, ...) and the HAND OVER NOW line is the hand-over message itself, so the fork the step was made for is not folded: settings.json keeps context_handover.py on Stop unchanged, M12's fix still does not reach Harmonize. doctor: 5 'forks: SHADOW' lines (it names them, as designed).",
+  "command": "install.py <copy of harmonize@0d020ef> --update --no-cmd (kit from origin/cl61); KIT_STALE_OK=1 .kit/kit.py resume --role orchestrator --full; scripts/rules-check.py",
+  "output": "install OK; resume exit 0 (about 62 lines); rules-check exit 2, the same as on unchanged Harmonize (no regression). Run by orchestrator 4 on the web, 2026-11-27, never pushed. Install listed 4 project hooks that shadow kit hooks and cannot be folded (session-start, say-it-once, pre-compact, stop): reported, not overwritten.",
   "project": "anlonlt/harmonize"
  },
+ "review": "continue",
+ "review_id": "CR-cl61-a-kit-fix-reaches-every-project-on-updat",
  "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "review_orchestrator_device": "web",
  "review_orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
@@ -102,7 +104,7 @@
  "task": "A kit fix reaches every project at its next `install.py --update`: no project keeps its own copy of a kit hook.\n\nOwner, 2026-11-27: \"Shouldn't anything that's happening in the kit automatically get fixed on kit update in harmonize anyway?\" Found: Harmonize runs its own `.claude/hooks/context_handover.py` (last changed 0d020ef, 11-24) as its Stop hand-over hook, wired in `.claude/settings.json`; the kit's `kit_pre_compact.py` is installed but M12's fix does not reach Harmonize because its fork decides.\n\n1. `install.py --update` lists every project hook that does a kit hook's job (same event and purpose: hand-over, role, board post, say-it-once...), and moves what the fork adds into the kit's hook as a project setting, then wires the kit's hook only; a fork it cannot fold is refused with what differs, never kept silently.\n2. Harmonize's context_handover.py folded: its rules (no fallback timers, the clerk at 80k) become kit settings; its test passes against the kit's hook.\n3. doctor flags a project hook that shadows a kit hook.\n4. Dry run on a Harmonize clone (by the orchestrator): after update, M12's takeover case blocks there.\n",
  "title": "A kit fix reaches every project on update: no project keeps a fork of a kit hook",
  "train": "takeover",
- "updated_at": "2026-11-27T07:49:46Z",
+ "updated_at": "2026-11-27T07:58:08Z",
  "verdict": "A kit update now folds a project's own hand-over hook into the kit's (its limits and rules become settings), refuses with the differences one it cannot fold, and doctor names any that shadow a kit hook.",
  "working_by": "owner"
 }

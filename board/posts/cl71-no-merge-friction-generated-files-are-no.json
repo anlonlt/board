@@ -36,6 +36,7 @@
  },
  "claimed_at": "2026-11-27T07:52:37Z",
  "column": "info",
+ "completed_at": "2026-11-27T07:59:14Z",
  "created_at": "2026-11-27T07:28:10Z",
  "differs": "CL71: builds on CL48 (test runs) and CL59 (part pushes), but touches neither: it takes the generated manifest and files map out of git, makes land count a reviewed commit on main (not the branch tip) and record a re-review's commit, and fixes the two tests red on main in a web container.",
  "from": "orchestrator",
@@ -59,20 +60,26 @@
  "part": "CL71",
  "planned_by": "orchestrator",
  "proof": {
-  "at": "2026-11-27T07:53:12Z",
-  "branch": "cl71",
-  "commit": "a01749b9",
+  "at": "2026-11-27T07:59:10Z",
+  "branch": "",
+  "commit": "065e803b",
   "key": "885f22715fac8071",
-  "needs_real": true,
-  "sha": "a01749b94ebd8613bbf7272209017fe17df91640"
+  "needs_real": false,
+  "sha": "065e803b5551b03fa79e47955edeb3f56807cc66"
+ },
+ "real_project": {
+  "command": "install.py <copy of harmonize@0d020ef> --update --no-cmd (kit from origin/cl71@065e803b); KIT_STALE_OK=1 .kit/kit.py resume --role orchestrator --full; scripts/rules-check.py; git status",
+  "output": "install exit 0; resume exit 0 (57 lines); rules-check exit 2, the same as on unchanged Harmonize; git status: .kit/manifest.json removed from the index and listed in .gitignore, .kit/kit_manifest.py new (to commit). Run by orchestrator 4 on the web, 2026-11-27, never pushed.",
+  "project": "anlonlt/harmonize"
  },
  "repo": "anlonlt/board",
+ "review_commit": "065e803b5551b03fa79e47955edeb3f56807cc66",
  "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "review_orchestrator_device": "web",
  "review_orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
  "session_id": "session_01AE1HGiRAcHgq5vH6T6Ubk3",
  "started_at": "2026-11-27T07:31:52Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "from": "task",
@@ -126,8 +133,8 @@
  "task": "Owner, 2026-11-27 (screenshots of CL17, CL54, CL61 and a review): \"why is there so much friction?\"\n\nFound (orchestrator 3, 03:40-07:30): every landing today hit the same loop. `.kit/manifest.json` and `.kit/artifact-files/files-board.json` are generated files committed in git. Every branch regenerates them, so every merge with a moved main conflicts in them (CL17, CL44, CL54, CL56). The save hook twice committed them WITH conflict markers. The part's fix (a regenerate commit) lands after its review, so `land` refuses and asks for a new review (CL17, CL54, CL56, CL57). Meanwhile two tests are red on main in a web container (test_launch_runtime, test_cl48_test_guard), so every part and review spends a run proving \"fails on main too\".\n\nDone when:\n1. The manifest and the files map are not tracked: built at install/update and at `artifact push` from the tree, never merged (.gitignore + `git rm --cached`, readers rebuild on demand).\n2. The save hook never commits a file with conflict markers (refuses, says which).\n3. `land` ignores commits after the review that touch only generated files.\n4. The two red tests pass on main in a web container (or say precisely why they cannot).\n5. Test: two branches that both change the kit merge with no manifest conflict; a post-review regenerate commit does not block land. `python3 scripts/run_all_tests.py --all` green.\n\nFolded in (owner's go, 2026-11-27): CL65 and CL70, same goal: a reviewed step reaches main without another review.\n6. (was CL65) A review records the commit it read on the post (`review_commit`) when it writes its verdict, whatever started the session; `land` takes the newest CR comment's commit when it is newer. CL57 needed 3 reviews because the second's commit was never recorded.\n7. (was CL70) `land` and resume count a step landed when its reviewed commit is on the trunk, or a trunk merge names its branch, and mark it themselves; later commits on the branch are listed apart (\"2 newer commits, not reviewed\"). CL44, M5-M8 and CL41 were merged yet shown \"not landed\" (shared branch feat/streamline-doctor-memory; two test commits on cl44).\n8. Tests for 6 and 7: a re-review recorded only in CR-...-2 lets land proceed; a merged branch with one later commit shows landed.\n",
  "title": "No merge friction: generated files out of git, a reviewed step lands without another review, main green on the web",
  "train": "board-data",
- "updated_at": "2026-11-27T07:53:12Z",
+ "updated_at": "2026-11-27T07:59:16Z",
  "verdict": "The merge loop is gone: the manifest and the files map left git, the save refuses conflict markers, land skips generated-only commits and merges what the last review read, and merged steps count as landed.",
  "work_branch": "main",
- "working_by": "owner"
+ "working_by": ""
 }

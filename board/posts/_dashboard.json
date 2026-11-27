@@ -3,7 +3,7 @@
  "created_at": "2026-11-27T08:01:03Z",
  "rows": [
   {
-   "at": 6,
+   "at": 7,
    "key": "A",
    "name": "Board data",
    "note": "Next: The board travels in git, always current (mirror synced on every step)",
@@ -16,12 +16,12 @@
     "A session on a computer never writes to the Artifact",
     "An outside AI gets one link, the owner's invite with the post's drop box",
     "A part pushes only its own post; a pull never deadlocks on waiting batches",
+    "No merge friction: generated files out of git, a reviewed step lands without another re...",
     "The board travels in git, always current (mirror synced on every step)",
     "end_session says why a push failed",
     "Tests clean up after themselves",
     "The orchestrator's push never sends the cards: no refused batch when another session re...",
     "A real-project run is done where Harmonize already is: the computer orchestrator, never...",
-    "No merge friction: generated files out of git, a reviewed step lands without another re...",
     "One way to touch the board: the kit prints every call, the guard refuses anything else,..."
    ],
    "train": "P-board-data"
@@ -169,6 +169,18 @@
   {
    "at": 0,
    "key": "G",
+   "name": "Orchestrator: open timers only (2026-11-27 03:18)",
+   "note": "",
+   "post": "P-orchestrator",
+   "state": "idle",
+   "steps": [
+    "next step"
+   ],
+   "train": "P-orchestrator"
+  },
+  {
+   "at": 0,
+   "key": "H",
    "name": "Agy",
    "note": "Next: install_cmd skips linked git worktrees so ~/.local/bin/<cmd> is never overwritten by a part",
    "post": "a1-install-cmd-skips-linked-git-worktrees-s",
@@ -180,7 +192,7 @@
   },
   {
    "at": 6,
-   "key": "H",
+   "key": "I",
    "name": "Demo",
    "note": "Next: Try replying or tapping 👍",
    "post": "demo-todo",
