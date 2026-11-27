@@ -13,6 +13,8 @@ import tempfile
 import time
 import unittest
 import urllib.request
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import temp_cleanup  # noqa: E402,F401  CL52: the folders this file makes go at exit
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KIT = os.path.join(ROOT, "scripts", "kit.py")

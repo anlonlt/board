@@ -12,6 +12,8 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from unittest import mock
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import temp_cleanup  # noqa: E402,F401  CL52: the folders this file makes go at exit
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = "327aee3"   # scripts/kit.py before CL20 (main it was merged with): the control compares against it byte for byte

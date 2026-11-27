@@ -463,20 +463,61 @@ def tail(text, n=60):
     return "\n".join(lines[:n] if i is not None else lines[-n:])
 
 
+TOOL_DIRS = re.compile(r"^claude-\d+$")   # Claude Code's own folder ($TMPDIR/claude-<uid>), made by any `claude` it runs
+
+
+def strays(tmp, pgid):
+    """{pid: command} of the processes a finished suite left running: its process group, and (Linux) any process whose
+    TMPDIR is the suite's own folder, even one that left the group (start_new_session)."""
+    out = {}
+    try:
+        pids = [int(x) for x in os.listdir("/proc") if x.isdigit()]
+    except OSError:
+        pids = []
+    mark = ("TMPDIR=" + tmp).encode()
+    for pid in pids:
+        try:
+            with open("/proc/%d/environ" % pid, "rb") as fh:
+                env = fh.read().split(b"\0")
+            mine = mark in env
+            if not mine and os.getpgid(pid) != pgid:
+                continue
+            with open("/proc/%d/cmdline" % pid, "rb") as fh:
+                cmd = [x.decode("utf-8", "replace") for x in fh.read().split(b"\0") if x]
+            with open("/proc/%d/stat" % pid, "rb") as fh:
+                if fh.read().rsplit(b")", 1)[-1].split()[0] == b"Z":
+                    continue                     # a zombie holds nothing
+        except (OSError, ValueError, IndexError):
+            continue
+        out[pid] = " ".join(os.path.basename(c) if i == 0 else c for i, c in enumerate(cmd[:3]))[:80]
+    if not pids:                                 # no /proc: the group alone
+        try:
+            os.killpg(pgid, 0)
+            out[-pgid] = "process group %d" % pgid
+        except OSError:
+            pass
+    return out
+
+
 def leftovers(tmp, pgid):
-    """CL52: what a finished suite left behind: the entries of its own temp folder, and its processes still running
-    (its process group: killed here). [] when it cleaned up after itself."""
+    """CL52: (left, swept) of a finished suite: `left` what fails it, the folders it left in its own temp folder and its
+    processes still running (killed here); `swept` the plain files the kit's scripts keep there by name (a lock, a
+    flag), removed with the folder."""
     try:
-        left = sorted(os.listdir(tmp))
+        names = sorted(os.listdir(tmp))
     except OSError:
-        left = []
-    try:
-        os.killpg(pgid, 0)                       # one of its processes is still alive
-        os.killpg(pgid, signal.SIGKILL)
-        left.append("running processes")
-    except OSError:
-        pass
-    return left
+        names = []
+    left = [n + "/" for n in names if os.path.isdir(os.path.join(tmp, n)) and not os.path.islink(os.path.join(tmp, n))
+            and not TOOL_DIRS.match(n)]
+    swept = [n for n in names if n + "/" not in left and not TOOL_DIRS.match(n)]
+    procs = strays(tmp, pgid)
+    for pid in procs:
+        try:
+            os.killpg(-pid, signal.SIGKILL) if pid < 0 else os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    left += ["process: " + c for c in procs.values()]
+    return left, swept
 
 
 def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True, on_done=None, work=None):
@@ -525,7 +566,7 @@ def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True, on_don
             for p in done:
                 name, folders, base, log, t0, venv, tmp = live.pop(p)
                 log.close()
-                left = leftovers(tmp, p.pid)
+                left, swept = leftovers(tmp, p.pid)
                 shutil.rmtree(tmp, ignore_errors=True)
                 if venv:
                     ears.free.append(venv)
@@ -537,8 +578,8 @@ def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True, on_don
                 skip = re.findall(r"^SKIP.*$", text, re.M)
                 out("[%s] %s (%s%.1f s)%s%s" % ("PASS" if ok else "FAIL", name, (n.group(1) + " tests, ") if n else "", dt,
                                               (" " + skip[0][:90]) if skip else "",
-                                              (" left in its temp folder: %d (%s%s)" % (len(left), ", ".join(left[:5]),
-                                               ", ..." if len(left) > 5 else "")) if left else ""))
+                                              (" LEFT %d: %s%s" % (len(left), ", ".join(left[:4]),
+                                               ", ..." if len(left) > 4 else "")) if left else ""))
                 m = memo.setdefault(name, {})
                 m["seconds"] = round(dt, 1)
                 if ok and (listen or folders is not None):
