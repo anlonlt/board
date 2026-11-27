@@ -8685,6 +8685,24 @@ def alarm_lines():
     return r or ([], [])
 
 
+def design_gate(cmd):
+    """CL72: `kit.py launch` and `kit.py land` refuse while an item of resume's "First: what keeps coming back" has no
+    `kit.py ledger design` entry: '' when none, else the refusal (each item, its ids, the command that records it)."""
+    try:
+        items = _led_call("open_items", _resolve_memory_dir(), kit_root=ROOT) or []
+    except Exception as e:                   # a broken ledger is said, never hidden; it blocks nothing by itself
+        print("(the ledger could not be read for the design gate: %s)" % e, file=sys.stderr)
+        return ""
+    if not items:
+        return ""
+    lines = ["NOT %s: %d item(s) of \"First: what keeps coming back\" have no design step yet (CL72: a section skipped "
+             "is now a gate). Plan the step for each (TaskCreate {train, part}), record it, then %s again:" % (
+                 cmd.upper(), len(items), cmd)]
+    for it in items:
+        lines.append("- %s (%s): `%s`" % (it["what"], ", ".join(it["ids"]) or it["kind"], it["command"]))
+    return "\n".join(lines)
+
+
 def memory_line():
     """The orchestrator's one line: entries checked, failing, unchecked."""
     led = _load_ledger_mod()
@@ -11026,6 +11044,11 @@ def main(argv=None):
         print(json.dumps(res, ensure_ascii=False))
         print(field_text("ask", "orchestrator"), file=sys.stderr)
         return 1 if res.get("error") else 0
+    if a.cmd in ("launch", "land") and not getattr(a, "session_id", None):
+        gate = design_gate(a.cmd)
+        if gate:
+            print(gate)
+            return 1
     if a.cmd == "land":
         rc, txt = _landing("land", a.post)
         print(txt)

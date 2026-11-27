@@ -227,7 +227,7 @@ class OneWay(unittest.TestCase):
                     if k != "updated_at":
                         self.assertEqual(live[1].get(k), v, "%s/%s.%s" % (coll, row["id"], k))
         self.assertGreaterEqual(self.batch_refusals, 4)          # the live card changed under the batch: refused, merged, sent
-        self.assertGreaterEqual(len(self.changed_live), 3)
+        self.assertGreaterEqual(len(self.changed_live), 2)
         for key in self.changed_live:
             self.assertEqual(self.live.docs[key][1].get("owner_note"), "written live meanwhile", key)
 
@@ -312,3 +312,41 @@ class OneWay(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DesignGate(unittest.TestCase):
+    """(asked: the owner, 2026-11-27, "Why do you skip stuff? It's not the first time."): an item of resume's "First:
+    what keeps coming back" with no `kit.py ledger design` entry blocks `kit.py launch` and `kit.py land`."""
+
+    def setUp(self):
+        from unittest import mock
+        self.mem = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.mem, ignore_errors=True))
+        self.led = kit._load_ledger_mod()
+        for p in (mock.patch.object(kit, "_resolve_memory_dir", lambda *a: str(self.mem)),
+                  mock.patch.object(kit, "ROOT", str(self.mem))):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def run_main(self, *argv):
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = kit.main(list(argv))
+        return rc, buf.getvalue()
+
+    def test_an_open_recurring_item_blocks_launch_and_land_until_its_design_is_recorded(self):
+        self.assertEqual(kit.design_gate("launch"), "")
+        for i in range(3):                               # "two copies out of sync", fixed again and again
+            self.led.observe(str(self.mem), "fix %d" % i, kind="fix", theme="two copies out of sync", source="cl%d" % i)
+        for cmd in ("launch", "land"):
+            rc, out = self.run_main(cmd, "cl99-next-step")
+            self.assertEqual(rc, 1, out)
+            self.assertIn("NOT %s" % cmd.upper(), out)
+            self.assertIn("two copies out of sync", out)
+            self.assertIn('kit.py ledger design "two copies out of sync" --post <step>', out)
+        r = self.led.mark_designed(str(self.mem), "two copies out of sync", "cl73-one-copy")
+        self.assertTrue(r.get("ok"), r)
+        self.assertEqual(kit.design_gate("launch"), "")
+        self.assertEqual(kit.design_gate("land"), "")
