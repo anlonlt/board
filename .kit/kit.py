@@ -5187,6 +5187,104 @@ def _is_web():
     return str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes")
 
 
+# ---------------------------------------------------------------- CL53: a session starts on the newest code from GitHub
+STALE_BRANCH_DAYS = 2      # ~/harmonize sat two days on a merged branch while its trunk moved (11-22 to 11-24)
+
+
+def checkout_fresh(root=None, trunk=None, fetch=True, move=True, days=None, now=None):
+    """Fetch origin; say in one line when this checkout is behind its trunk, or on a stale branch; move it forward by
+    itself only when that loses nothing: clean, on the trunk itself, with no commit of its own (CR-cl53). Returns
+    (lines, blocked): `blocked` is True when it stays behind and the session has something to do first."""
+    root = root or ROOT
+    k = _kit_config().get("kit") or {}
+    trunk = trunk or str(k.get("main_branch") or "main")
+    days = STALE_BRANCH_DAYS if days is None else days
+    now = now or time.time()
+
+    def g(*a, **kw):
+        try:
+            r = subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=kw.get("timeout", 30))
+            return r.returncode, (r.stdout or "").strip(), (r.stderr or "").strip()
+        except (OSError, subprocess.SubprocessError) as e:
+            return 1, "", str(e)
+
+    if g("rev-parse", "--is-inside-work-tree")[1] != "true" or g("remote", "get-url", "origin")[0]:
+        return [], False
+    up = "refs/remotes/origin/" + trunk
+    if fetch:
+        rc, _, err = g("fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:%s" % (trunk, up), timeout=25)
+        if rc:
+            return ["CHECKOUT: could not fetch origin (%s): this checkout may be on old code." % (err.splitlines() or ["?"])[-1][:160]], False
+    if g("rev-parse", "-q", "--verify", up)[0]:
+        return [], False
+    branch = g("symbolic-ref", "-q", "--short", "HEAD")[1]
+    behind = int(g("rev-list", "--count", "HEAD.." + up)[1] or 0)
+    own = int(g("rev-list", "--count", up + "..HEAD")[1] or 0)
+    if not behind:
+        return [], False
+    newest = g("log", "-1", "--format=%h %cs %s", up)[1][:90]
+    what = "%d newer commit%s on origin/%s (newest %s)" % (behind, "" if behind == 1 else "s", trunk, newest)
+    dirty = bool(g("status", "--porcelain", "--untracked-files=no")[1]) or any(
+        os.path.exists(os.path.join(g("rev-parse", "--absolute-git-dir")[1] or os.path.join(root, ".git"), f)) for f in ("MERGE_HEAD", "REBASE_HEAD", "rebase-merge", "rebase-apply"))
+    here = "branch %s" % branch if branch else "a detached HEAD"
+    if not own:                                   # the trunk itself, or a branch merged into it: nothing of its own
+        if dirty:
+            return ["CHECKOUT: %s is behind: %s. Not moved: it has uncommitted changes; commit or stash them, then "
+                    "`git checkout %s && git merge --ff-only origin/%s`." % (here, what, trunk, trunk)], True
+        if branch != trunk:
+            # CR-cl53: no commit of its own is not "merged": a part's new worktree branch or a review's detached HEAD
+            # looks the same, and switching it would put its work on the trunk. Only the trunk moves by itself.
+            return ["CHECKOUT: %s is behind: %s; it has no commit of its own: `git checkout %s && git merge --ff-only "
+                    "origin/%s` if it is done (not switched: it may be a new branch)." % (here, what, trunk, trunk)], False
+        if not move or "/.claude/worktrees/" in os.path.abspath(root).replace(os.sep, "/") + "/":
+            return ["CHECKOUT: %s is behind: %s." % (here, what)], True
+        rc, _, err = g("merge", "-q", "--ff-only", up)
+        if rc:
+            return ["CHECKOUT: %s is behind (%s) and could not be moved (`git merge --ff-only origin/%s`: %s): do it by "
+                    "hand." % (here, what, trunk, (err.splitlines() or ["?"])[-1][:160])], True
+        return ["CHECKOUT: moved %s forward: %s." % (trunk, what)], False
+    last = int(g("log", "-1", "--format=%ct", "HEAD")[1] or now)
+    trunk_last = int(g("log", "-1", "--format=%ct", up)[1] or 0)
+    age = int((now - last) // 86400)
+    if branch == trunk:
+        return ["CHECKOUT: %s has %d commit%s of its own not on origin, and is behind: %s. Not moved: `git pull --no-rebase`, "
+                "then push." % (trunk, own, "" if own == 1 else "s", what)], True
+    if age >= days and trunk_last > last:
+        return ["CHECKOUT: %s is stale: no commit for %d days while %s moved: %s. Not moved (%d commit%s of its own%s): merge "
+                "the trunk (`git merge --no-edit origin/%s`) or finish it, before you work here." % (
+                    here, age, trunk, what, own, "" if own == 1 else "s", ", uncommitted changes" if dirty else "", trunk)], True
+    return ["CHECKOUT: %s is behind its trunk: %s; its %d commit%s are its own: merge `origin/%s` before you build on what "
+            "changed there." % (here, what, own, "" if own == 1 else "s", trunk)], False
+
+
+def checkout_fresh_once(session=None, root=None, now=None):
+    """Once a session (the SessionStart hook or its first resume, whichever comes first): fetch and move. Later calls
+    look again without fetching and repeat only a line that still asks something. A web clone is fresh: nothing."""
+    if _is_web() or str(os.environ.get("KIT_REMOTE") or os.environ.get("AGY_REMOTE") or "").lower() in ("1", "true", "yes"):
+        return [], False
+    root = root or ROOT
+    now = now or time.time()
+    sid = re.sub(r"[^A-Za-z0-9._-]", "_", str(session or os.environ.get("CLAUDE_CODE_SESSION_ID")
+                                                  or os.environ.get("KIT_SESSION_ID") or ""))
+    d = os.path.join(root, ".kit", "run", "fresh")
+    mark = os.path.join(d, (sid or "_nosession") + ".done")
+    try:
+        first = not os.path.exists(mark) or (not sid and now - os.path.getmtime(mark) > 600)
+    except OSError:
+        first = True
+    if not first:
+        lines, blocked = checkout_fresh(root=root, fetch=False, move=False, now=now)
+        return (lines, blocked) if blocked else ([], False)
+    lines, blocked = checkout_fresh(root=root, now=now)
+    try:
+        os.makedirs(d, exist_ok=True)
+        with open(mark, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+    except OSError:
+        pass
+    return lines, blocked
+
+
 def _git_run(*args, cwd=None, timeout=60):
     return subprocess.run(["git", "-C", cwd or ROOT] + list(args), capture_output=True, text=True, timeout=timeout)
 
@@ -6424,6 +6522,7 @@ COMMANDS = [
     ("write the board", "kit.py sub <post> <number>... | \"<piece>\" [--status doing|done|drop] [--why \"...\"]", "a step's pieces by number (the task's numbered lines) or title, lines on its post; done refuses an open one; a piece the task names drops only with --why"),
     ("launch and finish", "kit.py form <post> [--doing \"...\"]", "a step's result as a file, half filled; `done` sends and checks it"),
     ("launch and finish", "kit.py whoami [name]", "this session's id for a post's session_id (web: session_<id>; else the name given)"),
+    ("git copy", "kit.py fresh [--again]", "fetch origin: say when it is behind its trunk or on a stale branch, move the trunk forward when clean (CL53; the SessionStart hook and the first resume run it once a session)"),
     ("launch and finish", "kit.py branches [--delete]", "origin's branches fully on the trunk (finished parts), and with --delete removes them"),
     ("launch and finish", "kit.py web-env [ask] [--id env_...]", "several repos on the web (CL39): the create_environment call (every repo, hooks at user level), its question post, its id for the hand-over"),
     ("launch and finish", "kit.py attach <owner/repo>", "attach another repo (web: the add_repo call, clone next to this project, register, record in the portfolio)"),
@@ -8664,6 +8763,9 @@ def main(argv=None):
     s.add_argument("--on-step-branch", action="store_true")
     sp.add_parser("keep", help="the board here into git: committed and pushed")
     s = sp.add_parser("guide", help="a case of the orchestrator's guide (no case: their list)"); s.add_argument("case", nargs="?", default=None)
+    s = sp.add_parser("fresh", help="CL53: fetch origin; say when this checkout is behind its trunk or on a stale branch, "
+                      "and move the trunk forward when that loses nothing (once a session; --again: now)")
+    s.add_argument("--session", default=None); s.add_argument("--again", action="store_true")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--session", default=None, help="your session id: resume flags an _orchestrator post naming another")
     s.add_argument("--role", choices=list(ROLES), default=None, help="what that role needs, nothing else (CL32)")
@@ -8753,6 +8855,25 @@ def main(argv=None):
         configure(a.config)
     elif os.path.exists(os.path.join(ROOT, ".kit", "config.json")):  # an installed kit: <project>/.kit/kit.py
         configure(os.path.join(ROOT, ".kit", "config.json"))
+    if a.cmd == "fresh":
+        sess = a.session
+        if not sess and not sys.stdin.isatty():      # a SessionStart line of its own: Claude Code's payload on stdin
+            try:
+                sess = str((json.loads(sys.stdin.read() or "{}") or {}).get("session_id") or "") or None
+            except (ValueError, OSError, AttributeError):
+                sess = None
+        lines, _ = checkout_fresh() if a.again and not _is_web() else checkout_fresh_once(session=sess)
+        if lines:
+            print("\n".join(lines))
+        return 0
+    if a.cmd == "resume" and not getattr(a, "db", None):
+        # CL53: before anything else, this checkout is on the newest code (or the first line says why not)
+        try:
+            lines, _ = checkout_fresh_once(session=getattr(a, "session", None))
+        except Exception:
+            lines = []
+        if lines:
+            print("\n".join(lines) + "\n")
     m = mirror_dir(a)
     if a.cmd in STALE_GATED and not getattr(a, "db", None):   # --db: a named database, not the Artifact's copy
         why = stale_copy()
