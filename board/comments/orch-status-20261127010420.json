@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T01:04:20Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "Orchestrator ready (agy, fc191f6c-eef7-4a90-9465-9877055f1c6d); board clerk active (0fde82f0-8c38-4f1a-bb23-83d420fe0249, watching: true).\n\n## Current state\n- **Git vs board drift:** `origin/main` (`80952f6`) already landed CL45, CL47, CL48, CL49, CL51, CL53, CL55, R6, and M11 from the web orchestrator, while local `board-mirror` still shows those steps as in progress/planned (Artifact board updates not yet synced to `board-mirror`).\n- **Local checkout:** on `feat/streamline-doctor-memory` (`76d403c`), 6 commits ahead of `origin/main` (R1/R2 prompts, CL56 prompt, `POST /_share/<token>/artifacts`, M10/M12 prompt update).\n- **Ready to land (reviewed, not on `origin/main`):** `origin/cl44` (3 commits ahead) and `origin/m1` (5 commits ahead).\n- **New external report:** R2 (`r2-gemini-tasks-how-far-it-runs-the-board-k`) received a full live test comment from `gemini-tasks` at 00:21Z.\n- **Device capacity (`penguin`):** 0 free slots (1365 MB free; 4 Claude `bg-spare` processes hold ~1139 MB). No local part launched yet."
+}
