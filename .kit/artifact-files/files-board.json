@@ -119,13 +119,8 @@
    "version": 9
   },
   "kit+2F~board+2F~board.template.html": {
-<<<<<<< HEAD
-   "sha": "23673a402cefc6765decbacaff0b90f50f16a567dee98af36260a9cf2dfb1595",
-   "version": 11
-=======
    "sha": "e4691c7d8b7c26f7f41a25f6d7da607457a1b9a91215c513026c2459aeacccd8",
    "version": 12
->>>>>>> origin/main
   },
   "kit+2F~claude+2F~BOARD.template.md": {
    "sha": "dc0bb18a126fa70540edaf79296b4923a780715d04cf12d8283ae1e13c48eff5",
