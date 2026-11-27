@@ -8688,8 +8688,12 @@ def alarm_lines():
 def design_gate(cmd):
     """CL72: `kit.py launch` and `kit.py land` refuse while an item of resume's "First: what keeps coming back" has no
     `kit.py ledger design` entry: '' when none, else the refusal (each item, its ids, the command that records it)."""
+    md = _resolve_memory_dir()
+    own = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if os.environ.get("KIT_TEST") and os.path.abspath(md).startswith(own + os.sep):
+        return ""                            # a test run never reads the real repo's ledger (its own temp one: yes)
     try:
-        items = _led_call("open_items", _resolve_memory_dir(), kit_root=ROOT) or []
+        items = _led_call("open_items", md, kit_root=ROOT) or []
     except Exception as e:                   # a broken ledger is said, never hidden; it blocks nothing by itself
         print("(the ledger could not be read for the design gate: %s)" % e, file=sys.stderr)
         return ""

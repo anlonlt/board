@@ -7,7 +7,7 @@ description: How a Claude Code Web session reports on this project's board (a cl
 
 The board is a claude.ai Artifact: its url is `board_url` in `.kit/config.json`. A step's post is a form (`python3 -I .kit/kit.py form <post>`, then `kit.py done <post>`): nothing to read first; any other post: `.kit/BOARD.md` § Post; the orchestrator starts from `python3 -I .kit/kit.py resume --role orchestrator`, not from a guide file.
 
-- Posts and comments go through the kit (CL30, a hook refuses a hand write for every session): pull + load, `board_cli.py set/update/reply` on the local copy, then `kit.py artifact push`, its `ArtifactData batch`, `artifact sent`; `reply_to` = the doc_id of the comment you answer. Typing dots (`typing/<post_id>`) stay a direct `ArtifactData` `set`.
+- Posts and comments go through the kit (CL72, a hook refuses every board call the kit did not just print, for every session): `kit.py artifact sync`, `board_cli.py set/update/reply` on the local copy, then `kit.py artifact sync` again until "in sync"; `reply_to` = the doc_id of the comment you answer. Typing dots (`typing/<post_id>`) stay a direct `ArtifactData` `set`.
 - Files you deliver for a post (scripts, docs, HTML): `ArtifactData` `set` in `kit_artifacts`, `{post_id, path, base_path, summary, content, by_user, agent_meta: {harness: "claude-code-web", model, effort}, created_at}`; the page lists them under the post with a diff against `base_path`.
 - Never republish the page from a working session; the installing session does that with `build_artifact_page.py`.
 - Lookups without dumping the board (`.kit/ORCHESTRATOR.md` § 3): `python3 -I .kit/kit.py post <id>`, `open`, `since <ISO>`, `session <post>`, after a sync.

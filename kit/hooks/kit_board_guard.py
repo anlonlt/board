@@ -31,8 +31,8 @@ import kit_config as kc  # noqa: E402
 LOCAL_WRITE = re.compile(r"board_cli\.py\b[^\n;&|]*\b(?:set|update|str-replace|batch|reply|import)\b|"
                          r"kit\.py\b[^\n;&|]*\b(?:step\s+(?:new|start|complete|drop)|adopt|welcome|pair)\b")
 PART_PROMPT = re.compile(r"^Your prompt is docs/prompts/([\w.-]+)\.md\b")
-PUSH = ("`python3 -I .kit/kit.py artifact push`, the ArtifactData batch it prints, then `python3 -I .kit/kit.py "
-        "artifact sent <batch>`")
+PUSH = ("`python3 -I .kit/kit.py artifact sync` (CL72: it prints the calls to make, exactly; run it again until it says "
+        "\"in sync\")")
 
 
 def artifact_board(data):

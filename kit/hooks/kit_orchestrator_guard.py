@@ -276,8 +276,11 @@ def board_verdict(ti, root, orch):
             return "a step post written by hand (%s): %s; any other change: %s." % (where, STEP_WAY, kc.SYNC_WAY)
         what = "a batch not printed by the kit" if act == "batch" else "a %s written by hand (%s, `%s`)" % (
             "post" if kind == "posts" else "comment" if kind == "comments" else "board document", where, act)
-    return "%s: %s. Every board read and write goes through %s; the board's posts are read with %s." % (
-        what, whys[0] if whys else "not printed", kc.SYNC_WAY, kc.CLI_READ_WAY)
+    if act in ("get", "list", "query"):
+        return "%s: %s. Every board read goes through %s; one post is read with %s." % (
+            what, whys[0] if whys else "not printed", kc.SYNC_WAY, kc.CLI_READ_WAY)
+    return "%s: %s. A change is made on the local copy (%s), and it reaches the board through %s." % (
+        what, whys[0] if whys else "not printed", kc.LOCAL_WRITE_WAY, kc.SYNC_WAY)
 
 
 def cli_verdict(command, data):

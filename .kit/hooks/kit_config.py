@@ -100,6 +100,9 @@ ORCH_FIELDS = frozenset({"session_id", "started_by", "started_at"})
 FREE_COLLS = _re.compile(r"^(?:repos/[^/]+/)?typing$")
 # the kit commands whose output carries the ArtifactData calls to make (usage.py's command keys)
 PRINTERS = ("kit.py artifact", "web_takeover.py", "kit.py launch", "kit.py step", "kit.py done", "end_session.py")
+LOCAL_WRITE_WAY = ("your post: `kit.py form|sub|checkpoint <post>`, a step: TaskCreate {train, part}; an answer: "
+                   "`python3 -I .kit/board_cli.py reply <post> --text ...`; a comment: `board_cli.py set comments <id> "
+                   "--data ...`")
 LEDGER = "printed.json"
 LEDGER_V = 3
 LEDGER_FRESH_S = 60 * 60

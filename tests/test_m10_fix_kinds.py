@@ -166,10 +166,13 @@ class Seed(unittest.TestCase):
         k = {x["kind"]: x for x in led.fix_kinds(m)}
         self.assertEqual(k["platform leak"]["total"], 8)                       # CL26, CL28, CL37, CL44 x2, CL51, R4, 106bba6
         self.assertEqual(k["platform leak"]["design"], "r5-every-rule-that-differs-by-platform-says")
-        self.assertGreaterEqual(k["silent error"]["count"], 3)
-        self.assertGreaterEqual(k["two copies out of sync"]["count"], 3)
+        # each kind reached three fixes, and its design step is now recorded (f6a809fe: CL71, CL72), so resume's
+        # "First" no longer raises it (and `kit.py launch`/`land` are not held by it, CL72)
+        self.assertGreaterEqual(k["silent error"]["total"], 3)
+        self.assertGreaterEqual(k["two copies out of sync"]["total"], 3)
+        self.assertTrue(k["silent error"]["design"] and k["two copies out of sync"]["design"])
         first = led.alarm_lines(m)[0]
-        self.assertTrue(any("silent error" in l for l in first) and any("two copies out of sync" in l for l in first), first)
+        self.assertFalse(any("silent error" in l or "two copies out of sync" in l for l in first), first)
         self.assertTrue(any("git is the one source" in l for l in first) and any("never hide an error" in l for l in first), first)
 
     def test_the_orchestrator_s_resume_says_them_first(self):
