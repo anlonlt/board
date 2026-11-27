@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T08:42:14Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_95215d753b91",
+ "text": "Yes — your rule from `m1-owner-no-question` (2026-11-26) is recorded: the map is for agents, so an agent A/B test (with vs. without the map) judges it, never a question asking you to pick.\n\n**What is on this local board (`board.db` / `origin/board-mirror`):**\n- **M3 (`m3-done-keeps-the-map-each-part-checks-its`)** has **no question or options** here — it is `complete`, reviewed `continue` (`CR-m3`), and already landed on `main`.\n- The only two-option/choice items I see here are:\n  1. **`cl27-q-trains-view`** (open question from 11-23): *The Trains view: task lists (A) or the old flow map (B)?*\n  2. **`q-two-orchestrators-which-one-runs-the-boa`** (open question from 02:29): *Two orchestrators: which one runs the board?*\n  3. **`conflict-ad7e7c0c8107502d` on M9**: an automatic Artifact-vs-GitHub sync conflict note (*\"Pick one\"*) — not a design choice for you (M9 is actively running on `agy`).\n\nIf you're seeing a newer two-option M3 question on the **Claude Artifact** (from web `orch4` before it synced to `board-mirror`), let me know its title/ID — per your rule, an agent comparison should decide it rather than asking you.\n\n*(Update: **R7 + R4** passed combined review `CR-r7-r4-combined` (`continue`) and **landed together on `main` at `2223abe39`**; planned small review follow-up **A2** on `agy`.)*"
+}
