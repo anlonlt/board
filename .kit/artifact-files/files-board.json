@@ -27,8 +27,8 @@
    "version": 2
   },
   ".kit+2F~board.html": {
-   "sha": "c8f6d56c646e0558ebc065bad96eda6006203dc289710bfd8a2c89eb38343d15",
-   "version": 9
+   "sha": "d2bb54205847a0692d2b16fa82dd619cc502d9aeeab763b36f247c60a4ec1377",
+   "version": 10
   },
   ".kit+2F~claude-cli+2F~orchestrator.md": {
    "sha": "7d34fac8aa7429dceafd8c77786684e31700fd9207a2fa30c77f9ab79ba5ca03",
@@ -119,8 +119,13 @@
    "version": 9
   },
   "kit+2F~board+2F~board.template.html": {
+<<<<<<< HEAD
    "sha": "23673a402cefc6765decbacaff0b90f50f16a567dee98af36260a9cf2dfb1595",
    "version": 11
+=======
+   "sha": "e4691c7d8b7c26f7f41a25f6d7da607457a1b9a91215c513026c2459aeacccd8",
+   "version": 12
+>>>>>>> origin/main
   },
   "kit+2F~claude+2F~BOARD.template.md": {
    "sha": "dc0bb18a126fa70540edaf79296b4923a780715d04cf12d8283ae1e13c48eff5",
@@ -216,6 +221,10 @@
   },
   "tests+2F~fixtures+2F~cl33_harmonize_awaits.md": {
    "sha": "c58b8c2259d4a2dd9a1ff0b02aea4ff37570feb6f5a764c42226506885f2157b",
+   "version": 1
+  },
+  "tests+2F~fixtures+2F~cl36_post_body.md": {
+   "sha": "1f7b1090b7a1e23e1e80609eab4ee42714a327b177b1dab19e6c73fc645efc44",
    "version": 1
   }
  }

@@ -46,6 +46,12 @@ const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width=
   await put('posts', 'cl9-new', { title: 'CL9 a result in its post', column: 'info', status: 'complete', created_at: at, verdict: 'Shown in the post.',
     body: 'The lead.\n\n## The flow\n\n```mermaid\nflowchart LR\n  A["Session"] --> B["Board post"]\n  B -->|"he reads"| C["Owner"]\n```\n\n' +
           '## A picture\n\n![the picture](docs/pic.png)\n\n![the flow, as a picture](docs/flow.svg)\n\nNot a picture: `![x](docs/pic.png)` stays text.\n\n## An SVG written here\n\n```svg\n' + SVG + '\n```\n\n## An SVG file\n\n`docs/flow.svg`\n' });
+  // CL57 (CR-cl36, 2026-11-27): CL36's own post body, as it is on the board, is the fixture: its diagram has 6 nodes and 5 edges
+  fs.mkdirSync(path.join(root, 'docs', 'cl36'));
+  const cl36Pic = path.join(KIT, 'docs', 'cl36', 'post-body.png');
+  if (fs.existsSync(cl36Pic)) fs.copyFileSync(cl36Pic, path.join(root, 'docs', 'cl36', 'post-body.png'));
+  await put('posts', 'cl36-own', { title: 'CL36 a part\'s result lives in its post', column: 'info', status: 'complete', created_at: at, verdict: 'Drawn.',
+    body: fs.readFileSync(path.join(KIT, 'tests', 'fixtures', 'cl36_post_body.md'), 'utf8') });
   await put('posts', 'cl8-old', { title: 'CL8 an older post that embeds a docs file', column: 'info', status: 'complete', created_at: at, verdict: 'Old way.',
     body: 'Lead.\n\n## The flow\n\n`docs/old.md § The flow`\n' });
 
@@ -58,7 +64,7 @@ const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width=
     // drawn, not a fixed sleep: on a busy computer 2.2 s was not enough (its pictures, diagram and svg each load on their own)
     await p.waitForFunction(() => { const b = document.querySelector('#p-body, .kit-post-win-body'); if (!b) return false;
       const ok = (i) => i && i.complete && i.naturalWidth > 0; const pics = [...b.querySelectorAll('img.md-img')];
-      return b.querySelectorAll('.kit-mmd-row').length >= 2 && pics.length >= 2 && pics.every(ok) && ok(b.querySelector('.kit-svg-box img'))
+      return b.querySelectorAll('.kit-mmd-box [data-edge]').length >= 2 && pics.length >= 2 && pics.every(ok) && ok(b.querySelector('.kit-svg-box img'))
         && [...b.querySelectorAll('.kit-inline-embed[data-kind="img"] img')].some(ok); }, null, { timeout: 20000 }).catch(() => {});
     const r = await p.evaluate(() => {
       const box = document.querySelector('#p-body, .kit-post-win-body'); if (!box) return { noBody: true };
@@ -67,7 +73,7 @@ const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width=
       const svgImg = box.querySelector('.kit-svg-box img');
       const mmd = box.querySelector('.kit-mmd-box');
       const W = document.documentElement.clientWidth;
-      return { mmdRows: mmd ? mmd.querySelectorAll('.kit-mmd-row').length : 0, mmdText: mmd ? mmd.textContent : '',
+      return { mmdRows: mmd ? mmd.querySelectorAll('[data-edge]').length : 0, mmdText: mmd ? mmd.textContent : '',
         rawFence: /```|flowchart LR/.test(box.textContent),
         pics: box.querySelectorAll('img.md-img').length, picSrc: pic ? pic.getAttribute('src') : '', picLoaded: pic ? pic.complete && pic.naturalWidth > 0 : false,
         codeKept: [...box.querySelectorAll('code')].some((c) => c.textContent === '![x](docs/pic.png)'),
@@ -89,6 +95,37 @@ const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width=
     await p.waitForFunction(() => { const e = document.querySelector('.kit-inline-embed[data-kind="md"]'); return e && /Text of the old section/.test(e.textContent); }, null, { timeout: 20000 }).catch(() => {});
     const o2 = await p.evaluate(() => { const e = document.querySelector('.kit-inline-embed[data-kind="md"]'); return e ? e.textContent : ''; });
     check(tag + ': an older post that embeds `docs/old.md § The flow` still shows that section inline', o.embed && /Text of the old section/.test(o2), { o, o2: o2.slice(0, 120) });
+    // CL57 (asked CR-cl36-a-part-s-result-lives-in-its-post-post-b): the flowchart is the post's graph, each node once, every edge
+    await p.goto('http://127.0.0.1:' + port + '/#/post/cl36-own');
+    await p.waitForFunction(() => { const b = document.querySelector('#p-body, .kit-post-win-body'); return !!(b && b.querySelector('.kit-mmd-box')); }, null, { timeout: 20000 }).catch(() => {});
+    const g = await p.evaluate(() => {
+      const box = document.querySelector('#p-body, .kit-post-win-body'); if (!box) return { noBody: true };
+      box.querySelectorAll('details').forEach((d) => { d.open = true; });
+      const mmd = box.querySelector('.kit-mmd-box'); const W = document.documentElement.clientWidth;
+      const nodes = mmd ? [...mmd.querySelectorAll('[data-node]')] : [];
+      const edges = mmd ? [...mmd.querySelectorAll('[data-edge]')] : [];
+      const tbl = box.querySelector('.tbl');
+      const tblText = tbl ? [...tbl.querySelectorAll('td, th')].map((c) => { const k = c.cloneNode(true); k.querySelectorAll('code').forEach((x) => x.remove()); return k.textContent; }).join(' ') : '';
+      const rule = [...box.querySelectorAll('p')].find((x) => /The result lives in the post body/.test(x.textContent));
+      const ruleText = rule ? (() => { const k = rule.cloneNode(true); k.querySelectorAll('code').forEach((x) => x.remove()); return k.textContent; })() : 'no rule paragraph';
+      return { ids: nodes.map((n) => n.getAttribute('data-node')), labels: nodes.map((n) => n.textContent.replace(/\s+/g, ' ').trim()),
+        edges: edges.map((e) => e.getAttribute('data-edge')), edgeLabels: mmd ? [...mmd.querySelectorAll('.kit-mmd-elbl')].map((e) => e.textContent.replace(/\s+/g, ' ').trim()) : [],
+        codes: tbl ? [...tbl.querySelectorAll('code')].map((c) => c.textContent) : [], strayTicks: /`/.test(tblText) || /`/.test(ruleText),
+        tblCut: tbl ? tbl.scrollWidth > tbl.clientWidth + 1 : 'no table',
+        wide: mmd ? mmd.getBoundingClientRect().right > W + 1 || mmd.getBoundingClientRect().width < 100 : true,
+        clipped: mmd ? [...mmd.querySelectorAll('[data-node]')].filter((n) => { const r = n.getBoundingClientRect(), m = mmd.getBoundingClientRect(); return r.left < m.left - 1 || r.right > m.right + 1; }).length : -1 };
+    });
+    const wantNodes = ['A', 'B', 'C', 'D', 'E', 'F'];
+    const wantEdges = ['A>B', 'B>C', 'D>B', 'E>B', 'F>B'];
+    check(tag + ': CL36\'s diagram draws 6 nodes, each once', g.ids && g.ids.length === 6 && wantNodes.every((n) => g.ids.filter((x) => x === n).length === 1)
+      && g.labels.filter((l) => l === 'Post body').length === 1, g);
+    check(tag + ': CL36\'s diagram draws its 5 edges, the picture input E --> B among them', g.edges && g.edges.length === 5 && wantEdges.every((e) => g.edges.includes(e)), g);
+    check(tag + ': a node label holding ![..](..) or brackets is kept as text', g.labels && g.labels.includes('![picture](repo/path.png)') && g.labels.includes('```mermaid / ```svg block')
+      && g.labels.includes("Part's result") && g.edgeLabels.includes('kit.py done refuses') && g.edgeLabels.includes('text, ## sections'), g);
+    check(tag + ': four-backtick inline code (```` ```mermaid ````) renders as code, no stray backticks', g.codes && g.codes.includes('```mermaid') && g.codes.includes('```svg') && !g.strayTicks, g);
+    check(tag + ': the diagram fits the screen, no node cut', g.wide === false && g.clipped === 0, g);
+    if (mobile) check(tag + ': the table\'s "now" column is not cut at phone width', g.tblCut === false, g);
+    if (process.env.KIT_SHOT_CL57) await (await p.$('.kit-mmd-box')).screenshot({ path: process.env.KIT_SHOT_CL57.replace('%s', tag) }).catch(() => {});
     check(tag + ': no page error', !errs.length, errs);
     await ctx.close();
   }

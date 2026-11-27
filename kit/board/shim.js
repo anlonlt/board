@@ -1640,6 +1640,22 @@
 
   function renderRichDocMarkdown(mdText, baseDocPath, repoOverride) {
     var text = String(mdText || "").replace(/\r/g, "");
+    function kitCodeSpans(s) {   /* CL57: a code span opens with a run of N backticks and closes at the next run of exactly N
+         (so ```` ```mermaid ```` is the code ```mermaid); one space inside each end is dropped; an unclosed run stays text */
+      var parts = [], re = /`+/g, m, last = 0;
+      while ((m = re.exec(s)) !== null) {
+        var n = m[0].length, re2 = /`+/g, m2, close = -1;
+        re2.lastIndex = m.index + n;
+        while ((m2 = re2.exec(s)) !== null) { if (m2[0].length === n) { close = m2.index; break; } }
+        if (close < 0) continue;
+        var c = s.slice(m.index + n, close);
+        if (/^ [\s\S]* $/.test(c) && /[^ ]/.test(c)) c = c.slice(1, -1);
+        parts.push({ t: s.slice(last, m.index) }, { code: c });
+        last = close + n; re.lastIndex = last;
+      }
+      parts.push({ t: s.slice(last) });
+      return parts;
+    }
     function escH(s) {
       return String(s || "").replace(/[&<>"']/g, function (c) {
         return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -1671,11 +1687,11 @@
     }
     function renderInlineRich(s) {
       var codeSlots = [];
-      var withSlots = String(s || "").replace(/`([^`]+)`/g, function (_, c) {
-        var idx = codeSlots.length;
-        codeSlots.push("<code>" + escH(c) + "</code>");
-        return "\u0000CODE" + idx + "\u0000";
-      });
+      var withSlots = kitCodeSpans(String(s || "")).map(function (seg) {
+        if (seg.code === undefined) return seg.t;
+        codeSlots.push("<code>" + escH(seg.code) + "</code>");
+        return "\u0000CODE" + (codeSlots.length - 1) + "\u0000";
+      }).join("");
       var htmlSlots = [];
       withSlots = withSlots.replace(/<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b([^>]*?)(\/?)>/g, function (full, sl, tn, at) {
         var idx = htmlSlots.length;
@@ -1813,56 +1829,253 @@
     return html;
   }
 
+  /* CL57 (CR-cl36, 2026-11-27: "the diagram is not this post's diagram"): a ```mermaid flowchart draws as the graph it
+     says: one box per node id, every edge, labels kept as text (a label holding ![..](..), brackets or backticks
+     included). Nodes are laid out in ranks (longest path from the sources, ordered to cross less); the boxes are
+     HTML, so their text wraps at the page's own size, and the wires are an SVG drawn behind them once the boxes are
+     placed (wireMermaidGraphs). The declared direction (LR or TB) is kept when it fits the width; a phone gets TB. */
+  function parseMermaidFlow(src) {
+    var dir = "TB", nodes = {}, order = [], edges = [];
+    var OPEN = [["(((", ")))", "circle"], ["((", "))", "circle"], ["([", "])", "stadium"], ["[(", ")]", "db"], ["[[", "]]", "sub"],
+      ["[/", "/]", "para"], ["[/", "\\]", "para"], ["[\\", "\\]", "para"], ["[\\", "/]", "para"], ["{{", "}}", "hex"],
+      ["[", "]", "rect"], ["(", ")", "round"], ["{", "}", "diamond"], [">", "]", "flag"]];
+    function node(id, label, shape) {
+      if (!nodes[id]) { nodes[id] = { id: id, label: id, shape: "rect", labelled: false }; order.push(id); }
+      if (label !== undefined && (!nodes[id].labelled || label !== id)) { nodes[id].label = label; nodes[id].shape = shape; nodes[id].labelled = true; }
+    }
+    function parseLine(l) {
+      var p = 0, n = l.length, groups = [], links = [];
+      function ws() { while (p < n && /\s/.test(l[p])) p++; }
+      function one() {
+        ws();
+        var m = /^[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*/.exec(l.slice(p));
+        if (!m) return null;
+        var id = m[0], label, shape; p += id.length;
+        for (var k = 0; k < OPEN.length; k++) {
+          var o = OPEN[k];
+          if (l.substr(p, o[0].length) !== o[0]) continue;
+          var q = p + o[0].length, txt, end;
+          while (q < n && l[q] === " ") q++;
+          if (l[q] === '"') {
+            var cq = l.indexOf('"', q + 1);
+            if (cq < 0) continue;
+            txt = l.slice(q + 1, cq); end = cq + 1;
+            while (end < n && l[end] === " ") end++;
+            if (l.substr(end, o[1].length) !== o[1]) continue;
+          } else {
+            end = l.indexOf(o[1], q);
+            if (end < 0) continue;
+            txt = l.slice(q, end).trim();
+          }
+          label = txt; shape = o[2]; p = end + o[1].length;
+          break;
+        }
+        var cls = /^:::[A-Za-z0-9_-]+/.exec(l.slice(p));
+        if (cls) p += cls[0].length;
+        return { id: id, label: label, shape: shape };
+      }
+      function group() {
+        var g = [], a = one();
+        if (!a) return null;
+        g.push(a);
+        for (;;) { var save = p; ws(); if (l[p] !== "&") { p = save; break; } p++; var b = one(); if (!b) return null; g.push(b); }
+        return g;
+      }
+      function link() {
+        ws();
+        var rest = l.slice(p), m, label = "", arrow;
+        if ((m = /^(<?)(--|==|-\.)\s+([^\s\-=.|][^|]*?)\s+(-{2,}>|-{3,}|={2,}>|={3,}|\.+->|\.+-)/.exec(rest))) {
+          arrow = m[1] + m[2] + m[4]; label = m[3]; p += m[0].length;
+        } else if ((m = /^<?(?:-{2,}>|-\.+->|-\.+-|={2,}>|-{3,}|={3,}|~~~|--[xo]|==[xo])/.exec(rest))) {
+          arrow = m[0]; p += m[0].length;
+          ws();
+          var lm = /^\|"([^"]*)"\||^\|([^|]*)\|/.exec(l.slice(p));
+          if (lm) { label = (lm[1] !== undefined ? lm[1] : lm[2]).trim(); p += lm[0].length; }
+        } else return null;
+        return { label: label, bi: arrow[0] === "<", head: /[>xo]$/.test(arrow), dashed: arrow.indexOf(".") >= 0, thick: arrow.indexOf("=") >= 0, hidden: arrow === "~~~" };
+      }
+      var g = group();
+      if (!g) return false;
+      groups.push(g);
+      for (;;) { var lk = link(); if (!lk) break; var g2 = group(); if (!g2) return false; links.push(lk); groups.push(g2); }
+      ws(); if (l[p] === ";") p++; ws();
+      if (p < n) return false;
+      groups.forEach(function (gr) { gr.forEach(function (a) { node(a.id, a.label, a.shape); }); });
+      links.forEach(function (lk, k) {
+        groups[k].forEach(function (a) { groups[k + 1].forEach(function (b) {
+          edges.push({ from: a.id, to: b.id, label: lk.label, bi: lk.bi, head: lk.head, dashed: lk.dashed, thick: lk.thick, hidden: lk.hidden });
+        }); });
+      });
+      return true;
+    }
+    String(src || "").replace(/\r/g, "").split("\n").forEach(function (raw) {
+      var l = raw.replace(/%%.*$/, "").trim();
+      if (!l) return;
+      var hd = /^(?:flowchart|graph)\b\s*(TB|TD|BT|LR|RL)?/i.exec(l);
+      if (hd) { var d = (hd[1] || "TB").toUpperCase(); dir = (d === "LR" || d === "RL") ? "LR" : "TB"; return; }
+      if (/^(?:subgraph|end\b|direction\b|classDef\b|class\b|style\b|linkStyle\b|click\b|accTitle|accDescr)/.test(l)) return;
+      parseLine(l);
+    });
+    return { dir: dir, nodes: order.map(function (id) { return nodes[id]; }), edges: edges };
+  }
+
+  function layoutMermaidRanks(g) {
+    var ids = g.nodes.map(function (x) { return x.id; }), out = {}, inc = {}, rank = {};
+    ids.forEach(function (id) { out[id] = []; inc[id] = []; });
+    /* a cycle's closing edge (found by a depth-first walk in source order) does not push ranks */
+    var state = {}, back = {};
+    function dfs(u) { state[u] = 1; g.edges.forEach(function (e, k) { if (e.from !== u) return; if (state[e.to] === 1) back[k] = 1; else if (!state[e.to]) dfs(e.to); }); state[u] = 2; }
+    ids.forEach(function (id) { if (!state[id]) dfs(id); });
+    g.edges.forEach(function (e, k) { if (!back[k] && e.from !== e.to) { out[e.from].push(e.to); inc[e.to].push(e.from); } });
+    function rk(id, seen) { if (rank[id] !== undefined) return rank[id]; if (seen[id]) return 0; seen[id] = 1; var r = 0; inc[id].forEach(function (s) { r = Math.max(r, rk(s, seen) + 1); }); rank[id] = r; return r; }
+    ids.forEach(function (id) { rk(id, {}); });
+    var ranks = [];
+    ids.forEach(function (id) { (ranks[rank[id]] = ranks[rank[id]] || []).push(id); });
+    ranks = ranks.filter(Boolean);
+    var pos = {};
+    function idx() { ranks.forEach(function (r) { r.forEach(function (id, k) { pos[id] = k; }); }); }
+    idx();
+    for (var sweep = 0; sweep < 4; sweep++) {
+      var down = sweep % 2 === 0;
+      for (var ri = down ? 1 : ranks.length - 2; down ? ri < ranks.length : ri >= 0; ri += down ? 1 : -1) {
+        var bc = {};
+        ranks[ri].forEach(function (id) { var nb = down ? inc[id] : out[id]; bc[id] = nb.length ? nb.reduce(function (s, x) { return s + pos[x]; }, 0) / nb.length : pos[id]; });
+        ranks[ri].sort(function (a, b) { return bc[a] - bc[b] || pos[a] - pos[b]; });
+        idx();
+      }
+    }
+    return ranks;
+  }
+
   function renderMermaidBlock(src) {
     function escM(s) {
       return String(s || "").replace(/[&<>"']/g, function (c) {
         return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
       });
     }
-    function cleanNodeLabel(raw) {
-      var s = String(raw || "").trim();
-      var m = /^[A-Za-z0-9_-]+\s*(?:\["([^"]*)"\]|\("([^"]*)"\)|\[\("([^"]*)"\)\]|\["?([^"\]]*)"?\]|\(([^)]*)\))/.exec(s);
-      var lbl = m ? (m[1] || m[2] || m[3] || m[4] || m[5] || s) : s;
-      return lbl.replace(/<br\s*\/?>/gi, " · ").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").trim();
-    }
-    var lines = String(src || "").split("\n").map(function (l) { return l.trim(); }).filter(function (l) {
-      return l && !/^(?:flowchart|graph)\b/i.test(l);
-    });
-    var defs = {};
-    lines.forEach(function (l) {
-      var re = /([A-Za-z0-9_-]+)\s*(?:\["([^"]*)"\]|\[\("([^"]*)"\)\]|\("([^"]*)"\)|\[([^\]]*)\])/g;
-      var m;
-      while ((m = re.exec(l)) !== null) {
-        var id = m[1];
-        var txt = (m[2] || m[3] || m[4] || m[5] || id).replace(/<br\s*\/?>/gi, "\n").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").trim();
-        defs[id] = txt;
-      }
-    });
-    var edges = [];
-    lines.forEach(function (l) {
-      var em = /^([A-Za-z0-9_-]+)(?:\s*(?:\[[^\]]*\]|\([^)]*\)))?\s*(?:<-->|-->|-\.->|==>)\s*(?:\|"([^"]*)"\||\|([^|]*)\|)?\s*([A-Za-z0-9_-]+)/.exec(l);
-      if (em) {
-        var fromId = em[1], edgeLbl = (em[2] || em[3] || "").trim(), toId = em[4];
-        var bi = l.indexOf("<-->") >= 0;
-        var dashed = l.indexOf("-.->") >= 0;
-        edges.push({ from: fromId, to: toId, label: edgeLbl, bi: bi, dashed: dashed });
-      }
-    });
-    if (!edges.length) {
-      return '<pre><code>' + escM(src) + '</code></pre>';
-    }
-    var rowsHtml = edges.map(function (e) {
-      var fTxt = (defs[e.from] || cleanNodeLabel(e.from)).split("\n");
-      var tTxt = (defs[e.to] || cleanNodeLabel(e.to)).split("\n");
-      var arrow = e.bi ? "\u2194" : (e.dashed ? "\u21e2" : "\u2192");
-      return '<div class="kit-mmd-row">' +
-        '<div class="kit-mmd-node"><b>' + escM(fTxt[0]) + '</b>' + (fTxt[1] ? '<span>' + escM(fTxt.slice(1).join(" · ")) + '</span>' : '') + '</div>' +
-        '<div class="kit-mmd-edge"><span class="arr">' + arrow + '</span>' + (e.label ? '<span class="elbl">' + escM(e.label) + '</span>' : '') + '</div>' +
-        '<div class="kit-mmd-node"><b>' + escM(tTxt[0]) + '</b>' + (tTxt[1] ? '<span>' + escM(tTxt.slice(1).join(" · ")) + '</span>' : '') + '</div>' +
-      '</div>';
+    function clean(s) { return String(s || "").replace(/#quot;/g, '"').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]️?/gu, "").trim(); }
+    var g = parseMermaidFlow(src);
+    if (!g.nodes.length) return '<pre><code>' + escM(src) + '</code></pre>';
+    var ranks = layoutMermaidRanks(g), byId = {};
+    g.nodes.forEach(function (x) { byId[x.id] = x; });
+    var longest = 0;
+    g.edges.forEach(function (e) { longest = Math.max(longest, clean(e.label).length); });
+    var gap = Math.max(44, Math.min(132, Math.round(Math.min(longest, 18) * 6.6) + 20));
+    var wires = g.edges.map(function (e, k) {
+      if (e.hidden) return "";
+      var cls = "kit-mmd-wire" + (e.dashed ? " dashed" : "") + (e.thick ? " thick" : "");
+      return '<path class="' + cls + '" data-edge="' + escM(e.from + ">" + e.to) + '" data-i="' + k + '" data-from="' + escM(e.from) + '" data-to="' + escM(e.to) + '"' +
+        (e.bi ? ' data-bi="1"' : "") + (e.head ? ' data-head="1"' : "") + ' d=""></path>';
     }).join("");
-    return '<div class="kit-mmd-box">' + rowsHtml + '</div>';
+    var ranksHtml = ranks.map(function (r) {
+      return '<div class="kit-mmd-rank' + (r.length > 2 ? " many" : "") + '">' + r.map(function (id) {
+        var nd = byId[id], lines = clean(nd.label).split(/<br\s*\/?>|\\n/i).map(function (s) { return s.trim(); }).filter(Boolean);
+        if (!lines.length) lines = [id];
+        return '<div class="kit-mmd-node ' + nd.shape + '" data-node="' + escM(id) + '"><b>' + escM(lines[0]) + '</b>' +
+          lines.slice(1).map(function (s) { return '<span> ' + escM(s) + '</span>'; }).join("") + '</div>';
+      }).join("") + '</div>';
+    }).join("");
+    var labels = g.edges.map(function (e, k) {
+      var t = clean(e.label).replace(/<br\s*\/?>/gi, " ");
+      return t && !e.hidden ? '<span class="kit-mmd-elbl" data-for="' + k + '">' + escM(t) + '</span>' : "";
+    }).join("");
+    return '<div class="kit-mmd-box kit-mmd-graph" data-dir="' + g.dir + '" data-ranks="' + ranks.length + '" style="--mmd-gap:' + gap + 'px">' +
+      '<svg class="kit-mmd-wires" aria-hidden="true">' + wires + '</svg>' +
+      '<div class="kit-mmd-ranks">' + ranksHtml + '</div>' + labels + '</div>';
   }
+
+  /* Places the wires once the boxes have a size, and again whenever the diagram's width changes (a phone turned, a
+     window resized, a folded section opened). One observer for the page, one ResizeObserver per diagram. */
+  function wireMermaidGraph(box) {
+    var W = box.clientWidth;
+    if (!W) return;
+    var nr = Number(box.getAttribute("data-ranks")) || 1, gap = parseFloat(box.style.getPropertyValue("--mmd-gap")) || 44;
+    var lr = box.getAttribute("data-dir") === "LR" && W >= nr * 116 + (nr - 1) * gap + 28;
+    box.classList.toggle("lr", lr); box.classList.toggle("tb", !lr);
+    var bb = box.getBoundingClientRect(), at = {}, rb = [];
+    [].forEach.call(box.querySelectorAll(".kit-mmd-rank"), function (rank, ri) {
+      var b = rb[ri] = { minX: 1e9, maxX: -1e9, lastTop: -1e9, bottom: -1e9, outL: 0, outR: 0 };
+      [].forEach.call(rank.querySelectorAll("[data-node]"), function (n) {
+        var r = n.getBoundingClientRect(), a = { x: r.left - bb.left - box.clientLeft + box.scrollLeft, y: r.top - bb.top - box.clientTop, w: r.width, h: r.height, rank: ri };
+        at[n.getAttribute("data-node")] = a;
+        b.minX = Math.min(b.minX, a.x); b.maxX = Math.max(b.maxX, a.x + a.w); b.lastTop = Math.max(b.lastTop, a.y); b.bottom = Math.max(b.bottom, a.y + a.h);
+      });
+    });
+    var svg = box.querySelector(".kit-mmd-wires"), paths = [].slice.call(svg.querySelectorAll("path.kit-mmd-wire"));
+    svg.setAttribute("width", box.scrollWidth); svg.setAttribute("height", box.scrollHeight);
+    /* ports: the edges leaving (or entering) one side of a box spread along it, in the order of their other ends */
+    var outs = {}, ins = {};
+    paths.forEach(function (p) { var f = p.getAttribute("data-from"), t = p.getAttribute("data-to"); if (!at[f] || !at[t]) return; (outs[f] = outs[f] || []).push(p); (ins[t] = ins[t] || []).push(p); });
+    function cross(id) { var a = at[id]; return lr ? a.y + a.h / 2 : a.x + a.w / 2; }
+    function port(list, p, id, other) {
+      list.sort(function (a, b) { return cross(a.getAttribute(other)) - cross(b.getAttribute(other)); });
+      var k = list.indexOf(p), n = list.length, a = at[id], side = lr ? a.h : a.w, step = Math.min(14, side * 0.6 / Math.max(1, n));
+      return (k - (n - 1) / 2) * step;
+    }
+    [].forEach.call(svg.querySelectorAll(".kit-mmd-head"), function (h) { h.parentNode.removeChild(h); });
+    paths.forEach(function (p) {
+      var f = p.getAttribute("data-from"), t = p.getAttribute("data-to"), A = at[f], B = at[t];
+      if (!A || !B) return;
+      var o1 = port(outs[f], p, f, "data-to"), o2 = port(ins[t], p, t, "data-from"), x0, y0, x3, y3, c1, c2;
+      if (lr) {
+        var fwd = B.x >= A.x + A.w;
+        x0 = fwd ? A.x + A.w : A.x + A.w / 2; y0 = fwd ? A.y + A.h / 2 + o1 : A.y + A.h;
+        x3 = fwd ? B.x : B.x + B.w / 2; y3 = fwd ? B.y + B.h / 2 + o2 : B.y + B.h;
+        var dx = Math.max(18, Math.abs(x3 - x0) / 2);
+        c1 = fwd ? [x0 + dx, y0] : [x0, y0 + 30]; c2 = fwd ? [x3 - dx, y3] : [x3, y3 + 30];
+      } else if (B.y >= A.y + A.h && A.y < rb[A.rank].lastTop - 1 && B.rank > A.rank) {
+        /* TB, from a box above the last row of its rank: out of its outer side, down the margin, past the boxes below */
+        var R = rb[A.rank], left = A.x + A.w / 2 <= (R.minX + R.maxX) / 2, xo = left ? R.minX - 6 - 4 * R.outL++ : R.maxX + 6 + 4 * R.outR++;
+        var ys = A.y + A.h / 2, yb = R.bottom + 6;
+        x3 = B.x + B.w / 2 + o2; y3 = B.y;
+        var dd = Math.max(12, (y3 - yb) / 2);
+        x0 = xo; y0 = yb; c1 = [xo, yb + dd]; c2 = [x3, y3 - dd];
+        p.setAttribute("d", "M" + Math.round(left ? A.x : A.x + A.w) + " " + Math.round(ys) + " Q" + Math.round(xo) + " " + Math.round(ys) + " " + Math.round(xo) + " " + Math.round(ys + 10) +
+          " L" + Math.round(xo) + " " + Math.round(yb) + " C" + c1.map(Math.round).join(" ") + " " + c2.map(Math.round).join(" ") + " " + Math.round(x3) + " " + Math.round(y3));
+        p.setAttribute("data-detour", "1");
+      } else {
+        var down = B.y >= A.y + A.h;
+        x0 = A.x + A.w / 2 + o1; y0 = down ? A.y + A.h : A.y + A.h / 2;
+        x3 = B.x + B.w / 2 + o2; y3 = down ? B.y : B.y + B.h / 2;
+        var dy = Math.max(16, Math.abs(y3 - y0) / 2);
+        c1 = down ? [x0, y0 + dy] : [x0 + (x3 >= x0 ? 1 : -1) * A.w / 2 + 20, y0]; c2 = down ? [x3, y3 - dy] : [x3 + (x3 >= x0 ? -1 : 1) * B.w / 2 - 20, y3];
+        if (!down) { x0 = A.x + (x3 >= x0 ? A.w : 0); x3 = B.x + (x3 >= A.x + A.w / 2 ? 0 : B.w); }
+      }
+      if (p.getAttribute("data-detour")) p.removeAttribute("data-detour");
+      else p.setAttribute("d", "M" + [x0, y0].map(Math.round).join(" ") + " C" + c1.map(Math.round).join(" ") + " " + c2.map(Math.round).join(" ") + " " + [x3, y3].map(Math.round).join(" "));
+      function head(tx, ty, fx, fy) {
+        var ang = Math.atan2(ty - fy, tx - fx), s = 7, h = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        var pts = [[tx, ty], [tx - s * Math.cos(ang - 0.45), ty - s * Math.sin(ang - 0.45)], [tx - s * Math.cos(ang + 0.45), ty - s * Math.sin(ang + 0.45)]];
+        h.setAttribute("class", "kit-mmd-head"); h.setAttribute("d", "M" + pts.map(function (q) { return q.map(function (v) { return v.toFixed(1); }).join(" "); }).join(" L") + " Z");
+        svg.appendChild(h);
+      }
+      if (p.getAttribute("data-head")) head(x3, y3, c2[0], c2[1]);
+      if (p.getAttribute("data-bi")) head(x0, y0, c1[0], c1[1]);
+      var lb = box.querySelector('.kit-mmd-elbl[data-for="' + p.getAttribute("data-i") + '"]');
+      if (lb) {
+        var mx = (x0 + 3 * c1[0] + 3 * c2[0] + x3) / 8, my = (y0 + 3 * c1[1] + 3 * c2[1] + y3) / 8;
+        lb.style.left = Math.round(mx) + "px"; lb.style.top = Math.round(my) + "px";
+      }
+    });
+    box.setAttribute("data-wired", lr ? "lr" : "tb");
+  }
+  function scanMermaidGraphs() {
+    [].forEach.call(document.querySelectorAll(".kit-mmd-graph:not([data-ro])"), function (box) {
+      box.setAttribute("data-ro", "1");
+      if (typeof ResizeObserver === "function") {
+        new ResizeObserver(function () { wireMermaidGraph(box); }).observe(box);
+      } else wireMermaidGraph(box);
+    });
+  }
+  if (typeof MutationObserver === "function" && typeof document !== "undefined") {
+    var mmdQueued = false;
+    new MutationObserver(function () {
+      if (mmdQueued) return; mmdQueued = true;
+      (window.requestAnimationFrame || setTimeout)(function () { mmdQueued = false; scanMermaidGraphs(); });
+    }).observe(document.documentElement, { childList: true, subtree: true });
+    window.addEventListener("load", scanMermaidGraphs);
+  }
+  window._kitWireMermaid = function () { [].forEach.call(document.querySelectorAll(".kit-mmd-graph"), wireMermaidGraph); };
 
   /* CL36 (the owner, 2026-11-24: "What was wrong with the SVG that they included in the post then?"): an SVG written in
      a ```svg block draws as a picture (an <img> of it: its scripts never run). Post bodies and the document viewer
@@ -1932,14 +2145,28 @@
         "img.md-img{max-width:100%;height:auto;border-radius:8px;vertical-align:middle;margin:2px 0;}" +
         ".kit-svg-box{margin:1em 0;max-width:100%;overflow-x:auto;}" +
         ".kit-svg-inline{display:block;max-width:100%;height:auto;border-radius:8px;background:#fff;}" +
-        ".kit-mmd-box{display:flex;flex-direction:column;gap:8px;margin:1em 0;padding:14px;border-radius:12px;background:var(--sunk);border:1px solid var(--line);max-width:100%;overflow-x:auto;box-sizing:border-box;}" +
-        ".kit-mmd-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:10px;min-width:0;}" +
-        ".kit-mmd-node{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 12px;display:flex;flex-direction:column;gap:2px;min-width:0;box-shadow:var(--shadow);}" +
-        ".kit-mmd-node b{font-size:.88em;color:var(--ink);overflow-wrap:anywhere;}" +
-        ".kit-mmd-node span{font-size:.76em;color:var(--muted);overflow-wrap:anywhere;}" +
-        ".kit-mmd-edge{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--ember);font-family:var(--mono);font-size:.75em;min-width:40px;text-align:center;}" +
-        ".kit-mmd-edge .arr{font-size:1.25em;font-weight:800;line-height:1;}" +
-        ".kit-mmd-edge .elbl{color:var(--muted);max-width:130px;overflow-wrap:anywhere;}" +
+        ".kit-mmd-box{position:relative;margin:1em 0;padding:16px 14px;border-radius:12px;background:var(--sunk);border:1px solid var(--line);max-width:100%;overflow-x:auto;box-sizing:border-box;}" +
+        ".kit-mmd-wires{position:absolute;left:0;top:0;z-index:0;pointer-events:none;overflow:visible;}" +
+        ".kit-mmd-wire{fill:none;stroke:var(--muted);stroke-width:1.4;opacity:.85;}" +
+        ".kit-mmd-wire.dashed{stroke-dasharray:5 4;}" +
+        ".kit-mmd-wire.thick{stroke-width:2.6;}" +
+        ".kit-mmd-head{fill:var(--muted);opacity:.85;}" +
+        ".kit-mmd-ranks{position:relative;z-index:1;display:flex;flex-direction:column;gap:46px;}" +
+        ".kit-mmd-rank{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px 12px;min-width:0;}" +
+        ".kit-mmd-box.lr .kit-mmd-ranks{flex-direction:row;align-items:stretch;column-gap:var(--mmd-gap,44px);}" +
+        ".kit-mmd-box.lr .kit-mmd-rank{flex:1 1 0;flex-direction:column;flex-wrap:nowrap;gap:14px;}" +
+        ".kit-mmd-node{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:7px 11px;display:flex;flex-direction:column;gap:2px;min-width:0;max-width:min(100%,240px);box-sizing:border-box;box-shadow:var(--shadow);text-align:center;}" +
+        ".kit-mmd-box.tb .kit-mmd-node{flex:0 1 auto;min-width:min(96px,100%);}" +
+        ".kit-mmd-box.tb .kit-mmd-rank.many{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(128px,100%),1fr));gap:12px 14px;padding:0 6px;}" +
+        ".kit-mmd-box.tb .kit-mmd-rank.many .kit-mmd-node{max-width:none;align-self:stretch;justify-content:center;}" +
+        ".kit-mmd-box.lr .kit-mmd-node{width:100%;max-width:100%;}" +
+        ".kit-mmd-node.round,.kit-mmd-node.stadium,.kit-mmd-node.circle{border-radius:999px;padding-left:14px;padding-right:14px;}" +
+        ".kit-mmd-node.diamond,.kit-mmd-node.hex{border-style:double;border-width:3px;}" +
+        ".kit-mmd-node.db,.kit-mmd-node.sub{border-left-width:4px;border-right-width:4px;}" +
+        ".kit-mmd-node b{font-size:.86em;font-weight:600;color:var(--ink);overflow-wrap:anywhere;}" +
+        ".kit-mmd-node span{display:block;font-size:.76em;color:var(--muted);overflow-wrap:anywhere;}" +
+        ".kit-mmd-elbl{position:absolute;z-index:2;left:-999px;top:0;transform:translate(-50%,-50%);max-width:140px;padding:1px 6px;border-radius:6px;background:var(--sunk);color:var(--muted);font-family:var(--mono);font-size:.7em;line-height:1.3;text-align:center;overflow-wrap:anywhere;}" +
+        ".kit-mmd-box.lr .kit-mmd-elbl{max-width:calc(var(--mmd-gap,44px) + 24px);}" +
         ".kit-docs-drawer{position:absolute;top:0;bottom:0;z-index:6;background:color-mix(in srgb, var(--surface) 95%, var(--sunk));backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 10px 32px rgba(0,0,0,.22);overflow-y:auto;overscroll-behavior:contain;transition:transform .18s cubic-bezier(.22,.85,.32,1),opacity .15s ease;touch-action:pan-y;}" +
         ".kit-docs-list{left:0;width:min(300px,84%);border-right:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:8px;transform:translateX(-100%);opacity:0;pointer-events:none;}" +
         ".kit-docs-list.open{transform:translateX(0);opacity:1;pointer-events:auto;}" +
@@ -2148,8 +2375,6 @@
           ".kit-pic-hdr button{width:24px;height:24px;}" +
           ".kit-pic-hdr button svg{width:13px;height:13px;}" +
           ".kit-docs-view{padding:14px 16px 36px !important;}" +
-          ".kit-mmd-row{grid-template-columns:1fr;gap:4px;text-align:center;}" +
-          ".kit-mmd-edge .arr{transform:rotate(90deg);display:inline-block;}" +
         "}";
       document.head.appendChild(st);
     }

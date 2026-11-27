@@ -6439,6 +6439,9 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
             if why:
                 return dict(out, ok=False, error=why)
             out["worktree"] = wt
+            # CL50: the worktree records its step before the session starts: `claude --bg` can run the work in a warm
+            # process made for an earlier launch, whose KIT_POST is that launch's; the hooks read this file first
+            _write_step(wt, pid)
             k = c.get("kit") or {}
             m = str(model or ((k.get("claude_cli_roles") or {}).get("part") or {}).get("model") or "inherit")
             cmd = ["claude", "--bg", "-n", name, "--permission-mode", permission_mode(k)]
@@ -8360,8 +8363,9 @@ def _my_post(posts, post=None):
     names)."""
     if post:
         return post if post in posts else None
-    if os.environ.get("KIT_POST") in posts:
-        return os.environ["KIT_POST"]
+    mine, _ = _own_step()                       # CL50: the worktree's recorded step first; KIT_POST only when it agrees
+    if mine in posts:
+        return mine
     br = _git_run("branch", "--show-current").stdout.strip().lower()
     if not br:
         return None
@@ -8981,7 +8985,10 @@ def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=
         if hits:
             _git_run("reset", "-q", "--", *to_add)
             return {"ok": False, "committed": False, "refused": True, "branch": br, "why": la.hits_text(hits)}
-    label = str(post or os.environ.get("KIT_POST") or br)
+    note = ""
+    if not post:                               # CL50: the worktree's recorded step, KIT_POST only when it agrees
+        post, note = _own_step()
+    label = str(post or br)
     msg = "checkpoint(%s): %s" % (label, str(message or "save progress").strip()[:120])
     if left:
         msg += "\n\nLeft out (secret-named, never committed): %s" % ", ".join(left[:20])
@@ -9003,8 +9010,32 @@ def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=
         pass
     pushed = _checkpoint_push(br, la) if (push or k.get("checkpoint_push")) else False
     if isinstance(pushed, dict):
-        return dict(pushed, committed=True, sha=sha, message=msg)
-    return {"ok": True, "committed": True, "branch": br, "sha": sha, "message": msg, "pushed": pushed, "left_out": left}
+        return dict(pushed, committed=True, sha=sha, message=msg, **({"step_note": note} if note else {}))
+    res = {"ok": True, "committed": True, "branch": br, "sha": sha, "message": msg, "pushed": pushed, "left_out": left}
+    return dict(res, step_note=note) if note else res
+
+
+def _write_step(root, pid):
+    """CL50: `.kit/run/step` in `root` names `pid`: the step this worktree is for."""
+    try:
+        path = os.path.join(root, ".kit", "run", "step")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(str(pid).strip() + "\n")
+    except OSError:
+        pass
+
+
+def _own_step(branch_post=""):
+    """CL50: (this worktree's step, a once-only note when KIT_POST names another), from .kit/landing.py; without it,
+    KIT_POST as before."""
+    la = _landing_mod()
+    if la and hasattr(la, "own_step"):
+        try:
+            return la.own_step(ROOT, branch_post)
+        except Exception:
+            pass
+    return str(os.environ.get("KIT_POST") or branch_post or ""), ""
 
 
 def _landing_mod():
@@ -9138,6 +9169,7 @@ def mark_part_branch(pid, p):
             json.dump({"branch": cur, "post": pid, "step_branch": str(p.get("branch") or "")}, fh)
     except OSError:
         pass
+    _write_step(ROOT, pid)                       # CL50: the part named its own step: the hooks read it before KIT_POST
 
 
 def take_last_save(br):
