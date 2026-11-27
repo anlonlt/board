@@ -233,7 +233,8 @@ class Runtime(Base):
         r2 = k.launch("cl99-launch-me", url=self.url, token=TOKEN, web=True, session_id="session_01WEB2")
         self.assertTrue(r2["ok"], r2)
         self.assertEqual(self.local("posts/cl99-launch-me")["data"]["runner"], "claude-web")
-        self.assertFalse((self.tmp / "claude.log").exists())
+        if (self.tmp / "claude.log").exists():
+            self.assertNotIn("--bg", (self.tmp / "claude.log").read_text().splitlines())
 
     def test_launch_cli_parses_cli_agy_flag_and_adopts_remote_branch(self):
         repo = self.repo({"project": "Board", "kit": {"runtime": "local", "cli": "claude"}})

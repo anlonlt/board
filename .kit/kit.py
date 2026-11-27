@@ -6227,7 +6227,9 @@ def _prepare_agy_branch(branch, base, reset=False, take=False):
     wt = _worktree_for(branch)
     if reset:
         if wt:
-            if _git_run("status", "--porcelain", cwd=wt).stdout.strip():
+            dirty = [ln for ln in _git_run("status", "--porcelain", cwd=wt).stdout.splitlines()
+                     if not ln[3:].strip().startswith(".kit/run/")]
+            if dirty:
                 return None, "worktree %s (branch %s) has uncommitted work: commit or keep it, then launch again" % (wt, branch)
             r = _git_run("reset", "-q", "--hard", base, cwd=wt)
         else:
@@ -6614,7 +6616,8 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     text = _launch_text(rel)
     me, people = _my_person(url, token)
     if not session_id and not take:
-        held = step_holder(pid, post, me=me, people=people, alive=_alive_sessions(), saved=_saved_mins(branch))
+        alive = _alive_sessions() if _rule("alive_check", pl) == "claude_agents" else None
+        held = step_holder(pid, post, me=me, people=people, alive=alive, saved=_saved_mins(branch))
         if held:
             return dict(out, ok=False, error="%s is taken: %s. If that session ended or its person agrees, "
                         "`kit.py launch %s --take`" % (pid, held, pid))
