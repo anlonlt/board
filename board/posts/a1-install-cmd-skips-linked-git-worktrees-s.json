@@ -31,6 +31,14 @@
  "orchestrator_name": "Antigravity orchestrator",
  "part": "A1",
  "planned_by": "orchestrator",
+ "proof": {
+  "at": "2026-11-27T08:53:06Z",
+  "branch": "a1",
+  "commit": "bceab4b",
+  "key": "873da9e666f0fcba",
+  "needs_real": false,
+  "sha": "bceab4ba09a09d2fae201989227f22f6d6c0e29a"
+ },
  "real_project": {
   "command": "python3 -I /home/anon/board-a1/install.py /home/anon/harmonize --update --dry-run",
   "output": "exit 0; dry-run refreshed kit files, kept kit.claude_permission_mode: best, merged hooks/settings/mcp, rendered docs/board/harmonize-board.html, and left /home/anon/harmonize and ~/.local/bin untouched",
@@ -66,6 +74,6 @@
  "task": "When a part subagent runs `install.py . --update` inside a linked git worktree (e.g. `~/.gemini/antigravity-cli/worktrees/...` or `.claude/worktrees/...`), `install_cmd()` in `install.py` only checks `under_tempdir(t)` and overwrites `~/.local/bin/<cmd>` to point at the ephemeral worktree, breaking the one-word launcher once the worktree is removed.\n\n1. In `install.py` (`install_cmd`), detect linked git worktrees (`.git` is a file, or `git rev-parse --git-dir` differs from `--git-common-dir`, or path under `/.gemini/antigravity-cli/worktrees/` or `/.claude/worktrees/`) and skip writing `~/.local/bin/<cmd>` when `KIT_BIN_DIR` is not explicitly set, logging a clear `SKIPPED command ... is a git worktree` line (matching `under_tempdir`).\n2. Add unit tests in `tests/test_install_worktree_cmd.py` covering: a linked git worktree skips `~/.local/bin/<cmd>` and leaves an existing launcher untouched; a main checkout still installs/updates it; explicit `KIT_BIN_DIR` still overrides the skip.",
  "title": "install_cmd skips linked git worktrees so ~/.local/bin/<cmd> is never overwritten by a part",
  "train": "agy",
- "updated_at": "2026-11-27T08:52:21Z",
+ "updated_at": "2026-11-27T08:53:06Z",
  "verdict": "Installing or updating from a linked git worktree now skips writing the default user launcher unless an explicit launcher folder is set, keeping the main checkout launcher intact."
 }
