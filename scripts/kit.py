@@ -6012,10 +6012,6 @@ def step_drop(pid, db_path=None):
 
 
 # ---------------------------------------------------------------- launch (CL13): a launched part is always on the board
-def _is_web():
-    return str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes")
-
-
 # ---------------------------------------------------------------- CL53: a session starts on the newest code from GitHub
 STALE_BRANCH_DAYS = 2      # ~/harmonize sat two days on a merged branch while its trunk moved (11-22 to 11-24)
 
@@ -6089,7 +6085,7 @@ def checkout_fresh(root=None, trunk=None, fetch=True, move=True, days=None, now=
 def checkout_fresh_once(session=None, root=None, now=None):
     """Once a session (the SessionStart hook or its first resume, whichever comes first): fetch and move. Later calls
     look again without fetching and repeat only a line that still asks something. A web clone is fresh: nothing."""
-    if _is_web() or str(os.environ.get("KIT_REMOTE") or os.environ.get("AGY_REMOTE") or "").lower() in ("1", "true", "yes"):
+    if not _rule("checkout_refetch") or str(os.environ.get("KIT_REMOTE") or os.environ.get("AGY_REMOTE") or "").lower() in ("1", "true", "yes"):
         return [], False
     root = root or ROOT
     now = now or time.time()
@@ -6511,8 +6507,10 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     answered. Refuses a prompt that is not committed."""
     url = url or local_board_url()
     token = _resolve_board_token(token)
+    pl = _platform(cli)
+    lmode = _rule("launcher", pl)
     run = _launcher(cli)
-    web = (run == "web") if web is None else web
+    web = (lmode == "create_session") if web is None else web
     given = _read_json(post_file) if post_file else None    # CL32: the host's copy of this board's post (from the Artifact)
     if isinstance(given, dict):
         # launched for another project: no board server here (none seeded, none to auto-push); the host writes the
@@ -6548,11 +6546,11 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
             return dict(out, ok=False, error="%s is taken: %s. If that session ended or its person agrees, "
                         "`kit.py launch %s --take`" % (pid, held, pid))
     cons = consumers(post.get("consumers"))
-    if cons:     # CL32: a kit part tests on the projects that use it; its session must reach them from its first step
-        # CL38: a launched session's classifier refuses add_repo unless the owner types it; parts never attach. The
-        # orchestrator's session holds both repos and runs the real-project check; files come from kit_docs.
-        text += (" Never attach a repo: the real-project run on %s is the orchestrator's (done says pending until then)."
-                 % ", ".join(c["github"] or c["name"] for c in cons))
+    if cons:     # CL32 / R5: consumer note follows PLATFORM_RULES['real_project_run']
+        if _rule("real_project_run", pl) == "orchestrator":
+            # CL38: a launched web session's classifier refuses add_repo unless the owner types it; parts never attach.
+            text += (" Never attach a repo: the real-project run on %s is the orchestrator's (done says pending until then)."
+                     % ", ".join(c["github"] or c["name"] for c in cons))
         out["consumers"] = [c["github"] or c["name"] for c in cons]
     mark = os.path.join(ROOT, ".kit", "run", "launch", pid + ".json")
     marked = os.path.isfile(mark)
@@ -6580,10 +6578,10 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
             sess = "pending: create_session (%s)" % name
             launch_mark(pid, text)                     # CL30: the orchestrator guard lets this create_session out
         else:
-            if not shutil.which("claude"):     # CL26: never an OSError on an absent binary
+            if pl == "arena" or not shutil.which("claude"):     # CL26 / R5: never an OSError on an absent binary or self-only platform
                 return dict(out, ok=False, error=(NO_RUNTIME.replace("neither `claude` nor `agy`", "no `claude`") +
                             "; an agy orchestrator starts a part with: %s" % _launch_line(part, rel, model, cli="agy")))
-            if gate and _device() is not None:
+            if gate and _rule("device_cap_gate", pl) and _device() is not None:
                 try:
                     ok, why = _device().gate(_device().survey())
                 except Exception:
@@ -7619,10 +7617,10 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
     (the task list to rebuild, one TaskCreate each with metadata {train, part}), which part sessions still run, and
     what of the owner's waits for an answer; then the same for each attached board (kit_repos/_index), under its
     own heading, with its id so a reply goes to repos/<id>/comments."""
-    active = _active_cli(cli)
+    pl = _platform(cli)
     posts, comments = _load_board_docs(m, db_path=db_path)
     if alive is None:
-        alive = None if active == "agy" else _alive_sessions()
+        alive = _alive_sessions() if _rule("alive_check", pl) == "claude_agents" else None
     out = ["# Resume (from the board; nothing else carries over)"]
     lines, n_active = _train_lines(posts, alive)
     out.extend(lines)
@@ -7636,7 +7634,7 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
     if dl:
         out.append("")
         out.append("## This device")
-        out.append(dl + ("" if dl.startswith("Device: cloud") else " A launch past the cap is refused "
+        out.append(dl + ("" if (dl.startswith("Device: cloud") or not _rule("device_cap_gate", pl)) else " A launch past the cap is refused "
                    "(`.kit/device.py --gate`, the guard): the step waits, planned, until a session ends; launch it then."))
     out.append("")
     out.append("## The owner's unanswered comments")
@@ -7673,12 +7671,13 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
         out.append("")
         out.append("(Not read: %s: listed as attached, but no clone here and nothing of it in the local copy.)"
                    % ", ".join(skipped))
-    if boards and artifact_url() and not glob.glob(os.path.join(_art_dir(), "in", "repos", "*")):
+    if boards and artifact_here() and not glob.glob(os.path.join(_art_dir(), "in", "repos", "*")):
         out.append("")
         out.append("(Comments written on the Artifact page on an attached board live only there: `python3 -I .kit/kit.py "
                    "artifact pull` brings them (changes only), then `kit.py artifact load`, then resume again.)")
     out.append("")
-    if active == "agy":
+    tlist = _rule("task_list", pl)
+    if tlist == "agy_step":
         out.append("Resume in agy: cross-check each session UUID above with `manage_subagents(Action=\"list\")`. "
                    "Plan and update steps with `python3 -I .kit/kit.py step new|start|complete|drop` (the train IS your "
                    "task list). A step whose session is not running and not done: check its branch (`git branch -a`) "
@@ -7687,6 +7686,9 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
                       "an attached board's step is planned, updated and continued in that board's clone (its relaunch "
                       "line), and a reply to the owner's comment there goes to repos/<id>/comments."
                       % _repo_id(_kit_config().get("project") or os.path.basename(ROOT)) if boards else ""))
+    elif tlist == "step_cli":
+        out.append("Manage steps with `python3 -I .kit/kit.py step new|start|complete|drop` (the train IS your task list; "
+                   "no session can be started here): do the next open step yourself on a branch of its own.")
     elif boards:
         out.append("Rebuild your task list: one TaskCreate per open step above ([r] too: its task completed starts its review), subject \"<PART> <title>\", metadata "
                    "{\"board\": \"<id>\", \"train\": \"<train>\", \"part\": \"<PART>\"} (board: this board's id \"%s\", or the "
@@ -7837,7 +7839,7 @@ def resume_delta(m, role=None, session=None, db_path=None, cli=None, full=False,
     now = now or datetime.now(timezone.utc)
     posts, comments = _resume_docs(m, db_path=db_path)
     if alive is None:
-        alive = None if _active_cli(cli) == "agy" else _alive_sessions()
+        alive = _alive_sessions() if _rule("alive_check", cli) == "claude_agents" else None
     snap = _resume_snapshot(posts, comments, alive)
     try:
         with open(path, encoding="utf-8") as fh:
@@ -8425,7 +8427,7 @@ def real_project_areas(root=ROOT, base=None):
 def check_real_project(p, root=ROOT):
     """A post whose change touches compact, install, resume, hooks or artifact names a dry run on a real project:
     `real_project: {project, command, output}` (or a list of them), the command run in a clone of that project and
-    what it printed. Refused without it: the kit's own suite passed CL29 while Harmonize stayed red."""
+    what it printed. Who runs it comes from PLATFORM_RULES['real_project_run']."""
     areas = real_project_areas(root)
     if not areas:
         return []
@@ -8436,9 +8438,18 @@ def check_real_project(p, root=ROOT):
     if good:
         return []
     cons = ", ".join(c.get("github") or c.get("name") for c in consumers()) or "a project that uses the kit"
-    return ["real_project: your change touches %s; the run on a real project (%s) is pending: the orchestrator runs it "
-            "from its session (it holds both repos) and writes {\"project\", \"command\", \"output\"} in the post's "
-            "real_project; a part never attaches a repo (CL38)" % (", ".join(areas), cons)]
+    who = _rule("real_project_run")
+    if who == "orchestrator":
+        return ["real_project: your change touches %s; the run on a real project (%s) is pending: the orchestrator runs it "
+                "from its session (it holds both repos) and writes {\"project\", \"command\", \"output\"} in the post's "
+                "real_project; a part never attaches a repo (CL38)" % (", ".join(areas), cons)]
+    if who == "part":
+        return ["real_project: your change touches %s; run the changed command on %s in a scratch local clone (never push) "
+                "and write {\"project\", \"command\", \"output\"} in the post's real_project before Done"
+                % (", ".join(areas), cons)]
+    return ["real_project: your change touches %s; the dry run on a real project (%s) is pending: run it in a local clone "
+            "(never push) and write {\"project\", \"command\", \"output\"} in the post's real_project"
+            % (", ".join(areas), cons)]
 
 
 def consumers(extra=None):
@@ -8499,38 +8510,47 @@ def _test_command():
 
 
 def _launch_workflow():
-    """The orchestrator's launch workflow for its runtime, attached-board steps included."""
-    run = _launcher()
+    """The orchestrator's launch workflow for its platform (read from PLATFORM_RULES), attached-board steps included."""
     pl = _platform()
-    alone = run is None or pl in ("arena", "generic")
-    lines = ["## How you launch (%s)" % ("web: Claude Code on the web" if run == "web" else "%s: no session can be started here" % pl if alone else run)]
+    lmode = _rule("launcher", pl)
+    tlist = _rule("task_list", pl)
+    art = _rule("artifact_steps", pl)
+    cards_mode = _rule("cards", pl)
+    alone = lmode == "self"
+    head = {"create_session": "web: Claude Code on the web", "claude_bg": "claude", "invoke_subagent": "agy"}.get(
+        lmode, "%s: no session can be started here" % pl)
+    lines = ["## How you launch (%s)" % head]
     lines.append("1. Plan: %s`python3 -I .kit/kit.py step new --train T --part P --title ... --task-file F`; commit and push the prompt."
-                 % ("" if alone or run == "agy" else "TaskCreate {train, part} (the hook writes the post and its prompt) or "))
-    if run == "web":
+                 % ("TaskCreate {train, part} (the hook writes the post and its prompt) or " if tlist == "claude_tasks" else ""))
+    if lmode == "create_session":
         lines.append("2. `python3 -I .kit/kit.py launch <post>`: it marks the post and prints the `create_session` call "
                      "(claude-code-remote); make it, then `python3 -I .kit/kit.py launch <post> --session-id <its id>`.")
     elif alone:
         lines.append("2. You do the step yourself, from its prompt, on a branch of its own.")
-    elif run == "agy":
+    elif lmode == "invoke_subagent":
         lines.append("2. `step new` prints the `invoke_subagent` call: make it once the prompt is committed (the device cap: "
                      "`python3 -I .kit/kit.py capacity`, past it the step waits planned).")
     else:
         lines.append("2. `python3 -I .kit/kit.py launch <post>`: it marks the post and starts `claude --bg` in a worktree "
                      "(the device cap refuses past it: the step waits planned).")
     if _attaches_repos():
+        real_note = (" The session never attaches a repo (CL38): the real-project run on the projects it tests on is yours."
+                     if _rule("real_project_run", pl) == "orchestrator" else "")
         lines.append("3. A step on an attached board (another repo's train, e.g. the kit's `cli`): the same command from here. "
                  "launch finds the post on that board and runs the launch in that repo's clone next to this one (missing: it "
                  "says the `git clone`); that clone starts no seeded board and never auto-pushes a board-mirror. A public board is "
                  "cloned read-only, nothing to attach: when its push is refused, the create_session call launch prints carries the "
-                 "prompt's text (CL40). The session never attaches a repo (CL38): the real-project run on the projects it "
-                 "tests on is yours.")
-    cfg = _kit_config()
-    if _attaches_repos() or "claude.ai/" in str(cfg.get("board_url") or "") + str(((cfg.get("kit") or {}).get("artifact") or {}).get("url") or ""):
+                 "prompt's text (CL40)." + real_note)
+    if art and (_attaches_repos() or attached_board()):
         lines.append("4. With an Artifact board (yours or an attached one), make the ArtifactData batch launch prints (the post and the Trains row).")
-    lines.append("5. Done%s: `kit.py done <post>` must say OK%s; then %s: %s."
+    if cards_mode == "agent":
+        lines.append("5. Cards (`_dashboard`, `_trains`): rebuild with the `kit-cards` agent at each launch and Done.")
+    else:
+        lines.append("5. Cards (`_dashboard`, `_trains`): the local board server rebuilds them on each write (`python3 -I .kit/kit.py cards` checks them and lists sessions to archive).")
+    lines.append("6. Done%s: `kit.py done <post>` must say OK%s; then %s: %s."
                  % ("" if alone else " comes as a message",
                     " (a change to compact, install, resume, hooks or artifact needs its real-project dry run)" if _attaches_repos() else "",
-                    "`python3 -I .kit/kit.py step complete <post>`" if alone or run == "agy" else "TaskUpdate completed",
+                    "TaskUpdate completed" if tlist == "claude_tasks" else "`python3 -I .kit/kit.py step complete <post>`",
                     "its review's prompt is written (`.kit/run`), and nothing else here can run it" if alone else "its review starts by itself"))
     return lines[:1] + [re.sub(r"^\d+\.", "%d." % n, x) for n, x in enumerate(lines[1:], 1)]
 
@@ -8613,21 +8633,9 @@ def _principle_lines(role, train=None, files=None):
 _MARK = re.compile(r"^<!--\s*(start|case)\s*:\s*(.+?)\s*-->\s*$", re.M)
 
 
-def _platform():
-    """web | cli | agy | arena | generic: where this session runs, not what the config was installed for (a project
-    whose config names agy can be worked from the web: its sessions need the web's guide)."""
-    run = _launcher()
-    if run in ("web", "agy"):
-        return run
-    rt = str((_kit_config().get("kit") or {}).get("runtime") or "")
-    return rt if rt in ("arena", "generic") else "cli" if run else "generic"
-
-
 def orchestrator_guide(platform=None):
-    """The orchestrator's guide of this platform, or None."""
-    # a local board's web session takes over (claude-cli/takeover.md); .kit/orchestrator.md there is agy's
-    for rel in {"web": ("claude-web/orchestrator.md", "claude-cli/takeover.md", "orchestrator.md"), "cli": ("claude-cli/orchestrator.md", "orchestrator.md")}.get(
-            platform or _platform(), ("orchestrator.md",)):
+    """The orchestrator's guide of this platform (PLATFORM_RULES['orchestrator_guide']), or None."""
+    for rel in _rule("orchestrator_guide", platform):
         p = os.path.join(ROOT, ".kit", rel)
         if os.path.isfile(p):
             return p
@@ -8665,7 +8673,7 @@ def situation(posts, comments, session=None, platform=None):
     holds the board: a successor after a context limit, or the first here of a project running elsewhere), `same` (it
     started already and runs resume again; a compaction never makes one: the hooks hand over before it, kit_pre_compact.py). A platform has one first and any number of takeovers."""
     pl = platform or _platform()
-    rt = {"web": "claude", "cli": "claude-cli"}.get(pl, pl)
+    rt = _rule("welcome_runtime", pl)
     named = str((posts.get("_orchestrator") or {}).get("session_id") or "")
     # a board older than the welcome has none: the session it names says a session of this platform was here
     was_here = {"web": named.startswith(("session_", "cse_")), "cli": named.endswith("-orchestrator")}.get(pl, False)
@@ -8708,24 +8716,11 @@ def start_lines(posts, comments, session=None):
 
 
 def owner_lines(platform=None):
-    """What the owner can do where he is, so that no session asks him for what he cannot: one short list a platform, then
-    the project's own (kit.owner_can, kit.owner_cannot)."""
-    pl = platform or _platform()
+    """What the owner can do where he is (PLATFORM_RULES['owner_surface']), then the project's own (kit.owner_can, kit.owner_cannot)."""
     k = _kit_config().get("kit") or {}
-    page = "read, look at pictures and documents, play audio, Like, tap an answer, comment under a post"
-    ask = "A question for him is a question post with its options, a default and a deadline: one tap answers it and reaches you."
-    can, cannot, how = {
-        "web": (["on the board page, usually from his phone: " + page],
-                ["run a command, open a file of this container, attach a repository or approve a tool for you"], ask),
-        "cli": (["on the board page (this computer, or his phone over his private network): " + page,
-                 "type in the orchestrator's terminal, only when he is at the computer"],
-                ["see a path under /tmp or in a part's worktree, or answer in a part's chat"], ask),
-        "agy": (["on the board page (this computer, or his phone over his private network): " + page,
-                 "type in the agy terminal, only when he is at the computer"],
-                ["see a path under /tmp or in a subagent's worktree, or answer in a subagent's chat"], ask),
-        "arena": (["type in this chat while a turn runs; use the embedded board"], [], "")}.get(pl, (["use the board page"], [], ""))
-    can = can + [str(x) for x in _as_list(k.get("owner_can"))]
-    cannot = cannot + [str(x) for x in _as_list(k.get("owner_cannot"))]
+    can, cannot, how = _rule("owner_surface", platform)
+    can = list(can) + [str(x) for x in _as_list(k.get("owner_can"))]
+    cannot = list(cannot) + [str(x) for x in _as_list(k.get("owner_cannot"))]
     out = ["", "## What the owner can do here", "- He can: " + "; ".join(can) + "."]
     if cannot:
         out.append("- He cannot: " + "; ".join(cannot) + ". Never ask him to.")
@@ -9218,7 +9213,7 @@ def held_lines(pid, p, session=None):
     sess = str(p.get("session_id") or "")
     if not sess or sess.startswith("pending") or step_state(p) != "running":
         return []
-    web = bool(os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID")) or str(session or "").startswith("session_")
+    web = (_platform() == "web") or str(session or "").startswith("session_")
     if sess.startswith("session_") == web:
         return []
     mins = [m for m in (_mins_since(p.get("updated_at")), _saved_mins(str(p.get("branch") or "") or _slug(p.get("part") or pid, 24)))
@@ -9347,12 +9342,16 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         areas = real_project_areas()
         cons = consumers(p.get("consumers"))
         if areas or cons:
-            out.append("- Real project: %s. A change to %s gets a dry run on %s, run by the orchestrator from its session "
-                       "(it holds both repos) and written in your post's `real_project`; you never attach a repo (CL38). "
-                       "A file of that project you need: the Artifact's `kit_docs` (`ArtifactData get`, doc_id = its "
-                       "path with `/` written `+2F~`), else ask under your post." % (
-                           ("your change touches " + ", ".join(areas)) if areas else "nothing of compact/install/resume/hooks/artifact touched yet",
-                           "/".join(REAL_PROJECT_AREAS), ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"))
+            touched = ("your change touches " + ", ".join(areas)) if areas else "nothing of compact/install/resume/hooks/artifact touched yet"
+            cnames = ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"
+            if _rule("real_project_run") == "orchestrator":
+                out.append("- Real project: %s. A change to %s gets a dry run on %s, run by the orchestrator from its session "
+                           "(it holds both repos) and written in your post's `real_project`; you never attach a repo (CL38). "
+                           "A file of that project you need: the Artifact's `kit_docs` (`ArtifactData get`, doc_id = its "
+                           "path with `/` written `+2F~`), else ask under your post." % (touched, "/".join(REAL_PROJECT_AREAS), cnames))
+            else:
+                out.append("- Real project: %s. A change to %s gets a dry run on %s in a local clone (never push), "
+                           "written in your post's `real_project`." % (touched, "/".join(REAL_PROJECT_AREAS), cnames))
         if lands_after_review():
             out += ["", "## When you are done", "- your branch reaches the trunk after its review: `end_session.py` pushes it, never onto the trunk"]
     elif role == "clerk":
@@ -9388,10 +9387,14 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         out += ["", "## Its acceptance conditions (from `%s`)" % rel] + (["- " + a for a in acc] or ["- (none written: judge against the task)"])
         rp = p.get("real_project")
         cons = consumers(p.get("consumers"))
+        cnames = ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"
+        if _rule("real_project_run") == "orchestrator":
+            how_real = ("from the orchestrator's session (it holds both repos; a launched session cannot attach one), "
+                        "by subagent; write the run in the post's real_project.")
+        else:
+            how_real = "in a local clone (never push); write the run in the post's real_project."
         out += ["", "## The real-project check",
-                "- Rerun its `check`, then its claim on a real project: %s, from the orchestrator's session (it holds both "
-                "repos; a launched session cannot attach one), by subagent; write the run in the post's real_project." % (
-                    ", ".join(c["github"] or c["name"] for c in cons) or "a project that uses the kit"),
+                "- Rerun its `check`, then its claim on a real project: %s, %s" % (cnames, how_real),
                 "- Its post says: %s" % (json.dumps(rp, ensure_ascii=False)[:500] if rp else "NO real-project result")]
         ft = field_text("review", "review", p.get("train"))
         out += ["", ft] if ft else []
@@ -9890,7 +9893,7 @@ def main(argv=None):
                 sess = str((json.loads(sys.stdin.read() or "{}") or {}).get("session_id") or "") or None
             except (ValueError, OSError, AttributeError):
                 sess = None
-        lines, _ = checkout_fresh() if a.again and not _is_web() else checkout_fresh_once(session=sess)
+        lines, _ = checkout_fresh() if a.again and _rule("checkout_refetch") else checkout_fresh_once(session=sess)
         if lines:
             print("\n".join(lines))
         return 0
@@ -10110,9 +10113,8 @@ def main(argv=None):
         print(msg)
         return rc
     if a.cmd == "artifact":
-        if a.action in ("pull", "load", "push", "sent", "pin") and not _is_web() and not os.environ.get("KIT_ARTIFACT_ON_COMPUTER"):
-            # CL51 (the owner's rule): CL44's local part ran `artifact load` because done asked it to, and wrote the
-            # Artifact's older copies over 11 newer posts of the local board
+        if a.action in ("pull", "load", "push", "sent", "pin") and not _rule("artifact_steps") and not os.environ.get("KIT_ARTIFACT_ON_COMPUTER"):
+            # CL51 / R5: the Artifact is Claude Code web's alone (PLATFORM_RULES['artifact_steps'])
             print("not on a computer: the Artifact is the Claude Code web session's. Here the local board is the board "
                   "(the git copy, board-mirror, carries it); the web session reconciles its Artifact with GitHub.")
             return 2
@@ -10133,7 +10135,7 @@ def main(argv=None):
                     print("NOT MERGED (rows without a key changed on both sides; this copy kept, its pin will refuse): " + u)
                 print(artifact_blobs_text(r), end="")
             elif a.action == "reconcile":
-                if not _is_web() and not os.environ.get("KIT_ARTIFACT_RECONCILE_LOCAL"):
+                if not _rule("artifact_steps") and not os.environ.get("KIT_ARTIFACT_RECONCILE_LOCAL"):
                     print("artifact reconcile: not in a local session (a computer reconciles its own board with git: "
                           "`kit.py reconcile`); it runs at a web session's start.")
                     return 0
