@@ -618,7 +618,7 @@ class BoardStore:
                  max(1, min(int(max_submissions or 5), 100)), str(created_by or "")),
             )
             self.conn.commit()
-        return {"token": tok, "post_id": post_id, "repo": str(repo or ""), "path": "/_share/" + tok, "allow_write": bool(allow_write), "expires_at": exp, "created_at": now}
+        return {"token": tok, "post_id": post_id, "repo": str(repo or ""), "path": "/_share/" + tok, "invite": "/_invite/" + tok + ".md", "allow_write": bool(allow_write), "expires_at": exp, "created_at": now}
 
     def get_share(self, tok):
         with self.lock:
@@ -646,7 +646,7 @@ class BoardStore:
                     "SELECT token, post_id, allow_write, expires_at, created_at, revoked, submissions, max_submissions, created_by FROM shares ORDER BY created_at DESC LIMIT 100"
                 ).fetchall()
         return [
-            {"token": r[0], "post_id": r[1], "path": "/_share/" + r[0], "allow_write": bool(r[2]),
+            {"token": r[0], "post_id": r[1], "path": "/_share/" + r[0], "invite": "/_invite/" + r[0] + ".md", "allow_write": bool(r[2]),
              "expires_at": r[3], "created_at": r[4], "revoked": bool(r[5]), "submissions": int(r[6]), "max_submissions": int(r[7]), "created_by": r[8] or ""}
             for r in rows
         ]
@@ -1884,7 +1884,18 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     blob_ids.add(str(f["id"]))
         return blob_ids, repo_paths, html_dirs
 
+    def _share_live(tok):
+        """The card link this token is (a live one), else None: the token of "Link for AI", a runner card, an old
+        /_share/ link."""
+        t = str(tok or "").strip()
+        sh = store.get_share(t) if t else None
+        if not sh or sh["revoked"] or sh["expires_at"] < utc_now():
+            return None
+        return sh
+
     def _render_share_brief(sh, base_origin):
+        """CL56: the one page an outside AI gets for a card, at /_invite/<token>.md (and an old /_share/<token>): how to
+        attach files to the card (its drop box, one command) and how to write its result come first, then the task."""
         tstore = stores_map.get(sh.get("repo") or "") or store
         post_doc = tstore.get_doc("posts", sh["post_id"])
         if not post_doc.get("exists"):
@@ -1901,24 +1912,52 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         max_sub = int(sh.get("max_submissions") or 5)
         used_sub = int(sh.get("submissions") or 0)
         rem_sub = max(0, max_sub - used_sub)
+        origin_p = base_origin.rstrip("/") if base_origin else ""
+        pid_q = urllib.parse.quote(sh["post_id"], safe="")
+        drop = "%s/_api/posts/%s/artifacts" % (origin_p, pid_q)
+        submit_url = "%s/_share/%s/submit" % (origin_p, sh["token"])
         lines = [
-            "# External Task Brief — %s" % (p.get("title") or sh["post_id"]),
+            "# Board invite — %s (card `%s`)" % (p.get("title") or sh["post_id"], sh["post_id"]),
+            "",
+            "This link is all you need: no GitHub, no account. It reaches this one card%s, until `%s`." % (
+                "" if sh["allow_write"] else " (read only)", sh["expires_at"]),
+            "",
+        ]
+        if sh["allow_write"]:
+            lines.extend([
+                "## 1. Attach your files to the card (a patch, a script, a report): one command a file",
+                "Never paste a file into your text: attach it. From the folder that holds it:",
+                "```bash",
+                "f=fix.patch; python3 -c 'import json,sys; print(json.dumps({\"path\": sys.argv[1], \"summary\": sys.argv[2], "
+                "\"from\": sys.argv[3], \"content\": open(sys.argv[1], encoding=\"utf-8\").read()}))' \"$f\" \"one line: what it is\" "
+                "\"<your name>\" | curl -sS -X POST %s -H \"X-Kit-Token: %s\" -H \"Content-Type: application/json\" --data-binary @-" % (drop, sh["token"]),
+                "```",
+                "No shell: POST JSON `{\"path\": \"fix.patch\", \"content\": \"<the file's text>\", \"summary\": \"<one line>\", \"from\": \"<your name>\"}` "
+                "to `%s` with the header `X-Kit-Token: %s`. It shows on the card at once; the same URL with GET lists what is attached. "
+                "This token opens this card's drop box only." % (drop, sh["token"]),
+                "",
+                "## 2. Write the card's result (default when you can send HTTP)",
+                "When you finish, or as soon as you are blocked, POST JSON to `%s`:" % submit_url,
+                "```json",
+                json.dumps({"from": "<your name>", "mode": "comment", "text": "<your concise Markdown result; name the files you attached>"}, indent=2),
+                "```",
+                "*(`\"mode\": \"child_post\"` and `\"title\": \"...\"` make a linked result card instead of a comment; an optional "
+                "`\"idempotency_key\": \"<slug>\"` updates the same card across re-runs. Submissions left: `%d/%d`.)*" % (rem_sub, max_sub),
+                "",
+            ])
+        lines.extend([
+            "## The card",
             "",
             "- **Card ID:** `%s`" % sh["post_id"],
             "- **Column:** `%s`" % (p.get("column") or "info"),
             "- **Train / Part:** `%s` / `%s`" % (p.get("train") or "-", p.get("part") or "-"),
-            "- **Expires:** `%s`" % sh["expires_at"],
-            "- **Write scope:** %s" % ("scoped to this card only (cannot read or modify other cards or the repository)" if sh["allow_write"] else "read-only"),
-            "- **Submissions remaining:** `%d/%d`" % (rem_sub, max_sub),
-            "",
-            "**For the AI reading this:** when you finish (or as soon as you are blocked), return your result to the board using **Option A** (direct POST) or **Option B** (Markdown block) at the end of this brief.",
+            "- **Write scope:** %s" % ("this card only (its comments and its drop box; no other card, no repository)" if sh["allow_write"] else "read-only"),
             "",
             "## Task & Context",
             "",
             str(p.get("body") or "").strip(),
-        ]
+        ])
         if blob_ids or repo_paths:
-            origin_p = base_origin.rstrip("/") if base_origin else ""
             lines.extend(["", "## Shared Assets & Attachments (Token-Scoped)"])
             for bid in sorted(blob_ids):
                 lines.append("- Blob `%s`: %s/_share/%s/blob/%s" % (bid, origin_p, sh["token"], bid))
@@ -1935,32 +1974,10 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
             lines.extend(["", "## Attached Reference Files"])
             for f in sh["files"]:
                 lines.extend(["", "### `%s`" % f["name"], "```", f.get("content") or "", "```"])
-        lines.extend(["", "## How to Return Your Findings", ""])
-        if sh["allow_write"]:
-            submit_url = (base_origin.rstrip("/") if base_origin else "") + "/_share/" + sh["token"] + "/submit"
-            lines.extend([
-                "### Option A — Direct write-back (default when outbound HTTP is available)",
-                "If the user asked you to complete this card and you have outbound HTTP, POST JSON directly to `%s` as your final step (use Option B only if HTTP POST is blocked):" % submit_url,
-                "```json",
-                json.dumps({
-                    "from": "lmarena",
-                    "mode": "comment",
-                    "text": "<your concise Markdown findings here>",
-                }, indent=2),
-                "```",
-                "*(Set `\"mode\": \"child_post\"` and `\"title\": \"...\"` to create a linked result card instead of a comment; pass an optional `\"idempotency_key\": \"<slug>\"` to update the same child card across re-runs without duplicates.)*",
-                "",
-                "### Files (a patch, a script, a report): the post's drop box",
-                "Attach each file to this card, never paste it into the text: POST JSON to `%s` (one file a call):" % (submit_url[:-len("/submit")] + "/artifacts"),
-                "```json",
-                json.dumps({"from": "lmarena", "path": "<file name, e.g. fix.patch>", "content": "<the file's text>",
-                            "summary": "<one line: what it is>"}, indent=2),
-                "```",
-                "",
-            ])
         lines.extend([
-            "### Option B — Copy-paste Markdown card (for 1-click import)",
-            "Output a single Markdown block starting with this YAML front-matter:",
+            "",
+            "## No HTTP at all: a Markdown block the owner pastes",
+            "End your reply with a single Markdown block starting with this YAML front-matter:",
             "```markdown",
             "---",
             "id: %s-research" % sh["post_id"],
@@ -1977,8 +1994,38 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         ])
         return "\n".join(lines)
 
+    def _share_drop_box(sh, body):
+        """(status, answer): a file saved into the drop box of this card link's post, in its own board."""
+        if not sh["allow_write"]:
+            return 403, {"error": "share_read_only"}
+        tstore = stores_map.get(sh.get("repo") or "") or store
+        res, err = tstore.save_artifact(sh["post_id"], body.get("path"), body.get("content", ""),
+                                        summary=body.get("summary", ""), by_user="share:" + str(body.get("from") or "ai"),
+                                        agent_meta=body.get("agent_meta"))
+        if err:
+            return (413 if err == "too_large" else 400), {"error": err}
+        return 200, res
+
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+
+        def _origin(self):
+            proto = (self.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip()
+            host_hdr = self.headers.get("Host") or ""
+            return ("%s://%s" % (proto, host_hdr)) if host_hdr else ""
+
+        def _send_markdown_page(self, text):
+            if text is None:
+                self._send_json(404, {"error": "post_not_found"})
+                return
+            raw = text.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/markdown; charset=utf-8")
+            self._send_security_headers()
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(raw)
 
         def _full(self):
             u = getattr(self, "_auth_user", None) or {"role": "owner"}
@@ -2375,9 +2422,26 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                                       "temp": _data_in_temp(store)})
                 return
 
+            if path.startswith("/_api/posts/") and path.endswith("/artifacts"):
+                hdr_g = (self.headers.get("X-Kit-Token") or "").strip() or (self.headers.get("Authorization") or "")[7:].strip()
+                sh_g = _share_live(hdr_g) if (hdr_g and not self._match_token(hdr_g)) else None
+                if sh_g:
+                    pid_g = urllib.parse.unquote(path[len("/_api/posts/"):-len("/artifacts")]).strip("/")
+                    if pid_g != sh_g["post_id"]:
+                        self._send_json(403, {"error": "forbidden", "why": "this link opens the drop box of card %s only" % sh_g["post_id"]})
+                        return
+                    tstore_g = stores_map.get(sh_g.get("repo") or "") or store
+                    self._send_json(200, {"post_id": pid_g, "artifacts": tstore_g.list_artifacts(post_id=pid_g)})
+                    return
+
             if path.startswith("/_invite/") and path.endswith(".md"):
                 itok = urllib.parse.unquote(path[len("/_invite/"):-len(".md")]).strip("/")
                 iu = store.lookup_user_by_token(itok)
+                sh_i = None if iu else _share_live(itok)
+                if sh_i:
+                    # CL56: a card's link (Link for AI, a runner card, the clerk) is an invite too, scoped to its card
+                    self._send_markdown_page(_render_share_brief(sh_i, self._origin()))
+                    return
                 if not iu:
                     self._send_json(410, {"error": "invite_invalid_or_revoked"})
                     return
@@ -2402,6 +2466,23 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 ]
                 if is_non_primary:
                     env_lines.append('export KIT_BOARD_REPO="%s"' % target_repo)
+                # CL56: first, how to attach files to the post (its drop box, one command) and how to write its result
+                inv_post = str((qs.get("post") or [""])[0] or "").strip()[:120]
+                pq = urllib.parse.quote(inv_post, safe="") if inv_post else "<post_id>"
+                first_lines = [
+                    "## First: attach your files to %s, then write its result" % (("post `%s`" % inv_post) if inv_post else "your post"),
+                    "Never paste a file into a post's text: attach it (a patch, a script, a report), one command a file, after the two `export` lines of section 1:",
+                    "```bash",
+                    "f=fix.patch; python3 -c 'import json,sys; print(json.dumps({\"path\": sys.argv[1], \"summary\": sys.argv[2], "
+                    "\"content\": open(sys.argv[1], encoding=\"utf-8\").read()}))' \"$f\" \"one line: what it is\" "
+                    "| curl -sS -X POST \"$KIT_BOARD_URL/_api/posts/%s/artifacts\" -H \"X-Kit-Token: $KIT_BOARD_TOKEN\" "
+                    "-H \"Content-Type: application/json\" --data-binary @-" % pq,
+                    "```",
+                    "It shows on the post at once (`GET $KIT_BOARD_URL/_api/posts/%s/artifacts` lists them). The result: a comment on the post, "
+                    "`python3 /tmp/board_cli.py set comments <fresh_id> --data '{\"post_id\": \"%s\", \"text\": \"<your result; name the files you attached>\"}'` "
+                    "(the CLI of section 2)." % (pq, inv_post or "<post_id>"),
+                    "",
+                ]
                 browser_link = "%s/?token=%s%s" % (origin, itok, ("&repo=" + urllib.parse.quote(target_repo)) if is_non_primary else "")
                 brief = "\n".join([
                     "# Board Collaborator AI Bootstrap — %s (@%s)" % (target_name, uid),
@@ -2409,6 +2490,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     "You are connecting as collaborator **`@%s`** (role: **`%s`**) on **%s**'s live board." % (uid, role, target_name),
                     "No GitHub repository access is required — everything runs over HTTPS using your scoped token.",
                     "",
+                ] + first_lines + [
                     "## 0. In Claude Code Web (a claude.ai cloud session): the token as an environment secret first",
                     "Do not paste the token into commands or files. Before any call to the board:",
                     "1. Call `request_credential` with `host: \"%s\"`, `header_name: \"X-Kit-Token\"`, `display_name: \"%s board (@%s)\"`, and a reason naming this board. The owner pastes the token below into the secure form once; the network proxy then adds the header to every request to this host, from this session and the environment's later ones (it also opens the host)." % (urllib.parse.urlparse(origin).hostname or origin, target_name, uid),
@@ -3149,20 +3231,25 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         def do_POST(self):
             parsed = urllib.parse.urlsplit(self.path)
             path = parsed.path
+            pid_dz = path[len("/_api/posts/"):-len("/artifacts")] if (path.startswith("/_api/posts/") and path.endswith("/artifacts")) else None
+            sh_dz = None
+            if pid_dz is not None:
+                hdr_dz = (self.headers.get("X-Kit-Token") or "").strip() or (self.headers.get("Authorization") or "")[7:].strip()
+                if hdr_dz and not self._match_token(hdr_dz):
+                    sh_dz = _share_live(hdr_dz)
             if path.startswith("/_share/") and path.endswith("/artifacts"):
-                # The post's drop box (b52f5b6, the owner's design), reached with the link "Link for AI" gives: files
-                # for this link's post only, never another; the same limits as any upload to the drop box.
+                # the old route of the same drop box (75a4f41): links already handed out keep working
                 stok_a = urllib.parse.unquote(path[len("/_share/"):-len("/artifacts")]).strip("/")
-                sh_a = store.get_share(stok_a)
-                if not sh_a:
+                sh_dz = store.get_share(stok_a)
+                if not sh_dz:
                     self._send_json(404, {"error": "share_not_found"})
                     return
-                if sh_a["revoked"] or sh_a["expires_at"] < utc_now():
+                if sh_dz["revoked"] or sh_dz["expires_at"] < utc_now():
                     self._send_json(410, {"error": "share_expired_or_revoked"})
                     return
-                if not sh_a["allow_write"]:
-                    self._send_json(403, {"error": "share_read_only"})
-                    return
+                pid_dz = sh_dz["post_id"]
+            if sh_dz is not None:
+                # The post's drop box (b52f5b6, the owner's design), reached with a card link's token (CL56): that card only
                 try:
                     body = self._read_json()
                 except PayloadTooLarge as e:
@@ -3171,13 +3258,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 except ValueError:
                     self._send_json(400, {"error": "invalid json"})
                     return
-                res_s, aerr_s = store.save_artifact(sh_a["post_id"], body.get("path"), body.get("content", ""),
-                                                       summary=body.get("summary", ""), by_user="share:" + str(body.get("from") or "ai"),
-                                                       agent_meta=body.get("agent_meta"))
-                if aerr_s:
-                    self._send_json(413 if aerr_s == "too_large" else 400, {"error": aerr_s})
+                if urllib.parse.unquote(pid_dz).strip("/") != sh_dz["post_id"]:
+                    self._send_json(403, {"error": "forbidden", "why": "this link opens the drop box of card %s only" % sh_dz["post_id"]})
                     return
-                self._send_json(200, res_s)
+                st_dz, ans_dz = _share_drop_box(sh_dz, body)
+                self._send_json(st_dz, ans_dz)
                 return
 
             if path.startswith("/_share/") and path.endswith("/submit"):
