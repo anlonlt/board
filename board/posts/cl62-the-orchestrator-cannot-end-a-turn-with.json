@@ -46,6 +46,8 @@
  "handoff": "`kit.py queue --gate` (exit 1 with the refusal text when a start-now step is neither launched nor held) is what the new Stop hook `kit_queue_stop.py` runs for the orchestrator role (role from kit_orchestrator_guard.is_orchestrator). `kit.py hold <post> --why \"...\" [--release]` records `held: {why, at, by}`, status \"held: <why>\" and `held_prev_status` on the post; queue_rank treats a held step as neither startable nor blocking. `stale_handover_lines` prints first in `resume --role orchestrator`. A split owner list lives in `_orchestrator.split`; a command to write it is the obvious next piece.",
  "kept_on_train": "the orchestrator skipped start-now steps after a hand-over (owner, 2026-11-27)",
  "kind": "bug",
+ "landed": "6b36f665aa6dace25267c4010953fda02ccf85e8",
+ "landed_at": "2026-11-27T08:08:30Z",
  "launched_at": "2026-11-27T03:13:43Z",
  "not_checked": [
   "Not seen live in a real orchestrator turn on the web: the hook was run end to end against a fixture project and its board database, not inside a Claude Code session.",
@@ -115,7 +117,7 @@
  "task": "The orchestrator cannot end a turn while a \"start now\" step is neither launched nor held with a reason: the queue is enforced, not read.\n\nOwner, 2026-11-27: \"Why didn't you launch it when it told you? This needs a permanent fix that doesn't depend on your stupidity.\" Measured: web orchestrator 2's resume at 02:28 listed M2, M4, M3 (and CL50, CL52, CL54, CL56) as [start now]; it followed the previous hand-over's stale line \"M2 and M3 wait on M1\" (M1 had landed at 02:19) and its own split, and launched them only at 03:09 and 03:11 after the owner asked.\n\n1. A Stop hook for the orchestrator role (same role function as M12/M13): while `kit.py queue` has a [start now] step that is not launched and not held (`kit.py hold <post> --why \"...\"`, recorded on the post, shown in resume and to the owner), the stop is refused once with the list and the exact launch commands. Steps owned by another orchestrator (a split recorded on _orchestrator) count as held for this one.\n2. A hand-over line never overrides the queue: resume compares each \"waits on X\" claim in the last hand-over with the board and prints the stale ones first (\"M2 waits on M1: M1 landed 02:19, start now\").\n3. The queue's out-of-order refusal stays; the Stop check is what makes \"start now\" impossible to skip.\n4. Tests: a fixture board with 2 start-now steps, one launched, one not: Stop refused, naming it; after hold: passes. A stale hand-over claim is flagged.\n",
  "title": "The orchestrator cannot end a turn with a start-now step not launched or held",
  "train": "takeover",
- "updated_at": "2026-11-27T08:01:42Z",
+ "updated_at": "2026-11-27T08:08:30Z",
  "verdict": "Yes: with two start-now steps, one launched, the orchestrator's stop is refused naming the other, and passes after a hold with a reason; at 02:28 resume would have flagged \"M3 waits on M1: M1 landed 02:18, start now\".",
  "working_by": ""
 }

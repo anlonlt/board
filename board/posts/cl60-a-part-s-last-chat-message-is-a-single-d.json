@@ -59,8 +59,8 @@
   "project": "anlonlt/harmonize"
  },
  "review": "continue",
- "review_commit": "d5e9762de9b832dce1a70e69dd21ef77ee43d321",
- "review_id": "CR-cl60-a-part-s-last-chat-message-is-a-single-d",
+ "review_commit": "aace41aaebf7d30b19656e4b4d8fe25461c0ce9a",
+ "review_id": "CR-cl60-a-part-s-last-chat-message-is-a-single-d-2",
  "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "review_orchestrator_device": "web",
  "review_orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
@@ -96,7 +96,7 @@
  "task": "A part's or review's last chat message is a single \"·\", the first time: the rule reaches it before it writes, not after.\n\nOwner, 2026-11-27: \"what is up with all the sessions not respecting the character and . hook? The review and M12, their long posts: completely unacceptable.\" Measured: M12 (session_01AE1HGigXaY4ApaiTBfLGWF) wrote a 2,900-character closing message, then the Stop hook refused it and it wrote \"·\". A Stop hook runs after the message is shown: it can only make a retry, never prevent the first one. The SAY IT ONCE context arrives on the owner's prompt and after some tools, but not after the part's last steps (`kit.py done`, `end_session.py`, the message to the orchestrator).\n\n1. Every last-step command (`kit.py done`, `end_session.py`, `kit.py unreached`, the review's comment write, SendMessage / send_message to the orchestrator) returns, through a PostToolUse hook, one line: \"Your next and last message is a single ·\". Same for the review role.\n2. The part and review prompts (resume --role part|review) say it in their \"how to report\" section, once.\n3. Measure on the transcripts of today's parts and reviews: how many first closing messages were longer than \"·\", before and after; a replayed part must close with \"·\" on its first try (test on a fixture transcript and the hook's output).\n",
  "title": "A part's last chat message is a single dot the first time, not after a refusal",
  "train": "takeover",
- "updated_at": "2026-11-27T08:04:57Z",
+ "updated_at": "2026-11-27T08:11:02Z",
  "verdict": "The dot rule now reaches a part or review right after its last steps and in its report instructions, before it writes; Stop stays as the backstop.",
  "working_by": ""
 }
