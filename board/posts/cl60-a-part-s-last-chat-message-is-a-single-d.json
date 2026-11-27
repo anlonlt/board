@@ -26,6 +26,7 @@
  "check": "python3 -I -m pytest -q tests/test_cl60_last_message.py",
  "claimed_at": "2026-11-27T07:52:39Z",
  "column": "info",
+ "completed_at": "2026-11-27T08:03:33Z",
  "created_at": "2026-11-27T02:50:26Z",
  "differs": "CL60: builds on CL14 (chat ends with a single dot) and CL49 (who a part reports to); CL14's rule is checked only by a Stop hook after the message is shown, CL60 delivers it before the last message is written.",
  "from": "orchestrator",
@@ -53,11 +54,12 @@
   "sha": "d5e9762de9b832dce1a70e69dd21ef77ee43d321"
  },
  "real_project": {
-  "command": "install.py <copy of harmonize@0d020ef> --update --no-cmd (kit from origin/cl60); KIT_STALE_OK=1 .kit/kit.py resume --role orchestrator --full; scripts/rules-check.py",
-  "output": "install OK; resume exit 0 (about 62 lines); rules-check exit 2, the same as on unchanged Harmonize (no regression). Run by orchestrator 4 on the web, 2026-11-27, never pushed.",
+  "command": "install.py <fresh copy of harmonize@0d020ef> --update --web-multi no --no-cmd (kit from origin/cl60@d5e9762d); in the copy: echo '<PostToolUse Bash payload: python3 -I .kit/kit.py done hm-probe>' | KIT_ROLE=part python3 -I .claude/hooks/kit/kit_say_it_once.py; and the copy's .claude/settings.json",
+  "output": "HOLDS ON HARMONIZE (rerun by orchestrator 4, 2026-11-27, after the review's redirect). install exit 0; settings.json now wires kit_say_it_once.py on PostToolUse ArtifactData|Bash|send_message|SendMessage; with Harmonize's kit.setup=true left as is, the hook prints {\"hookSpecificOutput\": {\"hookEventName\": \"PostToolUse\", \"additionalContext\": \"Your next and last message is a single \\\"·\\\": nothing before it, no summary (the post holds it).\"}}, exit 0. Earlier run (the part's, before its fix): BROKEN ON HARMONIZE, no PostToolUse Bash line and kit.setup=true silenced it. Harmonize's own say_it_once.py still runs beside it (a fork CL61 reports).",
   "project": "anlonlt/harmonize"
  },
- "review": "redirect",
+ "review": "continue",
+ "review_commit": "d5e9762de9b832dce1a70e69dd21ef77ee43d321",
  "review_id": "CR-cl60-a-part-s-last-chat-message-is-a-single-d",
  "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "review_orchestrator_device": "web",
@@ -66,7 +68,7 @@
  "review_started": "2026-11-27T07:49:45Z",
  "session_id": "session_01AE1HGj9jSo1nnBzqGaQAVW",
  "started_at": "2026-11-27T03:02:26Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "files": [
@@ -94,7 +96,7 @@
  "task": "A part's or review's last chat message is a single \"·\", the first time: the rule reaches it before it writes, not after.\n\nOwner, 2026-11-27: \"what is up with all the sessions not respecting the character and . hook? The review and M12, their long posts: completely unacceptable.\" Measured: M12 (session_01AE1HGigXaY4ApaiTBfLGWF) wrote a 2,900-character closing message, then the Stop hook refused it and it wrote \"·\". A Stop hook runs after the message is shown: it can only make a retry, never prevent the first one. The SAY IT ONCE context arrives on the owner's prompt and after some tools, but not after the part's last steps (`kit.py done`, `end_session.py`, the message to the orchestrator).\n\n1. Every last-step command (`kit.py done`, `end_session.py`, `kit.py unreached`, the review's comment write, SendMessage / send_message to the orchestrator) returns, through a PostToolUse hook, one line: \"Your next and last message is a single ·\". Same for the review role.\n2. The part and review prompts (resume --role part|review) say it in their \"how to report\" section, once.\n3. Measure on the transcripts of today's parts and reviews: how many first closing messages were longer than \"·\", before and after; a replayed part must close with \"·\" on its first try (test on a fixture transcript and the hook's output).\n",
  "title": "A part's last chat message is a single dot the first time, not after a refusal",
  "train": "takeover",
- "updated_at": "2026-11-27T07:54:23Z",
+ "updated_at": "2026-11-27T08:04:57Z",
  "verdict": "The dot rule now reaches a part or review right after its last steps and in its report instructions, before it writes; Stop stays as the backstop.",
- "working_by": "owner"
+ "working_by": ""
 }
