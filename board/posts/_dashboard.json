@@ -1,20 +1,20 @@
 {
  "column": "info",
- "created_at": "2026-11-27T03:12:10Z",
+ "created_at": "2026-11-27T03:12:13Z",
  "rows": [
   {
    "at": 0,
    "key": "A",
-   "name": "Takeover",
-   "note": "Next: A part launched in the background knows its own step",
-   "post": "cl50-a-part-launched-in-the-background-knows",
+   "name": "Board data",
+   "note": "Next: Tests clean up after themselves",
+   "post": "cl52-tests-clean-up-after-themselves",
    "state": "ready",
    "steps": [
-    "A part launched in the background knows its own step"
+    "Tests clean up after themselves"
    ],
-   "train": "P-takeover"
+   "train": "P-board-data"
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T03:12:10Z"
+ "updated_at": "2026-11-27T03:12:13Z"
 }
