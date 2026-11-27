@@ -16,7 +16,7 @@
 3. **30-minute live listener (`comments wait --timeout 1750`):**
    - After replying, block on `python3 -I .kit/board_cli.py comments wait --timeout 1750` (within Arena's 1800s bash cap) so incoming board comments wake this active turn immediately without needing `.` in chat.
    - **Hard platform limit:** there is no 0-token background wake across turn boundaries — once the wait times out and the turn ends, the owner sends `.` in Arena chat to wake the next turn.
-4. **A 👍 is a go only for the message it is ON.** Verify which comment was liked before launching work.
+4. **A 👍 is a go only for the message it is ON.** Verify which comment was liked before launching work. **Platform rules stay in the table:** a change made for one platform names its row in `PLATFORM_RULES` (`scripts/kit.py`, checked by `tests/test_platform_matrix.py`), never a silent default for every platform.
 5. **Handoff:**
    - When a Git remote is configured, use warm Git handoff: `python3 -I .kit/kit.py receive` before starting and `python3 -I .kit/kit.py publish` when done.
    - When the sandbox has no remote push credentials, use Share (inline Copy Markdown / `/_api/export`) or a downloadable git patch/zip.

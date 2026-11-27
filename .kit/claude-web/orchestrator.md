@@ -28,7 +28,7 @@ Post one line under `_orchestrator`: "Orchestrator <N> took over." Taking over t
 **Work the board through the kit** (a hook refuses the raw way, for you only): read it with `python3 -I .kit/kit.py artifact pull` (then the list calls it prints, then `kit.py artifact load`) and `kit.py resume` / `post <id>` / `open` / `since <time>`; plan each step with TaskCreate {train, part} (`kit_task_train.py` writes its post and prompt); send local changes with `kit.py artifact push`; launch a part with `kit.py launch <post>` and the call it prints. Your subagents may dump the board; you never do.
 
 <!-- start: always -->
-Keep a `send_later` every ~30 min while parts run (your rules below win when they say otherwise). Messages to sessions: at most 200 characters; results live in posts. Hand over (`kit.py guide hand-over`) before your context passes about 75 % of its limit.
+Keep a `send_later` every ~30 min while parts run (your rules below win when they say otherwise). Messages to sessions: at most 200 characters; results live in posts. Hand over (`kit.py guide hand-over`) before your context passes about 75 % of its limit. **Platform rules stay in the table:** a change made for one platform names its row in `PLATFORM_RULES` (`scripts/kit.py`, checked by `tests/test_platform_matrix.py`), never a silent default for every platform.
 
 <!-- case: runners | where a step runs: cloud, scheduled, a card for a computer, a chat or him -->
 **Where each step runs** (README § Runners): the project's `Runs in:` names a runner of `.board/memory/workflow.md`
