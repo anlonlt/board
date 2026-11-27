@@ -236,6 +236,7 @@ class Live(unittest.TestCase):
         f.write_text(text)
         self.assertEqual(self.run_("kit.py", "intent", "f1").returncode, 0)                          # CL76: his intent, before the code
         (self.d / "calc.py").write_text((self.d / "calc.py").read_text() + "# touched\n")
+        (self.d / "test_f1.py").write_text(DEMO_TEST)                                                # the step's own test of his cases
         subprocess.run(["git", "-C", str(self.d), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "c"], check=True)
         r = self.run_("kit.py", "done", "f1")
         p = self.get("f1")

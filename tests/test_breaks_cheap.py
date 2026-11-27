@@ -116,8 +116,10 @@ class Revert(Demo):
 
     def test_nothing_to_revert_is_refused(self):
         git(self.repo, "checkout", "-q", "main")
-        with open(os.path.join(self.repo, "test_calc.py"), "w") as fh:   # CL76: a part on the trunk, its test not committed yet
+        with open(os.path.join(self.repo, "test_calc.py"), "w") as fh:   # CL76: a part on the trunk, its test committed there
             fh.write(DEMO_TEST)
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "the test")
         rc, out = self.done(post(check="python3 -c \"import calc; assert calc.add(2, 2) == 4\"", started_at="2000-01-01T00:00:00Z"))
         self.assertEqual(rc, 1, out)
         self.assertIn("nothing to revert", out)
