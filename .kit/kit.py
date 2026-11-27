@@ -2590,6 +2590,207 @@ def whoami(name=""):
     return os.environ.get("KIT_SESSION_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or name or ""
 
 
+# CL49: a part reports to the orchestrator that started it, on the device that started it, unless another claimed it.
+# A fixed name (`<slug>-orchestrator`) matched dead sessions on another computer; the post now records its owner.
+OWNER_KEYS = ("orchestrator", "orchestrator_name", "orchestrator_device")
+REVIEW_OWNER_KEYS = ("review_orchestrator", "review_orchestrator_name", "review_orchestrator_device")
+
+
+def my_device():
+    """The device this session runs on: `web` for a Claude Code cloud session (send_message reaches it by its id from
+    anywhere), else KIT_DEVICE, else the host name."""
+    if os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID"):
+        return "web"
+    if os.environ.get("KIT_DEVICE"):
+        return os.environ["KIT_DEVICE"]
+    import socket
+    return socket.gethostname() or "unknown"
+
+
+def orchestrator_here():
+    """This orchestrator's address as a post records it: {orchestrator: its id (whoami), orchestrator_name: the session
+    name a CLI SendMessage takes, orchestrator_device}. Empty when no id is known (never a made-up one)."""
+    slug = _slug(_kit_config().get("project") or "project")
+    dev = my_device()
+    name = "" if dev == "web" else "%s-orchestrator" % slug
+    addr = whoami(name)
+    if not addr:
+        return {}
+    return {"orchestrator": addr, "orchestrator_name": name or addr, "orchestrator_device": dev}
+
+
+def step_owner(p, posts=None, review=False):
+    """Who a step's part (review=True: its review) reports to: {address, name, device, how}. The post's own record
+    (written by `launch`, `review` or `claim`); a post from before CL49 has none: the board's `_orchestrator`."""
+    p = p if isinstance(p, dict) else {}
+    if review and p.get("review_orchestrator"):
+        return {"address": str(p["review_orchestrator"]), "name": str(p.get("review_orchestrator_name") or p["review_orchestrator"]),
+                "device": str(p.get("review_orchestrator_device") or ""), "how": "it launched the review"}
+    if p.get("orchestrator"):
+        return {"address": str(p["orchestrator"]), "name": str(p.get("orchestrator_name") or p["orchestrator"]),
+                "device": str(p.get("orchestrator_device") or ""),
+                "how": "it claimed the step" if p.get("claimed_at") else "it launched the step"}
+    o = (posts or {}).get("_orchestrator") if isinstance(posts, dict) else None
+    o = o if isinstance(o, dict) else {}
+    sid = str(o.get("session_id") or "")
+    return {"address": sid, "name": sid, "device": str(o.get("device") or ""),
+            "how": "no owner on the post (launched before CL49): the board's orchestrator" if sid else "nobody named"}
+
+
+def report_lines(pid, p, posts=None, review=False):
+    """`resume`'s "Where you report": the step's owner now, how to reach that one session, and what to do when it fails."""
+    o = step_owner(p, posts, review=review)
+    who = "your review" if review else "your step"
+    if not o["address"]:
+        return ["", "## Where you report", "- No orchestrator owns %s and the board names none: `python3 -I .kit/kit.py unreached %s "
+                "--why \"no owner named\"`, then say so in your post; do not wait." % (who, pid)]
+    dev, here = o["device"], my_device()
+    if dev == "web" or o["address"].startswith(("session_", "cse_")):
+        how = "`send_message` (claude-code-remote) with `session_id` `%s`" % o["address"]
+    elif dev and dev != here:
+        how = ("`SendMessage` to `%s`, only the row of device `%s` (a Remote Control row of that machine); a row of another "
+               "machine with the same name is NOT it" % (o["name"], dev))
+    else:
+        how = ("`SendMessage` to `%s`, the session on this computer (`%s`); a row of another machine, or a cloud row, with the "
+               "same name is NOT it" % (o["name"], here))
+    return ["", "## Where you report",
+            "- The orchestrator that owns %s: `%s`%s, device `%s` (%s)." % (
+                who, o["address"], (" (session name `%s`)" % o["name"]) if o["name"] != o["address"] else "", dev or "not recorded", o["how"]),
+            "- Reach it with %s: `Done. Check post %s.`" % (how, pid),
+            "- The send fails, or no live session matches (ListAgents shows none on that device, or only stale ones): "
+            "`python3 -I .kit/kit.py unreached %s --why \"<what failed>\"`; your post then says so and every orchestrator's resume "
+            "lists it to claim. Do not wait, do not send to a look-alike." % pid]
+
+
+def _owner_write(pid, fields, url=None, token=None, drop=()):
+    """Merge `fields` into a post of the local board (`drop`: written as null, which reads as absent); with an attached
+    Artifact board, the batch too."""
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    try:
+        data = _local_update(url, token, "posts", pid, dict(fields, **{k: None for k in drop}))
+    except Exception as e:
+        return {"ok": False, "post": pid, "error": "cannot write the board at %s: %s" % (url, e)}
+    if data is None:
+        return {"ok": False, "post": pid, "error": "no post %s on this board" % pid}
+    out = {"ok": True, "post": pid, "data": data}
+    if attached_board():
+        try:
+            r = artifact_push(url=url, token=token)
+            out.update({"batches": r["batches"], "need_pin": r["need_pin"]})
+        except Exception as e:
+            out["push_error"] = str(e)
+    return out
+
+
+def claim(pid, url=None, token=None):
+    """`kit.py claim <post>`: this orchestrator takes a step explicitly (CL49): writes its own address on the post (the
+    part's and the review's owner) and says what to tell the part. Taking over the board alone claims nothing."""
+    me = orchestrator_here()
+    if not me:
+        return {"ok": False, "post": pid, "error": "no session id here (kit.py whoami prints none): a claim needs your address"}
+    fields = dict(me, claimed_at=_now_z(), review_orchestrator=me["orchestrator"],
+                  review_orchestrator_name=me["orchestrator_name"], review_orchestrator_device=me["orchestrator_device"])
+    r = _owner_write(pid, fields, url=url, token=token, drop=("orchestrator_unreached",))
+    if r.get("ok"):
+        sid = str(r["data"].get("session_id") or "")
+        r["tell"] = ("message the part%s: \"%s on %s claimed post %s: report to it from now on (`kit.py resume --role part` "
+                     "names it).\"" % ((" (session `%s`)" % sid) if sid and not sid.startswith("pending") else "",
+                                        me["orchestrator"], me["orchestrator_device"], pid))
+    return r
+
+
+def unreached(pid, why="", url=None, token=None):
+    """`kit.py unreached <post>`: the part could not reach its owner (the send failed, or no live session matches): its
+    post says so (`orchestrator_unreached`), and every orchestrator's resume lists it to claim (CL49)."""
+    try:
+        d = _board_request(url or local_board_url(), "doc/posts/" + urllib.parse.quote(pid, safe=""), token=_resolve_board_token(token))
+        p = d.get("data") if isinstance(d.get("data"), dict) else {}
+        o = _board_request(url or local_board_url(), "doc/posts/_orchestrator", token=_resolve_board_token(token)).get("data")
+    except Exception:
+        p, o = {}, None
+    o = step_owner(p, {"_orchestrator": o} if isinstance(o, dict) else None)
+    note = {"at": _now_z(), "to": o["address"], "device": o["device"], "why": str(why or "the send failed")[:300]}
+    return _owner_write(pid, {"orchestrator_unreached": note}, url=url, token=token)
+
+
+def owner_text(cmd, r):
+    if not r.get("ok"):
+        return "Not %s: %s\n" % ("claimed" if cmd == "claim" else "written", r.get("error"))
+    d = r["data"]
+    if cmd == "claim":
+        out = ["claimed: %s is yours (%s on %s)" % (r["post"], d.get("orchestrator"), d.get("orchestrator_device")), r.get("tell", "")]
+    else:
+        u = d.get("orchestrator_unreached") or {}
+        out = ["written: %s could not reach %s (%s); every orchestrator's resume lists it to claim" % (
+            r["post"], u.get("to") or "its orchestrator", u.get("why"))]
+    for b in r.get("batches") or []:
+        out.append("`ArtifactData` `batch` %s, then `python3 -I .kit/kit.py artifact sent %s`" % (b, b))
+    if r.get("push_error"):
+        out.append("artifact push failed (%s): run `kit.py artifact push`" % r["push_error"])
+    return "\n".join(x for x in out if x) + "\n"
+
+
+def unreached_lines(posts):
+    """Every orchestrator's resume: the open steps whose part could not reach its owner, to claim (CL49)."""
+    out = []
+    for pid, p in sorted((posts or {}).items()):
+        if pid.startswith("_") or not isinstance(p, dict) or not isinstance(p.get("orchestrator_unreached"), dict):
+            continue
+        if str(p.get("status") or "").lower() in ("dropped",) or p.get("removed"):
+            continue
+        u = p["orchestrator_unreached"]
+        out.append("- `%s` (%s): could not reach `%s`%s at %s (%s): `python3 -I .kit/kit.py claim %s`, then message its part" % (
+            pid, p.get("part") or pid, u.get("to") or "?", (" on " + u["device"]) if u.get("device") else "", u.get("at") or "?",
+            u.get("why") or "?", pid))
+    return ["", "## Parts that could not reach their orchestrator (claim one to answer it)"] + out if out else []
+
+
+HANDOVER_FROM = os.path.join(".kit", "run", "handover-from.json")
+
+
+def inherit_lines(posts, url=None, token=None):
+    """A successor orchestrator on the same device, after a hand-over (handover.py wrote who it replaces), inherits every
+    part its predecessor owned there (CL49): their posts get its address. Another device's parts are never taken."""
+    path = os.path.join(ROOT, HANDOVER_FROM)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            h = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    me = orchestrator_here()
+    old, dev = str(h.get("from") or ""), str(h.get("device") or "")
+    if not me or not old or old == me["orchestrator"]:
+        return []
+    if dev != me["orchestrator_device"]:
+        return ["", "## Hand-over", "- %s names a predecessor on device `%s`, not this one (`%s`): nothing inherited" % (
+            HANDOVER_FROM, dev, me["orchestrator_device"])]
+    took, failed = [], []
+    for pid, p in sorted((posts or {}).items()):
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("_board"):
+            continue
+        f = {}
+        if str(p.get("orchestrator") or "") == old and str(p.get("orchestrator_device") or "") == dev:
+            f.update(me)
+        if str(p.get("review_orchestrator") or "") == old and str(p.get("review_orchestrator_device") or "") == dev:
+            f.update(review_orchestrator=me["orchestrator"], review_orchestrator_name=me["orchestrator_name"],
+                     review_orchestrator_device=me["orchestrator_device"])
+        if not f:
+            continue
+        r = _owner_write(pid, dict(f, inherited_from=old), url=url, token=token)
+        (took if r.get("ok") else failed).append(pid)
+    if not failed:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    return ["", "## Hand-over: the parts your predecessor owned here are yours",
+            "- from `%s` on `%s`: %s%s" % (old, dev, ", ".join("`%s`" % x for x in took) or "none open",
+                                          ("; NOT written (run resume again): " + ", ".join(failed)) if failed else "")]
+
+
 def _is_kit_source_repo(root):
     return os.path.isfile(os.path.join(root, "install.py")) and os.path.isdir(os.path.join(root, "kit", "hooks"))
 
@@ -4693,7 +4894,12 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
     if tpl is None:
         return 1, "no %s (reinstall the kit)" % tpl_path
     orch_doc = _get_post("_orchestrator", db_path=db_path) or {}
-    orch_id = str(orch_doc.get("session_id") or ("%s-orchestrator" % slug))
+    # CL49: the review reports to the orchestrator that launched it (this session), unless another claims the step
+    launcher = orchestrator_here()
+    orch_id = launcher.get("orchestrator") or step_owner(_get_post(pid, db_path=db_path) if pid else {},
+                                                         {"_orchestrator": orch_doc}, review=True)["address"] or ("%s-orchestrator" % slug)
+    if launcher.get("orchestrator_name") and launcher["orchestrator_name"] != orch_id:
+        orch_id = "%s (session name `%s`, device `%s`)" % (orch_id, launcher["orchestrator_name"], launcher["orchestrator_device"])
     for key, val in (("<SCOPE>", scope), ("<SESSION>", session), ("<REVIEW_ID>", rid), ("<POST_ID>", pid),
                      ("<PART>", part), ("<PROJECT_ID>", project or "(none)"), ("<ORCH_ID>", orch_id)):
         tpl = tpl.replace(key, val)
@@ -4739,6 +4945,10 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
         fh.write(tpl)
     if os.environ.get("KIT_NO_LAUNCH"):
         return 0, "review %s prompt written (KIT_NO_LAUNCH: not started)" % rid
+    if launcher and pid and not pid.startswith("_"):     # CL49: who this review reports to, on the step's post
+        _board_write("update", "posts", pid, {"review_orchestrator": launcher["orchestrator"],
+                                              "review_orchestrator_name": launcher["orchestrator_name"],
+                                              "review_orchestrator_device": launcher["orchestrator_device"]})
     if run == "web":
         return 0, start
     if run is None:
@@ -4921,7 +5131,7 @@ def _fill_part(tpl, pid, doc):
     vals = {"<PART>": str(doc.get("part") or pid), "<TITLE>": str(doc.get("title") or pid), "<TRAIN>": str(doc.get("train") or ""), "<POST_ID>": pid,
             "<AFTER>": (", after `%s`" % doc["parent"]) if doc.get("parent") else "",
             "<TASK>": str(doc.get("task") or doc.get("body") or "").strip() or str(doc.get("title") or pid), "<SOURCES>": src,
-            "<ORCH_ID>": str(orch_doc.get("session_id") or "<orchestrator conversationId>"),
+            "<ORCH_ID>": step_owner(doc, {"_orchestrator": orch_doc})["address"] or "<orchestrator conversationId>",
             # CL38: the session_id a part writes is its real session (a web part: `session_<id>`), worked out by the
             # part's own shell at turn 1; the `<project>-<part>` name only where no session id exists (O54/O55)
             "<SESSION>": "'\"$(python3 -I .kit/kit.py whoami %s-%s)\"'" % (_slug(c.get("project") or "project"), _slug(str(doc.get("part") or pid), 24))}
@@ -5170,8 +5380,287 @@ def split_check(pieces):
                                                          "\n".join(rows)))
 
 
+# ---------------------------------------------------------------- R6: the queue, re-ranked at each new step
+# The owner, 2026-11-26: every new step is measured against every open step, for its place in the queue and for what can
+# run beside it; never ordered by date. On 11-26 M5 to M8 (features) were launched while CL51 waited, and CL51's bug then
+# overwrote 11 posts. Facts per pair: does one repair damage; does one wait on the other; do they share files or an area;
+# is one a bug in what the other builds. Order: damage first, then what unblocks the most, then bugs before features, date
+# only to break a tie. Two steps that share files or an area never run at the same time.
+QUEUE_DAMAGE = re.compile(r"\b(overwr(?:o|i)te\w*|overwrit\w*|data (?:loss|lost|at risk)|(?:lost|loses?|losing|dropp?(?:ed|s)?) "
+                          r"(?:data|posts?|comments?|work|rows?|cards?|answers?)|corrupt\w*|wiped?|wipes|erased?|erases|"
+                          r"deleted? (?:posts?|comments?|data|rows?)|wrong data|damage[sd]?|"
+                          r"(?:posts?|comments?|data|rows?|work|cards?|answers?) (?:were |was |are |is |got )?"
+                          r"(?:lost|overwritten|wiped|erased|deleted|dropped))\b", re.I)
+QUEUE_NOT = re.compile(r"\b(?:never|not|no|without|nor|cannot|can't|won't|doesn't|don't)\b(?:\s+\S+){0,2}\s*$", re.I)
+QUEUE_BLOCKS_ALL = re.compile(r"\b(?:every|all|each)\s+(?:other\s+)?steps?\b[^.]{0,60}\bwait|\bnothing\s+(?:reaches|lands|merges|"
+                              r"goes)\b[^.]{0,40}\buntil\b", re.I)
+QUEUE_BUG = re.compile(r"\b(bug|bugs|fix|fixe[sd]|broken|regress\w*|crash\w*|wrong|wrongly|leaks?)\b", re.I)
+QUEUE_PATH = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w-]+\.(?:py|js|json|md|html|sh|ts|css|toml|ya?ml))\b")
+
+
+def _q_text(q):
+    return "%s\n%s" % (q.get("title") or "", q.get("task") or q.get("body") or "")
+
+
+def _q_files(q):
+    """The files a step touches, by name (kit.py, .kit/kit.py and scripts/kit.py are one file: the kit copies it)."""
+    fs = set()
+    for x in q.get("subtasks") or []:
+        if isinstance(x, dict):
+            fs.update(str(f) for f in x.get("files") or [])
+    fs.update(str(f) for f in q.get("files") or [])
+    fs.update(QUEUE_PATH.findall(_q_text(q)))
+    return {os.path.basename(f.strip().strip("`")) for f in fs if f.strip()}
+
+
+def _q_paths(q):
+    fs = set()
+    for x in q.get("subtasks") or []:
+        if isinstance(x, dict):
+            fs.update(str(f) for f in x.get("files") or [])
+    fs.update(str(f) for f in q.get("files") or [])
+    fs.update(QUEUE_PATH.findall(_q_text(q)))
+    return {f.strip().strip("`") for f in fs if f.strip()}
+
+
+def _q_areas(q, areas=None):
+    """The areas of the map (M1: `map.areas` globs in .kit/config.json) a step's files fall in; without a map, none
+    (the shared files alone decide)."""
+    if areas is None:
+        areas = ((_kit_config().get("map") or {}).get("areas") or {}) if os.path.isfile(os.path.join(ROOT, ".kit", "config.json")) else {}
+    out = set()
+    for f in _q_paths(q):
+        for name, globs in (areas or {}).items():
+            if any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(os.path.basename(f), g) for g in ([globs] if isinstance(globs, str) else globs or [])):
+                out.add(str(name))
+    return out
+
+
+QUEUE_WAIT_BEFORE = (r"(?:after|builds? on|built on|on top of|waits? (?:on|for|behind)|waiting (?:on|for|behind)|once|needs|"
+                     r"requires|depends on|until|blocked by|behind)\s+(?:the\s+|step\s+|part\s+)?")
+QUEUE_WAIT_AFTER = r"(?:'s)?\s+(?:first|lands|landed|is done|must land|merges|is merged)\b"
+
+
+def _q_names(q, part):
+    """Does this step say it waits on that part ("waits on M1", "after CL51", "builds on M3", "once CL47 lands")? A mere
+    mention is history (CL51's task tells what CL44's part did), not a wait. A part has a digit and two characters."""
+    part = str(part or "")
+    if not re.search(r"\d", part) or len(part) < 2:
+        return False
+    p = r"(?<![\w-])%s(?![\w-])" % re.escape(part)
+    return re.search(QUEUE_WAIT_BEFORE + p + "|" + p + QUEUE_WAIT_AFTER, _q_text(q), re.I) is not None
+
+
+def _q_lead(q):
+    """The title and the task's first two sentences: what the step is for, not the history it tells."""
+    t = re.sub(r"\s+", " ", str(q.get("task") or q.get("body") or "")).strip()
+    return "%s. %s" % (q.get("title") or "", " ".join(re.split(r"(?<=[.!?])\s+", t)[:2]))
+
+
+def _q_damage(text):
+    """The first damage word the text says happened (not "never overwrites": a negation two words before it is none)."""
+    for m in QUEUE_DAMAGE.finditer(text):
+        if not QUEUE_NOT.search(text[max(0, m.start() - 40):m.start()]):
+            return m.group(0)
+    return ""
+
+
+def step_facts(pid, q, areas=None):
+    """The facts the queue reads about one step: damage, bug, files, areas, the parts it says it comes after."""
+    text = _q_lead(q)
+    kind = str(q.get("kind") or "").lower()
+    said = _q_damage(text) if kind != "feature" else ""
+    damage = bool(q.get("damage")) or bool(said)
+    bug = damage or kind == "bug" or (kind != "feature" and QUEUE_BUG.search(text) is not None)
+    after = q.get("after") or q.get("blocked_by") or []
+    after = [after] if isinstance(after, str) else list(after)
+    st = str(q.get("status") or "").lower()
+    return {"id": pid, "part": str(q.get("part") or pid), "damage": damage, "bug": bug, "files": _q_files(q),
+            "areas": _q_areas(q, areas), "after": [str(x) for x in after], "created": str(q.get("created_at") or ""),
+            "running": "progress" in st, "damage_why": str(q.get("damage") or said),
+            "blocks_all": QUEUE_BLOCKS_ALL.search(_q_text(q)) is not None}
+
+
+def step_pair(a, b, qa, qb):
+    """What two open steps are to each other, from facts: {first: id that must go first or None, why, shares: files,
+    areas: areas}. One waits on the other when it says so (after/blocked_by), names the other's part (it builds on it),
+    or is a feature on the files of the other's bug fix."""
+    first, why = None, ""
+    a_on_b = b["part"] in a["after"] or b["id"] in a["after"] or _q_names(qa, b["part"])
+    b_on_a = a["part"] in b["after"] or a["id"] in b["after"] or _q_names(qb, a["part"])
+    if a_on_b and b_on_a:                     # each names the other: the older one is what the newer builds on
+        a_on_b, b_on_a = a["created"] > b["created"], a["created"] <= b["created"]
+    shares = sorted(a["files"] & b["files"])
+    areas = sorted(a["areas"] & b["areas"])
+    if b_on_a:
+        first, why = a["id"], "%s builds on it (names %s)" % (b["part"], a["part"])
+    elif a_on_b:
+        first, why = b["id"], "%s builds on it (names %s)" % (a["part"], b["part"])
+    elif (shares or areas) and a["bug"] != b["bug"]:
+        bug, feat = (a, b) if a["bug"] else (b, a)
+        first, why = bug["id"], "a bug in what %s builds (%s)" % (feat["part"], ", ".join(shares or areas)[:60])
+    return {"first": first, "why": why, "shares": shares, "areas": areas}
+
+
+def _q_is_step(q):
+    """A step, not a question, an issue or a report filed under a train (Harmonize's F5, VR5, HL5, O56 are questions)."""
+    return str(q.get("kind") or "").lower() not in ("question", "issue", "report", "awaits") and \
+        str(q.get("column") or "").lower() != "question"
+
+
+def queue_facts(posts, areas=None):
+    """(open steps, their facts, the hub): a file or area most open steps name (more than half, 4 steps or more: kit.py
+    here) is not shared by itself, as in the split check (different functions of one big file merge cleanly);
+    `kit.queue.strict_files: true` in .kit/config.json counts it too."""
+    open_ = {pid: q for pid, q in posts.items() if isinstance(q, dict) and not pid.startswith("_") and not q.get("removed")
+             and str(q.get("train") or "").strip() and _step_open(q) and _q_is_step(q)}
+    f = {pid: step_facts(pid, q, areas) for pid, q in open_.items()}
+    strict = bool(((_kit_config().get("kit") or {}).get("queue") or {}).get("strict_files")) if os.path.isfile(
+        os.path.join(ROOT, ".kit", "config.json")) else False
+    count = {}
+    for x in f.values():
+        for k in x["files"] | {"area " + a for a in x["areas"]}:
+            count[k] = count.get(k, 0) + 1
+    hub = set() if strict else {k for k, c in count.items() if len(f) >= 4 and c * 2 > len(f)}
+    for x in f.values():
+        x["files"] -= hub
+        x["areas"] -= {k[5:] for k in hub if k.startswith("area ")}
+    return open_, f, hub
+
+
+def queue_rank(posts, areas=None):
+    """Every open train step, ranked: [{id, part, place, why, running, can_start, waits}] (place 1 is launched first).
+    Re-ranked whole at each call: nothing is kept between two rankings."""
+    open_, f, _hub = queue_facts(posts, areas)
+    deps = {pid: {} for pid in open_}          # pid -> {id it waits on: why}
+    clash = {pid: {} for pid in open_}         # pid -> {id it cannot run beside: files/areas}
+    ids = sorted(open_)
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            p = step_pair(f[a], f[b], open_[a], open_[b])
+            if p["first"]:
+                later = b if p["first"] == a else a
+                deps[later][p["first"]] = p["why"]
+            if p["shares"] or p["areas"]:
+                clash[a][b] = clash[b][a] = ", ".join(p["shares"] + ["area " + x for x in p["areas"]])
+    waiters = {pid: set() for pid in open_}    # who waits on pid, directly or not
+    for pid in open_:
+        seen, todo = set(), list(deps[pid])
+        while todo:
+            x = todo.pop()
+            if x in seen:
+                continue
+            seen.add(x)
+            todo.extend(deps.get(x) or [])
+        for x in seen:
+            waiters[x].add(pid)
+    for pid in open_:                          # "every step since 11-24 waits behind it" (CL47): it unblocks them all
+        if f[pid]["blocks_all"]:
+            waiters[pid] |= set(open_) - {pid}
+    key = lambda pid: (0 if f[pid]["damage"] else 1, -len(waiters[pid]), 0 if f[pid]["bug"] else 1, f[pid]["created"], pid)  # noqa: E731
+    order, left = [], set(open_)
+    while left:
+        ready = [p for p in left if not (set(deps[p]) & left)] or list(left)    # a cycle: the best of what is left
+        nxt = min(ready, key=key)
+        order.append(nxt)
+        left.discard(nxt)
+    running = {p for p in open_ if f[p]["running"]}
+    rows, started = [], set(running)
+    for n, pid in enumerate(order, 1):
+        why = []
+        if f[pid]["damage"]:
+            why.append("repairs damage (%s)" % _short(f[pid]["damage_why"], 40))
+        before = [x for x in order[n:] if pid in deps[x]]
+        if before:
+            why.append("before %s: %s" % (", ".join(f[x]["part"] for x in before[:4]) + (" ..." if len(before) > 4 else ""),
+                                           deps[before[0]][pid]))
+        if deps[pid]:
+            why.append("after %s" % ", ".join(f[x]["part"] for x in deps[pid] if x in open_))
+        if f[pid]["blocks_all"]:
+            why.append("every other step waits behind it (its task says so)")
+        if not why:
+            why.append("bug before features" if f[pid]["bug"] else "feature, by date (no fact sets it apart)")
+        waits = []
+        if pid not in running:
+            waits += ["%s first (%s)" % (f[x]["part"], deps[pid][x]) for x in deps[pid] if x in open_]
+            waits += ["%s %s (shares %s)" % (f[x]["part"], "runs" if x in running else "goes first", clash[pid][x])
+                      for x in clash[pid] if x in started]
+        can = pid not in running and not waits
+        if can:
+            started.add(pid)                   # what can run beside it is measured against it from here on
+        rows.append({"id": pid, "part": f[pid]["part"], "place": n, "why": "; ".join(why), "running": pid in running,
+                     "can_start": can, "waits": waits, "damage": f[pid]["damage"], "bug": f[pid]["bug"]})
+    return rows
+
+
+def queue_lines(posts, areas=None, limit=40):
+    rows = queue_rank(posts, areas)
+    if not rows:
+        return ["No open step."]
+    out = []
+    for r in rows[:limit]:
+        tag = "running" if r["running"] else ("start now" if r["can_start"] else "waits: " + "; ".join(r["waits"])[:160])
+        out.append("%d. %s `%s` [%s] %s" % (r["place"], r["part"], r["id"], tag, r["why"]))
+    if len(rows) > limit:
+        out.append("(%d more)" % (len(rows) - limit))
+    return out
+
+
+def _resume_queue(posts):
+    """R6, the orchestrator's resume: launch from the top; every new step re-ranks it."""
+    return ["", "## The queue (launch from the top; `kit.py queue` for all of it, a launch out of order is refused)"] + \
+        queue_lines(posts, limit=12)
+
+
+def queue_text(posts, areas=None):
+    hub = queue_facts(posts, areas)[2]
+    return "\n".join(["# The queue (every open step against every other: damage first, then what unblocks the most, "
+                      "then bugs before features, date only for a tie; launch from the top)"] + queue_lines(posts, areas)
+                     + (["(Named by most open steps, not a clash by itself: %s; `kit.queue.strict_files` counts it.)"
+                         % ", ".join(sorted(hub))] if hub else [])) + "\n"
+
+
+def order_problem(posts, pid, areas=None):
+    """None, or why launching this step now is out of order: a step ranked before it could start now, it waits on an
+    open step, or it shares files with a running one. The step to launch instead is named."""
+    rows = queue_rank(posts, areas)
+    me = next((r for r in rows if r["id"] == pid), None)
+    if me is None or me["running"]:
+        return None
+    if me["waits"]:
+        return "%s waits: %s" % (me["part"], "; ".join(me["waits"]))
+    first = next((r for r in rows if r["place"] < me["place"] and r["can_start"]), None)
+    if first:
+        return "%s goes first (place %d, %s is %d): %s; launch `%s`" % (first["part"], first["place"], me["part"], me["place"],
+                                                                      first["why"], first["id"])
+    return None
+
+
+def pause_messages(posts, new_pid, areas=None):
+    """A new damage step: the running steps it would undo or redo (they build on it, or share its files) are asked to
+    pause at their next save point. [{post, part, session_id, message}]."""
+    q = posts.get(new_pid) or {}
+    open_, f, _hub = queue_facts(posts, areas)
+    fn = f.get(new_pid) or step_facts(new_pid, q, areas)
+    if not fn["damage"]:
+        return []
+    out = []
+    for pid, r in open_.items():
+        fr = f[pid]
+        if pid == new_pid or not fr["running"]:
+            continue
+        p = step_pair(fn, fr, q, r)
+        if p["first"] == new_pid or p["shares"] or p["areas"]:
+            why = p["why"] or "it shares %s" % ", ".join(p["shares"] + p["areas"])
+            out.append({"post": pid, "part": fr["part"], "session_id": str(r.get("session_id") or ""),
+                        "message": "Pause at your next save point (commit and push your branch, update your post): %s repairs "
+                                   "damage (%s) and %s. Continue when it is done; `kit.py queue` shows the order."
+                                   % (fn["part"], _short(fn["damage_why"], 50), why)})
+    return out
+
+
 def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None, cli=None,
-             board=None, keep_whole=None, keep_train=None):
+             board=None, keep_whole=None, keep_train=None, damage=None, after=(), kind=None):
     """A train step: its post (adopted when the train already has one for that part, never duplicated) and its
     generated prompt. Returns {post, adopted, prompt, prompt_written, launch} or {error}. On an attached board (CL25)
     also {board, artifact_write}: the post is a file under .kit/run/artifact/out/repos/<id>/posts/, sent by the one
@@ -5225,6 +5714,12 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         doc["sources"] = list(sources)
     if review is False:
         doc["review_auto"] = False
+    if damage:                                     # R6: what was lost or put at risk, and who found it
+        doc["damage"] = str(damage)
+    if after:
+        doc["after"] = [str(x) for x in after]
+    if kind in ("bug", "feature"):
+        doc["kind"] = kind
     write = None
     if att:
         fp = os.path.join(os.path.abspath(_art_dir()), "out", "repos", att, "posts", pid + ".json")
@@ -5239,6 +5734,14 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
     res = {"post": pid, "adopted": False, "pieces": len(doc.get("subtasks") or []), "prompt": rel, "prompt_written": made,
            "train_goal": (rec or {}).get("goal") or "(none written: `kit.py trains new`)",
            "launch": _launch_line(part, rel, model, cli=cli) if rel else None}
+    # R6: the new step against every open one: the whole queue re-ranked, and the running steps it would undo told to pause
+    ranked = dict(posts, **{pid: doc})
+    res["queue"] = queue_lines(ranked, limit=12)
+    pauses = pause_messages(ranked, pid)
+    if pauses:
+        res["pause"] = pauses
+        res["next_pause"] = ("for each `pause` entry: send_message (claude-code-remote) to its session_id (agy: send_message "
+                             "to its conversation) with its message; it pauses at its next save point")
     if att:
         res.update({"board": att, "artifact_write": write,
                     "next": "send the post: ArtifactData %s (no other way: a hand-written step post is refused)"
@@ -5760,7 +6263,7 @@ def step_holder(pid, p, me=None, people=(), alive=None, saved=None, session=None
 
 
 def launch(pid, url=None, token=None, web=None, session_id=None, model=None, reset=False, gate=True, cli=None, post_file=None,
-           take=False):
+           take=False, anyway=None):
     """`kit.py launch <post>`: the one way a part starts (CL13). Writes status in progress, session_id, launched_at
     and branch on its post and marks its Trains row running (the local copy; with an attached Artifact board, the
     batch that carries both there), then starts it: CLI, `claude --bg` inside a worktree made from the current branch;
@@ -5817,9 +6320,17 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         sess = session_id
         launch_mark(pid, None)
     else:
-        why = _prompt_problem(rel) or circle_gate(_launch_posts(post), pid, post, os.path.join(ROOT, rel))
+        lp = _launch_posts(post)
+        why = _prompt_problem(rel) or circle_gate(lp, pid, post, os.path.join(ROOT, rel))
         if why:
             return dict(out, ok=False, error=why)
+        # R6: launched from the top of the queue; out of order only with the reason recorded
+        late = None if (post.get("launched_at") or take) else order_problem(dict(lp, **{pid: post}), pid)
+        if late and not anyway:
+            return dict(out, ok=False, error="out of order: %s. (Launch it anyway: `kit.py launch %s --anyway \"<why>\"`, "
+                                             "recorded on its post.)" % (late, pid), queue=True)
+        if late:
+            out["out_of_order"] = late
         if web:
             if _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + base).returncode != 0 and base != "HEAD":
                 out["warning"] = "branch %s is not pushed: push it first, the new session clones it from GitHub" % base
@@ -5861,6 +6372,15 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
             sess = name
     now = _now_z()
     fields = {"status": "in progress", "session_id": sess, "branch": branch, "working_by": me, "updated_at": now}
+    if out.get("out_of_order"):
+        fields["launched_out_of_order"] = {"why": str(anyway), "was": out["out_of_order"], "at": now}
+        out["launched_out_of_order"] = fields["launched_out_of_order"]
+    owner = orchestrator_here()       # CL49: the part reports to this session, on this device, unless another claims it
+    if owner:
+        fields.update(owner)
+        out["orchestrator"] = owner
+    else:
+        out["warning_owner"] = "no session id here (kit.py whoami): the post names no owner; the part reports to `_orchestrator`"
     had = str(post.get("session_id") or "")
     if session_id and not take and had and had != session_id and not had.startswith("pending") and not marked:
         out["warning"] = "%s already named session %s: if it still runs, two are on this step; stop one" % (pid, had)
@@ -5869,6 +6389,8 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     out["session_id"] = sess
     if isinstance(given, dict):
         return dict(out, trains=False)
+    if owner and post.get("orchestrator_unreached"):
+        fields["orchestrator_unreached"] = None      # a fresh launch is reached by its launcher
     _local_update(url, token, "posts", pid, fields)
     tr = _local_update(url, token, "posts", "_trains", lambda t: _trains_mark(t, pid, dict(post, **fields), sess, rel))
     out["session_id"] = sess
@@ -6627,6 +7149,8 @@ COMMANDS = [
     ("write the board", "board_cli.py reply <post> <comment> --text T", "answer the owner's comment in the owner's thread (marks it read)"),
     ("write the board", "kit_cards.py (agent kit-cards)", "rebuild the Where we are card and the Trains card, never by hand"),
     ("launch and finish", "kit.py launch <post>", "start a part: post in progress, Trains row running, then claude --bg or the create_session call"),
+    ("launch and finish", "kit.py claim <post>", "take a step explicitly: your address on its post; its part and review report to you (CL49)"),
+    ("launch and finish", "kit.py unreached <post> --why W", "a part (or review) could not reach its orchestrator: the post says so, every orchestrator's resume lists it"),
     ("launch and finish", "kit.py capacity / device.py run -- <cmd>", "the device's session cap / run a heavy job when it fits in memory"),
     ("launch and finish", "kit.py done <post>", "check a step's post: format, artifacts, check passes, breaks makes it fail"),
     ("launch and finish", "kit.py review <post> | --train T", "start the review of a step or a train"),
@@ -6864,6 +7388,8 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
     if not n_active:
         out.append("")
         out.append("No train has an open step.")
+    else:
+        out += _resume_queue(posts)
     out.extend(_resume_extras(posts, comments, now=now, session=session))
     dl = device_line()
     if dl:
@@ -8472,6 +8998,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
             out += ["", "## The record is git, and it is behind"] + ["- " + x for x in gl]
         out += split_lines(posts) + train_lines(posts)
         out += start_lines(posts, comments, session or whoami())
+        out += inherit_lines(posts) + unreached_lines(posts)
         out += owner_lines() + autonomy_lines()
         out += [""] + _launch_workflow()
         out += ["", "## Parts: their context and the save points",
@@ -8532,7 +9059,13 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 out.append("- %s: %s" % (k, "; ".join(map(str, _as_list(p[k])))[:400]))
         if len(out) and out[-1] == "## Your post now":
             out.append("- (nothing yet)")
-        out.append("- your Done goes to the orchestrator, `%s`" % ((posts.get("_orchestrator") or {}).get("session_id") or "named by no post yet"))
+        o = step_owner(p, posts)
+        out.append("- your Done goes to the orchestrator that owns your step, `%s`%s (see Where you report)" % (
+            o["address"] or "named by no post yet", (" on `%s`" % o["device"]) if o["device"] else ""))
+        if isinstance(p.get("orchestrator_unreached"), dict):
+            out.append("- orchestrator_unreached: %s (%s): wait for a claim; a message from the new owner names it" % (
+                p["orchestrator_unreached"].get("at"), p["orchestrator_unreached"].get("why")))
+        out += report_lines(pid, p, posts)
         out += held_lines(pid, p, session or whoami())
         out += continues_lines(p, session or whoami(), pid=pid)
         out += subtask_lines(dict(p, id=post))
@@ -8564,10 +9097,15 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         if lands_after_review():
             out += ["", "## When you are done", "- your branch reaches the trunk after its review: `end_session.py` pushes it, never onto the trunk"]
     elif role == "clerk":
-        orch = (posts.get("_orchestrator") or {}).get("session_id") or "(none on _orchestrator)"
+        od = posts.get("_orchestrator") or {}
+        orch = od.get("session_id") or "(none on _orchestrator)"
+        here = orchestrator_here()   # CL49: the clerk reports to the orchestrator that started it, on its own device
         out += ["# Resume: the clerk (comment routing only)", "",
                 "A comment on a post goes to the session that post names; none or not reachable: to the orchestrator.",
-                "", "## Session ids", "- orchestrator: %s" % orch]
+                "", "## Session ids", "- orchestrator: %s%s" % (orch, (" (device `%s`)" % od["device"]) if od.get("device") else ""),
+                "- reach it on this device (`%s`) only: a row with the same name on another machine, or a stale one, is not it; "
+                "the send fails: reply in the comment's thread \"Not passed: no orchestrator reached\" (`board_cli.py comments reply`) and go on" % (
+                    here.get("orchestrator_device") or my_device())]
         for pid, p in sorted(posts.items()):
             if pid.startswith("_") or not isinstance(p, dict) or not p.get("session_id"):
                 continue
@@ -8598,6 +9136,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "- Its post says: %s" % (json.dumps(rp, ensure_ascii=False)[:500] if rp else "NO real-project result")]
         ft = field_text("review", "review", p.get("train"))
         out += ["", ft] if ft else []
+        out += report_lines(pid, p, posts, review=True)
         out += owner_lines()
         out += ["", "## Lessons for a review"] + _lesson_lines(lessons_for("review"))
         out += _principle_lines("review", p.get("train"))
@@ -9030,8 +9569,15 @@ def main(argv=None):
     s.add_argument("--web", action="store_true", default=None); s.add_argument("--cli-run", dest="web", action="store_false")
     s.add_argument("--model", default=None); s.add_argument("--reset", action="store_true")
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
+    s.add_argument("--anyway", default=None, help="R6: launch out of the queue's order; the reason is recorded on the post")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s.add_argument("--post-file", default=None, help=argparse.SUPPRESS)
+    s = sp.add_parser("claim", help="this orchestrator takes a step: its address on the post, the part and its review report to it (CL49)")
+    s.add_argument("post"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
+    s.add_argument("--json", action="store_true")
+    s = sp.add_parser("unreached", help="a part's report did not reach its orchestrator: its post says so, every resume lists it (CL49)")
+    s.add_argument("post"); s.add_argument("--why", default=""); s.add_argument("--board-url", default=None)
+    s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     sp.add_parser("permission-mode", help="the permission mode the kit starts Claude Code sessions in")
     s = sp.add_parser("sub", help="a step's pieces, lines on its post: by number or title"); s.add_argument("post"); s.add_argument("title", nargs="+")
     s.add_argument("--why", default="", help="why a piece the task names is dropped"); s.add_argument("--known", action="store_true", help=argparse.SUPPRESS)
@@ -9049,6 +9595,10 @@ def main(argv=None):
     s.add_argument("--no-review", action="store_true"); s.add_argument("--db", default=None)
     s.add_argument("--keep-whole", default=None, help="why a step the split check flags must stay one part (recorded)")
     s.add_argument("--keep-train", default=None, help="why a step goes on a train the train check refuses (recorded)")
+    s.add_argument("--damage", default=None, help="R6: what was lost or put at risk, and who found it (a review, a done, "
+                   "the owner): the step goes to the top of the queue")
+    s.add_argument("--after", action="append", default=[], help="R6: a part this step waits on (it builds on its work)")
+    s.add_argument("--kind", choices=["bug", "feature"], default=None, help="R6: when the task's words do not say it")
     s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--board", default=None, help="an attached board's id (repos/<id>/ in the Artifact): the step goes "
                    "on its train (default: this board, or the one attached board that holds the train)")
@@ -9211,6 +9761,13 @@ def main(argv=None):
         print(portfolio_summary(config_path=a.portfolio_config, roots=a.roots), end="")
         return 0
     if a.cmd == "queue":
+        if not a.runner and not a.for_owner:          # R6: the steps, ranked, each place with its why
+            posts = _all_posts(a.db)
+            print(queue_text(posts), end="")
+            cards = queue_cards(m, db_path=a.db, unblocked_only=a.unblocked)
+            if not cards.endswith(": 0 open cards"):
+                print("\n# Cards for a runner or a person\n" + cards)
+            return 0
         print(queue_cards(m, runner=a.runner, for_owner=a.for_owner, db_path=a.db, unblocked_only=a.unblocked))
         return 0
     if a.cmd == "search":
@@ -9226,7 +9783,8 @@ def main(argv=None):
                 with open(a.task_file, encoding="utf-8") as fh:
                     task = fh.read()
             res = step_new(a.train, a.part, a.title or a.part, task=task, parent=a.parent, sources=a.source,
-                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board, keep_whole=a.keep_whole, keep_train=a.keep_train)
+                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board, keep_whole=a.keep_whole, keep_train=a.keep_train,
+                           damage=a.damage, after=a.after, kind=a.kind)
         elif a.action == "open":
             res = {"steps": step_open(a.db)}
         elif a.action == "find":
@@ -9472,9 +10030,16 @@ def main(argv=None):
             return 2
         print(adopt_text(r), end="")
         return 0
+    if a.cmd in ("claim", "unreached"):
+        r = (claim(a.post, url=a.board_url, token=a.token) if a.cmd == "claim"
+             else unreached(a.post, why=a.why, url=a.board_url, token=a.token))
+        print(json.dumps({k: v for k, v in r.items() if k != "data"}, ensure_ascii=False, indent=1) if a.json else owner_text(a.cmd, r), end="")
+        if a.json:
+            print()
+        return 0 if r.get("ok") else 1
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset,
-                   post_file=a.post_file, take=a.take)
+                   post_file=a.post_file, take=a.take, anyway=a.anyway)
         print(field_text("launch", "orchestrator"), file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
         return 0 if r.get("ok") else 1
