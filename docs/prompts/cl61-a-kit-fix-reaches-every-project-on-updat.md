@@ -16,4 +16,4 @@ Owner, 2026-11-27: "Shouldn't anything that's happening in the kit automatically
 - comment `m12-the-orchestrator-hands-over-at-its-conte`: read it with `python3 -I .kit/board_cli.py get comments m12-the-orchestrator-hands-over-at-its-conte --out-dir /tmp/src`
 
 ## What this does differently
-CL61: builds on CL25 (update refreshes every installed file) and M12; CL25 refreshes only the kit's own files, a project's fork of a kit hook stays and decides. CL61 folds forks into the kit's hook.
+CL61: builds on CL53 (a session starts on the newest kit code); CL53 brings the newest kit files, but a project's own fork of a kit hook still decides. CL61 folds such forks into the kit's hook at update.
