@@ -1,5 +1,5 @@
 {
- "at": "2026-11-27T02:53:09Z",
+ "at": "2026-11-27T03:00:48Z",
  "docs": {
   "comments/004abd3c5e334e6aac34": "9a926f42c90c194d",
   "comments/0d7buihhnapamdz5rqkz": "e06545c9744f3f81",
@@ -309,6 +309,7 @@
   "posts/cl59-a-part-pushes-only-its-own-post-a-pull-n": "6184e8340197191b",
   "posts/cl6-collapsible-sections-that-learn": "2079643d8979b3e0",
   "posts/cl60-a-part-s-last-chat-message-is-a-single-d": "ad63d6db3f0a9e21",
+  "posts/cl61-a-kit-fix-reaches-every-project-on-updat": "324384cb7f005c5a",
   "posts/cl7-say-it-once-the-leaks-closed": "2be38fe343e95c74",
   "posts/cl8-design-principles-complete-and-no-emoji": "ff80ffd0a55854d3",
   "posts/cl9-checks-that-must-be-able-to-fail-breaks": "519d0fa01ff5e220",

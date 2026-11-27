@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T02:58:20Z",
+ "created_at": "2026-11-27T03:00:45Z",
  "rows": [
   {
    "also": [],
@@ -12,8 +12,7 @@
     "CL48",
     "CL51",
     "CL52",
-    "CL56",
-    "CL59"
+    "CL56"
    ],
    "parent": "",
    "part": "P-board-data",
@@ -139,8 +138,7 @@
     "CL50",
     "CL53",
     "CL54",
-    "CL55",
-    "CL60"
+    "CL55"
    ],
    "parent": "",
    "part": "P-takeover",
@@ -1212,26 +1210,15 @@
   {
    "also": [],
    "children": [],
-   "parent": "P-board-data",
-   "part": "CL59",
-   "post": "cl59-a-part-pushes-only-its-own-post-a-pull-n",
-   "prompt": "",
-   "session": "",
-   "state": "idle",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [],
    "parent": "P-takeover",
-   "part": "CL60",
-   "post": "cl60-a-part-s-last-chat-message-is-a-single-d",
+   "part": "CL61",
+   "post": "cl61-a-kit-fix-reaches-every-project-on-updat",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGkvhfxecqjjkyDPUNi",
+   "state": "running",
    "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T02:58:20Z"
+ "updated_at": "2026-11-27T03:00:45Z"
 }
