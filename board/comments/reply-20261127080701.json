@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T08:07:01Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_882ea721d96a",
+ "text": "Got it — noted **R1 and R2 as done**, and **R3** is queued right after **R4** finishes (after the combined R7+R4 review).\n\n**M line (`memory`, 9/13 done) — launched M9 now:**\n- **M9 (`m9-the-workflow-on-the-map-what-lives-outsi`) — launched now** (`agy`, session `b050783b-dfd6-486c-aacd-33a7365f173e`, `/home/anon/board-m9`): touches `scripts/step0_scan.py` + `scripts/kit_map.py` (zero overlap with R4, A1, or web's CL71/CL72), measures its bars directly on `~/french` and `~/harmonize`, and feeds straight into **R3**.\n- **M2 (`m2-install-draws-the-first-map`)** — waits on **A1**, **M9**, and web's **CL71** (shares `install.py` and `scripts/step0_scan.py`).\n- **M3 (`m3-done-keeps-the-map-each-part-checks-its`)** — already built (`origin/m3`) and under review (`origin/review-m3-...`) in the web lane.\n- **M12 -> M13 (`m13-every-hook-reads-the-orchestrator-role-o`)** — M12 (`origin/m12`) was redirected into M13; M13 waits on web's **CL72** (both edit `kit/hooks/kit_orchestrator_guard.py`).\n\n*(Penguin is now full with 3 parallel parts with zero file overlap: **R4**, **A1**, and **M9**; full test suites serialized for RAM headroom.)*"
+}
