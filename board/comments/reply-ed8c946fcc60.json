@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T03:22:39Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_9c97be044f09",
+ "text": "Two reasons—one my miss, one a gap in `kit.py launch` itself—and R5's `runner` is fixed to **`agy`** now (v20):\n\n1. **Why I didn't run `kit.py launch --take`:** On a computer, `kit.py launch` (`scripts/kit.py:5304–5333`) hard-codes `claude --bg` and cannot invoke an agy subagent directly, so running `kit.py launch r5-... --take` would have spawned Claude Code again (which was rate-limited). I should still have called `kit.py launch r5-... --take --session-id <agy-uuid>` right after `invoke_subagent` instead of updating `session_id` directly.\n2. **Why it still showed `claude-web`:** Even `kit.py launch --take` never updates the post's `runner` field (`scripts/kit.py:5335` only writes `status`, `session_id`, `branch`, `working_by`, `updated_at`), so a step planned as `claude-web` kept that tag even after a local takeover. (That is also a good gap to close in `kit.py launch` so any local/agy takeover automatically sets `runner`.)\n\n**Now:** R5's post is set to `runner: \"agy\"`, cards are refreshed, and R5 has **4/4 pieces done** and is finishing its test run."
+}
