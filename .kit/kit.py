@@ -5110,7 +5110,60 @@ def pair(pid, answer=None, db_path=None, root=None, timeout=900):
     return 0, "\n".join(lines)
 
 
-def check_trunk_merged(root=ROOT):
+REFUSAL_KINDS = (                                    # CL78 (M10): what a refusal's text says -> the kind it is counted under
+    (r"carries step|carries another step", "branch carries another step"),
+    (r"conflict", "conflict in generated files"),
+    (r"after its review", "commits after review"),
+    (r"trunk moved|merge it first|fails merged", "branch behind the trunk"),
+    (r"not on the board yet|local copy differs|stale", "stale board copy"),
+)
+
+
+def refusal_kind(text):
+    t = str(text or "")
+    if re.search(r"carries step|carries another step", t, re.I):
+        return "branch carries another step"
+    if "conflict" in t.lower():
+        return "conflict in generated files" if re.search(r"manifest\.json|artifact-files", t) else "conflict with the trunk"
+    for rx, kind in REFUSAL_KINDS:
+        if re.search(rx, t, re.I):
+            return kind
+    return ""
+
+
+def record_refusal(pid, text, kind=None):
+    """CL78 (M10): a refusal of `land` / `done`, or a review's redirect, is one fix of its kind in the ledger, by itself (no
+    model call), so the third of a kind raises "what keeps coming back". One per (kind, step). Never fails its caller."""
+    kind = kind or refusal_kind(text)
+    if not kind or not pid:
+        return None
+    try:
+        led = _load_ledger_mod()
+        if led is None or not hasattr(led, "record_fix"):
+            return None
+        return led.record_fix(_resolve_memory_dir(), kind, re.sub(r"\s+", " ", str(text))[:200], pid)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def check_carried(root=ROOT, pid=""):
+    """CL78: a part's branch holds only its own work and the trunk: done refuses one that carries another open step's
+    unlanded commits (a merge of its branch), naming it, before it reaches review."""
+    la = _landing_mod()
+    if la is None or not hasattr(la, "carried"):
+        return []
+    br = _git_run("symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
+    if not br:
+        return []
+    try:
+        la.ROOT = root
+        found = la.carried(_git_run("rev-parse", "HEAD").stdout.strip(), br, pid, landing_steps(_all_posts()))
+    except Exception:  # noqa: BLE001
+        return []
+    return [la.carried_text(found, br, pid)] if found else []
+
+
+def check_trunk_merged(root=ROOT, check="", warn=None):
     """CL38: Done is judged by the kit as it is on the trunk now, not as it was when the part started (CL37 started
     before CL36's rule and skipped it): the work must contain origin/<trunk>. Only a repo with no origin at all is
     skipped (a local repo, a test); a fetch that fails or times out is refused (O55)."""
@@ -5128,10 +5181,42 @@ def check_trunk_merged(root=ROOT):
     if not fetched:
         return ["cannot fetch origin/%s to check that your work contains it: fix the network or the remote, then done "
                 "again (Done is never judged on an unknown trunk)" % trunk]
-    if g("merge-base", "--is-ancestor", "origin/" + trunk, "HEAD").returncode:
-        return ["the trunk moved since you started: merge it first (`git fetch origin %s && git merge --no-edit "
-                "origin/%s`), rerun the tests, then done again: Done is checked against the kit on %s now" % (trunk, trunk, trunk)]
-    return []
+    if not g("merge-base", "--is-ancestor", "origin/" + trunk, "HEAD").returncode:
+        return []
+    # CL78: the trunk moved. Done merges it itself in a throwaway worktree and runs the check there; the part merges only
+    # when that merge conflicts or the check fails merged (every landing used to send every running part into a merge loop).
+    d = os.path.join(tempfile.mkdtemp(prefix="kit-done-"), "w")
+    try:
+        if g("worktree", "add", "-q", "--detach", d, "HEAD").returncode:
+            return ["the trunk moved since you started and no throwaway worktree could be made to merge it: merge it yourself "
+                    "(`git fetch origin %s && git merge --no-edit origin/%s`), then done again" % (trunk, trunk)]
+        m = subprocess.run(["git", "-C", d, "-c", "user.name=board kit", "-c", "user.email=kit@localhost", "merge", "-q", "--no-edit",
+                            "origin/" + trunk], capture_output=True, text=True, timeout=180)
+        if m.returncode:
+            files = subprocess.run(["git", "-C", d, "diff", "--name-only", "--diff-filter=U"], capture_output=True, text=True).stdout.split()
+            return ["the trunk moved since you started and merging it conflicts in %s: merge it yourself (`git fetch origin %s && "
+                    "git merge --no-edit origin/%s`), resolve, rerun the tests, then done again" % (" ".join(files[:8]) or "?", trunk, trunk)]
+        cmd = str(check or "").strip()
+        if cmd and not cmd.lower().startswith("manual:"):
+            lim = int((_kit_config().get("kit") or {}).get("check_timeout_s") or 900)
+            try:
+                r = subprocess.run(cmd, shell=True, cwd=d, capture_output=True, text=True, timeout=lim,
+                                   env=dict(os.environ, KIT_BREAKS_COPY="1", PYTHONDONTWRITEBYTECODE="1"))
+                rc, tail = r.returncode, (r.stdout + r.stderr).strip()[-300:]
+            except subprocess.TimeoutExpired:
+                rc, tail = 124, "no answer in %d s" % lim
+            if rc:
+                return ["the trunk moved since you started and your check fails merged with it (exit %d): %s. Merge it yourself "
+                        "(`git fetch origin %s && git merge --no-edit origin/%s`), fix, then done again" % (rc, tail, trunk, trunk)]
+        if warn is not None:
+            warn.append("the trunk moved since you started: done merged origin/%s in a throwaway copy, cleanly%s; nothing to merge "
+                        "here (the land merges it)" % (trunk, ", and your check passes there" if cmd and not cmd.lower().startswith("manual:") else ""))
+        return []
+    except (OSError, subprocess.SubprocessError) as e:
+        return ["the trunk moved since you started and done could not merge it in a throwaway copy (%s): merge it yourself, then done again" % e]
+    finally:
+        g("worktree", "remove", "--force", d)
+        shutil.rmtree(os.path.dirname(d), ignore_errors=True)
 
 
 # ---------------------------------------------------------------- the form: a step's result, filled in and sent by `done`
@@ -5363,7 +5448,8 @@ def done(pid, db_path=None, root=None):
         err += pending_real
     else:
         warn += pending_real     # CL32/CL38: a real project too (pending)
-    err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
+    err += check_carried(root, pid)                  # CL78: the branch holds only its own work and the trunk
+    err += check_trunk_merged(root, p.get("check"), warn)   # CL38/CL78: merged with the trunk as it is now (done merges it itself)
     e_m, n_m = check_map(root)                       # M3: the part's stretch of the map, and what it built on it
     err += e_m
     warn += n_m
@@ -5390,6 +5476,9 @@ def done(pid, db_path=None, root=None):
             warn.append("proof: the board did not take it (is the board server running?): the step cannot be completed without it")
         elif artifact_here():
             warn.append("proof: written here; send it: `python3 -I .kit/kit.py artifact push`")
+    for e in err:                                    # CL78 (M10): each kind of refusal is counted, by itself
+        if refusal_kind(e) in ("branch carries another step", "branch behind the trunk", "conflict with the trunk", "stale board copy"):
+            record_refusal(pid, e)
     lines = (["NOT READY: %s" % pid] if err else ["OK: %s follows the post format" % pid])
     lines += ["  fix: " + e for e in err] + ["  note: " + w for w in warn]
     if not err:
@@ -7842,6 +7931,9 @@ def reviewed(pid, verdict, review_id, commit=None):
         _git_run("fetch", "-q", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (br, br), timeout=300)
         sha = _git_run("rev-parse", "-q", "--verify", "refs/remotes/origin/%s^{commit}" % br).stdout.strip()
     fields = {"review": verdict, "review_id": review_id}
+    if str(verdict or "").lower() == "redirect":         # CL78 (M10): a redirect is counted by its kind, by itself
+        c = _get_comment(review_id) or {}
+        record_refusal(pid, c.get("text") or "", refusal_kind(c.get("text")) or "review redirect")
     if sha:
         fields["review_commit"] = sha
     ok = _board_write("update", "posts", pid, fields)
@@ -11656,6 +11748,8 @@ def main(argv=None):
         return 0 if r.get("ok") else 1
     if a.cmd == "land":
         rc, txt = _landing("land", a.post)
+        if rc and "NOT LANDED" in txt:
+            record_refusal(a.post, txt)                  # CL78 (M10): counted by its kind
         print(txt)
         return rc
     if a.cmd == "save":
