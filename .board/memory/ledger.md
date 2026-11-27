@@ -378,3 +378,10 @@ enforced_by: review
 theme: stale-board-copie
 source: CL73 fresh-session check kit_docs
 created_at: 2026-11-27T09:23:30Z
+
+## F43 (fix, active): ledger fix dedupes on theme+source and answers ok with the old entry: repeats silently dropped
+scope: project
+enforced_by: review
+theme: repeat-counter-manual
+source: orchestrator 4 ledger dedupe find
+created_at: 2026-11-27T09:25:37Z
