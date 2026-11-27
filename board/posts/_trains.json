@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T02:18:41Z",
+ "created_at": "2026-11-27T02:28:14Z",
  "rows": [
   {
    "also": [],
@@ -19,7 +19,7 @@
    "post": "cl16-the-board-travels-in-git-always-current",
    "prompt": "",
    "session": "",
-   "state": "running",
+   "state": "idle",
    "store": []
   },
   {
@@ -82,7 +82,8 @@
     "M7",
     "M8",
     "M9",
-    "M10"
+    "M10",
+    "M11"
    ],
    "parent": "",
    "part": "P-memory",
@@ -141,7 +142,7 @@
    "post": "cl17-a-crashed-part-is-continued-from-its-las",
    "prompt": "",
    "session": "",
-   "state": "running",
+   "state": "idle",
    "store": []
   },
   {
@@ -969,7 +970,7 @@
    "post": "cl45-a-web-session-reconciles-its-artifact-wi",
    "prompt": "",
    "session": "session_01AE1HGkKV7HtTWfm1NM2pbv",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -991,7 +992,7 @@
    "post": "cl47-cl41-s-redirect-resolved-so-the-trunk-ca",
    "prompt": "",
    "session": "session_01AE1HGhpJ89oBj1xBqG4Daw",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1002,7 +1003,7 @@
    "post": "cl48-a-test-never-writes-to-the-real-board",
    "prompt": "",
    "session": "session_01AE1HGj52SDKNgDnUMMSCiL",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1013,7 +1014,7 @@
    "post": "cl49-a-part-reaches-the-orchestrator-running",
    "prompt": "",
    "session": "session_01AE1HGjpqRTVZzbRuw9ooMx",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1035,7 +1036,7 @@
    "post": "cl51-a-session-on-a-computer-never-writes-to",
    "prompt": "",
    "session": "session_01AE1HGhnU13NdSkjhWagX2m",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1090,7 +1091,7 @@
    "post": "cl53-a-session-always-starts-on-the-newest-co",
    "prompt": "",
    "session": "session_01AE1HGgvTvP34CBA3WeGJBJ",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1101,7 +1102,7 @@
    "post": "r6-the-next-step-is-the-most-important-one",
    "prompt": "",
    "session": "session_01AE1HGhgHvcKDoRPiZWHzPn",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1133,8 +1134,19 @@
    "part": "CL55",
    "post": "cl55-work-in-progress-is-on-github-within-min",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGhVmQjA6P148TQQMsY",
+   "state": "done",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-memory",
+   "part": "M11",
+   "post": "m11-sessions-use-the-kit-s-commands-the-ledg",
+   "prompt": "",
+   "session": "session_01AE1HGh3YKbEHRwHCUwdyNq",
+   "state": "done",
    "store": []
   },
   {
@@ -1161,5 +1173,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T02:18:41Z"
+ "updated_at": "2026-11-27T02:28:14Z"
 }
