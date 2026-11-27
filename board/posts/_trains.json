@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T09:02:35Z",
+ "created_at": "2026-11-27T09:07:07Z",
  "rows": [
   {
    "also": [],
@@ -128,7 +128,8 @@
     "R5",
     "R6",
     "antigravity-macos-local",
-    "guest-antigravity-app-local"
+    "guest-antigravity-app-local",
+    "R9"
    ],
    "parent": "",
    "part": "P-runners",
@@ -163,15 +164,26 @@
   },
   {
    "also": [],
+   "children": [],
+   "parent": "",
+   "part": "P-orchestrator",
+   "post": "",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
    "children": [
     "A1"
    ],
    "parent": "",
    "part": "P-agy",
-   "post": "a2-point-launch-line-and-kit-orchestrator-t",
+   "post": "a1-install-cmd-skips-linked-git-worktrees-s",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "running",
    "store": []
   },
   {
@@ -193,11 +205,14 @@
   {
    "also": [],
    "children": [
-    "CL76"
+    "CL74",
+    "CL75",
+    "CL76",
+    "CL77"
    ],
    "parent": "",
    "part": "P-reviews",
-   "post": "cl76-every-part-gets-the-idea-first-the-owner",
+   "post": "cl74-a-part-starts-its-own-review-at-done-a-r",
    "prompt": "",
    "session": "",
    "state": "running",
@@ -1224,8 +1239,8 @@
    "part": "M12",
    "post": "m12-the-orchestrator-hands-over-at-its-conte",
    "prompt": "",
-   "session": "session_01AE1HGigXaY4ApaiTBfLGWF",
-   "state": "done",
+   "session": "session_01AE1HGk2CJT771BtGPPKPXd",
+   "state": "running",
    "store": []
   },
   {
@@ -1307,9 +1322,7 @@
   },
   {
    "also": [],
-   "children": [
-    "A2"
-   ],
+   "children": [],
    "parent": "R5",
    "part": "R7",
    "post": "r7-kit-py-launch-updates-runner-on-takeover",
@@ -1370,7 +1383,7 @@
    "post": "a1-install-cmd-skips-linked-git-worktrees-s",
    "prompt": "",
    "session": "85f4c56f-89d5-492e-8b83-7fc575720a36",
-   "state": "done",
+   "state": "running",
    "store": []
   },
   {
@@ -1425,18 +1438,40 @@
    "post": "m14-the-usage-ledger-says-what-each-review-f",
    "prompt": "",
    "session": "session_01AE1HGgqiRtQ1f39ZXndGMM",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
    "also": [],
    "children": [],
-   "parent": "R7",
-   "part": "A2",
-   "post": "a2-point-launch-line-and-kit-orchestrator-t",
+   "parent": "P-reviews",
+   "part": "CL74",
+   "post": "cl74-a-part-starts-its-own-review-at-done-a-r",
    "prompt": "",
-   "session": "33d7c36c-bf1c-4f20-9b5f-04c3172f6e1b",
-   "state": "running",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-reviews",
+   "part": "CL75",
+   "post": "cl75-review-only-what-a-test-cannot-judge-no",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-runners",
+   "part": "R9",
+   "post": "r9-a-new-step-is-compared-with-every-open-a",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -1449,8 +1484,30 @@
    "session": "session_01AE1HGibELwzhQ31mndRps5",
    "state": "running",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-reviews",
+   "part": "CL77",
+   "post": "cl77-a-part-reads-its-task-once-the-launch-pr",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-reviews",
+   "part": "CL78",
+   "post": "cl78-a-part-s-branch-holds-only-its-own-work",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T09:02:35Z"
+ "updated_at": "2026-11-27T09:07:07Z"
 }

@@ -1,5 +1,5 @@
 {
- "at": "2026-11-27T08:49:06Z",
+ "at": "2026-11-27T09:07:09Z",
  "docs": {
   "comments/004abd3c5e334e6aac34": "9a926f42c90c194d",
   "comments/0d7buihhnapamdz5rqkz": "e06545c9744f3f81",
@@ -352,7 +352,7 @@
   "posts/CCW-claude-code-web-adaptation": "4592106dde9e3a0b",
   "posts/KIT-installed": "d4661f384b54db9a",
   "posts/_dashboard": "0dc010defbef5dd5",
-  "posts/_files": "6ec83902b15af0ae",
+  "posts/_files": "f97c7dcfa0984fab",
   "posts/_orchestrator": "48e3ac4252d772e1",
   "posts/_prefs": "66ac9aae0ab8d69b",
   "posts/_train-agy": "03ec2293a8114220",
@@ -436,6 +436,7 @@
   "posts/cl72-one-way-to-touch-the-board-the-kit-print": "fe4f12d826aa7a58",
   "posts/cl73-the-stop-check-counts-only-what-this-ses": "fde6586e88c1654e",
   "posts/cl76-every-part-gets-the-idea-first-the-owner": "f9c46acaf009a1af",
+  "posts/cl78-a-part-s-branch-holds-only-its-own-work": "3b2f655c1cc939cc",
   "posts/cl8-design-principles-complete-and-no-emoji": "ff80ffd0a55854d3",
   "posts/cl9-checks-that-must-be-able-to-fail-breaks": "519d0fa01ff5e220",
   "posts/cl9b-cheap-breaks-revert-asked-pair-sample": "9d2d959c48fef61f",
