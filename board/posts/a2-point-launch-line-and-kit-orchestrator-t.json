@@ -1,10 +1,28 @@
 {
- "body": "Read CR-r7-r4-combined, project rules, and target files",
+ "artifacts": [
+  "kit/ORCHESTRATOR.template.md",
+  "kit/orchestrator.template.md",
+  "scripts/kit.py",
+  "tests/test_launch_runtime.py",
+  "tests/test_platform_matrix.py",
+  "tests/test_train_and_task_train.py"
+ ],
+ "bars": [
+  "20 of 20 tests pass in tests/test_launch_runtime.py (including I1, stress I1, I2, stress I2, I3, stress I3)",
+  "7 of 7 tests pass in tests/test_cl54_prompt_from_post.py under agy (previously failed when step new emitted step prompt + invoke_subagent)",
+  "16 of 16 tests pass in tests/test_platform_matrix.py and 26 of 26 in tests/test_train_and_task_train.py",
+  "2 of 2 tests pass in tests/test_kit_copies_current.py and 7 of 7 in tests/test_new_install.py (78 of 78 total across all 6 suites)",
+  "2 of 2 agy orchestrator guides (kit/orchestrator.template.md and kit/ORCHESTRATOR.template.md) and their .kit/ copies updated and verified on a scratch copy of Harmonize"
+ ],
+ "body": "Antigravity orchestrators now launch parts through the single kit launch flow instead of raw subagent instructions, matching every other runner. Creating a new step, resuming a stopped one, or reading either orchestrator guide now points straight at the unified launch step so runner tracking, branch setup, and device limits are always applied.\n\n### What changed\n- `scripts/kit.py` (and `.kit/kit.py`):\n  - `_launch_line()` under `lmode == \"invoke_subagent\"` now returns `python3 -I .kit/kit.py launch <post>` (with `--model <m>` when non-`inherit`) whenever a post id is present, falling back to `invoke_subagent(...)` only when no post id can be derived.\n  - `_launch_workflow()` and `resume()` under `agy` point at `python3 -I .kit/kit.py launch <post>` (and `--continue` / `--take` for resuming/taking over steps) rather than `step prompt` + raw `invoke_subagent`.\n- `kit/orchestrator.template.md` and `kit/ORCHESTRATOR.template.md` (and their installed `.kit/orchestrator.md` and `.kit/ORCHESTRATOR.md` copies via `install.py . --update --no-cmd`):\n  - Both agy orchestrator guides direct part launches through `kit.py step new` + `python3 -I .kit/kit.py launch <post id>`, while keeping clerk rotation, consultant, and in-process handover `invoke_subagent` calls intact.\n- Tests:\n  - `tests/test_launch_runtime.py`: added `I1` / `stress I1` (`_launch_line` agy behavior, `--model`, `inherit`, explicit `post`, fallback, cross-config override), `I2` / `stress I2` (`step_new`, `_launch_workflow`, `resume` under `agy` including on claude-cli-configured repos), and `I3` / `stress I3` (both agy orchestrator templates and `.kit/` copies, plus stale-phrase regression checks).\n  - `tests/test_platform_matrix.py` and `tests/test_train_and_task_train.py`: updated `invoke_subagent` platform-matrix and `PostFormat` expectations to assert `kit.py launch` for `agy`.\n  - Fixes `tests/test_cl54_prompt_from_post.py::test_step_new_writes_the_post_only_with_where_to_work` when run under `agy`.\n\n### Real-project dry run (Harmonize)\nRan on a scratch copy of `/home/anon/harmonize` at `/tmp/a2-harmonize-dryrun` (cleaned up afterward; `/home/anon/harmonize` untouched, never pushed):\n- `python3 -I /home/anon/board-a2/install.py /tmp/a2-harmonize-dryrun --update --no-cmd` exited 0 and updated `.kit/kit.py`, `.kit/orchestrator.md`, and `.kit/ORCHESTRATOR.md`.\n- Under `ANTIGRAVITY_AGENT=1`, `python3 -I .kit/kit.py resume` exited 0 with `kit.py launch` relaunch commands, `_launch_line(\"H1\", \"docs/prompts/h1-sample.md\")` returned `python3 -I .kit/kit.py launch h1-sample`, and both `.kit/orchestrator.md` and `.kit/ORCHESTRATOR.md` contain `kit.py launch <post id>`.",
  "branch": "a2",
+ "breaks": "python3 -c 'p=\"scripts/kit.py\"; s=open(p).read(); assert \"if post:   # CL13 / A2:\" in s; open(p,\"w\").write(s.replace(\"if post:   # CL13 / A2:\", \"if False:  # CL13 / A2:\", 1))'",
+ "check": "python3 -I .kit/device.py run --kind tests -- python3 -m unittest tests.test_launch_runtime tests.test_cl54_prompt_from_post tests.test_platform_matrix tests.test_train_and_task_train tests.test_kit_copies_current",
  "column": "info",
  "created_at": "2026-11-27T08:41:22Z",
  "differs": "Follow-up from CR-r7-r4-combined (continue). Unlike A1 (which fixed install_cmd overwriting ~/.local/bin/<cmd> from linked worktrees), A2 updates _launch_line() in scripts/kit.py and kit/orchestrator.template.md so agy orchestrator guides and step new output point at kit.py launch <post>, with tests in tests/test_launch_runtime.py.",
  "from": "orchestrator",
+ "handoff": "Branch `a2` is merged with `origin/main` (`00137990`), `.kit/` copies are refreshed via `install.py . --update --no-cmd`, and all 5 affected suites plus `test_new_install` and the Harmonize scratch dry-run pass. Ready for review / `kit.py step complete` and landing onto `main`.",
  "intent": {
   "at": "2026-11-27T23:34:45Z",
   "cases": [
@@ -31,6 +49,9 @@
   "real": "live Board repo agy guides and Harmonize scratch dry run under ANTIGRAVITY_AGENT=1 (install.py --update --no-cmd, kit.py resume, _launch_line, and both .kit/ orchestrator guides verified)",
   "updated_at": "2026-11-27T23:34:45Z"
  },
+ "not_checked": [
+  "Full scripts/run_all_tests.py and browser Playwright UI suites (no UI files touched; targeted 78-test run across all affected launch, platform matrix, CL54, train, install, and kit copy suites passed 0 failed)"
+ ],
  "orchestrator": "702b0528-ed8c-482b-a8d8-9ffbbcdd8029",
  "orchestrator_device": "penguin",
  "orchestrator_name": "Antigravity orchestrator",
@@ -77,5 +98,6 @@
  "task": "Follow-up from combined review CR-r7-r4-combined (`continue`):\n\n1. Update `_launch_line()` in `scripts/kit.py` (and `.kit/kit.py`) and `kit/orchestrator.template.md` (plus its `.kit/orchestrator.md` copy via `install.py . --update --no-cmd`) so `agy` orchestrator guides and `step new` output point directly at `python3 -I .kit/kit.py launch <post>` instead of raw `invoke_subagent` instructions.\n2. Update or add unit tests in `tests/test_launch_runtime.py` verifying `_launch_line()` returns `kit.py launch` for `agy`.",
  "title": "Point _launch_line() and kit/orchestrator.template.md at kit.py launch for agy",
  "train": "agy",
- "updated_at": "2026-11-27T23:34:46Z"
+ "updated_at": "2026-11-27T23:34:57Z",
+ "verdict": "Antigravity step creation, resume guidance, and both orchestrator guides now route part launches uniformly through the kit launcher instead of raw subagent calls."
 }
