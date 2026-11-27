@@ -80,7 +80,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|mcp__claude-code-remote__send_message|SendMessage|TaskCreate|TaskUpdate|Edit|Write|MultiEdit",
+        "matcher": "Bash|mcp__claude-code-remote__send_message|SendMessage|TaskCreate|TaskUpdate|ArtifactData|Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
