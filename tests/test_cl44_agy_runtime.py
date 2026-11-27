@@ -537,6 +537,21 @@ class Bug8AgyUpdateStepsToBoard(unittest.TestCase):
             self.assertEqual(calls[0][:5], ["sub", "cl44-x", "1", "--status", "done"])
             self.assertEqual(calls[1][:5], ["sub", "cl44-x", "2", "--status", "doing"])
 
+    def test_part_post_matches_backticked_or_quoted_prompt_path(self):
+        from unittest import mock
+        tt = _load("tt_cl44_b8_bt", ROOT / "kit" / "hooks" / "kit_task_train.py")
+        for opener in (
+            "Your prompt is `docs/prompts/r5-example.md`: read it and do it.",
+            'Your prompt is "docs/prompts/r5-example.md": read it and do it.',
+            "Your prompt is 'docs/prompts/r5-example.md': read it and do it.",
+            "Your prompt is docs/prompts/r5-example.md: read it and do it.",
+        ):
+            st = {}
+            with mock.patch.dict(os.environ, {"KIT_ROLE": "orchestrator"}, clear=False):
+                os.environ.pop("KIT_POST", None)
+                got = tt.part_post({"lastUserInput": opener}, st)
+            self.assertEqual(got, "r5-example", opener)
+
 
 class Bug9AgyPreToolUseSchemaAndActivity(unittest.TestCase):
     AGY_SCHEMAS = {
