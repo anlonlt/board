@@ -164,6 +164,13 @@ def session_role(data, root, fallback=None):
     return os.environ.get("KIT_ROLE") or fallback
 
 
+def project_rules(k, role):
+    """CL61: a project's own hand-over rules (kit.<role>.handover_rules, what install.py --update folded out of a fork
+    of this hook), said after the kit's steps; the kit's hook stays the one that decides."""
+    rules = [str(r).strip() for r in ((k.get(role) or {}).get("handover_rules") or []) if str(r).strip()]
+    return (" This project's rules: " + " ".join(r if r[-1] in ".!?" else r + "." for r in rules)) if rules else ""
+
+
 def claude_handover(data, root):
     """Claude Code Stop: at the role's context limit, block the stop ONCE with the hand-over steps."""
     if data.get("stop_hook_active"):
@@ -208,7 +215,7 @@ def claude_handover(data, root):
             "--role clerk` (a fresh clerk, same name, starts and arms its own listener; this session and its listener "
             "stop), then end your turn with \"·\"."
         ) % (used_k, limit_k)
-    return {"decision": "block", "reason": reason}
+    return {"decision": "block", "reason": reason + project_rules(k, role)}
 
 
 def detect_role(data, cid, tp_role, orch_sid):
@@ -310,7 +317,7 @@ def main():
             "python3 -I .kit/board_cli.py comments watch --off --watcher clerk."
         ) % (used_k, limit_k, target, used_k, limit_k)
 
-    print(json.dumps({"decision": "deny", "reason": reason}, ensure_ascii=False))
+    print(json.dumps({"decision": "deny", "reason": reason + project_rules(k, role)}, ensure_ascii=False))
     return 0
 
 

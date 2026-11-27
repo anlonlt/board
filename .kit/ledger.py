@@ -1751,3 +1751,23 @@ def alarm_lines(memory_dir, kit_root=None):
         if not d["check"] and not d.get("design"):
             then.append("- His decision %s has no check: %s: give it one (`--enforced-by test:...|hook:...|refusal:...`)." % (d["id"], d["summary"][:140]))
     return first, then
+
+
+def open_items(memory_dir, kit_root=None):
+    """CL72 (the owner, 2026-11-27: "Why do you skip stuff? It's not the first time."): the items of resume's "First:
+    what keeps coming back" that no design step covers yet, each with the command that records one. `kit.py launch`
+    and `kit.py land` refuse while this list is not empty: a section of text was skipped, a gate is not.
+    -> [{"kind": "rule"|"fix", "theme", "ids", "what", "command"}]."""
+    out = []
+    for r in owner_rules(memory_dir, kit_root=kit_root):
+        if r["raised"]:
+            out.append({"kind": "rule", "theme": r["theme"], "ids": r["ids"],
+                        "what": "the owner said it %d times and nothing enforces it: \"%s\"" % (
+                            r["count"], min(r["quotes"], key=len)[:140]),
+                        "command": "python3 -I .kit/kit.py ledger design \"%s\" --post <step>" % r["theme"]})
+    for k in fix_kinds(memory_dir, kit_root=kit_root):
+        if k["raised"]:
+            out.append({"kind": "fix", "theme": k["kind"], "ids": k["ids"],
+                        "what": "fixed %d times, one kind of bug: %s" % (k["count"], k["kind"]),
+                        "command": "python3 -I .kit/kit.py ledger design \"%s\" --post <step>" % k["kind"]})
+    return out

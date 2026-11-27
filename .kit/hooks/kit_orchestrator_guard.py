@@ -16,7 +16,10 @@ the orchestrator only, the three gestures that bypass the kit, and says the kit'
     lets another launch through (`orchestrator` a successor, `board-clerk` the clerk, `review` a review): the title
     is never read for this (CL24); and its `source_url` is the step's repo (CL26: its post on an attached board in
     the local copy names it; else a known clone holding the prompt file), so the part can push its work.
-A targeted lookup pages no further: a `where` query with limit <= 5 that carries a `cursor` is a broad read.
+CL72 replaces the read and write rules below (kept for their history): a board call goes out only when it is exactly one
+the kit just printed (`kit.py artifact sync`, recorded in .kit/run/artifact/printed.json) or one with no kit form
+(kit_config.free_call), for every role; on an Artifact board a raw `board_cli.py get|list|query posts` is refused too.
+The audit (usage.py) counts by the same list (kit_config.py).
 CL30 (Harmonize docs/KIT-SCRIPTS.md § Gaps, the owner's yes on o52-q-close-gaps-1022): the board rules hold EVERY
 session, parts, the clerk and reviews too, not only the orchestrator:
   - a raw `list` / broad `query` of posts or comments: as above, for everyone;
@@ -44,6 +47,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_config import config, project_dir  # noqa: E402
+import kit_config as kc  # noqa: E402
 
 BOARD_COLL = re.compile(r"^(repos/[^/]+/)?(posts|comments)$")
 PART_PROMPT = re.compile(r"^Your prompt is docs/prompts/[\w.-]+\.md\b")
@@ -177,12 +181,6 @@ def under(path, root, *parts):
     return p == base or p.startswith(base + os.sep)
 
 
-READ_WAY = ("a whole collection is read only through the kit: `python3 -I .kit/kit.py artifact pull` (it prints the "
-            "ArtifactData calls, changes only after the first load; a part's first: `--post <id>`, its own documents; "
-            "the attached boards' repos/<id>/posts and comments too, "
-            "saved under .kit/run/artifact/in), `python3 -I .kit/kit.py artifact load`, then `kit.py resume`, "
-            "`kit.py post <id>`, `kit.py open`, `kit.py since <time>`; one document: ArtifactData `get`; a targeted "
-            "lookup: `query` with a `where` and limit <= 5")
 STEP_WAY = ("plan the step with TaskCreate, metadata {\"train\": ..., \"part\": ...}: the task-train hook writes its post "
             "(the task, written once) and answers with the launch line; `kit.py launch` generates docs/prompts/<id>.md from it; local changes go to the Artifact "
             "with `python3 -I .kit/kit.py artifact push`")
@@ -190,13 +188,6 @@ LAUNCH_WAY = ("launch a part from its prompt file: TaskCreate {train, part} firs
               "its post), `python3 -I .kit/kit.py launch <id>` (it generates and commits docs/prompts/<id>.md from the post, and prints the call), then create_session with the prompt \"Your prompt is docs/prompts/<id>.md: read "
               "it and do it.\" (at most %d characters, starting so; a successor orchestrator: tag `orchestrator`; a clerk: "
               "tag `board-clerk`; a review: tag `review`; the title is not read)" % PROMPT_MAX)
-
-
-WRITE_WAY = ("write the board through the kit: on the local copy (`python3 -I .kit/kit.py artifact pull`, the calls, "
-             "`kit.py artifact load` first), `python3 -I .kit/board_cli.py update posts <id> --data '{...}'` (your "
-             "post), `board_cli.py reply <post> --text ...` (an answer), `board_cli.py set comments <id> --data ...`; "
-             "then `python3 -I .kit/kit.py artifact push`, the ArtifactData batch it prints, and `kit.py artifact sent "
-             "<batch>`")
 
 
 def gh_repo(u):
@@ -305,10 +296,6 @@ def _hand_write(w, root):
     return (m.group(2), "%s/%s" % (w.get("collection"), did))
 
 
-PULL_FRESH_S = 30 * 60
-PULL_V = 2
-
-
 def _art_bases(root):
     bases = [os.path.join(r, ".kit", "run", "artifact") for r in kit_roots(root)]
     if os.environ.get("KIT_ARTIFACT_DIR"):
@@ -316,103 +303,42 @@ def _art_bases(root):
     return bases
 
 
-def _same_call(c, ti):
-    """A printed call (pull.json) and this one: the same action, collection, `where` and `limit` (a cursor aside)."""
-    q = ti.get("query") if isinstance(ti.get("query"), dict) else {}
-    return (c.get("action") == ti.get("action") and c.get("collection") == ti.get("collection")
-            and (c.get("where") or None) == (q.get("where") or None) and c.get("limit") == q.get("limit"))
-
-
-def pulled(ti, root):
-    """M11: this whole-collection read is one `kit.py artifact pull` printed, whole (its record .kit/run/artifact/
-    pull.json, version 2, under 30 minutes old: action, collection, where, limit), saved under that copy's
-    .kit/run/artifact, and not used yet: each printed call passes once (CR-m11: a record of {action, collection}
-    let any broad query of that collection through for 30 minutes). The next pages of a printed list (its `cursor`)
-    pass after it. Used calls are marked in the record."""
-    out = str(ti.get("out_dir") or "")
-    q = ti.get("query") if isinstance(ti.get("query"), dict) else {}
-    for base in _art_bases(root):
-        if not under(out, base):
-            continue
-        p = os.path.join(base, "pull.json")
-        rec = _read(p) or {}
-        try:
-            fresh = rec.get("v") == PULL_V and time.time() - float(rec.get("at") or 0) <= PULL_FRESH_S
-        except (TypeError, ValueError):
-            fresh = False
-        if not fresh:
-            continue
-        for c in rec.get("calls") or []:
-            if not isinstance(c, dict) or not _same_call(c, ti):
-                continue
-            if q.get("cursor"):
-                if c.get("used"):
-                    return True                   # the next page of a list the pull printed
-                continue
-            if c.get("used"):
-                continue
-            c["used"] = time.time()
-            try:
-                with open(p, "w", encoding="utf-8") as fh:
-                    json.dump(rec, fh)
-            except OSError:
-                pass
-            return True
-    return False
-
-
-def pending_batch(root):
-    """M11 (CR-m11): a batch `kit.py artifact push` built that is not recorded sent yet (its record
-    .kit/run/artifact/pending.json, 30 minutes): {ids: ["<collection>/<doc_id>", ...]}, else None. While it is out,
-    a refused batch is followed only by `get` of the documents it names (then `artifact pin`), never a list."""
-    for base in _art_bases(root):
-        rec = _read(os.path.join(base, "pending.json"))
-        if not isinstance(rec, dict):
-            continue
-        try:
-            if time.time() - float(rec.get("at") or 0) <= PULL_FRESH_S and rec.get("ids"):
-                return rec
-        except (TypeError, ValueError):
-            pass
-    return None
-
-
 def board_verdict(ti, root, orch):
-    """CL30: the board rules for every session (the orchestrator, parts, the clerk, reviews)."""
+    """CL72 (the owner, 2026-11-27: "No session may do anything by hand"): a board call goes out only when it is,
+    exactly, one the kit just printed (kit_config.ledger_match: same action, collection, document, query, out_dir,
+    version and files) or one with no kit form (kit_config.free_call: the typing dots, the clerk's marks, a new
+    orchestrator's session). Every role, the orchestrator included; the audit counts by the same list."""
+    if not kc.board_call(ti) or kc.free_call(ti):
+        return None
+    whys = []
+    for base in _art_bases(root):
+        why = kc.ledger_match(base, ti)
+        if why is None:
+            return None
+        whys.append(why)
     act = str(ti.get("action") or "")
-    pend = pending_batch(root) if act in ("list", "query", "get") else None
-    if pend:
-        key = "%s/%s" % (ti.get("collection"), ti.get("doc_id"))
-        if act == "get" and key in pend["ids"]:
-            return None
-        return ("a %s while a batch of `kit.py artifact push` is out (%s): after a refused batch read only the "
-                "documents it names, each by `get` (%s), then `python3 -I .kit/kit.py artifact pin <collection>/<id>=<N>` "
-                "and push again; a sent batch: `kit.py artifact sent <batch>` first." % (
-                    act, key if act == "get" else ti.get("collection"), ", ".join(pend["ids"][:6])))
-    if act in ("list", "query") and BOARD_COLL.match(str(ti.get("collection") or "")):
-        if pulled(ti, root):
-            return None
-        q = ti.get("query") or {}
-        try:
-            lim = int(q.get("limit") or 100)
-        except (TypeError, ValueError):
-            lim = 100
-        if act == "query" and q.get("where") and lim <= 5 and not q.get("cursor"):
-            return None
-        return "a raw %s of %s: %s." % (act, ti.get("collection"), READ_WAY)
-    writes = ti.get("writes") if act == "batch" else [dict(ti, op=act)]
-    for w in writes or []:
-        if not isinstance(w, dict):
-            continue
-        hw = _hand_write(w, root)
-        if not hw:
-            continue
-        kind, where = hw
-        if orch and kind == "posts" and not str(w.get("doc_id") or "").startswith("_"):
-            return "a step post written by hand (%s): %s; any other change: %s." % (where, STEP_WAY, WRITE_WAY)
-        return "a %s written by hand (%s, `%s`): %s." % ("post" if kind == "posts" else "comment", where,
-                                                        w.get("op") or w.get("action"), WRITE_WAY)
-    return None
+    what = "a raw %s of %s" % (act, ti.get("collection")) if act in ("get", "list", "query") else None
+    if what is None:
+        hw = next((h for h in (_hand_write(w, root) for w in kc.call_writes(ti)) if h), None)
+        kind, where = hw if hw else ("posts", "%s/%s" % (ti.get("collection"), ti.get("doc_id")))
+        if orch and kind == "posts" and not where.rsplit("/", 1)[-1].startswith("_") and act != "batch":
+            return "a step post written by hand (%s): %s; any other change: %s." % (where, STEP_WAY, kc.SYNC_WAY)
+        what = "a batch not printed by the kit" if act == "batch" else "a %s written by hand (%s, `%s`)" % (
+            "post" if kind == "posts" else "comment" if kind == "comments" else "board document", where, act)
+    if act in ("get", "list", "query"):
+        return "%s: %s. Every board read goes through %s; one post is read with %s." % (
+            what, whys[0] if whys else "not printed", kc.SYNC_WAY, kc.CLI_READ_WAY)
+    return "%s: %s. A change is made on the local copy (%s), and it reaches the board through %s." % (
+        what, whys[0] if whys else "not printed", kc.LOCAL_WRITE_WAY, kc.SYNC_WAY)
+
+
+def cli_verdict(command, data):
+    """CL72: on an Artifact board, a raw read of a post on the local copy (`board_cli.py get|list|query posts`): the
+    audit's cli-get-post, refused by the same rule (kit_config.cli_raw_read)."""
+    hit = kc.cli_raw_read(command)
+    if not hit:
+        return None
+    return "a raw read of the board's posts (`%s`): %s." % (hit, kc.CLI_READ_WAY)
 
 
 INLINE = re.compile(r"^Your prompt follows; first commit it to docs/prompts/([\w.-]+)\.md on your branch")
@@ -493,11 +419,22 @@ def subagent_verdict(ti, root):
     return None
 
 
+def _artifact_board(data):
+    if os.environ.get("KIT_ARTIFACT_URL"):
+        return True
+    c = config(data)
+    k = c.get("kit") or {}
+    a = k.get("artifact") if isinstance(k.get("artifact"), dict) else {}
+    return any("claude.ai/" in str(u or "") for u in (c.get("board_url"), k.get("artifact_url"), a.get("url")))
+
+
 def verdict(data, root, orch=True):
     name = str(data.get("tool_name") or "")
     ti = data.get("tool_input") or {}
     if name == "ArtifactData":
         return board_verdict(ti, root, orch)
+    if name == "Bash" and _artifact_board(data):
+        return cli_verdict(str(ti.get("command") or ""), data)
     if name.endswith("create_session") and orch:
         return launch_verdict(ti, root)
     return None
@@ -520,8 +457,8 @@ def main():
     why = verdict(data, project_dir(data), orch)
     if not why:
         return 0
-    print("REFUSED%s: " % (" for the orchestrator" if orch else " (the kit's way holds every session, CL30)") + why + " The kit does this for a fraction of the tokens (README "
-          "§ Artifact mode).", file=sys.stderr)
+    print("REFUSED%s: " % (" for the orchestrator" if orch else " (the kit's way holds every session, CL30/CL72)") + why +
+          " The kit does this for a fraction of the tokens (README § Artifact mode).", file=sys.stderr)
     return 2
 
 

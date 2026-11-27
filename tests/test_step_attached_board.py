@@ -87,7 +87,7 @@ class StepOnAttachedBoard(unittest.TestCase):
         # CL54: the post only; the launch generates the prompt from it (in the board's clone)
         self.assertFalse(os.path.exists(os.path.join(self.proj, res["prompt"])))
         # the orchestrator guard lets this kit-made file through, and still refuses the same post written by hand
-        self.assertIsNone(self.guard.verdict({"tool_name": "ArtifactData", "tool_input": dict(w, url="u")}, self.proj))
+        self.assertIsNone(self.guard.verdict({"tool_name": "ArtifactData", "tool_input": w}, self.proj))
         hand = {"action": "set", "url": "u", "collection": "repos/board/posts", "doc_id": pid, "data": doc}
         self.assertIn("by hand", self.guard.verdict({"tool_name": "ArtifactData", "tool_input": hand}, self.proj))
         return pid
