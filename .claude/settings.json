@@ -68,7 +68,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "SendMessage|Bash|TaskCreate|TaskUpdate|Edit|Write|MultiEdit",
+        "matcher": "SendMessage|Bash|TaskCreate|TaskUpdate|ArtifactData|Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",

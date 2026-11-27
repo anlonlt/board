@@ -1382,6 +1382,240 @@ def artifact_pull(full=False, post=None):
     return "\n".join(lines) + "\n"
 
 
+# ---------------------------------------------------------------- CL72: one command for every board read and write
+# The owner, 2026-11-27: "No session may do anything by hand." `kit.py artifact sync` is the one door: each run does what
+# it can itself (load, push, pin, record sent) and prints at most ONE set of ArtifactData calls, each as the exact tool
+# input (JSON) to pass, nothing to fill in; the kit records them (kit_config.ledger_record) and the guard lets only those
+# through. The versions the replies name are read by the PostToolUse hook (kit_config.seen_record), never copied by hand.
+
+
+def _kc():
+    """The kit's shared hook helpers (kit_config.py): the one list of the calls the kit allows (CL72)."""
+    for d in (os.path.join(ROOT, ".kit", "hooks"), os.path.join(ROOT, "kit", "hooks"),
+              os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kit", "hooks"),
+              os.path.join(os.path.dirname(os.path.abspath(__file__)), "hooks")):
+        p = os.path.join(d, "kit_config.py")
+        if os.path.isfile(p):
+            spec = importlib.util.spec_from_file_location("kit_config_cl72", p)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            if hasattr(mod, "ledger_record"):
+                return mod
+    raise Conflict("the kit's hooks/kit_config.py (CL72) is missing: `python3 install.py . --update`")
+
+
+def _pull_calls(full=False, post=None):
+    """The pull's calls as ArtifactData tool inputs (what `artifact pull` prints as text)."""
+    board = artifact_url()
+    d = os.path.join(_art_dir(), "in")
+    since = "" if full else str(_art_state().get("loaded_at") or "")
+    pre = _art_prefix()
+    scope = "" if full or since else _scope_post(post)
+    calls = []
+    if scope:
+        ids = [scope] + list(SCOPE_CARDS)
+        try:
+            doc = _board_request(local_board_url(), "doc/posts/%s" % urllib.parse.quote(scope, safe=""),
+                                 token=_resolve_board_token(None))
+            tr = _norm_train((doc.get("data") or {}).get("train")) if doc.get("exists") else ""
+            if tr:
+                ids.append("_train-" + tr)
+        except Exception:
+            pass
+        calls += [{"action": "get", "url": board, "collection": pre + "posts", "doc_id": i, "out_dir": d} for i in ids]
+        calls.append({"action": "query", "url": board, "collection": pre + "comments",
+                      "query": {"where": [["post_id", "==", scope]], "limit": 1000}, "out_dir": d})
+        calls.append({"action": "get", "url": board, "collection": pre + "kit_docs", "doc_id": "_index", "out_dir": d})
+        return calls
+    if since:
+        t = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) - timedelta(minutes=10)
+        since = t.strftime("%Y-%m-%dT%H:%M:%SZ")
+    colls = [pre + c for c in ART_COLLS]
+    if not pre:
+        colls += ["repos/%s/%s" % (rid, c) for rid in _attached_ids() for c in ART_COLLS]
+    for c in colls:
+        if since:
+            field = "updated_at" if c.endswith("posts") else "created_at"
+            calls.append({"action": "query", "url": board, "collection": c,
+                          "query": {"where": [[field, ">", since]], "limit": 1000}, "out_dir": d})
+        else:
+            calls.append({"action": "list", "url": board, "collection": c, "query": {"limit": 1000}, "out_dir": d})
+    calls.append({"action": "get", "url": board, "collection": pre + "kit_docs", "doc_id": "_index", "out_dir": d})
+    if not pre:
+        calls.append({"action": "get", "url": board, "collection": "kit_repos", "doc_id": "_index", "out_dir": d})
+    return calls
+
+
+def _sync_path():
+    return os.path.join(_art_dir(), "sync.json")
+
+
+def _calls_text(calls, what):
+    lines = ["# %s: make these %d ArtifactData call(s), each with exactly this input (copy it whole; nothing to fill in)"
+             % (what, len(calls)), ""]
+    for c in calls:
+        lines.append("- `ArtifactData` %s" % json.dumps(c, ensure_ascii=False))
+        if c.get("action") == "list":
+            lines.append("  (while it returns a `next_cursor`: the same input with `query.cursor` set to it)")
+        if c.get("action") == "get":
+            lines.append("  (\"No document\" is fine)")
+    lines += ["", "Then: `python3 -I .kit/kit.py artifact sync` again (it reads the versions from the replies itself). "
+              "Any other board call is refused (CL72)."]
+    return "\n".join(lines) + "\n"
+
+
+def _print_calls(calls, by, what, step):
+    _kc().ledger_record(_art_dir(), calls, by, url=artifact_url(), step=step)
+    return _calls_text(calls, what)
+
+
+def _own_docs(post):
+    """CL72: a part sends only its own documents: its post, the comments under it, its activity line."""
+    if not post:
+        return None
+
+    def own(coll, did, data):
+        if coll == "posts":
+            return did == post
+        if coll == "comments":
+            return str((data or {}).get("post_id") or "") == post
+        return did == post
+    return own
+
+
+def _seen_versions(kc, since):
+    """{this copy's key: version} of the documents the replies named since `since` (the PostToolUse hook's record)."""
+    out = {}
+    for k, v in (kc.seen_read(_art_dir()).get("versions") or {}).items():
+        if isinstance(v, dict) and float(v.get("at") or 0) >= since - 1:
+            out[_art_key(k)] = v
+    return out
+
+
+def artifact_sync(post=None, full=False, url=None, token=None):
+    """`kit.py artifact sync`: the next step of pull, load, push (a part: its own documents), pin, retry, sent.
+    -> (text, done?)."""
+    if not artifact_url():
+        raise Conflict("no Artifact board in .kit/config.json: the local board is the board here")
+    kc = _kc()
+    base = _art_dir()
+    sy = _read_json(_sync_path()) or {}
+    post = post or _scope_post() or ""
+    log = []
+
+    def save(**kw):
+        sy.update(kw)
+        os.makedirs(base, exist_ok=True)
+        write_doc(_sync_path(), sy)
+
+    def waiting():
+        left = [c for c, used in kc.ledger_calls(base) if not used]
+        if left:
+            return _calls_text(left, "Not made yet (the guard lets exactly these through)")
+        return None
+
+    phase = sy.get("phase") or "idle"
+    if phase in ("pull", "pin"):
+        w = waiting()
+        if w:
+            return w, False
+    if phase == "pull":
+        r = artifact_load(url=url, token=token)
+        st = _art_state()
+        for k, v in _seen_versions(kc, float(sy.get("at") or 0)).items():
+            if _read_json(_base_path(*k.split("/", 1))) is not None and k.count("/") == 1:
+                st["versions"][k] = int(v["version"])        # the version the pull's reply named: no pin round trip
+        _art_save(st)
+        log.append("Loaded: %d taken, %d kept from here, %d merged." % (r["taken"], r["kept_here"], r["merged"]))
+        phase = "push"
+    elif phase == "pin":
+        pairs = []
+        for key, v in _seen_versions(kc, float(sy.get("at") or 0)).items():
+            if key not in (sy.get("pins") or []) or not v.get("path"):
+                continue
+            coll, did = key.split("/", 1)
+            dst = os.path.join(_pin_dir(), "v%d" % int(v["version"]), *(_art_prefix() + coll).split("/"), did + ".json")
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if os.path.abspath(v["path"]) != os.path.abspath(dst) and os.path.isfile(v["path"]):
+                shutil.copyfile(v["path"], dst)
+            pairs.append("%s=%d" % (key, int(v["version"])))
+        missing = [k for k in (sy.get("pins") or []) if not any(p.startswith(k + "=") for p in pairs)]
+        st = _art_state()
+        for k in missing:                                  # "No document": not in the Artifact, a create
+            if k not in st.get("not_there", []):
+                st.setdefault("not_there", []).append(k)
+            st["versions"].pop(k, None)
+        _art_save(st)
+        rep = []
+        artifact_pin(pairs, url=url, token=token, report=rep)
+        log += rep
+        phase = "push"
+    elif phase == "batch":
+        b = sy.get("batch") or ""
+        first = (_read_json(b) or [{}])[0] if os.path.isfile(b) else {}
+        out = (kc.seen_read(base).get("batches") or {}).get(os.path.realpath(str(first.get("file_path") or "")))
+        if out is None or float(out.get("at") or 0) < float(sy.get("at") or 0) - 1:
+            w = waiting()
+            if w:
+                return w, False
+            out = {"ok": True}                       # made, and the reply was not seen by the hook: taken as committed
+        if out.get("ok"):
+            n = artifact_sent(b)
+            log.append("Sent: %d writes (%s)." % (n, os.path.basename(b)))
+            rest = [p for p in (sy.get("batches") or []) if p != b and os.path.isfile(p)]
+            if rest:
+                save(phase="batch", batch=rest[0], batches=rest, at=time.time())
+                return "\n".join(log) + "\n" + _print_calls(
+                    [{"action": "batch", "url": artifact_url(), "writes": _read_json(rest[0])}], "artifact sync",
+                    "Send the next batch", "batch"), False
+            for f in glob.glob(os.path.join(base, "out", "batch-*.json")):
+                os.remove(f)
+            save(phase="idle", at=time.time(), batch=None, batches=[])
+            kc.ledger_record(base, [], "artifact sync", url=artifact_url(), step="idle")
+            return "\n".join(log + ["In sync: the Artifact has every change of yours."]) + "\n", True
+        # refused: re-read the documents it names, pin them (merging this copy into the live one), push again
+        keys = [_art_key("%s/%s" % (e.get("collection"), e.get("doc_id"))) for e in (_read_json(b) or [])
+                if not str(e.get("collection") or "").endswith("kit_docs")]
+        return _pin_step(keys, save, log + ["The batch was refused (a document changed there): re-reading it."]), False
+    if phase == "idle":
+        calls = _pull_calls(full=full, post=post if not _art_state().get("loaded_at") else None)
+        artifact_pull(full=full, post=post)            # its side effects: the old pulled files go
+        save(phase="pull", at=time.time(), post=post)
+        return _print_calls(calls, "artifact sync", "Pull the board's changes", "pull"), False
+    # push
+    r = artifact_push(url=url, token=token, own=_own_docs(post))
+    if r.get("files"):
+        log.append(r["files"].rstrip("\n"))
+    if r.get("dropped"):
+        log.append("Not sent, older than the Artifact's copy (put back here): %s." % ", ".join(r["dropped"]))
+    if r.get("need_pin"):
+        for f in r.get("batches") or []:
+            os.remove(f)
+        return _pin_step(r["need_pin"], save, log), False
+    if not r.get("batches"):
+        save(phase="idle", at=time.time(), batch=None, batches=[])
+        kc.ledger_record(base, [], "artifact sync", url=artifact_url(), step="idle")
+        return "\n".join(log + ["In sync: the Artifact has every change of yours."]) + "\n", True
+    _pending_record(r)
+    save(phase="batch", batch=r["batches"][0], batches=r["batches"], at=time.time())
+    return "\n".join(log) + ("\n" if log else "") + _print_calls(
+        [{"action": "batch", "url": artifact_url(), "writes": _read_json(r["batches"][0])}], "artifact sync",
+        "Send your changes", "batch"), False
+
+
+def _pin_step(keys, save, log):
+    """Re-read each document to pin (its live copy and version, saved by the hook), then sync merges and pushes again."""
+    d = os.path.join(_pin_dir(), "live")
+    calls = []
+    for k in dict.fromkeys(keys):
+        coll, did = k.split("/", 1)
+        calls.append({"action": "get", "url": artifact_url(), "collection": _art_prefix() + coll, "doc_id": did,
+                      "out_dir": d})
+    save(phase="pin", pins=list(dict.fromkeys(keys)), at=time.time())
+    return "\n".join(log) + ("\n" if log else "") + _print_calls(calls, "artifact sync",
+                                                                 "Read the live copies to merge into", "pin")
+
+
 def _ensure_local_board(url):
     try:
         _board_request(url, "health")
@@ -1584,9 +1818,15 @@ def artifact_load(url=None, token=None, in_dir=None):
                 pass
     # what this copy held that the Artifact does not (a seed from git, an old copy): never sent unless changed here
     stale = set(st.get("not_there") or [])
+    # CL72: only what is older than the last load is a seed; a post or comment made here since (a sync pulls before
+    # it pushes) is this session's new work and goes out with the next push
+    last = str(st.get("loaded_at") or "")
     for coll in ART_COLLS:
         for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
             key = "%s/%s" % (coll, row["id"])
+            stamp = _doc_stamp(row.get("data"))
+            if last and (not stamp or stamp >= last):
+                continue
             if not os.path.exists(_base_path(coll, row["id"])) and key not in st["versions"]:
                 stale.add(key)
                 os.makedirs(os.path.dirname(_base_path(coll, row["id"])), exist_ok=True)
@@ -1774,7 +2014,7 @@ def launch_mark(pid, prompt, inline=None):
     write_doc(p, dict({"prompt": prompt, "at": time.time()}, **({"inline": inline} if inline else {})))
 
 
-def artifact_push(url=None, token=None, out_dir=None):
+def artifact_push(url=None, token=None, out_dir=None, own=None):
     if attached_board() and not _art_state().get("loaded_at"):
         # CL28's open item: a web part's copy came from git; its push built 78 writes without if_version
         raise Conflict("this copy was never loaded from the Artifact, so a push would overwrite the board with an old "
@@ -1796,6 +2036,8 @@ def artifact_push(url=None, token=None, out_dir=None):
             base = _read_json(_base_path(coll, did))
             if base == data:
                 continue
+            if own is not None and not own(coll, did, data):
+                continue                                 # CL72: a part sends only its own documents
             key = "%s/%s" % (coll, did)
             if _is_card(did) and base is not None and _card_older(data, base):
                 # CL31: an older card here (a seed, a stale rebuild): put the copy the Artifact had back, never send it
@@ -1823,6 +2065,8 @@ def artifact_push(url=None, token=None, out_dir=None):
         did, data = row["id"], row.get("data") or {}
         key = "activity/%s" % did
         if not isinstance(data, dict) or _read_json(_base_path("activity", did)) == data:
+            continue
+        if own is not None and not own("activity", did, data):
             continue
         e = {"op": "set", "collection": _art_prefix() + "activity", "doc_id": did}
         if key in st["versions"]:
@@ -1927,23 +2171,20 @@ def artifact_push_text(r):
     if r.get("dropped"):
         out.append("Not sent, older than the Artifact's copy (put back here): %s." % ", ".join(r["dropped"]))
     if r.get("need_pin"):
-        out.append("First, their versions (changed here, never sent from this copy): for each, `ArtifactData` `get`, `url` %s, "
-                   "that collection and doc_id, `out_dir: \"%s\"` (its reply names the version N; that file is not "
-                   "used), then the same `get` again with `out_dir: \"%s\"` (the pin merges this copy into the live "
-                   "document saved there: a newer live card is never written over); then one command: `python3 -I "
-                   ".kit/kit.py artifact pin %s` with each N; then push again." % (
-                       board, os.path.join(_pin_dir(), "probe"), os.path.join(_pin_dir(), "v<N>"),
-                       " ".join("%s=<N>" % k for k in r["need_pin"])))
-        pre = _art_prefix()
-        if pre:
-            out[-1] = out[-1].replace("that collection and doc_id", "collection `%s<collection>` and the doc_id" % pre)
-    for p in r.get("batches") or []:
-        out.append("`ArtifactData` `batch`, `url` %s, `writes` = the array in %s; when it is committed: "
-                   "`python3 -I .kit/kit.py artifact sent %s`." % (board, p, p))
+        # CL72: never a version copied by hand: sync re-reads them, the hook reads the versions, sync pins and pushes
+        out.append("Changed here, never sent from this copy (their versions are not known here): %s. Run `python3 -I "
+                   ".kit/kit.py artifact sync`: it prints the reads, then pins and sends them itself." % ", ".join(r["need_pin"]))
+    calls = [{"action": "batch", "url": board, "writes": _read_json(p) or []} for p in r.get("batches") or []]
+    for p, c in zip(r.get("batches") or [], calls):
+        out.append("`ArtifactData` `batch`, `url` %s, `writes` = the array in %s, exactly (the guard refuses an edited "
+                   "one); when it is committed: `python3 -I .kit/kit.py artifact sent %s`." % (board, p, p))
+    if calls and artifact_url():
+        with contextlib.suppress(Conflict, OSError):
+            _kc().ledger_record(_art_dir(), calls, "artifact push", url=artifact_url(), step="batch")
     if not out:
         out.append("Nothing to send: the Artifact has every change made here.")
-    out.append("A refused batch names a document's real version N: `ArtifactData` `get` it with `out_dir: \"%s\"`, then "
-               "`python3 -I .kit/kit.py artifact pin <collection>/<id>=<N>`, then push again." % os.path.join(_pin_dir(), "v<N>"))
+    out.append("A refused batch: `python3 -I .kit/kit.py artifact sync` (it re-reads what changed there, merges, pins "
+               "and sends again; CL72).")
     return "\n".join(out) + "\n"
 
 
@@ -10371,8 +10612,8 @@ def main(argv=None):
     s.add_argument("word", nargs="?", default=None)
     s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
     s.add_argument("--dry-run", action="store_true"); s.add_argument("--db", default=None)
-    s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>... | reconcile")
-    s.add_argument("action", choices=["pull", "load", "push", "sent", "pin", "status", "reconcile"]); s.add_argument("args", nargs="*")
+    s = sp.add_parser("artifact", help="an Artifact board: sync (the one door, CL72) | pull | load | push | sent <batch> | pin <coll/id=version>... | reconcile")
+    s.add_argument("action", choices=["sync", "pull", "load", "push", "sent", "pin", "status", "reconcile"]); s.add_argument("args", nargs="*")
     s.add_argument("--no-push", action="store_true", help="reconcile: the git copy is not committed nor pushed")
     s.add_argument("--branch", default=None, help="reconcile: the git copy's branch (default: the mirror's)")
     s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
@@ -10697,14 +10938,25 @@ def main(argv=None):
         print(msg)
         return rc
     if a.cmd == "artifact":
-        if a.action in ("pull", "load", "push", "sent", "pin") and not _rule("artifact_steps") and not os.environ.get("KIT_ARTIFACT_ON_COMPUTER"):
+        if a.action in ("sync", "pull", "load", "push", "sent", "pin") and not _rule("artifact_steps") and not os.environ.get("KIT_ARTIFACT_ON_COMPUTER"):
             # CL51 / R5: the Artifact is Claude Code web's alone (PLATFORM_RULES['artifact_steps'])
             print("not on a computer: the Artifact is the Claude Code web session's. Here the local board is the board "
                   "(the git copy, board-mirror, carries it); the web session reconciles its Artifact with GitHub.")
             return 2
         try:
+            if a.action == "sync":
+                txt, ok = artifact_sync(post=a.post, full=a.full, url=a.board_url, token=a.token)
+                print(txt, end="")
+                if ok and not glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")):
+                    with contextlib.suppress(OSError):
+                        os.remove(os.path.join(_art_dir(), "pending.json"))
+                    print(keep(m)[0])
+                return 0
             if a.action == "pull":
+                calls = _pull_calls(full=a.full, post=a.post) if artifact_url() else []
                 print(_pull_record(artifact_pull(full=a.full, post=a.post)), end="")
+                if calls:
+                    _kc().ledger_record(_art_dir(), calls, "artifact pull", url=artifact_url(), step="pull")
             elif a.action == "load":
                 r = artifact_load(url=a.board_url, token=a.token)
                 print("Loaded from the Artifact: %d taken, %d kept from here (unsent), %d merged field by field. "

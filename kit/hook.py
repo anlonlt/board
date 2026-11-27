@@ -32,7 +32,8 @@ TABLE = [
     ("PreToolUse", "kit_say_it_once.py", {"web": SEND, "cli": SEND, "agy": "send_message"}, GUARD, 25),
     # M11: "cli" too: a repo installed for a computer (this kit's own) also works its Artifact board on the web, and its
     # sessions' ArtifactData calls never reached the guard
-    ("PreToolUse", "kit_orchestrator_guard.py", {"web": "ArtifactData|" + SESSION, "cli": "ArtifactData"}, GUARD, 25),
+    # CL72: Bash too (a raw `board_cli.py get|list|query posts` on an Artifact board)
+    ("PreToolUse", "kit_orchestrator_guard.py", {"web": "ArtifactData|Bash|" + SESSION, "cli": "ArtifactData|Bash"}, GUARD, 25),
     ("PreToolUse", "kit_brief_guard.py", {"web": "ArtifactData|Bash", "cli": "Bash", "agy": "run_command"}, GUARD, 25),
     ("PostToolUse", "kit_say_it_once.py", {"web": "ArtifactData|mcp__claude-code-remote__send_message",
                                            "cli": "SendMessage|Bash", "agy": "send_message|run_command"}, PLAIN, 50),
@@ -41,7 +42,8 @@ TABLE = [
     ("PostToolUse", "kit_notify.py", {"web": "ArtifactData"}, PLAIN, 50),
     ("PostToolUse", "kit_task_train.py", {"web": "TaskCreate|TaskUpdate", "cli": "TaskCreate|TaskUpdate",
                                           "agy": "update_steps"}, PLAIN, 130),
-    ("PostToolUse", "kit_board_guard.py", {"web": "Bash|" + SESSION, "cli": "Bash"}, PLAIN, 50),
+    # CL72: ArtifactData too: the versions and batch outcomes the replies name, for `kit.py artifact sync`
+    ("PostToolUse", "kit_board_guard.py", {"web": "Bash|ArtifactData|" + SESSION, "cli": "Bash|ArtifactData"}, PLAIN, 50),
     ("PreToolUse", "kit_activity.py", {"web": "Bash|Edit|Write|MultiEdit", "cli": "Bash|Edit|Write|MultiEdit",
                                        "agy": "run_command|edit_file|write_file"}, PLAIN, 25),
     ("PostToolUse", "kit_activity.py", {"web": "Bash|Edit|Write|MultiEdit|mcp__claude-code-remote__send_message",
