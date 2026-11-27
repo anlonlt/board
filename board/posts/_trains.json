@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T03:00:48Z",
+ "created_at": "2026-11-27T03:01:12Z",
  "rows": [
   {
    "also": [],
@@ -17,10 +17,10 @@
    ],
    "parent": "",
    "part": "P-board-data",
-   "post": "cl16-the-board-travels-in-git-always-current",
+   "post": "cl46-end-session-says-why-a-push-failed",
    "prompt": "",
    "session": "",
-   "state": "running",
+   "state": "idle",
    "store": []
   },
   {
@@ -94,7 +94,7 @@
    "post": "m2-install-draws-the-first-map",
    "prompt": "",
    "session": "",
-   "state": "running",
+   "state": "idle",
    "store": []
   },
   {
@@ -443,8 +443,8 @@
    "part": "CL16",
    "post": "cl16-the-board-travels-in-git-always-current",
    "prompt": "",
-   "session": "session_01AE1HGjUyLjArKFESowYgiB",
-   "state": "running",
+   "session": "board-cl16",
+   "state": "done",
    "store": []
   },
   {
@@ -1075,7 +1075,7 @@
    "post": "m10-a-kind-of-bug-fixed-three-times-becomes",
    "prompt": "",
    "session": "session_01AE1HGjJUZaP5MmWsTMwbP4",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1185,7 +1185,7 @@
    "post": "m12-the-orchestrator-hands-over-at-its-conte",
    "prompt": "",
    "session": "session_01AE1HGigXaY4ApaiTBfLGWF",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1207,7 +1207,7 @@
    "post": "cl58-a-delta-resume-still-shows-the-web-envir",
    "prompt": "",
    "session": "session_01AE1HGhcpK68znY8XoLCUm8",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1245,5 +1245,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T03:00:48Z"
+ "updated_at": "2026-11-27T03:01:12Z"
 }
