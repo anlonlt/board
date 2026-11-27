@@ -1,25 +1,63 @@
 {
- "body": "The orchestrator hands over at its context limit however its session began.\n\nMeasured on 2026-11-27: orchestrator session 9919b5f1 reached 521k tokens (limit 380k) with no hand-over. kit/hooks/kit_pre_compact.py takes the role from the session's first user message only; this session began with the owner's question, took over as orchestrator later (on _orchestrator), so the hook said \"other\" and never blocked the stop. M11 fixed the same mistake for the usage row's label (role from what the session ran).\n\n1. kit_pre_compact.py (and every hook that decides a role) uses one role function, the one M11 gave the usage row: the `_orchestrator` post's session_id, a hand-over, or a takeover mid-session all count.\n2. A test with a transcript that starts with an owner question, then takes over, then passes 380k: the Stop is blocked once with the hand-over steps.\n3. Run it on 9919b5f1's transcript and put the result in the post.\n",
+ "artifacts": [
+  "kit/hooks/kit_pre_compact.py",
+  "kit/hooks/kit_session_start.py",
+  "kit/hooks/kit_task_train.py",
+  "scripts/usage.py",
+  "tests/test_m12_handover_role.py"
+ ],
+ "bars": [
+  "9919b5f1 replayed from its ledger row (first words a question, cwd /home/user, branch HEAD, peak 528,590 tokens): hook before M12 lets the stop through; M12 hook blocks it once with \"HANDOVER REQUIRED (context at 528k >= 380k)\" (asked: owner chat 2026-11-27 \"why hasn't the hook made you hand over?\")",
+  "Ways a session can become the orchestrator that block the stop past 380k: 5 of 5 tested (resume in mid-session, launch and land only, named by the `_orchestrator` post, a hand-over line first, launched as a part then took over)",
+  "Sessions wrongly blocked: 0 of 3 tested (a question with no takeover at 528k, a part at 528k, an orchestrator at 370k)",
+  "Hooks that decide a role and now use the one function: 3 of 3 (kit_pre_compact, kit_session_start, kit_task_train)",
+  "Cost: 1.6 s per Stop on a 29 MB transcript vs 0 s before, and only when the context is already past 80k (otherwise one pass, as before)",
+  "Project tests: 80 of 80 suites pass, 0 failed"
+ ],
+ "body": "An orchestrator now hands over at 380k however its session began. Before, the hook looked only at the session's first message, so an orchestrator that started with your question and took over later was never stopped. That is how yesterday's orchestrator went to 528k. Now the hook uses the same role reading as the usage ledger: what the session ran, the orchestrator post, or a hand-over line.\n\n### What was wrong\n`kit_pre_compact.py` took the role only from the session's first user message. 9919b5f1 began with \"Are there any posts for a Claude code web runners?\", took over as orchestrator later (it wrote the `_orchestrator` post and ran the orchestrator's resume), so the hook read \"other\" and never blocked the stop: it reached 528,590 tokens against the 380k limit. M11 had fixed exactly this for the usage row's label, but the hook kept its own reading.\n\n### What changed\n- `scripts/usage.py`: the role logic in `record()` is now `role_of(row, root, title)`, and `session_role(transcript, root, session_id)` runs it on a transcript file. A session that ran orchestrator commands is the orchestrator even if KIT_ROLE says part, or if its first question happens to contain \"review\" or \"clerk\".\n- `kit/hooks/kit_pre_compact.py`: one cheap pass reads the tokens. Only past the lowest limit (80k) does it read the role through `session_role`. A takeover, the `_orchestrator` post or a hand-over line now all count. On agy, the same function is used when the old reading finds no role.\n- `kit/hooks/kit_session_start.py` (the notice after a compaction) and `kit/hooks/kit_task_train.py` (the orchestrator's task list) use the same function. The task-list hook reads the role again after 200 KB of growth.\n- The copies in `.kit/` are updated.\n\n### The replay\n`python3 tests/test_m12_handover_role.py --replay`:\n```\n9919b5f1 (ledger row 2026-11-26): first words 'Are there any posts for a Claude code web runners?', cwd /home/user, branch HEAD, peak 528590 tokens\n- before M12: stop allowed (no hand-over)\n- M12: BLOCKED: HANDOVER REQUIRED (context at 528k >= 380k): a context RESET, not a compaction; your succe...\n- usage row role: orchestrator\n```\n\n### Did I add the step? (his chat question)\nYes, this is the step (M12). Its test is `tests/test_m12_handover_role.py`: a transcript that starts with his question, then takes over, then passes 380k, is blocked once; the next stop passes.",
  "branch": "m12",
+ "breaks": "sed -i 's/    role = session_role(data, root, first_role)/    role = os.environ.get(\"KIT_ROLE\") or first_role/' kit/hooks/kit_pre_compact.py",
+ "check": "python3 -m unittest tests.test_m12_handover_role",
  "column": "info",
  "created_at": "2026-11-27T02:28:52Z",
  "differs": "M12: builds on M11, which fixed the role label in the usage row only; M12 makes the hand-over hook use that same role function, so an orchestrator that took over mid-session hands over at 380k.",
  "from": "orchestrator",
+ "handoff": "- `usage.role_of(row, root, title)` is THE role of a session (the `_orchestrator` post, then `classify` with M11's `roles_run`, then KIT_ROLE); `usage.session_role(transcript, root, session_id)` reads a transcript for it (no subagents). `record()` uses `role_of`.\n- Hooks call `kit_pre_compact.session_role(data, root, fallback)`, which loads `.kit/usage.py` (else the kit repo's `scripts/usage.py`) and falls back to KIT_ROLE, then the first-message reading, if that file is missing.\n- Two changes to the rules: a session that ran the orchestrator's commands is the orchestrator even if KIT_ROLE says part, and even if its first question contains \"review\" or \"clerk\".\n- The task-list hook reads a non-orchestrator role again once the transcript has grown by 200 KB, so a takeover there is noticed too.\n- Orchestrator: run the Harmonize dry run (hooks changed) and write it in `real_project`.\n- This session reconciled the Artifact after a partial pull, so 7 batches (332 writes) were generated; they were NOT sent, because a part reads only its own post and they would overwrite. They are kept in the scratchpad, not in the repo. The next full `kit.py artifact pull` + `reconcile` by the orchestrator regenerates what is really needed.",
  "launched_at": "2026-11-27T02:35:18Z",
  "launched_out_of_order": {
   "at": "2026-11-27T02:35:18Z",
   "was": "M2 goes first (place 6, M12 is 21): feature, by date (no fact sets it apart); launch `m2-install-draws-the-first-map`",
   "why": "the owner asked for it in chat with orchestrator 1 (2026-11-27): the hand-over hook missed a 521k context; no file shared with M2"
  },
+ "not_checked": [
+  "The real 9919b5f1 transcript: it lives in that session's own container, which a part cannot reach. The replay rebuilds it from its ledger row (first words, cwd, branch, peak tokens) and the commands M11 recorded for it (resume --role orchestrator, launch, land).",
+  "The real-project dry run on anlonlt/harmonize (the hooks changed): that is for the orchestrator to run.",
+  "agy: the same function is called past 80k when the agy reading finds no role, but tested only through the existing agy hook self-test (kit/hooks/test_hooks.py), not with an agy takeover transcript."
+ ],
  "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
  "orchestrator_device": "web",
  "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "orchestrator_unreached": {
+  "at": "2026-11-27T02:48:34Z",
+  "device": "web",
+  "to": "session_01AE1HGm6otiBYEiW1xuHmHx",
+  "why": "SendMessage: no agent named c68653ea-eb49-4bca-bd50-ad90d6eca9ff is reachable from this web session"
+ },
  "part": "M12",
  "planned_by": "orchestrator",
+ "proof": {
+  "at": "2026-11-27T02:48:01Z",
+  "branch": "m12",
+  "commit": "1c13005",
+  "key": "df9eaaee290aa00e",
+  "needs_real": true,
+  "sha": "1c13005ce5b3987c371dc0737a753610b7610596"
+ },
  "session_id": "session_01AE1HGigXaY4ApaiTBfLGWF",
  "sources": [
   "owner chat 2026-11-27: why hasn't the hook made you hand over? / did you add the step?"
  ],
+ "started_at": "2026-11-27T02:36:41Z",
  "status": "in progress",
  "subtasks": [
   {
@@ -28,25 +66,26 @@
    ],
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "kit_pre_compact.py (and every hook that decides a role) uses one role function, the one M11 gave..."
   },
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "A test with a transcript that starts with an owner question, then takes over, then passes 380k"
   },
   {
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "Run it on 9919b5f1's transcript and put the result in the post"
   }
  ],
  "task": "The orchestrator hands over at its context limit however its session began.\n\nMeasured on 2026-11-27: orchestrator session 9919b5f1 reached 521k tokens (limit 380k) with no hand-over. kit/hooks/kit_pre_compact.py takes the role from the session's first user message only; this session began with the owner's question, took over as orchestrator later (on _orchestrator), so the hook said \"other\" and never blocked the stop. M11 fixed the same mistake for the usage row's label (role from what the session ran).\n\n1. kit_pre_compact.py (and every hook that decides a role) uses one role function, the one M11 gave the usage row: the `_orchestrator` post's session_id, a hand-over, or a takeover mid-session all count.\n2. A test with a transcript that starts with an owner question, then takes over, then passes 380k: the Stop is blocked once with the hand-over steps.\n3. Run it on 9919b5f1's transcript and put the result in the post.\n",
  "title": "The orchestrator hands over at its context limit however its session began",
  "train": "memory",
- "updated_at": "2026-11-27T02:35:35Z",
+ "updated_at": "2026-11-27T02:48:01Z",
+ "verdict": "Yes: the hand-over hook now reads the role the way the usage row does, so yesterday's orchestrator (a question first, a takeover later, 528k) is blocked once with the hand-over steps, where the old hook let it run on.",
  "working_by": "owner"
 }

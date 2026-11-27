@@ -25,31 +25,31 @@
    ],
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "Every fix records an observation in the ledger with its kind (a short theme, e.g. \"platform leak\",..."
   },
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "When a kind reaches 3, the orchestrator's resume says so in one line and plans a design step for it..."
   },
   {
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "Seed it from history"
   },
   {
    "from": "task",
    "n": 4,
-   "status": "open",
+   "status": "done",
    "title": "Tests on a fixture ledger"
   }
  ],
  "task": "A kind of bug fixed three times becomes a design question, never a fourth patch. Eight fixes since 11-23 were the same kind (a rule made for one platform applied to the others: CL26, CL28, CL37, CL44 items 1 and 9, CL51, R4, 106bba6) and nobody saw it until the owner asked; the memory's ledger already turns about 3 observations on one theme into a principle (`distil`, kit/ledger.py), but fixes never reach it: they stay in commits and posts.\n\n1. Every fix records an observation in the ledger with its kind (a short theme, e.g. \"platform leak\", \"silent error\", \"two copies out of sync\"), at `kit.py done` for a step that fixes a bug, and from a commit whose message says it fixes one; in kit/ledger.py and scripts/kit.py.\n2. When a kind reaches 3, the orchestrator's resume says so in one line and plans a design step for it (what all of them share and the change that makes the kind impossible), instead of the next patch.\n3. Seed it from history: today's three kinds (platform leaks, silent errors, two copies with nothing keeping them equal) with their fixes, so the counts start true.\n4. Tests on a fixture ledger: two fixes of one kind say nothing, the third raises it.\n5. The owner repeating a rule is the strongest signal: the owner's comments and chat words recorded as observations (verbatim, kit/ledger.py) are grouped by theme the same way; a rule the owner states that can be checked becomes a check the first time (the orchestrator plans it then); the second time the owner states the same rule (\"git is the one source\" was said about ten times by 2026-11-26, \"never hide an error\" several times) means nothing enforces it: the orchestrator's resume says so first, and a step is planned that makes it a check (a hook, a refusal, a test), never another memory line. A principle distilled from them names its check, or is shown as unenforced (M7).\n6. The owner's design decisions too (merged from M12): each is recorded as a `decision` entry the moment it is made, in chat, a comment or a commit (what, because, rejected, the owner's words, the files or map area it governs), never left in a commit message only; it gets its check like any rule; the memory hook shows it first to a session editing those files; done refuses a step that breaks its check, and a step that contradicts it becomes a question to the owner. Seed: the per-post drop box for every AI link (b52f5b6; the \"Link for AI\" link reached it only with 75a4f41), the web's cards agent in every repo, one token per machine, git as the one source.",
  "title": "A bug fixed three times, a rule repeated, or a decision of the owner becomes a check",
  "train": "memory",
- "updated_at": "2026-11-27T02:36:29Z",
+ "updated_at": "2026-11-27T02:44:26Z",
  "working_by": "owner"
 }

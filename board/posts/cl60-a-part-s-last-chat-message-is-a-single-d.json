@@ -1,0 +1,40 @@
+{
+ "body": "A part's or review's last chat message is a single \"·\", the first time: the rule reaches it before it writes, not after.\n\nOwner, 2026-11-27: \"what is up with all the sessions not respecting the character and . hook? The review and M12, their long posts: completely unacceptable.\" Measured: M12 (session_01AE1HGigXaY4ApaiTBfLGWF) wrote a 2,900-character closing message, then the Stop hook refused it and it wrote \"·\". A Stop hook runs after the message is shown: it can only make a retry, never prevent the first one. The SAY IT ONCE context arrives on the owner's prompt and after some tools, but not after the part's last steps (`kit.py done`, `end_session.py`, the message to the orchestrator).\n\n1. Every last-step command (`kit.py done`, `end_session.py`, `kit.py unreached`, the review's comment write, SendMessage / send_message to the orchestrator) returns, through a PostToolUse hook, one line: \"Your next and last message is a single ·\". Same for the review role.\n2. The part and review prompts (resume --role part|review) say it in their \"how to report\" section, once.\n3. Measure on the transcripts of today's parts and reviews: how many first closing messages were longer than \"·\", before and after; a replayed part must close with \"·\" on its first try (test on a fixture transcript and the hook's output).\n",
+ "column": "info",
+ "created_at": "2026-11-27T02:50:26Z",
+ "differs": "CL60: builds on CL14 (chat ends with a single dot) and CL49 (who a part reports to); CL14's rule is checked only by a Stop hook after the message is shown, CL60 delivers it before the last message is written.",
+ "from": "orchestrator",
+ "kept_on_train": "owner's complaint about parts' closing messages, same family as CL49/CL50 (how a part reports)",
+ "kind": "bug",
+ "part": "CL60",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "end_session.py",
+    "kit.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "Every last-step command (kit.py done, end_session.py, kit.py unreached, the review's comment write,..."
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "The part and review prompts (resume --role part|review) say it in their \"how to report\" section,..."
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "Measure on the transcripts of today's parts and reviews"
+  }
+ ],
+ "task": "A part's or review's last chat message is a single \"·\", the first time: the rule reaches it before it writes, not after.\n\nOwner, 2026-11-27: \"what is up with all the sessions not respecting the character and . hook? The review and M12, their long posts: completely unacceptable.\" Measured: M12 (session_01AE1HGigXaY4ApaiTBfLGWF) wrote a 2,900-character closing message, then the Stop hook refused it and it wrote \"·\". A Stop hook runs after the message is shown: it can only make a retry, never prevent the first one. The SAY IT ONCE context arrives on the owner's prompt and after some tools, but not after the part's last steps (`kit.py done`, `end_session.py`, the message to the orchestrator).\n\n1. Every last-step command (`kit.py done`, `end_session.py`, `kit.py unreached`, the review's comment write, SendMessage / send_message to the orchestrator) returns, through a PostToolUse hook, one line: \"Your next and last message is a single ·\". Same for the review role.\n2. The part and review prompts (resume --role part|review) say it in their \"how to report\" section, once.\n3. Measure on the transcripts of today's parts and reviews: how many first closing messages were longer than \"·\", before and after; a replayed part must close with \"·\" on its first try (test on a fixture transcript and the hook's output).\n",
+ "title": "A part's last chat message is a single dot the first time, not after a refusal",
+ "train": "takeover",
+ "updated_at": "2026-11-27T02:50:38Z"
+}

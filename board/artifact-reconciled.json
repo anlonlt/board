@@ -1,5 +1,5 @@
 {
- "at": "2026-11-27T02:45:19Z",
+ "at": "2026-11-27T02:53:09Z",
  "docs": {
   "comments/004abd3c5e334e6aac34": "9a926f42c90c194d",
   "comments/0d7buihhnapamdz5rqkz": "e06545c9744f3f81",
@@ -17,6 +17,7 @@
   "comments/20goiar0wuhbtafqxuk5": "c559316964ae9acf",
   "comments/2508ca6811474957a1fc": "2f6b0b869285d4da",
   "comments/2f358edb22224b0ebfab": "b846772df9571008",
+  "comments/4576ae64ffd44116aa63": "d52db47ef6bf6d96",
   "comments/45yws33d48dhh8613psx": "2cc95bb06130f8c7",
   "comments/4hrxp33h6wg7sng04f5k": "0bd991621f04332e",
   "comments/5714e29bbf7041a397ee": "f5c4723169a5cafc",
@@ -183,6 +184,7 @@
   "comments/orch-takeover-20261127020000": "8ade32d2ea651f13",
   "comments/orch2-reply-split-0237": "c079d26cd88ebdb5",
   "comments/orch2-split-0235": "3d4d01e2dcf9e734",
+  "comments/orch2-status-0246": "a4903f460bcaa840",
   "comments/ouavua42jppum2iaf8wg": "387449b97e283029",
   "comments/p7svz6ledxeyxb4r9ts3": "dcb8584a362f4b0b",
   "comments/pk0rbw6utfbn6f8jaujf": "9915aeabbae6b50d",
@@ -197,6 +199,7 @@
   "comments/reply-2d72c9a9f54b": "d8d75660d7addc23",
   "comments/reply-36c163cac42c": "4d3bf056c6f9cbf3",
   "comments/reply-3fd895d69307": "4b9cbb7bede2d59d",
+  "comments/reply-4fa996e1fcac": "54e29b82f2234ea0",
   "comments/reply-50533cf3722e": "429e0da9ae8ea8bc",
   "comments/reply-555175f586b9": "d68bf92f717352b8",
   "comments/reply-5cf8a69d0f43": "5caf0c0e07922dad",
@@ -302,8 +305,10 @@
   "posts/cl55-work-in-progress-is-on-github-within-min": "61247a1c3e8e3e73",
   "posts/cl56-a-session-on-the-shared-link-can-attach": "d7d1b23c8f79834f",
   "posts/cl57-the-board-s-flowchart-draws-the-post-s-g": "67735282025ebd03",
-  "posts/cl58-a-delta-resume-still-shows-the-web-envir": "2951c84e9735e545",
+  "posts/cl58-a-delta-resume-still-shows-the-web-envir": "44670aa00316144b",
+  "posts/cl59-a-part-pushes-only-its-own-post-a-pull-n": "6184e8340197191b",
   "posts/cl6-collapsible-sections-that-learn": "2079643d8979b3e0",
+  "posts/cl60-a-part-s-last-chat-message-is-a-single-d": "ad63d6db3f0a9e21",
   "posts/cl7-say-it-once-the-leaks-closed": "2be38fe343e95c74",
   "posts/cl8-design-principles-complete-and-no-emoji": "ff80ffd0a55854d3",
   "posts/cl9-checks-that-must-be-able-to-fail-breaks": "519d0fa01ff5e220",
@@ -321,9 +326,9 @@
   "posts/demo-todo-2": "a2c72f4d12f85721",
   "posts/demo-todo-3": "ff13e188457a61b7",
   "posts/m1-a-map-of-any-project-generated-from-its": "03235b6a019bf856",
-  "posts/m10-a-kind-of-bug-fixed-three-times-becomes": "1636b674906112fe",
+  "posts/m10-a-kind-of-bug-fixed-three-times-becomes": "7dd189e321853c4e",
   "posts/m11-sessions-use-the-kit-s-commands-the-ledg": "57632bf0e8f531d1",
-  "posts/m12-the-orchestrator-hands-over-at-its-conte": "13c62b6965e327b3",
+  "posts/m12-the-orchestrator-hands-over-at-its-conte": "aa2c412f0c8d2528",
   "posts/m12-the-owner-s-design-decisions-are-never-s": "5c39a53bfe33d8a6",
   "posts/m2-install-draws-the-first-map": "8159509b83b58be5",
   "posts/m3-done-keeps-the-map-each-part-checks-its": "e13ff8274e2c0b0a",
@@ -341,7 +346,7 @@
   "posts/r2-gemini-tasks-how-far-it-runs-the-board-k": "2c9e75ca182e5844",
   "posts/r3-the-kit-suggests-where-a-step-runs-from": "f669585d023c6ab1",
   "posts/r4-on-a-computer-a-part-runs-its-own-real-p": "c0d4c2dec0f31e6f",
-  "posts/r5-every-rule-that-differs-by-platform-says": "b822237ac101ebbe",
+  "posts/r5-every-rule-that-differs-by-platform-says": "71f7d27630a00bc1",
   "posts/r6-the-next-step-is-the-most-important-one": "c2dd05a3ac4d0746"
  }
 }
