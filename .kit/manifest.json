@@ -105,5 +105,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "6b98364bd05586e3d6a5d328d0e59658638bb115d81c03b3c7cd2b266d8541f0",
- "_kit_commit": "c75c7b3 2026-11-27T03:32:23+00:00"
+ "_kit_commit": "384f4b4 2026-11-27T03:33:36+00:00"
 }
