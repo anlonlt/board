@@ -140,6 +140,7 @@
  "breaks": "revert",
  "check": "python3 -m unittest tests.test_cl51_computer_artifact",
  "column": "info",
+ "completed_at": "2026-11-26T23:50:00Z",
  "created_at": "2026-11-26T21:33:09Z",
  "from": "orchestrator",
  "handoff": "CL45 (the web session reconciles its Artifact with GitHub at its start) can rely on two things: a computer never writes to the Artifact, and `artifact load` never writes an older copy over a newer one (by updated_at), never lowers a status or a done column.",
@@ -152,17 +153,27 @@
  "planned_by": "orchestrator",
  "priority": 1,
  "proof": {
-  "at": "2026-11-26T23:07:52Z",
-  "branch": "cl51",
-  "commit": "0323ffb",
+  "at": "2026-11-26T23:49:08Z",
+  "branch": "cl45",
+  "commit": "9c213ac",
   "key": "31b65c89bf8c96ab",
-  "needs_real": true,
-  "sha": "0323ffbc16f1b2b1d6f6195069f2d4c33b6e680a"
+  "needs_real": false,
+  "sha": "9c213acccb734e396ea246c88493ebf823d35f3f"
  },
+ "real_project": {
+  "command": "kit 1723a3f (cl45+cl51+cl53 merged) installed by install.py --update on a scratch copy; without CLAUDE_CODE_REMOTE: kit.py artifact load|push|pull; resume",
+  "output": "each artifact command rc=2: 'not on a computer: the Artifact is the Claude Code web session's. Here the local board is the board ...'. resume rc=0, no STALE gate (on the web: rc=3 STALE). Not exercised: done/keep_newer on a real step. Verdict: works.",
+  "project": "anlonlt/harmonize"
+ },
+ "review": "continue",
+ "review_commit": "9c213acccb734e396ea246c88493ebf823d35f3f",
+ "review_id": "CR-cl51-a-session-on-a-computer-never-writes-to",
+ "review_session": "session_01AE1HGhkZeCMSrh4jTrT71q",
+ "review_started": "2026-11-26T23:15:00Z",
  "runner": "claude-web",
  "session_id": "session_01AE1HGhnU13NdSkjhWagX2m",
  "started_at": "2026-11-26T23:05:38Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "files": [
@@ -189,7 +200,7 @@
  "task": "A session on a computer never writes to the Artifact. CL44's part (a local Claude Code session) sent its post to the web board: `kit.py done` refuses Done when the config names an Artifact and the post differs from the Artifact's last copy (\"the post is not on the board yet\"), whatever the platform. The owner's rule: the Artifact is the Claude Code web session's; a local session works with the local board, which reaches GitHub, and the web session reconciles its Artifact with GitHub (CL45).\n\n1. `kit.py done` checks the Artifact only on the web; on a computer it checks that the post is on the local board and in the git copy (board-mirror) instead.\n2. The same for every Artifact step a local session is told to do (the STALE gate, launch's Artifact batch, the task-train hook's \"push\"): none on a computer.\n3. Tests: a local done with an Artifact named in the config passes without any Artifact call; on the web it still asks for the push.\n4. The damage it already did: CL44's part (a local session) ran `kit.py artifact load` at 2026-11-26T20:23Z, made to by done; load wrote the Artifact's older copies over 11 newer posts of the local board (CL43 back to planned, CL32 and CL39 to in progress, CL16 and CL17's train moves undone, _orchestrator and _prefs), and the server pushed that to board-mirror (47cd73a). `artifact load` keeps the newer copy of each post and comment (by updated_at), takes only fields the other copy lacks, and never lowers a status; a test loads an older Artifact copy over a newer local board and nothing goes back.",
  "title": "A session on a computer never writes to the Artifact",
  "train": "board-data",
- "updated_at": "2026-11-26T23:07:52Z",
+ "updated_at": "2026-11-26T23:50:01Z",
  "verdict": "On a computer, finishing a step checks the local board and git, never the web board; and a load keeps the newer copy of every post, never lowering a status.",
- "working_by": "owner"
+ "working_by": ""
 }

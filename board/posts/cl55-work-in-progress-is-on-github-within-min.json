@@ -1,13 +1,59 @@
 {
- "body": "Work in progress is always on GitHub within minutes, on every platform, public repos included: a session that crashes or hits its usage limit is continued from there by any platform. The save hook (kit/hooks/kit_wip.py, `.kit/landing.py save`, every 5 minutes, every runtime) pushes only to a repo known to be private; anlonlt/board is public (.kit/run/wip-private.json), so every save stays in the clone (\"kept in this clone\"): on a web session that is the container, lost with it. GitHub had no wip branch at all on 2026-11-26.\n\n1. A save on a public repo is pushed too, after the secret check CL44's checkpoint already does (secret files and secret-looking values left out, named in the save's message); a save that would carry a secret is refused, said, never silent. In kit/landing.py.\n2. A part's save goes to its step's branch (CL44 item 10's checkpoint, on a timer, not only when the part remembers), a non-part session's to wip/<branch>; both pushed, at most every 5 minutes, never waited for.\n3. A takeover (CL49's claim, `launch --take`, web_takeover) starts from the newest of the step's branch and its last save, and says which one.\n4. Tests: a public-repo fixture's save is pushed; one with a planted token is refused and says why; a takeover after a lost session continues from the save.\n",
+ "artifacts": [
+  "kit/hooks/kit_wip.py",
+  "kit/landing.py",
+  "kit/web_takeover.py",
+  "scripts/kit.py",
+  "tests/test_cl55_wip_public.py",
+  "tests/test_landing.py"
+ ],
+ "bars": [
+  "13 of 13 CL55 tests pass (public save pushed, token refused with file:line, part checkpoint pushed, takeover from save)",
+  "0 false secret hits over the whole history of this repo (every line ever added, scanned)",
+  "1 of 1 live save from this web session reached GitHub: checkpoint 3fd3cb2 on origin/cl55, seconds after it was made",
+  "71 of 71 suites pass (run_all_tests --all, 0 failed)"
+ ],
+ "body": "Unfinished work now reaches GitHub every five minutes on this public repo too: a part's work is committed on its own branch and pushed there, anyone else's goes to a wip branch. Nothing that looks like a token or a private key ever leaves: that save is refused and the session is told why. A session that takes over a lost one starts from whichever is newer, the branch or the last save, and says which.\n\n### What changed\n- **kit/landing.py `save`**: `wip: auto` (the default) now pushes on any repo; the old \"private only\" rule and its GitHub lookup are gone. Before a push it reads every line the save adds to what origin already has (`secret_hits`): GitHub/AWS/Slack/Anthropic-OpenAI/Google/Stripe/Hugging Face tokens, private keys, a long password or key in the clear. A hit refuses the push (kept in the clone) and names file:line and kind. A line ending in `kit: not a secret` is allowed. Secret-named files (.env, *.pem, id_rsa...) are left out and named in the save's commit message and text.\n- **A part's save** (`resume --role part` marks the branch in .kit/run/part-branch.json, or KIT_POST): `kit.py checkpoint --on-step-branch --push`, the same 5-minute clock, detached. The checkpoint runs the same secret check before committing (a hit commits nothing, unstages) and before pushing (commits origin lacks). Pushed as `HEAD:<branch>`, never forced; if origin refuses, the save falls back to wip/<branch>.\n- **kit/hooks/kit_wip.py**: the separate 15-minute checkpoint clock is gone (the save does it). A refused or untaken save is told to the session once (additionalContext, or a systemMessage at Stop).\n- **Takeover** (`take_step_branch`, used by every part start incl. `launch --take` and web_takeover): looks at wip/<branch> at origin and here; a save newer than the branch that continues it is put in the working tree uncommitted, and the first lines say \"Started from your step's last save ...\" or \"Started from your step's branch ... the newest\". With local changes or a diverged branch it only says so. `_saved_mins` (CL49's claim) now also counts checkpoint commits on the branch as a sign of life.\n\n### Found on the way\n- A test (test_train_and_task_train) runs `resume --role part` with a test board and the real repo: it would have marked this clone as part B15. Marking is skipped when a test board is given.",
+ "branch": "cl55",
+ "breaks": "sed -i 's/    hits = secret_hits(push_base(head), tree)/    hits = []/' kit/landing.py",
+ "check": "python3 -m unittest tests.test_cl55_wip_public tests.test_landing",
  "column": "info",
+ "completed_at": "2026-11-26T23:53:40Z",
  "created_at": "2026-11-26T23:29:22Z",
  "from": "orchestrator",
+ "handoff": "Reinstall the kit (install.py . --update) so .kit/landing.py and .kit/kit.py carry this. CL45/CL51 untouched: only web_takeover's continuation text changed, not cmd_start.",
+ "landed": "85235368c5d07de4d07716ccc5b6141af82f56d0",
+ "landed_at": "2026-11-27T00:01:33Z",
+ "launched_at": "2026-11-26T23:30:32Z",
+ "not_checked": [
+  "agy and Claude Code on a computer were not run live: the same landing.py runs there, tested on real repositories only",
+  "the installed copies in .kit/ are the old ones until the kit is reinstalled: until then this repo's saves still follow the old private-only rule"
+ ],
  "part": "CL55",
  "planned_by": "orchestrator",
  "priority": 1,
+ "proof": {
+  "at": "2026-11-26T23:51:48Z",
+  "branch": "cl55",
+  "commit": "74aa0ee",
+  "key": "5c29616cac3796af",
+  "needs_real": true,
+  "sha": "74aa0eea2bf15e7716fae06a0085edaeb8f5e70a"
+ },
+ "real_project": {
+  "command": "cl55 kit d7c0c22 installed by install.py --update on a scratch copy, push URL a local bare repo; .kit/landing.py save after an edit; then with a planted ghp_ token; then on a part branch",
+  "output": "1) save: 3bbc785cd on origin/wip/main-c55check (rc 0, 11.7 s). 2) 'REFUSED: not pushed, it would carry a secret: app/c55probe.txt:1 (a GitHub token)...' rc 1, bare repo unchanged. 3) part branch: save 2be7e0d5 on origin/c55-part (rc 0). Not run: takeover from the newest save (needs a lost session). Verdict: works.",
+  "project": "anlonlt/harmonize"
+ },
+ "review": "continue",
+ "review_commit": "d7c0c22bbebf7752d82f816396a40c38f302d9bd",
+ "review_id": "CR-cl55-work-in-progress-is-on-github-within-min",
+ "review_session": "session_01AE1HGhkZeCMSrh4jTrT71q",
+ "review_started": "2026-11-26T23:53:48Z",
  "runner": "claude-web",
- "status": "planned",
+ "session_id": "session_01AE1HGhVmQjA6P148TQQMsY",
+ "started_at": "2026-11-26T23:31:09Z",
+ "status": "complete",
  "subtasks": [
   {
    "files": [
@@ -15,30 +61,32 @@
    ],
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "A save on a public repo is pushed too, after the secret check CL44's checkpoint already does..."
   },
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "A part's save goes to its step's branch (CL44 item 10's checkpoint, on a timer, not only when the..."
   },
   {
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "A takeover (CL49's claim, launch --take, web_takeover) starts from the newest of the step's branch..."
   },
   {
    "from": "task",
    "n": 4,
-   "status": "open",
+   "status": "done",
    "title": "Tests"
   }
  ],
  "task": "Work in progress is always on GitHub within minutes, on every platform, public repos included: a session that crashes or hits its usage limit is continued from there by any platform. The save hook (kit/hooks/kit_wip.py, `.kit/landing.py save`, every 5 minutes, every runtime) pushes only to a repo known to be private; anlonlt/board is public (.kit/run/wip-private.json), so every save stays in the clone (\"kept in this clone\"): on a web session that is the container, lost with it. GitHub had no wip branch at all on 2026-11-26.\n\n1. A save on a public repo is pushed too, after the secret check CL44's checkpoint already does (secret files and secret-looking values left out, named in the save's message); a save that would carry a secret is refused, said, never silent. In kit/landing.py.\n2. A part's save goes to its step's branch (CL44 item 10's checkpoint, on a timer, not only when the part remembers), a non-part session's to wip/<branch>; both pushed, at most every 5 minutes, never waited for.\n3. A takeover (CL49's claim, `launch --take`, web_takeover) starts from the newest of the step's branch and its last save, and says which one.\n4. Tests: a public-repo fixture's save is pushed; one with a planted token is refused and says why; a takeover after a lost session continues from the save.\n",
  "title": "Work in progress is on GitHub within minutes, public repos included",
  "train": "takeover",
- "updated_at": "2026-11-26T23:29:23Z"
+ "updated_at": "2026-11-27T00:01:33Z",
+ "verdict": "Yes: saves on a public repo are pushed after a secret check, a part's go to its step's branch, a planted token is refused and said, and a takeover continues from the newest save.",
+ "working_by": ""
 }

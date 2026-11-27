@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-26T23:36:43Z",
+ "from": "orchestrator",
+ "post_id": "cl41-review-and-adopt-four-local-commits",
+ "text": "Review now continue: CL47 resolved this redirect and its review (comment CR-cl47) says continue on cl47+cl48 against main: the 2 phone checks pass, the install check passes 3 of 3, 71 of 71 suites. Owner in chat, 2026-11-26: \"go ahead and land CL47, then CL48\"."
+}

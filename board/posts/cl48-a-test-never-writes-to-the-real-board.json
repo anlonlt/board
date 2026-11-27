@@ -20,9 +20,12 @@
  "breaks": "revert",
  "check": "python3 -m unittest tests.test_cl48_test_guard",
  "column": "info",
+ "completed_at": "2026-11-26T23:22:56Z",
  "created_at": "2026-11-26T21:32:57Z",
  "from": "orchestrator",
  "handoff": "A test run is KIT_TEST=1 (run_all_tests.py sets it, with KIT_TEST_GUARD pointing at kit/test_guard.py for tests that copy a few scripts by hand). A live install test by an agent should export KIT_TEST=1 and use a temp folder for its project. A new script that writes to a board, a mirror or a remote loads the guard with the same 20-line _test_guard() as kit.py.",
+ "landed": "01b49abb63b4fcec9102e5d203970f16b29313db",
+ "landed_at": "2026-11-26T23:36:58Z",
  "launched_at": "2026-11-26T22:58:05Z",
  "not_checked": [
   "A live install test run by an agent (like BD10) is covered only if KIT_TEST is set in that session: nothing marks such a run as a test by itself.",
@@ -33,10 +36,28 @@
  "part": "CL48",
  "planned_by": "orchestrator",
  "priority": 1,
+ "proof": {
+  "at": "2026-11-26T23:17:27Z",
+  "branch": "cl48",
+  "commit": "e0194cc",
+  "key": "b81978f3a2bb635e",
+  "needs_real": true,
+  "sha": "e0194cc8d0f2df95649bce4976f0837c7352e367"
+ },
+ "real_project": {
+  "command": "kit 4d75dc7 (cl47+cl48 merged) installed by install.py --update on a scratch copy (cli=agy project); ls .claude/hooks/kit; install.py --verify; KIT_STALE_OK=1 kit.py resume --role orchestrator",
+  "output": "install rc=0: 'updated .agents/hooks/kit/kit_brief_guard.py', 'updated .claude/hooks/kit/kit_brief_guard.py'; .claude/hooks/kit holds kit_board_guard.py and kit_brief_guard.py (the CL41 review's missing-hook case: fixed). verify: 82 ok, 0 modified, 1 missing (.story/awaits.md, the project's own, archived). resume rc=0 (30,411 chars). Verdict: works.",
+  "project": "anlonlt/harmonize"
+ },
+ "review": "continue",
+ "review_commit": "e0194cc8d0f2df95649bce4976f0837c7352e367",
+ "review_id": "CR-cl48-a-test-never-writes-to-the-real-board",
+ "review_session": "session_01AE1HGgW9gqHSQPMDVHV8mF",
+ "review_started": "2026-11-26T23:23:10Z",
  "runner": "claude-web",
  "session_id": "session_01AE1HGj52SDKNgDnUMMSCiL",
  "started_at": "2026-11-26T22:59:06Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "from": "task",
@@ -69,7 +90,7 @@
  "task": "A test never writes to the real board. The real board's `_orchestrator` post says \"the install session of the board kit on Tide Clock (branch test-install)\": Tide Clock is the made-up project of the install tests, and that text reached the real board's git copy on 2026-11-20 (board-mirror commit 738a5f3, \"kit sync ... (full)\").\n\n1. Find how: which test or install run wrote to the real board or its board-mirror (a test whose board URL, token or mirror path fell back to the real one).\n2. Make it impossible: a test run (run_all_tests.py, or KIT_TEST set) refuses any write to a board, mirror or remote that is not under a temp folder, with the path it refused.\n3. Put the `_orchestrator` post's text right (what it says for this repo), keeping its session id.\n4. A test that tries to write to the real board from a test run and is refused.\n",
  "title": "A test never writes to the real board",
  "train": "board-data",
- "updated_at": "2026-11-26T23:14:01Z",
+ "updated_at": "2026-11-26T23:36:58Z",
  "verdict": "Found (the 11-20 install test shared the kit repo's board-mirror), closed for every test run (writes outside a temp folder are refused with the path), and the orchestrator post is right again.",
- "working_by": "owner"
+ "working_by": ""
 }

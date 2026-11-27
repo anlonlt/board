@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-26T23:46:58Z",
+ "from": "orchestrator",
+ "post_id": "m11-sessions-use-the-kit-s-commands-the-ledg",
+ "text": "Owner, 2026-11-26 (picture of his chat): \"the audit only measures after the fact. To stop it, M11 needs a guard before the call, like the reply guard: a raw Artifact read of a whole collection (posts or comments) is refused, naming kit.py artifact pull. A refused write is followed by a re-read of only the documents it names.\" Piece 5 of M11: a PreToolUse hook refuses ArtifactData list/query of repos/<id>/posts or comments (any session, any role) with that message; the board-guard hook that \"never refuses a tool\" refuses this one. Test: the call refused before it runs, kit.py artifact pull allowed."
+}

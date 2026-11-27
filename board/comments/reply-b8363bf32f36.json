@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-26T23:41:05Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "Owner in chat, 2026-11-26: \"make a step to fix the role label and full board pulls ... I didn't see you check if the sessions had been using all the appropriate kit commands\". Step M11 launched (session_01AE1HGh3YKbEHRwHCUwdyNq). Today's ledger: orchestrator labelled 'other'; 9 + 31 full ArtifactData list reads (mine and parts') although kit.py artifact pull reads only changes; I also read posts with board_cli get and built pins by hand from full lists. M11 adds kit.py usage audit, which I will run at each Done."
+}
