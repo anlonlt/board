@@ -392,27 +392,15 @@ class Save(Repo):
     def conf_(self, **k):
         Path(self.d, ".kit", "config.json").write_text(json.dumps({"kit": dict(self.conf, **k)}))
 
-    def test_auto_pushes_only_where_github_says_private(self):
+    def test_auto_pushes_a_public_repo_too(self):
         self.put("a.txt", "two\n", commit=False)
-        self.conf_(wip="auto")                                                   # not on GitHub: unknown, so never pushed
-        self.assertIn("not known to be private", self.save())
-        self.assertEqual(self.remote("wip/s1"), "")
-        self.assertTrue(self.g("rev-parse", "-q", "--verify", "refs/wip/s1").stdout)
+        self.conf_(wip="auto")                                                   # CL55: not known to be private, pushed all the same
+        self.assertIn("on origin/wip/s1", self.save())
         self.conf_(wip="local")
+        self.put("a.txt", "three\n", commit=False)
         self.assertIn("kept in this clone", self.save())
         self.conf_(wip="off")
         self.assertIn("off", self.save())
-
-    def test_private_is_a_404_and_nothing_else(self):
-        import urllib.error
-        from unittest import mock
-        la = load("landing_t", "kit/landing.py")
-        err = lambda c: mock.Mock(side_effect=urllib.error.HTTPError("u", c, "m", {}, None))        # noqa: E731
-        for opened, want in ((err(404), True), (err(403), False), (err(500), False), (mock.Mock(side_effect=OSError), False), (mock.Mock(), False)):
-            for url in ("https://github.com/o/r.git", "git@github.com:o/r.git", "http://local_proxy@127.0.0.1:9/git/o/r"):
-                with mock.patch.object(la, "ROOT", tempfile.mkdtemp(dir=self.t)), mock.patch.object(la, "out", return_value=url), \
-                        mock.patch.object(la.urllib.request, "urlopen", opened):
-                    self.assertEqual(la._private(), want, (url, opened))
 
 
 class Hook(Repo):
