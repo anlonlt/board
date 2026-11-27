@@ -195,6 +195,29 @@ class AfterReview(Board):
         self.assertTrue(self.has("new.txt"))
         self.assertTrue(self.get().get("landed"))
 
+    def test_milestone_policy_lands_routine_step_and_holds_flagged_step(self):
+        """Under kit.review.auto='milestone', routine steps land at step complete without a per-step review,
+        while steps marked review_auto=True still wait for a continue verdict."""
+        cfg_p = Path(self.d, ".kit", "config.json")
+        cfg = json.loads(cfg_p.read_text())
+        cfg["kit"]["review"] = {"auto": "milestone", "train_every": 4}
+        cfg_p.write_text(json.dumps(cfg))
+        self.complete()
+        self.assertTrue(self.has("new.txt"))
+        self.assertTrue(self.get().get("landed"))
+        # A flagged step (review_auto=True) is held until reviewed
+        self.g("checkout", "-q", "main")
+        self.g("pull", "-q", "origin", "main")
+        self.g("checkout", "-q", "-b", "s2")
+        self.put("flagged.txt", "y\n")
+        self.g("push", "-q", "origin", "s2")
+        self.post("s2", dict(STEP, part="S2", branch="s2", review_auto=True,
+                             proof={"key": "k", "branch": "s2", "sha": self.g("rev-parse", "HEAD").stdout.strip(), "passed_at": "2026-05-01T00:00:00Z"}))
+        self.run_("kit.py", "step", "complete", "s2")
+        self.assertFalse(self.has("flagged.txt"))
+        got = {s["post"]: s for s in json.loads(self.run_("kit.py", "landing").stdout)["steps"]}
+        self.assertTrue(got["s2"]["held"])
+
     def test_resume_says_what_is_not_on_the_trunk(self):
         self.complete()
         self.post("s2", dict(STEP, part="S2", status="planned"))
@@ -308,6 +331,17 @@ class Save(Repo):
     def state(self):
         return (self.g("rev-parse", "HEAD").stdout, self.g("status", "--porcelain").stdout, self.g("diff", "--cached").stdout,
                 self.g("symbolic-ref", "HEAD").stdout)
+
+    def test_save_skips_while_merge_is_in_progress(self):
+        """CL55/stabilize: landing.py save never commits or checkpoints while MERGE_HEAD exists."""
+        merge_head = Path(self.d, ".git", "MERGE_HEAD")
+        merge_head.write_text(self.g("rev-parse", "HEAD").stdout.strip() + "\n")
+        try:
+            r = self.run_("landing.py", "save")
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("git merge is in progress", r.stdout)
+        finally:
+            merge_head.unlink(missing_ok=True)
 
     def test_all_of_it_and_nothing_touched(self):
         self.put("a.txt", "two\n", commit=False)

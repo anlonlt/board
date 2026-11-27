@@ -7,7 +7,7 @@ Your prompt is one command, `python3 -I .kit/kit.py resume --role orchestrator` 
 
 ## 2. A part
 - Write its prompt as a file (`docs/prompts/<part>.md`): goal, bars measured before building, holds, "post `<part>-<slug>` at turn 1". Launch it with `invoke_subagent(TypeName="self", Model="inherit", Workspace="share", ...)` (`Prompt`: "Your prompt is `docs/prompts/<file>`: read it and do it."). Its result lives in its post; it ends with `python3 -I .kit/end_session.py` and sends you `Done. Check post <id>.` via `send_message`.
-- Role models from `.kit/config.json` (`kit.roles`): orchestrator `inherit`, clerk `flash_lite`, part `inherit`, consultant `pro`, cards `flash`.
+- Role models from `.kit/config.json` (`kit.roles`): orchestrator `inherit`, clerk `flash_lite`, part `inherit`, consultant `inherit`, cards `flash`.
 - At a Done the review checks the work (it reruns, you do not); act on its verdict, then one comment under the post: what it means for the owner.
 
 ## 3. Reading the board (through `kit`, never whole dumps)

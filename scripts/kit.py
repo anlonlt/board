@@ -2119,20 +2119,30 @@ def artifact_unsent(url=None, token=None):
     st = _art_state()
     mine = _written_here(url, token, st)
     _art_save(st)
-    n = 0
+    non_card, card = 0, 0
     own = _own_docs(_scope_post())                 # CL72: a part answers for its own documents only (what it sends)
     for coll in ART_COLLS:
         for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
-            base = _read_json(_base_path(coll, row["id"]))
+            did = row["id"]
+            base = _read_json(_base_path(coll, did))
             data = row.get("data") or {}
-            if own is not None and not own(coll, row["id"], data):
+            if own is not None and not own(coll, did, data):
                 continue
-            if not _in_read_scope(st, coll, row["id"], data):
+            if not _in_read_scope(st, coll, did, data):
                 continue                       # CL59: never read from the Artifact: never sent, so never "unsent"
-            if not _counts_as_changed(coll, row["id"], base, data, mine):
+            if not _counts_as_changed(coll, did, base, data, mine):
                 continue                       # CL73: no base and never written here (a git seed, an unread post)
-            if base != data and not (_is_card(row["id"]) and base is not None and _card_older(data, base)):
-                n += 1                         # CL31: an older card here is dropped at push, not unsent
+            if coll == "posts" and did in GENERATED_CARDS:
+                if base is not None and (base.get("rows") or []) == (data.get("rows") or []):
+                    continue                   # F41: timestamp-only card rebuild at start is never unsent
+                if base is not None and _card_older(data, base):
+                    continue                   # CL31: an older card here is dropped at push, not unsent
+                card += 1
+                continue
+            if base != data and not (_is_card(did) and base is not None and _card_older(data, base)):
+                non_card += 1                  # CL31: an older card here is dropped at push, not unsent
+    # F41: auto-rebuilt _dashboard/_trains alone in a session that changed no real post/comment never block Stop
+    n = (non_card + card) if non_card else 0
     return {"changed": n, "batches": sorted(glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")))}
 
 
@@ -2193,10 +2203,13 @@ def artifact_push(url=None, token=None, out_dir=None, own=None, post=None):
             if post and not ((coll == "posts" and did == post) or
                              (coll == "comments" and str(data.get("post_id") or "") == post)):
                 continue                                 # CL59: --post: only that post and its comments
-            every.append(data)
             base = _read_json(_base_path(coll, did))
+            if base is not None or _counts_as_changed(coll, did, base, data, mine):
+                every.append(data)                       # F42: never mirror docs from untouched git-seeded posts
             if base == data:
                 continue
+            if coll == "posts" and did in GENERATED_CARDS and base is not None and (base.get("rows") or []) == (data.get("rows") or []):
+                continue                                 # F41: timestamp-only card rebuild is never pushed
             if own is not None and not own(coll, did, data):
                 continue                                 # CL72: a part sends only its own documents
             key = "%s/%s" % (coll, did)
@@ -2210,7 +2223,8 @@ def artifact_push(url=None, token=None, out_dir=None, own=None, post=None):
                 _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did,
                                                              "data": base, "if_version": row.get("version", 0)}], "sync": True}, token=token)
                 dropped.append(key)
-                every[-1] = base
+                if every:
+                    every[-1] = base
                 continue
             e = {"op": "set", "collection": _art_prefix() + coll, "doc_id": did}
             if key in (st.get("not_there") or []) and key not in st["versions"]:
@@ -2247,6 +2261,9 @@ def artifact_push(url=None, token=None, out_dir=None, own=None, post=None):
                                          changed=[(e["doc_id"], _read_json(e["file_path"])) for e in entries])
     pending = {}
     for did, ref, sha, data, ver in mirror:
+        if ver == -1:                                    # F42: already exists live on Artifact; pin version before writing
+            need_pin.append("kit_docs/" + did)
+            continue
         fp = os.path.join(os.path.abspath(out_dir), "docs", "%04d.json" % len(entries))
         write_doc(fp, data)
         e = {"op": "set", "collection": _art_prefix() + "kit_docs", "doc_id": did, "file_path": fp}
@@ -2361,12 +2378,17 @@ def _artifact_files(docs, out, changed=None):
         if path not in st["assets"] and u and os.path.isfile(full):
             st["assets"][path] = {"url": u, "sha": kas.sha256_of(full)}
     plan = kas.plan_files(ROOT, [x for x in docs if isinstance(x, dict)], st)
+    art_vers = (_art_state().get("versions") or {})
+    live_docs = {d.get("path") for d in ((idx.get("docs") or []) if isinstance(idx, dict) else []) if isinstance(d, dict) and d.get("path")}
     mirror = []
     for ref in plan["mirror"]:
         data = kas.mirror_doc(ROOT, ref)
         if data:
             did = kas.doc_id(ref)
-            mirror.append((did, ref, kas.sha256_of(os.path.join(ROOT, ref)), data, (st["docs"].get(did) or {}).get("version")))
+            ver = (st["docs"].get(did) or {}).get("version") or art_vers.get("kit_docs/" + did)
+            if not ver and ref in live_docs:
+                ver = -1                                 # F42: exists in live kit_docs/_index; never blind-set without if_version
+            mirror.append((did, ref, kas.sha256_of(os.path.join(ROOT, ref)), data, ver))
     plan["mirror"] = []                                 # in the push's batches, not a second step
     if changed is not None:                             # "stays a repo link": said for the posts sent now only
         by = {}                                         # CL33 (O54): each link names the post that cites it
@@ -5294,17 +5316,27 @@ def refusal_kind(text):
     return ""
 
 
-def record_refusal(pid, text, kind=None):
+def record_refusal(pid, text, kind=None, root=None):
     """CL78 (M10): a refusal of `land` / `done`, or a review's redirect, is one fix of its kind in the ledger, by itself (no
     model call), so the third of a kind raises "what keeps coming back". One per (kind, step). Never fails its caller."""
     kind = kind or refusal_kind(text)
-    if not kind or not pid:
+    if not kind or not pid or os.environ.get("KIT_NO_LEDGER"):
         return None
     try:
+        # Never let a unit test (temp root or temp artifact/mirror dir) pollute the real repo's .board/memory/ledger.md
+        tmp = os.path.realpath(tempfile.gettempdir())
+        if root is not None and os.path.realpath(root) != os.path.realpath(ROOT):
+            mdir = os.path.join(root, ".board", "memory")
+            if not os.path.isdir(mdir):
+                return None
+        else:
+            if os.path.realpath(_art_dir()).startswith(tmp + os.sep) or os.path.realpath(_mirror_path()).startswith(tmp + os.sep):
+                return None
+            mdir = _resolve_memory_dir()
         led = _load_ledger_mod()
         if led is None or not hasattr(led, "record_fix"):
             return None
-        return led.record_fix(_resolve_memory_dir(), kind, re.sub(r"\s+", " ", str(text))[:200], pid)
+        return led.record_fix(mdir, kind, re.sub(r"\s+", " ", str(text))[:200], pid)
     except Exception:  # noqa: BLE001
         return None
 
@@ -5714,6 +5746,25 @@ def first_code_commit_at(root, since=None):
     return dates[-1] if dates else None
 
 
+def _code_predates_intent_rule(root, since=None):
+    """True when this step's first code commit landed before CL76 existed in the repo's kit (so a mid-flight step that
+    backfills intent and tests is not permanently blocked by a retroactive timestamp check)."""
+    base = _step_base(root) or _since_base(root, since)
+    if not base:
+        return False
+    r = _git_run("log", "--first-parent", "--no-merges", "--format=%H", "%s..HEAD" % base, "--", ".",
+                 *[":!%s" % d.rstrip("/") for d in _NOT_CODE], cwd=root)
+    shas = [s.strip() for s in (r.stdout or "").splitlines() if s.strip()]
+    if not shas:
+        return False
+    parent = shas[-1] + "^"
+    for path in ("scripts/kit.py", ".kit/kit.py"):
+        show = _git_run("show", "%s:%s" % (parent, path), cwd=root)
+        if show.returncode == 0 and show.stdout:
+            return "def check_intent(" not in show.stdout
+    return False
+
+
 def _iso_utc(s):
     try:
         return datetime.fromisoformat(str(s).replace("Z", "+00:00")).astimezone(timezone.utc)
@@ -5749,7 +5800,7 @@ def check_intent(p, root=ROOT, added=None, code_at=None):
     since = p.get("started_at") or p.get("launched_at")
     first = code_at if code_at is not None else first_code_commit_at(root, since)
     at, fc = _iso_utc(it.get("at")), _iso_utc(first)
-    if at and fc and fc < at:
+    if at and fc and fc < at and not (code_at is None and _code_predates_intent_rule(root, since)):
         err.append("intent: written %s, after the step's first code commit (%s): the intent comes first, before any code" % (
             it.get("at"), first))
     if added is None:
@@ -5873,7 +5924,7 @@ def done(pid, db_path=None, root=None):
             warn.append("proof: written here; send it: `python3 -I .kit/kit.py artifact push`")
     for e in err:                                    # CL78 (M10): each kind of refusal is counted, by itself
         if refusal_kind(e) in ("branch carries another step", "branch behind the trunk", "conflict with the trunk", "stale board copy"):
-            record_refusal(pid, e)
+            record_refusal(pid, e, root=root)
     lines = (["NOT READY: %s" % pid] if err else ["OK: %s follows the post format" % pid])
     lines += ["  fix: " + e for e in err] + ["  note: " + w for w in warn]
     if not err:
@@ -8161,6 +8212,19 @@ def launch_text(r):
     return "\n".join(lines) + "\n"
 
 
+def _step_needs_review(p, cfg=None):
+    """True when step `p` gets an automatic per-step review under kit.review.auto:
+    'all' = every step unless review_auto is False; 'milestone' = only steps with review_auto is True (batched
+    train cross-reviews still run every train_every steps); 'off' = none."""
+    rv = ((cfg or _kit_config()).get("kit") or {}).get("review") or {}
+    mode = str(rv.get("auto", "all")).strip().lower()
+    if mode == "off":
+        return False
+    if mode == "milestone":
+        return p.get("review_auto") is True
+    return p.get("review_auto") is not False
+
+
 def lands_after_review():
     """Work reaches the trunk after its review (kit.land), where the kit may push the trunk and reviews run."""
     k = _kit_config().get("kit") or {}
@@ -8189,7 +8253,7 @@ def landing_steps(posts, git=True):
                 why = "it is not complete yet (status %s)" % (p.get("status") or "?") if pr or "progress" in st else ""
             elif not pr:
                 why = ""                                     # complete before this rule: its work landed the old way
-            elif p.get("review_auto") is False:
+            elif not _step_needs_review(p):
                 why = ""
             elif rv != "continue":
                 why = "its review has not said `continue` (%s)" % (("it said " + rv) if rv else "no verdict yet")
@@ -8430,14 +8494,14 @@ def step_complete(pid, db_path=None, cli=None):
         if tip:
             fields["review_commit"] = tip
     out = {"post": pid, "ok": _board_write("update", "posts", pid, fields), "reviews": []}
-    if out["ok"] and lands_after_review() and before.get("review_auto") is False:
+    if out["ok"] and lands_after_review() and not _step_needs_review(before):
         out["landed"] = _landing("land", pid)[1]
     rv = (_kit_config().get("kit") or {}).get("review") or {}
     if str(rv.get("auto", "all")) == "off":
         return out
     posts = _all_posts(db_path)
     p = posts.get(pid) or {}
-    if p.get("review_auto") is not False and not (p.get("review") or p.get("review_id") or p.get("review_started")):
+    if _step_needs_review(p) and not (p.get("review") or p.get("review_id") or p.get("review_started")):
         rc, msg = review(pid, db_path=db_path, cli=cli)
         out["reviews"].append(msg)
         if rc == 0 and "NOT STARTED" not in msg and "already started" not in msg and not os.environ.get("KIT_NO_LAUNCH"):
@@ -8716,7 +8780,7 @@ def review_due(p):
     since = str(rv.get("since") or "")
     return bool(since and str(rv.get("auto", "all")) != "off" and str(p.get("created_at") or "") >= since
                 and step_state(p) == "done" and str(p.get("column") or "") not in ("done", "question", "todo")
-                and (p.get("session_id") or p.get("verdict")) and p.get("review_auto") is not False
+                and (p.get("session_id") or p.get("verdict")) and _step_needs_review(p)
                 and not (p.get("review") or p.get("review_id") or p.get("review_started")))
 
 
@@ -10776,6 +10840,17 @@ def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=
     return res
 
 
+def _git_in_progress(cwd=None):
+    """Active git multi-step op ('merge', 'rebase', 'cherry-pick', 'revert') if in progress, else ''."""
+    for f, name in (("MERGE_HEAD", "merge"), ("REBASE_HEAD", "rebase"), ("rebase-merge", "rebase"),
+                    ("rebase-apply", "rebase"), ("CHERRY_PICK_HEAD", "cherry-pick"), ("REVERT_HEAD", "revert")):
+        r = _git_run("rev-parse", "--git-path", f, cwd=cwd)
+        p = (r.stdout or "").strip() if r.returncode == 0 else ""
+        if p and os.path.exists(p if os.path.isabs(p) else os.path.join(cwd or ROOT, p)):
+            return name
+    return ""
+
+
 def _checkpoint_commit(post=None, message=None, push=False, on_step_branch=False):
     cfg = _kit_config()
     k = cfg.get("kit") or {}
@@ -10787,6 +10862,10 @@ def _checkpoint_commit(post=None, message=None, push=False, on_step_branch=False
         if on_step_branch:
             return {"ok": True, "committed": False, "why": "skipped on trunk/system branch %s" % br}
         return {"ok": False, "committed": False, "why": "refusing to checkpoint on branch %s (use a step branch)" % br}
+    op = _git_in_progress(ROOT)
+    if op:
+        return {"ok": False, "committed": False, "refused": True, "branch": br,
+                "why": "git %s is in progress: resolve and finish it before checkpointing" % op}
     st = _git_run("status", "--porcelain", "--untracked-files=all")
     if st.returncode != 0 or not st.stdout.strip():
         res = {"ok": True, "committed": False, "branch": br, "why": "working tree clean"}

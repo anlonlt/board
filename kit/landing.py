@@ -464,6 +464,16 @@ def _untracked(env, left=None):
     return keep
 
 
+def _git_in_progress(cwd=None):
+    """Return active git multi-step op name ('merge', 'rebase', 'cherry-pick', 'revert') if in progress, else ''."""
+    for f, name in (("MERGE_HEAD", "merge"), ("REBASE_HEAD", "rebase"), ("rebase-merge", "rebase"),
+                    ("rebase-apply", "rebase"), ("CHERRY_PICK_HEAD", "cherry-pick"), ("REVERT_HEAD", "revert")):
+        p = out("rev-parse", "--git-path", f, cwd=cwd)
+        if p and os.path.exists(p if os.path.isabs(p) else os.path.join(cwd or ROOT, p)):
+            return name
+    return ""
+
+
 def save():
     """(exit code, text). One commit on wip/<branch>: parents HEAD and the last save, so nothing is ever forced."""
     mode = str(kit_cfg().get("wip") or "auto")
@@ -471,6 +481,9 @@ def save():
     head = out("rev-parse", "-q", "--verify", "HEAD")
     if mode == "off" or not name or not head:
         return 0, "save: nothing (%s)" % ("kit.wip is off" if mode == "off" else "no branch here")
+    op = _git_in_progress()
+    if op:
+        return said(1, "save: skipped: git %s is in progress (resolve and finish it first)" % op)
     left = []
     with tempfile.TemporaryDirectory(prefix="kit-wip-") as d:
         env = {"GIT_INDEX_FILE": os.path.join(d, "index")}
@@ -550,7 +563,7 @@ def _step_tip(br):
     return ""
 
 
-def carried(tip, branch, own="", got=None):
+def carried(tip, branch, own="", got=None, skip_branches=()):
     """CL78: [{post, part, branch, merge, n}] the open steps whose commits `tip` holds and the trunk does not: work of
     another step's branch (a merge of it, or commits copied from it whole), never the part's own. `got`: the board's
     steps (`kit.py landing`), read when not given. A step marked `after` another may build on it only once it landed:
@@ -564,10 +577,11 @@ def carried(tip, branch, own="", got=None):
     mine = set(out("rev-list", tip, "^" + t).split())
     if not mine:
         return []
+    skip = {branch} | {b for b in (skip_branches or ()) if b}
     found = []
     for s in got:
         br = str(s.get("branch") or "")
-        if s.get("landed") or not br or br == branch or s.get("post") == own or br == trunk():
+        if s.get("landed") or not br or br in skip or s.get("post") == own or br == trunk():
             continue
         other = _step_tip(br)
         if not other:
@@ -616,9 +630,10 @@ def pre_push(lines):
         p = ln.split()
         if len(p) == 4 and p[2] != t and p[2].startswith("refs/heads/") and p[1].strip("0"):
             br = p[2][len("refs/heads/"):]                 # CL78: a step's branch takes no other step's unlanded work
+            local_br = p[0][len("refs/heads/"):] if p[0].startswith("refs/heads/") else ""
             got = steps()
-            own = next((x.get("post") for x in (got or []) if x.get("branch") == br), "") or recorded_step()
-            found = carried(p[1], br, own, got)
+            own = next((x.get("post") for x in (got or []) if x.get("branch") in (br, local_br)), "") or recorded_step()
+            found = carried(p[1], br, own, got, skip_branches=(local_br,) if local_br else ())
             if found:
                 txt = carried_text(found, br, own)
                 _count_refusal(CARRIES, own or br, txt)

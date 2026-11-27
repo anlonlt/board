@@ -79,6 +79,32 @@ class StopCountsOwn(unittest.TestCase):
         self.local("comments/new-c", {"post_id": POST, "text": "mine", "created_at": "2026-11-27T02:00:00Z"})
         self.assertEqual(self.status(), 1)
 
+    def test_f41_rebuilt_cards_at_start_not_counted_unsent(self):
+        """F41: a fresh session whose _dashboard and _trains were rebuilt at start (zero real post/comment edits)
+        reports 0 unsent so Stop is never blocked."""
+        self.remote("posts", "_dashboard", {"title": "Where we are", "updated_at": "2026-11-27T01:00:00Z", "rows": [{"key": "A"}]})
+        self.remote("posts", "_trains", {"title": "Trains", "updated_at": "2026-11-27T01:00:00Z", "rows": [{"part": "CL1"}]})
+        kit.artifact_load(url=self.url, token=TOKEN)
+        self.local("posts/_dashboard", {"title": "Where we are", "updated_at": "2026-11-27T09:20:00Z", "rows": [{"key": "A"}]})
+        self.local("posts/_trains", {"title": "Trains", "updated_at": "2026-11-27T09:20:00Z", "rows": [{"part": "CL1"}, {"part": "CL2"}]})
+        self.assertEqual(self.status(), 0)
+
+    def test_f42_live_kit_docs_never_blind_set_without_version(self):
+        """F42: a doc already listed in live kit_docs/_index.docs with unknown local version goes to need_pin, never a
+        blind set without if_version; untouched git-seeded posts never trigger doc mirroring."""
+        kit.artifact_pull(post=POST)
+        post = {"title": "CL73", "body": "Read `README.md`.", "updated_at": "2026-11-27T01:00:00Z"}
+        self.remote("posts", POST, post)
+        self.remote("kit_docs", "_index", {"docs": [{"path": "README.md"}], "assets": {}})
+        kit.artifact_load(url=self.url, token=TOKEN, versions=["posts/%s=2" % POST])
+        # Put _index back in in/ so _artifact_files reads the pulled index (as after artifact pull)
+        self.remote("kit_docs", "_index", {"docs": [{"path": "README.md"}], "assets": {}})
+        r = kit.artifact_push(url=self.url, token=TOKEN)
+        writes = [e for p in r["batches"] for e in json.loads(Path(p).read_text())]
+        blind_kit_docs = [e for e in writes if e["collection"].endswith("kit_docs") and "if_version" not in e]
+        self.assertEqual(blind_kit_docs, [], writes)
+        self.assertIn("kit_docs/README.md", r["need_pin"])
+
 
 if __name__ == "__main__":
     unittest.main()

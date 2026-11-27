@@ -91,19 +91,20 @@ DEFAULT_KIT = {
     # ~150k, so a lower limit spends half of each session getting going; past ~400k every turn re-reads too much), the
     # clerk at 80k (its takeover is a 1k prompt, and every wake re-reads its whole context: small is cheap).
     "orchestrator": {"context_limit_k": 380},
-    # Reviews (Claude Code CLI): each completed step, and every train_every completed steps of a train a cross review.
-    "review": {"auto": "all", "train_every": 4},
+    # Reviews: 'milestone' = batched train cross-review every train_every steps (individual review on demand or when
+    # review_auto: true); 'all' = every completed step + cross-review; 'off' = none.
+    "review": {"auto": "milestone", "train_every": 4},
     # Memory (M8): an entry nobody confirmed for longer than this goes to a review list on the board, never deleted.
     "memory": {"review_days": 90},
     # Above this a post body gets a nudge from `kit.py done` (never an error: the post is where the detail goes).
     "post_body_max": 1500,
     "clerk": {"wait_minutes": 5, "context_limit_k": 80, "orchestrator_idle_minutes": 30},
     # agy subagent model tiers: clerk only forwards (flash_lite), cards runs scripts (flash),
-    # orchestrator/parts inherit the session model, consultant uses pro.
+    # orchestrator/parts/consultant inherit the session model so the reviewer is never a lesser model than the author.
     "roles": {"orchestrator": {"model": "inherit", "effort": "medium"},
               "clerk": {"model": "flash_lite", "effort": "low"},
               "part": {"model": "inherit", "effort": "medium"},
-              "consultant": {"model": "pro", "effort": "medium"},
+              "consultant": {"model": "inherit", "effort": "high"},
               "cards": {"model": "flash", "effort": "low"}},
     "autonomy": {
         "level": "balanced",

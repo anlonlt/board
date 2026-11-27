@@ -74,7 +74,7 @@ with tempfile.TemporaryDirectory() as d:
     cfgr = json.load(open(os.path.join(t, ".kit", "config.json")))["kit"]["roles"]
     check("roles in config: clerk flash_lite low", cfgr["clerk"] == {"model": "flash_lite", "effort": "low"})
     check("the consultant's prompt installed, the orchestrator launches it at its level",
-          os.path.exists(os.path.join(t, ".kit", "consultant.md")) and 'Model="pro"' in orch and "consultant.md" in orch)
+          os.path.exists(os.path.join(t, ".kit", "consultant.md")) and 'Model="inherit"' in orch and "consultant.md" in orch)
     cfg_k = json.load(open(os.path.join(t, ".kit", "config.json")))["kit"]
     guide = open(os.path.join(t, ".kit", "ORCHESTRATOR.md"), encoding="utf-8").read()
     check("context_limit_k in config: orchestrator 380, clerk 80",
@@ -165,7 +165,7 @@ with tempfile.TemporaryDirectory() as d:
     check("generated part prompts, the post format and the feature recipe installed; reviews on by default",
           "{{" not in part_cli and "<POST_ID>" in part_cli and "kit.py done <POST_ID>" in part_cli
           and "## The post format" in board_md and "## Which feature for what" in board_md and "board_cli.py reply" in board_md
-          and {k: v for k, v in cfg_loc.get("review", {}).items() if k != "since"} == {"auto": "all", "train_every": 4} and cfg_loc["review"].get("since") and cfg_loc.get("post_body_max") == 1500)
+          and {k: v for k, v in cfg_loc.get("review", {}).items() if k != "since"} == {"auto": "milestone", "train_every": 4} and cfg_loc["review"].get("since") and cfg_loc.get("post_body_max") == 1500)
     orch_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "orchestrator.md"), encoding="utf-8").read()
     # 38b1803: the web's cards agent is installed in every repo (any repo can be opened on the web); the CLI guide never calls it
     cards_cli = os.path.exists(os.path.join(t_loc, ".claude", "agents", "kit-cards.md"))

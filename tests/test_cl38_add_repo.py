@@ -197,10 +197,21 @@ class Branches(unittest.TestCase):
         self.commit("newer-rule")
         self.git("push", "-q", "origin", "main")
         self.git("checkout", "-q", "cl99")
+        # CL78: a non-conflicting trunk move merges cleanly in a throwaway copy (no error, note in warn)
+        warn = []
+        self.assertEqual(kit.check_trunk_merged(str(self.t), warn=warn), [])
+        self.assertTrue(any("throwaway copy" in w for w in warn), warn)
+        # A conflicting trunk move is refused until the part merges it
+        self.git("checkout", "-q", "main")
+        (self.t / "mine").write_text("trunk-conflict")
+        self.git("add", "mine")
+        self.git("commit", "-q", "-m", "conflict")
+        self.git("push", "-q", "origin", "main")
+        self.git("checkout", "-q", "cl99")
         err = kit.check_trunk_merged(str(self.t))
         self.assertEqual(len(err), 1)
-        self.assertIn("merge it first", err[0])
-        self.git("merge", "-q", "--no-edit", "origin/main")
+        self.assertIn("merge it yourself", err[0])
+        self.git("merge", "-q", "-X", "ours", "--no-edit", "origin/main")
         self.assertEqual(kit.check_trunk_merged(str(self.t)), [])
 
     def test_prompt_goes_on_the_trunk(self):

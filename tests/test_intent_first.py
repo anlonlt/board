@@ -301,6 +301,27 @@ class Gaming(unittest.TestCase):
         err = kit.check_intent(dict(p, intent=dict(p["intent"], at="2026-07-01T00:00:00Z")), root=d)
         self.assertTrue(any("after the step's first code commit" in e for e in err), err)
 
+    def test_pre_cl76_branch_not_retroactively_blocked_by_timestamp(self):
+        """A mid-flight step whose first code commit predated CL76 (no check_intent in kit.py at its parent)
+        is not permanently blocked by the retroactive timestamp check once it backfills intent + tests."""
+        d = os.path.join(self.d, "pre_cl76")
+        os.makedirs(os.path.join(d, "scripts"))
+        os.makedirs(os.path.join(d, "tests"))
+        git(d, "init", "-q", "-b", "main")
+        with open(os.path.join(d, "scripts", "kit.py"), "w") as fh:
+            fh.write("# pre-CL76 kit\ndef done(): pass\n")
+        git(d, "add", "-A")
+        git(d, "commit", "-qm", "trunk pre-cl76")
+        git(d, "checkout", "-qb", "m9")
+        with open(os.path.join(d, "app.py"), "w") as fh:
+            fh.write("x = 1\n")
+        with open(os.path.join(d, "tests", "test_m9.py"), "w") as fh:
+            fh.write(TOPIC_TEST)
+        git(d, "add", "-A")
+        git(d, "commit", "-qm", "m9 work before cl76")
+        err = kit.check_intent(with_intent(r6(), at="2999-01-01T00:00:00Z"), root=d)
+        self.assertEqual(err, [])
+
 class DoneRefuses(unittest.TestCase):
     """real: `done` itself calls the intent check (not only the helper)."""
 

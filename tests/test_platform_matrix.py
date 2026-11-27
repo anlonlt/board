@@ -475,7 +475,7 @@ class ResumeMatrix(unittest.TestCase):
                 self.assertEqual("rebuild with the `kit-cards` agent" in orch, self.kit.PLATFORM_RULES["cards"][pl] == "agent", pl)
                 # 4. resume_role('part') matches part_template, real_project_run, reply_format
                 part = self.kit.resume_role(str(self.root / "m"), "part", post="r5-step", db_path=self.db)
-                self.assertEqual("`kit.py artifact load`" in part, self.kit.PLATFORM_RULES["artifact_steps"][pl], pl)
+                self.assertEqual("kit.py artifact sync" in part, self.kit.PLATFORM_RULES["artifact_steps"][pl], pl)
                 rp_mode = self.kit.PLATFORM_RULES["real_project_run"][pl]
                 self.assertEqual("ArtifactData get" in part, rp_mode == "orchestrator", pl)
                 self.assertEqual("done refuses without it" in part, rp_mode == "part", pl)
@@ -502,7 +502,7 @@ class DoneMatrix(unittest.TestCase):
         kit.plain_notes = lambda p: []
         kit.real_project_areas = lambda root=None, base=None: ["resume"]
         kit.consumers = lambda extra=None: [{"github": "anlonlt/harmonize", "name": "harmonize"}]
-        kit.check_trunk_merged = lambda root=None: []
+        kit.check_trunk_merged = lambda *a, **kw: []
         kit.prove_check = lambda p, root=None, timeout=900: ([], [])
         kit._post_gate = lambda: None
         kit._art_dir = lambda: os.path.join(d, "art")
