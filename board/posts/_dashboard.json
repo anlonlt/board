@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T07:59:01Z",
+ "created_at": "2026-11-27T08:01:03Z",
  "rows": [
   {
    "at": 6,
@@ -172,7 +172,7 @@
    "name": "Agy",
    "note": "Next: install_cmd skips linked git worktrees so ~/.local/bin/<cmd> is never overwritten by a part",
    "post": "a1-install-cmd-skips-linked-git-worktrees-s",
-   "state": "ready",
+   "state": "running",
    "steps": [
     "install_cmd skips linked git worktrees so ~/.local/bin/<cmd> is never overwritten by a..."
    ],
@@ -198,5 +198,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T07:59:01Z"
+ "updated_at": "2026-11-27T08:01:03Z"
 }
