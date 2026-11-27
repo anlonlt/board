@@ -272,6 +272,7 @@ class Runtime(Base):
         self.assertEqual(self.local("posts/cl99-launch-me")["data"]["runner"], "agy")
 
     def test_launch_line_for_agy_points_at_kit_py_launch(self):
+        """I1: _launch_line() under agy returns python3 -I .kit/kit.py launch <post> with model flags, never raw invoke_subagent."""
         repo = self.repo({"project": "Board", "kit": {"runtime": "agy", "cli": "agy"}})
         k = self.kit_in(repo)
         os.environ["ANTIGRAVITY_AGENT"] = "1"
@@ -288,12 +289,28 @@ class Runtime(Base):
         }):
             self.assertEqual(k._launch_line("A2", "docs/prompts/a2-test-step.md", cli="agy"),
                              "python3 -I .kit/kit.py launch a2-test-step --model pro")
-        # Without a derivable post id, falls back to invoke_subagent(...)
+
+    def test_stress_I1_launch_line_agy_edge_cases_and_config_override(self):
+        """stress I1: inherit omits --model, explicit post overrides non-.md rel, missing post falls back, agy env beats claude config."""
+        repo = self.repo({"project": "Board", "kit": {"runtime": "local", "cli": "claude"}})
+        k = self.kit_in(repo)
+        os.environ["ANTIGRAVITY_AGENT"] = "1"
+        # agy runtime wins even when config names claude-cli
+        self.assertEqual(k._launch_line("A2", "docs/prompts/a2-test-step.md"),
+                         "python3 -I .kit/kit.py launch a2-test-step")
+        # explicit model="inherit" never emits redundant --model inherit
+        self.assertEqual(k._launch_line("A2", "docs/prompts/a2-test-step.md", model="inherit", cli="agy"),
+                         "python3 -I .kit/kit.py launch a2-test-step")
+        # explicit post= works even when rel does not end with .md
+        self.assertEqual(k._launch_line("A2", "no-post", cli="agy", post="a2-explicit-id"),
+                         "python3 -I .kit/kit.py launch a2-explicit-id")
+        # Without any derivable post id, falls back to invoke_subagent(...)
         fallback = k._launch_line("A2", "no-post", cli="agy")
         self.assertIn("invoke_subagent(", fallback)
         self.assertIn('Workspace="share"', fallback)
 
-    def test_agy_orchestrator_guide_and_launch_workflow_point_at_kit_py_launch(self):
+    def test_I2_agy_step_new_resume_and_launch_workflow_point_at_kit_py_launch(self):
+        """I2: step_new(), _launch_workflow(), and resume() under agy point at python3 -I .kit/kit.py launch <post>."""
         repo = self.repo({"project": "Board", "kit": {"runtime": "agy", "cli": "agy"}})
         k = self.kit_in(repo)
         os.environ["ANTIGRAVITY_AGENT"] = "1"
@@ -301,14 +318,61 @@ class Runtime(Base):
         self.assertIn("python3 -I .kit/kit.py launch <post>", wf)
         self.assertIn("prints the `invoke_subagent` call", wf)
         self.assertNotIn("`step new` prints the `invoke_subagent` call", wf)
-        for rel in ("kit/orchestrator.template.md", ".kit/orchestrator.md"):
+        self.local("posts/_trains", TRAINS)
+        k._all_posts = lambda db_path=None: {"_trains": TRAINS}
+        k._board_write = lambda cmd, coll, did, data, env=None: bool(self.local("%s/%s" % (coll, did), data) or True)
+        r = k.step_new("cli", "A9", "Launch via kit", task="Use kit.py launch for agy.", keep_train="test")
+        self.assertNotIn("error", r, r)
+        self.assertEqual(r["launch"], "python3 -I .kit/kit.py launch %s" % r["post"])
+        self.assertNotIn("invoke_subagent", r["launch"])
+        self.assertNotIn("step prompt", r["launch"])
+        res_txt = k.resume(str(self.tmp), db_path=str(self.board_dir / "board.db"), cli="agy")
+        self.assertIn("python3 -I .kit/kit.py launch <post> --continue", res_txt)
+        self.assertNotIn('continue it with `invoke_subagent(..., Workspace="share")`', res_txt)
+
+    def test_stress_I2_step_new_and_resume_under_agy_with_claude_config(self):
+        """stress I2: under ANTIGRAVITY_AGENT=1 on a repo configured for claude-cli, step_new and resume still route through kit.py launch."""
+        repo = self.repo({"project": "Board", "kit": {"runtime": "local", "cli": "claude"}})
+        k = self.kit_in(repo)
+        os.environ["ANTIGRAVITY_AGENT"] = "1"
+        self.local("posts/_trains", TRAINS)
+        k._all_posts = lambda db_path=None: {"_trains": TRAINS}
+        k._board_write = lambda cmd, coll, did, data, env=None: bool(self.local("%s/%s" % (coll, did), data) or True)
+        r = k.step_new("cli", "A10", "Cross-config agy launch", task="Route through kit.py launch.", keep_train="test")
+        self.assertNotIn("error", r, r)
+        self.assertEqual(r["launch"], "python3 -I .kit/kit.py launch %s" % r["post"])
+        self.assertNotIn("claude --bg", r["launch"])
+        self.assertNotIn("invoke_subagent", r["launch"])
+        res_txt = k.resume(str(self.tmp), db_path=str(self.board_dir / "board.db"))
+        self.assertIn("python3 -I .kit/kit.py launch <post> --continue", res_txt)
+        self.assertNotIn('continue it with `invoke_subagent(..., Workspace="share")`', res_txt)
+
+    def test_I3_every_agy_orchestrator_guide_points_part_launches_at_kit_py_launch(self):
+        """I3 [outside]: both kit/orchestrator.template.md and kit/ORCHESTRATOR.template.md (and .kit/ copies) point at kit.py launch."""
+        for rel in ("kit/orchestrator.template.md", ".kit/orchestrator.md",
+                    "kit/ORCHESTRATOR.template.md", ".kit/ORCHESTRATOR.md"):
             p = ROOT / rel
-            if not p.is_file():
-                continue
+            self.assertTrue(p.is_file(), rel)
             txt = p.read_text(encoding="utf-8")
             self.assertIn("python3 -I .kit/kit.py launch <post id>", txt, rel)
-            self.assertNotIn("the `Prompt` that `kit.py step new` prints", txt, rel)
-            self.assertNotIn("mark it `kit.py step start <post>`, then launch each part with `invoke_subagent`", txt, rel)
+
+    def test_stress_I3_no_stale_raw_part_launch_phrases_in_agy_guides(self):
+        """stress I3: stale raw part-launch instructions are gone from every agy orchestrator guide while clerk/consultant calls stay."""
+        stale = (
+            "the `Prompt` that `kit.py step new` prints",
+            "mark it `kit.py step start <post>`, then launch each part with `invoke_subagent`",
+            "Launch it with `invoke_subagent(",
+            "Write its prompt as a file (`docs/prompts/<part>.md`)",
+        )
+        for rel in ("kit/orchestrator.template.md", ".kit/orchestrator.md",
+                    "kit/ORCHESTRATOR.template.md", ".kit/ORCHESTRATOR.md"):
+            txt = (ROOT / rel).read_text(encoding="utf-8")
+            for phrase in stale:
+                self.assertNotIn(phrase, txt, (rel, phrase))
+        # Clerk rotation and in-process handover still use invoke_subagent as intended
+        orch_txt = (ROOT / "kit/orchestrator.template.md").read_text(encoding="utf-8")
+        self.assertIn('Role="Board Clerk"', orch_txt)
+        self.assertIn('Role="Consultant: <POST_ID>"', orch_txt)
 
 
 class HandoverOnTheWeb(unittest.TestCase):
