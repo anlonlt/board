@@ -38,10 +38,13 @@
  "check": "python3 scripts/run_all_tests.py --keep-going test_run_all_tests test_train_and_task_train test_device_and_takeover test_cl30_kit test_orchestrator_guard test_part_starts test_cl36_post test_cl48_test test_artifact_files test_cards_command test_artifact_assets test_artifact_cross test_install test_checklist test_arena test_welcome test_clerk_starts",
  "claimed_at": "2026-11-27T07:52:38Z",
  "column": "info",
+ "completed_at": "2026-11-27T08:01:45Z",
  "created_at": "2026-11-26T22:13:19Z",
  "differs": "CL52: builds on CL48 (a test never writes the real board); CL48 refuses writes outside temp, CL52 makes every test remove what it creates (temp dirs, worktrees, branches, processes).",
  "from": "orchestrator",
  "handoff": "- Run the tests as before with `python3 scripts/run_all_tests.py`. A suite that leaves anything now fails, with what it left on its result line: fix the suite, don't add an exception.\n- A new test file that makes folders with `tempfile.mkdtemp` and might not remove them can add `import temp_cleanup`, which removes them when the process exits, failures included. Prefer `TemporaryDirectory` or `addCleanup` in new code.\n- On each computer, once: `python3 scripts/run_all_tests.py --clean` (the list), then `--clean --yes` (the delete). It only takes folders untouched for 2 hours, so a run in progress is kept (`--older H` changes the age).",
+ "landed": "7aa48b5cf35b8d7baf23fecadfe1b02bc08aed15",
+ "landed_at": "2026-11-27T08:03:13Z",
  "launched_at": "2026-11-27T03:11:23Z",
  "launched_out_of_order": {
   "at": "2026-11-27T03:11:23Z",
@@ -69,7 +72,13 @@
   "needs_real": true,
   "sha": "ac387f62dba19bad4f8cb92186bd3bd45b4d1247"
  },
+ "real_project": {
+  "command": "install.py <copy of harmonize@0d020ef> --update --no-cmd (kit from origin/cl52@ac387f62); KIT_STALE_OK=1 .kit/kit.py resume --role orchestrator --full",
+  "output": "install exit 0; resume exit 0: no regression on Harmonize (the change is in the kit's own tests and runner). Orchestrator 4, 2026-11-27, never pushed.",
+  "project": "anlonlt/harmonize"
+ },
  "review": "continue",
+ "review_commit": "ac387f62dba19bad4f8cb92186bd3bd45b4d1247",
  "review_id": "CR-cl52-tests-clean-up-after-themselves",
  "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "review_orchestrator_device": "web",
@@ -79,7 +88,7 @@
  "runner": "claude-web",
  "session_id": "session_01AE1HGia6d8GJWcTSt6rRLs",
  "started_at": "2026-11-27T03:13:16Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "from": "task",
@@ -106,7 +115,7 @@
  "task": "Tests clean up after themselves: /tmp held about 5,600 folders left by test runs (cl30-inst-*, tmp*, kit-tests-*, scratch boards), each with a project copy and its own board token, on a computer with little room.\n\n1. Count what each suite leaves in the temp folder (run it, compare before and after) and fix the suites that leave anything: TemporaryDirectory or cleanup on every path, failures included.\n2. run_all_tests.py runs suites with their own temp folder (TMPDIR under one run folder) and removes it at the end; what a suite left is named in its result line, like the files it writes to ~/.local/bin.\n3. One command removes the leftovers of past runs (only folders the test runs make, by their prefixes and age), with a dry run listing them first.\n",
  "title": "Tests clean up after themselves",
  "train": "board-data",
- "updated_at": "2026-11-27T07:56:15Z",
+ "updated_at": "2026-11-27T08:03:13Z",
  "verdict": "Done: a full run now leaves nothing (80 of 80 suites clean, it was 20 suites and 111 folders per run), and one command clears the folders older runs left, after showing the list first.",
- "working_by": "owner"
+ "working_by": ""
 }
