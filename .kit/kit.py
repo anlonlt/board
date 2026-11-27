@@ -6755,7 +6755,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     base = _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "HEAD"
     text = _launch_text(rel)
     me, people = _my_person(url, token)
-    alive = _alive_sessions() if _rule("alive_check", pl) == "claude_agents" else None
+    alive = _alive_sessions() if (mode == "claude_bg" or _rule("alive_check", pl) == "claude_agents") else None
     if cont and not session_id:                     # CL17: a crashed part continues on its branch, from its post's checklist
         old = str(post.get("session_id") or "")
         if old and old in (alive or ()):
