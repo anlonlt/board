@@ -6477,6 +6477,47 @@ def _saved_mins(branch):
     return best
 
 
+def _public_board_base(url):
+    """The board's address from outside this computer: $KIT_FUNNEL_URL, `kit.funnel_url`, the Tailscale funnel that
+    points at this board's port, else the board's own address ('' when none)."""
+    k = _kit_config().get("kit") or {}
+    got = str(os.environ.get("KIT_FUNNEL_URL") or k.get("funnel_url") or "").rstrip("/")
+    if got:
+        return got
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path in (os.path.join(here, "notify.py"), os.path.join(here, "..", "kit", "notify.py")):
+        if os.path.isfile(path) and shutil.which("tailscale"):
+            try:
+                spec = importlib.util.spec_from_file_location("kit_notify_link", path)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                port = urllib.parse.urlsplit(url).port
+                ft = mod.funnel_target(mod.funnel_status(max_age=0), port)
+                if ft:
+                    return ft[0]
+            except Exception:
+                pass
+            break
+    return str(url or "").rstrip("/")
+
+
+def outside_link(pid, url=None, token=None, hours=72):
+    """CL56: the one link an outside AI (a runner card: lmarena, antigravity-web, claude-chrome...) gets for a step:
+    the board's invite scoped to its post, `/_invite/<token>.md`: how to attach files to the post (its drop box) and
+    write its result come first. {"link": ...} or {"error": ...}."""
+    url = url or local_board_url()
+    try:
+        r = _board_request(url, "shares", {"post_id": pid, "ttl_hours": hours, "allow_write": True, "max_submissions": 20},
+                           token=_resolve_board_token(token))
+    except Exception as e:
+        return {"error": "no link: the board at %s did not answer (%s)" % (url, str(e)[:120])}
+    base = _public_board_base(url)
+    out = {"link": base + (r.get("invite") or "/_invite/%s.md" % r.get("token")), "expires_at": r.get("expires_at")}
+    if re.match(r"^https?://(127\.|localhost|0\.0\.0\.0|\[::1\])", base):
+        out["warning"] = "this address is this computer's own: start the funnel (or set kit.funnel_url) so the runner can reach it"
+    return out
+
+
 def step_holder(pid, p, me=None, people=(), alive=None, saved=None, session=None):
     """Who holds this step besides the one asking, as text ('' : nobody). From what the post already carries: `for` and
     `working_by` (people), `runner` (who executes it), `session_id` (the session on it)."""
@@ -6663,6 +6704,13 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     if not session_id and not take and not cont:
         held = step_holder(pid, post, me=me, people=people, alive=_alive_sessions(), saved=_saved_mins(branch))
         if held:
+            runner = str(post.get("runner") or "").strip().lower()
+            if runner not in LAUNCH_RUNNERS and not isinstance(given, dict):
+                lk = outside_link(pid, url, token)          # CL56: its card's runner gets one link, the post's invite
+                if lk.get("link"):
+                    return dict(out, ok=False, link_for_ai=lk["link"], error="%s is %s's card: give %s this one link (its post, "
+                                "its drop box for files, its result): %s%s" % (pid, runner, runner, lk["link"],
+                                (" (%s)" % lk["warning"]) if lk.get("warning") else ""))
             return dict(out, ok=False, error="%s is taken: %s. If that session ended or its person agrees, "
                         "`kit.py launch %s --take`" % (pid, held, pid))
     cons = consumers(post.get("consumers"))
@@ -7501,6 +7549,7 @@ COMMANDS = [
     ("read the board", "kit.py session <post>", "the session a post names, and what it left"),
     ("read the board", "kit.py search <words>", "find posts and comments by words"),
     ("read the board", "kit.py queue [--runner R]", "the steps waiting for a runner"),
+    ("launch and finish", "kit.py link <post> [--hours H]", "the one link an outside AI (a runner card, LMArena, another account's app) gets for a post: its invite, scoped to the post: attach files to it (its drop box) and write its result, first (CL56)"),
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor [--fix]", "the board's size, columns, oldest question, missing files / full install, hook parity, conflict & sync health"),
     ("sessions", "kit.py permission-mode", "the mode the kit starts Claude Code sessions in: every check off once he accepted it, else auto"),
@@ -10095,6 +10144,7 @@ def main(argv=None):
     s.add_argument("--no-board", action="store_true", help="post nothing: open awaits points and issues stay in memory")
     s = sp.add_parser("report"); s.add_argument("--db", default=None)
     s = sp.add_parser("portfolio"); s.add_argument("--config", dest="portfolio_config", default=None); s.add_argument("--roots", nargs="*", default=[])
+    s = sp.add_parser("link", help="CL56: the one link an outside AI gets for a post (its invite: drop box, result)"); s.add_argument("post"); s.add_argument("--hours", type=float, default=72); s.add_argument("--url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None); s.add_argument("--unblocked", action="store_true", help="Exclude cards with unresolved blocked_by dependencies")
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
@@ -10376,6 +10426,13 @@ def main(argv=None):
         return 0
     if a.cmd == "portfolio":
         print(portfolio_summary(config_path=a.portfolio_config, roots=a.roots), end="")
+        return 0
+    if a.cmd == "link":
+        r = outside_link(a.post, a.url, a.token, hours=a.hours)
+        if r.get("error"):
+            print(r["error"])
+            return 1
+        print(r["link"] + (("\nWarning: " + r["warning"]) if r.get("warning") else ""))
         return 0
     if a.cmd == "queue":
         if not a.runner and not a.for_owner:          # R6: the steps, ranked, each place with its why

@@ -5692,7 +5692,7 @@
               info.appendChild(t1); info.appendChild(t2);
               var bCopy = document.createElement("button"); bCopy.type = "button"; bCopy.className = "btn small kit-icon-btn";
               bCopy.title = "Copy share link"; bCopy.innerHTML = SVG_LNK;
-              bCopy.addEventListener("click", function () { copyText(location.origin + s.path, "Copied AI share link for " + s.post_id); });
+              bCopy.addEventListener("click", function () { copyText(location.origin + (s.invite || s.path), "Copied AI link for " + s.post_id); });
               var bRev = document.createElement("button"); bRev.type = "button"; bRev.className = "btn small kit-icon-btn";
               bRev.title = "Revoke share link"; bRev.innerHTML = SVG_DEL;
               bRev.addEventListener("click", function () {
