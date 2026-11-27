@@ -2871,7 +2871,7 @@ def report_lines(pid, p, posts=None, review=False):
     who = "your review" if review else "your step"
     if not o["address"]:
         return ["", "## Where you report", "- No orchestrator owns %s and the board names none: `python3 -I .kit/kit.py unreached %s "
-                "--why \"no owner named\"`, then say so in your post; do not wait." % (who, pid)]
+                "--why \"no owner named\"`, then say so in your post; do not wait." % (who, pid), LAST_MESSAGE_LINE]
     dev, here = o["device"], my_device()
     rfmt = _rule("reply_format")
     if dev == "web" or o["address"].startswith(("session_", "cse_")):
@@ -2892,7 +2892,13 @@ def report_lines(pid, p, posts=None, review=False):
             "- Reach it with %s: `Done. Check post %s.`" % (how, pid),
             "- The send fails, or no live session matches (ListAgents shows none on that device, or only stale ones): "
             "`python3 -I .kit/kit.py unreached %s --why \"<what failed>\"`; your post then says so and every orchestrator's resume "
-            "lists it to claim. Do not wait, do not send to a look-alike." % pid]
+            "lists it to claim. Do not wait, do not send to a look-alike." % pid, LAST_MESSAGE_LINE]
+
+
+# CL60: said once, in the report section of a part's and a review's resume, before the closing message (a Stop hook only
+# refuses it after it is on screen); the PostToolUse hook repeats it after each last step.
+LAST_MESSAGE_LINE = ("- After that send (or `unreached`), your next and last chat message is a single \"\u00b7\": nothing "
+                     "before it, no summary; the post holds the result.")
 
 
 def _owner_write(pid, fields, url=None, token=None, drop=()):
@@ -4936,6 +4942,48 @@ def git_copy_has(pid, p, strip, m=None):
             % (BRANCH, (txt or "nothing")[-200:])]
 
 
+def _step_changed(root):
+    """M3: the files this step changed: its commits since it left the trunk, and what is not committed yet. None when
+    there is no trunk to compare with (a repo with no trunk ref, the trunk itself)."""
+    g = lambda *a: subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=60)  # noqa: E731
+    trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+    try:
+        if g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == trunk:
+            return None
+        base = ""
+        for ref in ("origin/" + trunk, trunk):
+            r = g("merge-base", "HEAD", ref)
+            if r.returncode == 0 and r.stdout.strip():
+                base = r.stdout.strip()
+                break
+        if not base:
+            return None
+        names = g("diff", "--name-only", base, "HEAD").stdout.splitlines()
+        names += g("diff", "--name-only", "HEAD").stdout.splitlines()
+        names += g("ls-files", "--others", "--exclude-standard").stdout.splitlines()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return sorted({n.strip() for n in names if n.strip()})
+
+
+def check_map(root):
+    """M3: Done keeps the map. Rebuild it, rerun every link's check (refused on one that fails, the link named),
+    refuse a file this step changed that is not on the map and an added thing with no check. (errors, notes)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    try:
+        import kit_map  # noqa: E402
+    except ImportError:
+        return [], ["map: kit_map.py is not next to kit.py: the map was not checked (`python3 -I install.py . --update`)"]
+    changed = _step_changed(root)
+    errors, notes, secs = kit_map.stretch(root, changed or [])
+    errors = ["map: " + e for e in errors]
+    notes = ["map: " + n for n in notes]
+    notes.append("map: checked in %.1f s%s" % (secs, "" if changed is not None else " (no trunk to compare with: changed files not checked)"))
+    return errors, notes
+
+
 def done(pid, db_path=None, root=None):
     p = _get_post(pid, db_path=db_path)
     if not p:
@@ -4974,6 +5022,9 @@ def done(pid, db_path=None, root=None):
     else:
         warn += pending_real     # CL32/CL38: a real project too (pending)
     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
+    e_m, n_m = check_map(root)                       # M3: the part's stretch of the map, and what it built on it
+    err += e_m
+    warn += n_m
     strip = lambda d: {k: v for k, v in (d or {}).items() if k not in ("proof", "updated_at")}  # noqa: E731
     if not artifact_here():
         # CL51 / R5: on a platform without artifact_steps, the board is the local one and git carries it
@@ -9246,6 +9297,7 @@ def _map_cmd(a):
         if val:
             argv += [flag, val]
     argv += (["--check"] if a.check else []) + (["--no-generators"] if a.no_generators else [])
+    argv += ["--steps", str(a.steps)] if getattr(a, "steps", 0) else []
     return kit_map.main(argv)
 
 
@@ -10627,6 +10679,7 @@ def main(argv=None):
     s = sp.add_parser("map", help="a map of the project from its code: overview, area cards, joins, map.json (--check: still true?)")
     s.add_argument("--root", default=None); s.add_argument("--out", default=None); s.add_argument("--config", dest="map_config", default=None)
     s.add_argument("--check", action="store_true"); s.add_argument("--no-generators", action="store_true")
+    s.add_argument("--steps", type=int, default=0, help="M3: how many of the last N steps' changed files the map covers")
     s = sp.add_parser("commands", help="the kit's commands: the topics, or those a word finds (`all`)")
     s.add_argument("word", nargs="?", default=None)
     s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
