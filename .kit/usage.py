@@ -932,6 +932,8 @@ def classify(row, title=None):
         if re.match(r"[\s\W]*(the\s+)?(board\s+)?clerk\b", tl[p.end():], re.I):  # "BC29 board clerk": a clerk
             return "clerk", p.group(1).upper()
         return "part", p.group(1).upper()
+    if rr.get("orchestrator"):  # M12: it ran the orchestrator's commands: a loose word in its first question does not outweigh that
+        return "orchestrator", part
     for word, role in (("orchestrator", "orchestrator"), ("clerk", "clerk"), ("review", "review"),
                        ("reviewer", "review")):
         if re.search(r"\b%s\b" % word, words[:160]):
@@ -1006,6 +1008,8 @@ def merge_rows(*groups):
             if other is not None:
                 if not new.get("cmd_seq") and other.get("cmd_seq"):
                     new = dict(new, cmd_seq=other["cmd_seq"], commands=other.get("commands") or new.get("commands"))
+                if other.get("verdict") and not new.get("verdict"):   # M14: a re-recorded review keeps its outcome
+                    new = dict(new, **{k: other[k] for k in ("verdict", "found_new", "found", "review_of") if k in other})
                 if other.get("is_orchestrator") and not new.get("is_orchestrator") and new.get("role") in ("other", None):
                     new = dict(new, is_orchestrator=True, role="orchestrator", part=None)
             best[k] = new
@@ -1169,6 +1173,35 @@ def work_by_trailer(repos, refs=("--all",)):
     return out
 
 
+def role_of(row, root=None, title=None):
+    """M12: THE role of a session, for the usage row and for every hook that decides one (kit_pre_compact's hand-over,
+    the session start's compaction notice, the task-list hook): (role, part). The `_orchestrator` post naming the
+    session, then `classify` (its first prompt, a hand-over line, and M11's `roles_run`: a takeover mid-session, a
+    `kit.py resume --role orchestrator`, `launch|land`, a write of `_orchestrator`), then KIT_ROLE when nothing says."""
+    osid = orchestrator_session(root) if root else None
+    if osid and osid in (row.get("session_id"), row.get("ccr_session_id"), os.environ.get("KIT_SESSION_NAME")):
+        row["is_orchestrator"] = True
+    r, p = classify(row, title)
+    env_role = os.environ.get("KIT_ROLE") if os.environ.get("KIT_ROLE") in ("orchestrator", "clerk", "review", "part") else None
+    if env_role == "orchestrator" and ((r == "part" and p) or r in ("clerk", "review")) and not row.get("is_orchestrator"):
+        env_role = None                                # agy subagents (part, clerk, review) inherit KIT_ROLE=orchestrator from kit/up
+    if r == "orchestrator" and (row.get("is_orchestrator") or (row.get("roles_run") or {}).get("orchestrator")):
+        env_role = None                                # M12: a session that took over is the orchestrator, whatever it was launched as
+    return env_role or r, p
+
+
+def session_role(transcript, root=None, session_id=None):
+    """M12: role_of() for a transcript on disk (a hook's `transcript_path`): its own events only (no subagents), so a
+    Stop hook pays one read of the file. None when the file cannot be read."""
+    try:
+        row = parse_transcript(transcript, {"push": False}, depth=1)
+    except (OSError, ValueError):
+        return None
+    if session_id and row.get("session_id") in (None, "", "transcript", "transcript_full"):
+        row["session_id"] = str(session_id)
+    return role_of(row, root)[0]
+
+
 def record(root, transcript, role=None, part=None, title=None, conf=None, session_id=None):
     conf = kit_conf(root) if conf is None else conf
     row = parse_transcript(transcript, conf)
@@ -1185,14 +1218,8 @@ def record(root, transcript, role=None, part=None, title=None, conf=None, sessio
     # only when the transcript is this very session's (a test or a backfill run inside a cloud session is not)
     if rid.startswith("cse_") and os.environ.get("CLAUDE_CODE_SESSION_ID") == row.get("session_id"):
         row["ccr_session_id"] = "session_" + rid[4:]       # the cloud session's own id, as its commit trailers carry it
-    osid = orchestrator_session(root)
-    if osid and osid in (row.get("session_id"), row.get("ccr_session_id"), os.environ.get("KIT_SESSION_NAME")):
-        row["is_orchestrator"] = True
-    r, p = classify(row, title)
-    env_role = os.environ.get("KIT_ROLE") if os.environ.get("KIT_ROLE") in ("orchestrator", "clerk", "review", "part") else None
-    if env_role == "orchestrator" and ((r == "part" and p) or r in ("clerk", "review")) and not row.get("is_orchestrator"):
-        env_role = None                                # agy subagents (part, clerk, review) inherit KIT_ROLE=orchestrator from kit/up
-    row["role"], row["part"] = role or env_role or r, part or p
+    r, p = role_of(row, root, title)
+    row["role"], row["part"] = role or r, part or p
     # the work is counted in the project the row is recorded for: a transcript's cwd moves (/home/user after a second
     # repo was attached) and need not be a repository at all
     row["work"] = git_work(root,
@@ -1545,6 +1572,217 @@ def record_self(root, push_too=True, every=60):
         return None
 
 
+# ---------------------------------------------------------------- M14: what each review found
+
+# The owner, 2026-11-27 (chat, orch4-review-ledger-0935): "is the reviews uselessness logged in the usage ledger?"
+# Cost yes, outcome no. A review row gets its outcome from the review's own board comment (CR-<post>[-N]), read by
+# this script, never by a model call: `verdict` (continue | redirect | stop), `found_new` (yes | no) and `found` (the
+# one line that says what it found, or what it only confirmed).
+VERDICTS = ("stop", "redirect", "continue")                   # the worst one first: a session over several steps
+VERDICT_WORD = re.compile(r"\b(continue|redirect|stop)\b", re.I)
+REVIEW_PROMPT = re.compile(r"\breview session\b|\bCR-[a-z0-9]|docs/prompts/CR-|--role[ =]review\b", re.I)
+END_OF_FINDINGS = re.compile(r"^##\s+(Goal|Verdict|For the orchestrator|Not checked)\b", re.I | re.M)
+NOT_CHECKED = re.compile(r"^\s*(?:[-*]\s*)?(?:\*\*)?(?:What I did not check|Not checked)\b", re.I)
+# A sentence about the step's own check failing on its break, or a failure that main shares, is not a find.
+# Nor is a problem the post already named, one it says is fixed, a negation ("no regression"), the step's tool
+# flagging the faults of its own fixture, or the real-project run the orchestrator owes (K2).
+CONFIRMS = re.compile(r"\bbreaks?\b|\brevert\w*|\bscratch copy\b|\bwhen broken\b|\bon (?:origin/)?main\b|"
+                      r"\bthe check (?:catches|can fail|fails)\b|\bcheck fails\b|\bmoved away\b|\bput back\b|"
+                      r"\balready\b|\bthe (?:post|bar|body) says\b|\bfixed\b|\bclosed\b|"
+                      r"\b(?:no|nothing|never|none)\b[^.]{0,30}\b(?:regress\w*|bugs?|gaps?|defects?|disagrees?)\b|"
+                      r"\bflags?\b|\bflagged\b|\bcatches\b|\bcaught\b|\bmy own (?:report|fixture|test)\b|"
+                      r"\bK2\b|\breal-project (?:check|run)\b", re.I)
+PROBLEM = re.compile(r"\b(?:is|are|was|were) false\b|\bfalse claim|\bclaim is false|\bdefects?\b|\bbugs?\b|\bgaps?\b|"
+                     r"\bwrong(?:ly)?\b|\bwill always leak\b|\bstill leaks?\b|\bnot there\b|\bfails today\b|\bdisagrees?\b|"
+                     r"\bdoes not (?:refuse|work|hold|catch|show|reach)\b|\bmissing\b|\bregress\w*", re.I)
+
+
+def _comment_doc(d):
+    if isinstance(d, dict) and isinstance(d.get("data"), dict) and set(d) <= {"id", "data", "version", "updated_at"}:
+        return d["data"]
+    return d
+
+
+def review_comments(root, src=None):
+    """{doc_id: comment} for the board's review comments (CR-*, or kind review): from `src` (a folder of JSON
+    files, or a board.db), else the local board (.kit/board_data/board.db), else the git copy (origin/board-mirror)."""
+    out = {}
+
+    def keep(did, d):
+        d = _comment_doc(d)
+        if isinstance(d, dict) and (did.upper().startswith("CR-") or d.get("kind") == "review") and d.get("post_id"):
+            out[did] = d
+
+    srcs = [src] if src else [os.path.join(root, ".kit", "board_data", "board.db")]
+    for s in srcs:
+        if s and os.path.isdir(s):
+            for p in sorted(glob.glob(os.path.join(s, "*.json"))):
+                try:
+                    with open(p, encoding="utf-8") as fh:
+                        keep(os.path.basename(p)[:-5], json.load(fh))
+                except (OSError, ValueError):
+                    pass
+        elif s and os.path.isfile(s):
+            import sqlite3
+            try:
+                conn = sqlite3.connect("file:%s?mode=ro" % s, uri=True, timeout=5)
+                try:
+                    for did, raw in conn.execute("SELECT doc_id, data FROM docs WHERE collection = 'comments'"):
+                        try:
+                            keep(did, json.loads(raw))
+                        except ValueError:
+                            pass
+                finally:
+                    conn.close()
+            except sqlite3.Error:
+                pass
+    if out or src:
+        return out
+    for ref in ("origin/board-mirror", "board-mirror"):
+        rc, names = git(root, "ls-tree", "--name-only", ref, "board/comments/")
+        if rc:
+            continue
+        for n in names.splitlines():
+            base = os.path.basename(n)
+            if not base.upper().startswith("CR-") or not base.endswith(".json"):
+                continue
+            rc, body = git(root, "show", "%s:%s" % (ref, n))
+            try:
+                keep(base[:-5], json.loads(body))
+            except ValueError:
+                pass
+        break
+    return out
+
+
+def review_verdict(c):
+    v = str(c.get("verdict") or "").strip().lower()
+    if v in VERDICTS:
+        return v
+    first = next((ln for ln in str(c.get("text") or "").splitlines() if ln.strip()), "")
+    m = VERDICT_WORD.search(first)
+    return m.group(1).lower() if m else None
+
+
+def _clean(s, n=160):
+    s = re.sub(r"\*\*|`", "", re.sub(r"\s+", " ", s)).strip(" -*:·—").lstrip(". ")
+    return s if len(s) <= n else s[:n - 1].rstrip() + "…"
+
+
+def _findings(text):
+    """The review's findings: its text before the Goal / Verdict sections, without what it says it did not check."""
+    m = END_OF_FINDINGS.search(text)
+    body = text[:m.start()] if m else text
+    keep, skip = [], False
+    for ln in body.splitlines():
+        if NOT_CHECKED.match(ln):
+            skip = True
+        elif skip and (not ln.strip() or ln.lstrip().startswith(("- ", "* ", "#"))):
+            skip = False
+        if not skip:
+            keep.append(ln)
+    return "\n".join(keep)
+
+
+def review_outcome(c):
+    """(verdict, found_new, found) for one review comment, by its words alone. A redirect or a stop found something
+    by definition; a continue found something when its findings name a problem (a false claim, a defect, a gap, a
+    bug...) in a sentence that is not about the step's own check failing on its break."""
+    verdict = review_verdict(c)
+    text = str(c.get("text") or "")
+    first = next((ln for ln in text.splitlines() if ln.strip()), "")
+    lead = _clean(VERDICT_WORD.sub("", first, count=1)) or _clean(str(c.get("suggestion") or ""))
+    if verdict in ("redirect", "stop"):
+        return verdict, "yes", lead
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", _findings(text)):
+        bare = re.sub(r'"[^"]*"|“[^”]*”', "", sent)                   # a quoted title or bar is not a find
+        if PROBLEM.search(bare) and not CONFIRMS.search(bare):
+            return verdict, "yes", _clean(sent)
+    return verdict, "no", "confirmed the step: " + (lead or "its check and break rerun")
+
+
+def _review_posts(row, posts, by_id=None):
+    """The steps a review row reviewed: its part (CR-<POST>, or a comment's own id), else the post ids its branch or
+    first prompt names (only a review's prompt: a part whose title says "review" is not one)."""
+    part = str(row.get("part") or "")
+    if by_id and part.lower() in by_id:
+        return [by_id[part.lower()]]
+    if part.upper().startswith("CR-"):
+        p = part[3:].lower()
+        hit = [x for x in posts if x == p or x.startswith(p) or p.startswith(x)]
+        if hit:
+            return hit[:1]
+    hay = str(row.get("branch") or "")
+    if REVIEW_PROMPT.search(str(row.get("first_prompt") or "")) or hay.startswith("review-"):
+        hay += " " + str(row.get("first_prompt") or "")
+    found = [(hay.find(p), p) for p in posts if p in hay]
+    return [p for _, p in sorted(found)]
+
+
+def review_outcomes(rows, comments):
+    """{session_id: {verdict, found_new, found, review_of}} for the review rows. Several reviews of one step
+    (CR-x, CR-x-2, ...) go to its review rows in time order: each row takes the first comment written after it
+    started; a later recheck written into the same comment shares it."""
+    by_post = {}
+    for did, c in comments.items():
+        by_post.setdefault(c["post_id"], []).append((str(c.get("created_at") or ""), did))
+    for v in by_post.values():
+        v.sort()
+    pairs = {}
+    for r in rows:
+        if r.get("role") != "review":
+            continue
+        for p in _review_posts(r, by_post, {d.lower(): c["post_id"] for d, c in comments.items()}):
+            pairs.setdefault(p, []).append(r)
+    got = {}
+    for p, rs in pairs.items():
+        taken = set()
+        for r in sorted(rs, key=lambda r: str(r.get("started") or "")):
+            start = str(r.get("started") or "")[:19]
+            pick = next((d for t, d in by_post[p] if d not in taken and t[:19] >= start), None) or by_post[p][-1][1]
+            taken.add(pick)
+            got.setdefault(r["session_id"], []).append(pick)
+    out = {}
+    for sid, dids in got.items():
+        each = [review_outcome(comments[d]) + (d,) for d in dids]
+        vs = [e[0] for e in each if e[0]]
+        yes = [e for e in each if e[1] == "yes"]
+        one = (yes or each)[0]
+        out[sid] = {"verdict": min(vs, key=VERDICTS.index) if vs else None,
+                    "found_new": "yes" if yes else "no",
+                    "found": one[2] if len(each) == 1 else "%d of %d found something; %s: %s" % (
+                        len(yes), len(each), one[3], one[2]),
+                    "review_of": dids}
+    return out
+
+
+def with_outcomes(rows, comments, res=None):
+    """The rows, each review row with its outcome (kept when the row has one and no comment matches it now)."""
+    res = review_outcomes(rows, comments) if res is None else res
+    return [dict(r, **res[r["session_id"]]) if r.get("session_id") in res else r for r in rows]
+
+
+def review_summary(rows):
+    rv = [r for r in rows if r.get("role") == "review"]
+    cost = sum(_cost(r) for r in rv)
+    k = sum(r.get("found_new") == "yes" for r in rv)
+    known = sum(r.get("found_new") in ("yes", "no") for r in rv)
+    per = ("$%.2f" % (cost / k)) if k else "-"
+    return "reviews %d, cost $%.2f, found_new %d of %d%s, cost per review that found something %s" % (
+        len(rv), cost, k, len(rv), "" if known == len(rv) else " (%d with no review comment)" % (len(rv) - known), per)
+
+
+def _cost(r):
+    c = r.get("cost_usd_all") if r.get("cost_usd_all") is not None else r.get("cost_usd")
+    return float(c or 0)
+
+
+def review_line(r):
+    return "%s %s $%.2f %-8s found_new=%-3s %s" % (
+        str(r.get("started") or "?")[:16], str(r.get("session_id"))[:8], _cost(r), r.get("verdict") or "-",
+        r.get("found_new") or "-", r.get("found") or "no review comment matches this row")
+
+
 # ---------------------------------------------------------------- CLI
 
 def main(argv=None):
@@ -1586,12 +1824,20 @@ def main(argv=None):
     s.add_argument("--rows", action="append", default=[])
     s.add_argument("--only", action="store_true", help="only the --rows files")
     s.add_argument("--role")
+    s.add_argument("--comments", help="M14: the review comments (a folder of JSON files, or a board.db; default: "
+                                       "the local board, else origin/board-mirror)")
     s.add_argument("--commands", action="store_true",
                    help="the top commands by cost per role, and runs of commands repeated in 3 sessions or more (M6)")
     s.add_argument("--top", type=int, default=10)
     s.add_argument("--min-sessions", type=int, default=3)
     s.add_argument("--transcripts", action="append", default=[],
                    help="also read these transcripts (a glob, e.g. ~/.claude/projects/*/*.jsonl) without recording them")
+    s = sp.add_parser("outcomes", help="M14: write each review row's verdict and found_new from its CR- comment "
+                                       "into the ledger (the backfill; no transcripts needed)")
+    s.add_argument("--comments")
+    s.add_argument("--rows", action="append", default=[])
+    s.add_argument("--only", action="store_true", help="only the --rows files")
+    s.add_argument("--push", action="store_true")
     s = sp.add_parser("audit", help="each session's manual actions where a kit command exists, with the command to "
                                      "use and what they carried (M11)")
     s.add_argument("--since", help="rows started at or after this time (ISO, or a date)")
@@ -1676,8 +1922,31 @@ def main(argv=None):
         if a.commands:
             print(render_commands(rows, a.top, a.min_sessions))
             return 0
+        if a.role == "review":                               # M14: what each review found, and what it cost
+            rows = with_outcomes(rows, review_comments(root, a.comments))
+            for r in sorted(rows, key=lambda r: str(r.get("started"))):
+                print(review_line(r))
+            print(review_summary(rows))
+            return 0
         for r in sorted(rows, key=lambda r: str(r.get("started"))):
             print(one_line(r))
+        return 0
+    if a.cmd == "outcomes":
+        rows = merge_rows(all_rows(root, a.rows) if not a.only else [], _read_rows(a.rows))
+        res = review_outcomes(rows, review_comments(root, a.comments))
+        now = datetime.now(timezone.utc).isoformat()
+        changed = []
+        for r in rows:
+            o = res.get(r.get("session_id"))
+            if o and any(r.get(k) != v for k, v in o.items()):
+                r = dict(r, recorded_at=now, **o)
+                save_local(root, r)
+                changed.append(r)
+        done = with_outcomes(rows, {}, res)
+        print("outcomes: %d of %d review rows written; %s" % (
+            len(changed), sum(r.get("role") == "review" for r in rows), review_summary(done)))
+        if a.push and changed:
+            print(push(root, changed))
         return 0
     return 1
 

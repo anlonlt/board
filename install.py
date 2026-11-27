@@ -38,6 +38,10 @@ _spec = importlib.util.spec_from_file_location("kit_hook_table", os.path.join(KI
 hook_table = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hook_table)
 
+_fspec = importlib.util.spec_from_file_location("kit_forks", os.path.join(KIT, "kit", "forks.py"))
+forks = importlib.util.module_from_spec(_fspec)
+_fspec.loader.exec_module(forks)
+
 PARTS = ("memory", "board", "clerk", "orchestrator")
 MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py", "kit_usage.py",
                 "kit_memory_jit.py", "kit_wip.py", "test_hooks.py"}
@@ -47,7 +51,8 @@ HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.
          "kit_activity.py", "kit_queue_stop.py", "test_hooks.py"]
 # CL30: the kit's guards. One whose file is in a present Claude Code runtime but that has no settings.json line (or a
 # narrower matcher than the kit's) is a hole, not a choice (Harmonize: kit_cards_reminder.py wired nowhere, the brief
-# guard on Bash only): --update wires it. Other kit hooks (a project's own hand-over, its Stop) are left as they are.
+# guard on Bash only): --update wires it. CL61: a project's own hook doing a kit hook's job (its hand-over, its say it
+# once...) is folded into the kit's at --update (kit/forks.py), or refused with what differs; never kept silently.
 MESSAGE_GUARD = "kit_say_it_once.py"
 SEND_TOOLS = "mcp__claude-code-remote__send_message|SendMessage"
 MESSAGE_CEILING = 200   # CL38: kit_say_it_once.py's ceiling; a config limit above it is lowered at install/--update
@@ -915,6 +920,74 @@ def merge_fresh_line(t, dry, log):
             fh.write("\n")
 
 
+def fold_forks(t, c, dry, log):
+    """CL61: every project hook in .claude/settings.json that does a kit hook's job. Each one is folded (what it adds
+    becomes kit settings in `c`, its lines leave settings.json, the kit's hook is wired in its place), kept on purpose
+    (kit.forks.keep {path: reason}: named here every time), or refused with what differs (nothing of it changes).
+    Returns (folded forks, refusal lines)."""
+    p = os.path.join(t, ".claude", "settings.json")
+    try:
+        s = json.load(open(p, encoding="utf-8"))
+    except (OSError, ValueError):
+        return [], []
+    keep = ((c["kit"].get("forks") or {}).get("keep") or {})
+    done, refused = [], []
+    for f in forks.find(t, s):
+        if f["path"] in keep:
+            log.append("fork kept: %s does the job of the kit's %s (%s), kept by kit.forks.keep: %s" % (
+                f["path"], f["kit"], f["job"], keep[f["path"]]))
+            continue
+        settings, differs = forks.fold(t, f, KIT)
+        if differs:
+            refused.append("%s (%s, %s) shadows the kit's %s and cannot be folded: %s" % (
+                f["path"], f["job"], "/".join(f["events"]), f["kit"], "; ".join(differs)))
+            continue
+        dropped = settings.pop("_dropped", [])
+        for key, value in settings.items():
+            forks.set_dotted(c, key, value)
+        if dropped:
+            log.append("fork %s: not kept as rules, the kit's hook says its own numbers here: %s" % (
+                f["path"], " | ".join(dropped)))
+        n = forks.unwire(s, f)
+        log.append("fork folded: %s (%s) -> the kit's %s; %s; %d line(s) out of .claude/settings.json (the file stays, "
+                   "unused: delete it when you like)" % (f["path"], f["job"], f["kit"], ", ".join(
+                       "%s = %s" % (k, json.dumps(v, ensure_ascii=False)) for k, v in settings.items()) or "no setting", n))
+        done.append(f)
+    if done and not dry:
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(s, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+    return done, refused
+
+
+def wire_folded(ins, folded, unified, runtime):
+    """After a fold: the kit's hook runs on each event the fork served (its own line, or the dispatcher's)."""
+    if not folded:
+        return
+    p = os.path.join(ins.t, ".claude", "settings.json")
+    s = json.load(open(p, encoding="utf-8")) if os.path.isfile(p) else {}
+    added = []
+    for f in folded:
+        for ev in f["events"]:
+            if forks.kit_hook_wired(s, f["kit"], ev):
+                continue
+            if unified:
+                cmd = DISPATCH["claude"] % (runtime if runtime in ("web", "cli") else "cli", ev)
+            else:
+                rel = RUNTIME_HOOK_DIRS["claude"] + f["kit"]
+                if not os.path.isfile(os.path.join(ins.t, rel)):
+                    ins.put(rel, open(os.path.join(KIT, "kit", "hooks", f["kit"]), encoding="utf-8").read())
+                cmd = CLAUDE_CMD % f["kit"]
+            s.setdefault("hooks", {}).setdefault(ev, []).append({"hooks": [{"type": "command", "command": cmd}]})
+            added.append("%s on %s" % (f["kit"], ev))
+    if added:
+        ins.log.append(".claude/settings.json: the kit's hook wired where a fork was: %s" % ", ".join(added))
+        if not ins.dry:
+            with open(p, "w", encoding="utf-8") as fh:
+                json.dump(s, fh, indent=2, ensure_ascii=False)
+                fh.write("\n")
+
+
 def under_tempdir(t):
     """True when t is inside the system temp folder (tempfile.gettempdir(), /tmp, $TMPDIR)."""
     import tempfile
@@ -1230,6 +1303,7 @@ def main(argv=None):
     ins.log.extend(perm_log)
     parts = c["kit"]["parts"]
     notes = []
+    folded, fork_refused = fold_forks(t, c, a.dry_run, ins.log) if not first else ([], [])
     cfg = json.dumps(c, indent=1, ensure_ascii=False) + "\n"
     p = os.path.join(t, ".kit", "config.json")
     if not os.path.exists(p) or open(p, encoding="utf-8").read() != cfg:
@@ -1248,6 +1322,7 @@ def main(argv=None):
     claude_cli = rt in ("local", "agy", "both")
     claude_cli_hooks = rt == "local"
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
+    ins.put(".kit/forks.py", rd("kit", "forks.py"))   # CL61: kit.py doctor names a project hook that shadows a kit hook
     ins.put(".kit/kit_map.py", rd("scripts", "kit_map.py"))   # M1: kit.py map, the project's map from its code
     ins.put(".kit/test_guard.py", rd("kit", "test_guard.py"))  # CL48: a test run (KIT_TEST) writes only under a temp folder
     ins.put(".kit/usage.py", rd("scripts", "usage.py"))       # CL37: the usage ledger (kit.py usage)
@@ -1713,6 +1788,7 @@ def main(argv=None):
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], spec)
     if ".kit/kit.py" in ins.touched and (want_claude or "claude" in present):
         merge_fresh_line(t, a.dry_run, ins.log)
+    wire_folded(ins, folded, unified, "web" if claude_only else "cli")
     if new_hooks.get(RUNTIME_HOOK_DIRS["agy"]):
         ins.log.append(".agents/hooks/kit/: new kit hook(s) %s copied; run --update with --runtime agy to wire them in "
                        ".agents/hooks.json" % ", ".join(new_hooks[RUNTIME_HOOK_DIRS["agy"]]))
@@ -1772,6 +1848,11 @@ def main(argv=None):
         print("cli: `%s` opens %s (the other one: `%s --%s`, or rerun with --cli %s)" % (
             cmd_word, cli, cmd_word, "claude" if cli == "agy" else "agy", "claude" if cli == "agy" else "agy"))
         print("next: run `%s` from any terminal (starts board on %s, Funnel, and orchestrator + clerk)" % (cmd_word, c.get("board_url", "http://127.0.0.1:8765")))
+    if fork_refused:
+        print("REFUSED (CL61): %d project hook(s) do a kit hook's job and cannot be folded into it, so a kit fix would "
+              "not reach this project through them. They stay wired as they are until you fold them by hand or keep them "
+              "on purpose with kit.forks.keep {\"<path>\": \"<why>\"} in .kit/config.json:\n  %s" % (
+                  len(fork_refused), "\n  ".join(fork_refused)))
     return 0
 
 

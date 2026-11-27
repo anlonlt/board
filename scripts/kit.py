@@ -3391,6 +3391,7 @@ def _doctor_conflicts(root, issues, lines):
         if overlaps:
             lines.append("conflicts: overlapping legacy hooks: %s" % "; ".join(overlaps))
             issues.append("overlapping legacy hooks alongside kit hooks: %s" % "; ".join(overlaps))
+    _doctor_forks(root, issues, lines)
     # Archived awaits file still referenced by custom hooks/skills (the kit's own files, in its manifest, are not)
     manifest = _manifest(root)
     for mrel in (".story", os.path.join(".board", "memory")):
@@ -3411,6 +3412,38 @@ def _doctor_conflicts(root, issues, lines):
             if stale_refs:
                 lines.append("conflicts: archived awaits still referenced in %s" % ", ".join(stale_refs[:4]))
                 issues.append("archived awaits file still referenced by %s" % ", ".join(stale_refs[:4]))
+
+
+def _forks_module(root):
+    """kit/forks.py: the project's copy (.kit/forks.py), else the kit's beside this script."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for p in (os.path.join(root, ".kit", "forks.py"), os.path.join(here, "forks.py"), os.path.join(here, "..", "kit", "forks.py")):
+        if os.path.isfile(p):
+            spec = importlib.util.spec_from_file_location("kit_forks", p)
+            mod = importlib.util.module_from_spec(spec)
+            try:
+                spec.loader.exec_module(mod)
+                return mod
+            except (OSError, SyntaxError):
+                continue
+    return None
+
+
+def _doctor_forks(root, issues, lines):
+    """CL61: a project hook that shadows a kit hook (does its job on its event): a kit fix does not reach the project
+    while it is wired. Kept on purpose (kit.forks.keep) is said, never an issue."""
+    mod = _forks_module(root)
+    if mod is None:
+        return
+    keep = ((_read_json_file(os.path.join(root, ".kit", "config.json")).get("kit") or {}).get("forks") or {}).get("keep") or {}
+    for f in mod.find(root):
+        what = "%s shadows the kit's %s (%s, on %s)" % (f["path"], f["kit"], f["job"], "/".join(f["events"]))
+        if f["path"] in keep:
+            lines.append("forks: %s, kept by kit.forks.keep: %s" % (what, keep[f["path"]]))
+            continue
+        lines.append("forks: SHADOW %s" % what)
+        issues.append("%s: a kit fix to %s does not reach this project while it is wired; `install.py . --update` folds "
+                      "it into the kit's hook (or says what differs)" % (what, f["kit"]))
 
 
 def _doctor_portfolio_and_sync(root, issues, lines, fix=False):

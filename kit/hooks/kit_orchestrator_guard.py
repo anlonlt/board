@@ -90,31 +90,80 @@ def first_prompt(path):
     return ""
 
 
+# M12: what in a transcript's new lines can make a session the orchestrator (a takeover mid-session): only then is the
+# transcript read again by the one role function
+TAKEOVER_TEXT = re.compile(r"_orchestrator|--role[ =]orchestrator|kit\.py\s+(?:launch|land)\b|"
+                           r"(?:orchestrator|takeover)\.md|start as the orchestrator", re.I)
+
+
+def _transcript_size(tp):
+    try:
+        return os.path.getsize(tp)
+    except OSError:
+        return -1
+
+
+def _new_text(tp, start):
+    try:
+        with open(tp, "rb") as fh:
+            fh.seek(max(0, start))
+            return fh.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
 def is_orchestrator(data):
-    role = os.environ.get("KIT_ROLE") or ""
-    if role:
-        return role == "orchestrator"
+    """M12: THE orchestrator test of every hook (this guard, kit_brief_guard, kit_cards_reminder): kit_pre_compact's
+    `session_role` (usage.py `role_of`, the usage row's): the `_orchestrator` post's session_id, a hand-over, a takeover
+    mid-session all count, KIT_ROLE when nothing says. Plus HARMONIZE_ROLE and the orchestrator branch prefix. A yes is
+    kept for the session; a no is read again only when the transcript's new lines hold a takeover's mark."""
+    data = data or {}
     if os.environ.get("HARMONIZE_ROLE") == "orchestrator":
         return True
+    tp = str(data.get("transcript_path") or data.get("transcriptPath") or "")
+    env = os.environ.get("KIT_ROLE") or ""
+    if not tp or not os.path.isfile(tp):
+        if env:
+            return env == "orchestrator"
     sid = re.sub(r"[^A-Za-z0-9._-]", "_", str(data.get("session_id") or "x"))
     cache = os.path.join(tempfile.gettempdir(), "kit-orch-role-%s" % sid)
+    size = _transcript_size(tp) if tp else -1
     try:
-        return open(cache).read() == "orchestrator"
+        with open(cache, encoding="utf-8") as fh:
+            seen = fh.read().strip()
     except OSError:
-        pass
+        seen = ""
+    said, _, rest = seen.partition("|")             # "<role>|<KIT_ROLE>|<bytes read>": kept while KIT_ROLE is the same
+    seen_env, _, upto = rest.partition("|")
+    if said == "orchestrator" and seen_env == env:
+        return True
+    if said == "other" and seen_env == env:
+        try:
+            upto = int(upto)
+        except ValueError:
+            upto = -1
+        if upto >= 0 and (size <= upto or not TAKEOVER_TEXT.search(_new_text(tp, upto))):
+            return False
+    root = project_dir(data)
     found = False
     prefix = str((config(data).get("kit") or {}).get("orchestrator_branch_prefix") or "")
     if prefix:
         try:
-            br = subprocess.run(["git", "-C", project_dir(data), "rev-parse", "--abbrev-ref", "HEAD"],
+            br = subprocess.run(["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
                                 capture_output=True, text=True, timeout=5).stdout.strip()
             found = br.startswith(prefix)
         except (OSError, subprocess.SubprocessError):
             pass
     if not found:
-        found = bool(ORCH_TEXT.search(first_prompt(str(data.get("transcript_path") or ""))))
+        first = "orchestrator" if ORCH_TEXT.search(first_prompt(tp)) else None
+        try:
+            from kit_pre_compact import session_role
+            found = session_role(data, root, first) == "orchestrator"
+        except Exception:  # noqa: BLE001 - the role function failing falls back to the first prompt, then KIT_ROLE
+            found = (env or first) == "orchestrator"
     try:
-        open(cache, "w").write("orchestrator" if found else "other")
+        with open(cache, "w", encoding="utf-8") as fh:
+            fh.write("%s|%s|%d" % ("orchestrator" if found else "other", env, size))
     except OSError:
         pass
     return found
