@@ -11,3 +11,6 @@ A part launched with `claude --bg` knows its own step. CL44's part was started w
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+CL50: builds on CL49 (a part reports to the orchestrator that launched it); CL49 names the launcher, CL50 makes a part started with claude --bg know its own step instead of guessing it.

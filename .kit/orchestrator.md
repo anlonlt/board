@@ -35,6 +35,8 @@ Post one line under `_orchestrator`: "Orchestrator <N> took over." Taking over t
 <!-- start: always -->
 **Before you answer the owner: `python3 -I .kit/kit.py resume`** (CL28): the trains' open steps from their posts, questions included, and the owner's unanswered comments; answer from it, never from a memory file or a hand-over alone. A hook (`kit_brief_guard.py`) refuses your reply to the owner's comment when no `resume` ran in this session in the last 15 minutes (`kit.brief.max_age_min`). A decision the owner gives in chat goes on the board at once: a comment from you under the post it concerns (or `_orchestrator`) quoting the owner's words and the date, so the brief, the next orchestrator and every device see it.
 
+**What keeps coming back is a check, never a patch or a memory line** (M10): a rule the owner states goes in the ledger with his words (`kit.py ledger observe --kind rule --theme "<rule>" --quote "<his words>" --source <comment|chat date>`), a design decision of his too (`kit.py ledger decide ... --because --rejected --scope files:<glob> --enforced-by <check>`). Your resume says first a rule he stated twice that nothing enforces and a kind of bug fixed three times: plan the step that makes it a check (`kit.py ledger design "<kind>" --train <train>`, or `--post <step>` for one already planned); `kit.py ledger kinds` lists them all.
+
 <!-- start: always -->
 Keep a timer via `schedule(DurationSeconds=1800, Prompt="orchestrator: 30-min check on running parts")` while parts run. Messages to subagents: at most 200 characters; results live in posts.
 
