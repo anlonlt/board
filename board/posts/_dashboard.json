@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T08:52:48Z",
+ "created_at": "2026-11-27T08:54:14Z",
  "rows": [
   {
    "at": 8,
@@ -170,12 +170,12 @@
    "train": "P-takeover"
   },
   {
-   "at": 0,
+   "at": 1,
    "key": "G",
    "name": "Agy",
-   "note": "Next: install_cmd skips linked git worktrees so ~/.local/bin/<cmd> is never overwritten by a part",
-   "post": "a1-install-cmd-skips-linked-git-worktrees-s",
-   "state": "running",
+   "note": "Next: Point _launch_line() and kit/orchestrator.template.md at kit.py launch for agy",
+   "post": "a2-point-launch-line-and-kit-orchestrator-t",
+   "state": "ready",
    "steps": [
     "install_cmd skips linked git worktrees so ~/.local/bin/<cmd> is never overwritten by a...",
     "Point _launch_line() and kit/orchestrator.template.md at kit.py launch for agy"
@@ -214,5 +214,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T08:52:48Z"
+ "updated_at": "2026-11-27T08:54:14Z"
 }
