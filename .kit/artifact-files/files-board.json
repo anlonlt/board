@@ -31,12 +31,12 @@
    "version": 11
   },
   ".kit+2F~claude-cli+2F~orchestrator.md": {
-   "sha": "9561b9a53fa1654595302860d953fd490e30829b9ab41f2fd5b638e76ded3d90",
-   "version": 6
+   "sha": "833f186d7998c8bd568cf85df58d5be1757ed26042d416b8b681e13bd2c0253d",
+   "version": 7
   },
   ".kit+2F~claude-cli+2F~part.md": {
-   "sha": "639080fb02d1cba011db3e3e52d0ec687a4b334bdf861a155ff688219936010b",
-   "version": 9
+   "sha": "94c452cdf864afc166b67d19f8526eb102c3ce9cd383b6381942164a7338f487",
+   "version": 10
   },
   ".kit+2F~claude-cli+2F~takeover.md": {
    "sha": "d80abd018b630a43799fd04bc5de0222f88394c7807933121d98296bbf117ae8",
@@ -51,8 +51,8 @@
    "version": 7
   },
   ".kit+2F~part.md": {
-   "sha": "11195035926854c34da92a6367ed8aaf8be74a2ae553e75319d41875c0548102",
-   "version": 8
+   "sha": "05cb12f087c1160e6114837e1623b0d87bac1a30376c303dd2a967e1eb12cb4c",
+   "version": 9
   },
   "AGENTS.md": {
    "sha": "c5f984b5b918280d7156e13102aad947f22129c15953fc81f9592a885f460c15",
@@ -143,12 +143,12 @@
    "version": 4
   },
   "kit+2F~claude+2F~orchestrator.template.md": {
-   "sha": "10720232da840d595e5fbcaf22823b1da9fb6dc5fb3e7e7e43cfe8aa9a1f04f2",
-   "version": 7
+   "sha": "e6d18cd2b64c2619ca405e679ab2464e91c5f0ea4ab125d044d9f814510fc3a1",
+   "version": 8
   },
   "kit+2F~claude+2F~part.template.md": {
-   "sha": "b0ba9c5c676d28a191fce39878aab204536594f5c68512feadb070979f5f74fa",
-   "version": 5
+   "sha": "56c5781c9216e26f0f9a80a8f4af3a09aa3791f8cc01a1c4629a62d8fd196c52",
+   "version": 6
   },
   "kit+2F~claude-cli+2F~ORCHESTRATOR.template.md": {
    "sha": "9e486179a0e1c71e4b8e67789c37d28c14bc6e4c31bc323243e6d228a7b05a0e",
@@ -163,12 +163,12 @@
    "version": 4
   },
   "kit+2F~claude-cli+2F~orchestrator.template.md": {
-   "sha": "4165391d14e0274ebe1553686d0b9bb843645bb4be78b2d1c9c949099e1aedfa",
-   "version": 9
+   "sha": "56a32426799f6056263f7038ed72dda167a36287297b622f1f5e5b7a2be36080",
+   "version": 10
   },
   "kit+2F~claude-cli+2F~part.template.md": {
-   "sha": "70ce66f7ac4bcfa9ca3a1d1c08423a65627441c29cef0d839a3609032a9a46cd",
-   "version": 9
+   "sha": "8e473fd7069bfa7a4f1791fd078396b8384e28c522737816ea8809900f5f485e",
+   "version": 10
   },
   "kit+2F~claude-cli+2F~takeover.template.md": {
    "sha": "300fea006a383684a0ae536f89fa9e7d89fcfd5139e025523de6351c4a36a353",
@@ -191,8 +191,8 @@
    "version": 8
   },
   "kit+2F~part.template.md": {
-   "sha": "c8bdfd2ac2ce999042e1c44c81de125c17397dac954eb87159ac80f7f949b7a5",
-   "version": 7
+   "sha": "a01c920de6e7592065a8aedea24cafa039ab09b2b72c18cdb8d77b78e82fdecb",
+   "version": 8
   },
   "kit+2F~skills+2F~board+2F~SKILL.md": {
    "sha": "0f665527b19f263b7f36ed722d51883a81cddcb0a4b55fb5696259a4973fdd74",
