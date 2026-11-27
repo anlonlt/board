@@ -6,8 +6,8 @@
  "discussion": "orch-agy-takeover-20261127072214",
  "from": "owner",
  "post_id": "_orchestrator",
- "read": true,
- "read_at": "2026-11-27T08:04:07Z",
+ "read": false,
+ "read_at": "",
  "text": "R1 and R2 are already done. you can launch R3, after R4. what about the M line ?",
  "thread_id": "thr_882ea721d96a"
 }
