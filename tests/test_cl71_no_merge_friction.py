@@ -149,6 +149,41 @@ class Landing(Board):
         self.assertIn("only generated files changed", r.stdout)
         self.assertTrue(self.has("new.txt"))
 
+    def test_landing_onto_a_trunk_that_still_tracks_the_manifest_takes_it_out(self):
+        # the trunk as it was before CL71: the manifest in git, changed there after the step branched off (CR-cl71)
+        self.g("checkout", "-q", "main")
+        Path(self.d, ".kit", "manifest.json").write_text('{"a": "1"}\n')
+        self.g("add", "-f", ".kit/manifest.json")
+        self.g("commit", "-qm", "manifest in git")
+        self.g("push", "-q", "origin", "main")
+        self.g("checkout", "-q", "s1")
+        self.g("merge", "-q", "--no-edit", "main")
+        self.g("rm", "-q", "--cached", ".kit/manifest.json")              # the step takes it out of git
+        self.g("commit", "-qm", "manifest out of git")
+        self.g("push", "-q", "origin", "s1")
+        self.complete("continue")
+        o = self.clone("other")                                          # meanwhile main regenerates it
+        Path(o, ".kit", "manifest.json").write_text('{"a": "2"}\n')
+        self.g("add", "-f", ".kit/manifest.json", d=o)
+        self.g("commit", "-qm", "manifest regenerated", d=o)
+        self.g("push", "-q", "origin", "main", d=o)
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(self.has("new.txt"))
+        self.assertFalse(self.has(".kit/manifest.json"), "the trunk still tracks the manifest after landing")
+
+    def test_a_trunk_that_tracks_the_manifest_with_no_conflict_loses_it_too(self):
+        self.complete("continue")
+        o = self.clone("other")                                          # main commits it after the step branched off
+        Path(o, ".kit", "manifest.json").write_text('{"a": "2"}\n')
+        self.g("add", "-f", ".kit/manifest.json", d=o)
+        self.put("other.txt", "o\n", d=o)
+        self.g("push", "-q", "origin", "main", d=o)
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertFalse(self.has(".kit/manifest.json"), "merged with no conflict, the trunk still tracks it")
+        self.assertTrue(self.has("other.txt") and self.has("new.txt"))
+
     def test_a_real_commit_after_the_review_still_waits(self):
         self.complete("continue")
         self.put("late.txt", "x\n")

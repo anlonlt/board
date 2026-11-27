@@ -139,22 +139,29 @@ def only_generated(sha, cwd=None):
 
 
 def _resolve_generated(w, t):
-    """CL71: a merge whose only conflicts are generated files: the trunk's copy kept (or none, where the trunk has
-    none). True when the merge could be concluded so."""
+    """CL71: a merge whose only conflicts are generated files: concluded with them out of git (`git rm --cached`; the
+    trunk's copy of one is never kept tracked: it is generated, rebuilt where it is missing). True when concluded."""
     files = out("diff", "--name-only", "--diff-filter=U", cwd=w).split()
     if not files or not all(is_generated(f) for f in files):
         return False
     for f in files:
-        if git("cat-file", "-e", "HEAD:" + f, cwd=w).returncode == 0:
-            git("checkout", "-q", "--ours", "--", f, cwd=w)
-            git("add", "--", f, cwd=w)
-        else:
-            git("rm", "-q", "--cached", "--", f, cwd=w)
-            try:
-                os.remove(os.path.join(w, f))
-            except OSError:
-                pass
+        git("rm", "-q", "--cached", "--force", "--", f, cwd=w)
+        try:
+            os.remove(os.path.join(w, f))
+        except OSError:
+            pass
     return git("-c", "user.name=board kit", "-c", "user.email=kit@localhost", "commit", "-q", "--no-edit", cwd=w).returncode == 0
+
+
+def _untrack_generated(w, tip):
+    """CL71: the step's branch keeps the generated files out of git; a trunk that still tracks one (it changed it, so
+    the merge took its side without a conflict) loses it in the same merge commit. True when it changed the commit."""
+    left = [f for f in out("ls-files", "--", *[g.rstrip("/") for g in GENERATED], cwd=w).split()
+            if f and git("cat-file", "-e", "%s:%s" % (tip, f), cwd=w).returncode != 0]
+    if not left:
+        return False
+    git("rm", "-q", "--cached", "--", *left, cwd=w)
+    return git("-c", "user.name=board kit", "-c", "user.email=kit@localhost", "commit", "-q", "--amend", "--no-edit", cwd=w).returncode == 0
 
 
 def land(pid):
@@ -213,6 +220,8 @@ def land(pid):
                 git("merge", "--abort", cwd=w)
                 return 1, "land %s: NOT LANDED: conflict with %s in %s: its part merges origin/%s on %s, reruns its check, pushes, then land again" % (
                     pid, t, " ".join(files) or "?", t, br)
+            if out("rev-parse", "HEAD^2", cwd=w):          # a merge commit of its own (not a fast-forward): amend it
+                _untrack_generated(w, tip)
             head = out("rev-parse", "HEAD", cwd=w)
             cmd = str(s.get("check") or "").strip()
             if cmd and not cmd.lower().startswith("manual:") and head != tip:            # the trunk moved: the two together
