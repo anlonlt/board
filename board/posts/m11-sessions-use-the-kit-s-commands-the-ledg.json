@@ -1,0 +1,113 @@
+{
+ "artifacts": [
+  "kit/claude/orchestrator.template.md",
+  "kit/claude/part.template.md",
+  "kit/hook.py",
+  "kit/hooks/kit_orchestrator_guard.py",
+  "scripts/kit.py",
+  "scripts/usage.py",
+  "test_install.py",
+  "tests/test_m11_kit_commands.py",
+  "tests/test_orchestrator_guard.py",
+  "tests/test_unified_hooks.py"
+ ],
+ "asked": [
+  {
+   "id": "reply-36c163cac42c",
+   "quote": "\"the audit only measures after the fact. To stop it, M11 needs a guard before the call, like the reply guard: a raw Artifact read of a whole collection (posts or comments) is refused, naming kit.py artifact pull. A refused write is followed by a re-read of only the documents it names.\""
+  }
+ ],
+ "bars": [
+  "The 11-26 orchestrator 9919b5f1 (first words a question, in /home/user, on HEAD, its post naming another session for part of the day): labelled `orchestrator`, from its transcript alone; 4 of 4 starts tested (its resume, launch and land only, a write of `_orchestrator`, the post on a computer) (asked: the role label)",
+  "A part's first pull on the real board today: 3,525 characters of replies against 22,252 for the whole-board pull (8 calls by id against 3, 0 full lists); later pulls changes only, as before (asked: full board pulls)",
+  "After a refused batch: only `get` of the documents it names passes until `artifact sent` (a list, a query or another `get` is refused while a batch of `artifact push` is out); tested (asked reply-36c163cac42c, CR-m11)",
+  "A raw read of all posts or comments: refused in 4 of 4 roles before it runs, naming `kit.py artifact pull`; each call a pull printed passes once, whole (its `where` and `limit`), so a repeat list or a broad query after a `--post` pull is refused; the review's script: 12 of 12 rows REFUSED (asked reply-36c163cac42c, CR-m11)",
+  "`usage audit` on 11-26's rows: 20 of 20 sessions with a command sequence had a manual action where a kit command exists; 211 actions, 13.4M tokens carried ($2.70), 10.5M of them by the whole-board lists of first pulls (asked: check sessions used the kit's commands)",
+  "Found on the way: in this kit's own repo (installed for a computer, `hook.py cli`) 0 of its ArtifactData calls reached the guard, so a raw list passed live on 11-27 after a refused batch. The guard now runs on ArtifactData in both runtimes; a test goes through the dispatcher (asked reply-36c163cac42c)",
+  "Tests: 76 of 76 suites pass after the redirect and the merge of main (`run_all_tests.py --all`), 0 failed; 23 tests in tests/test_m11_kit_commands.py, the guard suite updated"
+ ],
+ "body": "The orchestrator is now counted as the orchestrator from what it does (it launches, lands, runs its own resume), so a session that starts with a question or takes over mid-way is no longer \"other\". A part's first look at the board now reads only its own post, its comments and the cards (6 times less text), and reading a whole collection by hand is refused before it runs, for every session. A new audit lists, session by session, each time someone did by hand what a kit command does, with the command to use; the orchestrator sees the top 3 in its resume.\n\n### What he asked\nIn chat, 2026-11-26 (no comment id: the step's source): \"make a step to fix the role label and full board pulls; check sessions used the kit's commands\". Answered by bars 1, 2 and 5; reply-36c163cac42c by bars 3 and 4.\n\n### What was wrong\n- **The label.** 9919b5f1 recorded itself `other` 300+ times: its first words were a question, its folder was /home/user, its branch HEAD, and the `_orchestrator` post named another session (c79c7b98) for part of the evening. A later row from an older kit relabelled it `orchestrator` but dropped its 324 commands. Now the row reads what the session ran: `kit.py resume --role orchestrator`, `kit.py launch`/`land` (only the orchestrator does), or a write of the `_orchestrator` post; first prompt and branch still win when they name a role (a part stays a part).\n- **Full-board pulls.** `artifact pull` already printed only changes after a first load, but every part starts in a fresh container: its first pull listed the whole board (posts ~10k characters, comments ~11.5k in the reply), and 12 of 12 parts did it. The guard let any list through whose `out_dir` was the pull's folder, so hand-made lists passed too.\n\n### What changed\n1. `usage.py`: `roles_run` from the transcript; `classify` uses it when nothing else names a role; `merge_rows` keeps an older row's command sequence and orchestrator label.\n2. `kit.py artifact pull --post <id>` (and remembered from `resume --role part --post`): the post, `_orchestrator`, `_trains`, `_dashboard`, `_prefs`, the train's post by `get`, the post's comments by one `query`, the files' map. `--full` still lists all. Resume's attached-board line no longer prints a raw list.\n3. `kit_orchestrator_guard.py`: a whole-collection read passes only if `artifact pull` printed it in the last 30 minutes (its record `pull.json`).\n4. `usage.py audit [--since T] [--role R] [--top N] [--json]`; `resume --role orchestrator` prints the top 3; the orchestrator guide runs it at each Done and check-in.\n\n### Measured on the real board (11-26)\n| pull | calls | characters in the replies |\n|---|---|---|\n| first pull, whole board (before) | 3 (2 lists + the map) | 22,252 |\n| first pull of a part, `--post` (after) | 8 (6 gets, 1 query, the map) | 3,525 |\n| a refused batch (before and after) | one `get` per document named | no list |\n\n### The audit on 11-26's rows\n`python3 -I .kit/kit.py usage audit --since 2026-11-26` (with 9919b5f1's previous row from the ledger history):\n\n| session | role | part | manual | most often | carried |\n|---|---|---|---|---|---|\n| 9919b5f1 | orchestrator | - | 26 of 324 | cli-get-unknown 9, get-by-hand 8 | 4.1M tok, $0.81 |\n| 1e8f7bdd | part | M5 | 6 of 151 | list-first-pull 2, write-by-hand 2 | 1.1M tok, $0.23 |\n| 3d9f71af | review | CR-CL45 | 30 of 135 | get-by-hand 16, write-by-hand 9 | 1.1M tok, $0.21 |\n| 5d261710 | part | M7 | 11 of 143 | list-first-pull 4, write-by-hand 4 | 965k tok, $0.19 |\n| 0112d069 | part | CL53 | 14 of 132 | write-by-hand 5, get-by-hand 5 | 781k tok, $0.16 |\n| 52679160 | part | CL45 | 19 of 142 | get-by-hand 15, list-first-pull 2 | 730k tok, $0.15 |\n| 2376d4cd | part | R6 | 10 of 125 | write-by-hand 4, get-by-hand 4 | 653k tok, $0.13 |\n| b658eec0 | part | M8 | 5 of 137 | list-first-pull 2, get-by-hand 2 | 645k tok, $0.13 |\n| 5dfec145 | part | CL47 | 9 of 78 | cli-get-unknown 3, get-by-hand 3 | 576k tok, $0.12 |\n| f1b6042a | part | CL48 | 7 of 101 | list-first-pull 2, write-by-hand 2 | 477k tok, $0.10 |\n| cf244fba | part | CL49 | 9 of 91 | write-by-hand 4, list-first-pull 2 | 461k tok, $0.09 |\n| 19270d0d | part | M6 | 12 of 83 | get-by-hand 6, list-first-pull 3 | 436k tok, $0.09 |\n| baa4f5ee | review | CR-CL47 | 6 of 62 | list-first-pull 2, cli-get-unknown 2 | 334k tok, $0.07 |\n| b46cfe9d | review | CR-CL49 | 5 of 54 | list-first-pull 2, cli-get-unknown 2 | 246k tok, $0.05 |\n| 01ddc57e | review | CR-M8 | 4 of 47 | list-first-pull 2, write-by-hand 2 | 210k tok, $0.04 |\n| 2493d0b0 | review | CR-M5 | 10 of 44 | get-by-hand 5, list-first-pull 2 | 190k tok, $0.04 |\n| 7002772b | review | CR-M7 | 10 of 46 | write-by-hand 4, get-by-hand 4 | 190k tok, $0.04 |\n| 5c4a2871 | part | CL51 | 8 of 93 | write-by-hand 3, list-first-pull 2 | 173k tok, $0.03 |\n| 8c8246b7 | review | CR-M6 | 4 of 44 | list-first-pull 2, write-by-hand 2 | 96k tok, $0.02 |\n| 9d3b365a | part | CL55 | 6 of 19 | get-by-hand 3, list-first-pull 2 | 55k tok, $0.01 |\n\n| rule | what it did | use instead | times | sessions | carried |\n|---|---|---|---|---|---|\n| list-first-pull | a whole-board list a first pull printed | `kit.py artifact pull --post <id>` (now the default for parts) | 48 | 20 | 10.5M tok, $2.11 |\n| cli-get-unknown | `board_cli.py get`, target not recorded (old rows) | `kit.py train <train> --full <part>` for a post | 25 | 10 | 1.5M tok, $0.30 |\n| list-by-hand | a whole-board list made by hand | `kit.py artifact pull` (now refused) | 3 | 3 | 558k tok, $0.11 |\n| write-by-hand | a board write not built by `artifact push` | `artifact push`, its batch, `artifact sent`; `artifact pin` on a refusal | 56 | 20 | 500k tok, $0.10 |\n| get-by-hand | a post or comment read raw by `get`/`query` | `kit.py train --sections/--full`, `kit.py resume` | 79 | 16 | 376k tok, $0.08 |\n\nCarried: each result's tokens times the calls that followed it, at the cache read price. An ArtifactData call counts as the kit's when the command just before it was a kit script that printed it (pull, push, done, the takeover).",
+ "branch": "m11",
+ "breaks": "sed -i 's/    if rr:  # M11/    if False:  # M11/; s/    scope = \"\" if full or since else _scope_post(post)/    scope = \"\"/' scripts/usage.py scripts/kit.py",
+ "check": "python3 -m unittest tests.test_m11_kit_commands tests.test_orchestrator_guard",
+ "column": "info",
+ "completed_at": "2026-11-27T00:43:45Z",
+ "created_at": "2026-11-26T23:40:35Z",
+ "differs": "M11: builds on M6's per-command ledger (it measures cost) and M7's K3 (reuse the kit's commands, unchecked): M11 turns them into a check that flags each manual action where a kit command exists, fixes the orchestrator's role label, and stops full-board reads in pulls and pins.",
+ "from": "orchestrator",
+ "handoff": "- CR-m11 redirect done here: `pull.json` (version 2) records each printed call whole and the guard marks it used; `pending.json`, written by `artifact push` and removed by the last `artifact sent`, limits reads to `get` of its ids; a review's prompt says `artifact pull --post <post>`.\n- Rows now carry `roles_run` and a note per result in `cmd_seq` ([command, carry $, result tokens, target]); `usage.py audit_row(row)` and `audit_top(rows)` read them.\n- The part prompt says `kit.py artifact pull --post <id>`; `resume --role part --post X` also remembers X, so a plain first pull is scoped too. A review's prompt names `--post` too.\n- `kit_orchestrator_guard.py` lets each `list` or broad `query` of posts/comments a pull printed through once (`.kit/run/artifact/pull.json`, 30 min).\n- The orchestrator template now runs `kit.py usage audit --since ...` at each Done and each check-in; resume --role orchestrator prints the top 3 of the last 24 h.",
+ "landed": "80952f6b3282aba87283d5077e730fbfac82e92c",
+ "landed_at": "2026-11-27T00:43:50Z",
+ "launched_at": "2026-11-26T23:40:50Z",
+ "not_checked": [
+  "The guard's new wiring takes effect in sessions started after it (Claude Code reads the hook settings at start); this session ran the flow by hand, not under the hook.",
+  "Rows recorded before today's kit keep only each result's command name and carry: the audit cannot tell a `sed` of a board file from a `sed` of code there (file reads are flagged only on rows recorded from now on), and a `board_cli.py get` there is flagged as \"target not recorded\" (some are the prompt's own comment read).",
+  "The orchestrator's ledger row: a kit from before M6 (568b8f5, in another clone) rewrote it without a sequence; I pushed its earlier row through the new merge, so `usage audit --role orchestrator` now shows it (324 of its calls). If that old clone records again, it can overwrite the row again until it gets this kit (the Harmonize run).",
+  "The orchestrator's own first pull in a fresh container is still the whole board (it needs every post); after it, changes only. The review's row 3 is refused because its record lacks the whole call; the real \"same list again\" case is the single-use test.",
+  "On a computer, the role label still also comes from the `_orchestrator` post; not run on a computer here."
+ ],
+ "part": "M11",
+ "planned_by": "orchestrator",
+ "proof": {
+  "at": "2026-11-27T00:38:48Z",
+  "branch": "m11",
+  "commit": "147bc29",
+  "key": "b672d4b3318da582",
+  "needs_real": false,
+  "sha": "147bc29d8c99eca693cb05b21dd44ed07b095e9d"
+ },
+ "real_project": {
+  "command": "m11 kit 63308a1 installed by install.py --update on a scratch copy; PreToolUse JSON piped into .claude/hooks/kit/kit_orchestrator_guard.py; kit.py usage audit on Harmonize's ledger and on a row recorded from orchestrator transcript 9919b5f1",
+  "output": "list repos/harmonize/posts -> exit 2 'REFUSED ... a whole collection is read only through the kit: python3 -I .kit/kit.py artifact pull'; get _orchestrator -> exit 0. Audit on 9919b5f1: 'orchestrator | 33 of 391 | cli-get-post 12, get-by-hand 9 | 6.3M tok, $1.26'. Harmonize's own ledger: 3 rows of 11-24 without cmd_seq, nothing to audit yet. The guard is wired in .claude only (agy has no ArtifactData tool). Verdict: works.",
+  "project": "anlonlt/harmonize"
+ },
+ "review": "continue",
+ "review_commit": "80952f6b3282aba87283d5077e730fbfac82e92c",
+ "review_id": "CR-m11-sessions-use-the-kit-s-commands-the-ledg",
+ "review_session": "session_01AE1HGgWN6VfDjwiGRQWoGc",
+ "review_started": "2026-11-27T00:01:50Z",
+ "session_id": "session_01AE1HGh3YKbEHRwHCUwdyNq",
+ "sources": [
+  "owner chat 2026-11-26: make a step to fix the role label and full board pulls; check sessions used the kit's commands"
+ ],
+ "status": "complete",
+ "subtasks": [
+  {
+   "from": "task",
+   "n": 1,
+   "status": "done",
+   "title": "The usage row labels the orchestrator orchestrator on the web and on a computer, whatever its start..."
+  },
+  {
+   "files": [
+    "kit.py"
+   ],
+   "from": "task",
+   "n": 2,
+   "status": "done",
+   "title": "Every full-board read goes through kit.py artifact pull (changes only)"
+  },
+  {
+   "files": [
+    "board_cli.py",
+    "kit.py"
+   ],
+   "from": "task",
+   "n": 3,
+   "status": "done",
+   "title": "kit.py usage audit [--since T] [--role R]: from the ledger's cmd_seq, lists each session's manual..."
+  },
+  {
+   "from": "task",
+   "n": 4,
+   "status": "done",
+   "title": "Run it on today's rows and put the table in the post"
+  }
+ ],
+ "task": "Every session uses the kit's own commands where one exists, the ledger shows when it does not, and the orchestrator is counted as the orchestrator.\n\nMeasured on 2026-11-26 (kit-usage rows, `kit.py usage show --commands`): the orchestrator session 9919b5f1 is labelled role `other`; it made 9 `ArtifactData list` calls of the whole board (116k chars) and parts made 31 (318k chars, 12 of 12 sessions), although `kit.py artifact pull` prints only what changed by default (`--full` for all). Parts read code with `sed` 99 times (507k chars). The orchestrator also read posts raw (`board_cli.py get` 15 times) and built pins by hand from full lists. Nobody checked whether sessions used the kit's commands.\n\n1. The usage row labels the orchestrator `orchestrator` on the web and on a computer, whatever its start (the `_orchestrator` post's session_id, a hand-over, or a session that took over mid-way); a test with a transcript like 9919b5f1's.\n2. Every full-board read goes through `kit.py artifact pull` (changes only); the pin and version-mismatch path re-reads only the documents it names (`get`/`query` by id), never a full `list`. Measure: the calls a pull and a refused batch print, before and after, on the real board.\n3. `kit.py usage audit [--since T] [--role R]`: from the ledger's `cmd_seq`, lists each session's manual actions where a kit command exists (raw `ArtifactData list`/`get` of posts, `board_cli.py get`, `sed`/`cat` of board files, hand-built pins), with the command it should have used and the tokens it carried. The orchestrator runs it at each Done and at each check-in; resume --role orchestrator prints its top 3.\n4. Run it on today's rows and put the table in the post.\n",
+ "title": "Sessions use the kit's commands, the ledger shows when they don't, and the orchestrator is labelled as such",
+ "train": "memory",
+ "updated_at": "2026-11-27T00:43:50Z",
+ "verdict": "Yes: the role label comes from what the session ran, full-board reads go through the kit (refused otherwise), and the audit on today's 20 sessions puts first-pull full lists first: 48 calls, 10.5M tokens carried.",
+ "working_by": ""
+}

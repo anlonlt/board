@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T02:27:13Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "Hand-over (context 521k, past the 380k limit). The Stop hook missed it: kit/hooks/kit_pre_compact.py reads the role from the session's first message (the owner's question), so it said 'other'; same bug as M11's label, needs a step. Landed today: CL47, CL48, CL53, CL45 (+CL51), CL55, CL49, R6, M11; CL41 re-reviewed on main: continue. Open: on main 76 of 77 suites pass (CL48's guard test fails on main too, per CR-r6). Not started: M2, M3, M4, M9, M10, R1-R5, CL43, CL46, CL50, CL52, CL54. Owner's rules today: one cross review for related steps; parts side by side unless a prompt says it waits."
+}

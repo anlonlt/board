@@ -141,9 +141,12 @@
  "breaks": "sed -i 's/        fields.update(owner)/        pass/' scripts/kit.py",
  "check": "python3 -m unittest tests.test_cl49_orchestrator_owner tests.test_cl32_roles",
  "column": "info",
+ "completed_at": "2026-11-27T00:27:39Z",
  "created_at": "2026-11-26T21:33:00Z",
  "from": "orchestrator",
  "handoff": "Posts launched from now on carry `orchestrator`, `orchestrator_name`, `orchestrator_device` (and `review_orchestrator*` once a review starts). Older posts have none: they fall back to `_orchestrator`. CL50 (a background part knows its own step) can rely on `kit.py resume --role part` printing \"Where you report\". New commands: `kit.py claim <post>`, `kit.py unreached <post> --why W`.",
+ "landed": "672a3068e12c88ad48be5579b4c05bd5b4fbc6cc",
+ "landed_at": "2026-11-27T00:27:43Z",
  "launched_at": "2026-11-26T22:58:04Z",
  "not_checked": [
   "A real `claude --bg` part on one computer messaging its orchestrator while a same-named dead session exists on another: the ListAgents rows and their device labels were not seen here (web session); the guide tells the part to pick the row of the recorded device and to write `unreached` otherwise.",
@@ -154,17 +157,27 @@
  "planned_by": "orchestrator",
  "priority": 1,
  "proof": {
-  "at": "2026-11-26T23:10:45Z",
+  "at": "2026-11-27T00:21:25Z",
   "branch": "cl49",
-  "commit": "6d35e88",
+  "commit": "672a306",
   "key": "62b92a9d78a1ac2a",
   "needs_real": true,
-  "sha": "6d35e88d3b7ae2caaec0f89008947ce7df9f51e6"
+  "sha": "672a3068e12c88ad48be5579b4c05bd5b4fbc6cc"
  },
+ "real_project": {
+  "command": "cl49 kit installed by install.py --update on a scratch copy; KIT_STALE_OK=1 resume --role part --post E11-window; kit.py unreached E11-window; resume --role orchestrator --full; kit.py claim E11-window",
+  "output": "part resume: '## Where you report - owner session_01AE1HGkptvYS3Hxf91Ky5Vq ... (no owner on the post (launched before CL49): the board's orchestrator)'. unreached: 'written: E11-window could not reach ...'; orchestrator resume lists it under 'Parts that could not reach their orchestrator'. claim: 'claimed: E11-window is yours'. Not tested: launch writing the owner, hand-over inheritance. Verdict: works.",
+  "project": "anlonlt/harmonize"
+ },
+ "review": "continue",
+ "review_commit": "672a3068e12c88ad48be5579b4c05bd5b4fbc6cc",
+ "review_id": "CR-cl49-a-part-reaches-the-orchestrator-running",
+ "review_session": "session_01AE1HGm5H7b75z78UXHBaTT",
+ "review_started": "2026-11-26T23:19:57Z",
  "runner": "claude-web",
  "session_id": "session_01AE1HGjpqRTVZzbRuw9ooMx",
  "started_at": "2026-11-26T22:58:57Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "files": [
@@ -194,7 +207,7 @@
  "task": "A part reports to the orchestrator that started it, on the device that started it, unless another orchestrator has claimed that part. CL44's part said Done and messaged `board-orchestrator`, the fixed name in the part guide (`{{SLUG}}-orchestrator`): it was launched by the orchestrator on the owner's computer (a Claude Code CLI session), and the name matched two dead sessions on another computer, last active 3 days ago. The Done never arrived. A web orchestrator had taken over the board meanwhile, but had not claimed CL44: CL44 still belonged to the orchestrator that launched it.\n\n1. `kit.py launch` records on the post who owns the part: the launching orchestrator's session (its address) and its device (`orchestrator`, `orchestrator_device`).\n2. The owner changes only by a claim: an orchestrator takes a part explicitly (`kit.py claim <post>`: it writes its own address on the post and tells the part), or a successor orchestrator on the same device, after a hand-over (session limit, reset), inherits every part its predecessor owned there. Taking over the board alone claims nothing.\n3. `kit.py resume --role part` prints where to report: the post's owner now; the part guides use it instead of a fixed name, in kit/part.template.md and kit/claude-cli/part.template.md.\n4. When the send fails or the owner names no live session, the part says so in its post (`orchestrator_unreached`), and every orchestrator's resume lists such parts so one can claim them.\n5. The same rule for reviews and the clerk: their guides also message the fixed `{{SLUG}}-orchestrator` (M1's review finished and its message went to the same dead sessions); they report to the orchestrator that launched them, unless another claimed the step.",
  "title": "A part reports to the orchestrator that started it, unless another claimed it",
  "train": "takeover",
- "updated_at": "2026-11-26T23:10:45Z",
+ "updated_at": "2026-11-27T00:27:43Z",
  "verdict": "CL44's case is replayed and fixed: the part names its launcher on the laptop, not the web orchestrator nor a look-alike name; claim, hand-over and failed sends are recorded on the post.",
- "working_by": "owner"
+ "working_by": ""
 }
