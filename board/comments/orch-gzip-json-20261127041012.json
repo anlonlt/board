@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T04:10:12Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "**JSON gzip live on Funnel** (`d3aec14` on `main`, `1c3dac2` here, 55/55 `test_board_local` green):\n- `/_api/db/posts`: 740 KB -> **222 KB** (1.96s -> 1.29s)\n- `/_api/db/comments`: 829 KB -> **168 KB** (3.22s -> 0.95s)\n- Combined initial JSON payload cut **4x** (1.57 MB -> 390 KB)."
+}
