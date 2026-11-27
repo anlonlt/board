@@ -7652,6 +7652,45 @@ def _resume_snapshot(posts, comments, alive=None):
     return {"posts": ps, "comments": cs, "open": opn, "alive": sorted(alive) if alive is not None else None}
 
 
+# CL58: the orchestrator's resume sections that posts, comments and sessions do not hold, so a change in one shows in
+# a delta (CL39's web environment record printed "nothing new"). Checked and left out: train_lines (it ages with the
+# clock: every delta would show it), owner_lines and autonomy_lines (config text, no action), audit_lines and
+# memory_line (reports, not something to act on), split/start/inherit lines (from posts and comments: covered).
+RESUME_SECTIONS = (("web_env", "Web environment (several repos)"),
+                   ("land", "Work not on the trunk yet (it lands after its review)"),
+                   ("unreached", "Parts that could not reach their orchestrator (to claim)"),
+                   ("git_copy", "The record is git, and it is behind"))
+
+
+def _resume_sections(m, posts, comments, db_path=None):
+    """{key: [lines]} of RESUME_SECTIONS as the whole orchestrator resume would print them; a section that fails is
+    left out (never lose the delta over one)."""
+    out = {}
+    makers = {"web_env": lambda: [x for x in [web_env_state(posts, comments)[1]] if x],
+              "land": lambda: land_lines(posts),
+              "unreached": lambda: unreached_lines(posts),
+              "git_copy": lambda: ["- " + x for x in git_copy_lines(m, db_path)]}
+    for key, _ in RESUME_SECTIONS:
+        try:
+            out[key] = [str(x) for x in (makers[key]() or []) if str(x).strip()]
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+def resume_section_lines(old, new):
+    """The RESUME_SECTIONS whose text changed between two snapshots, each printed whole as it is now."""
+    os_, ns = old.get("sections"), new.get("sections")
+    if not isinstance(os_, dict) or not isinstance(ns, dict):
+        return []                                       # a snapshot from before CL58: nothing to compare
+    out = []
+    for key, head in RESUME_SECTIONS:
+        if key not in os_ or key not in ns or os_[key] == ns[key]:
+            continue
+        out += ["", "## %s" % head] + (ns[key] or ["- (cleared since)"])
+    return out
+
+
 def _resume_docs(m, db_path=None):
     """The host's posts and comments, and each attached board's under `repo:<id>/` (so a change there shows too)."""
     posts, comments = _load_board_docs(m, db_path=db_path)
@@ -7722,7 +7761,7 @@ def resume_delta_lines(old, new, since_hhmm, me=None):
     if gone_open:
         his.append("- answered since: %s" % ", ".join(gone_open))
     still = sorted(set(new.get("open") or []) & set(old.get("open") or []))
-    out = []
+    out = resume_section_lines(old, new)
     for head, rows in (("Steps", steps), ("Sessions", sess), ("Questions", qs), ("The owner's comments", his),
                        ("Other writers", others)):
         if rows:
@@ -7745,6 +7784,8 @@ def resume_delta(m, role=None, session=None, db_path=None, cli=None, full=False,
     if alive is None:
         alive = None if _active_cli(cli) == "agy" else _alive_sessions()
     snap = _resume_snapshot(posts, comments, alive)
+    if role == "orchestrator":
+        snap["sections"] = _resume_sections(m, posts, comments, db_path=db_path)
     try:
         with open(path, encoding="utf-8") as fh:
             old = json.load(fh)
