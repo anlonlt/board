@@ -12,3 +12,6 @@ A step's task is written once, in its post; the prompt file is generated from th
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+CL54: builds on CL49/CL53 (launch and fresh start); the task is written in two places today (post and prompt file), CL54 keeps it once in the post and generates the prompt at launch.

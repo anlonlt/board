@@ -14,3 +14,6 @@ Bars: on the kit itself, how many of the last 10 steps' changed files the map co
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+M3: builds on M1 (the map) and M7 (entries checked against reality); M3 makes kit.py done check the part's stretch of the map and add what it built.
