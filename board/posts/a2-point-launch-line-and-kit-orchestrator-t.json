@@ -2,6 +2,7 @@
  "body": "Follow-up from combined review CR-r7-r4-combined (`continue`):\n\n1. Update `_launch_line()` in `scripts/kit.py` (and `.kit/kit.py`) and `kit/orchestrator.template.md` (plus its `.kit/orchestrator.md` copy via `install.py . --update --no-cmd`) so `agy` orchestrator guides and `step new` output point directly at `python3 -I .kit/kit.py launch <post>` instead of raw `invoke_subagent` instructions.\n2. Update or add unit tests in `tests/test_launch_runtime.py` verifying `_launch_line()` returns `kit.py launch` for `agy`.",
  "column": "info",
  "created_at": "2026-11-27T08:41:22Z",
+ "differs": "Follow-up from CR-r7-r4-combined (continue). Unlike A1 (which fixed install_cmd overwriting ~/.local/bin/<cmd> from linked worktrees), A2 updates _launch_line() in scripts/kit.py and kit/orchestrator.template.md so agy orchestrator guides and step new output point at kit.py launch <post>, with tests in tests/test_launch_runtime.py.",
  "from": "orchestrator",
  "parent": "R7",
  "part": "A2",
@@ -9,7 +10,7 @@
  "sources": [
   "CR-r7-r4-combined"
  ],
- "status": "planned",
+ "status": "in progress",
  "subtasks": [
   {
    "files": [
@@ -37,5 +38,6 @@
  ],
  "task": "Follow-up from combined review CR-r7-r4-combined (`continue`):\n\n1. Update `_launch_line()` in `scripts/kit.py` (and `.kit/kit.py`) and `kit/orchestrator.template.md` (plus its `.kit/orchestrator.md` copy via `install.py . --update --no-cmd`) so `agy` orchestrator guides and `step new` output point directly at `python3 -I .kit/kit.py launch <post>` instead of raw `invoke_subagent` instructions.\n2. Update or add unit tests in `tests/test_launch_runtime.py` verifying `_launch_line()` returns `kit.py launch` for `agy`.",
  "title": "Point _launch_line() and kit/orchestrator.template.md at kit.py launch for agy",
- "train": "agy"
+ "train": "agy",
+ "updated_at": "2026-11-27T09:01:43Z"
 }

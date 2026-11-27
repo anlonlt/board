@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T08:54:14Z",
+ "created_at": "2026-11-27T09:01:43Z",
  "rows": [
   {
    "at": 8,
@@ -175,7 +175,7 @@
    "name": "Agy",
    "note": "Next: Point _launch_line() and kit/orchestrator.template.md at kit.py launch for agy",
    "post": "a2-point-launch-line-and-kit-orchestrator-t",
-   "state": "ready",
+   "state": "running",
    "steps": [
     "install_cmd skips linked git worktrees so ~/.local/bin/<cmd> is never overwritten by a...",
     "Point _launch_line() and kit/orchestrator.template.md at kit.py launch for agy"
@@ -214,5 +214,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T08:54:14Z"
+ "updated_at": "2026-11-27T09:01:43Z"
 }
