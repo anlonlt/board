@@ -74,7 +74,8 @@ def main():
            for v in ("CLAUDE_CODE_REMOTE", "KIT_REMOTE", "AGY_REMOTE")) and os.path.exists(
             os.path.join(root, ".kit", "web_takeover.py")):
         out.append("WEB: this is a remote/web session: no board server yet until you run "
-                   "`python3 -I .kit/web_takeover.py` (the board from git + the steps to continue). The orchestrator then "
+                   "`python3 -I .kit/web_takeover.py` (the board from git + the steps to continue; an Artifact board: the pull it "
+                   "prints, then `python3 -I .kit/kit.py artifact reconcile`, the Artifact against GitHub both ways). The orchestrator then "
                    "starts from `python3 -I .kit/kit.py resume --role orchestrator`. A part continues on its "
                    "branch; the board goes back to git with `python3 -I .kit/web_takeover.py save` (the Stop hook runs it too).")
     landing = os.path.join(root, ".kit", "landing.py")
