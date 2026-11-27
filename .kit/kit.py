@@ -4349,6 +4349,10 @@ def _load_board_docs(m, db_path=None):
     if posts or comments:
         BOARD_SOURCE.clear()
         BOARD_SOURCE.update(kind="db", text="the local board (%s)" % os.path.relpath(db, ROOT))
+        try:                                       # merged only for the project's own git copy, never a caller's dir
+            own_board = own_board and os.path.realpath(str(m)) == os.path.realpath(mirror_dir(argparse.Namespace(mirror=None)))
+        except (OSError, TypeError):
+            own_board = False
         if not own_board:
             return posts, comments
         gp, gc, info = _git_copy_docs(m)
