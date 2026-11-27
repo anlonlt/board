@@ -1,5 +1,5 @@
 {
- "at": "2026-11-27T03:10:57Z",
+ "at": "2026-11-27T03:12:12Z",
  "docs": {
   "comments/004abd3c5e334e6aac34": "9a926f42c90c194d",
   "comments/0d7buihhnapamdz5rqkz": "e06545c9744f3f81",
@@ -268,7 +268,7 @@
   "posts/_train-memory": "082f34cb0096b501",
   "posts/_train-runners": "b40646e32a6d8afb",
   "posts/_train-takeover": "8d603a421cdb27e7",
-  "posts/_trains": "9172c7e9b46696c8",
+  "posts/_trains": "994d5653f7250cdf",
   "posts/cl1-cli-agnostic-install": "aa13600a261e7fbc",
   "posts/cl10-see-the-new-ui-work-then-stop-tests-touc": "b296f627edafa03e",
   "posts/cl11-one-board-token-per-machine-kept-across": "0a29c2493daf1e7e",
