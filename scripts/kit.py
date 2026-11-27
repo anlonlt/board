@@ -918,6 +918,232 @@ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
             "git": pushed or "git copy not updated here"}
 
 
+# ---------------------------------------------------------------- Platform detection & rules table (R5)
+# One answer to "where does this session run" (_platform()), never inferred from .kit/config.json (a config naming an
+# Artifact, cli or runtime says what exists or was installed, not where this session runs). Every rule that differs by
+# platform declares a row in PLATFORM_RULES and reads it via _rule(name, platform); tests/test_platform_matrix.py
+# checks resume, done, launch and step new under all five platforms against this table and refuses un-rowed checks.
+PLATFORMS = ("web", "cli", "agy", "arena", "generic")
+_PLATFORM_ALIASES = {"claude": "cli", "claude-cli": "cli", "claude-web": "web", "lmarena": "arena"}
+
+_OWNER_PAGE = "read, look at pictures and documents, play audio, Like, tap an answer, comment under a post"
+_OWNER_ASK = "A question for him is a question post with its options, a default and a deadline: one tap answers it and reaches you."
+
+PLATFORM_RULES = {
+    # Board sync / Artifact steps (CL30, CL44, CL51): the Artifact is Claude Code web's alone.
+    "artifact_steps": {
+        "web": True,
+        "cli": False,
+        "agy": False,
+        "arena": False,
+        "generic": False,
+    },
+    # Gates (CL15, CL30, CL44, CL51):
+    # - stale_gate: refuses reads until the Artifact copy is loaded/reconciled.
+    "stale_gate": {
+        "web": True,
+        "cli": False,
+        "agy": False,
+        "arena": False,
+        "generic": False,
+    },
+    # - device_cap_gate: local machine RAM/CPU session cap (.kit/device.py --gate).
+    "device_cap_gate": {
+        "web": False,
+        "cli": True,
+        "agy": True,
+        "arena": False,
+        "generic": False,
+    },
+    # Real-project dry run (CL32, CL38, CL39, R4):
+    # "orchestrator" on web (launched web session cannot attach repos; uses Artifact kit_docs);
+    # "computer" on local platforms (local folder, no ArtifactData/add_repo; R4 flips to "part" to refuse done).
+    "real_project_run": {
+        "web": "orchestrator",
+        "cli": "computer",
+        "agy": "computer",
+        "arena": "computer",
+        "generic": "computer",
+    },
+    # Cards (_dashboard, _trains) builder (106bba6): web keeps its kit-cards agent & reminder; local platforms use the server.
+    "cards": {
+        "web": "agent",
+        "cli": "server",
+        "agy": "server",
+        "arena": "server",
+        "generic": "server",
+    },
+    # How a part/review/successor session is launched (CL26):
+    "launcher": {
+        "web": "create_session",
+        "cli": "claude_bg",
+        "agy": "invoke_subagent",
+        "arena": "self",
+        "generic": "self",
+    },
+    # Inter-session reply tool & hook response schema (CL44 item 9, CL49):
+    "reply_format": {
+        "web": "claude_remote",
+        "cli": "claude_cli",
+        "agy": "agy",
+        "arena": "none",
+        "generic": "none",
+    },
+    # Hook runtime row in kit/hook.py TABLE (None: no hooks on this platform):
+    "hook_runtime": {
+        "web": "web",
+        "cli": "cli",
+        "agy": "agy",
+        "arena": None,
+        "generic": None,
+    },
+    # Orchestrator task list mechanism in resume / workflow:
+    "task_list": {
+        "web": "claude_tasks",
+        "cli": "claude_tasks",
+        "agy": "agy_step",
+        "arena": "step_cli",
+        "generic": "step_cli",
+    },
+    # How resume checks whether running part sessions are still alive:
+    "alive_check": {
+        "web": "claude_agents",
+        "cli": "claude_agents",
+        "agy": "subagents",
+        "arena": "none",
+        "generic": "none",
+    },
+    # Role template resolution order under .kit/:
+    "part_template": {
+        "web": ("claude-web/part.md", "claude-cli/part.md", "part.md"),
+        "cli": ("claude-cli/part.md", "part.md", "claude-web/part.md"),
+        "agy": ("part.md", "claude-cli/part.md", "claude-web/part.md"),
+        "arena": ("part.md", "claude-cli/part.md", "claude-web/part.md"),
+        "generic": ("part.md", "claude-cli/part.md", "claude-web/part.md"),
+    },
+    "orchestrator_guide": {
+        "web": ("claude-web/orchestrator.md", "claude-cli/takeover.md", "orchestrator.md"),
+        "cli": ("claude-cli/orchestrator.md", "orchestrator.md"),
+        "agy": ("orchestrator.md",),
+        "arena": ("orchestrator.md",),
+        "generic": ("orchestrator.md",),
+    },
+    "consultant_template": {
+        "web": ("claude-cli/consultant.md", "consultant.md"),
+        "cli": ("claude-cli/consultant.md", "consultant.md"),
+        "agy": ("consultant.md", "claude-cli/consultant.md"),
+        "arena": ("consultant.md", "claude-cli/consultant.md"),
+        "generic": ("consultant.md", "claude-cli/consultant.md"),
+    },
+    # Fresh-trunk check (CL53): web clones start fresh (no refetch); local platforms fetch & move on start / --again.
+    "checkout_refetch": {
+        "web": False,
+        "cli": True,
+        "agy": True,
+        "arena": True,
+        "generic": True,
+    },
+    # Welcome comment runtime prefix (welcome-<rt>-<n>):
+    "welcome_runtime": {
+        "web": "claude",
+        "cli": "claude-cli",
+        "agy": "agy",
+        "arena": "arena",
+        "generic": "generic",
+    },
+    # What the owner can and cannot do where he is (owner_lines):
+    "owner_surface": {
+        "web": (
+            ["on the board page, usually from his phone: " + _OWNER_PAGE],
+            ["run a command, open a file of this container, attach a repository or approve a tool for you"],
+            _OWNER_ASK,
+        ),
+        "cli": (
+            ["on the board page (this computer, or his phone over his private network): " + _OWNER_PAGE,
+             "type in the orchestrator's terminal, only when he is at the computer"],
+            ["see a path under /tmp or in a part's worktree, or answer in a part's chat"],
+            _OWNER_ASK,
+        ),
+        "agy": (
+            ["on the board page (this computer, or his phone over his private network): " + _OWNER_PAGE,
+             "type in the agy terminal, only when he is at the computer"],
+            ["see a path under /tmp or in a subagent's worktree, or answer in a subagent's chat"],
+            _OWNER_ASK,
+        ),
+        "arena": (["type in this chat while a turn runs; use the embedded board"], [], ""),
+        "generic": (["use the board page"], [], ""),
+    },
+}
+
+
+def _norm_platform(name):
+    s = str(name or "").strip().lower()
+    s = _PLATFORM_ALIASES.get(s, s)
+    return s if s in PLATFORMS else ""
+
+
+def _truthy_env(name):
+    return str(os.environ.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _ancestor(comm_name):
+    """True when a process named `comm_name` (e.g. agy) encloses this one (/proc; False where there is none)."""
+    pid, seen = os.getppid(), set()
+    while pid > 1 and pid not in seen and os.path.exists("/proc/%d/comm" % pid):
+        seen.add(pid)
+        try:
+            with open("/proc/%d/comm" % pid, encoding="utf-8") as fh:
+                if fh.read().strip() == comm_name:
+                    return True
+            with open("/proc/%d/stat" % pid, encoding="utf-8") as fh:
+                st = fh.read()
+            pid = int(st[st.rindex(")") + 2:].split()[1])
+        except (OSError, ValueError, IndexError):
+            return False
+    return False
+
+
+def _platform(explicit=None):
+    """web | cli | agy | arena | generic: the one answer to "where does this session run".
+    Never inferred from .kit/config.json (a config naming an Artifact, cli or runtime says what exists or was
+    installed, not where this session runs): detected from the session's environment and parent process only."""
+    p = _norm_platform(explicit)
+    if p:
+        return p
+    p = _norm_platform(os.environ.get("KIT_PLATFORM"))
+    if p:
+        return p
+    if _truthy_env("CLAUDE_CODE_REMOTE") or os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID"):
+        return "web"
+    if _truthy_env("KIT_EMBED_PREVIEW") or _truthy_env("LMARENA") or _truthy_env("ARENA_SANDBOX"):
+        return "arena"
+    if os.environ.get("AGY_PID"):
+        return "agy"
+    if (os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+            or os.environ.get("CLAUDE_PID") or os.environ.get("CLAUDE_PROJECT_DIR")):
+        return "cli"
+    p = _norm_platform(os.environ.get("KIT_CLI"))
+    if p:
+        return p
+    if _truthy_env("ANTIGRAVITY_AGENT") or os.environ.get("ANTIGRAVITY_CONVERSATION_ID"):
+        return "agy"
+    if _ancestor("agy"):
+        return "agy"
+    if _ancestor("claude"):
+        return "cli"
+    return "generic"
+
+
+def _rule(name, platform=None):
+    """Read one row of PLATFORM_RULES for `platform` (default: _platform()). Refuses an unknown rule name."""
+    pl = _platform(platform)
+    return PLATFORM_RULES[name][pl]
+
+
+def _is_web():
+    return _platform() == "web"
+
+
 # ---------------------------------------------------------------- Artifact mode (a claude.ai Artifact board)
 # The board lives in the Artifact's database, which only the ArtifactData tool reaches. The kit's scripts (board_cli,
 # `kit.py step`, the task-train hook, kit_cards, resume and every lookup) keep working against a LOCAL copy of the
@@ -950,10 +1176,10 @@ def _art_save(st):
 
 
 def artifact_here():
-    """CL51 (the owner's rule): the Artifact is the Claude Code web session's. On a computer, a session works with the
-    local board, which reaches GitHub (board-mirror), and never writes to or waits on the Artifact: no STALE gate, no
-    push at launch or adopt, no "not on the board yet" at done. The attached board on the web, else None."""
-    return attached_board() if _is_web() else None
+    """CL51 / R5: the Artifact is Claude Code web's alone (PLATFORM_RULES['artifact_steps']). On a computer, a session
+    works with the local board, which reaches GitHub (board-mirror), and never writes to or waits on the Artifact: no
+    STALE gate, no push at launch or adopt, no "not on the board yet" at done. The attached board on the web, else None."""
+    return attached_board() if _rule("artifact_steps") else None
 
 
 def attached_board():
@@ -1147,7 +1373,7 @@ def artifact_pull(full=False, post=None):
     if since:
         lines.append("(A post changed on the page without a new `updated_at`, or a comment edited later, comes with "
                      "`kit.py artifact pull --full`: do it once a day or when something looks stale.)")
-    if _is_web():
+    if _rule("artifact_steps"):
         # CL45: a web session's start reconciles the Artifact with GitHub (board-mirror), not only loads it
         lines += ["", "Then: `python3 -I .kit/kit.py artifact reconcile` (it runs `artifact load`, then the Artifact against "
                   "origin/board-mirror both ways, and prints the batches to send; your own unsent changes stay)."]
