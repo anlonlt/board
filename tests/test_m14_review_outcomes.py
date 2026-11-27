@@ -105,7 +105,7 @@ class ReviewOutcomes(unittest.TestCase):
         self.assertRegex(lines[0], r"r-redire.*redirect\s+found_new=yes")
         self.assertRegex(lines[1], r"r-tests-.*continue\s+found_new=no ")
         self.assertRegex(lines[2], r"r-gap.*continue\s+found_new=yes .*One claim is false")
-        self.assertEqual(lines[3], "reviews 3, cost $6.00, found_new 2 of 3, cost per review that found something $2.00")
+        self.assertEqual(lines[3], "reviews 3, cost $6.00, found_new 2 of 3, cost per review that found something $3.00")
 
     def test_several_reviews_of_one_step_go_to_their_rows_in_time_order(self):
         cs = {"CR-b-step": dict(COMMENTS["CR-a2-the-second-step"], post_id="b-step", created_at="2026-11-21T10:10:00Z"),
