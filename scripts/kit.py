@@ -6287,8 +6287,107 @@ def step_holder(pid, p, me=None, people=(), alive=None, saved=None, session=None
     return "session %s is on it (%s)%s" % (sess, seen, ": check it with get_session" if sess.startswith("session_") else "")
 
 
+def _continue_worktree(branch, base):
+    """CL17: a worktree on the part's own branch, as it was left (its commits, and its uncommitted files when the old
+    worktree is still there): never reset. A branch only on origin is taken from there. No branch: a fresh one."""
+    path = _worktree_for(branch)
+    if path and os.path.isdir(path):
+        return path, None
+    _git_run("worktree", "prune")
+    path = os.path.join(ROOT, ".claude", "worktrees", branch)
+    if _git_run("rev-parse", "--verify", "--quiet", "refs/heads/" + branch).returncode == 0:
+        r = _git_run("worktree", "add", "-q", path, branch)
+    else:
+        _git_run("fetch", "-q", "origin", branch, timeout=120)
+        if _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + branch).returncode != 0:
+            return _make_worktree(branch, base)
+        r = _git_run("worktree", "add", "-q", "-b", branch, path, "origin/" + branch)
+    return (path, None) if r.returncode == 0 else (None, r.stderr.strip() or "git worktree add failed")
+
+
+def checklist(p):
+    """CL17: a part's checklist is its post's pieces (`kit.py sub`): {done, of, doing, next} or None (no pieces)."""
+    rows = [x for x in pieces_of(p) if x.get("status") != "dropped"]
+    if not rows:
+        return None
+    doing = [x for x in rows if x.get("status") == "doing"]
+    todo = [x for x in rows if x.get("status") not in ("done", "doing")]
+    return {"done": sum(x.get("status") == "done" for x in rows), "of": len(rows),
+            "doing": ("%d. %s" % (doing[0]["n"], doing[0]["title"])) if doing else "",
+            "next": ("%d. %s" % (todo[0]["n"], todo[0]["title"])) if todo else ""}
+
+
+def checklist_text(p):
+    c = checklist(p)
+    if not c:
+        return ""
+    return "checklist %d/%d done%s%s" % (c["done"], c["of"], (" · doing: %s" % _short(c["doing"], 70)) if c["doing"] else "",
+                                          (" · next: %s" % _short(c["next"], 70)) if c["next"] else "")
+
+
+def continue_text(p, branch):
+    """What a relaunched part is told after its prompt line (CL17)."""
+    ck = p.get("checkpoint") if isinstance(p.get("checkpoint"), dict) else {}
+    c = checklist(p)
+    return (" You continue a part that stopped (crash or closed session): continue from the checklist in your post "
+            "(`kit.py sub`%s); your branch `%s` has your work%s. Do not start again." % (
+                ("; next: %s" % (c["doing"] or c["next"])) if c and (c["doing"] or c["next"]) else "", branch,
+                (" (last checkpoint %s, %s)" % (ck.get("sha"), str(ck.get("at") or "")[:16].replace("T", " "))) if ck.get("sha") else ""))
+
+
+WAIT_RE = re.compile(r"\b(wait(s|ing)? (on|for) (the )?owner|asks? the owner|held for (the )?owner|needs the owner)\b", re.I)
+
+
+def waits_on_owner(pid, p, posts=None):
+    """CL17: why this step is waiting on the owner ('' : it is not), so a crashed part is relaunched without asking only
+    when nothing of his is pending: its column (question / todo), its status, or an open question post naming it."""
+    if step_state(p) == "you":
+        return "its column is %s" % p.get("column")
+    st = str(p.get("status") or "")
+    if WAIT_RE.search(st) or p.get("waits_on_owner"):
+        return "its status: %s" % _short(st or "waits_on_owner", 60)
+    part = str(p.get("part") or "")
+    for qid, q in (posts or {}).items():
+        if qid == pid or not isinstance(q, dict) or q.get("column") != "question" or step_state(q) != "you" or q.get("removed"):
+            continue
+        if q.get("parent") == pid or q.get("post") == pid or (len(part) >= 3 and re.search(
+                r"(?<![\w-])%s(?![\w])" % re.escape(part), str(q.get("title") or ""))):
+            return "question `%s` is open" % qid
+    return ""
+
+
+def _transcript_of(sess):
+    """A Claude Code transcript of this session id on this machine, or ''."""
+    if not sess or not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-", sess):
+        return ""
+    hits = glob.glob(os.path.join(os.path.expanduser("~"), ".claude", "projects", "*", sess + ".jsonl"))
+    return hits[0] if hits else ""
+
+
+def relaunch_lines(pid, p, posts=None, unknown=False):
+    """CL17: under a step whose session is not running: its last checkpoint, its checklist, and the relaunch line (or why
+    it waits on the owner). `unknown`: a web session whose life only get_session knows."""
+    out = []
+    ck = p.get("checkpoint") if isinstance(p.get("checkpoint"), dict) else None
+    if ck and ck.get("sha"):
+        out.append("  last checkpoint `%s` on `%s` (%s, %s)" % (ck["sha"], ck.get("branch") or p.get("branch") or "?",
+                   str(ck.get("at") or "")[:16].replace("T", " "), "pushed" if ck.get("pushed") else "NOT pushed"))
+    cl = checklist_text(p)
+    out.append("  " + (cl or "no checklist on its post (no pieces): the relaunched part reads its branch's commits"))
+    wait = waits_on_owner(pid, p, posts)
+    if wait:
+        out.append("  waits on the owner (%s): do not relaunch; his answer first" % wait)
+        return out
+    out.append("  relaunch%s: `python3 -I .kit/kit.py launch %s --continue`" % (
+        " (once its session is confirmed ended: get_session on the web)" if unknown else "", pid))
+    tr = _transcript_of(str(p.get("session_id") or ""))
+    if tr:
+        out.append("  or here, same machine, its transcript still exists: `claude --resume %s`" % p["session_id"])
+    return out
+
+
 def launch(pid, url=None, token=None, web=None, session_id=None, model=None, reset=False, gate=True, cli=None, post_file=None,
-           take=False, anyway=None):
+           take=False, anyway=None, cont=False):
     """`kit.py launch <post>`: the one way a part starts (CL13). Writes status in progress, session_id, launched_at
     and branch on its post and marks its Trains row running (the local copy; with an attached Artifact board, the
     batch that carries both there), then starts it: CLI, `claude --bg` inside a worktree made from the current branch;
@@ -6319,7 +6418,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                                               ", ".join(_attached_ids()) or "none attached")}
     part = str(post.get("part") or pid)
     rel = "docs/prompts/%s.md" % pid
-    branch = str(post.get("branch") or "") if session_id else ""
+    branch = str(post.get("branch") or "") if (session_id or cont) else ""
     branch = branch or _slug(part, 24)
     c = _kit_config()
     name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
@@ -6327,7 +6426,16 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     base = _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "HEAD"
     text = _launch_text(rel)
     me, people = _my_person(url, token)
-    if not session_id and not take:
+    if cont and not session_id:                     # CL17: a crashed part continues on its branch, from its post's checklist
+        old = str(post.get("session_id") or "")
+        if old and old in (_alive_sessions() or ()):
+            return dict(out, ok=False, error="%s's session %s still runs: nothing to continue" % (pid, old))
+        wait = waits_on_owner(pid, post)
+        if wait:
+            return dict(out, ok=False, error="%s waits on the owner (%s): answer that, then continue it" % (pid, wait))
+        text += continue_text(post, branch)
+        out["continued"] = True
+    if not session_id and not take and not cont:
         held = step_holder(pid, post, me=me, people=people, alive=_alive_sessions(), saved=_saved_mins(branch))
         if held:
             return dict(out, ok=False, error="%s is taken: %s. If that session ended or its person agrees, "
@@ -6350,7 +6458,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         if why:
             return dict(out, ok=False, error=why)
         # R6: launched from the top of the queue; out of order only with the reason recorded
-        late = None if (post.get("launched_at") or take) else order_problem(dict(lp, **{pid: post}), pid)
+        late = None if (post.get("launched_at") or take or cont) else order_problem(dict(lp, **{pid: post}), pid)
         if late and not anyway:
             return dict(out, ok=False, error="out of order: %s. (Launch it anyway: `kit.py launch %s --anyway \"<why>\"`, "
                                              "recorded on its post.)" % (late, pid), queue=True)
@@ -6359,8 +6467,11 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         if web:
             if _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + base).returncode != 0 and base != "HEAD":
                 out["warning"] = "branch %s is not pushed: push it first, the new session clones it from GitHub" % base
+            src = base
+            if cont and _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + branch).returncode == 0:
+                src = branch                           # CL17: the new session clones the part's own branch, its work
             out["create_session"] = {"title": ("%s %s" % (part, str(post.get("title") or "")[:60])).strip(),
-                                     "source_url": _github_url(), "source_revision": base, "outcome_branch": branch,
+                                     "source_url": _github_url(), "source_revision": src, "outcome_branch": branch,
                                      "prompt": text}
             sess = "pending: create_session (%s)" % name
             launch_mark(pid, text)                     # CL30: the orchestrator guard lets this create_session out
@@ -6375,7 +6486,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                     ok, why = True, ""
                 if not ok:
                     return dict(out, ok=False, error="device cap: " + why)
-            wt, why = _make_worktree(branch, base, reset=reset)
+            wt, why = _continue_worktree(branch, base) if cont and not reset else _make_worktree(branch, base, reset=reset)
             if why:
                 return dict(out, ok=False, error=why)
             out["worktree"] = wt
@@ -6411,6 +6522,9 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         out["warning"] = "%s already named session %s: if it still runs, two are on this step; stop one" % (pid, had)
     if not session_id or not post.get("launched_at"):
         fields["launched_at"] = now
+    if cont:
+        fields["relaunched"] = {"at": now, "from": str(post.get("session_id") or ""), "n": int((post.get("relaunched") or {}).get("n") or 0) + 1
+                                if isinstance(post.get("relaunched"), dict) else 1}
     out["session_id"] = sess
     if isinstance(given, dict):
         return dict(out, trains=False)
@@ -6814,6 +6928,11 @@ def _train_lines(posts, alive, h="##", board=None):
                 out.extend(_attached_step_detail(board, pid, p, "running" not in who or "not running" in who))
             elif st in ("planned", "in progress") or "progress" in st:
                 out.extend(_step_location_lines(pid, p))
+                if "progress" in st and sess and not sess.startswith("pending"):
+                    if alive is None or sess.startswith("session_"):        # a web session: only get_session knows
+                        out.extend(relaunch_lines(pid, p, posts, unknown=True))
+                    elif sess not in alive:
+                        out.extend(relaunch_lines(pid, p, posts))
         got = found_so_far(posts, t)
         if got:
             out.append("%s# Found so far (do not repeat it; a new step near one says what it does differently)" % h)
@@ -7476,14 +7595,16 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
         out.append("Rebuild your task list: one TaskCreate per open step above ([r] too: its task completed starts its review), subject \"<PART> <title>\", metadata "
                    "{\"board\": \"<id>\", \"train\": \"<train>\", \"part\": \"<PART>\"} (board: this board's id \"%s\", or the "
                    "attached board's id from its heading; the existing post is adopted, not duplicated); TaskUpdate "
-                   "in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it (an attached "
-                   "board's step from its own clone, with its relaunch line) or ask the owner."
+                   "in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it with its relaunch "
+                   "line (`kit.py launch <post> --continue`; an attached board's step from its own clone), within the device "
+                   "cap, without asking; only a step that waits on the owner waits for his answer (CL17)."
                    % (_repo_id(_kit_config().get("project") or os.path.basename(ROOT))))
     else:
         out.append("Rebuild your task list: one TaskCreate per open step above ([r] too: its task completed starts its review), subject \"<PART> <title>\", metadata "
                    "{\"train\": \"<train>\", \"part\": \"<PART>\"} (the existing post is adopted, not duplicated); "
-                   "TaskUpdate in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it or "
-                   "ask the owner.")
+                   "TaskUpdate in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it with its "
+                   "relaunch line (`kit.py launch <post> --continue`), within the device cap, without asking; only a step that "
+                   "waits on the owner waits for his answer (CL17).")
     return "\n".join(out) + "\n"
 
 
@@ -8722,9 +8843,29 @@ _CK_SECRETS = (".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*
 _CK_MAX_FILE = 2 * 1024 * 1024
 
 
-def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=False):
+def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=False, stamp=False, url=None, token=None):
     """CL44 (item 10 / CL17): commit in-progress work on the step's branch (never on the trunk or detached HEAD)
-    so a session limit or crash never leaves work only uncommitted in a worktree."""
+    so a session limit or crash never leaves work only uncommitted in a worktree. `stamp` (CL17, `kit.py checkpoint
+    <post>`): the post then carries `checkpoint` {branch, sha, at, pushed}, what a relaunched part continues from."""
+    res = _checkpoint_commit(post=post, message=message, push=push, on_step_branch=on_step_branch)
+    if stamp and post and res.get("ok") and res.get("branch"):
+        sha = res.get("sha") or _git_run("rev-parse", "--short", "HEAD").stdout.strip()
+        pushed = res.get("pushed")
+        if pushed is None and not res.get("committed"):          # a clean tree: is this commit on origin already?
+            pushed = _git_run("branch", "-r", "--contains", "HEAD", "--list", "origin/" + res["branch"]).stdout.strip() != ""
+        ck = {"branch": res["branch"], "sha": sha, "at": _now_z(), "pushed": bool(pushed)}
+        fields = {"checkpoint": ck, "branch": res["branch"], "updated_at": ck["at"]}
+        try:
+            done = _local_update(url or local_board_url(), _resolve_board_token(token), "posts", post, fields) is not None
+        except Exception:
+            done = False
+        if not done:
+            done = _board_write("update", "posts", post, fields)
+        res = dict(res, stamped=ck if done else False)
+    return res
+
+
+def _checkpoint_commit(post=None, message=None, push=False, on_step_branch=False):
     cfg = _kit_config()
     k = cfg.get("kit") or {}
     trunk = str(k.get("main_branch") or "main")
@@ -9555,9 +9696,12 @@ def main(argv=None):
     s = sp.add_parser("landing", help="JSON: which steps may reach the trunk"); s.add_argument("--post", default=None)
     s.add_argument("--branch", default=None); s.add_argument("--mark", default=None, help="landed at this commit"); s.add_argument("--db", default=None)
     sp.add_parser("save", help="the work in progress to wip/<branch> now")
-    s = sp.add_parser("checkpoint", help="commit in-progress work on the step's branch (never on trunk)")
+    s = sp.add_parser("checkpoint", help="commit in-progress work on the step's branch (never on trunk); with the post: "
+                      "pushed, and the post stamped with branch, commit and time (CL17)")
+    s.add_argument("post_id", nargs="?", default=None, help="the step's post: push and stamp it (CL17)")
     s.add_argument("--post", default=None); s.add_argument("-m", "--message", default=None)
-    s.add_argument("--push", action="store_true"); s.add_argument("--quiet", action="store_true")
+    s.add_argument("--push", action="store_true"); s.add_argument("--no-push", action="store_true")
+    s.add_argument("--quiet", action="store_true")
     s.add_argument("--on-step-branch", action="store_true")
     sp.add_parser("keep", help="the board here into git: committed and pushed")
     s = sp.add_parser("guide", help="a case of the orchestrator's guide (no case: their list)"); s.add_argument("case", nargs="?", default=None)
@@ -9617,6 +9761,8 @@ def main(argv=None):
     s.add_argument("--model", default=None); s.add_argument("--reset", action="store_true")
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
     s.add_argument("--anyway", default=None, help="R6: launch out of the queue's order; the reason is recorded on the post")
+    s.add_argument("--continue", dest="cont", action="store_true", help="CL17: a crashed part, again on its own branch "
+                   "(its work and checkpoints), told to continue from the checklist in its post")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s.add_argument("--post-file", default=None, help=argparse.SUPPRESS)
     s = sp.add_parser("claim", help="this orchestrator takes a step: its address on the post, the part and its review report to it (CL49)")
@@ -9864,7 +10010,8 @@ def main(argv=None):
         print(json.dumps(res, ensure_ascii=False))
         return 1 if res.get("error") else 0
     if a.cmd == "checkpoint":
-        res = checkpoint(post=a.post, message=a.message, push=a.push, quiet=a.quiet, on_step_branch=a.on_step_branch)
+        res = checkpoint(post=a.post_id or a.post, message=a.message, push=(a.push or bool(a.post_id)) and not a.no_push,
+                         quiet=a.quiet, on_step_branch=a.on_step_branch, stamp=bool(a.post_id))
         if not a.quiet:
             print(json.dumps(res, ensure_ascii=False))
         return 0 if res.get("ok") else 1
@@ -10088,7 +10235,7 @@ def main(argv=None):
         return 0 if r.get("ok") else 1
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset,
-                   post_file=a.post_file, take=a.take, anyway=a.anyway)
+                   post_file=a.post_file, take=a.take, anyway=a.anyway, cont=a.cont)
         print(field_text("launch", "orchestrator"), file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
         return 0 if r.get("ok") else 1
