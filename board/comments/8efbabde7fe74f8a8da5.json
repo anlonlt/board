@@ -6,7 +6,8 @@
  "discussion": "8efbabde7fe74f8a8da5",
  "from": "owner",
  "post_id": "_orchestrator",
- "read": false,
+ "read": true,
+ "read_at": "2026-11-27T02:13:43Z",
  "text": "are you able to start R3 ? would it be better to start R4 and R5 before ?",
  "thread_id": "thr_3dc77d673849"
 }
