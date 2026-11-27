@@ -1,0 +1,7 @@
+{
+ "arrived_at": "2026-11-27T02:34:58.704Z",
+ "created_at": "2026-11-27T02:36:00Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "Owner, 2026-11-27 02:31 on q-two-orchestrators: \"Agy orchestrator handles the parts it has taken, and you handle others that don't depend on them\". Web orchestrator 2 (session_01AE1HGm6otiBYEiW1xuHmHx) takes CL16, CL17, M10, M12 and the CL36/38/39/40 cross review; agy (c68653ea) keeps R5, R4, R3, CL8, R1, R2 and the clerk routing. Message me via the session id above for a web step."
+}

@@ -5,7 +5,8 @@
  "delivery_error": "",
  "from": "owner",
  "post_id": "q-two-orchestrators-which-one-runs-the-boa",
- "read": false,
+ "read": true,
+ "read_at": "2026-11-27T02:33:38Z",
  "text": "Isn't it possible for two boards to run at the same time ? Agy orchestrator handles the parts it's taken, and you handle others that don't depend on them ?",
  "thread_id": "e2f8642c-9f85-4a43-891c-4f1851b2ccfe"
 }
