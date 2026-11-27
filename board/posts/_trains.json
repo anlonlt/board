@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T07:28:19Z",
+ "created_at": "2026-11-27T07:44:58Z",
  "rows": [
   {
    "also": [],
@@ -161,12 +161,10 @@
   },
   {
    "also": [],
-   "children": [
-    "A1"
-   ],
+   "children": [],
    "parent": "",
-   "part": "P-agy",
-   "post": "a1-install-cmd-skips-linked-git-worktrees-s",
+   "part": "P-orchestrator",
+   "post": "",
    "prompt": "",
    "session": "",
    "state": "idle",
@@ -1073,8 +1071,8 @@
    "part": "R4",
    "post": "r4-on-a-computer-a-part-runs-its-own-real-p",
    "prompt": "",
-   "session": "a443d007-989a-42dd-9e91-ce51b28d3fa2",
-   "state": "running",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -1295,8 +1293,8 @@
    "part": "R7",
    "post": "r7-kit-py-launch-updates-runner-on-takeover",
    "prompt": "",
-   "session": "6caee8ac-37bc-43bc-9723-01390950372e",
-   "state": "done",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -1368,15 +1366,15 @@
   {
    "also": [],
    "children": [],
-   "parent": "P-agy",
-   "part": "A1",
-   "post": "a1-install-cmd-skips-linked-git-worktrees-s",
+   "parent": "P-board-data",
+   "part": "CL72",
+   "post": "cl72-one-way-to-touch-the-board-the-kit-print",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGkF2ieYqR2ZtyxfSbR",
+   "state": "running",
    "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T07:28:19Z"
+ "updated_at": "2026-11-27T07:44:58Z"
 }
