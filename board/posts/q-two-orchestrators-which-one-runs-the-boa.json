@@ -1,0 +1,17 @@
+{
+ "body": "The web orchestrator handed over to a new web session (me, session_01AE1HGm6otiBYEiW1xuHmHx) at 02:27, but the board already routes your comments to the agy orchestrator on penguin (c68653ea), which answered you until 02:21 and launched R5. Two orchestrators would launch the same steps twice. Your two ntfy comments (02:23, 02:25: notify on replies and on Ask-the-orchestrator messages) are still unanswered; they need penguin, so they belong to the agy one.\n\nAbout `_orchestrator`.",
+ "column": "question",
+ "created_at": "2026-11-27T02:29:45Z",
+ "deadline": "2026-11-27T03:15:00Z",
+ "default_option": "A: penguin's agy orchestrator keeps the board; the web one stops",
+ "from": "orchestrator",
+ "kind": "question",
+ "needs": "direction",
+ "options": [
+  "A: penguin's agy orchestrator keeps the board; the web one stops",
+  "B: the web orchestrator takes the board; penguin's stops"
+ ],
+ "priority": 1,
+ "status": "open",
+ "title": "Two orchestrators: which one runs the board?"
+}
