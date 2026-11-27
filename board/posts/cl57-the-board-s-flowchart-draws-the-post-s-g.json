@@ -1,13 +1,40 @@
 {
- "body": "The board's flowchart renderer draws the graph a post's mermaid block says: each node once, every edge, picture labels kept.\n\nCR-cl36 (redirect, 2026-11-27): on CL36's own post at 390 px, `renderMermaidBlock` (kit/board/shim.js) drew 8 boxes in one column for a 6-node, 5-edge hub; \"Post body\" appeared 4 times and the edge `E[\"![picture](repo/path.png)\"] --> B` was missing. Four-backtick inline code (```` ```mermaid ````) shows as broken backtick fragments; the table's \"now\" column is cut at phone width.\n\n1. `renderMermaidBlock` draws a graph: one box per node id, every edge, a label holding `![..](..)` or brackets kept as text.\n2. Inline code spans with 3+ backticks render as code.\n3. Tests (kit/board/test_page_body.js) on CL36's post body as the fixture: count nodes (6, each once) and edges (5); they must fail on today's renderer before the fix.\n4. Check it at 390 px and desktop on the local board page; a picture of each in the post.\n",
+ "artifacts": [
+  "docs/cl57/after-desktop.png",
+  "docs/cl57/after-phone.png",
+  "docs/cl57/before-desktop.png",
+  "docs/cl57/before-phone.png",
+  "kit/board/board.template.html",
+  "kit/board/shim.js",
+  "kit/board/test_page_body.js",
+  "kit/claude/test_artifact_page.js",
+  "tests/fixtures/cl36_post_body.md"
+ ],
+ "bars": [
+  "CL36's diagram: 6 of 6 nodes drawn, each once (\"Post body\" 1 time, was 4), at 390 px and 1280 px (asked CR-cl36-a-part-s-result-lives-in-its-post-post-b)",
+  "CL36's diagram: 5 of 5 edges drawn, E (the picture input) to B among them (was 4 of 5) (asked CR-cl36-a-part-s-result-lives-in-its-post-post-b)",
+  "the new checks fail on the old renderer: 9 of 9 new phone and desktop checks failed before the fix, 0 after",
+  "four-backtick inline code: 2 of 2 table cells show ```mermaid and ```svg as code, 0 stray backticks in the table and in \"The rule\"",
+  "CL36's table at 390 px: 0 of 3 columns cut (was 1 of 3: the \"now\" column scrolled inside its box)",
+  "test suites: 79 of 79 passed (run_all_tests --all), 75 of 75 again after merging main"
+ ],
+ "body": "The diagrams in posts now draw the graph they describe: each box once, every arrow, and a label holding a picture link or backticks shows as written. CL36's own diagram, the reviewer's example, now shows its 6 boxes and 5 arrows on the phone and on the computer. Inline code written with three or four backticks shows as code, and table cells wrap between words so the phone's table fits. Nothing to do.\n\n### Before and after, at 390 px\n\nBefore: one column of 8 boxes, \"Post body\" four times, the picture input missing.\n\n![before, phone](docs/cl57/before-phone.png)\n\nAfter: the post's graph. On a phone the four inputs sit in two columns; the upper ones' arrows run down the margins so no line crosses a box.\n\n![after, phone](docs/cl57/after-phone.png)\n\n### After, at desktop width\n\nThe declared direction (left to right) is kept when it fits.\n\n![after, desktop](docs/cl57/after-desktop.png)\n\n### What changed\n\n```mermaid\nflowchart LR\n  S[\"mermaid source\"] --> P[\"parser: one node per id\"]\n  P --> L[\"ranks: longest path, fewer crossings\"]\n  L --> H[\"boxes in HTML: text wraps at page size\"]\n  H --> W[\"wires in SVG, placed after layout\"]\n  W -->|\"width changes\"| H\n```\n\n- `kit/board/shim.js`: `renderMermaidBlock` is rebuilt. A small parser reads each line as a chain of nodes and links (`A --> B`, `A -->|label| B`, `A -- label --> B`, `A & B --> C`, dashed `-.->`, thick `==>`, `<-->`), with every node shape; a quoted label is read up to its closing quote, so `[\"![picture](repo/path.png)\"]` stays one label. Nodes get ranks (longest path from the sources, cycles cut), then four sweeps order each rank to cross less. The boxes are HTML; the wires are an SVG behind them, placed by a resize observer once the boxes have a size and again when the width changes (a phone turned, a section unfolded).\n- Code spans: a run of N backticks closes at the next run of exactly N (the CommonMark rule), in the post body (`kit/board/board.template.html`) and the document viewer (`shim.js`).\n- Tables: body cells wrap between words (never mid-word), headers stay on one line; a table that still cannot fit scrolls in its own box as before.\n- Tests: `kit/board/test_page_body.js` opens CL36's own post body (`tests/fixtures/cl36_post_body.md`, copied from the board) at 390 px and 1280 px and counts 6 nodes each once and the 5 named edges, the labels kept, the code spans, the table width, the diagram inside the screen.\n\n### Board sync note\n\nThe reconcile at the start of this session proposed 346 writes to the Artifact board without version pins (it followed a partial pull of this post only). I did not send them; they are set aside, not on the board.",
  "branch": "cl57",
+ "breaks": "git checkout $(git merge-base HEAD origin/main) -- kit/board/shim.js kit/board/board.template.html",
+ "check": "KIT_REQUIRE_BROWSER=1 node kit/board/test_page_body.js",
  "column": "info",
  "created_at": "2026-11-27T02:44:08Z",
  "differs": "CL57: builds on CL36, which made post bodies render mermaid at all; CL57 makes the renderer draw the graph itself (each node once, every edge, picture labels), tested on CL36's own post.",
  "from": "orchestrator",
+ "handoff": "Any post's ```mermaid flowchart now draws as a graph (TB or LR, a phone gets TB with a wide rank in two columns). Subgraph frames and non-flowchart diagrams are the next gaps if he wants them.",
  "kept_on_train": "fix asked by CL36's review redirect on this train",
  "kind": "bug",
  "launched_at": "2026-11-27T02:44:29Z",
+ "not_checked": [
+  "the published Artifact page (it uses the same renderer file; its own test, test_artifact_page.js, passed with one diagram edge)",
+  "a real phone, and the dark theme by eye (colors come from the theme's own variables)",
+  "mermaid features beyond flowcharts: subgraph frames are not drawn (their nodes and edges are), other diagram kinds (sequence, gantt) still show as code"
+ ],
  "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
  "orchestrator_device": "web",
  "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
@@ -17,18 +44,19 @@
  "sources": [
   "CR-cl36-a-part-s-result-lives-in-its-post-post-b"
  ],
+ "started_at": "2026-11-27T02:45:34Z",
  "status": "in progress",
  "subtasks": [
   {
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "renderMermaidBlock draws a graph"
   },
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "Inline code spans with 3+ backticks render as code"
   },
   {
@@ -37,19 +65,20 @@
    ],
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "Tests (kit/board/test_page_body.js) on CL36's post body as the fixture"
   },
   {
    "from": "task",
    "n": 4,
-   "status": "open",
+   "status": "done",
    "title": "Check it at 390 px and desktop on the local board page"
   }
  ],
  "task": "The board's flowchart renderer draws the graph a post's mermaid block says: each node once, every edge, picture labels kept.\n\nCR-cl36 (redirect, 2026-11-27): on CL36's own post at 390 px, `renderMermaidBlock` (kit/board/shim.js) drew 8 boxes in one column for a 6-node, 5-edge hub; \"Post body\" appeared 4 times and the edge `E[\"![picture](repo/path.png)\"] --> B` was missing. Four-backtick inline code (```` ```mermaid ````) shows as broken backtick fragments; the table's \"now\" column is cut at phone width.\n\n1. `renderMermaidBlock` draws a graph: one box per node id, every edge, a label holding `![..](..)` or brackets kept as text.\n2. Inline code spans with 3+ backticks render as code.\n3. Tests (kit/board/test_page_body.js) on CL36's post body as the fixture: count nodes (6, each once) and edges (5); they must fail on today's renderer before the fix.\n4. Check it at 390 px and desktop on the local board page; a picture of each in the post.\n",
  "title": "The board's flowchart draws the post's graph: each node once, every edge",
  "train": "cli",
- "updated_at": "2026-11-27T02:44:48Z",
+ "updated_at": "2026-11-27T03:00:20Z",
+ "verdict": "The board's flowchart now draws the post's graph: CL36's diagram shows its 6 nodes once each and all 5 edges, the picture input included, at 390 px and at desktop width.",
  "working_by": "owner"
 }

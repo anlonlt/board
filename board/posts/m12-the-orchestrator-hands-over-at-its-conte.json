@@ -19,6 +19,7 @@
  "breaks": "sed -i 's/    role = session_role(data, root, first_role)/    role = os.environ.get(\"KIT_ROLE\") or first_role/' kit/hooks/kit_pre_compact.py",
  "check": "python3 -m unittest tests.test_m12_handover_role",
  "column": "info",
+ "completed_at": "2026-11-27T02:56:04Z",
  "created_at": "2026-11-27T02:28:52Z",
  "differs": "M12: builds on M11, which fixed the role label in the usage row only; M12 makes the hand-over hook use that same role function, so an orchestrator that took over mid-session hands over at 380k.",
  "from": "orchestrator",
@@ -53,12 +54,23 @@
   "needs_real": true,
   "sha": "1c13005ce5b3987c371dc0737a753610b7610596"
  },
+ "real_project": {
+  "command": "cp harmonize; install.py --update (m12 1c13005); check .claude/settings.json hooks; Stop hook on test_m12 fixture transcripts (question, then resume --role orchestrator, peak 528,590) with CLAUDE_PROJECT_DIR=Harmonize copy",
+  "output": "Install clean: '8 kit hook/permission lines merged in'; .claude/hooks/kit/kit_pre_compact.py present. kit_pre_compact.py: takeover past limit -> block 'HANDOVER REQUIRED (context at 528k >= 300k)'; non-orchestrator -> pass. BUT Harmonize's Stop does not wire kit_pre_compact.py: it runs its own fork .claude/hooks/context_handover.py (role from branch orchestrator-*/HARMONIZE_ROLE), which passed the takeover case (no block). The M12 fix does not reach Harmonize until that fork is replaced or updated.",
+  "project": "anlonlt/harmonize"
+ },
+ "review_commit": "1c13005ce5b3987c371dc0737a753610b7610596",
+ "review_orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "review_orchestrator_device": "web",
+ "review_orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "review_session": "session_01AE1HGmC2R6J7KEi3pfqnc1",
+ "review_started": "2026-11-27T02:56:21Z",
  "session_id": "session_01AE1HGigXaY4ApaiTBfLGWF",
  "sources": [
   "owner chat 2026-11-27: why hasn't the hook made you hand over? / did you add the step?"
  ],
  "started_at": "2026-11-27T02:36:41Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "files": [
@@ -85,7 +97,7 @@
  "task": "The orchestrator hands over at its context limit however its session began.\n\nMeasured on 2026-11-27: orchestrator session 9919b5f1 reached 521k tokens (limit 380k) with no hand-over. kit/hooks/kit_pre_compact.py takes the role from the session's first user message only; this session began with the owner's question, took over as orchestrator later (on _orchestrator), so the hook said \"other\" and never blocked the stop. M11 fixed the same mistake for the usage row's label (role from what the session ran).\n\n1. kit_pre_compact.py (and every hook that decides a role) uses one role function, the one M11 gave the usage row: the `_orchestrator` post's session_id, a hand-over, or a takeover mid-session all count.\n2. A test with a transcript that starts with an owner question, then takes over, then passes 380k: the Stop is blocked once with the hand-over steps.\n3. Run it on 9919b5f1's transcript and put the result in the post.\n",
  "title": "The orchestrator hands over at its context limit however its session began",
  "train": "memory",
- "updated_at": "2026-11-27T02:48:01Z",
+ "updated_at": "2026-11-27T02:56:49Z",
  "verdict": "Yes: the hand-over hook now reads the role the way the usage row does, so yesterday's orchestrator (a question first, a takeover later, 528k) is blocked once with the hand-over steps, where the old hook let it run on.",
- "working_by": "owner"
+ "working_by": ""
 }

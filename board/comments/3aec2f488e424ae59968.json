@@ -6,8 +6,7 @@
  "discussion": "3aec2f488e424ae59968",
  "from": "owner",
  "post_id": "_orchestrator",
- "read": true,
- "read_at": "2026-11-27T02:54:19Z",
+ "read": false,
  "text": "Re `r5-every-rule-that-differs-by-platform-says` (Every rule that differs by platform says where it applies, checked by a test):\nAre you sure it's been updating its task list ? Why is it still at 0 out of 4 ????",
  "thread_id": "thr_a42b71db0131"
 }
