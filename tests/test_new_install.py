@@ -101,7 +101,7 @@ class NewInstall(unittest.TestCase):
                 text = self.run_(["-c", code.split("print(")[0] + "print('\\n'.join(k.part_prompt('p1', {'part':'P1','title':'one','train':'t','body':'x'})))"]).stdout
                 self.assertEqual(text.count("## The task"), 1)
                 self.assertNotIn("Run `python3 -I .kit/kit.py resume --role part", text)     # it is what printed this
-                self.assertEqual("`kit.py artifact load`" in text, pl == "web", pl)
+                self.assertEqual("`python3 -I .kit/kit.py artifact sync --post" in text, pl == "web", pl)   # CL72: the one door
                 self.assertEqual("claude-code-remote" in text, pl == "web", pl)
                 self.assertNotIn("<PART>", text)
 

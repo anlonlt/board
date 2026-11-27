@@ -1404,6 +1404,15 @@ def _kc():
     raise Conflict("the kit's hooks/kit_config.py (CL72) is missing: `python3 install.py . --update`")
 
 
+def _record_printed(calls, by):
+    """CL72: a call the kit prints outside `artifact sync` (a step post on an attached board) is recorded the same way,
+    so the guard lets exactly it through; a kit without the shared list records nothing (the guard then refuses)."""
+    try:
+        _kc().ledger_record(_art_dir(), calls, by, url=artifact_url(), step="write")
+    except (Conflict, OSError):
+        pass
+
+
 def _pull_calls(full=False, post=None):
     """The pull's calls as ArtifactData tool inputs (what `artifact pull` prints as text)."""
     board = artifact_url()
@@ -3800,8 +3809,8 @@ class _LocalBoard:
         return _read_json(_base_path("posts", pid)) == posts.get(pid)
 
     def push_hint(self):
-        return ("`python3 -I .kit/kit.py artifact push`, the ArtifactData batches it prints, `kit.py artifact sent "
-                "<batch>`") if self.artifact else ""
+        return ("`python3 -I .kit/kit.py artifact sync` (it prints the ArtifactData calls to make, exactly; again until "
+                "\"in sync\")") if self.artifact else ""
 
 
 def _await_point(lines, mem_rel, fname, today, since=None):
@@ -6370,6 +6379,7 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         }[rfmt]
         res["next_pause"] = "for each `pause` entry: %s with its message; it pauses at its next save point" % pause_how
     if att:
+        _record_printed([write], "kit.py step new")
         res.update({"board": att, "artifact_write": write,
                     "next": "send the post: ArtifactData %s (no other way: a hand-written step post is refused)"
                             % json.dumps(write, ensure_ascii=False)})
@@ -6800,6 +6810,7 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
     if isinstance(pulled.get("version"), int):
         w["if_version"] = pulled["version"]
     res["artifact_write"] = w
+    _record_printed([w], "kit.py step")
     try:
         url, token = local_board_url(), _resolve_board_token(None)
         cur = _board_request(url, "doc/posts/%s?repo=%s" % (urllib.parse.quote(pid, safe=""), urllib.parse.quote(b["id"])), token=token)

@@ -35,10 +35,21 @@ class Project(unittest.TestCase):
     def pulled(self, *calls, root=None, at=None):
         """M11: what `kit.py artifact pull` printed (its record), so the guard lets those whole-collection reads pass."""
         d = os.path.join(root or self.proj, ".kit", "run", "artifact")
-        os.makedirs(d, exist_ok=True)
-        json.dump({"v": 2, "at": time.time() if at is None else at,
-                   "calls": [{"action": a, "collection": c, "where": None, "limit": None} for a, c in calls]},
-                  open(os.path.join(d, "pull.json"), "w"))
+        self.printed([{"action": a, "collection": c, "out_dir": os.path.join(d, "in")} for a, c in calls], root=root)
+        if at is not None:
+            p = os.path.join(d, "printed.json")
+            rec = json.load(open(p))
+            rec["at"] = at
+            json.dump(rec, open(p, "w"))
+
+    def printed(self, calls, root=None):
+        """CL72: what the kit printed last (.kit/run/artifact/printed.json), the only board calls that pass."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("kc_test", os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "kit", "hooks", "kit_config.py"))
+        kc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(kc)
+        kc.ledger_record(os.path.join(root or self.proj, ".kit", "run", "artifact"), calls, "artifact sync")
 
     def run_hook(self, tool, ti, role="orchestrator", prompt=None):
         env = {k: v for k, v in os.environ.items() if k not in ("KIT_ROLE", "HARMONIZE_ROLE")}
@@ -59,23 +70,24 @@ class OrchestratorGuard(Project):
     def test_raw_reads(self):
         rc, err = self.run_hook("ArtifactData", {"action": "list", "collection": "posts", "url": "u"})
         self.assertEqual(rc, 2)
-        self.assertIn("kit.py artifact pull", err)
+        self.assertIn("kit.py artifact sync", err)
         rc, _ = self.run_hook("ArtifactData", {"action": "query", "collection": "repos/board/comments", "query": {"limit": 1000}})
         self.assertEqual(rc, 2)
         kit_pull = os.path.join(self.proj, ".kit", "run", "artifact", "in")
         # M11: the pull's folder alone no longer passes (a hand-made list copied it); a call the pull printed does
         rc, err = self.run_hook("ArtifactData", {"action": "list", "collection": "posts", "out_dir": kit_pull})
         self.assertEqual(rc, 2)
-        self.assertIn("a whole collection is read only through the kit", err)
+        self.assertIn("the kit printed no ArtifactData call here", err)
         self.pulled(("list", "posts"))
         self.assertEqual(self.run_hook("ArtifactData", {"action": "list", "collection": "posts", "out_dir": kit_pull})[0], 0)
         self.assertEqual(self.run_hook("ArtifactData", {"action": "list", "collection": "comments", "out_dir": kit_pull})[0], 2)
         self.assertEqual(self.run_hook("ArtifactData", {"action": "list", "collection": "posts", "out_dir": "/tmp/x"})[0], 2)
-        self.pulled(("list", "posts"), at=time.time() - 31 * 60)          # printed more than 30 minutes ago
+        self.pulled(("list", "posts"), at=time.time() - 61 * 60)          # printed more than an hour ago
         self.assertEqual(self.run_hook("ArtifactData", {"action": "list", "collection": "posts", "out_dir": kit_pull})[0], 2)
+        # CL72: a lookup or a get the kit did not print is refused too
         self.assertEqual(self.run_hook("ArtifactData", {"action": "query", "collection": "comments",
-                                                        "query": {"where": [["thread_id", "==", "t"]], "limit": 1}})[0], 0)
-        self.assertEqual(self.run_hook("ArtifactData", {"action": "get", "collection": "posts", "doc_id": "X"})[0], 0)
+                                                        "query": {"where": [["thread_id", "==", "t"]], "limit": 1}})[0], 2)
+        self.assertEqual(self.run_hook("ArtifactData", {"action": "get", "collection": "posts", "doc_id": "X"})[0], 2)
 
     def test_hand_written_step_posts(self):
         rc, err = self.run_hook("ArtifactData", {"action": "set", "collection": "posts", "doc_id": "CL22-x", "data": {}})
@@ -85,8 +97,10 @@ class OrchestratorGuard(Project):
         self.assertEqual(self.run_hook("ArtifactData", {"action": "set", "collection": "posts", "doc_id": "_trains", "data": {}})[0], 2)
         self.assertEqual(self.run_hook("ArtifactData", {"action": "set", "collection": "comments", "doc_id": "c", "data": {}})[0], 2)
         out = os.path.join(self.proj, ".kit", "run", "artifact", "out", "docs", "0000.json")
-        self.assertEqual(self.run_hook("ArtifactData", {"action": "batch", "writes": [
-            {"op": "set", "collection": "posts", "doc_id": "CL22-x", "file_path": out}]})[0], 0)
+        batch = {"action": "batch", "writes": [{"op": "set", "collection": "posts", "doc_id": "CL22-x", "file_path": out}]}
+        self.assertEqual(self.run_hook("ArtifactData", batch)[0], 2)          # CL72: under out/ is not enough
+        self.printed([batch])
+        self.assertEqual(self.run_hook("ArtifactData", batch)[0], 0)          # the batch the kit printed
         rc, _ = self.run_hook("ArtifactData", {"action": "batch", "writes": [
             {"op": "set", "collection": "repos/board/posts", "doc_id": "CL22-x", "data": {}}]})
         self.assertEqual(rc, 2)
@@ -136,9 +150,10 @@ class OrchestratorGuard(Project):
             # a targeted lookup does not page through the board five at a time
             self.assertEqual(self.run_hook(ad, {"action": "query", "collection": coll, "query": {
                 "where": [["created_at", ">", ""]], "limit": 5, "cursor": "c2"}})[0], 2, coll)
+            # CL72: a targeted lookup or a get the kit did not print is refused too
             self.assertEqual(self.run_hook(ad, {"action": "query", "collection": coll,
-                                                "query": {"where": [["post_id", "==", "x"]], "limit": 5}})[0], 0, coll)
-            self.assertEqual(self.run_hook(ad, {"action": "get", "collection": coll, "doc_id": "x"})[0], 0, coll)
+                                                "query": {"where": [["post_id", "==", "x"]], "limit": 5}})[0], 2, coll)
+            self.assertEqual(self.run_hook(ad, {"action": "get", "collection": coll, "doc_id": "x"})[0], 2, coll)
             pull = os.path.join(self.proj, ".kit", "run", "artifact", "in")
             self.pulled(("list", coll))
             self.assertEqual(self.run_hook(ad, {"action": "list", "collection": coll, "out_dir": pull})[0], 0, coll)
@@ -231,8 +246,10 @@ class LaunchRepo(Project):
             self.pulled(("list", "repos/board/comments"), root=clone)
             self.assertEqual(self.run_hook(ad, {"action": "list", "collection": "repos/board/comments", "out_dir": pull})[0], 0)
             out = os.path.join(clone, ".kit", "run", "artifact", "out", "docs", "0000.json")
-            self.assertEqual(self.run_hook(ad, {"action": "batch", "writes": [
-                {"op": "set", "collection": "repos/board/comments", "doc_id": "c", "file_path": out}]})[0], 0)
+            batch = {"action": "batch", "writes": [{"op": "set", "collection": "repos/board/comments", "doc_id": "c",
+                                                    "file_path": out}]}
+            self.printed([batch], root=clone)
+            self.assertEqual(self.run_hook(ad, batch)[0], 0)
             stray = os.path.join(tempfile.mkdtemp(), ".kit", "run", "artifact", "out", "docs", "0000.json")
             self.assertEqual(self.run_hook(ad, {"action": "batch", "writes": [
                 {"op": "set", "collection": "repos/board/comments", "doc_id": "c", "file_path": stray}]})[0], 2)

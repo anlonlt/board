@@ -129,8 +129,10 @@ class OneWay(unittest.TestCase):
         return api_req(self.url, "doc/" + path, {"data": data}, TOKEN, "PUT")
 
     def stamp(self):
+        """A change made here now (after the last load), a second apart."""
+        import time
         self.t += 1
-        return "2026-11-27T%02d:%02d:00Z" % (8 + self.t // 60, self.t % 60)
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 3600 + self.t))
 
     def make(self, ti, before=None):
         why = guard.board_verdict(ti, str(self.proj), True)
