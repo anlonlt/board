@@ -487,6 +487,7 @@ class Bug8AgyUpdateStepsToBoard(unittest.TestCase):
             self.assertEqual(calls[1][:5], ["sub", "cl44-x", "2", "--status", "doing"])
 
     def test_part_post_matches_backticked_or_quoted_prompt_path(self):
+        from unittest import mock
         tt = _load("tt_cl44_b8_bt", ROOT / "kit" / "hooks" / "kit_task_train.py")
         for opener in (
             "Your prompt is `docs/prompts/r5-example.md`: read it and do it.",
