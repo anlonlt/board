@@ -248,6 +248,83 @@ class WorkflowMapAndStep0(unittest.TestCase):
         self.assertEqual(rc3, 1)
         self.assertIn("no check", msg3)
 
+    def test_intent_I1_and_stress_I1_credentialed_remote_and_nested_secret_refused(self):
+        """I1 / stress I1: strip credentials from git remote URLs and refuse nested secrets in map-added.json."""
+        cred_token = "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz123456"
+        subprocess.run(
+            ["git", "-C", self.proj, "remote", "add", "credtest",
+             "https://alice:%s@github.com/org/secret-app.git" % cred_token],
+            check=True,
+        )
+        ext = kit_map.scan_external(self.proj, home_dir=self.home)
+        raw = json.dumps(ext)
+        self.assertNotIn(cred_token, raw)
+        self.assertNotIn("alice:", raw)
+        r_cred = next(t for t in ext["things"] if t["id"] == "remote:credtest")
+        self.assertEqual(r_cred["refs"]["url"], "https://github.com/org/secret-app")
+        # Stress I1: nested secret token hidden inside refs is refused by add_external_thing
+        with self.assertRaises(ValueError):
+            kit_map.add_external_thing(self.proj, {
+                "id": "service:nested-bad", "kind": "external-service", "name": "Bad",
+                "refs": {"nested": {"bearer": cred_token}},
+                "check": {"probe": "Open dashboard", "confirmed": None},
+            })
+
+    def test_intent_I2_and_stress_I2_worktree_remote_and_corrupt_added_json(self):
+        """I2 / stress I2: linked git worktree (.git file) resolves remotes, and corrupt map-added.json fails cleanly."""
+        wt_dir = os.path.join(self.tmp, "wt-branch")
+        subprocess.run(["git", "-C", self.proj, "worktree", "add", "-b", "wt-test", wt_dir],
+                       check=True, capture_output=True)
+        self.assertTrue(os.path.isfile(os.path.join(wt_dir, ".git")))
+        ext_wt = kit_map.scan_external(wt_dir, home_dir=self.home)
+        self.assertIn("remote:origin", {t["id"] for t in ext_wt["things"]})
+        # Stress I2: corrupt .board/map-added.json causes check() and check_external() to fail cleanly
+        _write(self.proj, kit_map.ADDED_REL, "{not valid json")
+        d, out = kit_map.build(self.proj, run_gens=False, home_dir=self.home)
+        rc, msg = kit_map.check(self.proj, out=out, run_gens=False, home_dir=self.home)
+        self.assertEqual(rc, 1)
+        self.assertIn("JSON", msg)
+        rep = kit_map.check_external(self.proj, out=out, home_dir=self.home, network=False)
+        self.assertTrue(any("JSON" in e for e in rep["errors"]))
+
+    def test_intent_I3_and_stress_I3_browser_only_outside_service_cli(self):
+        """I3 / stress I3: out-of-repo browser-only service added via CLI with probe, confirmed by date, invalid date refused."""
+        km_py = os.path.join(ROOT, "scripts", "kit_map.py")
+        # Refused without check
+        r_bad = subprocess.run(
+            [sys.executable, "-I", km_py, "--root", self.proj, "--add-external",
+             json.dumps({"id": "service:admin-panel", "kind": "external-service", "name": "Admin Panel"})],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(r_bad.returncode, 1)
+        self.assertIn("REFUSED", r_bad.stdout)
+        # Accepted with browser probe
+        r_ok = subprocess.run(
+            [sys.executable, "-I", km_py, "--root", self.proj, "--add-external",
+             json.dumps({
+                 "id": "service:admin-panel", "kind": "external-service", "name": "Admin Panel",
+                 "refs": {"url": "https://admin.example.com", "account": "owner@example.com"},
+                 "check": {"probe": "Open https://admin.example.com in Chrome (Work)", "confirmed": None},
+             })],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(r_ok.returncode, 0, r_ok.stdout + r_ok.stderr)
+        # Stress I3: invalid --date format refused; valid --date confirms the probe
+        r_bad_date = subprocess.run(
+            [sys.executable, "-I", km_py, "--root", self.proj, "--confirm", "service:admin-panel", "--date", "not-a-date"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(r_bad_date.returncode, 1)
+        today = datetime.date.today().isoformat()
+        r_conf = subprocess.run(
+            [sys.executable, "-I", km_py, "--root", self.proj, "--confirm", "service:admin-panel", "--date", today],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(r_conf.returncode, 0, r_conf.stdout + r_conf.stderr)
+        rep = kit_map.check_external(self.proj, home_dir=self.home, network=False)
+        res_by_id = {r["id"]: r for r in rep["results"]}
+        self.assertEqual(res_by_id["service:admin-panel"]["status"], "probe_confirmed")
+
 
 FRENCH = os.path.expanduser("~/french")
 HARMONIZE = os.path.expanduser("~/harmonize")
