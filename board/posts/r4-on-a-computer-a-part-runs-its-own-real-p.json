@@ -1,13 +1,18 @@
 {
  "body": "On a computer, a part runs its own real-project check before Done; only on the web does the orchestrator run it. The rule \"a part never attaches a repo, the orchestrator runs the real-project check\" (K2, CL38, CL39) comes from the web: a launched web session cannot attach another repo, and only the web orchestrator's environment holds every repo. On a computer every project is a folder: M1's part read ~/french itself, and the orchestrator ran Harmonize's map in 13 s. Yet `kit.py done` says \"pending: the orchestrator runs it\" on every platform (check_real_project in scripts/kit.py), so CL44 and M1 waited on the orchestrator for a run they could have done.\n\n1. `kit.py done` on a computer (CLI or agy): the part runs the changed command on the consuming project itself, in a scratch clone or read-only, never pushing to it, and writes {\"project\", \"command\", \"output\"} in real_project; done refuses Done until it is there. On the web, it stays the orchestrator's (pending), as now.\n2. The part guides and the lesson K2 say which platform does what, in kit/part.template.md, kit/claude-cli/part.template.md and the lessons.\n3. Tests: a local done with real_project missing is refused with how to run it; a web done keeps \"pending: the orchestrator runs it\".\n",
+ "branch": "r4",
  "column": "info",
  "created_at": "2026-11-26T21:56:53Z",
  "differs": "Builds on R5's central PLATFORM_RULES table and branches on top of origin/main + origin/r7 so R7 and R4 can be reviewed together. Unlike R5 (centralized platform detection, kept real_project_run='computer') and R7 (wired kit.py launch to PLATFORM_RULES and agy), R4 switches real_project_run for local computer runners (cli/agy) to 'part', enforces real_project in kit.py done on a computer, updates part templates and lesson K2, and adds tests.",
  "from": "orchestrator",
+ "orchestrator": "702b0528-ed8c-482b-a8d8-9ffbbcdd8029",
+ "orchestrator_device": "penguin",
+ "orchestrator_name": "Antigravity orchestrator",
  "part": "R4",
  "planned_by": "orchestrator",
  "priority": 2,
- "runner": "claude-web",
+ "runner": "agy",
+ "session_id": "a443d007-989a-42dd-9e91-ce51b28d3fa2",
  "status": "in progress",
  "subtasks": [
   {
@@ -39,5 +44,5 @@
  "task": "On a computer, a part runs its own real-project check before Done; only on the web does the orchestrator run it. The rule \"a part never attaches a repo, the orchestrator runs the real-project check\" (K2, CL38, CL39) comes from the web: a launched web session cannot attach another repo, and only the web orchestrator's environment holds every repo. On a computer every project is a folder: M1's part read ~/french itself, and the orchestrator ran Harmonize's map in 13 s. Yet `kit.py done` says \"pending: the orchestrator runs it\" on every platform (check_real_project in scripts/kit.py), so CL44 and M1 waited on the orchestrator for a run they could have done.\n\n1. `kit.py done` on a computer (CLI or agy): the part runs the changed command on the consuming project itself, in a scratch clone or read-only, never pushing to it, and writes {\"project\", \"command\", \"output\"} in real_project; done refuses Done until it is there. On the web, it stays the orchestrator's (pending), as now.\n2. The part guides and the lesson K2 say which platform does what, in kit/part.template.md, kit/claude-cli/part.template.md and the lessons.\n3. Tests: a local done with real_project missing is refused with how to run it; a web done keeps \"pending: the orchestrator runs it\".\n",
  "title": "On a computer, a part runs its own real-project check before Done",
  "train": "runners",
- "updated_at": "2026-11-27T07:27:02Z"
+ "updated_at": "2026-11-27T07:28:18Z"
 }

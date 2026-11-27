@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T07:28:23Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_01f65ae55209",
+ "text": "Done:\n\n1. **Fixed `~/.local/bin/board`** to point back to `/home/anon/board-streamline/.kit/up`.\n2. **Why it changed to a worktree:** `install_cmd()` in `install.py` (lines 882–894) only skips `/tmp` (`under_tempdir`), not linked git worktrees. When Part R5 ran `install.py . --update` inside its ephemeral agy worktree at 22:07, it overwrote `~/.local/bin/board`, which broke once R5's subagent was cleaned up.\n   - Added step **A1** (`a1-install-cmd-skips-linked-git-worktrees-s`, train `agy`) to make `install_cmd()` skip linked git worktrees by default and test it.\n3. **Launched R4** (`r4-on-a-computer-a-part-runs-its-own-real-p`, runner `agy`, session `a443d007-989a-42dd-9e91-ce51b28d3fa2`) in `/home/anon/board-r4` on branch `r4`, based cleanly on `origin/main` + `origin/r7` (`7e5ad06`), with `--no-cmd` noted so it leaves `~/.local/bin/board` untouched.\n4. **Next:** Once R4 finishes, I'll launch one combined review covering **R7 + R4** together (`origin/main..origin/r4`)."
+}
