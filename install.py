@@ -31,6 +31,9 @@ sys.path.insert(0, os.path.join(KIT, "kit", "board"))
 import strings as page_strings  # noqa: E402
 
 import importlib.util  # noqa: E402
+_mspec = importlib.util.spec_from_file_location("kit_manifest", os.path.join(KIT, "kit", "kit_manifest.py"))
+kit_manifest = importlib.util.module_from_spec(_mspec)
+_mspec.loader.exec_module(kit_manifest)
 _spec = importlib.util.spec_from_file_location("kit_hook_table", os.path.join(KIT, "kit", "hook.py"))
 hook_table = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hook_table)
@@ -200,8 +203,9 @@ class Installer:
     def __init__(self, target, dry):
         self.t, self.dry, self.log, self.kept = os.path.abspath(target), dry, [], []
         self.touched = set()
-        mp = os.path.join(self.t, ".kit", "manifest.json")
-        self.manifest = json.load(open(mp, encoding="utf-8")) if os.path.exists(mp) else {}
+        # CL71: not in git; a clone without one rebuilds it from the tree (committed kit files are the kit's)
+        self.manifest = kit_manifest.load(self.t, write=False)
+        self.manifest.pop("_rebuilt", None)
 
     def put(self, rel, data, past=()):
         """`past`: git blob ids of earlier kit versions of this file; a target copy equal to one is refreshed (CL25)."""
@@ -248,6 +252,21 @@ class Installer:
             with open(os.path.join(self.t, ".kit", "manifest.json"), "w", encoding="utf-8") as fh:
                 json.dump(self.manifest, fh, indent=1, sort_keys=True)
                 fh.write("\n")
+
+
+def untrack_generated(t, dry, log):
+    """CL71: the manifest and the Artifact's files map leave git (the files stay here): `git rm --cached`, said."""
+    try:
+        r = subprocess.run(["git", "-C", t, "ls-files", "--", ".kit/manifest.json", ".kit/artifact-files"],
+                           capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return
+    tracked = [x for x in r.stdout.splitlines() if x.strip()] if r.returncode == 0 else []
+    if not tracked:
+        return
+    log.append("untracked (generated, kept out of git; commit the removal): " + ", ".join(tracked))
+    if not dry:
+        subprocess.run(["git", "-C", t, "rm", "-q", "--cached", "--"] + tracked, capture_output=True, timeout=30)
 
 
 def load_config(t, a):
@@ -1025,11 +1044,10 @@ def main(argv=None):
     if not os.path.isdir(t):
         raise SystemExit("install: %s is not a directory" % t)
     if a.verify:
-        mp = os.path.join(t, ".kit", "manifest.json")
-        if not os.path.isfile(mp):
-            print("verify: no .kit/manifest.json found in %s" % t)
+        mf = kit_manifest.load(t, write=False)              # CL71: rebuilt from the tree when this clone has none
+        if len([k for k in mf if not k.startswith("_")]) == 0:
+            print("verify: no .kit/manifest.json found in %s, and no kit file in its tree" % t)
             return 1
-        mf = json.load(open(mp, encoding="utf-8"))
         ok_n, mod_n, miss_n = 0, 0, 0
         for rel, expected_sha in sorted(mf.items()):
             if rel.startswith("_"):
@@ -1047,10 +1065,10 @@ def main(argv=None):
         return 0 if (mod_n == 0 and miss_n == 0) else 1
     if a.uninstall:
         mp = os.path.join(t, ".kit", "manifest.json")
-        if not os.path.isfile(mp):
+        mf = kit_manifest.load(t, write=False)              # CL71: rebuilt from the tree when this clone has none
+        if len([k for k in mf if not k.startswith("_")]) == 0:
             print("uninstall: no .kit/manifest.json found in %s" % t)
             return 0
-        mf = json.load(open(mp, encoding="utf-8"))
         removed, kept = [], []
         for rel, expected_sha in sorted(mf.items()):
             if rel.startswith("_"):
@@ -1203,6 +1221,7 @@ def main(argv=None):
     ins.put(".kit/kit_map.py", rd("scripts", "kit_map.py"))   # M1: kit.py map, the project's map from its code
     ins.put(".kit/test_guard.py", rd("kit", "test_guard.py"))  # CL48: a test run (KIT_TEST) writes only under a temp folder
     ins.put(".kit/usage.py", rd("scripts", "usage.py"))       # CL37: the usage ledger (kit.py usage)
+    ins.put(".kit/kit_manifest.py", rd("kit", "kit_manifest.py"))  # CL71: the manifest, rebuilt where git has none
     ins.put(".kit/ledger.py", rd("kit", "ledger.py"))        # 3-layer memory ledger (observations -> principles)
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
     # the Artifact board's tools, whatever runs the sessions: its docs mirror and (Artifact mode) the local copy's server
@@ -1356,12 +1375,15 @@ def main(argv=None):
     cur = open(gi, encoding="utf-8").read() if os.path.exists(gi) else ""
     gi_add = [x for x in ("%s/before-compaction.md" % mdir, ".kit/board_data/", ".kit/handover.flag", ".kit/handover.log",
                                 ".kit/handover-*.gen", ".kit/run/", ".kit/**/__pycache__/", ".claude/hooks/kit/__pycache__/",
-                                ".agents/hooks/kit/__pycache__/", ".claude/worktrees/") if x not in cur]
+                                ".agents/hooks/kit/__pycache__/", ".claude/worktrees/",
+                                # CL71: generated, so never merged: built here and at `artifact push`
+                                ".kit/manifest.json", ".kit/artifact-files/") if x not in cur]
     if gi_add:
         ins.log.append(".gitignore: + " + ", ".join(gi_add))
         if not a.dry_run:
             prefix = "" if cur.endswith("\n") or not cur else "\n"
             open(gi, "a", encoding="utf-8").write(prefix + "\n".join(gi_add) + "\n")
+    untrack_generated(t, a.dry_run, ins.log)
     if want_agy:
         merge_hooks(t, a.dry_run, ins.log, parts["board"], unified)
         if parts["board"] and not claude_only:
