@@ -387,12 +387,34 @@ class BoardStore:
             return mp if os.path.isabs(mp) else os.path.normpath(os.path.join(root, mp))
         return os.path.join(os.path.dirname(root), "board-mirror")
 
+    def _auto_sync_log(self, ok, stage="", detail=""):
+        """CL16: a failed sync is said in the server log (stderr) once per distinct cause, and its recovery once.
+        Before, every failure (no mirror, sync-db, commit, push) was swallowed and the board looked synced."""
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        detail = " ".join(str(detail or "").split())[-400:]
+        prev = getattr(self, "auto_sync_last", None) or {}
+        self.auto_sync_last = {"ok": bool(ok), "at": now, "stage": stage, "error": "" if ok else detail}
+        if ok:
+            self._auto_sync_failures = 0
+            self._auto_sync_last_key = None
+            if prev and not prev.get("ok"):
+                print("[auto-sync] %s recovered: the board is in git again (%s)" % (now, detail or "pushed"),
+                      file=sys.stderr, flush=True)
+            return
+        self._auto_sync_failures = getattr(self, "_auto_sync_failures", 0) + 1
+        key = (stage, detail)
+        if key != getattr(self, "_auto_sync_last_key", None):
+            self._auto_sync_last_key = key
+            print("[auto-sync] %s FAILED at %s: %s (retrying; the board is NOT in git until this clears)"
+                  % (now, stage, detail or "no detail"), file=sys.stderr, flush=True)
+
     def _run_auto_sync_once(self):
         root = getattr(self, "_auto_sync_root", None)
         if not root:
             return False
         m = self._resolve_mirror_dir()
         if not m or not os.path.exists(os.path.join(m, ".git")):
+            self._auto_sync_log(False, "mirror", "no git copy at %s: run `python3 -I .kit/kit.py init`" % m)
             return False
         here = os.path.dirname(os.path.abspath(__file__))
         kit_candidates = [
@@ -403,6 +425,7 @@ class BoardStore:
         ]
         kit_py = next((p for p in kit_candidates if os.path.isfile(p)), None)
         if not kit_py:
+            self._auto_sync_log(False, "kit.py", "kit.py not found under %s" % root)
             return False
         try:
             r = subprocess.run(
@@ -412,29 +435,43 @@ class BoardStore:
                 text=True,
                 timeout=30,
             )
-            if r.returncode == 0:
-                self.auto_sync_count += 1
-                if getattr(self, "_auto_sync_push", False):
-                    pr = subprocess.run(
-                        [sys.executable, "-I", kit_py, "--mirror", m, "push"],
-                        cwd=root,
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                    )
-                    # refused: git moved (a web session saved there). Reconcile, at most every 5 minutes: the newer
-                    # copy of each post comes here, then the union goes to git (a plain push never overwrites git).
-                    url = getattr(self, "_auto_sync_url", "")
-                    if pr.returncode != 0 and url and time.time() - getattr(self, "_auto_reconcile_at", 0) > 300:
-                        self._auto_reconcile_at = time.time()
-                        env = dict(os.environ, KIT_BOARD_URL=url)
-                        if getattr(self, "_auto_sync_token", ""):
-                            env["KIT_BOARD_TOKEN"] = self._auto_sync_token
-                        subprocess.run([sys.executable, "-I", kit_py, "--mirror", m, "reconcile", "--db", self.db_path],
-                                       cwd=root, capture_output=True, text=True, timeout=180, env=env)
+            if r.returncode != 0:
+                self._auto_sync_log(False, "sync-db", (r.stdout + r.stderr).strip() or "exit %d" % r.returncode)
+                return False
+            self.auto_sync_count += 1
+            if not getattr(self, "_auto_sync_push", False):
+                self._auto_sync_log(True, "sync-db", "committed, not pushed")
                 return True
-        except Exception:
-            pass
+            pr = subprocess.run(
+                [sys.executable, "-I", kit_py, "--mirror", m, "push"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if pr.returncode == 0:
+                self._auto_sync_log(True, "push", "pushed")
+                return True
+            why = (pr.stdout + pr.stderr).strip() or "exit %d" % pr.returncode
+            # refused: git moved (a web session saved there). Reconcile, at most every 5 minutes: the newer
+            # copy of each post comes here, then the union goes to git (a plain push never overwrites git).
+            url = getattr(self, "_auto_sync_url", "")
+            if url and time.time() - getattr(self, "_auto_reconcile_at", 0) > 300:
+                self._auto_reconcile_at = time.time()
+                env = dict(os.environ, KIT_BOARD_URL=url)
+                if getattr(self, "_auto_sync_token", ""):
+                    env["KIT_BOARD_TOKEN"] = self._auto_sync_token
+                rr = subprocess.run([sys.executable, "-I", kit_py, "--mirror", m, "reconcile", "--db", self.db_path],
+                                    cwd=root, capture_output=True, text=True, timeout=180, env=env)
+                out = (rr.stdout + rr.stderr).strip()
+                if rr.returncode == 0 and "push refused" not in out:
+                    self._auto_sync_log(True, "reconcile", "push was refused, reconciled with git and pushed")
+                    return True
+                why += " | reconcile: " + (out[-300:] or "exit %d" % rr.returncode)
+            self._auto_sync_log(False, "push", why)
+            return False
+        except Exception as e:  # noqa: BLE001 - said in the log, retried
+            self._auto_sync_log(False, "run", "%s: %s" % (type(e).__name__, e))
         return False
 
     def _auto_sync_worker(self):
@@ -448,7 +485,14 @@ class BoardStore:
                 if self._auto_sync_closed:
                     return
                 self._auto_sync_dirty = False
-            self._run_auto_sync_once()
+            if not self._run_auto_sync_once():
+                # CL16: a failure is retried, never dropped until the next write: 30 s, doubling, at most 10 min
+                delay = min(600.0, 30.0 * (2 ** min(5, max(0, getattr(self, "_auto_sync_failures", 1) - 1))))
+                delay = min(delay, float(os.environ.get("KIT_AUTO_SYNC_RETRY_MAX") or delay))
+                with self._auto_sync_cond:
+                    if not self._auto_sync_closed:
+                        self._auto_sync_cond.wait(timeout=delay)
+                        self._auto_sync_dirty = True
 
     def save_artifact(self, post_id, rel_path, content, summary="", base_path="", by_user="owner", agent_meta=None):
         pid = str(post_id or "").strip()

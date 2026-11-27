@@ -245,6 +245,28 @@ def _export_blobs_to_mirror(db_path, m, max_bytes=5 * 1024 * 1024):
     return copied
 
 
+SYNC_LOG_KEEP = 100     # CL16: sync.json keeps its last 100 runs (it had grown to 86 KB in git)
+
+
+def _db_identity(conn):
+    """CL16: this board.db's own id (a random hex made once, kept in its kit_meta table): the key of its delta cursor."""
+    import uuid
+    conn.execute("CREATE TABLE IF NOT EXISTS kit_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    row = conn.execute("SELECT value FROM kit_meta WHERE key='db_id'").fetchone()
+    if row:
+        return row[0]
+    conn.execute("INSERT OR IGNORE INTO kit_meta(key, value) VALUES ('db_id', ?)", (uuid.uuid4().hex,))
+    conn.commit()
+    return conn.execute("SELECT value FROM kit_meta WHERE key='db_id'").fetchone()[0]
+
+
+def _doc_time(doc):
+    """A document's last write time (updated_at, else created_at) as a comparable UTC string; '' when it has none."""
+    if not isinstance(doc, dict):
+        return ""
+    return _utc(doc.get("updated_at") or doc.get("created_at") or "") or ""
+
+
 def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
     """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full)."""
     if _TEST_GUARD:     # CL48: a test run writes a board's git copy under a temp folder only
@@ -257,12 +279,17 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
         raise SystemExit("kit sync-db: %s does not exist" % db)
     now = at or zstamp(datetime.now(timezone.utc))
     st = read_state(m)
-    last_seq = int(st.get("db_seq") or 0)
     conn = sqlite3.connect(db, timeout=5)
     try:
+        # CL16: the delta cursor counts THIS board.db's changes, so it is kept per database (db_seqs[<its id>]).
+        # It used to be one db_seq in sync.json, which travels in git: another machine's (or a web session's) higher
+        # number made every delta here ask for seq > it and silently write nothing.
+        db_id = _db_identity(conn)
+        st.pop("db_seq", None)
+        last_seq = int((st.get("db_seqs") or {}).get(db_id) or 0)
         latest_seq = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM changes").fetchone()[0]
         min_seq = conn.execute("SELECT COALESCE(MIN(seq), 0) FROM changes").fetchone()[0]
-        can_delta = (not full) and bool(st.get("cursor")) and last_seq > 0 and (min_seq == 0 or last_seq >= min_seq - 1)
+        can_delta = (not full) and bool(st.get("cursor")) and 0 < last_seq <= latest_seq and (min_seq == 0 or last_seq >= min_seq - 1)
         if not can_delta:
             # CL44 (item 7): a full sync never deletes a mirror file that git added or changed unless the board
             # explicitly deleted it (its changes log). Missing files not deleted by the board are kept and imported.
@@ -278,11 +305,16 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
                 for coll in ("posts", "comments"):
                     os.makedirs(os.path.join(tmp, coll), exist_ok=True)
                     db_docs = {}
+                    old_mirror = load_dir(m + "/board", coll)
                     for doc_id, raw in conn.execute("SELECT doc_id, data FROM docs WHERE collection=?", (coll,)):
                         doc = json.loads(raw)
                         db_docs[doc_id] = doc
+                        # CL16: a full sync never writes an older copy over a newer one git holds (made elsewhere):
+                        # git's stays, and `kit.py reconcile` (up, web takeover, a refused push) brings it here.
+                        mdoc = old_mirror.get(doc_id)
+                        if mdoc is not None and _doc_time(mdoc) > _doc_time(doc):
+                            doc = mdoc
                         write_doc(os.path.join(tmp, coll, doc_id + ".json"), doc)
-                    old_mirror = load_dir(m + "/board", coll)
                     for doc_id, mdoc in old_mirror.items():
                         if doc_id not in db_docs and (coll, doc_id) not in deleted:
                             write_doc(os.path.join(tmp, coll, doc_id + ".json"), mdoc)
@@ -300,7 +332,9 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
             if with_blobs:
                 _export_blobs_to_mirror(db, m)
             st2 = read_state(m)
-            st2["db_seq"] = latest_seq
+            st2.pop("db_seq", None)
+            st2.setdefault("db_seqs", {})[db_id] = latest_seq
+            st2["log"] = (st2.get("log") or [])[-SYNC_LOG_KEEP:]
             write_doc(os.path.join(m, "board", "sync.json"), st2)
             return res
 
@@ -348,10 +382,11 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
                     if old_s.get(user) != doc:
                         write_doc(os.path.join(sdir, user + ".json"), doc)
         st["cursor"] = now
-        st["db_seq"] = latest_seq
-        st["log"].append({"at": now, "full": False, "db_seq": latest_seq, "posts": len(old_p) - pr,
-                          "posts_written": pw, "posts_removed": pr, "comments_read": len(rows),
-                          "new": new, "changed": changed, "removed": removed})
+        st.setdefault("db_seqs", {})[db_id] = latest_seq
+        st["log"] = (st.get("log") or [])[-(SYNC_LOG_KEEP - 1):] + [
+            {"at": now, "full": False, "db": db_id[:8], "db_seq": latest_seq, "posts": len(old_p) - pr,
+             "posts_written": pw, "posts_removed": pr, "comments_read": len(rows),
+             "new": new, "changed": changed, "removed": removed}]
         write_doc(os.path.join(m, "board", "sync.json"), st)
         return pw, pr, new, changed, removed
     finally:
@@ -9444,8 +9479,13 @@ def commit(m, msg, branch=None):
     if git(m, "symbolic-ref", "--short", "HEAD").stdout.strip() != target_branch:
         raise SystemExit("kit: %s is not on branch %s; refusing to commit the copy anywhere else" % (m, target_branch))
     git(m, "add", "-A", "board")
+    if git(m, "diff", "--cached", "--quiet", "--", "board").returncode == 0:
+        return "nothing to commit"
     r = git(m, "commit", "-q", "-m", msg)
-    return (r.stdout + r.stderr).strip() or "committed"
+    out = (r.stdout + r.stderr).strip()
+    if r.returncode != 0:   # CL16: a refused commit (no identity, a lock, a merge in progress) is an error, never "committed"
+        raise SystemExit("kit: the commit in %s failed: %s" % (m, out[-300:] or "git exit %d" % r.returncode))
+    return out or "committed"
 
 
 def _usage_self():
