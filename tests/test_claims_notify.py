@@ -288,6 +288,8 @@ class Rules(unittest.TestCase):
             tap, more = notify.links(dict(CFG, artifact=""), "Q1", port=8766)
             self.assertEqual((tap, more), ("", []))                                          # never a loopback address
             self.assertIn("?repo=kit#/post/Q1", notify.links(CFG, "Q1", port=8765, repo="kit")[0])
+            self.assertEqual(notify.links(CFG, "_orchestrator", port=8765, disc="d123")[0],
+                             "https://m.ts.net/#/post/_orchestrator?disc=d123")
 
     def test_the_funnel_address(self):
         self.assertEqual(notify.funnel_target(FUNNEL), ("https://m.ts.net", 8765))
@@ -467,6 +469,16 @@ class BothBoards(unittest.TestCase):
         self.assertEqual(Path(notify.topic_file(self.d)).read_text().strip(), u)
         self.assertEqual(os.stat(notify.topic_file(self.d)).st_mode & 0o77, 0)
         self.assertEqual(self.n.got[0][0]["Click"], "https://m.ts.net/")
+
+    def test_orchestrator_reply_links_directly_to_its_discussion(self):
+        self.call("PUT", "db/comments/c-owner-1", {"data": {
+            "post_id": "_orchestrator", "from": "owner", "text": "question",
+            "thread_id": "thr_disc1", "discussion": "disc-42"}})
+        self.call("PUT", "db/comments/c-reply-1", {"data": {
+            "post_id": "_orchestrator", "from": "orchestrator", "text": "answer",
+            "reply_to": "thr_disc1"}})
+        self.assertEqual(self.n.wait(1), 1)
+        self.assertEqual(self.n.got[0][0]["Click"], "https://m.ts.net/#/post/_orchestrator?disc=disc-42")
 
 
 class Funnel(unittest.TestCase):
