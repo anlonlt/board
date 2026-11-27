@@ -5,6 +5,7 @@
     python3 scripts/run_all_tests.py --all       every suite, not listened to: faster (before a push, a merge, a release)
     python3 scripts/run_all_tests.py --list      what would run, and why; runs nothing
     python3 scripts/run_all_tests.py access notify     the suites whose name has one of these words, whatever changed
+    python3 scripts/run_all_tests.py --clean     the folders past test runs left in the temp folder (--yes removes them)
     --keep-going: past a failure    -j N: how many at once (default: the cores but one)
 
 A suite is one test file. While it runs, scripts/test_trace.py notes the files of this repo that it and its child processes
@@ -462,23 +463,45 @@ def tail(text, n=60):
     return "\n".join(lines[:n] if i is not None else lines[-n:])
 
 
-def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True, on_done=None):
+def leftovers(tmp, pgid):
+    """CL52: what a finished suite left behind: the entries of its own temp folder, and its processes still running
+    (its process group: killed here). [] when it cleaned up after itself."""
+    try:
+        left = sorted(os.listdir(tmp))
+    except OSError:
+        left = []
+    try:
+        os.killpg(pgid, 0)                       # one of its processes is still alive
+        os.killpg(pgid, signal.SIGKILL)
+        left.append("running processes")
+    except OSError:
+        pass
+    return left
+
+
+def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True, on_done=None, work=None):
     """(results, stopped): the suites run, at most `jobs` at once; the first failure stops the others. `on_done(name,
-    ok, seconds)` after each suite (a full run records its progress on the commit)."""
-    work = tempfile.mkdtemp(prefix="kit-tests-")
+    ok, seconds)` after each suite (a full run records its progress on the commit). CL52: each suite has its own temp
+    folder (TMPDIR) under the run's folder `work`; what it leaves there fails it, named in its result line, and the
+    run's folder is removed at the end, whatever happened."""
+    own_work = work is None
+    work = work or tempfile.mkdtemp(prefix="kit-tests-")
     live, results, queue, stopped, ears = {}, [], list(todo), False, Listeners(out)
 
     def start(name, cmd, folders):
         base = os.path.join(work, re.sub(r"\W+", "-", name))
         log = open(base + ".log", "wb")
         e, venv = dict(env), None
+        tmp = base + ".tmp"
+        os.makedirs(tmp, exist_ok=True)
+        e["TMPDIR"] = e["TMP"] = e["TEMP"] = tmp
         if folders is None and listen:
             py, venv = ears.take(base + ".trace")
             if py:
                 cmd = [py] + cmd[1:]
                 e["PATH"] = os.path.dirname(py) + os.pathsep + env.get("PATH", "")
         p = subprocess.Popen(cmd, cwd=REPO_ROOT, env=e, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
-        live[p] = (name, folders, base, log, time.monotonic(), venv)
+        live[p] = (name, folders, base, log, time.monotonic(), venv, tmp)
 
     def kill(p):
         try:
@@ -500,17 +523,22 @@ def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True, on_don
                 time.sleep(0.05)
                 continue
             for p in done:
-                name, folders, base, log, t0, venv = live.pop(p)
+                name, folders, base, log, t0, venv, tmp = live.pop(p)
                 log.close()
+                left = leftovers(tmp, p.pid)
+                shutil.rmtree(tmp, ignore_errors=True)
                 if venv:
                     ears.free.append(venv)
                 with open(base + ".log", encoding="utf-8", errors="replace") as fh:
                     text = fh.read()
-                dt, ok = time.monotonic() - t0, p.returncode == 0
+                dt, ok = time.monotonic() - t0, p.returncode == 0 and not left
                 results.append((name, ok, dt))
                 n = re.search(r"^Ran (\d+) tests?", text, re.M)
                 skip = re.findall(r"^SKIP.*$", text, re.M)
-                out("[%s] %s (%s%.1f s)%s" % ("PASS" if ok else "FAIL", name, (n.group(1) + " tests, ") if n else "", dt, (" " + skip[0][:90]) if skip else ""))
+                out("[%s] %s (%s%.1f s)%s%s" % ("PASS" if ok else "FAIL", name, (n.group(1) + " tests, ") if n else "", dt,
+                                              (" " + skip[0][:90]) if skip else "",
+                                              (" left in its temp folder: %d (%s%s)" % (len(left), ", ".join(left[:5]),
+                                               ", ..." if len(left) > 5 else "")) if left else ""))
                 m = memo.setdefault(name, {})
                 m["seconds"] = round(dt, 1)
                 if ok and (listen or folders is not None):
@@ -523,7 +551,8 @@ def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True, on_don
                     m["failed"] = False                     # not listened to: what it rests on stays as last noted
                 else:
                     m["failed"] = True
-                    out("\n" + tail(text) + "\n")
+                    if p.returncode != 0:
+                        out("\n" + tail(text) + "\n")
                     if not keep_going:
                         stopped = True
                 save_memo(memo)
@@ -537,8 +566,86 @@ def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True, on_don
     finally:
         for p in list(live):
             kill(p)
-        shutil.rmtree(work, ignore_errors=True)
+        if own_work:
+            shutil.rmtree(work, ignore_errors=True)
     return results, stopped
+
+
+# CL52: what test runs leave in the temp folder, by name. /tmp held about 5,600 such folders on a computer with little
+# room, each with a project copy and its own board token. The kit's own prefixes are made only by its tests and its
+# runner; Python's bare mkdtemp() ("tmp" and 8 letters) is anyone's, so such a folder counts only when it holds what a
+# test makes there (a project copy, a board, a git repository).
+TEST_PREFIXES = ("kit-", "kitmap-", "cl30-", "cl48-", "playwright-artifacts-", "playwright_chromiumdev_profile-")
+TEST_MARKS = (".kit", ".git", ".board", ".claude", "board_data", "board.db", "AGENTS.md", "CLAUDE.md", "repo", "proj",
+              "project", "home", "kit")
+BARE_TMP = re.compile(r"^tmp[a-z0-9_]{8}$")
+
+
+def newest(path):
+    """The latest mtime of a folder and of what it holds directly (a live run writes its logs one level down)."""
+    t = os.lstat(path).st_mtime
+    try:
+        with os.scandir(path) as it:
+            for e in it:
+                try:
+                    t = max(t, e.stat(follow_symlinks=False).st_mtime)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return t
+
+
+def test_leftovers(root=None, older_h=2.0, now=None):
+    """[(path, why)] of the folders past test runs left in `root` (the temp folder): a test's name and untouched for
+    `older_h` hours (a run going on now is never one), owned by this user."""
+    root, now = root or tempfile.gettempdir(), now or time.time()
+    out = []
+    try:
+        entries = list(os.scandir(root))
+    except OSError:
+        return out
+    for e in entries:
+        try:
+            if not e.is_dir(follow_symlinks=False) or e.stat(follow_symlinks=False).st_uid != os.getuid():
+                continue
+            if e.name.startswith(TEST_PREFIXES):
+                why = "a test run's name (%s*)" % next(x for x in TEST_PREFIXES if e.name.startswith(x))
+            elif BARE_TMP.match(e.name):
+                inside = set(os.listdir(e.path))
+                marks = sorted(inside & set(TEST_MARKS))
+                if not marks:
+                    continue
+                why = "tmp* holding " + ", ".join(marks[:3])
+            else:
+                continue
+            age = (now - newest(e.path)) / 3600
+        except OSError:
+            continue
+        if age >= older_h:
+            out.append((e.path, "%s, untouched for %.0f h" % (why, age)))
+    return sorted(out)
+
+
+def clean(argv):
+    """`run_all_tests.py --clean [--yes] [--older H] [--root DIR]`: the leftovers of past test runs; a dry run (the list)
+    unless --yes."""
+    ap = argparse.ArgumentParser(prog="run_all_tests.py --clean")
+    ap.add_argument("--clean", action="store_true")
+    ap.add_argument("--yes", action="store_true", help="remove them (without it: only the list)")
+    ap.add_argument("--older", type=float, default=2.0, help="hours untouched (default 2: a run going on is kept)")
+    ap.add_argument("--root", default=None, help="the temp folder (default: this computer's)")
+    a = ap.parse_args(argv)
+    found = test_leftovers(a.root, a.older)
+    for path, why in found:
+        print("%s %s  (%s)" % ("removed" if a.yes else "would remove", path, why))
+        if a.yes:
+            shutil.rmtree(path, ignore_errors=True)
+    left = [p for p, _ in found if os.path.exists(p)] if a.yes else []
+    print("%d folder(s) of past test runs in %s%s%s" % (
+        len(found), a.root or tempfile.gettempdir(), ": removed" if a.yes and found else
+        (" (dry run: --yes removes them)" if found else ""), ("; %d could not be removed: %s" % (len(left), ", ".join(left[:5]))) if left else ""))
+    return 1 if left else 0
 
 
 def through_device(argv):
@@ -558,6 +665,8 @@ def through_device(argv):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if "--clean" in argv:
+        return clean(argv)
     rc = through_device(argv)
     if rc is not None:
         return rc
@@ -609,11 +718,17 @@ def main(argv=None):
     env["KIT_TEST"] = "1"
     env["KIT_TEST_GUARD"] = os.path.join(REPO_ROOT, "kit", "test_guard.py")   # for a test's hand-made copy of a script
     env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+    # CL52: one folder for the whole run (each suite's TMPDIR, the launchers, the jobs, the logs), removed at the end,
+    # also when the run is stopped (Ctrl-C, a kill)
+    work = tempfile.mkdtemp(prefix="kit-tests-")
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     # Every launcher a test install writes goes to a temp dir; the real ~/.local/bin is watched.
-    tmp_bin = tempfile.mkdtemp(prefix="kit-test-bin-")
+    tmp_bin = os.path.join(work, "bin")
+    os.makedirs(tmp_bin)
     env["KIT_BIN_DIR"] = tmp_bin
     # the device's jobs the suites see: none (this run is one, and a test of the gate must not count it)
-    env["KIT_JOBS_DIR"] = tempfile.mkdtemp(prefix="kit-test-jobs-")
+    env["KIT_JOBS_DIR"] = os.path.join(work, "jobs")
+    os.makedirs(env["KIT_JOBS_DIR"])
     real_bin = os.path.expanduser("~/.local/bin")
     before = bin_snapshot(real_bin)
     last_push = [0.0]
@@ -635,11 +750,11 @@ def main(argv=None):
 
     try:
         results, stopped = run([s for s, _ in todo], memo, files, max(1, a.j), a.keep_going, env,
-                               lambda *x: print(*x, flush=True), listen=not a.all, on_done=record)
+                               lambda *x: print(*x, flush=True), listen=not a.all, on_done=record, work=work)
     finally:
+        shutil.rmtree(work, ignore_errors=True)
         if commit:
             note_push(REPO_ROOT, wait=True)
-    shutil.rmtree(tmp_bin, ignore_errors=True)
     changed = bin_changes(before, bin_snapshot(real_bin))
     if changed:
         print("[FAIL] files written to %s by the suites: %s" % (real_bin, ", ".join(changed)))
@@ -651,6 +766,10 @@ def main(argv=None):
         (", %d passed earlier on this commit" % len(resumed)) if resumed else "", time.monotonic() - t0))
     for n in failed:
         print("  FAIL " + n)
+    old = test_leftovers()
+    if old:
+        print("%d folder(s) left in %s by past test runs: `python3 scripts/run_all_tests.py --clean` lists them, --yes removes them"
+              % (len(old), tempfile.gettempdir()))
     return 1 if failed or changed else 0
 
 

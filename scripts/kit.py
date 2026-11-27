@@ -7210,6 +7210,7 @@ COMMANDS = [
     ("measure", "kit.py usage show --commands [--role R] [--transcripts GLOB] / compare ... --commands", "cost per command: each result's size and its carry (tokens x calls after it, cache read price), top commands per role, runs of commands repeated in 3+ sessions as script candidates (M6)"),
     ("measure", "kit.py usage record|show|push|import-ccr", "one session's usage row from its transcript (the Stop/SessionEnd hook does it, no model call) / the rows / onto the ledger branch kit-usage / rows from saved get_session records"),
     ("read the code", "kit.py map [--root DIR] [--out DIR] [--config F] [--check]", "a map of any project generated from its code (M1): overview.md in one screen, a card per area and feature, joins.md (UI fields sent vs schema accepted, handler, tables, tests; dropped fields, write routes with no CSRF/auth, uncalled handlers, files over 1,500 lines), map.json things/links/flags; --check fails when the code changed or a link check fails"),
+    ("tests", "run_all_tests.py [--all] | --clean [--yes] [--older H]", "the kit's tests, each suite in its own temp folder that fails it if anything is left there (CL52) / the folders past test runs left in the temp folder: a dry run, --yes removes them"),
     ("index", "kit.py commands [word|all]", "the topics / the commands a word finds / every one"),
 ]
 
