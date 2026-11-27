@@ -106,6 +106,7 @@ class Runtime(Base):
         self.assertFalse((self.tmp / "agy.log").exists())
 
     def test_review_runs_agy_where_agy_runs(self):
+        os.environ["AGY_PID"] = "1"      # CL71: where agy runs, said; not left to the parent processes (claude in a web container)
         rc, msg = self.review(tool_dir(self.tmp, "agy", "claude"))
         self.assertEqual(rc, 0, msg)
         self.assertIn("-p", self.wait_log("agy").splitlines())

@@ -204,3 +204,9 @@ source: docs/KIT-GOALS.md (f189539 2026-11-24)
 because: the owner's goal 5: no sprawl, no double copies
 rejected: a board or an Artifact as its own record
 created_at: 2026-11-27T02:42:43Z
+
+## O1 (observation, active): A part never takes another step's unlanded work into its branch: each step's branch holds only its own commits and main, so it merges the moment it is reviewed
+scope: project
+enforced_by: review
+because: owner 2026-11-27: CL59 carried CL16, CL61 merged origin/m12; both held back by the other part
+created_at: 2026-11-27T08:58:54Z
