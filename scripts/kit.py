@@ -1276,8 +1276,10 @@ def _scoped_pull_lines(board, d, pre, post):
                  "\"%s\"]], limit: 1000}`, `out_dir: \"%s\"`." % (board, pre, post, d))
     lines.append("- `ArtifactData` `get`, `url` %s, `collection: \"%skit_docs\"`, `doc_id: \"_index\"`, `out_dir: \"%s\"` "
                  "(the files' map; \"No document\" is fine)." % (board, pre, d))
-    lines += ["", "Then: `python3 -I .kit/kit.py artifact load` (starts the local board if needed; your own unsent changes "
-              "stay). Every later pull brings what changed on the whole board since this one."]
+    lines += ["", "Then: `python3 -I .kit/kit.py artifact load %s=<N>` with the version N each reply names (add "
+              "`comments/<id>=<N>` for each comment the query returned; starts the local board if needed; your own unsent "
+              "changes stay): `artifact push --post %s` then pins its writes to them. Every later pull brings what "
+              "changed on the whole board since this one." % ("posts/" + post, post)]
     return "\n".join(lines) + "\n"
 
 
@@ -1329,13 +1331,25 @@ def artifact_pull(full=False, post=None):
     pull (its post known: --post or its resume) gets only its own documents by id."""
     board = artifact_url() or "<the board's claude.ai/artifact url>"
     d = os.path.join(_art_dir(), "in")
-    since = "" if full else str(_art_state().get("loaded_at") or "")
+    st = _art_state()
+    since = "" if full else str(st.get("loaded_at") or "")
     pre = _art_prefix()
     scope = "" if full or since else _scope_post(post)
+    head = _drop_waiting_batches(st)
     if scope:
         for f in glob.glob(os.path.join(d, "*", "*.json")) + glob.glob(os.path.join(d, "repos", "*", "*", "*.json")):
             os.remove(f)
-        return _scoped_pull_lines(board, d, pre, scope)
+        text = _scoped_pull_lines(board, d, pre, scope)
+        st["partial"] = True                       # CL59: what this copy read; a push sends nothing outside it
+        st["scope_posts"] = sorted(set(st.get("scope_posts") or []) | set(_scoped_ids(text)))
+        st["scope_comments"] = sorted(set(st.get("scope_comments") or []) | {scope})
+        _art_save(st)
+        return head + text
+    if not since:
+        st["partial"] = False                      # CL59: a whole list of every collection: the whole board is read
+        _art_save(st)
+    elif head:
+        _art_save(st)
     attached = [] if pre else _attached_ids()          # before the delta pull clears in/kit_repos/_index.json
     if since:
         t = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) - timedelta(minutes=10)
@@ -1381,7 +1395,35 @@ def artifact_pull(full=False, post=None):
                   "origin/board-mirror both ways, and prints the batches to send; your own unsent changes stay)."]
     else:
         lines += ["", "Then: `python3 -I .kit/kit.py artifact load` (starts the local board if needed; your own unsent changes stay)."]
-    return "\n".join(lines) + "\n"
+    return head + "\n".join(lines) + "\n"
+
+
+def _scoped_ids(text):
+    return re.findall(r'`collection: "[^"]*posts"`, `doc_id: "([^"]+)"`', text)
+
+
+def _drop_waiting_batches(st):
+    """CL59 (CL17 and web orchestrator 2, 11-27: the guard refused a pull while built batches waited, and the batches
+    could not be sent without one: a deadlock). A pull is always allowed: the batches built and never recorded sent are
+    dropped (they are only this copy against its base, rebuilt from it), and `artifact load` builds them again, the
+    same way (`--post` kept), against what the pull brought. A batch that did reach the Artifact comes back with the
+    pull as the live copy, so nothing is sent twice over it. Returns the line that says so ('' when none waited)."""
+    out = os.path.join(_art_dir(), "out")
+    waiting = sorted(glob.glob(os.path.join(out, "batch-*.json")))
+    if not waiting:
+        return ""
+    keys = set()
+    for f in waiting:
+        for e in _read_json(f) or []:
+            if isinstance(e, dict) and e.get("collection") and e.get("doc_id"):
+                keys.add("%s/%s" % (_art_key(e["collection"]), e["doc_id"]))
+        with contextlib.suppress(OSError):
+            os.remove(f)
+    with contextlib.suppress(OSError):
+        os.remove(os.path.join(_art_dir(), "pending.json"))
+    st["rebuild"] = {"post": str(st.get("last_push_post") or ""), "keys": sorted(keys)}
+    return ("%d batch(es) built and not recorded sent were waiting: dropped; `artifact load` builds them again after "
+            "this pull.\n\n" % len(waiting))
 
 
 # ---------------------------------------------------------------- CL72: one command for every board read and write
@@ -1781,15 +1823,30 @@ def keep_newer(incoming, here):
     return out
 
 
-def artifact_load(url=None, token=None, in_dir=None):
+def _version_pairs(pairs):
+    """CL59: `<collection>/<id>=<N>` (the versions the pull's replies named) -> {key: N}."""
+    out = {}
+    for x in pairs or []:
+        k, _, n = str(x).partition("=")
+        k = _art_key(k.strip())
+        if "/" not in k or not n.strip().isdigit():
+            raise Conflict("not a version: %r (`<collection>/<id>=<N>`, N from the get's reply)" % x)
+        out[k] = int(n)
+    return out
+
+
+def artifact_load(url=None, token=None, in_dir=None, versions=None):
+    versions = _version_pairs(versions) if not isinstance(versions, dict) else versions
     url = url or local_board_url()
     if not _ensure_local_board(url):
         raise Conflict("no local board at %s (run `python3 -I .kit/web_takeover.py` first)" % url)
     token = _resolve_board_token(token)            # after the start: a first start writes the token
     in_dir = in_dir or os.path.join(_art_dir(), "in")
     st = _art_state()
+    _written_here(url, token, st)              # CL73: what this copy wrote before this load (or the first mark)
     taken = kept = merged = 0
     unmerged = []
+    read = set(st.get("read") or [])
     pre = _art_prefix()
     for coll in ART_COLLS:
         # ArtifactData's out_dir writes <out_dir>/<collection path>/<doc_id>.json: under the prefix for an attached board
@@ -1823,6 +1880,9 @@ def artifact_load(url=None, token=None, in_dir=None):
                                                              "if_version": d.get("version", 0)}], "sync": True}, token=token)
             os.makedirs(os.path.dirname(_base_path(coll, did)), exist_ok=True)
             write_doc(_base_path(coll, did), remote)
+            read.add("%s/%s" % (coll, did))           # CL59: read from the Artifact (a partial pull's push sends only these)
+            if "%s/%s" % (coll, did) in versions:
+                st["versions"]["%s/%s" % (coll, did)] = versions["%s/%s" % (coll, did)]
             # CL30: a pulled file is loaded once; left there, a later load without a pull took that OLD copy over
             # this copy's newer post (and its base), as on 11-23 after a container restart
             try:
@@ -1831,12 +1891,18 @@ def artifact_load(url=None, token=None, in_dir=None):
                 pass
     # what this copy held that the Artifact does not (a seed from git, an old copy): never sent unless changed here
     stale = set(st.get("not_there") or [])
+    # CL59: what this copy wrote and has not sent yet is not a seed: a dropped batch's documents, and in a partial
+    # copy a create under the post it works on (never compared with anything else, so never sent outside it)
+    mine = set((st.get("rebuild") or {}).get("keys") or []) | set(st.get("written_here") or [])
     # CL72: only what is older than the last load is a seed; a post or comment made here since (a sync pulls before
     # it pushes) is this session's new work and goes out with the next push
     last = str(st.get("loaded_at") or "")
     for coll in ART_COLLS:
         for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
             key = "%s/%s" % (coll, row["id"])
+            if key in mine or (st.get("partial") and key not in read and
+                               _in_read_scope(st, coll, row["id"], row.get("data") or {})):
+                continue
             stamp = _doc_stamp(row.get("data"))
             if last and (not stamp or stamp >= last):
                 continue
@@ -1845,13 +1911,22 @@ def artifact_load(url=None, token=None, in_dir=None):
                 os.makedirs(os.path.dirname(_base_path(coll, row["id"])), exist_ok=True)
                 write_doc(_base_path(coll, row["id"]), row.get("data") or {})
     st["not_there"] = sorted(stale)
+    st["read"] = sorted(read)
     st["loaded_at"] = zstamp(datetime.now(timezone.utc))
+    with contextlib.suppress(urllib.error.URLError, OSError, ValueError):
+        # CL73: this load's own writes are the Artifact's copy, not changes made here: the mark moves past them
+        st["seen_seq"] = int(_board_request(url, "changes?since=0&limit=1", token=token).get("latest_seq") or 0)
+    rebuild = st.pop("rebuild", None)
     _art_save(st)
     files_card_sync(url, token)                         # CL71: the files map from the board, in a clone that has none
     restored, missing = _load_blobs(url, token, in_dir)
     attached = _load_attached(url, token, in_dir)
-    return {"taken": taken, "kept_here": kept, "merged": merged, "not_there": len(stale), "blobs_restored": restored,
-            "blobs_missing": missing, "unmerged": unmerged, "attached": attached}
+    out = {"taken": taken, "kept_here": kept, "merged": merged, "not_there": len(stale), "blobs_restored": restored,
+           "blobs_missing": missing, "unmerged": unmerged, "attached": attached}
+    if isinstance(rebuild, dict):
+        # CL59: the batches a pull dropped, built again against what it brought (the same way: --post kept)
+        out["rebuilt"] = _pending_record(artifact_push(url=url, token=token, post=rebuild.get("post") or None))
+    return out
 
 
 def _load_attached(url, token, in_dir):
@@ -1999,11 +2074,51 @@ def stale_copy():
     return "STALE: this copy of the Artifact board was loaded %d min ago (more than %d): %s." % (age, cap, way)
 
 
+def _written_here(url, token, st, init=False):
+    """CL73: the documents this copy wrote itself (board_cli, kit write, the page), from the local board's own changes
+    log, since the mark `artifact load` leaves after its own writes. A seed from git (board-mirror) or anything before
+    the first load is not a change made here, so a document with no sync base counts as unsent only when it is in this
+    set. Kept in the state (st["written_here"]) across loads until sent; `init` (a load's start) sets the mark the first
+    time without counting what came before it. Returns the set of `<collection>/<id>` keys."""
+    mine = set(st.get("written_here") or [])
+    try:
+        since = st.get("seen_seq")
+        if since is None:
+            r = _board_request(url, "changes?since=0&limit=1", token=token)
+            st["seen_seq"] = int(r.get("latest_seq") or 0)
+            return mine
+        since = int(since)
+        while True:
+            r = _board_request(url, "changes?since=%d&limit=1000" % since, token=token)
+            ch = r.get("changes") or []
+            for c in ch:
+                if c.get("collection") in ART_COLLS and c.get("op") != "delete":
+                    mine.add("%s/%s" % (c["collection"], c["doc_id"]))
+                since = max(since, int(c.get("seq") or 0))
+            if len(ch) < 1000:
+                break
+        st["seen_seq"] = since
+    except (urllib.error.URLError, OSError, ValueError, KeyError):
+        pass
+    st["written_here"] = sorted(mine)
+    return mine
+
+
+def _counts_as_changed(coll, did, base, data, mine):
+    """CL73: a document this copy changed: its base exists and differs, or it has no base and this copy wrote it."""
+    if base is None:
+        return "%s/%s" % (coll, did) in mine
+    return base != data
+
+
 def artifact_unsent(url=None, token=None):
     """CL30: how many documents of the local copy differ from what the Artifact last had, and the batch files built
     but never recorded sent: {"changed": n, "batches": [paths]}."""
     url = url or local_board_url()
     token = _resolve_board_token(token)
+    st = _art_state()
+    mine = _written_here(url, token, st)
+    _art_save(st)
     n = 0
     own = _own_docs(_scope_post())                 # CL72: a part answers for its own documents only (what it sends)
     for coll in ART_COLLS:
@@ -2012,6 +2127,10 @@ def artifact_unsent(url=None, token=None):
             data = row.get("data") or {}
             if own is not None and not own(coll, row["id"], data):
                 continue
+            if not _in_read_scope(st, coll, row["id"], data):
+                continue                       # CL59: never read from the Artifact: never sent, so never "unsent"
+            if not _counts_as_changed(coll, row["id"], base, data, mine):
+                continue                       # CL73: no base and never written here (a git seed, an unread post)
             if base != data and not (_is_card(row["id"]) and base is not None and _card_older(data, base)):
                 n += 1                         # CL31: an older card here is dropped at push, not unsent
     return {"changed": n, "batches": sorted(glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")))}
@@ -2031,7 +2150,24 @@ def launch_mark(pid, prompt, inline=None):
     write_doc(p, dict({"prompt": prompt, "at": time.time()}, **({"inline": inline} if inline else {})))
 
 
-def artifact_push(url=None, token=None, out_dir=None, own=None):
+def _in_read_scope(st, coll, did, data):
+    """CL59: after a partial pull (a part's `pull --post`), a document this copy may send: one it read from the Artifact
+    (or sent, or pinned), a post the pull fetched by id, a comment under the post whose comments it queried. Anything
+    else here (a git seed, an old copy, a write the board server made since) was never compared with the live board."""
+    key = "%s/%s" % (coll, did)
+    if not st.get("partial") or key in (st.get("read") or []) or key in st["versions"]:
+        return True
+    if coll == "posts":
+        return did in (st.get("scope_posts") or [])
+    if coll == "comments":
+        return str((data or {}).get("post_id") or "") in (st.get("scope_comments") or [])
+    return False
+
+
+def artifact_push(url=None, token=None, out_dir=None, own=None, post=None):
+    """The batches that send this copy's changes. CL59: `post` (`artifact push --post <id>`) builds only that post and
+    the comments under it, each pinned to the version this copy read; after a partial pull, a push never sends a
+    document the pull did not read (CL17: 330 unpinned writes from a whole-copy diff against a one-post pull)."""
     if attached_board() and not _art_state().get("loaded_at"):
         # CL28's open item: a web part's copy came from git; its push built 78 writes without if_version
         raise Conflict("this copy was never loaded from the Artifact, so a push would overwrite the board with an old "
@@ -2041,17 +2177,22 @@ def artifact_push(url=None, token=None, out_dir=None, own=None):
     token = _resolve_board_token(token)
     out_dir = out_dir or os.path.join(_art_dir(), "out")
     if own is None:
-        own = _own_docs(_scope_post())               # CL72: a part's push (any command's) sends only its own documents
+        own = _own_docs(post or _scope_post())       # CL72: a part's push (any command's) sends only its own documents
     os.makedirs(os.path.join(out_dir, "docs"), exist_ok=True)
     for f in glob.glob(os.path.join(out_dir, "batch-*.json")) + glob.glob(os.path.join(out_dir, "docs", "*.json")):
         os.remove(f)
     files_card_sync(url, token)                         # CL71: what changed in the files map rides this push
     st = _art_state()
-    entries, need_pin, every, dropped = [], [], [], []
+    mine = _written_here(url, token, st)                # CL73: what this copy wrote itself
+    _art_save(st)
+    entries, need_pin, every, dropped, unread = [], [], [], [], []
     for coll in ART_COLLS:
         res = _board_request(url, "db/%s" % coll, token=token)
         for row in res.get("docs") or []:
             did, data = row["id"], row.get("data") or {}
+            if post and not ((coll == "posts" and did == post) or
+                             (coll == "comments" and str(data.get("post_id") or "") == post)):
+                continue                                 # CL59: --post: only that post and its comments
             every.append(data)
             base = _read_json(_base_path(coll, did))
             if base == data:
@@ -2059,6 +2200,11 @@ def artifact_push(url=None, token=None, out_dir=None, own=None):
             if own is not None and not own(coll, did, data):
                 continue                                 # CL72: a part sends only its own documents
             key = "%s/%s" % (coll, did)
+            if not _counts_as_changed(coll, did, base, data, mine):
+                continue                                 # CL73: no base, never written here: an old copy, never sent
+            if not post and not _in_read_scope(st, coll, did, data):
+                unread.append(key)                       # CL59: never read from the Artifact: never sent from here
+                continue
             if _is_card(did) and base is not None and _card_older(data, base):
                 # CL31: an older card here (a seed, a stale rebuild): put the copy the Artifact had back, never send it
                 _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did,
@@ -2122,8 +2268,11 @@ def artifact_push(url=None, token=None, out_dir=None, own=None):
         p = os.path.join(out_dir, "batch-%02d.json" % (i + 1))
         write_doc(p, b)
         paths.append(p)
+    st = _art_state()
+    st["last_push_post"] = post or ""                    # CL59: a pull that drops these batches rebuilds them this way
+    _art_save(st)
     return {"batches": paths, "need_pin": need_pin, "writes": len(entries), "board": artifact_url(), "files": files_text,
-            "dropped": dropped}
+            "dropped": dropped, "unread": unread, "post": post or ""}
 
 
 def _kas():
@@ -2240,6 +2389,11 @@ def artifact_push_text(r):
         out.append(r["files"].rstrip("\n") + "\n(The posts' own batches below can go before or after; the page shows a file once it is mapped.)")
     if r.get("dropped"):
         out.append("Not sent, older than the Artifact's copy (put back here): %s." % ", ".join(r["dropped"]))
+    if r.get("unread"):
+        u = r["unread"]
+        out.append("Not sent, never read from the Artifact (this copy's pull was partial): %d document(s) (%s%s). They "
+                   "were never compared with the live board; `kit.py artifact pull --full` first if one is really yours."
+                   % (len(u), ", ".join(u[:5]), ", …" if len(u) > 5 else ""))
     if r.get("need_pin"):
         # CL72: never a version copied by hand: sync re-reads them, the hook reads the versions, sync pins and pushes
         out.append("Changed here, never sent from this copy (their versions are not known here): %s. Run `python3 -I "
@@ -2335,6 +2489,9 @@ def _conflict_comment(kind, did, kept, kept_side, other, other_side):
                  "conflict": {"doc": "%s/%s" % (kind, did), "shown": kept_side, "other_side": other_side, "other": other}}
 
 
+GENERATED_CARDS = ("_dashboard", "_trains")      # CL59: built from the posts by kit_cards, never written by hand
+
+
 def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
     """`kit.py artifact reconcile` (after `artifact pull` and its ArtifactData calls): the Artifact against
     origin/<branch>, both ways, nothing lost. Returns the counts and the artifact push (the batches to send)."""
@@ -2383,6 +2540,7 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
             base = {}
     st = _art_state()
     not_there = set(st.get("not_there") or [])
+    sent_from_git = set()
     here, art, side = {}, {}, {}
     for coll in ART_COLLS:
         for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
@@ -2433,7 +2591,9 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
         else:
             sl, sg = _doc_stamp(l), _doc_stamp(g, gt)
             win = "git" if sg > sl else "here"
-            if b:                              # both changed since the last reconcile: never silent
+            if b and kind == "posts" and did in GENERATED_CARDS:
+                decided_by_date += 1           # CL59: a card kit_cards builds: the newer build wins, no conflict comment
+            elif b:                            # both changed since the last reconcile: never silent
                 kept, other = (g, l) if win == "git" else (l, g)
                 cid, cdoc = _conflict_comment(kind, did, kept, "GitHub" if win == "git" else "Artifact", other,
                                               "Artifact" if win == "git" else "GitHub")
@@ -2471,6 +2631,7 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
         if key in not_there and (coll, did) not in art:
             # O53 kept a document the Artifact never had from being sent; one git holds goes now, as a create
             not_there.discard(key)
+            sent_from_git.add(key)               # CL73: git holds it, the Artifact does not: it is to be sent
             try:
                 os.remove(_base_path(coll, did))
             except OSError:
@@ -2480,11 +2641,13 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
         key = "%s/%s" % k
         if key in not_there and k not in art and k not in writes and here.get(k, (None,))[0] == g:
             not_there.discard(key)
+            sent_from_git.add(key)               # CL73: git holds it, the Artifact does not: it is to be sent
             try:
                 os.remove(_base_path(*k))
             except OSError:
                 pass
     st = _art_state()
+    st["written_here"] = sorted(set(st.get("written_here") or []) | sent_from_git)
     st["not_there"] = sorted(not_there)
     _art_save(st)
     # git: the documents it lacks or holds older, and the base (each document both sides will hold), in one commit
@@ -11556,7 +11719,7 @@ def main(argv=None):
     s.add_argument("--no-push", action="store_true", help="reconcile: the git copy is not committed nor pushed")
     s.add_argument("--branch", default=None, help="reconcile: the git copy's branch (default: the mirror's)")
     s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
-    s.add_argument("--post", default=None, help="pull: a first pull reads only this post's documents (M11)")
+    s.add_argument("--post", default=None, help="pull: a first pull reads only this post's documents (M11); push: sends only this post and its comments (CL59)")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("reconcile", help="the board here vs its git copy: the newer copy of each post and comment wins")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--branch", default=None)
@@ -11920,7 +12083,7 @@ def main(argv=None):
                 if calls:
                     _kc().ledger_record(_art_dir(), calls, "artifact pull", url=artifact_url(), step="pull")
             elif a.action == "load":
-                r = artifact_load(url=a.board_url, token=a.token)
+                r = artifact_load(url=a.board_url, token=a.token, versions=a.args)
                 print("Loaded from the Artifact: %d taken, %d kept from here (unsent), %d merged field by field. "
                       "The scripts now read and write the local copy; send its changes with `kit.py artifact push`." % (
                           r["taken"], r["kept_here"], r["merged"]))
@@ -11932,6 +12095,9 @@ def main(argv=None):
                 for u in r.get("unmerged") or []:
                     print("NOT MERGED (rows without a key changed on both sides; this copy kept, its pin will refuse): " + u)
                 print(artifact_blobs_text(r), end="")
+                if r.get("rebuilt"):
+                    print("The batches the pull dropped, built again against it:")
+                    print(artifact_push_text(r["rebuilt"]), end="")
             elif a.action == "reconcile":
                 if not _rule("artifact_steps") and not os.environ.get("KIT_ARTIFACT_RECONCILE_LOCAL"):
                     print("artifact reconcile: not in a local session (a computer reconciles its own board with git: "
@@ -11947,7 +12113,7 @@ def main(argv=None):
                     print("NOT MERGED (rows without a key changed on both sides; this copy kept, its pin will refuse): " + u)
                 print(artifact_push_text(r["push"]), end="")
             elif a.action == "push":
-                print(artifact_push_text(_pending_record(artifact_push(url=a.board_url, token=a.token))), end="")
+                print(artifact_push_text(_pending_record(artifact_push(url=a.board_url, token=a.token, post=a.post))), end="")
             elif a.action == "sent":
                 print("recorded: %d writes" % sum(artifact_sent(p) for p in a.args))
                 if not glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")):      # the last batch: git, the record
