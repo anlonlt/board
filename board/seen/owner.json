@@ -1279,6 +1279,11 @@
    "sig": "le4wse.1i8",
    "v": []
   },
+  "r5-every-rule-that-differs-by-platform-says": {
+   "at": "2026-11-27T03:20:02.718Z",
+   "sig": "1efuksx.46",
+   "v": []
+  },
   "test-image": {
    "at": "2026-11-20T03:08:38Z",
    "bt": "2026-11-20T03:08:38Z",
