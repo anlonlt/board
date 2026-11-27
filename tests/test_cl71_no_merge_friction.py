@@ -53,7 +53,7 @@ class GeneratedFilesOutOfGit(unittest.TestCase):
         os.makedirs(proj)
         sh("git", "init", "-q", "-b", "main", cwd=proj, env=env)
         Path(proj, "app.py").write_text("print(1)\n")
-        r = sh(sys.executable, os.path.join(kit, "install.py"), proj, "--project", "P", "--talk", "en", cwd=t, env=env)
+        r = sh(sys.executable, os.path.join(kit, "install.py"), proj, "--project", "P", "--talk", "en", "--no-survey", "a test", cwd=t, env=env)
         self.assertEqual(r.returncode, 0, r.stdout[-800:] + r.stderr[-800:])
         self.assertTrue(os.path.isfile(os.path.join(proj, ".kit", "manifest.json")))     # built at install
         sh("git", "add", "-A", cwd=proj, env=env)
@@ -75,6 +75,8 @@ class GeneratedFilesOutOfGit(unittest.TestCase):
         m = sh("git", "merge", "--no-edit", "b", cwd=proj, env=env)
         self.assertEqual(m.returncode, 0, m.stdout + m.stderr)
         self.assertNotIn("manifest", m.stdout + m.stderr)
+        self.assertIn("changed on a", Path(proj, ".kit", "lessons.md").read_text())    # both kit changes are there
+        self.assertIn("changed on b", Path(proj, ".kit", "ledger.py").read_text())
         # the clone has none: a reader rebuilds it from the tree, the kit's files in it
         os.remove(os.path.join(proj, ".kit", "manifest.json"))
         r = sh(sys.executable, "-I", os.path.join(proj, ".kit", "kit_manifest.py"), proj)
@@ -138,7 +140,6 @@ class Landing(Board):
 
     def test_a_regenerate_commit_after_the_review_does_not_block_land(self):
         self.complete("continue")
-        self.put(".kit-gen.txt", "", commit=False)
         Path(self.d, ".kit", "manifest.json").write_text('{"x": "1"}\n')
         self.g("add", "-f", ".kit/manifest.json")
         self.g("commit", "-qm", "manifest regenerated")
@@ -183,7 +184,7 @@ class Landing(Board):
         seen = self.get()["review_commit"]
         self.g("checkout", "-q", "main")
         self.g("merge", "-q", "--no-ff", "--no-edit", "s1")                   # merged by hand
-        self.g("push", "-q", "origin", "main", env={"KIT_SKIP": "1"})
+        self.g("push", "-q", "origin", "main")
         self.g("checkout", "-q", "s1")
         self.put("test_more.txt", "t\n")                                     # a later commit on its branch
         self.g("push", "-q", "origin", "s1")
@@ -209,6 +210,37 @@ class Landing(Board):
         self.assertTrue(got["landed"], got)
         self.assertEqual(len(got["newer"]), 1)
         self.assertTrue(self.get().get("landed"))
+
+
+class FilesMapOnTheBoard(Board):
+    """1: the Artifact's files map is no file in git: a clone without it rebuilds it from the board's card `_files`
+    (which pull, load and push carry), and a clone whose map gained entries puts them on the card for its push."""
+
+    def sync(self):
+        shutil.copy(str(ROOT / "kit" / "claude" / "kit_artifact_sync.py"), os.path.join(self.d, ".kit", "kit_artifact_sync.py"))
+        code = ("import importlib.util,sys,json; s=importlib.util.spec_from_file_location('k', sys.argv[1]); m=importlib.util.module_from_spec(s); "
+                "s.loader.exec_module(m); print(json.dumps(m.files_card_sync()))")
+        r = subprocess.run([sys.executable, "-I", "-c", code, os.path.join(self.d, ".kit", "kit.py")], capture_output=True, text=True,
+                           env=self.env, cwd=self.d, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout.strip().splitlines()[-1])
+
+    def test_a_clone_without_the_map_rebuilds_it_from_the_card_and_gives_back_what_it_gained(self):
+        path = Path(self.d, ".kit", "artifact-files", "files-primary.json")
+        self.assertFalse(path.exists())
+        self.post("_files", {"title": "Files map", "files": {"assets": {"a.png": {"url": "/_blob/1", "sha": "s1"}},
+                                                             "docs": {"README.md": {"version": 3, "sha": "x"}}}})
+        got = self.sync()
+        self.assertEqual(json.loads(path.read_text())["docs"]["README.md"]["version"], 3)     # rebuilt from the card
+        self.assertEqual(got["assets"]["a.png"]["url"], "/_blob/1")
+        st = json.loads(path.read_text())
+        st["docs"]["README.md"]["version"] = 4                                                 # a mirror sent from here
+        st["assets"]["b.png"] = {"url": "/_blob/2", "sha": "s2"}
+        path.write_text(json.dumps(st))
+        self.sync()
+        card = self.get("_files")["files"]
+        self.assertEqual(card["docs"]["README.md"]["version"], 4)
+        self.assertIn("b.png", card["assets"])
 
 
 if __name__ == "__main__":
