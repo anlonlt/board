@@ -1,21 +1,72 @@
 {
- "body": "Goal: the board travels in git, always current, so a clone anywhere (another computer, Claude Code web) sees the same trains. Today .kit/board_data/board.db is gitignored and board-mirror was last synced 2026-11-20 (two days stale), so after a crash or on the web `kit.py resume` finds nothing.\n\nDo:\n- Sync the board to the `board-mirror` branch automatically (`kit.py sync-db` / `sync`) after every step change (`kit.py step new|start|complete|drop`, so the kit_task_train hook covers it), after `kit.py done`, and in `end_session.py` and `handover.py`; debounce (e.g. at most one push per minute, a final one guaranteed) and never block the tool on a network failure (retry later, say so once).\n- `kit.py resume` (and `train`, `board_cli.py` reads) work without a local board.db: they read the mirror (fetch origin/board-mirror). When both exist, the newer wins and the older is merged, never lost; say which source was used and its age.\n- Writes from a machine without the board server (web, another computer) go to the mirror and are imported by the board server when it next runs (`kit_import.py` / `git_watch.py`), conflicts resolved per post by updated_at.\n\nBars: a test with a fresh clone and no .kit/board_data that gets the same `kit.py resume` output as the source; a test that a step change reaches origin/board-mirror; a write made from the mirror side shows on the local board after import. Mirror .kit/ changes into kit/.\nHolds: never force-push board-mirror; no secrets (the token) in the mirror.\n",
+ "artifacts": [
+  "tests/test_cl16_board_in_git.py",
+  "scripts/kit.py",
+  "kit/board/board_server.py",
+  "kit/board/board_cli.py",
+  "kit/end_session.py",
+  "kit/handover.py",
+  "kit/web_takeover.py"
+ ],
+ "bars": [
+  "7 of 7 CL16 tests pass now; 7 of 7 fail on the code before (0942fc3)",
+  "fresh clone with no .kit/board_data: kit.py resume output equal to the source's (1 of 1)",
+  "step change reaches origin/board-mirror: 2 of 2 paths (server auto-sync, kit mirror-sync)",
+  "write with no server, then imported by a board server started later: 1 of 1",
+  "all suites: 80 of 80 pass (run_all_tests.py --all)"
+ ],
+ "body": "The board now follows every step change to origin/board-mirror, and a clone with no local board reads it. The 11-22 loss came from a cursor stored in git that belongs to one machine. Nothing for you to do. Merged on main once its review passes.\n\n## Why the 11-22 posts never reached git\nThe board server did run its sync. But the delta cursor `db_seq` was kept in `board/sync.json`, which travels in git, and it counts the changes of ONE machine's board.db. Another board (a web session, the other computer) wrote a higher number. From then on every sync here asked for \"changes after 1059\", found none, committed only the sync log and pushed it. Every step reported success, so nothing ever looked wrong.\n\n- Proof in the real data: git's sync log shows `db_seq` going backwards 12 times (289→97, 220→64, …): several databases wrote one shared number. This web session's board.db is at 435 while git says 1059.\n- Reproduced in a sandbox (bare origin, server with `--auto-sync-push`): a post made after another machine's cursor never reaches origin, yet a \"kit sync-db\" commit is pushed.\n- Two things hid it: `commit()` ignored git's exit code, and the server swallowed every error (`except: pass`).\n\n## What changed\n- **A cursor per database:** each board.db gets its own id (table `kit_meta`), and `sync.json` keeps `db_seqs[id]`. A cursor above the database's own count means a full sync. The sync log is capped at 100 runs (it was 86 KB in git).\n- **Failures are visible:** the server log says `[auto-sync] … FAILED at <stage>: <why>` once per cause. It retries on its own (30 s, doubling, at most 10 min) and logs `recovered` once the board is pushed again. A refused git commit is now an error, never \"committed\".\n- **`kit.py mirror-sync`:** runs after every `step new|start|complete|drop` (so the task-train hook too) and after a `done` that says OK, in the background, at most one push a minute. `end_session.py`, `handover.py` and `web_takeover.py save` run `--final`. It never blocks on the network: a failure is said once and retried at the next sync.\n- **Both sides wrote:** when git refuses the push, the git copy is merged post by post. The newer `updated_at` wins, read marks are merged, nothing is deleted, then it is pushed again, never forced. This replaces the `-X ours` merges in `reconcile` and web save, which could drop the other side's newer post.\n- **Reads:** `resume`, `train` and `board_cli` reads merge the local board with its git copy (origin/board-mirror, the local branch and the worktree), and the newer copy of each document wins. With no local board.db, `origin/board-mirror` is fetched first. Every read ends with the source and its age, e.g. `(board read from the local board and its git copy origin/board-mirror (40 s old): 34 document(s) newer in git)`.\n- **No board server:** `board_cli set|update` and `kit.py step` write to the git copy (stamped `updated_at`, committed, pushed). A board server started with `--auto-sync-push` runs `kit.py reconcile` at start, which imports them (newer wins).\n- **A full sync** never writes this board's older copy over a newer one in git. \"Older\" means this board.db's own write time, so a change made here always counts.\n\n## Tests\n`tests/test_cl16_board_in_git.py`, 7 tests on real repositories, a bare origin and a real board server. On the code before this step (0942fc3) all 7 fail; now all 7 pass.\n\n| test | what it proves |\n|---|---|\n| step change after another machine's cursor | a `step new` reaches origin/board-mirror (the 11-22 case) |\n| failed sync said and retried | the server log says `FAILED at sync-db … not on branch board-mirror`, then sends the post with no new write and logs `recovered` |\n| refused commit | a commit a git hook refuses makes `kit.py sync --commit` fail |\n| kit path | `step new` / `step start` push with the server's auto-sync off |\n| fresh clone | a clone with no `.kit/board_data` prints the same `kit.py resume` as the source |\n| write from the git side | a `board_cli set` with no server goes to origin, and a board server started later shows it |\n| both sides wrote | the newer copy of a shared post wins, posts only one side had are both kept, and both histories are in git |\n\nAll suites: `run_all_tests.py --all`: 80 passed, 0 failed.\n",
  "branch": "cl16",
+ "breaks": "git checkout 0942fc3 -- .kit/kit.py .kit/board_server.py .kit/board_cli.py",
+ "check": "python3 -m unittest tests.test_cl16_board_in_git",
  "column": "info",
  "created_at": "2026-11-22T23:17:04Z",
  "from": "orchestrator",
+ "handoff": "On each computer: install.py --update, then restart the board server (up). The server log (/tmp/kit-board-<port>.log) now says [auto-sync] FAILED/recovered. Writes with no server land in board-mirror and are imported at the server's next start. Sync off: KIT_MIRROR_SYNC=0 or mirror.auto false in .kit/config.json.",
  "launched_at": "2026-11-27T02:34:06Z",
  "moved_from_train": "cli",
+ "not_checked": "On your computer: the board server there runs the old code until install.py --update and a restart. The real anlonlt/harmonize run is the orchestrator's. Sending this session's Artifact copy (328 writes) is left to the orchestrator: this part pulled only its own post.",
  "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
  "orchestrator_device": "web",
  "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
  "part": "CL16",
  "planned_by": "orchestrator",
+ "proof": {
+  "at": "2026-11-27T03:00:17Z",
+  "branch": "cl16",
+  "commit": "76cd5fb",
+  "key": "2a2a2ddfb94d7b9d",
+  "needs_real": false,
+  "sha": "76cd5fbda7626b59a07fc385583470168f0ed0c0"
+ },
  "restored_from": "board-mirror 5d7db0d: an artifact load at 2026-11-26T20:23Z (CL44's part, on this computer) overwrote it with an older Artifact copy; fields only that copy had are kept",
- "session_id": "session_01AE1HGjUyLjArKFESowYgiB",
- "status": "in progress",
+ "session_id": "board-cl16",
+ "status": "complete",
+ "subtasks": [
+  {
+   "n": 1,
+   "status": "done",
+   "title": "Fix db_seq cursor + silent failures (sync-db, commit, server log)"
+  },
+  {
+   "n": 2,
+   "status": "done",
+   "title": "Sync after step change/done/end_session/handover, debounced, nonblocking"
+  },
+  {
+   "n": 3,
+   "status": "done",
+   "title": "resume/train/board_cli reads work without board.db (mirror fallback, newer wins)"
+  },
+  {
+   "n": 4,
+   "status": "done",
+   "title": "Mirror-side writes imported by server; tests; mirror .kit into kit; post + done"
+  }
+ ],
  "title": "The board travels in git, always current (mirror synced on every step)",
  "train": "board-data",
- "updated_at": "2026-11-27T02:34:18Z",
- "working_by": "owner"
+ "updated_at": "2026-11-27T03:00:22Z",
+ "verdict": "Fixed: step changes reach origin/board-mirror again (the cause was a per-machine sync cursor kept in git), and a clone with no local board resumes the same board.",
+ "working_by": ""
 }

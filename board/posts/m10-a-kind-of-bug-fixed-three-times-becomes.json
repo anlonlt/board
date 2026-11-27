@@ -1,21 +1,66 @@
 {
- "body": "Reading kit/ledger.py and kit.py done to add fix kinds to the ledger",
+ "artifacts": [
+  ".board/memory/ledger.md",
+  "kit/board/BOARD.template.md",
+  "kit/claude/BOARD.template.md",
+  "kit/ledger.py",
+  "kit/orchestrator.template.md",
+  "scripts/kit.py",
+  "tests/test_m10_fix_kinds.py"
+ ],
+ "bars": [
+  "Fixture: 2 fixes of one kind print 0 lines; the 3rd prints 1 line naming all 3 and \"a design step, not a fourth patch\".",
+  "Seeded kinds: platform leak 8 fixes (covered by R5), silent error 3, two copies out of sync 6.",
+  "His rules: 2 themes, each said 2 times, 0 enforced: both are the first lines of the orchestrator's start.",
+  "His decisions: 4 recorded, 3 with a check; 1 of the 3 fails on the trunk today (the drop box), 1 has none (git is the one source).",
+  "New tests: 15 of 15 pass; the whole suite 80 of 80 (after merging main: 76 run, 4 unchanged, 0 failed)."
+ ],
+ "body": "Each bug fix, each rule you state and each design decision of yours now goes into the memory with its kind. When the same kind of bug is fixed a third time, or you state the same rule twice and nothing enforces it, the orchestrator's start says so first and plans a step that turns it into a check, instead of another patch. Today it says four things first: \"git is the one source\" and \"never hide an error\" (each said at least twice, neither enforced), silent errors (fixed 3 times) and two copies out of sync (fixed 6 times). Platform leaks (8 fixes) already have their design step, R5.\n\n### What changed\n- **The ledger** (kit/ledger.py) has a `fix` kind: one fix of one kind (`record_fix`, once per source). `fix_kinds` counts the fixes no design step covers; the 3rd raises the kind. `owner_rules` groups his rules (kind `rule` with his words) by theme: said once with no check, \"plan its check now\"; said twice with none, raised first. `decisions` lists his decisions with their check. `alarm_lines` gives the orchestrator's lines. A rule, decision or principle on the theme with a check (test, hook, code, refusal) quiets it; `mark_designed` records the step planned for a kind.\n- **kit.py**: `ledger fix | kinds | design | scan`. `done` records the form's `## fixes` line (optional), reads the branch's commits for `Fix-kind:` (and notes a commit that says it fixes without its kind), and refuses a branch where a decision over the files it changes no longer holds. The orchestrator's resume starts with \"## First: what keeps coming back\", and lists his rules and decisions without a check after the memory line.\n- **The hook** that shows memory before an edit puts his decisions first.\n- Fixes are counted, never printed as rules, never distilled, never in contradiction checks.\n- The post format and the orchestrator's guide say how (`fixes`, `ledger observe --kind rule`, `ledger decide`, `ledger design`).\n\n### The seed (.board/memory/ledger.md)\n| Kind | Fixes |\n|---|---|\n| platform leak (design step R5) | CL26, CL28, CL37, CL44 item 1, CL44 item 9, CL51, R4, 106bba6 |\n| silent error | bd6791b (part resume exited 0 blind), 376fa17 (map overview silent on 568 files), 0703d5e (page tests went on after a refused seed) |\n| two copies out of sync | CL28 (local post only), CL51 (older Artifact copies over 11 newer posts), CL45 (Artifact vs git), cfe798c and 7821ba3 (stale .kit copies), 22e889c (second copy of the guide) |\n\nCL16 and CL46 (both silent errors) are planned, not fixed yet: they count when their `done` records them.\n\nRules R1, R2 (git is the one source), R3, R4 (never hide an error). Decisions D1 drop box for every AI link (check: the server's drop box route), D2 the web's cards agent in every repo (check: install puts it), D3 one token per machine (check: its test), D4 git is the one source (no check: named in the resume).\n\n### Principles (M7)\nA distilled principle without a check is already shown as unchecked by M7's memory check; nothing new was needed there.\n\n### Found on the way\nOn this web session, a first `artifact reconcile` after a pull of only this post prepared 330 unpinned writes over the live board; I discarded them and did the full pull it asked for, after which it was one write. Worth a refusal in reconcile after a `--post` pull.",
  "branch": "m10",
+ "breaks": "sed -i 's/^FIX_RAISE = 3 /FIX_RAISE = 30 /' kit/ledger.py",
+ "check": "python3 -B -m unittest tests.test_m10_fix_kinds",
  "column": "info",
+ "completed_at": "2026-11-27T02:56:44Z",
  "created_at": "2026-11-26T22:05:06Z",
  "differs": "M10: builds on M7 (each memory entry checked) and M8 (replacing and forgetting); neither counts repeated fixes or repeated owner rules. M10 records each fix and each owner rule as a kind in the ledger and turns the third of a kind into a design step.",
  "from": "orchestrator",
+ "handoff": "- Orchestrator: your resume now opens with \"## First: what keeps coming back\". Plan the four: `kit.py ledger design \"silent error\" --train <t>` (and \"two copies out of sync\") makes the step and marks its fixes; for the two rules, plan a check step and `kit.py ledger design \"<theme>\" --post <step>`.\n- The drop box decision (D1) fails on main: commit 75a4f41 (the \"Link for AI\" link reaching the post's drop box) is only on origin/feat/streamline-doctor-memory. Landing it makes D1 hold; until then any step changing kit/board/board_server.py is refused by done.\n- A part fixing a bug adds `## fixes` to its form: `<kind>: <what was broken>`.\n- M12 (merged into item 6): decisions are in; the hook shows them first; what is left of M12 is reading a step's task against them.",
  "launched_at": "2026-11-27T02:34:57Z",
+ "not_checked": [
+  "The real-project run on Harmonize (the orchestrator's, K2: this changes resume and done).",
+  "Item 5's \"chat words recorded verbatim\": I had no chat log; \"git is the one source\" and \"never hide an error\" are quoted as the task gives them (the orchestrator's count), plus one written source each (the goals file, the PartStop note).",
+  "Item 6's \"a step that contradicts a decision becomes a question\": done refuses a branch where a decision's check fails, but does not read a step's task for contradictions.",
+  "A git hook recording `Fix-kind:` commits on main directly: they are read at `done` (the branch's own commits) and by `kit.py ledger scan --since <ref>`."
+ ],
  "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
  "orchestrator_device": "web",
  "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
  "part": "M10",
  "planned_by": "orchestrator",
  "priority": 1,
+ "proof": {
+  "at": "2026-11-27T02:54:09Z",
+  "branch": "m10",
+  "commit": "8e865e1",
+  "key": "d3eff6ff0ed715c4",
+  "needs_real": true,
+  "sha": "8e865e1f852f1b4e0a9b2ef9e5917e7257345d07"
+ },
+ "real_project": {
+  "command": "cp harmonize; install.py --update (m10 d74d590); CLAUDE_CODE_SESSION_ID=rp-test KIT_STALE_OK=1 kit.py resume --role orchestrator; kit.py ledger kinds|scan|check",
+  "output": "PASS (nothing to show). resume rc=0, no ledger lines (no fix kinds yet; local copy has no open steps). ledger kinds: {fixes:[], rules:[], decisions:[]}; ledger scan: {ok:true, recorded:[], unnamed:[]} (no Fix-kind: commits; shallow clone); ledger check: {ok:true, errors:[], warnings:[], count:0}. Harmonize has no seeded ledger, so the third-fix raise could not be exercised on real data.",
+  "project": "anlonlt/harmonize"
+ },
+ "review_commit": "d74d5900291e58c3845b2c197af0338adc535460",
+ "review_orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "review_orchestrator_device": "web",
+ "review_orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "review_session": "session_01AE1HGmC2R6J7KEi3pfqnc1",
+ "review_started": "2026-11-27T02:56:54Z",
  "runner": "claude-web",
  "session_id": "session_01AE1HGjJUZaP5MmWsTMwbP4",
  "started_at": "2026-11-27T02:36:29Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "files": [
@@ -50,6 +95,7 @@
  "task": "A kind of bug fixed three times becomes a design question, never a fourth patch. Eight fixes since 11-23 were the same kind (a rule made for one platform applied to the others: CL26, CL28, CL37, CL44 items 1 and 9, CL51, R4, 106bba6) and nobody saw it until the owner asked; the memory's ledger already turns about 3 observations on one theme into a principle (`distil`, kit/ledger.py), but fixes never reach it: they stay in commits and posts.\n\n1. Every fix records an observation in the ledger with its kind (a short theme, e.g. \"platform leak\", \"silent error\", \"two copies out of sync\"), at `kit.py done` for a step that fixes a bug, and from a commit whose message says it fixes one; in kit/ledger.py and scripts/kit.py.\n2. When a kind reaches 3, the orchestrator's resume says so in one line and plans a design step for it (what all of them share and the change that makes the kind impossible), instead of the next patch.\n3. Seed it from history: today's three kinds (platform leaks, silent errors, two copies with nothing keeping them equal) with their fixes, so the counts start true.\n4. Tests on a fixture ledger: two fixes of one kind say nothing, the third raises it.\n5. The owner repeating a rule is the strongest signal: the owner's comments and chat words recorded as observations (verbatim, kit/ledger.py) are grouped by theme the same way; a rule the owner states that can be checked becomes a check the first time (the orchestrator plans it then); the second time the owner states the same rule (\"git is the one source\" was said about ten times by 2026-11-26, \"never hide an error\" several times) means nothing enforces it: the orchestrator's resume says so first, and a step is planned that makes it a check (a hook, a refusal, a test), never another memory line. A principle distilled from them names its check, or is shown as unenforced (M7).\n6. The owner's design decisions too (merged from M12): each is recorded as a `decision` entry the moment it is made, in chat, a comment or a commit (what, because, rejected, the owner's words, the files or map area it governs), never left in a commit message only; it gets its check like any rule; the memory hook shows it first to a session editing those files; done refuses a step that breaks its check, and a step that contradicts it becomes a question to the owner. Seed: the per-post drop box for every AI link (b52f5b6; the \"Link for AI\" link reached it only with 75a4f41), the web's cards agent in every repo, one token per machine, git as the one source.",
  "title": "A bug fixed three times, a rule repeated, or a decision of the owner becomes a check",
  "train": "memory",
- "updated_at": "2026-11-27T02:44:26Z",
- "working_by": "owner"
+ "updated_at": "2026-11-27T02:56:54Z",
+ "verdict": "Yes: fixes, your rules and your decisions are counted by kind; the third fix of a kind or your second statement of an unenforced rule goes first in the orchestrator's start, with the step that makes it a check.",
+ "working_by": ""
 }

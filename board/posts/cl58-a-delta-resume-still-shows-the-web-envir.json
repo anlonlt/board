@@ -20,6 +20,7 @@
  "breaks": "revert",
  "check": "python3 -m pytest -q tests/test_cl39_web_multi.py tests/test_resume_delta.py",
  "column": "info",
+ "completed_at": "2026-11-27T02:56:01Z",
  "created_at": "2026-11-27T02:44:09Z",
  "differs": "CL58: builds on CL39 (web environment record in resume) and M5 (delta resume); neither saw the other: CL58 adds the environment record to M5's snapshot so the delta shows it.",
  "from": "orchestrator",
@@ -44,12 +45,23 @@
   "needs_real": true,
   "sha": "7eb544598c717ececf76eb313dd2d180d1e6a9e1"
  },
+ "real_project": {
+  "command": "cp harmonize; install.py --update (cl58 7eb5445), then --update --web-multi yes --web-repos anlonlt/harmonize,anlonlt/board (web_env off in Harmonize); CLAUDE_CODE_SESSION_ID=rp-test KIT_STALE_OK=1 kit.py resume --role orchestrator x2; kit.py web-env --id env_01RpTest; resume again; Harmonize scripts/test_*.py (gradle suite 342-885s skipped)",
+  "output": "PASS. resume 1: full (64 lines, 'Web environment ... not created yet'); resume 2: 'Resume: nothing new since 02:54 UTC'; web-env: 'environment env_01RpTest recorded in .kit/config.json'; resume 3: '## Web environment (several repos) / Web environment env_01RpTest holds anlonlt/harmonize, anlonlt/board'. Without KIT_STALE_OK resume exits 3 (STALE: Artifact copy never loaded). Harmonize tests: 19 scripts pass; test_next_clerk fails only on commit 759281a4 missing from the shallow clone.",
+  "project": "anlonlt/harmonize"
+ },
+ "review_commit": "7eb544598c717ececf76eb313dd2d180d1e6a9e1",
+ "review_orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "review_orchestrator_device": "web",
+ "review_orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "review_session": "session_01AE1HGmC2R6J7KEi3pfqnc1",
+ "review_started": "2026-11-27T02:56:22Z",
  "session_id": "session_01AE1HGhcpK68znY8XoLCUm8",
  "sources": [
   "CR-cl39-install-for-several-repos-on-the-web-one"
  ],
  "started_at": "2026-11-27T02:45:31Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "from": "task",
@@ -73,7 +85,7 @@
  "task": "CL39's test is green again: a delta resume still shows what the orchestrator must act on.\n\nCR-cl39 (redirect, 2026-11-27): `tests.test_cl39_web_multi.test_resume_has_no_add_repo_line` fails on main in any session with a session id: M5's delta resume (`_resume_snapshot`, scripts/kit.py) holds posts, comments and sessions only, so recording a web environment id prints \"nothing new\" and hides the Web environment section.\n\n1. The resume snapshot covers every section an orchestrator acts on (the web environment record at least; list the others checked), so a change in one shows in the delta.\n2. The test runs with and without a session id (both must pass); it fails on today's main with one set.\n3. Run the full suite with CLAUDE_CODE_SESSION_ID set, as a web session has it, and say what else that turns red.\n",
  "title": "A delta resume still shows the web environment: CL39's test green with a session id",
  "train": "cli",
- "updated_at": "2026-11-27T02:52:18Z",
+ "updated_at": "2026-11-27T02:56:22Z",
  "verdict": "Fixed: the short re-read now compares the web environment and three other orchestrator sections, and CL39's test passes with and without a session id; the whole suite is green with one set.",
- "working_by": "owner"
+ "working_by": ""
 }
