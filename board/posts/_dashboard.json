@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T02:28:14Z",
+ "created_at": "2026-11-27T02:36:12Z",
  "rows": [
   {
    "at": 4,
@@ -95,7 +95,8 @@
     "Map readers beyond code: Power BI, documents, any folder",
     "Done keeps the map: each part checks its stretch and adds what it built",
     "The workflow on the map: what lives outside the repo, with checks",
-    "A bug fixed three times, a rule repeated, or a decision of the owner becomes a check"
+    "A bug fixed three times, a rule repeated, or a decision of the owner becomes a check",
+    "The orchestrator hands over at its context limit however its session began"
    ],
    "train": "P-memory"
   },
@@ -171,5 +172,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T02:28:14Z"
+ "updated_at": "2026-11-27T02:36:12Z"
 }
