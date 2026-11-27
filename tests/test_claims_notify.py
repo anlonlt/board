@@ -245,10 +245,21 @@ class Rules(unittest.TestCase):
     def test_an_answer_but_never_a_parts_done(self):
         c = {"post_id": "P1", "from": "S1", "text": "here", "reply_to": "c0"}
         self.assertEqual(self.ev(c, coll="comments")["post"], "P1")
-        self.assertIsNone(self.ev(c, coll="comments", replies=False))                       # full_auto
+        self.assertIsNone(self.ev(c, coll="comments", replies=False))                       # explicitly turned off
         self.assertIsNone(self.ev({k: v for k, v in c.items() if k != "reply_to"}, coll="comments"))
         for who in ("owner", "clerk", "viewer", ""):
             self.assertIsNone(self.ev(dict(c, **{"from": who}), coll="comments"))
+        # full_auto still notifies on replies and on non-reply messages in Ask the orchestrator (_orchestrator)
+        self.assertTrue(notify.settings(".", {"kit": {"autonomy": {"level": "full_auto"}}})["replies"])
+        self.assertFalse(notify.settings(".", {"kit": {"notify_replies": False}})["replies"])
+        om = {"post_id": "_orchestrator", "from": "orchestrator", "text": "status update"}
+        ev_om = self.ev(om, coll="comments")
+        self.assertIsNotNone(ev_om)
+        self.assertEqual((ev_om["post"], ev_om["kind"]), ("_orchestrator", "message"))
+        self.assertIsNone(self.ev(om, coll="comments", replies=False))
+        for who in ("owner", "clerk", "viewer", ""):
+            self.assertIsNone(self.ev(dict(om, **{"from": who}), coll="comments"))
+        self.assertIsNone(self.ev(dict(om, like=True), coll="comments"))
 
     def test_attached_boards_and_one_id_on_both_boards(self):
         e = self.ev({"column": "todo"}, coll="repos/kit/posts")
