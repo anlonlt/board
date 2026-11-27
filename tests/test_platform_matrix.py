@@ -98,8 +98,8 @@ EXPECTED_PLATFORM_RULES = {
     },
     "real_project_run": {
         "web": "orchestrator",
-        "cli": "computer",
-        "agy": "computer",
+        "cli": "part",
+        "agy": "part",
         "arena": "computer",
         "generic": "computer",
     },
@@ -476,7 +476,9 @@ class ResumeMatrix(unittest.TestCase):
                 # 4. resume_role('part') matches part_template, real_project_run, reply_format
                 part = self.kit.resume_role(str(self.root / "m"), "part", post="r5-step", db_path=self.db)
                 self.assertEqual("`kit.py artifact load`" in part, self.kit.PLATFORM_RULES["artifact_steps"][pl], pl)
-                self.assertEqual("ArtifactData get" in part, self.kit.PLATFORM_RULES["real_project_run"][pl] == "orchestrator", pl)
+                rp_mode = self.kit.PLATFORM_RULES["real_project_run"][pl]
+                self.assertEqual("ArtifactData get" in part, rp_mode == "orchestrator", pl)
+                self.assertEqual("done refuses without it" in part, rp_mode == "part", pl)
                 rfmt = self.kit.PLATFORM_RULES["reply_format"][pl]
                 where = part.split("## Where you report", 1)[1].split("\n## ", 1)[0]
                 self.assertEqual("`SendMessage`" in where, rfmt in ("claude_cli", "claude_remote"), (pl, where))
@@ -507,23 +509,39 @@ class DoneMatrix(unittest.TestCase):
         return kit
 
     def test_done_matches_table_on_every_platform(self):
-        post = {"title": "x", "status": "complete", "verdict": "v", "updated_at": "2026-11-26T20:00:00Z"}
+        post_no_rp = {"title": "x", "status": "complete", "verdict": "v", "updated_at": "2026-11-26T20:00:00Z"}
+        post_with_rp = dict(post_no_rp, real_project={
+            "project": "anlonlt/harmonize", "command": "python3 -I .kit/kit.py resume", "output": "ok",
+        })
         for pl, (env, anc) in PLATFORM_FIXTURES.items():
-            with self.subTest(pl), tempfile.TemporaryDirectory() as d:
-                kit = self._make_kit(post, d)
+            with self.subTest(pl + "-missing-rp"), tempfile.TemporaryDirectory() as d:
+                kit = self._make_kit(post_no_rp, d)
                 mp = Path(d) / "mirror" / "board" / "posts"
                 mp.mkdir(parents=True)
-                (mp / "p1.json").write_text(json.dumps(post))
+                (mp / "p1.json").write_text(json.dumps(post_no_rp))
                 with fake_platform(kit, env, ancestor=anc):
                     rc, out = kit.done("p1")
                     art = kit.PLATFORM_RULES["artifact_steps"][pl]
-                    # Artifact push gate applies iff artifact_steps is True
-                    self.assertEqual(rc, 1 if art else 0, (pl, out))
+                    rp_mode = kit.PLATFORM_RULES["real_project_run"][pl]
+                    # Artifact push gate applies iff artifact_steps; missing real_project refuses iff real_project_run == "part"
+                    self.assertEqual(rc, 1 if (art or rp_mode == "part") else 0, (pl, out))
                     self.assertEqual("artifact push" in out, art, (pl, out))
                     # real_project wording matches PLATFORM_RULES['real_project_run']
-                    rp_mode = kit.PLATFORM_RULES["real_project_run"][pl]
                     self.assertEqual("a part never attaches a repo (CL38)" in out, rp_mode == "orchestrator", (pl, out))
+                    self.assertEqual("pending: the orchestrator runs it" in out, rp_mode == "orchestrator", (pl, out))
+                    self.assertEqual("fix: real_project:" in out, rp_mode == "part", (pl, out))
+                    self.assertEqual("scratch local clone or read-only" in out, rp_mode == "part", (pl, out))
                     self.assertEqual("in a local clone" in out, rp_mode == "computer", (pl, out))
+            with self.subTest(pl + "-with-rp"), tempfile.TemporaryDirectory() as d:
+                kit = self._make_kit(post_with_rp, d)
+                mp = Path(d) / "mirror" / "board" / "posts"
+                mp.mkdir(parents=True)
+                (mp / "p1.json").write_text(json.dumps(post_with_rp))
+                with fake_platform(kit, env, ancestor=anc):
+                    rc, out = kit.done("p1")
+                    art = kit.PLATFORM_RULES["artifact_steps"][pl]
+                    self.assertEqual(rc, 1 if art else 0, (pl, out))
+                    self.assertNotIn("real_project:", out, (pl, out))
                     # Next messaging tool matches PLATFORM_RULES['reply_format'] when done passes
                     if not art:
                         rfmt = kit.PLATFORM_RULES["reply_format"][pl]
@@ -532,18 +550,46 @@ class DoneMatrix(unittest.TestCase):
                         self.assertEqual("is complete on the board" in out, rfmt == "none", (pl, out))
 
     def test_real_project_part_mode_refuses_done(self):
-        post = {"title": "x", "status": "complete", "verdict": "v"}
-        with tempfile.TemporaryDirectory() as d:
-            kit = self._make_kit(post, d)
-            mp = Path(d) / "mirror" / "board" / "posts"
-            mp.mkdir(parents=True)
-            (mp / "p1.json").write_text(json.dumps(post))
-            patched = dict(kit.PLATFORM_RULES["real_project_run"], cli="part")
-            with fake_platform(kit, *PLATFORM_FIXTURES["cli"]), \
-                    mock.patch.dict(kit.PLATFORM_RULES, {"real_project_run": patched}):
+        """R4: on a computer (cli/agy), done refuses missing or incomplete real_project with how to run it;
+        passes once real_project is recorded; on web, done keeps 'pending: the orchestrator runs it'."""
+        base_post = {"title": "x", "status": "complete", "verdict": "v"}
+        good_rp = {"project": "anlonlt/harmonize", "command": "python3 -I .kit/kit.py resume", "output": "ok"}
+        for pl in ("cli", "agy"):
+            for label, post, want_rc in (
+                ("missing", base_post, 1),
+                ("incomplete", dict(base_post, real_project={"project": "anlonlt/harmonize", "command": "c"}), 1),
+                ("complete", dict(base_post, real_project=good_rp), 0),
+            ):
+                with self.subTest((pl, label)), tempfile.TemporaryDirectory() as d:
+                    kit = self._make_kit(post, d)
+                    mp = Path(d) / "mirror" / "board" / "posts"
+                    mp.mkdir(parents=True)
+                    (mp / "p1.json").write_text(json.dumps(post))
+                    with fake_platform(kit, *PLATFORM_FIXTURES[pl]):
+                        rc, out = kit.done("p1")
+                        self.assertEqual(rc, want_rc, (pl, label, out))
+                        if want_rc:
+                            self.assertIn("fix: real_project:", out)
+                            self.assertIn("scratch local clone or read-only", out)
+                            self.assertIn("never push", out)
+                            self.assertIn('{"project", "command", "output"}', out)
+                            self.assertNotIn("pending: the orchestrator runs it", out)
+                        else:
+                            self.assertIn("OK: p1", out)
+                            self.assertNotIn("real_project:", out)
+        # Web done with real_project missing (and artifact copy synced) succeeds with pending note for orchestrator
+        with self.subTest("web-pending"), tempfile.TemporaryDirectory() as d:
+            kit = self._make_kit(base_post, d)
+            bp = Path(d) / "art" / "base" / "posts"
+            bp.mkdir(parents=True)
+            (bp / "p1.json").write_text(json.dumps(base_post))
+            with fake_platform(kit, *PLATFORM_FIXTURES["web"]):
                 rc, out = kit.done("p1")
-                self.assertEqual(rc, 1, out)
-                self.assertIn("fix: real_project:", out)
+                self.assertEqual(rc, 0, out)
+                self.assertIn("OK: p1", out)
+                self.assertIn("note: real_project:", out)
+                self.assertIn("pending: the orchestrator runs it", out)
+                self.assertNotIn("fix: real_project:", out)
 
 
 class LaunchAndStepNewMatrix(Base):
@@ -653,19 +699,25 @@ class LaunchAndStepNewMatrix(Base):
                     self.assertTrue(r["ok"], r)
                     self.assertIn("create_session", r)
                     self.assertIn("Never attach a repo", r["create_session"]["prompt"])
+                    self.assertIn("their real-project run is yours (CL38)", k.launch_text(r))
                     self.assertEqual(r["runner"], "claude-web")
                     self.assertEqual(self.local("posts/" + pid)["data"]["runner"], "claude-web")
                     self.assertEqual(pushed, [pl])
                 elif lmode == "claude_bg":
                     self.assertTrue(r["ok"], r)
                     self.assertIn("worktree", r)
+                    self.assertIn("the part runs its real-project check", k.launch_text(r))
+                    self.assertNotIn("their real-project run is yours", k.launch_text(r))
                     self.assertEqual(r["runner"], "claude-cli")
                     self.assertEqual(self.local("posts/" + pid)["data"]["runner"], "claude-cli")
                     self.assertEqual(pushed, [])
                 elif lmode == "invoke_subagent":
                     self.assertTrue(r["ok"], r)
                     self.assertIn("invoke_subagent", r)
-                    self.assertIn("invoke_subagent(", k.launch_text(r))
+                    ltxt = k.launch_text(r)
+                    self.assertIn("invoke_subagent(", ltxt)
+                    self.assertIn("the part runs its real-project check", ltxt)
+                    self.assertNotIn("their real-project run is yours", ltxt)
                     self.assertEqual(r["runner"], "agy")
                     self.assertEqual(self.local("posts/" + pid)["data"]["runner"], "agy")
                     self.assertFalse(self.agy_claude_marker.exists())
@@ -710,6 +762,24 @@ class GuidesNameTheTable(unittest.TestCase):
             text = (ROOT / rel).read_text(encoding="utf-8")
             self.assertIn("PLATFORM_RULES", text, rel)
             self.assertIn("one platform", text.lower(), rel)
+
+    def test_part_guides_and_k2_document_real_project_by_platform(self):
+        for rel in ("kit/part.template.md", "kit/claude-cli/part.template.md"):
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            self.assertIn("real_project", text, rel)
+            self.assertIn("scratch clone or read-only", text, rel)
+            self.assertIn("Claude Code web", text, rel)
+        web_part = (ROOT / "kit" / "claude" / "part.template.md").read_text(encoding="utf-8")
+        self.assertIn("Claude Code web", web_part)
+        self.assertIn("real_project", web_part)
+        self.assertIn("computer CLI/agy", web_part)
+        lessons = (ROOT / "kit" / "lessons.md").read_text(encoding="utf-8")
+        k2 = lessons.split("## K2:", 1)[1].split("\n## ", 1)[0]
+        self.assertIn('PLATFORM_RULES["real_project_run"]', k2)
+        self.assertIn("CLI or agy", k2)
+        self.assertIn("`kit.py done` refuses without it", k2)
+        self.assertIn("Claude Code web", k2)
+        self.assertIn("pending", k2)
 
 
 if __name__ == "__main__":

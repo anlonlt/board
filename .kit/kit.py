@@ -957,11 +957,13 @@ PLATFORM_RULES = {
     },
     # Real-project dry run (CL32, CL38, CL39, R4):
     # "orchestrator" on web (launched web session cannot attach repos; uses Artifact kit_docs);
-    # "computer" on local platforms (local folder, no ArtifactData/add_repo; R4 flips to "part" to refuse done).
+    # "part" on computer runners (cli/agy: part runs on the consuming project in a scratch local clone or read-only,
+    # never pushing, and writes real_project before Done; kit.py done refuses without it);
+    # "computer" on arena/generic (local dry run pending, no ArtifactData/add_repo).
     "real_project_run": {
         "web": "orchestrator",
-        "cli": "computer",
-        "agy": "computer",
+        "cli": "part",
+        "agy": "part",
         "arena": "computer",
         "generic": "computer",
     },
@@ -6922,12 +6924,14 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
             return dict(out, ok=False, error="%s is taken: %s. If that session ended or its person agrees, "
                         "`kit.py launch %s --take`" % (pid, held, pid))
     cons = consumers(post.get("consumers"))
-    if cons:     # CL32 / R5: consumer note follows PLATFORM_RULES['real_project_run']
-        if _rule("real_project_run", pl) == "orchestrator":
+    if cons:     # CL32 / R5 / R4: consumer note follows PLATFORM_RULES['real_project_run']
+        rp_who = _rule("real_project_run", pl)
+        if rp_who == "orchestrator":
             # CL38: a launched web session's classifier refuses add_repo unless the owner types it; parts never attach.
             text += (" Never attach a repo: the real-project run on %s is the orchestrator's (done says pending until then)."
                      % ", ".join(c["github"] or c["name"] for c in cons))
         out["consumers"] = [c["github"] or c["name"] for c in cons]
+        out["real_project_run"] = rp_who
     mark = os.path.join(ROOT, ".kit", "run", "launch", pid + ".json")
     marked = os.path.isfile(mark)
     if session_id:                                   # the second half of a web launch: create_session answered
@@ -7085,7 +7089,13 @@ def launch_text(r):
         lines.append("It is a step of board %s: launched from its clone %s (no seeded board, no board-mirror push there)."
                      % (r["attached"]["id"], r["attached"]["clone"]))
     if r.get("consumers"):
-        lines.append("Its session tests on: %s; it never attaches them: their real-project run is yours (CL38)." % ", ".join(r["consumers"]))
+        rp_who = r.get("real_project_run") or _rule("real_project_run")
+        if rp_who == "orchestrator":
+            lines.append("Its session tests on: %s; it never attaches them: their real-project run is yours (CL38)." % ", ".join(r["consumers"]))
+        elif rp_who == "part":
+            lines.append("Its session tests on: %s; the part runs its real-project check in a scratch local clone or read-only (never push) before Done." % ", ".join(r["consumers"]))
+        else:
+            lines.append("Its session tests on: %s; dry run in a local clone (never push) goes in `real_project`." % ", ".join(r["consumers"]))
     if r.get("worktree"):
         lines.append("claude --bg runs in %s (made from the current branch)." % r["worktree"])
     if r.get("warning"):
@@ -8939,8 +8949,9 @@ def check_real_project(p, root=ROOT):
                 "from its session (it holds both repos) and writes {\"project\", \"command\", \"output\"} in the post's "
                 "real_project; a part never attaches a repo (CL38)" % (", ".join(areas), cons)]
     if who == "part":
-        return ["real_project: your change touches %s; run the changed command on %s in a scratch local clone (never push) "
-                "and write {\"project\", \"command\", \"output\"} in the post's real_project before Done"
+        return ["real_project: your change touches %s; run the changed command on %s in a scratch local clone or read-only "
+                "(never push) and write {\"project\", \"command\", \"output\"} in the post's real_project "
+                "(`python3 -I .kit/board_cli.py update posts <post> --data '{\"real_project\": ...}'`) before Done"
                 % (", ".join(areas), cons)]
     return ["real_project: your change touches %s; the dry run on a real project (%s) is pending: run it in a local clone "
             "(never push) and write {\"project\", \"command\", \"output\"} in the post's real_project"
@@ -9995,6 +10006,11 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                            "(it holds both repos) and written in your post's `real_project`; you never attach a repo (CL38). "
                            "A file of that project you need: the Artifact's `kit_docs` (`ArtifactData get`, doc_id = its "
                            "path with `/` written `+2F~`), else ask under your post." % (touched, "/".join(REAL_PROJECT_AREAS), cnames))
+            elif _rule("real_project_run") == "part":
+                out.append("- Real project: %s. A change to %s gets a dry run on %s: run the changed command yourself in a "
+                           "scratch local clone or read-only (never push) and write `{\"project\", \"command\", \"output\"}` "
+                           "in your post's `real_project` before `kit.py done` (done refuses without it)."
+                           % (touched, "/".join(REAL_PROJECT_AREAS), cnames))
             else:
                 out.append("- Real project: %s. A change to %s gets a dry run on %s in a local clone (never push), "
                            "written in your post's `real_project`." % (touched, "/".join(REAL_PROJECT_AREAS), cnames))
@@ -10039,7 +10055,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
             how_real = ("from the orchestrator's session (it holds both repos; a launched session cannot attach one), "
                         "by subagent; write the run in the post's real_project.")
         else:
-            how_real = "in a local clone (never push); write the run in the post's real_project."
+            how_real = "in a scratch local clone or read-only (never push); write the run in the post's real_project."
         out += ["", "## The real-project check",
                 "- Rerun its `check`, then its claim on a real project: %s, %s" % (cnames, how_real),
                 "- Its post says: %s" % (json.dumps(rp, ensure_ascii=False)[:500] if rp else "NO real-project result")]
