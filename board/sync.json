@@ -1,6 +1,6 @@
 {
- "cursor": "2026-11-27T03:13:29Z",
- "db_seq": 1325,
+ "cursor": "2026-11-27T03:17:52Z",
+ "db_seq": 1334,
  "log": [
   {
    "at": "2026-11-20T02:51:15Z",
@@ -5473,6 +5473,18 @@
    "changed": 0,
    "comments_read": 0,
    "db_seq": 1325,
+   "full": false,
+   "new": 0,
+   "posts": 111,
+   "posts_removed": 0,
+   "posts_written": 0,
+   "removed": 0
+  },
+  {
+   "at": "2026-11-27T03:17:52Z",
+   "changed": 0,
+   "comments_read": 1,
+   "db_seq": 1334,
    "full": false,
    "new": 0,
    "posts": 111,
