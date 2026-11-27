@@ -1934,7 +1934,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                 "```",
                 "No shell: POST JSON `{\"path\": \"fix.patch\", \"content\": \"<the file's text>\", \"summary\": \"<one line>\", \"from\": \"<your name>\"}` "
                 "to `%s` with the header `X-Kit-Token: %s`. It shows on the card at once; the same URL with GET lists what is attached. "
-                "This token opens this card's drop box only." % (drop, sh["token"]),
+                "Text files, %d MB at most a file. This token opens this card's drop box only." % (drop, sh["token"], MAX_REPO_DOC_BYTES // (1024 * 1024)),
                 "",
                 "## 2. Write the card's result (default when you can send HTTP)",
                 "When you finish, or as soon as you are blocked, POST JSON to `%s`:" % submit_url,
@@ -2002,8 +2002,11 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         res, err = tstore.save_artifact(sh["post_id"], body.get("path"), body.get("content", ""),
                                         summary=body.get("summary", ""), by_user="share:" + str(body.get("from") or "ai"),
                                         agent_meta=body.get("agent_meta"))
+        if err == "too_large":
+            return 413, {"error": err, "max_bytes": MAX_REPO_DOC_BYTES,
+                         "why": "a file in the drop box is %d MB at most" % (MAX_REPO_DOC_BYTES // (1024 * 1024))}
         if err:
-            return (413 if err == "too_large" else 400), {"error": err}
+            return 400, {"error": err}
         return 200, res
 
     class Handler(BaseHTTPRequestHandler):

@@ -115,6 +115,16 @@ class OneLink(unittest.TestCase):
         st, raw = self._req("GET", "/_api/posts/r9-runner-step/artifacts", headers={"X-Kit-Token": tok})
         self.assertEqual(st, 200, raw)
 
+    def test_a_file_over_the_cap_is_refused_with_the_cap_named(self):
+        tok = self._runner_card_link().rsplit("/", 1)[1][:-3]
+        big = "x" * (board_server.MAX_REPO_DOC_BYTES + 1)
+        st, raw = self._req("POST", "/_api/posts/r9-runner-step/artifacts", {"path": "big.txt", "content": big}, {"X-Kit-Token": tok})
+        self.assertEqual(st, 413, raw)
+        ans = json.loads(raw)
+        self.assertEqual(ans["max_bytes"], board_server.MAX_REPO_DOC_BYTES)
+        self.assertIn("2 MB", ans["why"])
+        self.assertEqual(self.store.list_artifacts(post_id="r9-runner-step"), [])
+
     def test_an_old_share_link_reaches_the_same_page_and_drop_box(self):
         st, raw = self._req("POST", "/_api/shares", {"post_id": "r9-runner-step"}, {"X-Kit-Token": "owner-tok"})
         self.assertEqual(st, 200, raw)
