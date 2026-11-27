@@ -6,7 +6,8 @@
  "discussion": "8efbabde7fe74f8a8da5",
  "from": "owner",
  "post_id": "_orchestrator",
- "read": false,
+ "read": true,
+ "read_at": "2026-11-27T02:17:01Z",
  "text": "you can kill claude",
  "thread_id": "thr_c222ab29f653"
 }

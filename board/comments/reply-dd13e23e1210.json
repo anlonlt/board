@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T02:17:01Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_c222ab29f653",
+ "text": "Done: stopped the idle Claude daemon and spare processes (freed ~1 GB RAM, opening 6 slots on penguin) and launched **R5** (`r5-every-rule-that-differs-by-platform-says`, branch `r5`, session `board-r5`).\n\nM1's merge verification is finishing up (`test_map.py` 17/17 passed; `test_install.py` and kit-copy checks running now); once green I will land M1 onto `main`, then launch **R4** after R5 lands so it builds directly on R5's `_platform()` table."
+}
