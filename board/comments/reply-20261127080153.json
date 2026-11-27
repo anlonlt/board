@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T08:01:53Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_1bc19988768f",
+ "text": "Yes — **launched A1 now** (`a1-install-cmd-skips-linked-git-worktrees-s`, train `agy`, runner `agy`, session `85f4c56f-89d5-492e-8b83-7fc575720a36`) in `/home/anon/board-a1`:\n\n- **Why it fits in parallel:** touches only `install.py` + `tests/test_install_worktree_cmd.py` (zero overlap with R4's `scripts/kit.py`/`post_gate.py`/templates, and zero collision with the active web orchestrator). Penguin had 3 free slots (~2 GB free); A1 is instructed not to overlap `run_all_tests.py` with R4.\n- **R4 status:** nearly finished — already past `test_post_gate`, `test_board_local`, and `test_kit_cards` in `run_all_tests.py`.\n\n**What else is in the penguin/agy lane:**\n1. **Combined review of R7 + R4** — starts right when R4 reports Done.\n2. **R3** (`r3-the-kit-suggests-where-a-step-runs-from`) — waits on R4 (both edit `scripts/kit.py`), and builds on R1/R2 profiles.\n3. **R1 / CL8 (if you want them next):** R1 already has all 5 sections + guest patches (`part-r1-antigravity-web` & desktop-app-local) ready to close/review; CL8 (`worktree-cl8`, docs/emoji UI) is stalled and has no file overlap.\n\n*(Leaving `board-data`, `takeover`, and `memory` to the web orchestrator — it is actively pushing `CL71`/`CL72`/reviews on `origin/main` right now.)*"
+}
