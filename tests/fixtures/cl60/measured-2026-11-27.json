@@ -1,0 +1,143 @@
+{
+ "sessions": [
+  {
+   "id": "session_01AE1HGigXaY4ApaiTBfLGWF",
+   "label": "M12",
+   "role": "part",
+   "turns": 1,
+   "final_dot": 1,
+   "refusals": 1,
+   "refused_lengths": [
+    2696
+   ],
+   "result_lengths": [
+    1
+   ]
+  },
+  {
+   "id": "session_01AE1HGjUyLjArKFESowYgiB",
+   "label": "CL16",
+   "role": "part",
+   "turns": 1,
+   "final_dot": 1,
+   "refusals": 1,
+   "refused_lengths": [
+    1900
+   ],
+   "result_lengths": [
+    1
+   ]
+  },
+  {
+   "id": "session_01AE1HGmDCcNCZJKbZFJoqKv",
+   "label": "CL17",
+   "role": "part",
+   "turns": 3,
+   "final_dot": 3,
+   "refusals": 3,
+   "refused_lengths": [
+    140,
+    296,
+    2484
+   ],
+   "result_lengths": [
+    1,
+    1,
+    1
+   ]
+  },
+  {
+   "id": "session_01AE1HGjJUZaP5MmWsTMwbP4",
+   "label": "M10",
+   "role": "part",
+   "turns": 2,
+   "final_dot": 2,
+   "refusals": 2,
+   "refused_lengths": [
+    21,
+    3070
+   ],
+   "result_lengths": [
+    1,
+    1
+   ]
+  },
+  {
+   "id": "session_01AE1HGhcpK68znY8XoLCUm8",
+   "label": "CL58",
+   "role": "part",
+   "turns": 1,
+   "final_dot": 1,
+   "refusals": 1,
+   "refused_lengths": [
+    1729
+   ],
+   "result_lengths": [
+    1
+   ]
+  },
+  {
+   "id": "session_01AE1HGgdMHf6k4dHXTky4HD",
+   "label": "CL57",
+   "role": "part",
+   "turns": 1,
+   "final_dot": 1,
+   "refusals": 1,
+   "refused_lengths": [
+    1708
+   ],
+   "result_lengths": [
+    1
+   ]
+  },
+  {
+   "id": "session_01AE1HGhkvEUZcGXVDSarrUk",
+   "label": "Review CR-cl38",
+   "role": "review",
+   "turns": 2,
+   "final_dot": 1,
+   "refusals": 1,
+   "refused_lengths": [
+    1719
+   ],
+   "result_lengths": [
+    1,
+    166
+   ]
+  },
+  {
+   "id": "session_01AE1HGgWN6VfDjwiGRQWoGc",
+   "label": "Review CR-m11",
+   "role": "review",
+   "turns": 2,
+   "final_dot": 2,
+   "refusals": 1,
+   "refused_lengths": [
+    1164
+   ],
+   "result_lengths": [
+    1,
+    1
+   ]
+  },
+  {
+   "id": "session_01AE1HGmC2R6J7KEi3pfqnc1",
+   "label": "Review CR-m12+CR-cl58",
+   "role": "review",
+   "turns": 0,
+   "final_dot": 0,
+   "refusals": 0,
+   "refused_lengths": [],
+   "result_lengths": []
+  }
+ ],
+ "totals": {
+  "turns": 13,
+  "final_dot": 12,
+  "refusals": 11,
+  "share_first_closing_longer_than_dot": 0.846,
+  "refused_length_median": 1719,
+  "refused_length_max": 3070,
+  "refused_length_sum": 16927
+ }
+}
