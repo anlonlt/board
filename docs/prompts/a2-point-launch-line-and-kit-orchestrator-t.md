@@ -10,3 +10,6 @@ Follow-up from combined review CR-r7-r4-combined (`continue`):
 
 ## What this step answers (the owner's words, or a review's)
 - comment `CR-r7-r4-combined`: read it with `python3 -I .kit/board_cli.py get comments CR-r7-r4-combined --out-dir /tmp/src`
+
+## What this does differently
+Follow-up from CR-r7-r4-combined (continue). Unlike A1 (which fixed install_cmd overwriting ~/.local/bin/<cmd> from linked worktrees), A2 updates _launch_line() in scripts/kit.py and kit/orchestrator.template.md so agy orchestrator guides and step new output point at kit.py launch <post>, with tests in tests/test_launch_runtime.py.
