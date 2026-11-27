@@ -3,6 +3,8 @@ Board, part R1: Antigravity on the web: how far it runs the board kit, and its p
 Run `python3 -I .kit/kit.py resume --role part --post r1-antigravity-on-the-web-how-far-it-runs-t`: it prints this and how a part works here. If it fails or prints STOP, do not start: do what it says.
 
 ## The task
+**Work on `anlonlt/board`, branch `feat/streamline-doctor-memory`** (git clone https://github.com/anlonlt/board -b feat/streamline-doctor-memory; then `git fetch origin board-mirror` for the board's git copy). Never a fork or another account's copy, never `main`: the kit being tested is on that branch.
+
 Find out how far Antigravity on the web runs the board kit, and which profile it fits: like the Claude Code CLI (a computer: git, the local board, hooks), like Claude Code on the web (a GitHub clone: the board's git copy, no local server), like LMArena (no GitHub: the board's shared link only), or in between. This step runs on that platform itself (runner `antigravity-web`): the owner starts it there with this prompt.
 
 1. Reach: can it clone the repo from GitHub, read `docs/prompts/` and the board's git copy (branch board-mirror), run python3, commit and push a branch? Say what worked, with the command and its output.

@@ -12,6 +12,8 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from unittest import mock
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import temp_cleanup  # noqa: E402,F401  CL52: the folders this file makes go at exit
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = "327aee3"   # scripts/kit.py before CL20 (main it was merged with): the control compares against it byte for byte
@@ -167,6 +169,10 @@ class ResumeReadsAttachedBoards(unittest.TestCase):
                     b = self.kit.resume(self.tmp, db_path=db, alive={"s1"}, cli=cli)
                 # the import line names the review-due steps since the task list is rebuilt with them too
                 b = b.replace(" ([r] too: its task completed starts its review)", "")
+                # CL17: a crashed step is relaunched with its relaunch line, not asked about
+                b = b.replace("relaunch it with its relaunch line (`kit.py launch <post> --continue`), within the device cap, "
+                              "without asking; only a step that waits on the owner waits for his answer (CL17).",
+                              "relaunch it or ask the owner.")
                 self.assertEqual(a, b, cli)
 
 

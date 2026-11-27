@@ -94,7 +94,7 @@ def on_create(root, st, ti, tr):
             cfg = json.load(open(os.path.join(root, ".kit", "config.json"), encoding="utf-8"))
         except (OSError, ValueError):
             pass
-        if artifact_board(cfg):
+        if artifact_board(cfg) and on_web():
             hint = (" The board is an Artifact: start its local copy first (`python3 -I .kit/kit.py artifact pull`, the "
                     "calls it prints, `python3 -I .kit/kit.py artifact load`), then TaskUpdate this task or create it again.")
         return "Task %s (train %s step %s): %s; it is only in your task list.%s" % (tid, train, part, res["error"], hint)
@@ -109,10 +109,10 @@ def on_create(root, st, ti, tr):
     sent = (" It is on the attached board %s: first %s." % (res["board"], res["next"])) if res.get("artifact_write") else ""
     n = res.get("pieces") or 0
     sent = (" Its %d numbered lines are its pieces: he sees them, and the part cannot end while one is open." % n if n else "") + sent
-    return ("Task %s is train %s step %s: post %s created (planned), prompt %s written from your description%s.%s "
-            "To launch: commit and push it, TaskUpdate %s in_progress, then: %s") % (
-        tid, train, part, res["post"], res["prompt"], "" if res.get("prompt_written") else " (it existed: kept)", sent,
-        tid, res["launch"])
+    return ("Task %s is train %s step %s: post %s created (planned), its task written once, on the post%s. Its prompt %s is "
+            "generated from the post at launch and committed (CL54): to change the task, edit the post only. "
+            "To launch: TaskUpdate %s in_progress, then: %s") % (
+        tid, train, part, res["post"], sent, res["prompt"], tid, res["launch"])
 
 
 def on_completed_event(root, st, data):
@@ -173,7 +173,7 @@ def on_update(root, st, ti):
 
 PART_POST = re.compile(r"docs/prompts/([\w.-]+)\.md")
 PART_POST_ARG = re.compile(r"--role part --post ([\w.-]+)")
-PART_OPEN = re.compile(r"^\s*Your prompt (?:is (?:\S*/)?docs/prompts/|follows)")
+PART_OPEN = re.compile(r"""^\s*Your prompt (?:is [`"']?(?:\S*/)?docs/prompts/|follows)""")
 AGY_USER_REQ = re.compile(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", re.S)
 AGY_SUBAGENT_MSG = re.compile(r"\[Message\][^\n]*?\bcontent=(.*?)(?:\n</SYSTEM_MESSAGE>|\Z)", re.S)
 
@@ -246,13 +246,50 @@ def _part_post_from_branch(root):
     return hits[0] if len(hits) == 1 else ""
 
 
+def _landing(root):
+    """The project's .kit/landing.py as a module (CL50: one reading of a worktree's step), or None."""
+    f = os.path.join(root, ".kit", "landing.py")
+    if not os.path.isfile(f):
+        return None
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("kit_landing_hook", f)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.ROOT = root
+        return mod
+    except Exception:
+        return None
+
+
+def own_step(root, branch_post=None):
+    """CL50: (step, note): landing.own_step for `root`; `branch_post` (a value or a callable) is asked only when no step
+    is recorded and KIT_POST is set. Without landing.py: KIT_POST, as before."""
+    env = str(os.environ.get("KIT_POST") or "").strip()
+    la = _landing(root)
+    if la is None or not hasattr(la, "own_step"):
+        return env, ""
+    try:
+        bp = ""
+        if env and not la.recorded_step(root):
+            bp = branch_post() if callable(branch_post) else (branch_post or "")
+        return la.own_step(root, bp)
+    except Exception:
+        return env, ""
+
+
 def part_post(data, st):
     """The post of the step this session is a part of, or "".
     Note (CL44): an agy part subagent inherits KIT_ROLE=orchestrator from `kit/up` in its parent process, so an explicit
     KIT_POST or a part opening prompt (`Your prompt is docs/prompts/<post>.md`) overrides an inherited role."""
     role = str(os.environ.get("KIT_ROLE") or "").strip().lower()
     if os.environ.get("KIT_POST"):
-        return os.environ["KIT_POST"]
+        # CL50: the worktree's recorded step first (a `claude --bg` part can run in a process another launch made, its
+        # KIT_POST that launch's); KIT_POST only when nothing is recorded or it agrees. A disagreement is said once.
+        step, note = own_step(project_dir(data), lambda: _part_post_from_branch(project_dir(data)))
+        if note:
+            st["step_note"] = note
+        return step
     if role not in ("", "part", "orchestrator"):
         return ""
     if st.get("part_post") is None or (not st["part_post"] and role == "part"):
@@ -435,6 +472,7 @@ def main():
             st = {"tasks": {}}
         msg = refuse = None
         piece = part_post(data, st)
+        msg = st.pop("step_note", None)                      # CL50: KIT_POST names another step: said once
         if piece:
             if name == "update_steps":
                 args = tc.get("args") if isinstance(tc.get("args"), dict) else (data.get("tool_input") or {})

@@ -13,6 +13,8 @@ import tempfile
 import time
 import unittest
 import urllib.request
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import temp_cleanup  # noqa: E402,F401  CL52: the folders this file makes go at exit
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KIT = os.path.join(ROOT, "scripts", "kit.py")
@@ -20,8 +22,14 @@ CLI = os.path.join(ROOT, "kit", "board", "board_cli.py")
 SERVER = os.path.join(ROOT, "kit", "board", "board_server.py")
 
 def _in_temp(p):
-    t = os.path.realpath(tempfile.gettempdir())
-    return os.path.realpath(p).startswith(t.rstrip(os.sep) + os.sep)
+    """The guard's own measure (kit/test_guard.py: TMPDIR, /tmp, /var/tmp): run_all_tests.py gives a suite a TMPDIR of
+    its own (CL52), so a copy in /tmp is still a temp folder to the guard though not under TMPDIR."""
+    p = os.path.realpath(p)
+    for t in (tempfile.gettempdir(), "/tmp", "/var/tmp"):
+        t = os.path.realpath(t)
+        if t != os.sep and p.startswith(t.rstrip(os.sep) + os.sep):
+            return True
+    return False
 
 
 # the real project: this repository, or (when this runs from a copy in a temp folder, as `kit.py done` does) a folder

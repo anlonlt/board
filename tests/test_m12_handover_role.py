@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import uuid
 from pathlib import Path
 
@@ -158,6 +159,66 @@ class HandOverHowever(unittest.TestCase):
             self.assertEqual(hook.inspect_claude_transcript(tp)[1], None, "the first message alone says nothing")
         for f in ("kit_pre_compact.py", "kit_session_start.py", "kit_task_train.py"):
             self.assertIn("session_role(", (HOOK.parent / f).read_text(), f)
+
+    def _guard_hooks(self):
+        """kit_orchestrator_guard, kit_brief_guard, kit_cards_reminder, loaded from kit/hooks (their own imports)."""
+        mods = {}
+        sys.path.insert(0, str(HOOK.parent))
+        try:
+            for name in ("kit_orchestrator_guard", "kit_brief_guard", "kit_cards_reminder"):
+                sp = importlib.util.spec_from_file_location(name, HOOK.parent / (name + ".py"))
+                mods[name] = importlib.util.module_from_spec(sp)
+                sys.modules[name] = mods[name]
+                sp.loader.exec_module(mods[name])
+        finally:
+            sys.path.remove(str(HOOK.parent))
+        return mods
+
+    def _roles(self, prompt, cmds, env=None):
+        """What the three guard hooks say of a transcript (a fresh session id each, no mark, no cache)."""
+        mods = self._guard_hooks()
+        out = {}
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            clean = {k: v for k, v in os.environ.items()
+                     if k not in ("KIT_ROLE", "HARMONIZE_ROLE", "KIT_SESSION_NAME", "CLAUDE_CODE_SESSION_ID")}
+            clean.update(CLAUDE_PROJECT_DIR=root, **(env or {}))
+            with mock.patch.dict(os.environ, clean, clear=True), \
+                    mock.patch.object(mods["kit_cards_reminder"], "MARK", os.path.join(d, "no-mark")):
+                for name, mod in mods.items():
+                    sid = "m12-%s-%s" % (name, uuid.uuid4().hex[:8])
+                    tp = transcript(d, sid, prompt, cmds, 100000)
+                    out[name] = "orchestrator" if mod.is_orchestrator(
+                        {"session_id": sid, "transcript_path": tp, "cwd": root}) else "other"
+        return out
+
+    def test_takeover_reads_orchestrator_in_the_three_guard_hooks(self):
+        """CR-m12 redirect: kit_orchestrator_guard, kit_brief_guard and kit_cards_reminder use session_role: the
+        takeover fixture (an owner question, then `kit.py resume --role orchestrator`) reads `orchestrator` in all three,
+        even launched as a part (KIT_ROLE=part); a question alone and a part read `other`."""
+        both = {"kit_orchestrator_guard": "orchestrator", "kit_brief_guard": "orchestrator",
+                "kit_cards_reminder": "orchestrator"}
+        self.assertEqual(self._roles(QUESTION, [TAKEOVER]), both)
+        self.assertEqual(self._roles(QUESTION, [TAKEOVER], {"KIT_ROLE": "part"}), both)
+        self.assertEqual(set(self._roles(QUESTION, ["ls"]).values()), {"other"})
+        self.assertEqual(set(self._roles("Your prompt is docs/prompts/m12-x.md: read it and do it.",
+                                         ["python3 -I .kit/kit.py resume --role part --post m12-x"]).values()), {"other"})
+        for f in ("kit_orchestrator_guard.py",):
+            self.assertIn("session_role", (HOOK.parent / f).read_text(), f)
+
+    def test_a_no_is_read_again_after_a_takeover(self):
+        """The guard caches a no until the transcript's new lines hold a takeover's mark."""
+        g = self._guard_hooks()["kit_orchestrator_guard"]
+        with tempfile.TemporaryDirectory() as d:
+            root = project(d)
+            clean = {k: v for k, v in os.environ.items() if k not in ("KIT_ROLE", "HARMONIZE_ROLE")}
+            clean["CLAUDE_PROJECT_DIR"] = root
+            sid = "m12-later-%s" % uuid.uuid4().hex[:8]
+            with mock.patch.dict(os.environ, clean, clear=True):
+                tp = transcript(d, sid, QUESTION, ["ls"], 100000)
+                self.assertFalse(g.is_orchestrator({"session_id": sid, "transcript_path": tp, "cwd": root}))
+                tp = transcript(d, sid, QUESTION, ["ls", TAKEOVER], 100000)
+                self.assertTrue(g.is_orchestrator({"session_id": sid, "transcript_path": tp, "cwd": root}))
 
     def test_compaction_notice_for_a_takeover(self):
         """kit_session_start after a compaction tells a session that took over to hand over (the same role)."""

@@ -90,17 +90,17 @@ class InstallMultiRepo(unittest.TestCase):
     def test_user_hooks_33_idempotent_user_lines_kept(self):
         r = self.uh("install")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("33 hooks", r.stdout)
+        self.assertIn("34 hooks", r.stdout)
         first = self.user.read_bytes()
         s = json.loads(first)
-        self.assertEqual(n_hooks(s), 33 + 1)
+        self.assertEqual(n_hooks(s), 34 + 1)
         self.assertEqual(s["model"], "opus")
         self.assertIn("echo mine", json.dumps(s))
         r = self.uh("install")
         self.assertIn("0 changed", r.stdout)
         self.assertEqual(self.user.read_bytes(), first)
         r = self.uh("remove")
-        self.assertIn("33 lines", r.stdout)
+        self.assertIn("34 lines", r.stdout)
         s = json.loads(self.user.read_text())
         self.assertEqual(n_hooks(s), 1)
 
@@ -166,15 +166,28 @@ class HandoverAndResume(unittest.TestCase):
         clerk = next(p for p in (self.t / ".kit" / "clerk.md", self.t / ".kit" / "claude-cli" / "clerk.md") if p.exists())
         self.assertIn('environment_id: "env_01TestAbc"', clerk.read_text())
 
-    def test_resume_has_no_add_repo_line(self):
-        r = self.kit("resume", "--role", "orchestrator", env={"KIT_STALE_OK": "1"})
+    def _resume_no_add_repo(self, sid):
+        # CL58: with a session id (every web session has one) the second resume is M5's delta: recording the
+        # environment id must still show there, never "nothing new"
+        env = {"KIT_STALE_OK": "1", "CLAUDE_CODE_SESSION_ID": sid, "KIT_SESSION_ID": ""}
+        r = self.kit("resume", "--role", "orchestrator", env=env)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("add_repo", r.stdout)
         self.assertIn("web-env ask", r.stdout)            # not asked yet: post the question
         self.kit("web-env", "--id", "env_01TestAbc")
-        r = self.kit("resume", "--role", "orchestrator", env={"KIT_STALE_OK": "1"})
+        r = self.kit("resume", "--role", "orchestrator", env=env)
         self.assertNotIn("add_repo read", r.stdout)
         self.assertIn("env_01TestAbc", r.stdout)
+        self.assertNotIn("nothing new", r.stdout)
+        return r.stdout
+
+    def test_resume_has_no_add_repo_line(self):
+        self._resume_no_add_repo("")
+
+    def test_resume_has_no_add_repo_line_with_a_session_id(self):
+        out = self._resume_no_add_repo("cl58-test-session")
+        self.assertIn("what changed since", out)          # the delta, and the record is in it
+        self.assertIn("## Web environment", out)
 
 
 class StateFromTheBoard(unittest.TestCase):

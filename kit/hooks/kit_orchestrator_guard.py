@@ -90,31 +90,78 @@ def first_prompt(path):
     return ""
 
 
+# M12: what in a transcript's new lines can make a session the orchestrator (a takeover mid-session): only then is the
+# transcript read again by the one role function
+TAKEOVER_TEXT = re.compile(r"_orchestrator|--role[ =]orchestrator|kit\.py\s+(?:launch|land)\b|"
+                           r"(?:orchestrator|takeover)\.md|start as the orchestrator", re.I)
+
+
+def _transcript_size(tp):
+    try:
+        return os.path.getsize(tp)
+    except OSError:
+        return -1
+
+
+def _new_text(tp, start):
+    try:
+        with open(tp, "rb") as fh:
+            fh.seek(max(0, start))
+            return fh.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
 def is_orchestrator(data):
-    role = os.environ.get("KIT_ROLE") or ""
-    if role:
-        return role == "orchestrator"
+    """M12: THE orchestrator test of every hook (this guard, kit_brief_guard, kit_cards_reminder): kit_pre_compact's
+    `session_role` (usage.py `role_of`, the usage row's): the `_orchestrator` post's session_id, a hand-over, a takeover
+    mid-session all count, KIT_ROLE when nothing says. Plus HARMONIZE_ROLE and the orchestrator branch prefix. A yes is
+    kept for the session; a no is read again only when the transcript's new lines hold a takeover's mark."""
+    data = data or {}
     if os.environ.get("HARMONIZE_ROLE") == "orchestrator":
         return True
+    tp = str(data.get("transcript_path") or data.get("transcriptPath") or "")
+    env = os.environ.get("KIT_ROLE") or ""
+    if not tp or not os.path.isfile(tp):
+        if env:
+            return env == "orchestrator"
     sid = re.sub(r"[^A-Za-z0-9._-]", "_", str(data.get("session_id") or "x"))
     cache = os.path.join(tempfile.gettempdir(), "kit-orch-role-%s" % sid)
+    size = _transcript_size(tp) if tp else -1
     try:
-        return open(cache).read() == "orchestrator"
+        with open(cache, encoding="utf-8") as fh:
+            seen = fh.read().strip()
     except OSError:
-        pass
+        seen = ""
+    if seen == "orchestrator":
+        return True
+    if seen.startswith("other") and env == seen[5:].partition(":")[0]:
+        try:
+            upto = int(seen.rpartition(":")[2])
+        except ValueError:
+            upto = -1
+        if upto >= 0 and (size <= upto or not TAKEOVER_TEXT.search(_new_text(tp, upto))):
+            return False
+    root = project_dir(data)
     found = False
     prefix = str((config(data).get("kit") or {}).get("orchestrator_branch_prefix") or "")
     if prefix:
         try:
-            br = subprocess.run(["git", "-C", project_dir(data), "rev-parse", "--abbrev-ref", "HEAD"],
+            br = subprocess.run(["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
                                 capture_output=True, text=True, timeout=5).stdout.strip()
             found = br.startswith(prefix)
         except (OSError, subprocess.SubprocessError):
             pass
     if not found:
-        found = bool(ORCH_TEXT.search(first_prompt(str(data.get("transcript_path") or ""))))
+        first = "orchestrator" if ORCH_TEXT.search(first_prompt(tp)) else None
+        try:
+            from kit_pre_compact import session_role
+            found = session_role(data, root, first) == "orchestrator"
+        except Exception:  # noqa: BLE001 - the role function failing falls back to the first prompt, then KIT_ROLE
+            found = (env or first) == "orchestrator"
     try:
-        open(cache, "w").write("orchestrator" if found else "other")
+        with open(cache, "w", encoding="utf-8") as fh:
+            fh.write("orchestrator" if found else "other%s:%d" % (env, size))
     except OSError:
         pass
     return found
@@ -135,10 +182,10 @@ READ_WAY = ("a whole collection is read only through the kit: `python3 -I .kit/k
             "`kit.py post <id>`, `kit.py open`, `kit.py since <time>`; one document: ArtifactData `get`; a targeted "
             "lookup: `query` with a `where` and limit <= 5")
 STEP_WAY = ("plan the step with TaskCreate, metadata {\"train\": ..., \"part\": ...}: the task-train hook writes its post "
-            "and its prompt docs/prompts/<id>.md and answers with the launch line; local changes go to the Artifact "
+            "(the task, written once) and answers with the launch line; `kit.py launch` generates docs/prompts/<id>.md from it; local changes go to the Artifact "
             "with `python3 -I .kit/kit.py artifact push`")
 LAUNCH_WAY = ("launch a part from its prompt file: TaskCreate {train, part} first (the hook writes "
-              "docs/prompts/<id>.md), `python3 -I .kit/kit.py launch <id>` (it prints the call), then create_session with the prompt \"Your prompt is docs/prompts/<id>.md: read "
+              "its post), `python3 -I .kit/kit.py launch <id>` (it generates and commits docs/prompts/<id>.md from the post, and prints the call), then create_session with the prompt \"Your prompt is docs/prompts/<id>.md: read "
               "it and do it.\" (at most %d characters, starting so; a successor orchestrator: tag `orchestrator`; a clerk: "
               "tag `board-clerk`; a review: tag `review`; the title is not read)" % PROMPT_MAX)
 

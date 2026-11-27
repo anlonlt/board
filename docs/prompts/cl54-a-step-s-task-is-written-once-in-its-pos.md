@@ -9,6 +9,10 @@ A step's task is written once, in its post; the prompt file is generated from th
 2. A relaunch or takeover regenerates it from the post when the post changed since, as a new commit (the history shows each version).
 3. `done` and the reviews read the task from the post; a prompt file that differs from its post's task is named by doctor.
 4. Tests: a task edited on the post reaches the next launch's prompt with no other edit; a prompt edited by hand is named by doctor.
+5. Every step names where to work, in its post and so in its prompt: the repo and the branch (`step new` records the current branch; a runner card for a platform started by hand says them first, with the clone command). R1 and R2 said "clone the repo" with no branch; the Antigravity desktop app ran in another account's workspace and found the right branch by itself (it says it built on anlonlt/board feat/streamline-doctor-memory c053208), but nothing in the step made sure of it.
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+CL54: builds on CL49/CL53 (launch and fresh start); the task is written in two places today (post and prompt file), CL54 keeps it once in the post and generates the prompt at launch.
