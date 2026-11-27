@@ -2396,12 +2396,18 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
 
         def _send_json(self, code, obj):
             raw = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+            ae = (self.headers.get("Accept-Encoding") or "").lower()
+            use_gzip = "gzip" in ae and len(raw) >= 1024
+            payload = gzip.compress(raw, compresslevel=6) if use_gzip else raw
             self.send_response(code)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(raw)))
+            if use_gzip:
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Vary", "Accept-Encoding")
+            self.send_header("Content-Length", str(len(payload)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            self.wfile.write(raw)
+            self.wfile.write(payload)
 
         def _read_json(self):
             try:
