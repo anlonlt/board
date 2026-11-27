@@ -6,7 +6,8 @@
  "discussion": "3aec2f488e424ae59968",
  "from": "owner",
  "post_id": "_orchestrator",
- "read": false,
+ "read": true,
+ "read_at": "2026-11-27T03:35:03Z",
  "reply_to": "reply-0c0469ccf834",
  "text": "And why is r5 taking so long ????",
  "thread_id": "thr_522fb6d7721f"
