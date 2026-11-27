@@ -131,28 +131,24 @@
    "version": 2
   },
   "kit+2F~claude+2F~consultant.template.md": {
-   "sha": "82fc2e48458dd75bf1a4b59c568c678784d45a495cfb0005450b2afaa9dc8f79",
-   "version": 2
-  },
-  "kit+2F~claude+2F~orchestrator.template.md": {
-   "sha": "4ee2ec82394578fcfac49f982b88115197348beaedf9f22ab2a0b4ad0e82d711",
+   "sha": "2643cb16be86cdc2e4c79e721ed1fba8d32a0bf41ed9977ed03c7f7f8ebb908a",
    "version": 4
   },
   "kit+2F~claude+2F~orchestrator.template.md": {
-   "sha": "cb17b1fbf2e2ca622a48a6a23c9467efd2c6c1f98d3438bf10ee44f66e0d46d7",
-   "version": 4
+   "sha": "811eadf9e045754d27368a5646e4d2029b149da3eeb3e108e1eb64bc23b7d3b2",
+   "version": 6
   },
   "kit+2F~claude+2F~part.template.md": {
-   "sha": "7564580dda5fdd73b9ddd64a0161d5ba7a33e56c1a07d67818d80f5666acaa7d",
-   "version": 2
+   "sha": "4bc3137af9f2fa8eeaf5ef8ead90b89f8161bc01dee1b4674071cdf658ab6fd6",
+   "version": 4
   },
   "kit+2F~claude-cli+2F~ORCHESTRATOR.template.md": {
    "sha": "9e486179a0e1c71e4b8e67789c37d28c14bc6e4c31bc323243e6d228a7b05a0e",
    "version": 4
   },
   "kit+2F~claude-cli+2F~clerk.template.md": {
-   "sha": "492ef01c4b986a4a330a13957a52b01064ceb8e6482429444d3ca0acf4c9eb57",
-   "version": 5
+   "sha": "59b4e1bbd694497cb67688491769fa00159bd697c0a03b0ca1e29c2076810a72",
+   "version": 6
   },
   "kit+2F~claude-cli+2F~consultant.template.md": {
    "sha": "0a07a00d296623ceb3e614af1e43999dc2f45f5a65ef03e11be63182391977b8",
