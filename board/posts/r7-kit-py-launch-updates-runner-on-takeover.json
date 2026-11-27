@@ -25,6 +25,7 @@
  "created_at": "2026-11-27T03:25:51Z",
  "from": "orchestrator",
  "handoff": "Any orchestrator (agy, Claude CLI, or Claude web) can now use `python3 -I .kit/kit.py launch <post> [--take] [--cli agy|claude]` uniformly: `runner` is always rewritten to the actual launcher (`agy`, `claude-cli`, or `claude-web`) on the post and Trains row, and agy launches check device capacity, prepare or adopt the step branch (including `origin/<branch>`), and print the exact `invoke_subagent(...)` call. Any future edit to `PLATFORM_RULES` must also update the pinned `EXPECTED_PLATFORM_RULES` dict in `tests/test_platform_matrix.py`.",
+ "landed": "2223abe39",
  "launched_at": "2026-11-27T04:03:38Z",
  "not_checked": [
   "Live cross-machine remote `git fetch` against GitHub during an agy takeover (covered locally via a bare git remote in `test_launch_cli_parses_cli_agy_flag_and_adopts_remote_branch`)"
@@ -83,6 +84,6 @@
  "task": "When a step is launched or taken over on a computer (CLI or agy), kit.py launch must update the post runner field to the actual runner taking it (agy, claude-cli, or claude-web) and support agy launches/takeovers without hard-coding claude --bg.\n\n1. In scripts/kit.py (`launch`), update `runner` in the post fields on every launch and `--take` (`claude-web`, `agy`, or `claude-cli`) so a step planned for one runner never stays stale after another runner takes it over.\n2. When running on agy (or with `--cli agy`), `launch` in scripts/kit.py checks device capacity, prepares or adopts the step branch, records the takeover cleanly (`runner: \"agy\"`), and prints the exact `invoke_subagent` call instead of spawning `claude --bg`.\n3. Tests in `tests/test_launch_runtime.py`: takeover updates `runner` from `claude-web` to `agy` and `claude-cli`; agy launch/takeover never invokes `claude --bg`; `--web` launch keeps `runner: \"claude-web\"`.",
  "title": "kit.py launch updates runner on takeover and supports agy launches",
  "train": "runners",
- "updated_at": "2026-11-27T08:30:16Z",
+ "updated_at": "2026-11-27T08:40:30Z",
  "verdict": "Launching or taking over any step now updates its runner to the actual launcher taking it, and Antigravity launches prepare or adopt the branch and print the subagent launch call instead of running Claude in the background."
 }
