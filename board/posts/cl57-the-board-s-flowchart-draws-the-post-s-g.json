@@ -56,12 +56,12 @@
  },
  "review": "continue",
  "review_commit": "103a53e786b0aba0571acfbbc1a870c04922dd7a",
- "review_id": "CR-cl57-the-board-s-flowchart-draws-the-post-s-g-2",
- "review_orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "review_id": "CR-cl57-the-board-s-flowchart-draws-the-post-s-g-3",
+ "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "review_orchestrator_device": "web",
- "review_orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
- "review_session": "session_01AE1HGiRuGUAeiaNG7Qu2wp",
- "review_started": "2026-11-27T03:16:43Z",
+ "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_session": "session_01AE1HGiP3csFGE59Ywexskk",
+ "review_started": "2026-11-27T03:43:42Z",
  "session_id": "session_01AE1HGgdMHf6k4dHXTky4HD",
  "sources": [
   "CR-cl36-a-part-s-result-lives-in-its-post-post-b"
@@ -100,7 +100,7 @@
  "task": "The board's flowchart renderer draws the graph a post's mermaid block says: each node once, every edge, picture labels kept.\n\nCR-cl36 (redirect, 2026-11-27): on CL36's own post at 390 px, `renderMermaidBlock` (kit/board/shim.js) drew 8 boxes in one column for a 6-node, 5-edge hub; \"Post body\" appeared 4 times and the edge `E[\"![picture](repo/path.png)\"] --> B` was missing. Four-backtick inline code (```` ```mermaid ````) shows as broken backtick fragments; the table's \"now\" column is cut at phone width.\n\n1. `renderMermaidBlock` draws a graph: one box per node id, every edge, a label holding `![..](..)` or brackets kept as text.\n2. Inline code spans with 3+ backticks render as code.\n3. Tests (kit/board/test_page_body.js) on CL36's post body as the fixture: count nodes (6, each once) and edges (5); they must fail on today's renderer before the fix.\n4. Check it at 390 px and desktop on the local board page; a picture of each in the post.\n",
  "title": "The board's flowchart draws the post's graph: each node once, every edge",
  "train": "cli",
- "updated_at": "2026-11-27T03:19:05Z",
+ "updated_at": "2026-11-27T03:45:45Z",
  "verdict": "The board's flowchart now draws the post's graph: CL36's diagram shows its 6 nodes once each and all 5 edges, the picture input included, at 390 px and at desktop width.",
  "working_by": ""
 }

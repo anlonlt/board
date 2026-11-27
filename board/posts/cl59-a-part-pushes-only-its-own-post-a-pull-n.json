@@ -39,12 +39,12 @@
  "part": "CL59",
  "planned_by": "orchestrator",
  "proof": {
-  "at": "2026-11-27T03:19:38Z",
+  "at": "2026-11-27T03:37:03Z",
   "branch": "cl59",
-  "commit": "77f9fb2",
+  "commit": "86f219a3",
   "key": "d9b0049c5b6d16fa",
   "needs_real": true,
-  "sha": "77f9fb277f2e519bb135f9982b4b4d857ab38cb0"
+  "sha": "86f219a33eb78aeca6154e516a584e21cb27d91b"
  },
  "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "review_orchestrator_device": "web",
@@ -90,7 +90,7 @@
  "task": "A part sends its own post to the live board in one command, never other sessions' writes.\n\nOwner, 2026-11-27 (screenshot of CL17's session): \"How did it have so many failed commands? Was it stupid?\" CL17 pulled only its own post (`artifact pull --post`), then `artifact push` diffed the whole local copy against that partial pull and built 330 unpinned writes; the push has no single-post option, the guard refuses a hand-made ArtifactData write, and refuses a pull while built batches wait. The part tried four ways and stopped. Web orchestrator 2 hit the same today: hand-filtering batches, conflict comments on _trains at every sync.\n\n1. `kit.py artifact push --post <id>` (and the comments it wrote) builds only those writes, pinned to the versions read.\n2. A push after a partial pull never sends documents the pull did not read.\n3. A pull is allowed while batches wait: it rebuilds them after loading, never deadlocks.\n4. The generated cards (_dashboard, _trains) are never a two-sided conflict: the newer build wins, no conflict comment.\n5. Tests for each; replay CL17's case and count writes (1 post + its comments).\n",
  "title": "A part pushes only its own post; a pull never deadlocks on waiting batches",
  "train": "board-data",
- "updated_at": "2026-11-27T03:19:38Z",
+ "updated_at": "2026-11-27T03:37:03Z",
  "verdict": "A part's push now carries only its own post and comments, pinned to the versions it read; a push never sends what its pull did not read; a pull no longer deadlocks on waiting batches.",
  "working_by": "owner"
 }

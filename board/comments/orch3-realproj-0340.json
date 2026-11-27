@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T03:36:42Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "Blocked, your call: CL17, CL50, CL54, CL56, CL59 and CL60 say Done, but their reviews can't start until each runs once on a real project (Harmonize), and this web session was refused permission to attach anlonlt/harmonize. Options: (a) allow add_repo for this session (a permission rule, or say so here), and I run the six checks; (b) the Antigravity orchestrator on penguin runs them from its Harmonize clone. M4's review is running. CL57 waits on a third review or CL65."
+}

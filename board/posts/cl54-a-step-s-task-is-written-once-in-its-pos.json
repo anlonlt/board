@@ -1,17 +1,42 @@
 {
- "body": "A step's task is written once, in its post; the prompt file is generated from the post at launch, never edited by hand. Today `step new` writes the post and docs/prompts/<step>.md at once, and the kit never overwrites the prompt: changing a task means editing both by hand (on 2026-11-26 CL49, M10, R6 and CL51 were each edited twice), and the two can drift apart.\n\n1. `step new` writes the post only; `kit.py launch` (every platform, the web's create_session included) generates the prompt from the post as it is then, commits it, and launches: the record of what each part was told stays in git next to what it did, made by the script, never by hand. In scripts/kit.py.\n2. A relaunch or takeover regenerates it from the post when the post changed since, as a new commit (the history shows each version).\n3. `done` and the reviews read the task from the post; a prompt file that differs from its post's task is named by doctor.\n4. Tests: a task edited on the post reaches the next launch's prompt with no other edit; a prompt edited by hand is named by doctor.\n",
+ "artifacts": [
+  "kit/claude-cli/ORCHESTRATOR.template.md",
+  "kit/generic/orchestrator.template.md",
+  "kit/hooks/kit_orchestrator_guard.py",
+  "kit/hooks/kit_task_train.py",
+  "scripts/kit.py",
+  "tests/test_cl54_prompt_from_post.py",
+  "tests/test_claims_notify.py",
+  "tests/test_step_attached_board.py",
+  "tests/test_train_and_task_train.py"
+ ],
+ "bars": [
+  "7 of 7 new tests pass (tests/test_cl54_prompt_from_post.py): a task edited on the post reaches the next launch's prompt with no other edit, as one new commit; a hand edit is named by doctor",
+  "81 of 81 suites pass (run_all_tests.py --all)",
+  "Live, on this step: 1 of 1 regenerations added the item 5 my prompt lacked (it had been added to the post later), as commit 0d5e993, with no edit by hand",
+  "Doctor on this board today: 4 open steps' prompts say a task their post does not (cl56, r1, r2, r5), vs 0 for CL54 after its regeneration; 2 finished steps differ too, kept as history"
+ ],
+ "body": "A step's task now lives in one place, its post. To change a task, edit the post only: the next launch rewrites the prompt from it and commits it, so git still records what each part was told. Each prompt now also says which repo and branch to work in.\n\n### What changed, by piece\n1. **Planning writes the post only.** `step new` (and the TaskCreate hook) no longer writes docs/prompts/<post>.md. `kit.py launch` (CLI, web, and an attached board's clone) generates it from the post as it is then, commits that one path (`prompt(<part>): generated from post <id>`), then starts the part. On the web the commit is pushed to the branch that create_session clones; if that push is refused, the prompt goes in the start message (CL40). agy has no `launch`, so its launch line now runs `kit.py step prompt <post>` first.\n2. **A relaunch or takeover regenerates it.** When the post changed, the new prompt is a new commit (`regenerated, the post changed`), so the history shows each version. When nothing changed, no commit is made. A post from before CL54 that holds no `task` keeps its file as it is, so no older prompt is lost.\n3. **Reading the task from the post.** `resume --role part` builds the task from the post, and the review's acceptance lines come from the post's task. `done` never read the prompt. Doctor names, as an issue, an open step whose prompt's \"The task\" says something its post does not. A finished step that differs is one info line (history, kept). `step differs` now writes on the post only.\n4. **Tests.** tests/test_cl54_prompt_from_post.py: a post edit reaches the next launch with no other edit (and one new commit); a CLI part's worktree holds the regenerated prompt; a hand edit is named by doctor (open step: issue, finished: line); resume and review read the post; a post with no task keeps its file; step new writes the post only, with where to work; the runner queue says where. Updated: test_train_and_task_train and test_step_attached_board (step new no longer writes the prompt), test_claims_notify (its mocked launch must not write a prompt into the real repo; the CL48 test guard caught this).\n5. **Where to work.** `step new` records `work_branch` (the current branch) and `repo` on the post. The prompt then opens with \"## Where to work\", which gives the repo, the branch and the clone command. In `kit.py queue --runner R`, each card a platform started by hand now shows a `where:` line, with the same clone command.\n\n### Board sync note\nTurn 1's `artifact reconcile` wanted 372 writes with no version pin, only because I had pulled my own post and not the whole board. I did not send them. The orchestrator's full pull and reconcile cover that.",
  "branch": "cl54",
+ "breaks": "revert",
+ "check": "python3 -m unittest tests.test_cl54_prompt_from_post",
  "claimed_at": "2026-11-27T03:27:30Z",
  "column": "info",
  "created_at": "2026-11-26T22:50:24Z",
  "differs": "CL54: builds on CL49/CL53 (launch and fresh start); the task is written in two places today (post and prompt file), CL54 keeps it once in the post and generates the prompt at launch.",
  "from": "orchestrator",
+ "handoff": "The orchestrator: edit a task on the post only. `kit.py launch` (or `kit.py step prompt <post>` before an agy invoke_subagent) rewrites and commits docs/prompts/<post>.md. Reinstall the kit in other projects (install.py --update) so their .kit/kit.py gets this. Doctor names any open step whose prompt drifted from its post (today: cl56, r1, r2, r5).",
  "launched_at": "2026-11-27T03:11:25Z",
  "launched_out_of_order": {
   "at": "2026-11-27T03:11:25Z",
   "was": "R2 goes first (place 13, CL54 is 19): feature, by date (no fact sets it apart); launch `r2-gemini-tasks-how-far-it-runs-the-board-k`",
   "why": "R2/R3 are the agy orchestrator's (owner's split 02:31); this web step shares no file with them"
  },
+ "not_checked": [
+  "A real web launch through create_session. The tests run a web launch with a faked session; there the push of the prompt commit fails (no origin), so the prompt goes in the start message (the CL40 path)",
+  "A real agy launch: only the printed line is changed (it now runs `step prompt <post>` first)",
+  "An attached-board launch from Harmonize: the code now rewrites the clone's prompt when it differs from the post, but no test runs it end to end"
+ ],
  "orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "orchestrator_device": "web",
  "orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
@@ -19,11 +44,20 @@
  "part": "CL54",
  "planned_by": "orchestrator",
  "priority": 1,
+ "proof": {
+  "at": "2026-11-27T03:32:17Z",
+  "branch": "cl54",
+  "commit": "e346d1c",
+  "key": "604605ae32e81052",
+  "needs_real": true,
+  "sha": "e346d1c00c28d301fc1cf6888e5dfa606e335151"
+ },
  "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "review_orchestrator_device": "web",
  "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "runner": "claude-web",
  "session_id": "session_01AE1HGjRnr9HjFKPVLAiSso",
+ "started_at": "2026-11-27T03:12:34Z",
  "status": "in progress",
  "subtasks": [
   {
@@ -33,31 +67,32 @@
    ],
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "step new writes the post only"
   },
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "A relaunch or takeover regenerates it from the post when the post changed since, as a new commit..."
   },
   {
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "done and the reviews read the task from the post"
   },
   {
    "from": "task",
    "n": 4,
-   "status": "open",
+   "status": "done",
    "title": "Tests"
   }
  ],
  "task": "A step's task is written once, in its post; the prompt file is generated from the post at launch, never edited by hand. Today `step new` writes the post and docs/prompts/<step>.md at once, and the kit never overwrites the prompt: changing a task means editing both by hand (on 2026-11-26 CL49, M10, R6 and CL51 were each edited twice), and the two can drift apart.\n\n1. `step new` writes the post only; `kit.py launch` (every platform, the web's create_session included) generates the prompt from the post as it is then, commits it, and launches: the record of what each part was told stays in git next to what it did, made by the script, never by hand. In scripts/kit.py.\n2. A relaunch or takeover regenerates it from the post when the post changed since, as a new commit (the history shows each version).\n3. `done` and the reviews read the task from the post; a prompt file that differs from its post's task is named by doctor.\n4. Tests: a task edited on the post reaches the next launch's prompt with no other edit; a prompt edited by hand is named by doctor.\n5. Every step names where to work, in its post and so in its prompt: the repo and the branch (`step new` records the current branch; a runner card for a platform started by hand says them first, with the clone command). R1 and R2 said \"clone the repo\" with no branch; the Antigravity desktop app ran in another account's workspace and found the right branch by itself (it says it built on anlonlt/board feat/streamline-doctor-memory c053208), but nothing in the step made sure of it.",
  "title": "A step's task is written once, in its post; the prompt is generated at launch",
  "train": "takeover",
- "updated_at": "2026-11-27T03:11:57Z",
+ "updated_at": "2026-11-27T03:32:17Z",
+ "verdict": "Yes: planning writes the post only, every launch makes the prompt from the post and commits it (a new commit when the post changed), and doctor names a prompt that says something else.",
  "working_by": "owner"
 }

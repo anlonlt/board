@@ -1,0 +1,48 @@
+{
+ "body": "Owner, 2026-11-27 in chat: \"Not this problem again? The add repo problem?\"\n\nFound (orchestrator 3, 03:36): `.claude/settings.json` has the CL38 allow rule `mcp__claude-code-remote__add_repo`, yet in auto mode the classifier refused `add_repo anlonlt/harmonize` (\"Unauthorized Access\"), and then refused `kit.py attach anlonlt/harmonize` too. So CL38's fix (an allow rule) does not hold under auto mode. Six Done steps (CL17, CL50, CL54, CL56, CL59, CL60) are stuck on their Harmonize real-project run because of it. CL39 built the other way (one web environment holding every repo, `install.py --web-multi`), but the kit's own repo has `kit.web_env` off, so its sessions still start with anlonlt/board alone.\n\nDone when:\n1. The kit repo runs `install.py . --update --web-multi yes --web-repos anlonlt/board,anlonlt/harmonize`; `kit.py web-env` prints the create_environment call; the owner approves it once; new orchestrator and part sessions start with Harmonize already checked out (no add_repo at all).\n2. The real-project gate, on the web, finds Harmonize in that checkout and runs the post's command there; when Harmonize is missing it says which environment to use, never \"attach it\".\n3. README § Runners and CL38's post say that an allow rule does not pass the auto-mode classifier, so add_repo is never the kit's way on the web.\n4. Test: a web session with `kit.web_env` on and both repos present runs the real-project check without add_repo. `python3 scripts/run_all_tests.py` green.\n",
+ "column": "info",
+ "created_at": "2026-11-27T03:39:00Z",
+ "from": "orchestrator",
+ "kind": "bug",
+ "part": "CL68",
+ "planned_by": "orchestrator",
+ "removed": true,
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "install.py",
+    "kit.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "The kit repo runs install.py . --update --web-multi yes --web-repos anlonlt/board,anlonlt/harmonize"
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "The real-project gate, on the web, finds Harmonize in that checkout and runs the post's command..."
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "README § Runners and CL38's post say that an allow rule does not pass the auto-mode classifier, so..."
+  },
+  {
+   "files": [
+    "scripts/run_all_tests.py"
+   ],
+   "from": "task",
+   "n": 4,
+   "status": "open",
+   "title": "Test"
+  }
+ ],
+ "task": "Owner, 2026-11-27 in chat: \"Not this problem again? The add repo problem?\"\n\nFound (orchestrator 3, 03:36): `.claude/settings.json` has the CL38 allow rule `mcp__claude-code-remote__add_repo`, yet in auto mode the classifier refused `add_repo anlonlt/harmonize` (\"Unauthorized Access\"), and then refused `kit.py attach anlonlt/harmonize` too. So CL38's fix (an allow rule) does not hold under auto mode. Six Done steps (CL17, CL50, CL54, CL56, CL59, CL60) are stuck on their Harmonize real-project run because of it. CL39 built the other way (one web environment holding every repo, `install.py --web-multi`), but the kit's own repo has `kit.web_env` off, so its sessions still start with anlonlt/board alone.\n\nDone when:\n1. The kit repo runs `install.py . --update --web-multi yes --web-repos anlonlt/board,anlonlt/harmonize`; `kit.py web-env` prints the create_environment call; the owner approves it once; new orchestrator and part sessions start with Harmonize already checked out (no add_repo at all).\n2. The real-project gate, on the web, finds Harmonize in that checkout and runs the post's command there; when Harmonize is missing it says which environment to use, never \"attach it\".\n3. README § Runners and CL38's post say that an allow rule does not pass the auto-mode classifier, so add_repo is never the kit's way on the web.\n4. Test: a web session with `kit.web_env` on and both repos present runs the real-project check without add_repo. `python3 scripts/run_all_tests.py` green.\n",
+ "title": "Harmonize is in every web session from the start: no add_repo, which auto mode refuses despite CL38's rule",
+ "train": "board-data",
+ "updated_at": "2026-11-27T03:40:30Z"
+}

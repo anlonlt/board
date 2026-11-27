@@ -43,12 +43,12 @@
  "planned_by": "orchestrator",
  "priority": 2,
  "proof": {
-  "at": "2026-11-27T03:28:18Z",
+  "at": "2026-11-27T03:34:39Z",
   "branch": "cl50",
-  "commit": "50b00a6",
+  "commit": "d8e7b0f",
   "key": "d572ae856238cb22",
   "needs_real": true,
-  "sha": "50b00a6a572626d10bb7266cf348f70a284d6ff9"
+  "sha": "d8e7b0fe36842434ca8d0b6def4d8aba0d582a92"
  },
  "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "review_orchestrator_device": "web",
@@ -81,7 +81,7 @@
  "task": "A part launched with `claude --bg` knows its own step. CL44's part was started while M1's part had just been launched, and its environment named M1's post (KIT_POST): its automatic save commits were labelled with M1's name. A likely cause: `claude --bg` hands the work to a warm spare process made earlier, whose environment is not the one the launch passed (the launch sets KIT_POST, KIT_ROLE and the task list id in its subprocess environment).\n\n1. Confirm the cause: launch two parts one after the other and read each session's KIT_POST.\n2. A part's step never rests on the environment alone: the launch records the worktree's step (`.kit/run/step` in the worktree, or the branch's post), and the hooks read that first; KIT_POST only when it agrees.\n3. When the two disagree, the hooks say so once, never label commits with the other step.\n",
  "title": "A part launched in the background knows its own step",
  "train": "takeover",
- "updated_at": "2026-11-27T03:28:18Z",
+ "updated_at": "2026-11-27T03:34:39Z",
  "verdict": "Yes for the fix: the launch writes the step into the worktree before the session starts, saves and hooks read it first, and a disagreeing environment is said once; the cause itself is not yet confirmed live.",
  "working_by": "owner"
 }

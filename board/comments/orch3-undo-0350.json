@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T03:34:13Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "Owner, 2026-11-27 in chat: \"Why are you taking over antigravity orchestrator messages?\" My mistake: at takeover I set this post's session_id to my web session, as the takeover steps say, which overrode your decision that two orchestrators run side by side. Put back to the Antigravity orchestrator (c68653ea-...). I keep only the web parts orchestrator 2 launched."
+}

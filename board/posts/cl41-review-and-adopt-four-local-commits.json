@@ -118,6 +118,8 @@
  "created_at": "2026-11-26T00:19:30Z",
  "from": "claude-cli",
  "handoff": "Rebuild and republish the Artifact board page from this branch (update_board.py, then publish to the same url) so the live line shows there. The page reads the step's line on the board that holds the step. Web parts launched in free words must keep the words \"You are part\" and \"--role part --post <id>\" for their hook to find their post.",
+ "landed": "309ba6ca",
+ "landed_at": "2026-11-27T03:46:52Z",
  "not_checked": [
   "The board page itself is not republished: the line shows in the Artifact only after the page is rebuilt from this version (the page test proves it reads the right place).",
   "The loop breaker and the live line were not run on a computer here (no computer attached); their tests ran.",
@@ -187,6 +189,6 @@
  "task": "Get the code: clone anlonlt/board, `git checkout feat/streamline-doctor-memory` (the four commits are 95f0eab..309ba6c), then `python3 -I install.py . --update --no-cmd`.\n\nWhat changed (each with its tests): `done` refuses open pieces and code in the verdict or lead; `kit_activity.py` writes activity/<post> (what it does now, no model call, at most every 15 s; a loop of 8 identical calls is said once); `kit.py permission-mode` (bypass once the owner accepted it, else auto); hooks find the project above a subfolder; page tests close their browser.\n\n1. Review the four commits for real bugs: say each with file:line, or none.\n2. Run the scoped tests (`python3 scripts/run_all_tests.py`), then `--all` once: numbers, and any failure that is not timing.\n3. Run the new commands for real here and measure each in characters: `resume --role part`, `form`, `done`, `sub`, `permission-mode`, `commands`.\n4. Make the live line work for a web part: its hook cannot reach a local board; find the way (ArtifactData through the push, or the board's own page), build it, test it.\n5. Report what a web session sees of `permission-mode` (web ignores bypass) and whether anything here needs a change for the web.",
  "title": "Review and adopt four kit changes made on a computer (patch in this post)",
  "train": "cli",
- "updated_at": "2026-11-26T23:52:43Z",
+ "updated_at": "2026-11-27T03:46:52Z",
  "verdict": "Adopted: no blocking bug, three small ones fixed, 61 of 62 suites green on the web (the last fails the same before the changes), and a web step's live line now reaches the Artifact board."
 }

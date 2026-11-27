@@ -1,17 +1,59 @@
 {
- "body": "Tests clean up after themselves: /tmp held about 5,600 folders left by test runs (cl30-inst-*, tmp*, kit-tests-*, scratch boards), each with a project copy and its own board token, on a computer with little room.\n\n1. Count what each suite leaves in the temp folder (run it, compare before and after) and fix the suites that leave anything: TemporaryDirectory or cleanup on every path, failures included.\n2. run_all_tests.py runs suites with their own temp folder (TMPDIR under one run folder) and removes it at the end; what a suite left is named in its result line, like the files it writes to ~/.local/bin.\n3. One command removes the leftovers of past runs (only folders the test runs make, by their prefixes and age), with a dry run listing them first.\n",
+ "artifacts": [
+  "kit/board/kit_cards.py",
+  "scripts/kit.py",
+  "scripts/run_all_tests.py",
+  "test_install.py",
+  "test_install_bd11.py",
+  "tests/temp_cleanup.py",
+  "tests/test_arena_out_of_box.py",
+  "tests/test_artifact_assets_into.py",
+  "tests/test_artifact_cross_repo.py",
+  "tests/test_artifact_files.py",
+  "tests/test_cards_command.py",
+  "tests/test_checklist_features.py",
+  "tests/test_cl30_kit_scripts.py",
+  "tests/test_cl36_post_body.py",
+  "tests/test_cl48_test_guard.py",
+  "tests/test_clerk_starts_orchestrator.py",
+  "tests/test_device_and_takeover.py",
+  "tests/test_install_present_runtimes.py",
+  "tests/test_install_update.py",
+  "tests/test_orchestrator_guard.py",
+  "tests/test_part_starts_on_its_work.py",
+  "tests/test_resume_attached_boards.py",
+  "tests/test_run_all_tests.py",
+  "tests/test_train_and_task_train.py",
+  "tests/test_welcome.py"
+ ],
+ "bars": [
+  "20 of 80 suites left folders in the temp folder before (111 folders in one full run); 0 of 80 after",
+  "80 of 80 suites pass on the full run with the new check, 0 failed",
+  "0 of 80 suites wrote anything new straight into the system temp folder (listed before and after the run)",
+  "3 of 3 cleanup cases right: a dry run deletes nothing; a delete takes only old folders whose names test runs use; a fresh folder, another tool's folder and a Python tmp folder holding no test files are kept"
+ ],
+ "body": "Test runs no longer fill the temp folder. Every suite now gets its own temp folder, which is deleted when the run ends. A suite that leaves a folder or a running process behind is marked as failed, and the result line names what it left. To clear what past runs already left on your computer, there is now one cleanup command: it first lists what it would delete, and deletes only when you confirm.\n\n### What each suite left (measured)\nEvery suite ran with its own temp folder, which was listed when the suite ended. One full run (80 suites) before the fixes:\n\n| What was left | Suites | Cause |\n|---|---|---|\n| `kit-xdg-*` (the machine's board token folder) | 9 | made at import time, never removed |\n| `tmp*` (project copies, boards) | 9 | `tempfile.mkdtemp()` in setUp, no cleanup |\n| `cl30-*` (24), `cl48-*` (6), `kit-cl36-*` (5) | 3 | same, with a name |\n| `other` (a clone made next to the test project) | 1 | written straight into the temp folder, shared by every run |\n| `kit-trains.json` in /tmp | 1 | kit_cards.py default path was written as /tmp, so it ignored TMPDIR |\n\nPlain files the kit's hooks keep for each session (`kit-ledger-*.lock`, `kit-handover-*.flag`, `kit-memory-jit-*.json`) and Claude Code's own `claude-<uid>` folder don't fail a suite. They are deleted along with its temp folder.\n\n### What changed\n- **The runner** (`scripts/run_all_tests.py`): one run folder holds everything: each suite's TMPDIR (also TMP and TEMP), the logs, the test launchers and the jobs folder. Before, the jobs folder (`kit-test-jobs-*`) was left behind by every run. The run folder is deleted at the end, also on Ctrl-C or a kill signal. After each suite, the runner lists what is left in its folder and kills its processes that are still running. On Linux that includes processes that left the group, found by their TMPDIR. A folder or a process left behind fails the suite: `[FAIL] tests/x.py (… s) LEFT 2: tmpab12cd34/, process: python3 -c …`. A write straight into the system temp folder fails the run, like a file written to ~/.local/bin.\n- **The suites**: `tests/temp_cleanup.py` makes every `mkdtemp` folder of a test process go away when that process exits, failures included. 11 test files import it. The 9 `kit-xdg-` lines remove their folder at exit. The orchestrator guard test now keeps its project inside its own folder, so the sibling clone `other` no longer lands in /tmp.\n- **The CL48 guard test** decided it ran from a temp copy by looking at TMPDIR only. With a TMPDIR per suite it took a copy in /tmp for the real project, and the board server it expected to be refused ran for 120 s. It now uses the guard's own measure (TMPDIR, /tmp, /var/tmp).\n- **The cleanup command**: `run_all_tests.py --clean` lists the folders past runs left, and `--yes` deletes them. It only considers folders owned by you, untouched for 2 hours (counting what they hold one level down), and named by a test run: the kit's exact test prefixes, the throwaway copies made by done's breaks check, land, pair and wip, and the browser profiles. Python's `tmp` plus 8 letters is a name any program can use, so such a folder counts only if it holds what a test makes (`.kit`, `.git`, a board). The end of every test run says how many such folders are waiting. The command is listed in `kit.py commands`.\n\n### Tests\n`tests/test_run_all_tests.py` covers three cases. A suite that leaves a folder fails, and one that leaves a process fails and the process is killed; the run's own folder is gone afterwards. A write past the suite's folder fails the run. The cleanup: a dry run deletes nothing, a delete removes only the 5 old test folders and keeps a fresh one, another tool's folder and a Python `tmp` folder with no test files in it.",
  "branch": "cl52",
+ "breaks": "sed -i 's/^tempfile.mkdtemp = mkdtemp$/pass/' tests/temp_cleanup.py",
+ "check": "python3 scripts/run_all_tests.py --keep-going test_run_all_tests test_train_and_task_train test_device_and_takeover test_cl30_kit test_orchestrator_guard test_part_starts test_cl36_post test_cl48_test test_artifact_files test_cards_command test_artifact_assets test_artifact_cross test_install test_checklist test_arena test_welcome test_clerk_starts",
  "claimed_at": "2026-11-27T03:27:30Z",
  "column": "info",
  "created_at": "2026-11-26T22:13:19Z",
  "differs": "CL52: builds on CL48 (a test never writes the real board); CL48 refuses writes outside temp, CL52 makes every test remove what it creates (temp dirs, worktrees, branches, processes).",
  "from": "orchestrator",
+ "handoff": "- Run the tests as before with `python3 scripts/run_all_tests.py`. A suite that leaves anything now fails, with what it left on its result line: fix the suite, don't add an exception.\n- A new test file that makes folders with `tempfile.mkdtemp` and might not remove them can add `import temp_cleanup`, which removes them when the process exits, failures included. Prefer `TemporaryDirectory` or `addCleanup` in new code.\n- On each computer, once: `python3 scripts/run_all_tests.py --clean` (the list), then `--clean --yes` (the delete). It only takes folders untouched for 2 hours, so a run in progress is kept (`--older H` changes the age).",
  "launched_at": "2026-11-27T03:11:23Z",
  "launched_out_of_order": {
   "at": "2026-11-27T03:11:23Z",
   "was": "R2 goes first (place 13, CL52 is 18): feature, by date (no fact sets it apart); launch `r2-gemini-tasks-how-far-it-runs-the-board-k`",
   "why": "R2/R3 are the agy orchestrator's (owner's split 02:31); this web step shares no file with them"
  },
+ "not_checked": [
+  "Not run on the owner's computer yet, where the 5,600 folders are: the cleanup was tried on folders made for the test, not on that machine. Run the dry run there first.",
+  "Processes that leave the suite's process group are found through /proc (Linux only). On macOS only the group is checked, so a detached process there goes unseen.",
+  "`tests/test_resume_attached_boards.py`, the byte-for-byte control, fails when it runs from a copy in a temp folder, as done runs it. It fails the same way on main, so it is not from this step: the new resume shows an owner's open comment the old one did not. It is left out of `check` (its leak is fixed and passes here). A step of its own should fix it.",
+  "Git worktrees and branches: no suite left one in these runs, and the runner does not check for them."
+ ],
  "orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "orchestrator_device": "web",
  "orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
@@ -19,17 +61,26 @@
  "part": "CL52",
  "planned_by": "orchestrator",
  "priority": 2,
+ "proof": {
+  "at": "2026-11-27T03:42:04Z",
+  "branch": "cl52",
+  "commit": "ac387f62",
+  "key": "2162bf5f1fe9c8b2",
+  "needs_real": true,
+  "sha": "ac387f62dba19bad4f8cb92186bd3bd45b4d1247"
+ },
  "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "review_orchestrator_device": "web",
  "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "runner": "claude-web",
  "session_id": "session_01AE1HGia6d8GJWcTSt6rRLs",
+ "started_at": "2026-11-27T03:13:16Z",
  "status": "in progress",
  "subtasks": [
   {
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "Count what each suite leaves in the temp folder (run it, compare before and after) and fix the..."
   },
   {
@@ -38,19 +89,20 @@
    ],
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "run_all_tests.py runs suites with their own temp folder (TMPDIR under one run folder) and removes..."
   },
   {
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "One command removes the leftovers of past runs (only folders the test runs make, by their prefixes..."
   }
  ],
  "task": "Tests clean up after themselves: /tmp held about 5,600 folders left by test runs (cl30-inst-*, tmp*, kit-tests-*, scratch boards), each with a project copy and its own board token, on a computer with little room.\n\n1. Count what each suite leaves in the temp folder (run it, compare before and after) and fix the suites that leave anything: TemporaryDirectory or cleanup on every path, failures included.\n2. run_all_tests.py runs suites with their own temp folder (TMPDIR under one run folder) and removes it at the end; what a suite left is named in its result line, like the files it writes to ~/.local/bin.\n3. One command removes the leftovers of past runs (only folders the test runs make, by their prefixes and age), with a dry run listing them first.\n",
  "title": "Tests clean up after themselves",
  "train": "board-data",
- "updated_at": "2026-11-27T03:11:57Z",
+ "updated_at": "2026-11-27T03:42:04Z",
+ "verdict": "Done: a full run now leaves nothing (80 of 80 suites clean, it was 20 suites and 111 folders per run), and one command clears the folders older runs left, after showing the list first.",
  "working_by": "owner"
 }

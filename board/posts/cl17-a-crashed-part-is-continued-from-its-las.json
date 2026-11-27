@@ -42,12 +42,12 @@
  "part": "CL17",
  "planned_by": "orchestrator",
  "proof": {
-  "at": "2026-11-27T03:23:30Z",
+  "at": "2026-11-27T03:35:55Z",
   "branch": "cl17",
-  "commit": "9d2b673",
+  "commit": "280660b",
   "key": "2ed6c0948c3826a4",
   "needs_real": true,
-  "sha": "9d2b6739e87f891049176c76062f4c32c777bcca"
+  "sha": "280660bb1bd701334739982b46de3938c7f95fe4"
  },
  "restored_from": "board-mirror 5d7db0d: an artifact load at 2026-11-26T20:23Z (CL44's part, on this computer) overwrote it with an older Artifact copy; fields only that copy had are kept",
  "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
@@ -57,7 +57,7 @@
  "status": "in progress",
  "title": "A crashed part is continued from its last checkpoint",
  "train": "takeover",
- "updated_at": "2026-11-27T03:23:30Z",
+ "updated_at": "2026-11-27T03:35:55Z",
  "verdict": "A part that crashes now carries on from its last save. Its post keeps its to-do list, GitHub keeps its work, and the orchestrator restarts it there on its own, asking you only when the part was waiting on your answer.",
  "working_by": "owner"
 }
