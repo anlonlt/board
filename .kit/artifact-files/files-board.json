@@ -31,8 +31,8 @@
    "version": 9
   },
   ".kit+2F~claude-cli+2F~orchestrator.md": {
-   "sha": "7d34fac8aa7429dceafd8c77786684e31700fd9207a2fa30c77f9ab79ba5ca03",
-   "version": 5
+   "sha": "2ad2da57a368a2390ea168e0d4adc0ce43a349c657e9a30b3b9f174e1515b7fb",
+   "version": 6
   },
   ".kit+2F~claude-cli+2F~part.md": {
    "sha": "1a9b03495a80c65244586fce1fcccab236b35f5b92861d5af538b3ea1d87bd95",
@@ -47,8 +47,8 @@
    "version": 8
   },
   ".kit+2F~orchestrator.md": {
-   "sha": "e658c18ebb8fcc97a5d61c96782005026020fbf622a758057b59c8a17e47d3cc",
-   "version": 6
+   "sha": "b47087aae9c533b72474878eba01854eb5c752dbf229a0cb5600bf2f5efcc4ea",
+   "version": 7
   },
   ".kit+2F~part.md": {
    "sha": "29f0b722cc23ccb7c927a0f89cf380539282199bb8547a22f075f69d6c2b74c5",
@@ -143,8 +143,8 @@
    "version": 4
   },
   "kit+2F~claude+2F~orchestrator.template.md": {
-   "sha": "811eadf9e045754d27368a5646e4d2029b149da3eeb3e108e1eb64bc23b7d3b2",
-   "version": 6
+   "sha": "74e5d61aa9be8c75a440f39e6c515352cf605d1347ca3826c5eb1f736143cacc",
+   "version": 7
   },
   "kit+2F~claude+2F~part.template.md": {
    "sha": "4bc3137af9f2fa8eeaf5ef8ead90b89f8161bc01dee1b4674071cdf658ab6fd6",
@@ -163,8 +163,8 @@
    "version": 4
   },
   "kit+2F~claude-cli+2F~orchestrator.template.md": {
-   "sha": "71c1fa3bc485b70c22ca73493dd4239b2a0ff59601682df05d0475513b780de9",
-   "version": 8
+   "sha": "a7e394e1d815d0df3e6c61c0c7b85005ac94f5233c0c0669111b3aa266a11eb1",
+   "version": 9
   },
   "kit+2F~claude-cli+2F~part.template.md": {
    "sha": "987bef766546d7d132936aff02be63b8bac98aebe81400688aa2b26a788cae8c",
@@ -187,8 +187,8 @@
    "version": 8
   },
   "kit+2F~orchestrator.template.md": {
-   "sha": "ecaa5b8dc47db56fdb93c309665b274eb995bf1ae651af2ec467dc8c2f665419",
-   "version": 7
+   "sha": "69b4b1abc2f5230c42fdef927fd799186f1bf7fb51681a8a2823d75dc8fd4d6a",
+   "version": 8
   },
   "kit+2F~part.template.md": {
    "sha": "398854c3f4f7dbc76d80f923665783ccfc3116108d7ab6a5399ed3411c1b617b",
