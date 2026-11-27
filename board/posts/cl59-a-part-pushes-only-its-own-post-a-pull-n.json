@@ -1,0 +1,48 @@
+{
+ "body": "A part sends its own post to the live board in one command, never other sessions' writes.\n\nOwner, 2026-11-27 (screenshot of CL17's session): \"How did it have so many failed commands? Was it stupid?\" CL17 pulled only its own post (`artifact pull --post`), then `artifact push` diffed the whole local copy against that partial pull and built 330 unpinned writes; the push has no single-post option, the guard refuses a hand-made ArtifactData write, and refuses a pull while built batches wait. The part tried four ways and stopped. Web orchestrator 2 hit the same today: hand-filtering batches, conflict comments on _trains at every sync.\n\n1. `kit.py artifact push --post <id>` (and the comments it wrote) builds only those writes, pinned to the versions read.\n2. A push after a partial pull never sends documents the pull did not read.\n3. A pull is allowed while batches wait: it rebuilds them after loading, never deadlocks.\n4. The generated cards (_dashboard, _trains) are never a two-sided conflict: the newer build wins, no conflict comment.\n5. Tests for each; replay CL17's case and count writes (1 post + its comments).\n",
+ "column": "info",
+ "created_at": "2026-11-27T02:48:26Z",
+ "from": "orchestrator",
+ "kind": "bug",
+ "part": "CL59",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "kit.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "kit.py artifact push --post <id> (and the comments it wrote) builds only those writes, pinned to..."
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "A push after a partial pull never sends documents the pull did not read"
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "A pull is allowed while batches wait"
+  },
+  {
+   "from": "task",
+   "n": 4,
+   "status": "open",
+   "title": "The generated cards (_dashboard, _trains) are never a two-sided conflict"
+  },
+  {
+   "from": "task",
+   "n": 5,
+   "status": "open",
+   "title": "Tests for each"
+  }
+ ],
+ "task": "A part sends its own post to the live board in one command, never other sessions' writes.\n\nOwner, 2026-11-27 (screenshot of CL17's session): \"How did it have so many failed commands? Was it stupid?\" CL17 pulled only its own post (`artifact pull --post`), then `artifact push` diffed the whole local copy against that partial pull and built 330 unpinned writes; the push has no single-post option, the guard refuses a hand-made ArtifactData write, and refuses a pull while built batches wait. The part tried four ways and stopped. Web orchestrator 2 hit the same today: hand-filtering batches, conflict comments on _trains at every sync.\n\n1. `kit.py artifact push --post <id>` (and the comments it wrote) builds only those writes, pinned to the versions read.\n2. A push after a partial pull never sends documents the pull did not read.\n3. A pull is allowed while batches wait: it rebuilds them after loading, never deadlocks.\n4. The generated cards (_dashboard, _trains) are never a two-sided conflict: the newer build wins, no conflict comment.\n5. Tests for each; replay CL17's case and count writes (1 post + its comments).\n",
+ "title": "A part pushes only its own post; a pull never deadlocks on waiting batches",
+ "train": "board-data"
+}
