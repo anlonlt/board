@@ -210,3 +210,10 @@ scope: project
 enforced_by: review
 because: owner 2026-11-27: CL59 carried CL16, CL61 merged origin/m12; both held back by the other part
 created_at: 2026-11-27T08:58:54Z
+
+## F20 (fix, active): the post is not on the board yet (https://claude.ai/artifact/Ek79P6H3WTPJjJVYPe9rsf): its local copy differs from what the Artifact last had. Run `python3 -I .kit/kit.py artifact push`, make the Artif
+scope: project
+enforced_by: review
+theme: stale board copy
+source: cl78-a-part-s-branch-holds-only-its-own-work
+created_at: 2026-11-27T09:10:18Z
