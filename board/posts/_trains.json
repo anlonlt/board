@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T08:06:53Z",
+ "created_at": "2026-11-27T08:09:41Z",
  "rows": [
   {
    "also": [],
@@ -153,10 +153,10 @@
    ],
    "parent": "",
    "part": "P-takeover",
-   "post": "cl60-a-part-s-last-chat-message-is-a-single-d",
+   "post": "cl64-resume-sees-whether-a-web-part-is-alive",
    "prompt": "",
    "session": "",
-   "state": "running",
+   "state": "idle",
    "store": []
   },
   {
@@ -918,7 +918,7 @@
    "post": "m3-done-keeps-the-map-each-part-checks-its",
    "prompt": "",
    "session": "session_01AE1HGh1fxKykMgMsMPiU9R",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1109,7 +1109,7 @@
    "post": "cl52-tests-clean-up-after-themselves",
    "prompt": "",
    "session": "session_01AE1HGia6d8GJWcTSt6rRLs",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1252,7 +1252,7 @@
    "post": "cl60-a-part-s-last-chat-message-is-a-single-d",
    "prompt": "",
    "session": "session_01AE1HGj9jSo1nnBzqGaQAVW",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1263,7 +1263,7 @@
    "post": "cl61-a-kit-fix-reaches-every-project-on-updat",
    "prompt": "",
    "session": "session_01AE1HGkvhfxecqjjkyDPUNi",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1285,7 +1285,7 @@
    "post": "cl62-the-orchestrator-cannot-end-a-turn-with",
    "prompt": "",
    "session": "session_01AE1HGhL21m74opxVsmtKrx",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1378,5 +1378,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T08:06:53Z"
+ "updated_at": "2026-11-27T08:09:41Z"
 }

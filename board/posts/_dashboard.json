@@ -1,9 +1,9 @@
 {
  "column": "info",
- "created_at": "2026-11-27T08:04:23Z",
+ "created_at": "2026-11-27T08:09:41Z",
  "rows": [
   {
-   "at": 7,
+   "at": 8,
    "key": "A",
    "name": "Board data",
    "note": "Next: The board travels in git, always current (mirror synced on every step)",
@@ -14,12 +14,12 @@
     "CL41's redirect resolved, so the trunk can move",
     "A test never writes to the real board",
     "A session on a computer never writes to the Artifact",
+    "Tests clean up after themselves",
     "An outside AI gets one link, the owner's invite with the post's drop box",
     "A part pushes only its own post; a pull never deadlocks on waiting batches",
     "No merge friction: generated files out of git, a reviewed step lands without another re...",
     "The board travels in git, always current (mirror synced on every step)",
     "end_session says why a push failed",
-    "Tests clean up after themselves",
     "The orchestrator's push never sends the cards: no refused batch when another session re...",
     "A real-project run is done where Harmonize already is: the computer orchestrator, never...",
     "One way to touch the board: the kit prints every call, the guard refuses anything else,..."
@@ -85,7 +85,7 @@
    "train": "P-cli"
   },
   {
-   "at": 9,
+   "at": 10,
    "key": "C",
    "name": "Memory",
    "note": "Next: Install draws the first map",
@@ -96,13 +96,13 @@
     "Map readers beyond code: Power BI, documents, any folder",
     "A resume prints only what changed",
     "The usage ledger counts cost per command",
+    "Done keeps the map: each part checks its stretch and adds what it built",
     "Every memory entry is checked against reality",
     "Replacing and forgetting in memory",
     "A bug fixed three times, a rule repeated, or a decision of the owner becomes a check",
     "Sessions use the kit's commands, the ledger shows when they don't, and the orchestrator...",
     "The orchestrator hands over at its context limit however its session began",
     "Install draws the first map",
-    "Done keeps the map: each part checks its stretch and adds what it built",
     "The workflow on the map: what lives outside the repo, with checks",
     "Every hook reads the orchestrator role one way: 6 of 6 on the takeover fixture"
    ],
@@ -145,12 +145,12 @@
    "train": "P-runners"
   },
   {
-   "at": 6,
+   "at": 9,
    "key": "F",
    "name": "Takeover",
-   "note": "Next: A part's last chat message is a single dot the first time, not after a refusal",
-   "post": "cl60-a-part-s-last-chat-message-is-a-single-d",
-   "state": "running",
+   "note": "Next: Resume sees whether a web part is alive: never 'stalled' from an empty local list",
+   "post": "cl64-resume-sees-whether-a-web-part-is-alive",
+   "state": "ready",
    "steps": [
     "A crashed part is continued from its last checkpoint",
     "A part reports to the orchestrator that started it, unless another claimed it",
@@ -198,5 +198,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T08:04:23Z"
+ "updated_at": "2026-11-27T08:09:41Z"
 }
