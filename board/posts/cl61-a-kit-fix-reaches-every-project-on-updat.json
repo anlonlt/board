@@ -16,13 +16,14 @@
   "1 of 1 M12 takeover case (question first, takeover, 528k) blocked after the fold, where the fork let it pass",
   "1 of 1 fork that runs a command refused with what differs, 0 of its settings lines changed, doctor still flags it",
   "4 of 4 kinds of fork found by the detector (hand-over, say it once, session start, stop); 0 forks found in the kit repo itself",
-  "82 of 82 test suites pass, with main merged (`run_all_tests.py --all`)"
+  "86 of 87 test suites pass with main merged (`run_all_tests.py --all --keep-going`); the 87th, `test_launch_runtime` (new on main), fails 4 of its cases the same way on main itself in this web container",
+  "Harmonize's 2 refusal reasons for `context_handover.py` (its `sys.path.insert` + `is_orchestrator()`, its \"HAND OVER NOW: your context is at %dk\" line) now fold in the test's copy, which carries all three"
  ],
- "body": "Yes: from now on a kit update folds a project's own copy of a kit hook into the kit's. Its limits and rules become the project's kit settings, and the kit's hook takes its place, so the next kit fix reaches the project. A copy that cannot be folded is refused, with what differs listed, instead of being kept without a word.\n\n### What was wrong\nHarmonize wires its own `.claude/hooks/context_handover.py` on Stop. The kit's `kit_pre_compact.py` was installed beside it, but the fork decided the hand-over, so M12's fix (a session that took over mid-way hands over too) never reached Harmonize. `install.py --update` refreshed the kit's files and left every project hook alone (CL30's comment: \"a project's own hand-over, its Stop are left as they are\").\n\n### What changed\n- `kit/forks.py` (new, installed as `.kit/forks.py`): finds each line in `.claude/settings.json` that is not the kit's, on an event a kit hook serves, whose script's name or text says it does that hook's job: hand-over (`kit_pre_compact.py`), say it once, session start, stop. For a hand-over fork it reads what the fork adds as kit settings: its limits (`kit.orchestrator.context_limit_k`, `kit.clerk.context_limit_k`) and its rule sentences (`kit.orchestrator.handover_rules`, `kit.clerk.handover_rules`). A sentence the kit's hook already says is dropped. A fork that runs code the kit's hook does not, or says something that is not a rule, cannot be folded, and the update lists what differs.\n- `install.py --update`: folds each fork (settings into `.kit/config.json`, its lines out of settings.json, the kit's hook wired on the same events; the file stays, unused), or refuses it (a REFUSED block at the end with what differs, nothing of it changed, everything else updated, exit 0 so no caller breaks; doctor keeps it as an issue). `kit.forks.keep {path: reason}` keeps one on purpose, and every update names it with that reason.\n- `kit_pre_compact.py`: says the project's `handover_rules` after the kit's steps (Claude Code and agy). The limits and the role reading stay the kit's (M12's).\n- `kit.py doctor`: `forks: SHADOW <path> shadows the kit's <hook> (<job>, on <event>)` is an issue; a kept fork is shown with its reason.\n- This branch includes M12 (`origin/m12`, under review), which CL61 builds on. Merging main met M12 in `usage.py`: main's agy-subagent fix (a clerk or review under `KIT_ROLE=orchestrator`) now lives in M12's `role_of`. `test_install_present_runtimes` now runs here (M12 gave the hook a git history) and accepts CL53's `kit.py fresh` line as the kit's.\n\n### The test\n`tests/test_cl61_forks_fold.py` installs a project, plants a Harmonize-shaped `context_handover.py` (orchestrator at 300k, clerk at 80k, \"No fallback timers: never schedule a send_later or a wakeup as a safety net before you hand over.\") and checks these steps:\n1. doctor flags it.\n2. `--update` folds it.\n3. The fork's own cases and M12's takeover case run against the kit's hook.\n4. A second update doubles no rule.\n5. A fork that calls `subprocess.run` is refused with \"runs code the kit's hook does not: run()\".\n6. `kit.forks.keep` keeps a fork and names it.",
+ "body": "Yes: from now on a kit update folds a project's own copy of a kit hook into the kit's. Its limits and rules become the project's kit settings, and the kit's hook takes its place, so the next kit fix reaches the project. A copy that cannot be folded is refused, with what differs listed, instead of being kept without a word.\n\n### Harmonize's first run (the orchestrator's real_project)\nAll 5 project hooks were refused. `context_handover.py`, the step's own case, was refused on two counts, and both were the fold being too strict:\n- \"runs code the kit's hook does not: insert, is_orchestrator()\". The first is its import line (`sys.path.insert`). The second is its own role reading, which is exactly what the kit's hook replaces with M12's. A fork's role, session, token or limit reading is now never a difference, and `sys.path` handling is plumbing.\n- \"says what the kit's hook does not, and it is no rule: HAND OVER NOW: your context is at %dk (limit %dk)...\". That is its header. Now any \"HAND OVER NOW:\" or \"HANDOVER REQUIRED:\" header is the kit's to say, a sentence carrying the numbers (`%dk`) is left out and named in the update's log, and every other instruction sentence becomes a project rule.\n\nThe other four (`session-start.sh`, `say_it_once.py`, `stop.sh`, `pre-compact.sh`, which runs `git status`/`pgrep`) stay refused as designed: the kit takes no settings from those jobs yet.\n### What was wrong\nHarmonize wires its own `.claude/hooks/context_handover.py` on Stop. The kit's `kit_pre_compact.py` was installed beside it, but the fork decided the hand-over, so M12's fix (a session that took over mid-way hands over too) never reached Harmonize. `install.py --update` refreshed the kit's files and left every project hook alone (CL30's comment: \"a project's own hand-over, its Stop are left as they are\").\n\n### What changed\n- `kit/forks.py` (new, installed as `.kit/forks.py`): finds each line in `.claude/settings.json` that is not the kit's, on an event a kit hook serves, whose script's name or text says it does that hook's job: hand-over (`kit_pre_compact.py`), say it once, session start, stop. For a hand-over fork it reads what the fork adds as kit settings: its limits (`kit.orchestrator.context_limit_k`, `kit.clerk.context_limit_k`) and its rule sentences (`kit.orchestrator.handover_rules`, `kit.clerk.handover_rules`). A sentence the kit's hook already says is dropped. A fork that runs code the kit's hook does not, or says something that is not a rule, cannot be folded, and the update lists what differs.\n- `install.py --update`: folds each fork (settings into `.kit/config.json`, its lines out of settings.json, the kit's hook wired on the same events; the file stays, unused), or refuses it (a REFUSED block at the end with what differs, nothing of it changed, everything else updated, exit 0 so no caller breaks; doctor keeps it as an issue). `kit.forks.keep {path: reason}` keeps one on purpose, and every update names it with that reason.\n- `kit_pre_compact.py`: says the project's `handover_rules` after the kit's steps (Claude Code and agy). The limits and the role reading stay the kit's (M12's).\n- `kit.py doctor`: `forks: SHADOW <path> shadows the kit's <hook> (<job>, on <event>)` is an issue; a kept fork is shown with its reason.\n- This branch includes M12 (`origin/m12`, under review), which CL61 builds on. Merging main met M12 in `usage.py`: main's agy-subagent fix (a clerk or review under `KIT_ROLE=orchestrator`) now lives in M12's `role_of`. `test_install_present_runtimes` now runs here (M12 gave the hook a git history) and accepts CL53's `kit.py fresh` line as the kit's.\n\n### The test\n`tests/test_cl61_forks_fold.py` installs a project, plants a Harmonize-shaped `context_handover.py` (orchestrator at 300k, clerk at 80k, \"No fallback timers: never schedule a send_later or a wakeup as a safety net before you hand over.\") and checks these steps:\n1. doctor flags it.\n2. `--update` folds it.\n3. The fork's own cases and M12's takeover case run against the kit's hook.\n4. A second update doubles no rule.\n5. A fork that calls `subprocess.run` is refused with \"runs code the kit's hook does not: run()\".\n6. `kit.forks.keep` keeps a fork and names it.",
  "branch": "cl61",
  "breaks": "revert",
  "check": "python3 -m unittest tests.test_cl61_forks_fold tests.test_m12_handover_role",
- "claimed_at": "2026-11-27T03:27:31Z",
+ "claimed_at": "2026-11-27T07:52:39Z",
  "column": "info",
  "created_at": "2026-11-27T02:59:43Z",
  "differs": "CL61: builds on CL53 (a session starts on the newest kit code); CL53 brings the newest kit files, but a project's own fork of a kit hook still decides. CL61 folds such forks into the kit's hook at update.",
@@ -32,26 +33,33 @@
  "kind": "bug",
  "launched_at": "2026-11-27T03:00:06Z",
  "not_checked": [
-  "Harmonize's real `context_handover.py`: it is not in this repo or in the board's files, so the fold was tested on a Harmonize-shaped copy (same event, job, limits and rules). The orchestrator's dry run on a Harmonize clone (item 4) is the check on the real file; if it has something the kit cannot take as a setting, the update refuses and lists it.",
+  "Harmonize's real `context_handover.py` after the fix: the orchestrator's first run refused it for two reasons, both now folded in the test's copy. Only a rerun on the Harmonize copy shows it folds there.",
   "agy's `.agents/hooks.json`: only Claude Code's `.claude/settings.json` is read for forks."
  ],
- "orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "orchestrator_device": "web",
- "orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
  "orchestrator_unreached": null,
  "part": "CL61",
  "planned_by": "orchestrator",
  "proof": {
-  "at": "2026-11-27T03:40:03Z",
+  "at": "2026-11-27T04:16:57Z",
   "branch": "cl61",
-  "commit": "477a4327",
-  "key": "31ee6ef723882cc0",
-  "needs_real": true,
-  "sha": "477a43272f6106eec8af15cd13c841967a6814d4"
+  "commit": "27a79ea4",
+  "key": "28f84d98f7d96947",
+  "needs_real": false,
+  "sha": "27a79ea4d9dafe3fac2ef11b9812bddf4973d80c"
  },
- "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "real_project": {
+  "command": "python3 -I <kit worktree of origin/cl61>/install.py <harmonize copy> --update --web-multi no (exit 0); then in the copy: KIT_STALE_OK=1 python3 -I .kit/kit.py doctor",
+  "output": "BROKEN ON HARMONIZE. install: exit 0, but 'REFUSED (CL61): 5 project hook(s) do a kit hook's job and cannot be folded': session-start.sh, say_it_once.py, stop.sh ('takes no setting from a project's own ... hook yet'), pre-compact.sh (runs git status/pgrep: real project code), and .claude/hooks/context_handover.py, the step's own case: 'runs code the kit's hook does not: insert, is_orchestrator(); says what the kit's hook does not, and it is no rule: HAND OVER NOW: your context is at %dk (limit %dk)...'. The 'insert' is the import line sys.path.insert(0, ...) and the HAND OVER NOW line is the hand-over message itself, so the fork the step was made for is not folded: settings.json keeps context_handover.py on Stop unchanged, M12's fix still does not reach Harmonize. doctor: 5 'forks: SHADOW' lines (it names them, as designed).",
+  "project": "anlonlt/harmonize"
+ },
+ "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "review_orchestrator_device": "web",
- "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
+ "review_session": "session_01AE1HGivzjZvG4hcFjonCYX",
+ "review_started": "2026-11-27T07:49:46Z",
  "session_id": "session_01AE1HGkvhfxecqjjkyDPUNi",
  "sources": [
   "m12-the-orchestrator-hands-over-at-its-conte"
@@ -94,7 +102,7 @@
  "task": "A kit fix reaches every project at its next `install.py --update`: no project keeps its own copy of a kit hook.\n\nOwner, 2026-11-27: \"Shouldn't anything that's happening in the kit automatically get fixed on kit update in harmonize anyway?\" Found: Harmonize runs its own `.claude/hooks/context_handover.py` (last changed 0d020ef, 11-24) as its Stop hand-over hook, wired in `.claude/settings.json`; the kit's `kit_pre_compact.py` is installed but M12's fix does not reach Harmonize because its fork decides.\n\n1. `install.py --update` lists every project hook that does a kit hook's job (same event and purpose: hand-over, role, board post, say-it-once...), and moves what the fork adds into the kit's hook as a project setting, then wires the kit's hook only; a fork it cannot fold is refused with what differs, never kept silently.\n2. Harmonize's context_handover.py folded: its rules (no fallback timers, the clerk at 80k) become kit settings; its test passes against the kit's hook.\n3. doctor flags a project hook that shadows a kit hook.\n4. Dry run on a Harmonize clone (by the orchestrator): after update, M12's takeover case blocks there.\n",
  "title": "A kit fix reaches every project on update: no project keeps a fork of a kit hook",
  "train": "takeover",
- "updated_at": "2026-11-27T03:40:03Z",
+ "updated_at": "2026-11-27T07:49:46Z",
  "verdict": "A kit update now folds a project's own hand-over hook into the kit's (its limits and rules become settings), refuses with the differences one it cannot fold, and doctor names any that shadow a kit hook.",
  "working_by": "owner"
 }

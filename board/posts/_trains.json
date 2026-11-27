@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T07:28:19Z",
+ "created_at": "2026-11-27T07:54:08Z",
  "rows": [
   {
    "also": [],
@@ -16,7 +16,8 @@
     "CL59",
     "CL67",
     "CL69",
-    "CL70"
+    "CL71",
+    "CL72"
    ],
    "parent": "",
    "part": "P-board-data",
@@ -148,15 +149,25 @@
     "CL61",
     "CL62",
     "CL64",
-    "CL65",
     "CL66"
    ],
    "parent": "",
    "part": "P-takeover",
-   "post": "cl17-a-crashed-part-is-continued-from-its-las",
+   "post": "cl60-a-part-s-last-chat-message-is-a-single-d",
    "prompt": "",
    "session": "",
    "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "",
+   "part": "P-orchestrator",
+   "post": "",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -476,7 +487,7 @@
    "post": "cl17-a-crashed-part-is-continued-from-its-las",
    "prompt": "",
    "session": "board-cl17",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1052,7 +1063,7 @@
    "post": "cl50-a-part-launched-in-the-background-knows",
    "prompt": "",
    "session": "session_01AE1HGj6WUrysNPM7yLUF7w",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1142,7 +1153,7 @@
    "post": "cl54-a-step-s-task-is-written-once-in-its-pos",
    "prompt": "",
    "session": "session_01AE1HGjRnr9HjFKPVLAiSso",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1197,7 +1208,7 @@
    "post": "cl56-a-session-on-the-shared-link-can-attach",
    "prompt": "",
    "session": "session_01AE1HGjFXDNKgKeG7VX6toq",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1241,7 +1252,7 @@
    "post": "cl59-a-part-pushes-only-its-own-post-a-pull-n",
    "prompt": "",
    "session": "session_01AE1HGhkLW2xJ5o7XZbq77K",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1314,17 +1325,6 @@
    "also": [],
    "children": [],
    "parent": "P-takeover",
-   "part": "CL65",
-   "post": "cl65-a-re-review-s-commit-is-the-one-land-che",
-   "prompt": "",
-   "session": "",
-   "state": "idle",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [],
-   "parent": "P-takeover",
    "part": "CL66",
    "post": "cl66-two-orchestrators-each-keep-their-addres",
    "prompt": "",
@@ -1357,9 +1357,9 @@
   {
    "also": [],
    "children": [],
-   "parent": "P-board-data",
-   "part": "CL70",
-   "post": "cl70-a-merged-step-is-shown-landed-the-review",
+   "parent": "P-agy",
+   "part": "A1",
+   "post": "a1-install-cmd-skips-linked-git-worktrees-s",
    "prompt": "",
    "session": "",
    "state": "idle",
@@ -1368,15 +1368,26 @@
   {
    "also": [],
    "children": [],
-   "parent": "P-agy",
-   "part": "A1",
-   "post": "a1-install-cmd-skips-linked-git-worktrees-s",
+   "parent": "P-board-data",
+   "part": "CL71",
+   "post": "cl71-no-merge-friction-generated-files-are-no",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "session_01AE1HGiRAcHgq5vH6T6Ubk3",
+   "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-board-data",
+   "part": "CL72",
+   "post": "cl72-one-way-to-touch-the-board-the-kit-print",
+   "prompt": "",
+   "session": "session_01AE1HGkF2ieYqR2ZtyxfSbR",
+   "state": "running",
    "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T07:28:19Z"
+ "updated_at": "2026-11-27T07:54:08Z"
 }

@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T07:44:36Z",
+ "from": "orchestrator",
+ "post_id": "cl61-a-kit-fix-reaches-every-project-on-updat",
+ "text": "Orchestrator 3 hand-over: CL61 said Done again (07:21) after its Harmonize failure. Next: rerun its Harmonize real-project check, then step complete starts its review. Not launched: the owner said launch nothing without his go."
+}

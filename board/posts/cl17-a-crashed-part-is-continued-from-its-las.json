@@ -23,9 +23,12 @@
  },
  "claimed_at": "2026-11-27T03:27:33Z",
  "column": "info",
+ "completed_at": "2026-11-27T03:47:21Z",
  "created_at": "2026-11-22T23:17:04Z",
  "from": "orchestrator",
  "handoff": "Parts now checkpoint with `kit.py checkpoint <post>` and keep their checklist as post pieces (`kit.py sub`). The orchestrator relaunches a stopped step with `kit.py launch <post> --continue`, inside the device cap, and asks only when the step waits on the owner. CL8/9/10/12/14: their old work is in uncommitted worktrees, which `--continue` reuses when the worktree is still on this machine.",
+ "landed": "9e17f0c1",
+ "landed_at": "2026-11-27T04:11:33Z",
  "launched_at": "2026-11-27T02:34:20Z",
  "moved_from_train": "cli",
  "not_checked": [
@@ -42,22 +45,32 @@
  "part": "CL17",
  "planned_by": "orchestrator",
  "proof": {
-  "at": "2026-11-27T03:35:55Z",
+  "at": "2026-11-27T04:06:48Z",
   "branch": "cl17",
-  "commit": "280660b",
+  "commit": "adb7e1d",
   "key": "2ed6c0948c3826a4",
   "needs_real": true,
-  "sha": "280660bb1bd701334739982b46de3938c7f95fe4"
+  "sha": "adb7e1d0b38c40518303fad745ad6db7d43b1d5d"
+ },
+ "real_project": {
+  "command": "python3 -I <kit worktree of origin/cl17>/install.py <harmonize copy> --update --web-multi no (exit 0); then in the copy: KIT_STALE_OK=1 python3 -I .kit/kit.py resume --role orchestrator",
+  "output": "install: exit 0, kit version 280660bb. resume (git copy; the Artifact copy was never loaded in the clone, so KIT_STALE_OK=1): exit 0, 61 lines, no traceback: '# Resume (from the board...)', 'No train has an open step.', Open questions (0), This device: cloud session, How you launch (web), Kit commands skipped, Lessons for the orchestrator K1-K9, Memory 11 entries. Harmonize's copy has no in-progress step, so the new stopped-step lines (checkpoint, checklist, relaunch) had nothing to show; nothing in resume broke on Harmonize.",
+  "project": "anlonlt/harmonize"
  },
  "restored_from": "board-mirror 5d7db0d: an artifact load at 2026-11-26T20:23Z (CL44's part, on this computer) overwrote it with an older Artifact copy; fields only that copy had are kept",
+ "review": "continue",
+ "review_commit": "280660bb1bd701334739982b46de3938c7f95fe4",
+ "review_id": "CR-cl17-a-crashed-part-is-continued-from-its-las",
  "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "review_orchestrator_device": "web",
  "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_session": "session_01AE1HGk6nd3jdZu5yRKj782",
+ "review_started": "2026-11-27T03:48:42Z",
  "session_id": "board-cl17",
- "status": "in progress",
+ "status": "complete",
  "title": "A crashed part is continued from its last checkpoint",
  "train": "takeover",
- "updated_at": "2026-11-27T03:35:55Z",
+ "updated_at": "2026-11-27T04:11:33Z",
  "verdict": "A part that crashes now carries on from its last save. Its post keeps its to-do list, GitHub keeps its work, and the orchestrator restarts it there on its own, asking you only when the part was waiting on your answer.",
- "working_by": "owner"
+ "working_by": ""
 }

@@ -37,7 +37,7 @@
  "branch": "cl62",
  "breaks": "sed -i 's/if seen == key:/if False:/; s/if not reason:/if True:/' kit/hooks/kit_queue_stop.py",
  "check": "python3 -I -m unittest discover -s tests -p test_cl62_start_now_stop.py",
- "claimed_at": "2026-11-27T03:27:32Z",
+ "claimed_at": "2026-11-27T07:52:38Z",
  "column": "info",
  "created_at": "2026-11-27T03:13:38Z",
  "differs": "CL62: builds on R6 (the queue ranks every step) and CL53; R6 only lists and refuses out-of-order launches, CL62 makes an unlaunched start-now step block the orchestrator's stop and flags stale hand-over claims.",
@@ -52,9 +52,9 @@
   "\"A half-done action must be kit state resume shows\" (03:18 note): not built here; an unsent batch is already shown (NOT SENT), a created session not recorded is not checked by this step.",
   "The split on `_orchestrator` has no command yet that writes it: the field is `split: {<orchestrator address>: [<post id or part>, ...]}`, read only."
  ],
- "orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "orchestrator_device": "web",
- "orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
  "orchestrator_unreached": null,
  "part": "CL62",
  "planned_by": "orchestrator",
@@ -66,9 +66,11 @@
   "needs_real": true,
   "sha": "7273704f4aa8acbc2581fe112205039b447b0e3c"
  },
- "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "review_orchestrator_device": "web",
- "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
+ "review_session": "session_01AE1HGivzjZvG4hcFjonCYX",
+ "review_started": "2026-11-27T07:49:45Z",
  "session_id": "session_01AE1HGhL21m74opxVsmtKrx",
  "started_at": "2026-11-27T03:14:32Z",
  "status": "in progress",
@@ -104,7 +106,7 @@
  "task": "The orchestrator cannot end a turn while a \"start now\" step is neither launched nor held with a reason: the queue is enforced, not read.\n\nOwner, 2026-11-27: \"Why didn't you launch it when it told you? This needs a permanent fix that doesn't depend on your stupidity.\" Measured: web orchestrator 2's resume at 02:28 listed M2, M4, M3 (and CL50, CL52, CL54, CL56) as [start now]; it followed the previous hand-over's stale line \"M2 and M3 wait on M1\" (M1 had landed at 02:19) and its own split, and launched them only at 03:09 and 03:11 after the owner asked.\n\n1. A Stop hook for the orchestrator role (same role function as M12/M13): while `kit.py queue` has a [start now] step that is not launched and not held (`kit.py hold <post> --why \"...\"`, recorded on the post, shown in resume and to the owner), the stop is refused once with the list and the exact launch commands. Steps owned by another orchestrator (a split recorded on _orchestrator) count as held for this one.\n2. A hand-over line never overrides the queue: resume compares each \"waits on X\" claim in the last hand-over with the board and prints the stale ones first (\"M2 waits on M1: M1 landed 02:19, start now\").\n3. The queue's out-of-order refusal stays; the Stop check is what makes \"start now\" impossible to skip.\n4. Tests: a fixture board with 2 start-now steps, one launched, one not: Stop refused, naming it; after hold: passes. A stale hand-over claim is flagged.\n",
  "title": "The orchestrator cannot end a turn with a start-now step not launched or held",
  "train": "takeover",
- "updated_at": "2026-11-27T03:40:35Z",
+ "updated_at": "2026-11-27T07:49:45Z",
  "verdict": "Yes: with two start-now steps, one launched, the orchestrator's stop is refused naming the other, and passes after a hold with a reason; at 02:28 resume would have flagged \"M3 waits on M1: M1 landed 02:18, start now\".",
  "working_by": "owner"
 }

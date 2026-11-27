@@ -1,0 +1,87 @@
+{
+ "conflict": {
+  "doc": "posts/_dashboard",
+  "other": {
+   "column": "info",
+   "created_at": "2026-11-27T03:55:26Z",
+   "rows": [
+    {
+     "at": 4,
+     "key": "A",
+     "name": "Board data",
+     "note": "Next: The board travels in git, always current (mirror synced on every step)",
+     "post": "cl16-the-board-travels-in-git-always-current",
+     "state": "running",
+     "steps": [
+      "A web session reconciles its Artifact with GitHub at its start",
+      "CL41's redirect resolved, so the trunk can move",
+      "A test never writes to the real board",
+      "A session on a computer never writes to the Artifact",
+      "The board travels in git, always current (mirror synced on every step)",
+      "end_session says why a push failed",
+      "Tests clean up after themselves",
+      "An outside AI gets one link, the owner's invite with the post's drop box",
+      "A part pushes only its own post; a pull never deadlocks on waiting batches",
+      "The orchestrator's push never sends the cards: no refused batch when another session re...",
+      "A real-project run is done where Harmonize already is: the computer orchestrator, never...",
+      "A merged step is shown landed: the reviewed commit on main counts, not the branch tip"
+     ],
+     "train": "P-board-data"
+    },
+    {
+     "at": 2,
+     "key": "E",
+     "name": "Runners",
+     "note": "Next: Antigravity on the web: how far it runs the board kit, and its profile",
+     "post": "r1-antigravity-on-the-web-how-far-it-runs-t",
+     "state": "running",
+     "steps": [
+      "Every rule that differs by platform says where it applies, checked by a test",
+      "Every new step is measured against every open one: queue order and what runs together",
+      "Antigravity on the web: how far it runs the board kit, and its profile",
+      "Gemini tasks: how far it runs the board kit, and its profile",
+      "The kit suggests where a step runs, from the devices and platforms it remembers",
+      "On a computer, a part runs its own real-project check before Done",
+      "macOS Install Guide & Script: Connecting GitHub to Antigravity Desktop App",
+      "Antigravity desktop app (local computer, NOT web) — Direct kit support patch & review b...",
+      "kit.py launch updates runner on takeover and supports agy launches"
+     ],
+     "train": "P-runners"
+    },
+    {
+     "at": 0,
+     "key": "A",
+     "name": "Orchestrator: open timers only (2026-11-27 03:18)",
+     "note": "",
+     "post": "P-orchestrator",
+     "state": "idle",
+     "steps": [
+      "next step"
+     ],
+     "train": "P-orchestrator"
+    },
+    {
+     "at": 0,
+     "key": "B",
+     "name": "Takeover",
+     "note": "Next: A part launched in the background knows its own step",
+     "post": "cl50-a-part-launched-in-the-background-knows",
+     "state": "done",
+     "steps": [
+      "A part launched in the background knows its own step"
+     ],
+     "train": "P-takeover"
+    }
+   ],
+   "title": "Where we are",
+   "updated_at": "2026-11-27T03:55:26Z"
+  },
+  "other_side": "Artifact",
+  "shown": "GitHub"
+ },
+ "created_at": "2026-11-27T07:50:55Z",
+ "from": "kit",
+ "kind": "conflict",
+ "post_id": "_dashboard",
+ "text": "Conflict: post _dashboard changed both on the Artifact and on the GitHub copy (board-mirror) since the last reconcile. The board shows the GitHub copy (newer, 2026-11-27T07:44:58Z); the Artifact copy (2026-11-27T03:55:26Z) is kept here, whole, in this comment's `conflict.other`; nothing was lost. Pick one and write it back to the post.\n\nThe Artifact copy:\n\n> Where we are"
+}

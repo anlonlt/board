@@ -1,9 +1,9 @@
 {
  "column": "info",
- "created_at": "2026-11-27T07:26:54Z",
+ "created_at": "2026-11-27T07:54:08Z",
  "rows": [
   {
-   "at": 4,
+   "at": 6,
    "key": "A",
    "name": "Board data",
    "note": "Next: The board travels in git, always current (mirror synced on every step)",
@@ -14,14 +14,15 @@
     "CL41's redirect resolved, so the trunk can move",
     "A test never writes to the real board",
     "A session on a computer never writes to the Artifact",
+    "An outside AI gets one link, the owner's invite with the post's drop box",
+    "A part pushes only its own post; a pull never deadlocks on waiting batches",
     "The board travels in git, always current (mirror synced on every step)",
     "end_session says why a push failed",
     "Tests clean up after themselves",
-    "An outside AI gets one link, the owner's invite with the post's drop box",
-    "A part pushes only its own post; a pull never deadlocks on waiting batches",
     "The orchestrator's push never sends the cards: no refused batch when another session re...",
     "A real-project run is done where Harmonize already is: the computer orchestrator, never...",
-    "A merged step is shown landed: the reviewed commit on main counts, not the branch tip"
+    "No merge friction: generated files out of git, a reviewed step lands without another re...",
+    "One way to touch the board: the kit prints every call, the guard refuses anything else,..."
    ],
    "train": "P-board-data"
   },
@@ -144,24 +145,23 @@
    "train": "P-runners"
   },
   {
-   "at": 3,
+   "at": 6,
    "key": "F",
    "name": "Takeover",
-   "note": "Next: A crashed part is continued from its last checkpoint",
-   "post": "cl17-a-crashed-part-is-continued-from-its-las",
+   "note": "Next: A part's last chat message is a single dot the first time, not after a refusal",
+   "post": "cl60-a-part-s-last-chat-message-is-a-single-d",
    "state": "running",
    "steps": [
-    "A part reports to the orchestrator that started it, unless another claimed it",
-    "A session always starts on the newest code from GitHub, in every checkout",
-    "Work in progress is on GitHub within minutes, public repos included",
     "A crashed part is continued from its last checkpoint",
+    "A part reports to the orchestrator that started it, unless another claimed it",
     "A part launched in the background knows its own step",
+    "A session always starts on the newest code from GitHub, in every checkout",
     "A step's task is written once, in its post; the prompt is generated at launch",
+    "Work in progress is on GitHub within minutes, public repos included",
     "A part's last chat message is a single dot the first time, not after a refusal",
     "A kit fix reaches every project on update: no project keeps a fork of a kit hook",
     "The orchestrator cannot end a turn with a start-now step not launched or held",
     "Resume sees whether a web part is alive: never 'stalled' from an empty local list",
-    "A re-review's commit is the one land checks: CL57 refused after a continue at its tip",
     "Two orchestrators each keep their address: a takeover never replaces the other one's"
    ],
    "train": "P-takeover"
@@ -169,6 +169,18 @@
   {
    "at": 0,
    "key": "G",
+   "name": "Orchestrator: open timers only (2026-11-27 03:18)",
+   "note": "",
+   "post": "P-orchestrator",
+   "state": "idle",
+   "steps": [
+    "next step"
+   ],
+   "train": "P-orchestrator"
+  },
+  {
+   "at": 0,
+   "key": "H",
    "name": "Agy",
    "note": "Next: install_cmd skips linked git worktrees so ~/.local/bin/<cmd> is never overwritten by a part",
    "post": "a1-install-cmd-skips-linked-git-worktrees-s",
@@ -180,7 +192,7 @@
   },
   {
    "at": 6,
-   "key": "H",
+   "key": "I",
    "name": "Demo",
    "note": "Next: Try replying or tapping 👍",
    "post": "demo-todo",
@@ -198,5 +210,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T07:26:54Z"
+ "updated_at": "2026-11-27T07:54:08Z"
 }

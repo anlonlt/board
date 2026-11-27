@@ -1,0 +1,133 @@
+{
+ "artifacts": [
+  ".gitignore",
+  "install.py",
+  "kit/claude-cli/consultant.template.md",
+  "kit/claude/consultant.template.md",
+  "kit/consultant.template.md",
+  "kit/hook.py",
+  "kit/kit_manifest.py",
+  "kit/landing.py",
+  "scripts/kit.py",
+  "scripts/usage.py",
+  "test_install.py",
+  "tests/test_cl71_no_merge_friction.py",
+  "tests/test_claims_notify.py",
+  "tests/test_landing.py",
+  "tests/test_launch_runtime.py",
+  "tests/test_m10_fix_kinds.py"
+ ],
+ "bars": [
+  "0 generated files tracked in git, of 2 before (the manifest and the Artifact's files map)",
+  "0 conflicts of 1 merge: 2 branches that both change the kit (the test installs, updates on each branch, merges)",
+  "2 of 2 red-on-web tests pass in this web container (test_launch_runtime 9 of 9, test_cl48_test_guard 8 of 8)",
+  "87 of 87 suites pass (`run_all_tests.py --all`, after merging main)",
+  "12 of 12 new cases pass (tests/test_cl71_no_merge_friction.py: merge, save refusals, land after regenerate, re-review in CR-...-2, merged branch landed)"
+ ],
+ "body": "A reviewed step now reaches main without another review: the two generated files that every branch rewrote are out of git, a regenerate after the review no longer blocks landing, a re-review's commit is recorded, and a step already merged shows as landed. The two tests that were red on main in a web container pass.\n\n### What was wrong\nEvery landing on 11-27 went round the same loop. `.kit/manifest.json` and `.kit/artifact-files/files-board.json` are generated, yet were committed: every branch regenerated them, so every merge with a moved main conflicted in them (CL17, CL44, CL54, CL56). The save hook committed them twice with the conflict markers still in. The part's fix, a regenerate commit, landed after its review, so `land` asked for a new review (CL17, CL54, CL56, CL57). A re-review's commit never reached the post (CL57: three reviews). Steps merged by hand or from a shared branch stayed \"not landed\" (CL44, M5-M8, CL41). And two tests were red on main in a web container.\n\n### 1. The two generated files are out of git\n- `.gitignore` lists both; `git rm --cached` took them out of this repo. `install.py` does the same in a project (said in its log: \"untracked ... commit the removal\") and adds both to its `.gitignore`.\n- **The manifest** is rebuilt from the tree where a clone has none (`kit/kit_manifest.py`, installed as `.kit/kit_manifest.py`): every file under the kit's own paths that git tracks and that equals its committed copy; `_kit_commit` is the last commit that changed `.kit/kit.py`. Readers use it: `install.py` (update, `--verify`, `--uninstall`), `kit.py doctor`, `usage.py`; the hook runner asks git whether a hook is tracked. On this repo the rebuild gives 103 files, each with the hash the installed manifest has; the 4 it leaves out are memory files (`.board/memory/`), which belong to the project.\n- **The files map** is the Artifact's own state (which blob each picture is, each mirrored document's version): it cannot come from the tree. It now rides the board as the card `posts/_files`, which `artifact pull`, `load` and `push` already carry with their versions. `load` and `push` rebuild the local file from the card when it is missing and put new entries on the card when it gained any (`files_card_sync` in kit.py). The page hides `_` cards.\n\n### 2. The save never commits conflict markers\n`conflict_hits` (kit/landing.py) finds a file still unmerged, or one whose added lines hold both a `<<<<<<<` and a `>>>>>>>` line. The checkpoint (a part's save) and the wip snapshot both refuse then, name the files and commit nothing (\"REFUSED: nothing committed: new.txt still holds a merge's conflict markers\"). A lone `=======` (a Markdown title) is not one. The checkpoint also no longer fails on a file staged for removal that is now ignored.\n\n### 3. land skips commits that only touch generated files\nAfter the review, a commit whose files are all generated is not a reason to review again; land says so in its line. A merge whose only conflicts are generated files is concluded with the trunk's side kept.\n\n### 4. The two red tests\n- `test_launch_runtime`: its \"not on the web\" cases cleared `CLAUDE_CODE_REMOTE` but not `CLAUDE_CODE_REMOTE_SESSION_ID`, which a web container sets, so they ran as web. The list now holds every variable the platform detection reads; the agy case says `AGY_PID` instead of trusting the parent processes. 9 of 9.\n- `test_cl48_test_guard`: passes here, 8 of 8, alone and in the full run, before and after this change. I could not make it fail in this container, so nothing in it changed.\n\n### Also red on main, fixed here\n`tests/test_m10_fix_kinds.py` failed on main after the orchestrator's ledger commit (11-27 07:42) gave 'silent error' and 'two copies out of sync' their design steps (CL71, CL72): its seed case still expected those two kinds to raise the alarm. It now checks their totals and design steps, and that the alarm names only the owner's two rules left without a check. The full run is green: 87 of 87 suites.\n\n### 6. A review records the commit it read\nNew `kit.py reviewed <post> <verdict> --review-id <id> [--commit sha]`: writes `review`, `review_id` and `review_commit` (the branch's tip on origin, or `--commit`) on the post, and `commit` on the review's comment, whatever started the review. The three consultant templates use it instead of a bare `board_cli.py update`. `kit.py review --force` also records the tip the new review will read. `land` takes the newest CR comment's `commit` when it is newer than the post's.\n\n### 7. A step on the trunk counts as landed\n`kit.py landing`, `land` and resume's \"Work not on the trunk yet\" now count a step landed when its reviewed commit is on the trunk, or (no reviewed commit recorded) its branch tip is, or a trunk merge names its branch (`Merge branch 'x'`, `Merge origin/x`, a pull request from it). They mark it themselves and list later commits apart: \"is on the trunk (at abc): marked landed; 2 newer commit(s) on `cl44`, not reviewed\". The branch is not deleted then, so the unreviewed commits stay.\n\n### 5 and 8. Tests\n`tests/test_cl71_no_merge_friction.py`, 12 cases:\n- the kit's repo tracks neither file, and ignores both;\n- a project installed from a kit clone with neither file: two branches each change a kit file and update; they merge with no conflict, both changes in; the manifest is rebuilt from the tree; an uncommitted edit is KEPT by an update;\n- the files map is rebuilt from the `_files` card and gives back what it gained;\n- a checkpoint and the save hook each refuse a file with markers and name it; a Markdown `=======` is saved;\n- a regenerate commit after the review lands; a real commit after it still waits;\n- a re-review recorded only in `CR-s1-2` lands; `kit.py reviewed` records the commit and land merges it;\n- a branch merged by hand with one later commit shows landed, with \"1 newer commit(s)\"; a trunk merge naming the branch counts.",
+ "branch": "cl71",
+ "breaks": "sed -i 's/gen = \\[c for c in new if only_generated(c)\\]/gen = []/' kit/landing.py",
+ "check": "python3 -m unittest tests.test_cl71_no_merge_friction tests.test_launch_runtime tests.test_cl48_test_guard",
+ "checkpoint": {
+  "at": "2026-11-27T07:40:55Z",
+  "branch": "cl71",
+  "pushed": true,
+  "sha": "291e94e3"
+ },
+ "claimed_at": "2026-11-27T07:52:37Z",
+ "column": "info",
+ "created_at": "2026-11-27T07:28:10Z",
+ "differs": "CL71: builds on CL48 (test runs) and CL59 (part pushes), but touches neither: it takes the generated manifest and files map out of git, makes land count a reviewed commit on main (not the branch tip) and record a re-review's commit, and fixes the two tests red on main in a web container.",
+ "from": "orchestrator",
+ "handoff": "Generated files are listed in one place each: `GENERATED` in kit/landing.py and scripts/kit.py, `NOT_KIT`/`GENERATED` in kit/kit_manifest.py. A review now ends with `kit.py reviewed <post> <verdict> --review-id <id>` (in the three consultant templates). Branches cut before CL71 drop the manifest at their first merge with main.",
+ "kept_on_train": "same goal as CL70: steps reach main without re-review",
+ "kind": "bug",
+ "launched_at": "2026-11-27T07:30:50Z",
+ "launched_out_of_order": {
+  "at": "2026-11-27T07:30:50Z",
+  "was": "CL71 waits: CL16 runs (shares run_all_tests.py); CL52 runs (shares run_all_tests.py)",
+  "why": "owner's go 2026-11-27; CL16 is blocked on D1 and CL52 is Done, neither is editing run_all_tests.py now"
+ },
+ "not_checked": [
+  "The real-project run on anlonlt/harmonize (install/update touched): the orchestrator's, pending.",
+  "A branch made before CL71 that still tracks the manifest: its first merge with main hits a modify/delete in it; `land` resolves that itself (the trunk's side kept), a hand merge must `git rm --cached` it once.",
+  "A project's own edit to a kit file, committed: a clone with no manifest takes it as the kit's, so an update replaces it (shown as \"updated\", in git); an uncommitted edit is still KEPT."
+ ],
+ "orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
+ "orchestrator_device": "web",
+ "orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
+ "part": "CL71",
+ "planned_by": "orchestrator",
+ "proof": {
+  "at": "2026-11-27T07:53:12Z",
+  "branch": "cl71",
+  "commit": "a01749b9",
+  "key": "885f22715fac8071",
+  "needs_real": true,
+  "sha": "a01749b94ebd8613bbf7272209017fe17df91640"
+ },
+ "repo": "anlonlt/board",
+ "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
+ "review_orchestrator_device": "web",
+ "review_orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
+ "session_id": "session_01AE1HGiRAcHgq5vH6T6Ubk3",
+ "started_at": "2026-11-27T07:31:52Z",
+ "status": "in progress",
+ "subtasks": [
+  {
+   "from": "task",
+   "n": 1,
+   "status": "done",
+   "title": "The manifest and the files map are not tracked"
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "done",
+   "title": "The save hook never commits a file with conflict markers (refuses, says which)"
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "done",
+   "title": "land ignores commits after the review that touch only generated files"
+  },
+  {
+   "from": "task",
+   "n": 4,
+   "status": "done",
+   "title": "The two red tests pass on main in a web container (or say precisely why they cannot)"
+  },
+  {
+   "files": [
+    "scripts/run_all_tests.py"
+   ],
+   "from": "task",
+   "n": 5,
+   "status": "done",
+   "title": "Test"
+  },
+  {
+   "n": 6,
+   "status": "done",
+   "title": "6. A review records the commit it read (review_commit); land takes the newest CR comment's commit"
+  },
+  {
+   "n": 7,
+   "status": "done",
+   "title": "7. land and resume count a step landed when its reviewed commit is on the trunk"
+  },
+  {
+   "n": 8,
+   "status": "done",
+   "title": "8. Tests for 6 and 7"
+  }
+ ],
+ "task": "Owner, 2026-11-27 (screenshots of CL17, CL54, CL61 and a review): \"why is there so much friction?\"\n\nFound (orchestrator 3, 03:40-07:30): every landing today hit the same loop. `.kit/manifest.json` and `.kit/artifact-files/files-board.json` are generated files committed in git. Every branch regenerates them, so every merge with a moved main conflicts in them (CL17, CL44, CL54, CL56). The save hook twice committed them WITH conflict markers. The part's fix (a regenerate commit) lands after its review, so `land` refuses and asks for a new review (CL17, CL54, CL56, CL57). Meanwhile two tests are red on main in a web container (test_launch_runtime, test_cl48_test_guard), so every part and review spends a run proving \"fails on main too\".\n\nDone when:\n1. The manifest and the files map are not tracked: built at install/update and at `artifact push` from the tree, never merged (.gitignore + `git rm --cached`, readers rebuild on demand).\n2. The save hook never commits a file with conflict markers (refuses, says which).\n3. `land` ignores commits after the review that touch only generated files.\n4. The two red tests pass on main in a web container (or say precisely why they cannot).\n5. Test: two branches that both change the kit merge with no manifest conflict; a post-review regenerate commit does not block land. `python3 scripts/run_all_tests.py --all` green.\n\nFolded in (owner's go, 2026-11-27): CL65 and CL70, same goal: a reviewed step reaches main without another review.\n6. (was CL65) A review records the commit it read on the post (`review_commit`) when it writes its verdict, whatever started the session; `land` takes the newest CR comment's commit when it is newer. CL57 needed 3 reviews because the second's commit was never recorded.\n7. (was CL70) `land` and resume count a step landed when its reviewed commit is on the trunk, or a trunk merge names its branch, and mark it themselves; later commits on the branch are listed apart (\"2 newer commits, not reviewed\"). CL44, M5-M8 and CL41 were merged yet shown \"not landed\" (shared branch feat/streamline-doctor-memory; two test commits on cl44).\n8. Tests for 6 and 7: a re-review recorded only in CR-...-2 lets land proceed; a merged branch with one later commit shows landed.\n",
+ "title": "No merge friction: generated files out of git, a reviewed step lands without another review, main green on the web",
+ "train": "board-data",
+ "updated_at": "2026-11-27T07:53:12Z",
+ "verdict": "The merge loop is gone: the manifest and the files map left git, the save refuses conflict markers, land skips generated-only commits and merges what the last review read, and merged steps count as landed.",
+ "work_branch": "main",
+ "working_by": "owner"
+}

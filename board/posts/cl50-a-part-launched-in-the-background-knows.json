@@ -22,10 +22,13 @@
  "check": "python3 -m unittest tests.test_bg_step -v",
  "claimed_at": "2026-11-27T03:27:29Z",
  "column": "info",
+ "completed_at": "2026-11-27T03:47:25Z",
  "created_at": "2026-11-26T21:33:05Z",
  "differs": "CL50: builds on CL49 (a part reports to the orchestrator that launched it); CL49 names the launcher, CL50 makes a part started with claude --bg know its own step instead of guessing it.",
  "from": "orchestrator",
  "handoff": "Reinstall the kit on each project (`install.py . --update`) so `.kit/kit.py`, `.kit/landing.py` and the hooks carry this. Run the probe below once on the laptop and add its two lines to this post: if both sessions show their own KIT_POST, the warm-spare guess is wrong and CL44's mix-up came from elsewhere (the fix still holds).",
+ "landed": "3de70476c3fd83dc30cb1dfbb0c914f9a04aef28",
+ "landed_at": "2026-11-27T03:56:29Z",
  "launched_at": "2026-11-27T03:11:22Z",
  "launched_out_of_order": {
   "at": "2026-11-27T03:11:22Z",
@@ -50,13 +53,23 @@
   "needs_real": true,
   "sha": "d8e7b0fe36842434ca8d0b6def4d8aba0d582a92"
  },
+ "real_project": {
+  "command": "python3 -I <kit worktree of origin/cl50>/install.py <harmonize copy> --update --web-multi no (exit 0); then in the copy on a scratch branch: echo hm-probe-step > .kit/run/step; echo '<PostToolUse Bash payload>' | KIT_POST=OTHER-POST python3 -I .claude/hooks/kit/kit_activity.py (twice)",
+  "output": "install: exit 0, kit version d8e7b0fe. Run 1: {\"hookSpecificOutput\": {\"hookEventName\": \"PostToolUse\", \"additionalContext\": \"STEP: this session's environment names step OTHER-POST (KIT_POST), but this worktree is step hm-probe-step (.kit/run/step): working as hm-probe-step, its saves are labelled hm-probe-step. A `claude --bg` launch can start in a process made for another launch; nothing to do (said once).\"}} exit 0. Run 2: no output, exit 0 (said once). .kit/run/step-disagree.json = {\"env\": \"OTHER-POST\", \"step\": \"hm-probe-step\"}. The live two-launch claude --bg probe was not run (no background sessions here).",
+  "project": "anlonlt/harmonize"
+ },
+ "review": "continue",
+ "review_commit": "d8e7b0fe36842434ca8d0b6def4d8aba0d582a92",
+ "review_id": "CR-cl50-a-part-launched-in-the-background-knows",
  "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "review_orchestrator_device": "web",
  "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_session": "session_01AE1HGirQuX5Q6LatgSvQdz",
+ "review_started": "2026-11-27T03:48:42Z",
  "runner": "claude-web",
  "session_id": "session_01AE1HGj6WUrysNPM7yLUF7w",
  "started_at": "2026-11-27T03:12:31Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "from": "task",
@@ -81,7 +94,7 @@
  "task": "A part launched with `claude --bg` knows its own step. CL44's part was started while M1's part had just been launched, and its environment named M1's post (KIT_POST): its automatic save commits were labelled with M1's name. A likely cause: `claude --bg` hands the work to a warm spare process made earlier, whose environment is not the one the launch passed (the launch sets KIT_POST, KIT_ROLE and the task list id in its subprocess environment).\n\n1. Confirm the cause: launch two parts one after the other and read each session's KIT_POST.\n2. A part's step never rests on the environment alone: the launch records the worktree's step (`.kit/run/step` in the worktree, or the branch's post), and the hooks read that first; KIT_POST only when it agrees.\n3. When the two disagree, the hooks say so once, never label commits with the other step.\n",
  "title": "A part launched in the background knows its own step",
  "train": "takeover",
- "updated_at": "2026-11-27T03:34:39Z",
+ "updated_at": "2026-11-27T03:56:29Z",
  "verdict": "Yes for the fix: the launch writes the step into the worktree before the session starts, saves and hooks read it first, and a disagreeing environment is said once; the cause itself is not yet confirmed live.",
- "working_by": "owner"
+ "working_by": ""
 }

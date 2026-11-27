@@ -36,7 +36,7 @@
  "branch": "cl52",
  "breaks": "sed -i 's/^tempfile.mkdtemp = mkdtemp$/pass/' tests/temp_cleanup.py",
  "check": "python3 scripts/run_all_tests.py --keep-going test_run_all_tests test_train_and_task_train test_device_and_takeover test_cl30_kit test_orchestrator_guard test_part_starts test_cl36_post test_cl48_test test_artifact_files test_cards_command test_artifact_assets test_artifact_cross test_install test_checklist test_arena test_welcome test_clerk_starts",
- "claimed_at": "2026-11-27T03:27:30Z",
+ "claimed_at": "2026-11-27T07:52:38Z",
  "column": "info",
  "created_at": "2026-11-26T22:13:19Z",
  "differs": "CL52: builds on CL48 (a test never writes the real board); CL48 refuses writes outside temp, CL52 makes every test remove what it creates (temp dirs, worktrees, branches, processes).",
@@ -54,9 +54,9 @@
   "`tests/test_resume_attached_boards.py`, the byte-for-byte control, fails when it runs from a copy in a temp folder, as done runs it. It fails the same way on main, so it is not from this step: the new resume shows an owner's open comment the old one did not. It is left out of `check` (its leak is fixed and passes here). A step of its own should fix it.",
   "Git worktrees and branches: no suite left one in these runs, and the runner does not check for them."
  ],
- "orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "orchestrator_device": "web",
- "orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
  "orchestrator_unreached": null,
  "part": "CL52",
  "planned_by": "orchestrator",
@@ -69,9 +69,11 @@
   "needs_real": true,
   "sha": "ac387f62dba19bad4f8cb92186bd3bd45b4d1247"
  },
- "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "review_orchestrator_device": "web",
- "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
+ "review_session": "session_01AE1HGivzjZvG4hcFjonCYX",
+ "review_started": "2026-11-27T07:49:45Z",
  "runner": "claude-web",
  "session_id": "session_01AE1HGia6d8GJWcTSt6rRLs",
  "started_at": "2026-11-27T03:13:16Z",
@@ -102,7 +104,7 @@
  "task": "Tests clean up after themselves: /tmp held about 5,600 folders left by test runs (cl30-inst-*, tmp*, kit-tests-*, scratch boards), each with a project copy and its own board token, on a computer with little room.\n\n1. Count what each suite leaves in the temp folder (run it, compare before and after) and fix the suites that leave anything: TemporaryDirectory or cleanup on every path, failures included.\n2. run_all_tests.py runs suites with their own temp folder (TMPDIR under one run folder) and removes it at the end; what a suite left is named in its result line, like the files it writes to ~/.local/bin.\n3. One command removes the leftovers of past runs (only folders the test runs make, by their prefixes and age), with a dry run listing them first.\n",
  "title": "Tests clean up after themselves",
  "train": "board-data",
- "updated_at": "2026-11-27T03:42:04Z",
+ "updated_at": "2026-11-27T07:49:45Z",
  "verdict": "Done: a full run now leaves nothing (80 of 80 suites clean, it was 20 suites and 111 folders per run), and one command clears the folders older runs left, after showing the list first.",
  "working_by": "owner"
 }

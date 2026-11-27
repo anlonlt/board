@@ -1,0 +1,111 @@
+{
+ "conflict": {
+  "doc": "posts/r5-every-rule-that-differs-by-platform-says",
+  "other": {
+   "artifacts": [
+    "kit/arena/orchestrator.template.md",
+    "kit/claude-cli/orchestrator.template.md",
+    "kit/claude-cli/part.template.md",
+    "kit/claude/orchestrator.template.md",
+    "kit/claude/part.template.md",
+    "kit/generic/orchestrator.template.md",
+    "kit/hooks/kit_task_train.py",
+    "kit/orchestrator.template.md",
+    "kit/part.template.md",
+    "scripts/kit.py",
+    "scripts/run_all_tests.py",
+    "tests/test_new_install.py",
+    "tests/test_platform_matrix.py",
+    "tests/test_train_and_task_train.py"
+   ],
+   "bars": [
+    "5 of 5 platforms (`web`, `cli`, `agy`, `arena`, `generic`) detected from environment and parent process alone with 0 config reads in `_platform()`",
+    "16 of 16 platform-rule rows declared across all 5 platforms in `PLATFORM_RULES` with 0 un-rowed platform checks remaining in `scripts/kit.py` (AST-audited)",
+    "4 of 4 core workflows (`resume`, `done`, `launch`, `step_new`) verified against `PLATFORM_RULES` across all 5 platforms (13 of 13 tests passing in `tests/test_platform_matrix.py`)",
+    "8 of 8 part and orchestrator guide templates updated to require naming a `PLATFORM_RULES` row for any single-platform change",
+    "77 of 80 repository test suites passing (3 unrelated pre-existing failures on trunk: `test_install_present_runtimes.py`, `test_resume_attached_boards.py` against live board port, `test_run_all_tests.py` git notes)"
+   ],
+   "body": "Rules that behave differently on the web, in the terminal, in Antigravity, in embedded previews, or in a plain shell now live in one central table instead of being scattered across separate checks. A new test suite runs the core workflow commands under all five environments and refuses any new platform rule that is not declared in that table, stopping changes made for one environment from leaking into the others.\n\n### One platform detector (`_platform()`)\n- Consolidated platform detection in `scripts/kit.py` into `_platform(explicit=None)` returning one of `PLATFORMS = (\"web\", \"cli\", \"agy\", \"arena\", \"generic\")`.\n- Detection uses only runtime environment markers (`KIT_PLATFORM`, `CLAUDE_CODE_REMOTE` / `CLAUDE_CODE_REMOTE_SESSION_ID`, `KIT_EMBED_PREVIEW` / `LMARENA` / `ARENA_SANDBOX`, `AGY_PID`, `CLAUDECODE` / `CLAUDE_CODE_SESSION_ID` / `CLAUDE_PID` / `CLAUDE_PROJECT_DIR`, `KIT_CLI`, `ANTIGRAVITY_AGENT` / `ANTIGRAVITY_CONVERSATION_ID`) and parent process inspection (`_ancestor(\"agy\")`, `_ancestor(\"claude\")`).\n- Removed config inference (`kit.runtime`, `kit.cli`, `kit.artifact`) from `_platform()` and `_active_cli()` so a config naming an Artifact or default CLI never misclassifies where a session runs.\n\n### Central platform rules table (`PLATFORM_RULES` + `_rule()`)\n- Added `PLATFORM_RULES` in `scripts/kit.py` with 16 rows covering all 5 platforms:\n  - `artifact_steps`, `stale_gate`, `device_cap_gate`, `real_project_run`, `cards`, `launcher`, `reply_format`, `hook_runtime`, `task_list`, `alive_check`, `part_template`, `orchestrator_guide`, `consultant_template`, `checkout_refetch`, `welcome_runtime`, `owner_surface`.\n- Migrated `artifact_here`, `artifact_pull`, `stale_copy`, `_owner_write`, `report_lines`, `done`, `_launcher`, `review`, `_part_template`, `_launch_line`, `step_new`, `checkout_fresh_once`, `launch`, `resume`, `resume_delta`, `check_real_project`, `_launch_workflow`, `orchestrator_guide`, `situation`, `owner_lines`, `resume_role`, and `main` (`fresh` and `artifact`) to read `_rule(...)`.\n- Fixed additional leaks discovered during the audit:\n  - `_owner_write()` (`claim` / `unreached`) called `attached_board()` instead of `artifact_here()`.\n  - `_launch_workflow()` printed the `ArtifactData batch` step on computers whenever `kit.artifact.url` appeared in config.\n  - `resume()` printed the attached-board `artifact pull` hint and `TaskCreate` footer on non-web / non-Claude platforms.\n  - `resume_role()` (`part` and `review`) and `launch()` leaked web-only `ArtifactData get` / `CL38` (`add_repo`) instructions onto computers.\n  - `kit/hooks/kit_task_train.py` `on_create()` error hint suggested `artifact pull` on computers without checking `on_web()`.\n  - `scripts/run_all_tests.py` `SESSION_VARS` now strips `ANTIGRAVITY_*`, `KIT_PLATFORM`, `KIT_EMBED_PREVIEW`, `KIT_STALE_OK`, `LMARENA`, `ARENA_SANDBOX`.\n\n### Matrix test and static refusal (`tests/test_platform_matrix.py`)\n- `PlatformDetection`: verifies config independence across trap configs and tests every env and parent-process signal (including real-agy detection via `ANTIGRAVITY_AGENT` + `_ancestor(\"agy\")` with no `AGY_PID`).\n- `TableContract`: enforces 5-platform completeness on every row, verifies `_rule()` rejects unknown rows, cross-checks `kit/hook.py` `TABLE` against `PLATFORM_RULES[\"hook_runtime\"]` and `PLATFORM_RULES[\"cards\"]` (cards reminder only where `cards == \"agent\"`, web `kit-cards.md` preserved), and runs an AST audit over `scripts/kit.py` refusing any ad-hoc platform env check, `_is_web()` / `_active_cli()` / `_ancestor()` call, or `_platform() == \"...\"` comparison outside the allowlisted detector helpers.\n- `ResumeMatrix`, `DoneMatrix`, `LaunchAndStepNewMatrix`: run `stale_copy`, `resume`, `resume_role`, `done`, `step_new`, and `launch` under all 5 platforms with an Artifact URL and consumers in config, comparing every output against `PLATFORM_RULES`.\n- `GuidesNameTheTable`: checks all 3 part templates and all 5 orchestrator templates require naming a `PLATFORM_RULES` row for single-platform changes.",
+   "branch": "r5",
+   "breaks": "python3 -c 'p=\"scripts/kit.py\"; s=open(p).read(); assert \"not _rule(\\\"stale_gate\\\")\" in s; open(p,\"w\").write(s.replace(\"not _rule(\\\"stale_gate\\\")\", \"_platform() != \\\"web\\\"\", 1))'",
+   "check": "python3 -m unittest tests.test_platform_matrix tests.test_cl51_computer_artifact tests.test_launch_runtime tests.test_resume_one_prompt tests.test_kit_copies_current -v",
+   "column": "info",
+   "completed_at": "2026-11-27T03:45:07Z",
+   "created_at": "2026-11-26T22:02:24Z",
+   "from": "orchestrator",
+   "handoff": "R4 can switch `PLATFORM_RULES[\"real_project_run\"]` for `cli` and `agy` from `\"computer\"` to `\"part\"` in one table row: `done()` and `check_real_project()` already support `\"part\"` mode (refusing `done` until `real_project` is recorded) and `tests/test_platform_matrix.py::DoneMatrix::test_real_project_part_mode_refuses_done` already verifies it. Every future single-platform change must add or update a row in `PLATFORM_RULES` or `test_no_unrowed_platform_checks_in_kit_py` will refuse it.",
+   "launched_at": "2026-11-27T02:16:25Z",
+   "not_checked": [
+    "Dry run on `anlonlt/harmonize` (real-project check for `scripts/kit.py` `resume`/`artifact` changes; pending per `real_project_run`)",
+    "Browser-backed JS layout/UX suites (`kit/board/test_page_*.js` printed SKIP because no Chromium/Playwright is installed in this environment; no UI files were modified)"
+   ],
+   "part": "R5",
+   "planned_by": "orchestrator",
+   "priority": 2,
+   "proof": {
+    "at": "2026-11-27T03:44:46Z",
+    "branch": "r5",
+    "commit": "4bd6f71",
+    "key": "bef52055d26ef23b",
+    "needs_real": false,
+    "sha": "4bd6f71e1a0a18aadcc783a074ffeba27a1098eb"
+   },
+   "real_project": {
+    "command": "git -C /home/anon/harmonize worktree add --detach /tmp/r5-harmonize-wt HEAD && python3 -I <r5>/install.py . --update && KIT_CLI=agy python3 -I .kit/kit.py resume --role orchestrator",
+    "output": "install.py --update exited 0 (kit version 087d9b8, 23 agy handlers, 8 claude settings hooks); KIT_CLI=agy kit.py resume --role orchestrator exited 0 and rendered all Harmonize trains cleanly (DRYRUN_RC=0).",
+    "project": "anlonlt/harmonize"
+   },
+   "review_commit": "4bd6f71e1a0a18aadcc783a074ffeba27a1098eb",
+   "review_started": "2026-11-27T03:45:10Z",
+   "runner": "agy",
+   "session_id": "ef7b5d5c-8702-4f7a-88b2-e3d7a2e9bf03",
+   "started_at": "2026-11-27T02:42:53Z",
+   "status": "complete",
+   "subtasks": [
+    {
+     "files": [
+      "scripts/kit.py"
+     ],
+     "from": "task",
+     "n": 1,
+     "status": "done",
+     "title": "One answer to \"where does this session run\" (web, CLI, agy, LMArena-like, generic), the kit's..."
+    },
+    {
+     "from": "task",
+     "n": 2,
+     "status": "done",
+     "title": "A table of what differs by platform, like the hook table"
+    },
+    {
+     "files": [
+      "tests/test_platform_matrix.py"
+     ],
+     "from": "task",
+     "n": 3,
+     "status": "done",
+     "title": "A test that runs resume, done, launch and step new under each platform (faked as this morning's agy..."
+    },
+    {
+     "from": "task",
+     "n": 4,
+     "status": "done",
+     "title": "The part and orchestrator guides say"
+    }
+   ],
+   "task": "Every rule that differs by platform says where it applies, and a test catches a rule that leaks to another platform. At least eight times since 11-23 a rule made on one platform was applied to the others: the launchers' runtime (CL26), hooks copied into every runtime (CL28, CL37), the web's Artifact STALE gate on a computer (CL30, fixed in part by CL44 item 1), done's Artifact push on a computer (CL51), the web's \"orchestrator runs the real-project check\" on a computer (R4), Claude Code's hook reply sent to agy (CL44 item 9), a computer decision removing the web's cards agent (106bba6), the web's cards reminder in the CLI. Only the hooks were caught, because only they declare their platforms (the hook table's rows, and a test counting hooks per platform).\n\n1. One answer to \"where does this session run\" (web, CLI, agy, LMArena-like, generic), the kit's `_platform()`, used by every rule; never inferred from the config (a config naming an Artifact says what exists, not where the session runs). In scripts/kit.py.\n2. A table of what differs by platform, like the hook table: the Artifact steps, the real-project run, the cards (server or agent), the launcher, the reply format, the gates; each rule reads it instead of its own check.\n3. A test that runs resume, done, launch and step new under each platform (faked as this morning's agy run: environment and parent process) and compares what each does with the table, in tests/test_platform_matrix.py; a new rule with no row is refused.\n4. The part and orchestrator guides say: a change made for one platform names its row in the table.\n5. Launch follows the step's runner; taking a step over is a claim, never a launch: `launch` refuses a step assigned to another runner (a `claude-web` step from the computer, a `cli` or `agy` step from the web), naming it. A takeover goes through a claim (`launch --take` / CL49's `kit.py claim`): allowed only when the holder's session is checked ended or stalled, or the owner said so; it records on the post who took it, from whom and why, tells the old holder, and continues from where it stopped. Today only runners the kit cannot launch (antigravity-web, gemini-tasks) are refused (step_holder in scripts/kit.py).",
+   "title": "Every rule that differs by platform says where it applies, checked by a test",
+   "train": "runners",
+   "updated_at": "2026-11-27T03:45:10Z",
+   "verdict": "Every platform-dependent rule now reads one central platform table driven by a single config-free platform detector, verified across all five environments by a matrix test that refuses un-rowed checks.",
+   "working_by": ""
+  },
+  "other_side": "Artifact",
+  "shown": "GitHub"
+ },
+ "created_at": "2026-11-27T07:50:55Z",
+ "from": "kit",
+ "kind": "conflict",
+ "post_id": "r5-every-rule-that-differs-by-platform-says",
+ "text": "Conflict: post r5-every-rule-that-differs-by-platform-says changed both on the Artifact and on the GitHub copy (board-mirror) since the last reconcile. The board shows the GitHub copy (newer, 2026-11-27T04:01:55Z); the Artifact copy (2026-11-27T03:45:10Z) is kept here, whole, in this comment's `conflict.other`; nothing was lost. Pick one and write it back to the post.\n\nThe Artifact copy:\n\n> Rules that behave differently on the web, in the terminal, in Antigravity, in embedded previews, or in a plain shell now live in one central table instead of being scattered across separate checks. A new test suite runs the core workflow commands under all five environments and refuses any new platform rule that is not declared in that table, stopping changes made for one environment from leaking into the others.\n> \n> ### One platform detector (`_platform()`)\n> - Consolidated platform detection in `scripts/kit.py` into `_platform(explicit=None)` returning one of `PLATFORMS = (\"web\", \"cli\", \"agy\", \"arena\", \"generic\")`.\n> - Detection uses only runtime environment markers (`KIT_PLATFORM`, `CLAUDE_CODE_REMOTE` / `CLAUDE_CODE_REMOTE_SESSION_ID`, `KIT_EMBED_PREVIEW` / `LMARENA` / `ARENA_SANDBOX`, `AGY_PID`, `CLAUDECODE` / `CLAUDE_CODE_SESSION_ID` / `CLAUDE_PID` / `CLAUDE_PROJECT_DIR`, `KIT_CLI`, `ANTIGRAVITY_AGENT` / `ANTIGRAVITY_CONVERSATION_ID`) and parent process inspection (`_ancestor(\"agy\")`, `_ancestor(\"claude\")`).\n> - Removed config inference (`kit.runtime`, `kit.cli`, `kit.artifact`) from `_platform()` and `_active_cli()` so a config naming an Artifact or default CLI never misclassifies where a session runs.\n> \n> ### Central platform rules table (`PLATFORM_RULES` + `_rule()`)\n> - Added `PLATFORM_RULES` in `scripts/kit.py` with 16 rows covering all 5 platforms:\n>   - `artifact_steps`, `stale_gate`, `device_cap_gate`, `real_project_run`, `cards`, `launcher`, `reply_format`, `hook_runtime`, `ta…"
+}
