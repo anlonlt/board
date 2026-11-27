@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T00:14:48Z",
+ "created_at": "2026-11-27T01:02:04Z",
  "rows": [
   {
    "also": [],
@@ -82,8 +82,7 @@
     "M7",
     "M8",
     "M9",
-    "M10",
-    "M12"
+    "M10"
    ],
    "parent": "",
    "part": "P-memory",
@@ -1159,19 +1158,8 @@
    "session": "",
    "state": "idle",
    "store": []
-  },
-  {
-   "also": [],
-   "children": [],
-   "parent": "P-memory",
-   "part": "M12",
-   "post": "m12-the-owner-s-design-decisions-are-never-s",
-   "prompt": "",
-   "session": "",
-   "state": "idle",
-   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T00:14:48Z"
+ "updated_at": "2026-11-27T01:02:04Z"
 }
