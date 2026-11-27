@@ -420,7 +420,7 @@ class BothBoards(unittest.TestCase):
         src = (ROOT / "scripts/kit.py").read_text(encoding="utf-8")
         calls = [m.group(0) for m in re.finditer(r'"db/batch", \{"writes".*?token=tok(?:en)?\)', src, re.S)]
         plain = [c for c in calls if '"sync": True' not in c]
-        self.assertEqual(len(calls) - len(plain), 6)                # CL45: artifact reconcile copies git in, silent
+        self.assertEqual(len(calls) - len(plain), 7)                # CL45: artifact reconcile copies git in, silent; CL71: the _files card
         self.assertEqual(len(plain), 2)                            # a receipt, and this machine's own writes
         self.assertTrue(any("kit-receipts" in c for c in plain))
 

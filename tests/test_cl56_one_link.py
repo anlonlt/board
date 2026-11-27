@@ -21,6 +21,8 @@ import unittest
 import urllib.request
 
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp(prefix="kit-xdg-")
+import atexit  # noqa: E402
+atexit.register(shutil.rmtree, os.environ["XDG_CONFIG_HOME"], True)  # CL52: removed at exit
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = importlib.util.spec_from_file_location("kit_board_server_cl56", os.path.join(ROOT, "kit", "board", "board_server.py"))
 board_server = importlib.util.module_from_spec(spec)

@@ -145,7 +145,9 @@ def kit_version(root):
         with open(os.path.join(root, ".kit", "manifest.json"), encoding="utf-8") as fh:
             v = json.load(fh).get("_kit_commit") or ""
     except (OSError, ValueError):
-        v = ""
+        # CL71: not in git; a clone without it: the last commit that changed the kit's own kit.py
+        rc, v = git(root, "log", "-1", "--format=%H %cI", "--", ".kit/kit.py")
+        v = v if rc == 0 else ""
     parts = v.split()
     return (parts[0] if parts else None), (parts[1] if len(parts) > 1 else None)
 
