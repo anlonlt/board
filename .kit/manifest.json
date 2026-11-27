@@ -43,7 +43,7 @@
  ".kit/access.py": "235a7cf461eac4f4b863c7a217473949c7b8a3c4f52f9a59fee5e7b6f1280f84",
  ".kit/board.html": "d2bb54205847a0692d2b16fa82dd619cc502d9aeeab763b36f247c60a4ec1377",
  ".kit/board_cli.py": "06828fff2940f8b61a672bad1bf6a958b80848a44cada49bfa1cb024e641be08",
- ".kit/board_server.py": "8da3b4034dd77cc1abd36ccf1470a4e20ed5207ad585f0cd5b3a86dde3472c5a",
+ ".kit/board_server.py": "f0a69f62a67a388c2b9ed9a026e9f1d1427334efb41515bd57aae1170bc0971d",
  ".kit/board_token.py": "637e13c9140b8d9abb8378292d7287baaf7c978cfce566123fb9a8eb2bd93ea6",
  ".kit/claude-cli/ORCHESTRATOR.md": "a987decab6b4084e94a2d7ede595b8616f0307fd39084347c4233fab99f36460",
  ".kit/claude-cli/clerk.md": "520eb1d55db7bd4d9c7e4870e322aa6018276c4e21f87163aa990457946f9176",
@@ -75,12 +75,12 @@
  ".kit/hooks/kit_say_it_once.py": "6bb08ed6e02c0a3b3eb74abff64c504275e3657544f95557ad4b71285d501a1e",
  ".kit/hooks/kit_session_start.py": "9c5708982bf6d447a457791e86a627ea36b1b00d465ab4ba3e1ec655d1ba6c2d",
  ".kit/hooks/kit_stop.py": "30d8613fa8e400f3bba20e455a24af2fdedd2398552f7317753a3e128d955d89",
- ".kit/hooks/kit_task_train.py": "feb037d3ec6d928359c32a40503efcb5ffa85270d829d693e233aa27fabd8978",
+ ".kit/hooks/kit_task_train.py": "29bfbb41c6911358fcbdf25965c51f9baaa5c9e8a90da408224fedd41296b7ab",
  ".kit/hooks/kit_usage.py": "845684c0c636ae58813f7efb5b0dea399432a36eccd1791ffffa4eb1e7071077",
  ".kit/hooks/kit_web_save.py": "74229a81f846eb4ccb4bd8834d320e3adb605458ed49534cce1916eb0237bbf6",
  ".kit/hooks/kit_wip.py": "d135c3b669a1d6e4727ada175cffc05bfd0dbe68a43f3dbe6df29eea09bacf0a",
  ".kit/hooks/test_hooks.py": "778123d6f729d1363c6ddad76c18cdb44cbe4fc4b6e9b2275211b1c62f53e654",
- ".kit/kit.py": "4c6221bf753b28b3ecb33cc06774691a1b23b6f5cae453edf3607f2f65d86d18",
+ ".kit/kit.py": "f051b9aff31fa4cf2d1bdec5e365de7e56f0153f3f7517148cd820987d1bc5ca",
  ".kit/kit_artifact_sync.py": "64760e0f0ff2e3e3aca193ddcbbf501ec30474179b5ea838a4e34dc5b8b2ca67",
  ".kit/kit_cards.py": "f7352a5317a42f958167146364539996603f8f8926a12da71f36ef6d4fa07ca8",
  ".kit/kit_import.py": "7ee7050f20af4343885704ca613b86945472e9ceec08ec8e0fb47645578ba809",
@@ -89,12 +89,8 @@
  ".kit/ledger.py": "d9c5e2c5e3faaef36bcd974661e687d6ec4544aab0ba3bae17a94bb80202accc",
  ".kit/lessons.md": "bf8caff727a820056bfc7203eaa38098cea636afd575bd3843fbc11b73c67f7c",
  ".kit/mcp_stdio.py": "a28be626a94283a6f53918806e688c1c95e305f0b86ce7abc65489f5feb7482c",
- ".kit/notify.py": "0e4286693746db8fbc07544676cb4e5446c62c7e33a43a3be400eb5692b1970f",
-<<<<<<< HEAD
- ".kit/orchestrator.md": "bc6843d8c2b433ed60ab16f114aa46ab02682ac8c5a444ea5517e64b7309179e",
-=======
+ ".kit/notify.py": "9155b0af04a75c6ea5b78fbb4180168ce57b16f5a673ab02907d3bdfca2fc892",
  ".kit/orchestrator.md": "e658c18ebb8fcc97a5d61c96782005026020fbf622a758057b59c8a17e47d3cc",
->>>>>>> origin/main
  ".kit/part.md": "29f0b722cc23ccb7c927a0f89cf380539282199bb8547a22f075f69d6c2b74c5",
  ".kit/post_gate.py": "2d3cb425861779d8d90a7da4ce98e8efd422246e45e9ab910326c746eed78ec7",
  ".kit/runner.md": "71d6c50e8b088f539254f1435631e00cd5cc9a3da3cc280f929de414b4cf0a7d",
@@ -105,13 +101,9 @@
  ".kit/test_guard.py": "f5e8d918892a3b0a5214eb0a72b0e1c4651afe8476b21b9b8c16eb6e3f1d705e",
  ".kit/twrp_wizard.py": "a930ad5cedc7143a0a67c44ac7184a9e87a97b9f528a5d4eb3b7629f250dd00e",
  ".kit/up": "265dd1ec9c4687f13e2f69ceed9d5001eccae2f5d199cac006941b464b1c5fc5",
- ".kit/usage.py": "06488170c1f4552ddcaa68d3aaa6238446940120532bd70a8105f85baee0ba2d",
+ ".kit/usage.py": "ad3eb65fd9fbb17050fb6131cbdc72735053863f82f028666f7e7fdc80ad6844",
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "6b98364bd05586e3d6a5d328d0e59658638bb115d81c03b3c7cd2b266d8541f0",
-<<<<<<< HEAD
- "_kit_commit": "975a8df 2026-11-27T02:44:26+00:00"
-=======
- "_kit_commit": "31117b8 2026-11-27T02:49:10+00:00"
->>>>>>> origin/main
+ "_kit_commit": "fe049eb 2026-11-27T03:12:49+00:00"
 }
