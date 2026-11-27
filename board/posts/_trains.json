@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T07:44:58Z",
+ "created_at": "2026-11-27T07:54:08Z",
  "rows": [
   {
    "also": [],
@@ -16,7 +16,8 @@
     "CL59",
     "CL67",
     "CL69",
-    "CL70"
+    "CL71",
+    "CL72"
    ],
    "parent": "",
    "part": "P-board-data",
@@ -148,12 +149,11 @@
     "CL61",
     "CL62",
     "CL64",
-    "CL65",
     "CL66"
    ],
    "parent": "",
    "part": "P-takeover",
-   "post": "cl17-a-crashed-part-is-continued-from-its-las",
+   "post": "cl60-a-part-s-last-chat-message-is-a-single-d",
    "prompt": "",
    "session": "",
    "state": "running",
@@ -165,6 +165,19 @@
    "parent": "",
    "part": "P-orchestrator",
    "post": "",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "A1"
+   ],
+   "parent": "",
+   "part": "P-agy",
+   "post": "a1-install-cmd-skips-linked-git-worktrees-s",
    "prompt": "",
    "session": "",
    "state": "idle",
@@ -474,7 +487,7 @@
    "post": "cl17-a-crashed-part-is-continued-from-its-las",
    "prompt": "",
    "session": "board-cl17",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1050,7 +1063,7 @@
    "post": "cl50-a-part-launched-in-the-background-knows",
    "prompt": "",
    "session": "session_01AE1HGj6WUrysNPM7yLUF7w",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1071,8 +1084,8 @@
    "part": "R4",
    "post": "r4-on-a-computer-a-part-runs-its-own-real-p",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "a443d007-989a-42dd-9e91-ce51b28d3fa2",
+   "state": "running",
    "store": []
   },
   {
@@ -1140,7 +1153,7 @@
    "post": "cl54-a-step-s-task-is-written-once-in-its-pos",
    "prompt": "",
    "session": "session_01AE1HGjRnr9HjFKPVLAiSso",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1195,7 +1208,7 @@
    "post": "cl56-a-session-on-the-shared-link-can-attach",
    "prompt": "",
    "session": "session_01AE1HGjFXDNKgKeG7VX6toq",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1239,7 +1252,7 @@
    "post": "cl59-a-part-pushes-only-its-own-post-a-pull-n",
    "prompt": "",
    "session": "session_01AE1HGhkLW2xJ5o7XZbq77K",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1293,8 +1306,8 @@
    "part": "R7",
    "post": "r7-kit-py-launch-updates-runner-on-takeover",
    "prompt": "",
-   "session": "",
-   "state": "idle",
+   "session": "6caee8ac-37bc-43bc-9723-01390950372e",
+   "state": "done",
    "store": []
   },
   {
@@ -1303,17 +1316,6 @@
    "parent": "P-takeover",
    "part": "CL64",
    "post": "cl64-resume-sees-whether-a-web-part-is-alive",
-   "prompt": "",
-   "session": "",
-   "state": "idle",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [],
-   "parent": "P-takeover",
-   "part": "CL65",
-   "post": "cl65-a-re-review-s-commit-is-the-one-land-che",
    "prompt": "",
    "session": "",
    "state": "idle",
@@ -1355,12 +1357,23 @@
   {
    "also": [],
    "children": [],
-   "parent": "P-board-data",
-   "part": "CL70",
-   "post": "cl70-a-merged-step-is-shown-landed-the-review",
+   "parent": "P-agy",
+   "part": "A1",
+   "post": "a1-install-cmd-skips-linked-git-worktrees-s",
    "prompt": "",
    "session": "",
    "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-board-data",
+   "part": "CL71",
+   "post": "cl71-no-merge-friction-generated-files-are-no",
+   "prompt": "",
+   "session": "session_01AE1HGiRAcHgq5vH6T6Ubk3",
+   "state": "running",
    "store": []
   },
   {
@@ -1376,5 +1389,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T07:44:58Z"
+ "updated_at": "2026-11-27T07:54:08Z"
 }

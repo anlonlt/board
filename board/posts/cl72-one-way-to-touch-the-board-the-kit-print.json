@@ -1,6 +1,7 @@
 {
  "body": "Owner, 2026-11-27: \"Why are there contradicting rules? The commands are there for a reason. No session may do anything by hand.\"\n\nFound (orchestrator 3, usage audit 03:00-07:30): 22 of 22 sessions did board work by hand, because three kit pieces disagree. The guard (CL30, M11) refuses only a raw whole-board list and a raw post write. `kit.py artifact push` and `pin` (CL31) TELL the session to make `ArtifactData get` calls by hand (to learn a live version) and to send the batch by hand. The first `artifact pull` prints a whole-board list. The audit (M11) then counts all of those as manual. So a session following the kit word for word is flagged, and a session working around it is not stopped.\n\nDone when:\n1. Every board read and write a session needs goes through one kit command with no hand step between: `kit.py artifact sync` (pull the changes, load, push the session's own documents, pin a refused one by re-reading it, retry, record sent), printing at most one ArtifactData call set the model must make, with exact args, and nothing to edit.\n2. The guard refuses every ArtifactData call and board_cli read/write that is not exactly the one the kit just printed (same collection, doc_id, version, file), for every role, the orchestrator included; the refusal names the command.\n3. The audit and the guard use one shared list of allowed calls, so nothing the kit tells a session to do is ever counted as manual.\n4. Test: replay today's orchestrator transcript's board work: 0 manual actions, 0 refusals of kit-printed calls, a hand-edited batch refused. `python3 scripts/run_all_tests.py --all` green.\n",
  "branch": "cl72",
+ "claimed_at": "2026-11-27T07:52:38Z",
  "column": "info",
  "created_at": "2026-11-27T07:38:05Z",
  "differs": "CL72: builds on CL30 (guard), CL31 (pin), M11 (audit) and CL59 (part push), which each patched one path; it replaces the hand steps with one kit command, makes the guard refuse anything the kit did not print, gives guard and audit one list, and gates launch/land on recorded design steps.",
@@ -13,12 +14,16 @@
   "was": "CL72 waits: CL16 runs (shares run_all_tests.py); CL52 runs (shares run_all_tests.py); CL71 runs (shares run_all_tests.py)",
   "why": "owner's go 2026-11-27 in chat ('launch it')"
  },
- "orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
  "orchestrator_device": "web",
- "orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
+ "orchestrator_unreached": null,
  "part": "CL72",
  "planned_by": "orchestrator",
  "repo": "anlonlt/board",
+ "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
+ "review_orchestrator_device": "web",
+ "review_orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
  "session_id": "session_01AE1HGkF2ieYqR2ZtyxfSbR",
  "status": "in progress",
  "subtasks": [
