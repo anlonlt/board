@@ -48,6 +48,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEEP = ("board-mirror", "kit-usage")
 
 
+def final_board_sync():
+    """CL16: the board's last state to its git copy (board-mirror) before this session ends; never blocks on the
+    network (the line says what happened; a failure is retried by the next sync)."""
+    kit = os.path.join(ROOT, ".kit", "kit.py")
+    if not os.path.isfile(kit):
+        return ""
+    try:
+        r = subprocess.run([sys.executable, "-I", kit, "mirror-sync", "--final"], capture_output=True, text=True,
+                           timeout=150, cwd=ROOT)
+        return (r.stdout.strip().splitlines() or [r.stderr.strip()[-200:] or "mirror-sync: no output"])[-1]
+    except (OSError, subprocess.SubprocessError) as e:
+        return "mirror-sync: NOT DONE: %s" % e
+
+
 def git(*a, check=False):
     r = subprocess.run(["git", "-C", ROOT] + list(a), capture_output=True, text=True)
     if check and r.returncode:
@@ -105,6 +119,7 @@ def main(argv=None):
             print("end-session: usage ledger: " + (u.stdout.strip() or u.stderr.strip()[-200:] or "?"))
         except (OSError, subprocess.SubprocessError):
             pass
+    print("end-session: board: " + final_board_sync())
     if branch == trunk and branch_only:
         print("end-session: refusing to push directly to trunk '%s' (--branch-only, or no standing permission: kit.trunk_push is false). Commit on a feature branch instead." % trunk)
         return 1
