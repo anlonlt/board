@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T07:44:36Z",
+ "from": "orchestrator",
+ "post_id": "cl59-a-part-pushes-only-its-own-post-a-pull-n",
+ "text": "Orchestrator 3 hand-over: its review said redirect (CR-cl59-..., 03:52); not acted on, because the owner said launch nothing without his go. CL72 (running) rewrites the push path; check whether the redirect is covered there before relaunching CL59."
+}

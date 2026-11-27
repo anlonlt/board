@@ -22,6 +22,7 @@
  "check": "python3 -m unittest tests.test_cl59_part_push",
  "claimed_at": "2026-11-27T03:27:31Z",
  "column": "info",
+ "completed_at": "2026-11-27T03:47:32Z",
  "created_at": "2026-11-27T02:48:26Z",
  "differs": "CL59: builds on CL16 (the board travels in git) and CL45 (web reconcile); neither lets a part push only its own post nor stops a pull deadlocking on waiting batches. CL59 adds both.",
  "from": "orchestrator",
@@ -46,12 +47,22 @@
   "needs_real": true,
   "sha": "86f219a33eb78aeca6154e516a584e21cb27d91b"
  },
+ "real_project": {
+  "command": "python3 -I <kit worktree of origin/cl59>/install.py <harmonize copy> --update --web-multi no (exit 0); then in the copy: python3 -I .kit/kit.py artifact pull --post A1-recipe; the 7 ArtifactData reads it printed (real Harmonize Artifact, read only); python3 -I .kit/kit.py artifact load posts/A1-recipe=4; python3 -I .kit/kit.py artifact status",
+  "output": "install: exit 0, kit version 86f219a3. pull --post: 'only post A1-recipe and what it needs (a first pull)': 7 calls (A1-recipe, _orchestrator, _trains, _dashboard, _prefs, comments where post_id==A1-recipe, kit_docs/_index), then 'artifact load posts/A1-recipe=<N> ... artifact push --post A1-recipe then pins its writes'. load: 'Loaded from the Artifact: 0 taken, 2 kept from here (unsent), 0 merged'; state: partial=True, read=[posts/A1-recipe,_dashboard,_orchestrator,_trains], versions {posts/A1-recipe: 4}; the git-seeded comments are listed not_there. status: 'NOT SENT: 2 document(s)' (CL17 saw 328). Not run here: artifact push --post (building the batch was refused by this session's permission check); nothing was sent to the Artifact.",
+  "project": "anlonlt/harmonize"
+ },
+ "review": "redirect",
+ "review_commit": "86f219a33eb78aeca6154e516a584e21cb27d91b",
+ "review_id": "CR-cl59-a-part-pushes-only-its-own-post-a-pull-n",
  "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "review_orchestrator_device": "web",
  "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_session": "session_01AE1HGkzPgFvKMRZy3Xj433",
+ "review_started": "2026-11-27T03:48:43Z",
  "session_id": "session_01AE1HGhkLW2xJ5o7XZbq77K",
  "started_at": "2026-11-27T03:02:25Z",
- "status": "in progress",
+ "status": "complete",
  "subtasks": [
   {
    "files": [
@@ -90,7 +101,7 @@
  "task": "A part sends its own post to the live board in one command, never other sessions' writes.\n\nOwner, 2026-11-27 (screenshot of CL17's session): \"How did it have so many failed commands? Was it stupid?\" CL17 pulled only its own post (`artifact pull --post`), then `artifact push` diffed the whole local copy against that partial pull and built 330 unpinned writes; the push has no single-post option, the guard refuses a hand-made ArtifactData write, and refuses a pull while built batches wait. The part tried four ways and stopped. Web orchestrator 2 hit the same today: hand-filtering batches, conflict comments on _trains at every sync.\n\n1. `kit.py artifact push --post <id>` (and the comments it wrote) builds only those writes, pinned to the versions read.\n2. A push after a partial pull never sends documents the pull did not read.\n3. A pull is allowed while batches wait: it rebuilds them after loading, never deadlocks.\n4. The generated cards (_dashboard, _trains) are never a two-sided conflict: the newer build wins, no conflict comment.\n5. Tests for each; replay CL17's case and count writes (1 post + its comments).\n",
  "title": "A part pushes only its own post; a pull never deadlocks on waiting batches",
  "train": "board-data",
- "updated_at": "2026-11-27T03:37:03Z",
+ "updated_at": "2026-11-27T03:51:19Z",
  "verdict": "A part's push now carries only its own post and comments, pinned to the versions it read; a push never sends what its pull did not read; a pull no longer deadlocks on waiting batches.",
- "working_by": "owner"
+ "working_by": ""
 }

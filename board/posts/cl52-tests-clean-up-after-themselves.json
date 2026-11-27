@@ -72,6 +72,8 @@
  "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "review_orchestrator_device": "web",
  "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_session": "session_01AE1HGivzjZvG4hcFjonCYX",
+ "review_started": "2026-11-27T07:49:45Z",
  "runner": "claude-web",
  "session_id": "session_01AE1HGia6d8GJWcTSt6rRLs",
  "started_at": "2026-11-27T03:13:16Z",
@@ -102,7 +104,7 @@
  "task": "Tests clean up after themselves: /tmp held about 5,600 folders left by test runs (cl30-inst-*, tmp*, kit-tests-*, scratch boards), each with a project copy and its own board token, on a computer with little room.\n\n1. Count what each suite leaves in the temp folder (run it, compare before and after) and fix the suites that leave anything: TemporaryDirectory or cleanup on every path, failures included.\n2. run_all_tests.py runs suites with their own temp folder (TMPDIR under one run folder) and removes it at the end; what a suite left is named in its result line, like the files it writes to ~/.local/bin.\n3. One command removes the leftovers of past runs (only folders the test runs make, by their prefixes and age), with a dry run listing them first.\n",
  "title": "Tests clean up after themselves",
  "train": "board-data",
- "updated_at": "2026-11-27T03:42:04Z",
+ "updated_at": "2026-11-27T07:49:45Z",
  "verdict": "Done: a full run now leaves nothing (80 of 80 suites clean, it was 20 suites and 111 folders per run), and one command clears the folders older runs left, after showing the list first.",
  "working_by": "owner"
 }
