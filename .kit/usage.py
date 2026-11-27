@@ -71,7 +71,10 @@ PRICES = {
     "gemini-4-hydrogen": (1.25, 10.0, 0.125),
     "gemini-pro-orchestrator": (2.0, 12.0, 0.20),
     "gemini-3.8-flash": (0.50, 3.0, 0.05),
+    "gemini-3.5-flash-lite": (0.10, 0.40, 0.025),
+    "gemini-3.5-flash": (0.30, 2.50, 0.075),
     "gemini-3-pro": (2.0, 12.0, 0.20),
+    "gemini-3-flash-lite": (0.10, 0.40, 0.025),
     "gemini-3-flash": (0.50, 3.0, 0.05),
     "gemini-2.5-pro": (1.25, 10.0, 0.3125),
     "gemini-2.5-flash-lite": (0.10, 0.40, 0.025),
@@ -977,8 +980,8 @@ def record(root, transcript, role=None, part=None, title=None, conf=None, sessio
         row["is_orchestrator"] = True
     r, p = classify(row, title)
     env_role = os.environ.get("KIT_ROLE") if os.environ.get("KIT_ROLE") in ("orchestrator", "clerk", "review", "part") else None
-    if env_role == "orchestrator" and r == "part" and p and not row.get("is_orchestrator"):
-        env_role = None                                # agy part subagents inherit KIT_ROLE=orchestrator from kit/up
+    if env_role == "orchestrator" and ((r == "part" and p) or r in ("clerk", "review")) and not row.get("is_orchestrator"):
+        env_role = None                                # agy subagents (part, clerk, review) inherit KIT_ROLE=orchestrator from kit/up
     row["role"], row["part"] = role or env_role or r, part or p
     # the work is counted in the project the row is recorded for: a transcript's cwd moves (/home/user after a second
     # repo was attached) and need not be a repository at all

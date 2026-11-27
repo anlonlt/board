@@ -266,6 +266,10 @@ class Bug4AgyUsageParsingAndHookWiring(unittest.TestCase):
 
             # Child subagent classifies as part CL44 via [Message] content
             child_row = usage.parse_transcript(str(child_tp))
+            self.assertEqual(child_row["received"], 1)
+            self.assertEqual(child_row["sent"], 1)
+            self.assertEqual(child_row["tests_run"], 1)
+            self.assertEqual(usage.classify(child_row), ("part", "CL44"))
 
     def test_agy_clerk_role_and_gemini_35_flash_lite_pricing(self):
         from unittest import mock
@@ -290,10 +294,6 @@ class Bug4AgyUsageParsingAndHookWiring(unittest.TestCase):
             self.assertEqual(row["role"], "clerk")
             self.assertIsNotNone(row["cost_usd"])
             self.assertGreater(row["cost_usd"], 0)
-            self.assertEqual(child_row["received"], 1)
-            self.assertEqual(child_row["sent"], 1)
-            self.assertEqual(child_row["tests_run"], 1)
-            self.assertEqual(usage.classify(child_row), ("part", "CL44"))
 
     def test_hook_table_wires_kit_usage_for_agy_stop(self):
         hk = _load("hook_cl44_b4", ROOT / "kit" / "hook.py")
