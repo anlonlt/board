@@ -2725,6 +2725,116 @@ def fingerprint(facts):
     return h.hexdigest()[:16]
 
 
+# ── what parts add by hand (M3): things no reader sees, each with its check ───────────────────────────────────
+def run_check(root, c, cache=None, home_dir=None):
+    """None when a check holds, else why not. A probe is never run here (see unconfirmed())."""
+    cache = {} if cache is None else cache
+    if c.get("run"):
+        env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+        if home_dir:
+            env["HOME"] = os.path.abspath(home_dir)
+        try:
+            r = subprocess.run(c["run"], shell=True, cwd=root, capture_output=True, text=True, timeout=300, env=env)
+            return None if r.returncode == 0 else "`%s` fails" % c["run"]
+        except (OSError, subprocess.SubprocessError):
+            return "`%s` fails" % c["run"]
+    fp = c.get("file")
+    if fp and "contains" in c:
+        if fp not in cache:
+            cache[fp] = strip_ts(_read(os.path.join(root, fp))) if fp.endswith(TS_EXT) else _text_of(root, fp)
+        return None if c["contains"] in (cache[fp] or "") else "`%s` is no longer in %s" % (c["contains"], fp)
+    if fp and "imports" in c:
+        return None if os.path.isfile(os.path.join(root, fp)) and os.path.isfile(os.path.join(root, c["imports"])) else "a file is gone"
+    if c.get("exists"):
+        gone = [x for x in c["exists"] if not os.path.exists(_expand_home(x, home_dir) if x.startswith("~") else os.path.join(root, x))]
+        return ("gone: %s" % ", ".join(gone)) if gone else None
+    return None
+
+
+def unconfirmed(added, days=CONFIRM_DAYS, today=None):
+    """[(name, probe, confirmed or None)] for each probe never confirmed or confirmed more than `days` ago."""
+    out = []
+    for e in added.get("things", []) + added.get("links", []):
+        c = e.get("check") if isinstance(e.get("check"), dict) else {}
+        if c.get("probe"):
+            age = _probe_age(c, today)
+            if age is None or age > days:
+                out.append((_entry_name(e), c["probe"], c.get("confirmed") or None))
+    return out
+
+
+def _confirm_days(root, config_path=None):
+    try:
+        return int(load_config(root, config_path).get("confirm_days") or CONFIRM_DAYS)
+    except (TypeError, ValueError):
+        return CONFIRM_DAYS
+
+
+def _outside_map(path):
+    """Paths the map leaves out on purpose: dot folders (tooling, memory, the board) and dependency folders."""
+    parts = path.split("/")
+    return any(p.startswith(".") or p in SKIP_DIRS for p in parts[:-1])
+
+
+def covers(root, paths, d=None, added=None):
+    """(covered, uncovered) among `paths`: a path is on the map when it is a code file the map read, or one an added
+    thing names (a path or a glob). Deleted files and those the map leaves out on purpose are neither."""
+    files = set((d or {}).get("files") or {})
+    added = load_added(root) if added is None else added
+    globs = [g for t in added.get("things", []) for g in (t.get("files") or [])]
+    cov, unc = [], []
+    for p in sorted(set(paths)):
+        if not p or _outside_map(p) or not os.path.exists(os.path.join(root, p)):
+            continue
+        (cov if p in files or any(p == g or fnmatch.fnmatch(p, g) for g in globs) else unc).append(p)
+    return cov, unc
+
+
+def stretch(root, paths, out=None, config_path=None, run_gens=True):
+    """M3/M9, what `kit.py done` asks of a part: rebuild the map, rerun every link's check (the added ones included),
+    verify no added entry is missing a check or stores a literal secret, and find the changed files nobody put on it.
+    Returns (errors, notes, seconds)."""
+    t0 = time.time()
+    root = os.path.abspath(root)
+    errors, notes = [], []
+    added = load_added(root)
+    if added.get("error"):
+        return [added["error"]], [], round(time.time() - t0, 2)
+    d, out = build(root, out, config_path, run_gens=run_gens)
+    rc, msg = check(root, out, config_path, run_gens=run_gens)
+    if rc:
+        errors.append("the map's check fails: " + msg.split("\n")[0].replace("STALE: ", ""))
+    for err in validate_added(added):
+        if err not in errors:
+            errors.append(err)
+    _, unc = covers(root, paths, d, added)
+    if unc:
+        errors.append("%d file(s) this step changed are not on the map: %s. Add what you built to %s, each thing "
+                      "with its files and its check" % (len(unc), ", ".join(unc[:8]) + (" ..." if len(unc) > 8 else ""), ADDED_REL))
+    for name, probe, when in unconfirmed(added, _confirm_days(root, config_path)):
+        notes.append("unconfirmed: %s (%s); a browser part does: %s" % (name, "last confirmed %s" % when if when else "never confirmed", probe))
+    return errors, notes, round(time.time() - t0, 2)
+
+
+def step_files(root, steps=10, ref="HEAD"):
+    """[(step, [files])] for the last `steps` steps in git's log, a step named by its commits' prefix
+    (`M3:`, `CL58:`, `checkpoint(m3)`, `Land CL58`)."""
+    log = _git(root, "log", "--no-merges", "--name-only", "--format=@@%s", ref) or ""
+    order, files, cur = [], {}, None
+    for line in log.splitlines():
+        if line.startswith("@@"):
+            m = re.match(r"(?:Land\s+)?(?:checkpoint\()?((?:CL|M|R)\d+[a-z]?)\b", line[2:], re.I)
+            cur = m.group(1).upper() if m else None
+            if cur and cur not in files:
+                if len(order) >= steps:
+                    break
+                order.append(cur)
+                files[cur] = set()
+        elif line.strip() and cur in files:
+            files[cur].add(line.strip())
+    return [(s, sorted(files[s])) for s in order]
+
+
 def build(root, out=None, config_path=None, run_gens=True, home_dir=None):
     t0 = time.time()
     root = os.path.abspath(root)
@@ -2761,15 +2871,6 @@ def build(root, out=None, config_path=None, run_gens=True, home_dir=None):
     others = run_other_readers(root, out_rel, cfg, home_dir=home_dir)
     for name, r in others.items():
         things.extend(r["things"]); links.extend(r["links"]); flags.extend(r["flags"])
-    added = load_added(root)
-    existing_ids = {t.get("id") for t in things}
-    for t in added.get("things", []):
-        if t.get("id") and t["id"] not in existing_ids:
-            things.append(t); existing_ids.add(t["id"])
-    for ln in added.get("links", []):
-        links.append(ln)
-    for err in validate_added(added):
-        flags.append({"kind": "added-invalid", "thing": ADDED_REL, "text": err})
 
     def link(frm, to, kind, file, evidence, line=None):
         links.append({"from": frm, "to": to, "kind": kind,
@@ -3023,6 +3124,21 @@ def build(root, out=None, config_path=None, run_gens=True, home_dir=None):
                              "areas": sorted({areas_index[p] for p in fs}), "card": "areas/feature-%s.md" % _card_name(w)})
         things.append({"id": "feature:" + w, "kind": "feature", "files": fs})
 
+    added = load_added(root)   # M3/M9: what parts added by hand, each with its check
+    days = _confirm_days(root, config_path)
+    existing_ids = {t.get("id") for t in things}
+    for t in added["things"]:
+        if t.get("id") not in existing_ids:
+            things.append(dict(t, added=True))
+            existing_ids.add(t.get("id"))
+        if isinstance(t.get("check"), dict):
+            links.append({"from": t.get("id"), "to": t.get("id"), "kind": "is-there", "check": t["check"], "added": True})
+    for ln in added["links"]:
+        links.append(dict(ln, added=True))
+    for name, probe, when in unconfirmed(added, days):
+        flags.append({"kind": "unconfirmed", "thing": name,
+                      "text": "%s: %s; a browser part does: %s" % (name, "last confirmed %s, over %d days ago" % (when, days) if when
+                                                                 else "never confirmed", probe)})
     commit = (_git(root, "rev-parse", "--short", "HEAD") or "").strip() or None
     dirty = bool((_git(root, "status", "--porcelain", "--untracked-files=no") or "").strip())
     data = {"version": 1, "root": root, "commit": commit, "dirty": dirty, "fingerprint": fingerprint(facts),
@@ -3150,7 +3266,7 @@ def overview_md(d):
         for n, r in d["readers"].items():
             L.append("- %s" % r["summary"])
     L.append("")
-    order = ["unread", "powerbi-needs-export", "pbi-missing-measure", "pbi-missing-relationship",
+    order = ["unread", "unconfirmed", "powerbi-needs-export", "pbi-missing-measure", "pbi-missing-relationship",
              "pbi-ambiguous-relationship", "pbi-personal-source", "pbi-unused-measure", "pbi-missing-report",
              "doc-missing-citation", "doc-missing-bibliography", "doc-figure-script-gone", "doc-figure-unreferenced",
              "doc-question-unanswered", "broken-link", "dropped-field", "no-csrf-auth", "no-csrf", "no-auth", "never-read", "generator-failed", "uncalled", "big-file"]
@@ -3285,54 +3401,33 @@ def check(root, out=None, config_path=None, run_gens=True, home_dir=None):
     if changed:
         problems.append("%d file(s) changed since the map was built from %s: %s" % (
             len(changed), d.get("commit") or "this folder", ", ".join(changed[:8]) + (" ..." if len(changed) > 8 else "")))
-    added = load_added(root)
+    added = load_added(root)    # M3/M9: the added entries as they are now, not as the last build saw them
     problems.extend(validate_added(added))
     cache, failed, ran = {}, [], 0
-    for t in added.get("things", []):
-        c = t.get("check") or {}
-        if c.get("probe") or ("run" in c and not run_gens):
+    live = [ln for ln in d.get("links") or [] if not ln.get("added")]
+    live += [{"from": t.get("id"), "to": t.get("id"), "kind": "is-there", "check": t.get("check")} for t in added["things"]]
+    live += added["links"]
+    for ln in live:
+        c = ln.get("check") if isinstance(ln.get("check"), dict) else {}
+        if c.get("probe") or not any(k in c for k in ("run", "contains", "imports", "exists")):
             continue
-        if any(c.get(k) for k in ("run", "exists", "contains")):
-            ran += 1
-            st, det = _run_single_check(root, c, cache=cache, home_dir=home_dir)
-            if st == "fail":
-                failed.append("%s: %s" % (_entry_name(t), det))
-    for ln in d.get("links") or []:
-        c = ln.get("check") or {}
-        if "run" in c:
-            if not run_gens:
-                continue
-            ran += 1
-            try:
-                r = subprocess.run(c["run"], shell=True, cwd=root, capture_output=True, text=True, timeout=300)
-                ok = r.returncode == 0
-            except (OSError, subprocess.SubprocessError):
-                ok = False
-            if not ok:
-                failed.append("%s -> %s: `%s` fails" % (ln["from"], ln["to"], c["run"]))
-            continue
-        fp = c.get("file")
-        if not fp:
-            if c.get("exists"):
-                ran += 1
-                if not all(os.path.exists(_expand_home(x, home_dir) if x.startswith("~") else os.path.join(root, x)) for x in c["exists"]):
-                    failed.append("%s -%s-> %s: a file is gone" % (ln["from"], ln["kind"], ln["to"]))
+        if "run" in c and not run_gens:
             continue
         ran += 1
-        if fp not in cache:
-            cache[fp] = strip_ts(_read(os.path.join(root, fp))) if fp.endswith(TS_EXT) else _text_of(root, fp)
-        txt = cache[fp]
-        if "contains" in c and c["contains"] not in txt:
-            failed.append("%s -%s-> %s: `%s` is no longer in %s" % (ln["from"], ln["kind"], ln["to"], c["contains"], fp))
-        elif "imports" in c and not (txt and os.path.isfile(os.path.join(root, c["imports"]))):
-            failed.append("%s -%s-> %s: a file is gone" % (ln["from"], ln["kind"], ln["to"]))
-        elif "exists" in c and not all(os.path.isfile(os.path.join(root, x)) for x in c["exists"]):
-            failed.append("%s -%s-> %s: a file is gone" % (ln["from"], ln["kind"], ln["to"]))
+        why = run_check(root, c, cache, home_dir=home_dir)
+        if why:
+            failed.append("%s -%s-> %s: %s" % (ln.get("from"), ln.get("kind"), ln.get("to"), why))
     if failed:
         problems.append("%d of %d link checks fail: %s" % (len(failed), ran, "; ".join(failed[:6]) + (" ..." if len(failed) > 6 else "")))
     if problems:
         return 1, "STALE: " + " | ".join(problems) + "\nRun `kit.py map` to rebuild it."
-    return 0, "map fresh: built from %s, %d files unchanged, %d link checks pass" % (d.get("commit") or "a folder", len(now), ran)
+    msg = "map fresh: built from %s, %d files unchanged, %d link checks pass" % (d.get("commit") or "a folder", len(now), ran)
+    unc = unconfirmed(added, _confirm_days(root, config_path))
+    if unc:   # never shown as fine: what only a browser sees is unconfirmed until a browser part looks again
+        msg = ("UNCONFIRMED: %d thing(s) only a browser sees: %s\n" % (len(unc), "; ".join(
+            "%s (%s): %s" % (n, "last confirmed %s" % w if w else "never confirmed", pr) for n, pr, w in unc[:6]))) + \
+            msg.replace("map fresh", "the rest of the map is fresh")
+    return 0, msg
 
 
 def main(argv=None):
@@ -3351,6 +3446,7 @@ def main(argv=None):
     ap.add_argument("--confirm", default=None, help="mark a browser probe thing id as confirmed today (or --date)")
     ap.add_argument("--date", default=None, help="YYYY-MM-DD date for --confirm")
     ap.add_argument("--no-generators", action="store_true")
+    ap.add_argument("--steps", type=int, default=0, help="how many of the last N steps' changed files the map covers")
     a = ap.parse_args(argv)
     if a.add_external:
         try:
@@ -3381,6 +3477,16 @@ def main(argv=None):
     if a.write_workflow:
         p, _ = write_workflow_md(a.root, memory_dir=a.memory_dir, home_dir=a.home)
         print("workflow: %s" % p)
+        return 0
+    if a.steps:
+        d, _ = build(a.root, a.out, a.config, run_gens=False, home_dir=a.home)
+        root, added = os.path.abspath(a.root), load_added(os.path.abspath(a.root))
+        tot_c = tot = 0
+        for step, fs in step_files(root, a.steps):
+            cov, unc = covers(root, fs, d, added)
+            tot_c, tot = tot_c + len(cov), tot + len(cov) + len(unc)
+            print("%s: %d of %d on the map%s" % (step, len(cov), len(cov) + len(unc), (" (not: %s)" % ", ".join(unc[:5])) if unc else ""))
+        print("last %d steps: %d of %d changed files on the map" % (a.steps, tot_c, tot))
         return 0
     if a.check:
         rc, msg = check(a.root, a.out, a.config, run_gens=not a.no_generators, home_dir=a.home)

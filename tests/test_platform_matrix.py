@@ -70,6 +70,139 @@ GUARDED_ENV_KEYS = {
     "KIT_PLATFORM", "KIT_EMBED_PREVIEW", "LMARENA", "ARENA_SANDBOX",
 }
 
+# Pinned literal copy of scripts/kit.py::PLATFORM_RULES (CR-r5-every-rule-that-differs-by-platform-says-2 / R7):
+# any change to a platform-rules row requires editing this pinned table on purpose.
+_EXPECTED_OWNER_PAGE = "read, look at pictures and documents, play audio, Like, tap an answer, comment under a post"
+_EXPECTED_OWNER_ASK = "A question for him is a question post with its options, a default and a deadline: one tap answers it and reaches you."
+EXPECTED_PLATFORM_RULES = {
+    "artifact_steps": {
+        "web": True,
+        "cli": False,
+        "agy": False,
+        "arena": False,
+        "generic": False,
+    },
+    "stale_gate": {
+        "web": True,
+        "cli": False,
+        "agy": False,
+        "arena": False,
+        "generic": False,
+    },
+    "device_cap_gate": {
+        "web": False,
+        "cli": True,
+        "agy": True,
+        "arena": False,
+        "generic": False,
+    },
+    "real_project_run": {
+        "web": "orchestrator",
+        "cli": "part",
+        "agy": "part",
+        "arena": "computer",
+        "generic": "computer",
+    },
+    "cards": {
+        "web": "agent",
+        "cli": "server",
+        "agy": "server",
+        "arena": "server",
+        "generic": "server",
+    },
+    "launcher": {
+        "web": "create_session",
+        "cli": "claude_bg",
+        "agy": "invoke_subagent",
+        "arena": "self",
+        "generic": "self",
+    },
+    "reply_format": {
+        "web": "claude_remote",
+        "cli": "claude_cli",
+        "agy": "agy",
+        "arena": "none",
+        "generic": "none",
+    },
+    "hook_runtime": {
+        "web": "web",
+        "cli": "cli",
+        "agy": "agy",
+        "arena": None,
+        "generic": None,
+    },
+    "task_list": {
+        "web": "claude_tasks",
+        "cli": "claude_tasks",
+        "agy": "agy_step",
+        "arena": "step_cli",
+        "generic": "step_cli",
+    },
+    "alive_check": {
+        "web": "claude_agents",
+        "cli": "claude_agents",
+        "agy": "subagents",
+        "arena": "none",
+        "generic": "none",
+    },
+    "part_template": {
+        "web": ("claude-web/part.md", "claude-cli/part.md", "part.md"),
+        "cli": ("claude-cli/part.md", "part.md", "claude-web/part.md"),
+        "agy": ("part.md", "claude-cli/part.md", "claude-web/part.md"),
+        "arena": ("part.md", "claude-cli/part.md", "claude-web/part.md"),
+        "generic": ("part.md", "claude-cli/part.md", "claude-web/part.md"),
+    },
+    "orchestrator_guide": {
+        "web": ("claude-web/orchestrator.md", "claude-cli/takeover.md", "orchestrator.md"),
+        "cli": ("claude-cli/orchestrator.md", "orchestrator.md"),
+        "agy": ("orchestrator.md",),
+        "arena": ("orchestrator.md",),
+        "generic": ("orchestrator.md",),
+    },
+    "consultant_template": {
+        "web": ("claude-cli/consultant.md", "consultant.md"),
+        "cli": ("claude-cli/consultant.md", "consultant.md"),
+        "agy": ("consultant.md", "claude-cli/consultant.md"),
+        "arena": ("consultant.md", "claude-cli/consultant.md"),
+        "generic": ("consultant.md", "claude-cli/consultant.md"),
+    },
+    "checkout_refetch": {
+        "web": False,
+        "cli": True,
+        "agy": True,
+        "arena": True,
+        "generic": True,
+    },
+    "welcome_runtime": {
+        "web": "claude",
+        "cli": "claude-cli",
+        "agy": "agy",
+        "arena": "arena",
+        "generic": "generic",
+    },
+    "owner_surface": {
+        "web": (
+            ["on the board page, usually from his phone: " + _EXPECTED_OWNER_PAGE],
+            ["run a command, open a file of this container, attach a repository or approve a tool for you"],
+            _EXPECTED_OWNER_ASK,
+        ),
+        "cli": (
+            ["on the board page (this computer, or his phone over his private network): " + _EXPECTED_OWNER_PAGE,
+             "type in the orchestrator's terminal, only when he is at the computer"],
+            ["see a path under /tmp or in a part's worktree, or answer in a part's chat"],
+            _EXPECTED_OWNER_ASK,
+        ),
+        "agy": (
+            ["on the board page (this computer, or his phone over his private network): " + _EXPECTED_OWNER_PAGE,
+             "type in the agy terminal, only when he is at the computer"],
+            ["see a path under /tmp or in a subagent's worktree, or answer in a subagent's chat"],
+            _EXPECTED_OWNER_ASK,
+        ),
+        "arena": (["type in this chat while a turn runs; use the embedded board"], [], ""),
+        "generic": (["use the board page"], [], ""),
+    },
+}
+
 
 def load_mod(name, path):
     spec = importlib.util.spec_from_file_location(name, str(path))
@@ -223,6 +356,9 @@ class TableContract(unittest.TestCase):
         for name, row in self.kit.PLATFORM_RULES.items():
             self.assertEqual(set(row.keys()), expected_platforms, "row %r must declare every platform" % name)
 
+    def test_platform_rules_matches_expected_literal_table(self):
+        self.assertEqual(self.kit.PLATFORM_RULES, EXPECTED_PLATFORM_RULES)
+
     def test_unknown_rule_is_refused(self):
         with self.assertRaises(KeyError):
             self.kit._rule("unregistered_platform_rule")
@@ -340,7 +476,9 @@ class ResumeMatrix(unittest.TestCase):
                 # 4. resume_role('part') matches part_template, real_project_run, reply_format
                 part = self.kit.resume_role(str(self.root / "m"), "part", post="r5-step", db_path=self.db)
                 self.assertEqual("`kit.py artifact load`" in part, self.kit.PLATFORM_RULES["artifact_steps"][pl], pl)
-                self.assertEqual("ArtifactData get" in part, self.kit.PLATFORM_RULES["real_project_run"][pl] == "orchestrator", pl)
+                rp_mode = self.kit.PLATFORM_RULES["real_project_run"][pl]
+                self.assertEqual("ArtifactData get" in part, rp_mode == "orchestrator", pl)
+                self.assertEqual("done refuses without it" in part, rp_mode == "part", pl)
                 rfmt = self.kit.PLATFORM_RULES["reply_format"][pl]
                 where = part.split("## Where you report", 1)[1].split("\n## ", 1)[0]
                 self.assertEqual("`SendMessage`" in where, rfmt in ("claude_cli", "claude_remote"), (pl, where))
@@ -371,23 +509,39 @@ class DoneMatrix(unittest.TestCase):
         return kit
 
     def test_done_matches_table_on_every_platform(self):
-        post = {"title": "x", "status": "complete", "verdict": "v", "updated_at": "2026-11-26T20:00:00Z"}
+        post_no_rp = {"title": "x", "status": "complete", "verdict": "v", "updated_at": "2026-11-26T20:00:00Z"}
+        post_with_rp = dict(post_no_rp, real_project={
+            "project": "anlonlt/harmonize", "command": "python3 -I .kit/kit.py resume", "output": "ok",
+        })
         for pl, (env, anc) in PLATFORM_FIXTURES.items():
-            with self.subTest(pl), tempfile.TemporaryDirectory() as d:
-                kit = self._make_kit(post, d)
+            with self.subTest(pl + "-missing-rp"), tempfile.TemporaryDirectory() as d:
+                kit = self._make_kit(post_no_rp, d)
                 mp = Path(d) / "mirror" / "board" / "posts"
                 mp.mkdir(parents=True)
-                (mp / "p1.json").write_text(json.dumps(post))
+                (mp / "p1.json").write_text(json.dumps(post_no_rp))
                 with fake_platform(kit, env, ancestor=anc):
                     rc, out = kit.done("p1")
                     art = kit.PLATFORM_RULES["artifact_steps"][pl]
-                    # Artifact push gate applies iff artifact_steps is True
-                    self.assertEqual(rc, 1 if art else 0, (pl, out))
+                    rp_mode = kit.PLATFORM_RULES["real_project_run"][pl]
+                    # Artifact push gate applies iff artifact_steps; missing real_project refuses iff real_project_run == "part"
+                    self.assertEqual(rc, 1 if (art or rp_mode == "part") else 0, (pl, out))
                     self.assertEqual("artifact push" in out, art, (pl, out))
                     # real_project wording matches PLATFORM_RULES['real_project_run']
-                    rp_mode = kit.PLATFORM_RULES["real_project_run"][pl]
                     self.assertEqual("a part never attaches a repo (CL38)" in out, rp_mode == "orchestrator", (pl, out))
+                    self.assertEqual("pending: the orchestrator runs it" in out, rp_mode == "orchestrator", (pl, out))
+                    self.assertEqual("fix: real_project:" in out, rp_mode == "part", (pl, out))
+                    self.assertEqual("scratch local clone or read-only" in out, rp_mode == "part", (pl, out))
                     self.assertEqual("in a local clone" in out, rp_mode == "computer", (pl, out))
+            with self.subTest(pl + "-with-rp"), tempfile.TemporaryDirectory() as d:
+                kit = self._make_kit(post_with_rp, d)
+                mp = Path(d) / "mirror" / "board" / "posts"
+                mp.mkdir(parents=True)
+                (mp / "p1.json").write_text(json.dumps(post_with_rp))
+                with fake_platform(kit, env, ancestor=anc):
+                    rc, out = kit.done("p1")
+                    art = kit.PLATFORM_RULES["artifact_steps"][pl]
+                    self.assertEqual(rc, 1 if art else 0, (pl, out))
+                    self.assertNotIn("real_project:", out, (pl, out))
                     # Next messaging tool matches PLATFORM_RULES['reply_format'] when done passes
                     if not art:
                         rfmt = kit.PLATFORM_RULES["reply_format"][pl]
@@ -396,18 +550,46 @@ class DoneMatrix(unittest.TestCase):
                         self.assertEqual("is complete on the board" in out, rfmt == "none", (pl, out))
 
     def test_real_project_part_mode_refuses_done(self):
-        post = {"title": "x", "status": "complete", "verdict": "v"}
-        with tempfile.TemporaryDirectory() as d:
-            kit = self._make_kit(post, d)
-            mp = Path(d) / "mirror" / "board" / "posts"
-            mp.mkdir(parents=True)
-            (mp / "p1.json").write_text(json.dumps(post))
-            patched = dict(kit.PLATFORM_RULES["real_project_run"], cli="part")
-            with fake_platform(kit, *PLATFORM_FIXTURES["cli"]), \
-                    mock.patch.dict(kit.PLATFORM_RULES, {"real_project_run": patched}):
+        """R4: on a computer (cli/agy), done refuses missing or incomplete real_project with how to run it;
+        passes once real_project is recorded; on web, done keeps 'pending: the orchestrator runs it'."""
+        base_post = {"title": "x", "status": "complete", "verdict": "v"}
+        good_rp = {"project": "anlonlt/harmonize", "command": "python3 -I .kit/kit.py resume", "output": "ok"}
+        for pl in ("cli", "agy"):
+            for label, post, want_rc in (
+                ("missing", base_post, 1),
+                ("incomplete", dict(base_post, real_project={"project": "anlonlt/harmonize", "command": "c"}), 1),
+                ("complete", dict(base_post, real_project=good_rp), 0),
+            ):
+                with self.subTest((pl, label)), tempfile.TemporaryDirectory() as d:
+                    kit = self._make_kit(post, d)
+                    mp = Path(d) / "mirror" / "board" / "posts"
+                    mp.mkdir(parents=True)
+                    (mp / "p1.json").write_text(json.dumps(post))
+                    with fake_platform(kit, *PLATFORM_FIXTURES[pl]):
+                        rc, out = kit.done("p1")
+                        self.assertEqual(rc, want_rc, (pl, label, out))
+                        if want_rc:
+                            self.assertIn("fix: real_project:", out)
+                            self.assertIn("scratch local clone or read-only", out)
+                            self.assertIn("never push", out)
+                            self.assertIn('{"project", "command", "output"}', out)
+                            self.assertNotIn("pending: the orchestrator runs it", out)
+                        else:
+                            self.assertIn("OK: p1", out)
+                            self.assertNotIn("real_project:", out)
+        # Web done with real_project missing (and artifact copy synced) succeeds with pending note for orchestrator
+        with self.subTest("web-pending"), tempfile.TemporaryDirectory() as d:
+            kit = self._make_kit(base_post, d)
+            bp = Path(d) / "art" / "base" / "posts"
+            bp.mkdir(parents=True)
+            (bp / "p1.json").write_text(json.dumps(base_post))
+            with fake_platform(kit, *PLATFORM_FIXTURES["web"]):
                 rc, out = kit.done("p1")
-                self.assertEqual(rc, 1, out)
-                self.assertIn("fix: real_project:", out)
+                self.assertEqual(rc, 0, out)
+                self.assertIn("OK: p1", out)
+                self.assertIn("note: real_project:", out)
+                self.assertIn("pending: the orchestrator runs it", out)
+                self.assertNotIn("fix: real_project:", out)
 
 
 class LaunchAndStepNewMatrix(Base):
@@ -452,6 +634,17 @@ class LaunchAndStepNewMatrix(Base):
             src = shutil.which(real)
             if src:
                 os.symlink(src, self.bindir_claude / real)
+        self.bindir_agy = self.tmp / "bin-agy"
+        self.bindir_agy.mkdir()
+        self.agy_claude_marker = self.tmp / "agy-claude-called.log"
+        (self.bindir_agy / "agy").write_text("#!/bin/sh\nexit 0\n")
+        (self.bindir_agy / "agy").chmod(0o755)
+        (self.bindir_agy / "claude").write_text("#!/bin/sh\necho called > %s\nexit 0\n" % self.agy_claude_marker)
+        (self.bindir_agy / "claude").chmod(0o755)
+        for real in ("git", "sh", "env"):
+            src = shutil.which(real)
+            if src:
+                os.symlink(src, self.bindir_agy / real)
         self.bindir_empty = self.tmp / "bin-empty"
         self.bindir_empty.mkdir()
         for real in ("git", "sh", "env"):
@@ -487,15 +680,15 @@ class LaunchAndStepNewMatrix(Base):
         k = self.kit_in(self.repo)
         for idx, (pl, (env, anc)) in enumerate(PLATFORM_FIXTURES.items(), 1):
             pid = "cl99-launch-me"
-            self.local("posts/" + pid, dict(POST, part="CL99", status="planned", session_id=None, launched_at=None))
+            self.local("posts/" + pid, dict(POST, part="CL99", status="planned", runner="claude-web", session_id=None, launched_at=None))
             pushed = []
 
             def fake_push(*a, **kw):
                 pushed.append(pl)
                 return {"batches": [], "need_pin": [], "board": ART["url"]}
 
-            # Give CLI fake `claude` on PATH; arena/generic/agy get no `claude` so self/agy refusal is exercised cleanly
-            path_dir = str(self.bindir_claude) if pl == "cli" else str(self.bindir_empty)
+            # Give CLI fake `claude`, agy fake `agy` (+ trap `claude`), arena/generic empty PATH
+            path_dir = str(self.bindir_claude) if pl == "cli" else (str(self.bindir_agy) if pl == "agy" else str(self.bindir_empty))
             with self.subTest(pl), fake_platform(k, dict(env, PATH=path_dir), ancestor=anc), \
                     mock.patch.object(k, "artifact_push", side_effect=fake_push), \
                     mock.patch.object(k, "_device", return_value=None):
@@ -506,17 +699,48 @@ class LaunchAndStepNewMatrix(Base):
                     self.assertTrue(r["ok"], r)
                     self.assertIn("create_session", r)
                     self.assertIn("Never attach a repo", r["create_session"]["prompt"])
+                    self.assertIn("their real-project run is yours (CL38)", k.launch_text(r))
+                    self.assertEqual(r["runner"], "claude-web")
+                    self.assertEqual(self.local("posts/" + pid)["data"]["runner"], "claude-web")
                     self.assertEqual(pushed, [pl])
                 elif lmode == "claude_bg":
                     self.assertTrue(r["ok"], r)
                     self.assertIn("worktree", r)
+                    self.assertIn("the part runs its real-project check", k.launch_text(r))
+                    self.assertNotIn("their real-project run is yours", k.launch_text(r))
+                    self.assertEqual(r["runner"], "claude-cli")
+                    self.assertEqual(self.local("posts/" + pid)["data"]["runner"], "claude-cli")
+                    self.assertEqual(pushed, [])
+                elif lmode == "invoke_subagent":
+                    self.assertTrue(r["ok"], r)
+                    self.assertIn("invoke_subagent", r)
+                    ltxt = k.launch_text(r)
+                    self.assertIn("invoke_subagent(", ltxt)
+                    self.assertIn("the part runs its real-project check", ltxt)
+                    self.assertNotIn("their real-project run is yours", ltxt)
+                    self.assertEqual(r["runner"], "agy")
+                    self.assertEqual(self.local("posts/" + pid)["data"]["runner"], "agy")
+                    self.assertFalse(self.agy_claude_marker.exists())
                     self.assertEqual(pushed, [])
                 else:
-                    # agy / arena / generic without claude: loud refusal, never an OSError, never touches Artifact
+                    # arena / generic without launcher: loud refusal, never an OSError, never touches Artifact
                     self.assertFalse(r["ok"], r)
                     self.assertIn("NOT STARTED", r["error"])
                     self.assertEqual(pushed, [])
                 self.assertEqual(bool(pushed), art, pl)
+
+    def test_agy_launch_without_agy_on_path_refuses_loudly(self):
+        k = self.kit_in(self.repo)
+        pid = "cl99-launch-me"
+        self.local("posts/" + pid, dict(POST, part="CL99", status="planned", runner="claude-web", session_id=None, launched_at=None))
+        env, anc = PLATFORM_FIXTURES["agy"]
+        # Even with `claude` on PATH, agy without `agy` refuses loudly and never spawns `claude --bg`
+        with fake_platform(k, dict(env, PATH=str(self.bindir_claude)), ancestor=anc), \
+                mock.patch.object(k, "_device", return_value=None):
+            r = k.launch(pid, url=self.url, token=TOKEN, gate=False, reset=True, anyway="matrix test")
+        self.assertFalse(r["ok"], r)
+        self.assertIn("NOT STARTED", r["error"])
+        self.assertEqual(self.local("posts/" + pid)["data"]["status"], "planned")
 
 
 class GuidesNameTheTable(unittest.TestCase):
@@ -538,6 +762,24 @@ class GuidesNameTheTable(unittest.TestCase):
             text = (ROOT / rel).read_text(encoding="utf-8")
             self.assertIn("PLATFORM_RULES", text, rel)
             self.assertIn("one platform", text.lower(), rel)
+
+    def test_part_guides_and_k2_document_real_project_by_platform(self):
+        for rel in ("kit/part.template.md", "kit/claude-cli/part.template.md"):
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            self.assertIn("real_project", text, rel)
+            self.assertIn("scratch clone or read-only", text, rel)
+            self.assertIn("Claude Code web", text, rel)
+        web_part = (ROOT / "kit" / "claude" / "part.template.md").read_text(encoding="utf-8")
+        self.assertIn("Claude Code web", web_part)
+        self.assertIn("real_project", web_part)
+        self.assertIn("computer CLI/agy", web_part)
+        lessons = (ROOT / "kit" / "lessons.md").read_text(encoding="utf-8")
+        k2 = lessons.split("## K2:", 1)[1].split("\n## ", 1)[0]
+        self.assertIn('PLATFORM_RULES["real_project_run"]', k2)
+        self.assertIn("CLI or agy", k2)
+        self.assertIn("`kit.py done` refuses without it", k2)
+        self.assertIn("Claude Code web", k2)
+        self.assertIn("pending", k2)
 
 
 if __name__ == "__main__":

@@ -515,6 +515,10 @@ def main(argv=None):
     if os.environ.get("KIT_GATE") == "done" or a.cmd == "import":        # the server holds the proof gate too
         base_hdrs["X-Kit-Gate"] = "copy" if a.cmd == "import" else "done"
     call = lambda m, p, body=None, headers=None, timeout=60: req(base, m, p, body=body, headers={**base_hdrs, **(headers or {})}, timeout=timeout, token=tok)
+    if _TEST_GUARD and a.cmd in ("set", "update", "str-replace", "batch", "delete", "import", "reply"):
+        # CL71: a write's first request can be a read (the gate reads the post): the board is checked before it, so a
+        # test run with no server at the real address is refused too, not "cannot reach" (red in a web container)
+        _TEST_GUARD.check_board(base, "POST")
 
     if a.cmd == "changes":
         res = call("GET", "/_api/changes?since=%d&limit=%d" % (a.since, a.limit))

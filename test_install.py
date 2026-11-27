@@ -54,12 +54,12 @@ with tempfile.TemporaryDirectory() as d:
     s = json.load(open(os.path.join(t, ".agents", "hooks.json")))
     check("hooks.json: the project's own named hook kept", s.get("my-linter") == mine["my-linter"])
     cmds = all_hook_cmds(s)
-    check("hooks.json: 23 kit handlers merged into kit-board", sum("hooks/kit/" in c for c in cmds) == 23)   # CL44: + update_steps, PostInvocation memory JIT, Stop usage
+    check("hooks.json: 24 kit handlers merged into kit-board", sum("hooks/kit/" in c for c in cmds) == 24)   # CL44: + update_steps, PostInvocation memory JIT, Stop usage; CL62: Stop queue
     check("a project's own skill is not overwritten", open(os.path.join(t, ".agents", "skills", "memory", "SKILL.md")).read() == "my own memory skill\n"
           and "KEPT" in out)
     page = open(os.path.join(t, ".kit", "board.html"), encoding="utf-8").read()
     check("page: the project's name, no Harmonize, no placeholder", "Tide Clock board" in page and "armoniz" not in page and "{{" not in page)
-    check(".gitignore appended, not replaced", open(os.path.join(t, ".gitignore")).read() == "build/\n.board/memory/before-compaction.md\n.kit/board_data/\n.kit/handover.flag\n.kit/handover.log\n.kit/handover-*.gen\n.kit/run/\n.kit/**/__pycache__/\n.claude/hooks/kit/__pycache__/\n.agents/hooks/kit/__pycache__/\n.claude/worktrees/\n")
+    check(".gitignore appended, not replaced", open(os.path.join(t, ".gitignore")).read() == "build/\n.board/memory/before-compaction.md\n.kit/board_data/\n.kit/handover.flag\n.kit/handover.log\n.kit/handover-*.gen\n.kit/run/\n.kit/**/__pycache__/\n.claude/hooks/kit/__pycache__/\n.agents/hooks/kit/__pycache__/\n.claude/worktrees/\n.kit/manifest.json\n.kit/artifact-files/\n")   # CL71: generated, out of git
     rc, out = inst(t)
     check("a rerun changes nothing", rc == 0 and "nothing to change" in out)
     open(os.path.join(t, ".kit", "BOARD.md"), "a").write("my note\n")
@@ -147,9 +147,9 @@ with tempfile.TemporaryDirectory() as d:
     say_pre = "mcp__claude-code-remote__send_message|SendMessage"
     check("`local` maps the agy hooks onto Claude Code tools (Bash, SendMessage), no Artifact or other cloud-session matchers",
           ("PreToolUse", "Bash") in loc_matchers and ("PreToolUse", say_pre) in loc_matchers
-          and ("PostToolUse", "SendMessage|Bash") in loc_matchers and ("PreCompact", None) in loc_matchers
+          and ("PostToolUse", "Bash|" + say_pre) in loc_matchers and ("PreCompact", None) in loc_matchers   # CL60: the send's "·" line
           and not any(m and ((("Artifact" in m) and (ev, m) != ("PreToolUse", "ArtifactData"))   # M11: the board guard
-                              or ("claude-code-remote" in m and m != say_pre)) for ev, m in loc_matchers))
+                              or ("claude-code-remote" in m and m not in (say_pre, "Bash|" + say_pre))) for ev, m in loc_matchers))
     st_loc_all = json.load(open(os.path.join(t_loc, ".claude", "settings.json")))
     check("the Claude Code CLI install: context reset (.kit/handover.py, Stop hook) and the task list as the train (hook + task tools on)",
           os.path.isfile(os.path.join(t_loc, ".kit", "handover.py"))

@@ -17,9 +17,9 @@ check: test:tests/test_orchestrator_guard.py::LaunchRepo.test_a_step_on_an_attac
 roles: part, review, orchestrator
 where: attached
 files: scripts/kit.py, install.py, kit/hooks/*, kit/web_takeover.py, kit/claude/kit_artifact_sync.py, kit/board/board_server.py
-from: CL29
+from: CL29, R4
 check: test:tests/test_cl32_roles.py::RealProject.test_install_change_needs_a_real_project_result
-The kit's suite passed CL29's compact while Harmonize's story checker went red. The orchestrator's session, which holds both repos, runs the changed command in a clone of the consuming project (never pushed) and puts the command and its output in the part's `real_project`; a launched part never attaches a repo (CL38: a launched session's classifier refuses to attach one unless the owner types it; CL39: on the web the orchestrator's environment holds every repo); `kit.py done` says it is pending until then.
+The kit's suite passed CL29's compact while Harmonize's story checker went red. Who runs the check follows `PLATFORM_RULES["real_project_run"]`: on a computer (CLI or agy), the part runs the changed command on the consuming project itself in a scratch clone or read-only (never pushing to it) and writes `{"project", "command", "output"}` in its post's `real_project` before Done (`kit.py done` refuses without it). Only on Claude Code web does the orchestrator run it from its multi-repo session (CL38: a launched web session's classifier refuses `add_repo` unless the owner types it; CL39: the web orchestrator's environment holds every repo), where `kit.py done` leaves it pending until the orchestrator writes `real_project`.
 
 ## K3: Reuse the kit's commands before writing code
 roles: part

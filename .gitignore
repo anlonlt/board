@@ -10,3 +10,5 @@ __pycache__/
 .claude/hooks/kit/__pycache__/
 .agents/hooks/kit/__pycache__/
 .board/map/
+.kit/manifest.json
+.kit/artifact-files/

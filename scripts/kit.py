@@ -957,11 +957,13 @@ PLATFORM_RULES = {
     },
     # Real-project dry run (CL32, CL38, CL39, R4):
     # "orchestrator" on web (launched web session cannot attach repos; uses Artifact kit_docs);
-    # "computer" on local platforms (local folder, no ArtifactData/add_repo; R4 flips to "part" to refuse done).
+    # "part" on computer runners (cli/agy: part runs on the consuming project in a scratch local clone or read-only,
+    # never pushing, and writes real_project before Done; kit.py done refuses without it);
+    # "computer" on arena/generic (local dry run pending, no ArtifactData/add_repo).
     "real_project_run": {
         "web": "orchestrator",
-        "cli": "computer",
-        "agy": "computer",
+        "cli": "part",
+        "agy": "part",
         "arena": "computer",
         "generic": "computer",
     },
@@ -1244,7 +1246,7 @@ def _read_json(p):
         return None
 
 
-SCOPE_CARDS = ("_orchestrator", "_trains", "_dashboard", "_prefs")
+SCOPE_CARDS = ("_orchestrator", "_trains", "_dashboard", "_prefs", "_files")   # CL71: _files, the Artifact's files map
 
 
 def _scope_post(post=None):
@@ -1594,6 +1596,7 @@ def artifact_load(url=None, token=None, in_dir=None):
     st["not_there"] = sorted(stale)
     st["loaded_at"] = zstamp(datetime.now(timezone.utc))
     _art_save(st)
+    files_card_sync(url, token)                         # CL71: the files map from the board, in a clone that has none
     restored, missing = _load_blobs(url, token, in_dir)
     attached = _load_attached(url, token, in_dir)
     return {"taken": taken, "kept_here": kept, "merged": merged, "not_there": len(stale), "blobs_restored": restored,
@@ -1786,6 +1789,7 @@ def artifact_push(url=None, token=None, out_dir=None):
     os.makedirs(os.path.join(out_dir, "docs"), exist_ok=True)
     for f in glob.glob(os.path.join(out_dir, "batch-*.json")) + glob.glob(os.path.join(out_dir, "docs", "*.json")):
         os.remove(f)
+    files_card_sync(url, token)                         # CL71: what changed in the files map rides this push
     st = _art_state()
     entries, need_pin, every, dropped = [], [], [], []
     for coll in ART_COLLS:
@@ -1872,6 +1876,56 @@ def _kas():
             spec.loader.exec_module(kas)
             return kas
     return None
+
+
+FILES_CARD = "_files"
+
+
+def _merge_files_state(a, b):
+    """Two copies of the files map: every asset and document of both; a document's newer version wins, an asset's
+    copy in `b` (this clone's) wins."""
+    out = {"assets": dict((a or {}).get("assets") or {}), "docs": dict((a or {}).get("docs") or {})}
+    out["assets"].update((b or {}).get("assets") or {})
+    for did, v in ((b or {}).get("docs") or {}).items():
+        cur = out["docs"].get(did) or {}
+        if int((v or {}).get("version") or 0) >= int(cur.get("version") or 0):
+            out["docs"][did] = v
+    for k in ("index_version",):
+        if (b or {}).get(k) or (a or {}).get(k):
+            out[k] = max(int((a or {}).get(k) or 0), int((b or {}).get(k) or 0))
+    return out
+
+
+def files_card_sync(url=None, token=None):
+    """CL71: the Artifact's files map (.kit/artifact-files/: what it holds of this repo's files, each mirrored document's
+    version) is not in git any more (every branch rewrote it, every merge conflicted). It rides the board instead, as
+    the card posts/_files, which pull, load and push already carry with their versions: a clone without the file
+    rebuilds it from the card; a clone whose file gained entries puts them on the card, for this push to send."""
+    kas = _kas()
+    if kas is None:
+        return None
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    path = kas.files_state_path(ROOT, _art_into())
+    try:
+        d = _board_request(url, "doc/posts/%s" % FILES_CARD, token=token)
+    except Exception:  # noqa: BLE001
+        return None
+    card = (d.get("data") or {}) if isinstance(d, dict) and d.get("exists") else {}
+    here = _read_json(path) if os.path.isfile(path) else None
+    merged = _merge_files_state(card.get("files"), here)
+    if not merged["assets"] and not merged["docs"]:
+        return None
+    if merged != here:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        write_doc(path, merged)
+    if merged != card.get("files"):
+        doc = {"title": "Files map (the kit's)", "files": merged, "updated_at": _now_z(),
+               "body": "What the Artifact holds of this repo's files (CL71: out of git, rebuilt from here)."}
+        _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": "posts", "doc_id": FILES_CARD, "data": doc,
+                                                     "if_version": d.get("version", 0) if isinstance(d, dict) else 0}],
+                                         "sync": True}, token=token)
+    return merged
 
 
 def _art_into():
@@ -2869,7 +2923,7 @@ def report_lines(pid, p, posts=None, review=False):
     who = "your review" if review else "your step"
     if not o["address"]:
         return ["", "## Where you report", "- No orchestrator owns %s and the board names none: `python3 -I .kit/kit.py unreached %s "
-                "--why \"no owner named\"`, then say so in your post; do not wait." % (who, pid)]
+                "--why \"no owner named\"`, then say so in your post; do not wait." % (who, pid), LAST_MESSAGE_LINE]
     dev, here = o["device"], my_device()
     rfmt = _rule("reply_format")
     if dev == "web" or o["address"].startswith(("session_", "cse_")):
@@ -2890,7 +2944,13 @@ def report_lines(pid, p, posts=None, review=False):
             "- Reach it with %s: `Done. Check post %s.`" % (how, pid),
             "- The send fails, or no live session matches (ListAgents shows none on that device, or only stale ones): "
             "`python3 -I .kit/kit.py unreached %s --why \"<what failed>\"`; your post then says so and every orchestrator's resume "
-            "lists it to claim. Do not wait, do not send to a look-alike." % pid]
+            "lists it to claim. Do not wait, do not send to a look-alike." % pid, LAST_MESSAGE_LINE]
+
+
+# CL60: said once, in the report section of a part's and a review's resume, before the closing message (a Stop hook only
+# refuses it after it is on screen); the PostToolUse hook repeats it after each last step.
+LAST_MESSAGE_LINE = ("- After that send (or `unreached`), your next and last chat message is a single \"\u00b7\": nothing "
+                     "before it, no summary; the post holds the result.")
 
 
 def _owner_write(pid, fields, url=None, token=None, drop=()):
@@ -3090,7 +3150,7 @@ def _doctor_hook_parity(root, issues, lines, fix=False):
         c_files = {f for f in os.listdir(c_dir) if f.endswith(".py") and f != "test_hooks.py"}
         a_files = {f for f in os.listdir(a_dir) if f.endswith(".py") and f != "test_hooks.py"}
         drifted, fixed = [], []
-        manifest = _read_json_file(os.path.join(root, ".kit", "manifest.json"))
+        manifest = _manifest(root)
         for f in sorted(c_files | a_files):
             cp, ap = os.path.join(c_dir, f), os.path.join(a_dir, f)
             if not os.path.isfile(cp) or not os.path.isfile(ap):
@@ -3169,7 +3229,7 @@ def _doctor_conflicts(root, issues, lines):
             lines.append("conflicts: overlapping legacy hooks: %s" % "; ".join(overlaps))
             issues.append("overlapping legacy hooks alongside kit hooks: %s" % "; ".join(overlaps))
     # Archived awaits file still referenced by custom hooks/skills (the kit's own files, in its manifest, are not)
-    manifest = _read_json_file(os.path.join(root, ".kit", "manifest.json"))
+    manifest = _manifest(root)
     for mrel in (".story", os.path.join(".board", "memory")):
         arch = glob.glob(os.path.join(root, mrel, "archive", "awaits*.md"))
         live = glob.glob(os.path.join(root, mrel, "awaits*.md"))
@@ -4934,6 +4994,48 @@ def git_copy_has(pid, p, strip, m=None):
             % (BRANCH, (txt or "nothing")[-200:])]
 
 
+def _step_changed(root):
+    """M3: the files this step changed: its commits since it left the trunk, and what is not committed yet. None when
+    there is no trunk to compare with (a repo with no trunk ref, the trunk itself)."""
+    g = lambda *a: subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=60)  # noqa: E731
+    trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+    try:
+        if g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == trunk:
+            return None
+        base = ""
+        for ref in ("origin/" + trunk, trunk):
+            r = g("merge-base", "HEAD", ref)
+            if r.returncode == 0 and r.stdout.strip():
+                base = r.stdout.strip()
+                break
+        if not base:
+            return None
+        names = g("diff", "--name-only", base, "HEAD").stdout.splitlines()
+        names += g("diff", "--name-only", "HEAD").stdout.splitlines()
+        names += g("ls-files", "--others", "--exclude-standard").stdout.splitlines()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return sorted({n.strip() for n in names if n.strip()})
+
+
+def check_map(root):
+    """M3: Done keeps the map. Rebuild it, rerun every link's check (refused on one that fails, the link named),
+    refuse a file this step changed that is not on the map and an added thing with no check. (errors, notes)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    try:
+        import kit_map  # noqa: E402
+    except ImportError:
+        return [], ["map: kit_map.py is not next to kit.py: the map was not checked (`python3 -I install.py . --update`)"]
+    changed = _step_changed(root)
+    errors, notes, secs = kit_map.stretch(root, changed or [])
+    errors = ["map: " + e for e in errors]
+    notes = ["map: " + n for n in notes]
+    notes.append("map: checked in %.1f s%s" % (secs, "" if changed is not None else " (no trunk to compare with: changed files not checked)"))
+    return errors, notes
+
+
 def done(pid, db_path=None, root=None):
     p = _get_post(pid, db_path=db_path)
     if not p:
@@ -4972,6 +5074,9 @@ def done(pid, db_path=None, root=None):
     else:
         warn += pending_real     # CL32/CL38: a real project too (pending)
     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
+    e_m, n_m = check_map(root)                       # M3: the part's stretch of the map, and what it built on it
+    err += e_m
+    warn += n_m
     strip = lambda d: {k: v for k, v in (d or {}).items() if k not in ("proof", "updated_at")}  # noqa: E731
     if not artifact_here():
         # CL51 / R5: on a platform without artifact_steps, the board is the local one and git carries it
@@ -5119,6 +5224,12 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
             scope += (" The board, on the web: `python3 -I .kit/kit.py artifact pull --post %s` (only this step's documents, "
                       "by id), the calls it prints, `python3 -I .kit/kit.py artifact load`." % pid)
         br = str((p.get("proof") or {}).get("branch") or p.get("branch") or "")
+        if br and lands_after_review() and force and not dry_run:
+            # CL71: a review started again reads the branch as it is now: that commit is what it lands (CL57's third review)
+            _git_run("fetch", "-q", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (br, br), timeout=300)
+            tip = _git_run("rev-parse", "-q", "--verify", "refs/remotes/origin/%s^{commit}" % br).stdout.strip()
+            if tip and tip != p.get("review_commit") and _board_write("update", "posts", pid, {"review_commit": tip}):
+                p = dict(p, review_commit=tip)
         if br and lands_after_review():
             scope += (" Its work is on branch `%s`%s, not on the trunk: read and run it there (`git fetch origin %s && git worktree add "
                       "/tmp/review-%s origin/%s`)." % (br, (" at %s" % str(p["review_commit"])[:9]) if p.get("review_commit") else "", br, _slug(pid, 30), br))
@@ -5850,7 +5961,7 @@ def step_facts(pid, q, areas=None):
     st = str(q.get("status") or "").lower()
     return {"id": pid, "part": str(q.get("part") or pid), "damage": damage, "bug": bug, "files": _q_files(q),
             "areas": _q_areas(q, areas), "after": [str(x) for x in after], "created": str(q.get("created_at") or ""),
-            "running": "progress" in st, "damage_why": str(q.get("damage") or said),
+            "running": "progress" in st, "damage_why": str(q.get("damage") or said), "held": step_hold(q),
             "blocks_all": QUEUE_BLOCKS_ALL.search(_q_text(q)) is not None}
 
 
@@ -5954,15 +6065,16 @@ def queue_rank(posts, areas=None):
         if not why:
             why.append("bug before features" if f[pid]["bug"] else "feature, by date (no fact sets it apart)")
         waits = []
-        if pid not in running:
+        if pid not in running and not f[pid]["held"]:
             waits += ["%s first (%s)" % (f[x]["part"], deps[pid][x]) for x in deps[pid] if x in open_]
             waits += ["%s %s (shares %s)" % (f[x]["part"], "runs" if x in running else "goes first", clash[pid][x])
                       for x in clash[pid] if x in started]
-        can = pid not in running and not waits
+        can = pid not in running and not waits and not f[pid]["held"]   # CL62: a held step starts nothing, blocks nothing
         if can:
             started.add(pid)                   # what can run beside it is measured against it from here on
         rows.append({"id": pid, "part": f[pid]["part"], "place": n, "why": "; ".join(why), "running": pid in running,
-                     "can_start": can, "waits": waits, "damage": f[pid]["damage"], "bug": f[pid]["bug"]})
+                     "can_start": can, "waits": waits, "damage": f[pid]["damage"], "bug": f[pid]["bug"],
+                     "held": f[pid]["held"]})
     return rows
 
 
@@ -5972,7 +6084,8 @@ def queue_lines(posts, areas=None, limit=40):
         return ["No open step."]
     out = []
     for r in rows[:limit]:
-        tag = "running" if r["running"] else ("start now" if r["can_start"] else "waits: " + "; ".join(r["waits"])[:160])
+        tag = "running" if r["running"] else ("held: " + r["held"][:120] if r.get("held") else
+                                              "start now" if r["can_start"] else "waits: " + "; ".join(r["waits"])[:160])
         out.append("%d. %s `%s` [%s] %s" % (r["place"], r["part"], r["id"], tag, r["why"]))
     if len(rows) > limit:
         out.append("(%d more)" % (len(rows) - limit))
@@ -6007,6 +6120,149 @@ def order_problem(posts, pid, areas=None):
         return "%s goes first (place %d, %s is %d): %s; launch `%s`" % (first["part"], first["place"], me["part"], me["place"],
                                                                       first["why"], first["id"])
     return None
+
+
+# CL62: "start now" is enforced, not read. Orchestrator 2 on the web read [start now] for M2, M3, M4 at 02:28, followed
+# a stale hand-over line ("M2 and M3 wait on M1", M1 had landed at 02:19) and launched them at 03:09 when the owner
+# asked. The orchestrator's Stop is refused once while a start-now step is neither launched nor held with a reason.
+def step_hold(q):
+    """Why this step is held ("" when it is not): `kit.py hold` records {why, at, by} in `held`; a status "held: ..."
+    written by hand counts too."""
+    h = q.get("held") if isinstance(q, dict) else None
+    if isinstance(h, dict) and str(h.get("why") or "").strip():
+        return str(h["why"]).strip()
+    if isinstance(h, str) and h.strip():
+        return h.strip()
+    st = str((q or {}).get("status") or "")
+    if STEP_HELD.match(st):
+        return st.split(":", 1)[1].strip() if ":" in st else st.strip()
+    return ""
+
+
+def split_owners(posts, me=""):
+    """{post id or part (lower case): the other orchestrator that owns it} from the split recorded on `_orchestrator`:
+    `split: {<orchestrator address>: [<post id or part>, ...]}`. What this orchestrator (`me`) owns is not in it."""
+    o = (posts or {}).get("_orchestrator")
+    sp = o.get("split") if isinstance(o, dict) else None
+    out = {}
+    for who, items in (sp.items() if isinstance(sp, dict) else []):
+        if me and str(who) == str(me):
+            continue
+        for x in _as_list(items):
+            out[str(x).strip().lower()] = str(who)
+    return out
+
+
+def _launch_marked(pid, root=None):
+    return os.path.isfile(os.path.join(root or ROOT, ".kit", "run", "launch", pid + ".json"))
+
+
+def start_now_unlaunched(posts, me=None, areas=None, root=None):
+    """The queue's [start now] steps that this orchestrator has neither launched nor held: [{id, part, place, why}].
+    Launched: running on the board, or `kit.py launch` marked it here (the board copy may lag). Held: `kit.py hold`.
+    A step the split on `_orchestrator` gives another orchestrator counts as held for this one."""
+    me = orchestrator_here().get("orchestrator", "") if me is None else me
+    others = split_owners(posts, me)
+    out = []
+    for r in queue_rank(posts, areas):
+        if not r["can_start"] or r["running"] or r.get("held"):
+            continue
+        if r["id"].lower() in others or r["part"].lower() in others or _launch_marked(r["id"], root):
+            continue
+        out.append({"id": r["id"], "part": r["part"], "place": r["place"], "why": r["why"]})
+    return out
+
+
+def start_now_refusal(rows):
+    """The Stop hook's text for these unlaunched start-now steps: the list and the exact commands ("" when none)."""
+    if not rows:
+        return ""
+    out = ["Before you stop (CL62): the queue says start now and you have neither launched nor held these:"]
+    for r in rows:
+        out.append("- %s `%s` (place %d, %s): `python3 -I .kit/kit.py launch %s`" % (r["part"], r["id"], r["place"],
+                                                                                  _short(r["why"], 80), r["id"]))
+    out.append("Launch each (on the web `launch` prints the create_session call, then `launch <post> --session-id <id>`), "
+               "or hold it with the reason the owner will read: `python3 -I .kit/kit.py hold <post> --why \"...\"`. "
+               "A hand-over line or your own plan never overrides the queue.")
+    return "\n".join(out)
+
+
+def hold(pid, why="", release=False, url=None, token=None):
+    """`kit.py hold <post> --why "..."`: the orchestrator does not launch this start-now step yet, and says why. It is
+    recorded on the post (`held`, status "held: <why>", shown on the board, in resume and the queue); `--release` undoes it."""
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    try:
+        d = _board_request(url, "doc/posts/" + urllib.parse.quote(pid, safe=""), token=token)
+        p = d.get("data") if isinstance(d.get("data"), dict) else None
+    except Exception as e:
+        return {"ok": False, "post": pid, "error": "cannot read the board at %s: %s" % (url, e)}
+    if p is None:
+        return {"ok": False, "post": pid, "error": "no post %s on this board" % pid}
+    if release:
+        prev = str(p.get("held_prev_status") or "planned")
+        return _owner_write(pid, {"status": prev}, url=url, token=token, drop=("held", "held_prev_status"))
+    why = re.sub(r"\s+", " ", str(why or "")).strip()
+    if len(why) < 8:
+        return {"ok": False, "post": pid, "error": "a hold needs its reason, in words the owner reads: --why \"...\""}
+    st = str(p.get("status") or "planned")
+    fields = {"held": {"why": why[:300], "at": _now_z(), "by": orchestrator_here().get("orchestrator", "")},
+              "status": "held: " + why[:120]}
+    if not STEP_HELD.match(st):
+        fields["held_prev_status"] = st
+    return _owner_write(pid, fields, url=url, token=token)
+
+
+HANDOVER_WAIT = re.compile(r"((?:[A-Z]{1,4}\d+[a-z]?)(?:\s*(?:,|and|&|\+)\s*(?:[A-Z]{1,4}\d+[a-z]?))*)\s+(?:still\s+)?"
+                           r"(?:waits?|waiting|are waiting|is waiting|stay(?:s)? behind|blocked)\s+(?:on|for|behind|by)\s+"
+                           r"([A-Z]{1,4}\d+[a-z]?)\b")
+
+
+def _hhmm(z):
+    m = re.search(r"T(\d\d:\d\d)", str(z or ""))
+    return m.group(1) if m else str(z or "?")
+
+
+def stale_handover_lines(posts, comments, limit=40, hours=48, areas=None):
+    """CL62: a hand-over line never overrides the queue. Each "X waits on Y" in the orchestrators' comments under
+    `_orchestrator` (the last `hours` before the newest, at most `limit`) is compared with the board; a claim whose Y
+    has landed (or is complete) is printed, first. A claim that still holds prints nothing."""
+    notes = sorted((c for c in (comments or {}).values() if isinstance(c, dict) and c.get("post_id") == "_orchestrator"
+                    and str(c.get("from") or c.get("author") or "").lower() not in ("owner", "you", "")),
+                   key=lambda c: str(c.get("created_at") or ""))[-limit:]
+    if notes:
+        try:
+            newest = iso(str(notes[-1].get("created_at")))
+            notes = [c for c in notes if (newest - iso(str(c.get("created_at")))).total_seconds() <= hours * 3600]
+        except Exception:
+            pass
+    by_part = {}
+    for pid, p in (posts or {}).items():
+        if isinstance(p, dict) and not pid.startswith("_") and p.get("part"):
+            by_part.setdefault(str(p["part"]).lower(), (pid, p))
+    rank = {r["part"].lower(): r for r in queue_rank(posts, areas)}
+    out, seen = [], set()
+    for c in reversed(notes):
+        for m in HANDOVER_WAIT.finditer(str(c.get("text") or c.get("body") or "")):
+            on = m.group(2)
+            hit = by_part.get(on.lower())
+            if not hit:
+                continue
+            _pid, y = hit
+            if _step_open(y) and not y.get("landed"):
+                continue                                    # the claim still holds
+            gone = ("landed %s" % _hhmm(y.get("landed_at") or y.get("completed_at") or y.get("updated_at"))) if y.get("landed") \
+                else "%s %s" % (str(y.get("status") or "done").split(":")[0], _hhmm(y.get("completed_at") or y.get("updated_at")))
+            for x in re.findall(r"[A-Z]{1,4}\d+[a-z]?", m.group(1)):
+                if (x, on) in seen:
+                    continue
+                seen.add((x, on))
+                r = rank.get(x.lower())
+                now = ("start now: `python3 -I .kit/kit.py launch %s`" % r["id"]) if r and r["can_start"] else \
+                    ("running" if r and r["running"] else ("held: " + r["held"]) if r and r.get("held") else
+                     ("waits: " + "; ".join(r["waits"])[:120]) if r else "not an open step")
+                out.append("- %s waits on %s (said %s): %s %s, %s" % (x, on, _hhmm(c.get("created_at")), on, gone, now))
+    return ["## First: hand-over lines the board contradicts (the queue wins)"] + out if out else []
 
 
 def pause_messages(posts, new_pid, areas=None):
@@ -6277,6 +6533,8 @@ def _trains_mark(trains, pid, post, session, prompt_rel):
         rows.append(row)
         by[part] = row
     row.update({"post": pid, "session": session, "state": "running", "prompt": prompt_rel or row.get("prompt") or ""})
+    if post.get("runner"):
+        row["runner"] = post["runner"]
     par = by.get(str(row.get("parent") or ""))
     if par is not None:
         par["children"] = list(par.get("children") or [])
@@ -6347,6 +6605,47 @@ def _make_worktree(branch, base, reset=False):
                           "--reset to start it again from %s" % (branch, own, base))
     r = _git_run("worktree", "add", "-q", "-B", branch, path, base)
     return (path, None) if r.returncode == 0 else (None, r.stderr.strip() or "git worktree add failed")
+
+
+def _prepare_agy_branch(branch, base, reset=False, take=False):
+    """R7: prepare or adopt `branch` for an agy subagent (`Workspace=\"share\"`) without switching the orchestrator's
+    working tree or locking `branch` in a `.claude/worktrees/` checkout. Returns (status, error)."""
+    if _git_run("remote", "get-url", "origin").returncode == 0:
+        _git_run("fetch", "-q", "origin", branch, timeout=20)
+    has_local = _git_run("rev-parse", "--verify", "--quiet", "refs/heads/" + branch).returncode == 0
+    has_remote = _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + branch).returncode == 0
+    wt = _worktree_for(branch)
+    if reset:
+        if wt:
+            dirty = [ln for ln in _git_run("status", "--porcelain", cwd=wt).stdout.splitlines()
+                     if not ln[3:].strip().startswith(".kit/run/")]
+            if dirty:
+                return None, "worktree %s (branch %s) has uncommitted work: commit or keep it, then launch again" % (wt, branch)
+            r = _git_run("reset", "-q", "--hard", base, cwd=wt)
+        else:
+            r = _git_run("branch", "-f", branch, base)
+        return ("reset", None) if r.returncode == 0 else (None, (r.stderr or r.stdout).strip() or "git branch reset failed")
+    if not has_local:
+        start = ("origin/" + branch) if has_remote else base
+        r = _git_run("branch", branch, start)
+        if r.returncode != 0:
+            return None, (r.stderr or r.stdout).strip() or "git branch failed"
+        return ("adopted_remote" if has_remote else "created"), None
+    if has_remote and not wt:
+        loc_sha = _git_run("rev-parse", "refs/heads/" + branch).stdout.strip()
+        rem_sha = _git_run("rev-parse", "refs/remotes/origin/" + branch).stdout.strip()
+        if loc_sha != rem_sha and _git_run("merge-base", "--is-ancestor", "refs/heads/" + branch, "refs/remotes/origin/" + branch).returncode == 0:
+            r = _git_run("branch", "-f", branch, "refs/remotes/origin/" + branch)
+            if r.returncode != 0:
+                return None, (r.stderr or r.stdout).strip() or "git branch fast-forward failed"
+            return "adopted_remote", None
+    own = _git_run("rev-list", "--count", "%s..%s" % (base, branch)).stdout.strip()
+    if own in ("", "0") and not wt:
+        r = _git_run("branch", "-f", branch, base)
+        if r.returncode != 0:
+            return None, (r.stderr or r.stdout).strip() or "git branch update failed"
+        return "prepared", None
+    return "adopted", None
 
 
 def _github_url():
@@ -6432,7 +6731,7 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
             return dict(out, error=why)
     restore = []      # the branch the clone was on: it goes back there whatever happens
     try:
-        return _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset, take)
+        return _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset, take, cli=cli)
     finally:
         if restore:
             g("checkout", "-q", restore[0])
@@ -6458,7 +6757,7 @@ def _inline_prompt(text, rel, body):
             "it and do it.%s\n\n<prompt path=\"%s\">\n%s\n</prompt>" % (rel, (" " + rest) if rest else "", rel, body.rstrip()))
 
 
-def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset, take=False):
+def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset, take=False, cli=None):
     inline = None
 
     def stale():   # CL54: the clone's prompt is missing or differs from the one this post makes now
@@ -6513,6 +6812,8 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         cmd.append("--reset")
     if take:
         cmd.append("--take")
+    if cli:
+        cmd += ["--cli", cli]
     if web is True:
         cmd.append("--web")
     elif web is False:
@@ -6548,6 +6849,8 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
     # the last pull saw, so the board shows the launch (the orchestrator guard lets this file through)
     fields = {"status": "in progress", "session_id": res.get("session_id"), "branch": res.get("branch"),
               "updated_at": _now_z()}
+    if res.get("runner"):
+        fields["runner"] = res["runner"]
     if not post.get("launched_at"):
         fields["launched_at"] = fields["updated_at"]
     pulled = _read_json(os.path.join(_art_dir(), "in", "repos", b["id"], "posts", pid + ".json")) or {}
@@ -6796,9 +7099,10 @@ def relaunch_lines(pid, p, posts=None, unknown=False):
 
 def launch(pid, url=None, token=None, web=None, session_id=None, model=None, reset=False, gate=True, cli=None, post_file=None,
            take=False, anyway=None, cont=False):
-    """`kit.py launch <post>`: the one way a part starts (CL13). Writes status in progress, session_id, launched_at
-    and branch on its post and marks its Trains row running (the local copy; with an attached Artifact board, the
-    batch that carries both there), then starts it: CLI, `claude --bg` inside a worktree made from the current branch;
+    """`kit.py launch <post>`: the one way a part starts (CL13, CL17, R7). Writes status in progress, session_id, runner,
+    launched_at and branch on its post and marks its Trains row running (the local copy; with an attached Artifact
+    board, the batch that carries both there), then starts it: CLI, `claude --bg` inside a worktree made from the
+    current branch; agy, checks device capacity, prepares or adopts the step branch, and prints `invoke_subagent`;
     web, the create_session call to make (a script cannot call it), and `launch <post> --session-id <id>` once it
     answered. Refuses a prompt that is not committed."""
     url = url or local_board_url()
@@ -6806,7 +7110,18 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     pl = _platform(cli)
     lmode = _rule("launcher", pl)
     run = _launcher(cli)
-    web = (lmode == "create_session") if web is None else web
+    if web is True or (web is None and lmode == "create_session"):
+        mode = "create_session"
+    elif web is False and cli is None:
+        mode = "claude_bg" if (run is not None or lmode != "self") else "self"
+    elif lmode == "invoke_subagent":
+        mode = "invoke_subagent"
+    elif lmode == "claude_bg":
+        mode = "claude_bg"
+    else:
+        mode = "self"
+    web = (mode == "create_session")
+    runner = {"create_session": "claude-web", "invoke_subagent": "agy", "claude_bg": "claude-cli"}.get(mode)
     given = _read_json(post_file) if post_file else None    # CL32: the host's copy of this board's post (from the Artifact)
     if isinstance(given, dict):
         # launched for another project: no board server here (none seeded, none to auto-push); the host writes the
@@ -6826,19 +7141,24 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                 "Artifact pull (.kit/run/artifact/in/repos/<id>/posts): run `python3 -I .kit/kit.py artifact pull`, make its "
                 "calls, then launch again" % (pid, (" (no local board at %s)" % url) if d.get("_error") else "",
                                               ", ".join(_attached_ids()) or "none attached")}
+    if not runner and session_id:
+        runner = "claude-web" if str(session_id).startswith("session_") else str(post.get("runner") or "")
     part = str(post.get("part") or pid)
     rel = "docs/prompts/%s.md" % pid
-    branch = str(post.get("branch") or "") if (session_id or cont) else ""
+    branch = str(post.get("branch") or "").strip() if (session_id or take or cont) else ""
     branch = branch or _slug(part, 24)
     c = _kit_config()
     name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
     out = {"ok": True, "post": pid, "part": part, "branch": branch, "web": web, "prompt": rel}
+    if runner:
+        out["runner"] = runner
     base = _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "HEAD"
     text = _launch_text(rel)
     me, people = _my_person(url, token)
+    alive = _alive_sessions() if (mode == "claude_bg" or _rule("alive_check", pl) == "claude_agents") else None
     if cont and not session_id:                     # CL17: a crashed part continues on its branch, from its post's checklist
         old = str(post.get("session_id") or "")
-        if old and old in (_alive_sessions() or ()):
+        if old and old in (alive or ()):
             return dict(out, ok=False, error="%s's session %s still runs: nothing to continue" % (pid, old))
         wait = waits_on_owner(pid, post)
         if wait:
@@ -6846,24 +7166,26 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         text += continue_text(post, branch)
         out["continued"] = True
     if not session_id and not take and not cont:
-        held = step_holder(pid, post, me=me, people=people, alive=_alive_sessions(), saved=_saved_mins(branch))
+        held = step_holder(pid, post, me=me, people=people, alive=alive, saved=_saved_mins(branch))
         if held:
-            runner = str(post.get("runner") or "").strip().lower()
-            if runner not in LAUNCH_RUNNERS and not isinstance(given, dict):
+            post_runner = str(post.get("runner") or "").strip().lower()
+            if post_runner not in LAUNCH_RUNNERS and not isinstance(given, dict):
                 lk = outside_link(pid, url, token)          # CL56: its card's runner gets one link, the post's invite
                 if lk.get("link"):
                     return dict(out, ok=False, link_for_ai=lk["link"], error="%s is %s's card: give %s this one link (its post, "
-                                "its drop box for files, its result): %s%s" % (pid, runner, runner, lk["link"],
+                                "its drop box for files, its result): %s%s" % (pid, post_runner, post_runner, lk["link"],
                                 (" (%s)" % lk["warning"]) if lk.get("warning") else ""))
             return dict(out, ok=False, error="%s is taken: %s. If that session ended or its person agrees, "
                         "`kit.py launch %s --take`" % (pid, held, pid))
     cons = consumers(post.get("consumers"))
-    if cons:     # CL32 / R5: consumer note follows PLATFORM_RULES['real_project_run']
-        if _rule("real_project_run", pl) == "orchestrator":
+    if cons:     # CL32 / R5 / R4: consumer note follows PLATFORM_RULES['real_project_run']
+        rp_who = _rule("real_project_run", pl)
+        if rp_who == "orchestrator":
             # CL38: a launched web session's classifier refuses add_repo unless the owner types it; parts never attach.
             text += (" Never attach a repo: the real-project run on %s is the orchestrator's (done says pending until then)."
                      % ", ".join(c["github"] or c["name"] for c in cons))
         out["consumers"] = [c["github"] or c["name"] for c in cons]
+        out["real_project_run"] = rp_who
     mark = os.path.join(ROOT, ".kit", "run", "launch", pid + ".json")
     marked = os.path.isfile(mark)
     if session_id:                                   # the second half of a web launch: create_session answered
@@ -6887,7 +7209,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                                              "recorded on its post.)" % (late, pid), queue=True)
         if late:
             out["out_of_order"] = late
-        if web:
+        if mode == "create_session":
             if _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + base).returncode != 0 and base != "HEAD":
                 out["warning"] = "branch %s is not pushed: push it first, the new session clones it from GitHub" % base
             src = base
@@ -6913,8 +7235,28 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                 launch_mark(pid, prompt_text, inline=rel)
             else:
                 launch_mark(pid, text)                 # CL30: the orchestrator guard lets this create_session out
-        else:
-            if pl == "arena" or not shutil.which("claude"):     # CL26 / R5: never an OSError on an absent binary or self-only platform
+        elif mode == "invoke_subagent":
+            if not shutil.which("agy"):                # CL26 / R7: never an OSError on an absent binary
+                return dict(out, ok=False, error=(NO_RUNTIME.replace("neither `claude` nor `agy`", "no `agy`") +
+                            "; an agy orchestrator starts a part with: %s" % _launch_line(part, rel, model, cli="agy")))
+            if gate and _rule("device_cap_gate", pl) and _device() is not None:
+                try:
+                    ok, why = _device().gate(_device().survey())
+                except Exception:
+                    ok, why = True, ""
+                if not ok:
+                    return dict(out, ok=False, error="device cap: " + why)
+            bstatus, why = _prepare_agy_branch(branch, base, reset=reset, take=take or cont)
+            if why:
+                return dict(out, ok=False, error=why)
+            out["branch_status"] = bstatus
+            k = c.get("kit") or {}
+            agy_model = str(model or ((k.get("roles") or {}).get("part") or {}).get("model") or "inherit")
+            out["invoke_subagent"] = ('invoke_subagent(TypeName="self", Role="Part: %s", Model="%s", Workspace="share", '
+                                      'Prompt="%s")') % (part, agy_model, text)
+            sess = "pending: invoke_subagent (%s)" % name
+        elif mode == "claude_bg":
+            if not shutil.which("claude"):             # CL26 / R5: never an OSError on an absent binary
                 return dict(out, ok=False, error=(NO_RUNTIME.replace("neither `claude` nor `agy`", "no `claude`") +
                             "; an agy orchestrator starts a part with: %s" % _launch_line(part, rel, model, cli="agy")))
             if gate and _rule("device_cap_gate", pl) and _device() is not None:
@@ -6947,8 +7289,13 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
             if r.returncode != 0:
                 return dict(out, ok=False, error="claude --bg failed: %s" % (r.stderr or r.stdout).strip()[:300])
             sess = name
+        else:
+            return dict(out, ok=False, error=(NO_RUNTIME.replace("neither `claude` nor `agy`", "no `claude`") +
+                        "; an agy orchestrator starts a part with: %s" % _launch_line(part, rel, model, cli="agy")))
     now = _now_z()
     fields = {"status": "in progress", "session_id": sess, "branch": branch, "working_by": me, "updated_at": now}
+    if runner:
+        fields["runner"] = runner
     if out.get("out_of_order"):
         fields["launched_out_of_order"] = {"why": str(anyway), "was": out["out_of_order"], "at": now}
         out["launched_out_of_order"] = fields["launched_out_of_order"]
@@ -6988,13 +7335,21 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
 def launch_text(r):
     if not r.get("ok"):
         return "Not launched: %s\n" % r.get("error")
-    lines = ["%s launched: post %s in progress, session %s, branch %s%s." % (
-        r["part"], r["post"], r["session_id"], r["branch"], "" if r.get("trains") else " (no Trains card here to mark)")]
+    runner_note = (", runner %s" % r["runner"]) if r.get("runner") else ""
+    lines = ["%s launched: post %s in progress, session %s, branch %s%s%s." % (
+        r["part"], r["post"], r["session_id"], r["branch"], runner_note,
+        "" if r.get("trains") else " (no Trains card here to mark)")]
     if r.get("attached"):
         lines.append("It is a step of board %s: launched from its clone %s (no seeded board, no board-mirror push there)."
                      % (r["attached"]["id"], r["attached"]["clone"]))
     if r.get("consumers"):
-        lines.append("Its session tests on: %s; it never attaches them: their real-project run is yours (CL38)." % ", ".join(r["consumers"]))
+        rp_who = r.get("real_project_run") or _rule("real_project_run")
+        if rp_who == "orchestrator":
+            lines.append("Its session tests on: %s; it never attaches them: their real-project run is yours (CL38)." % ", ".join(r["consumers"]))
+        elif rp_who == "part":
+            lines.append("Its session tests on: %s; the part runs its real-project check in a scratch local clone or read-only (never push) before Done." % ", ".join(r["consumers"]))
+        else:
+            lines.append("Its session tests on: %s; dry run in a local clone (never push) goes in `real_project`." % ", ".join(r["consumers"]))
     if r.get("worktree"):
         lines.append("claude --bg runs in %s (made from the current branch)." % r["worktree"])
     if r.get("warning"):
@@ -7002,6 +7357,8 @@ def launch_text(r):
     if r.get("prompt_inline"):
         lines.append("The prompt could not be pushed to the board (%s): the start message carries its full text and the "
                      "session commits it on its branch (CL40)." % r["prompt_inline"]["reason"][:160])
+    if r.get("invoke_subagent"):
+        lines.append("Now start it: %s" % r["invoke_subagent"])
     if r.get("create_session"):
         lines.append("Now start it: the claude-code-remote `create_session` tool with %s; then "
                      "`python3 -I .kit/kit.py launch %s --session-id <the session_id it returned>`."
@@ -7023,7 +7380,7 @@ def lands_after_review():
     return bool(k.get("trunk_push")) and str((k.get("review") or {}).get("auto", "all")) != "off"
 
 
-def landing_steps(posts):
+def landing_steps(posts, git=True):
     """[{post, part, branch, commit, seen, check, review, landed, held, why}] of the steps that have work of their own on a
     branch: which may reach the trunk, and why one may not yet."""
     g, hold, out = _post_gate(), lands_after_review(), []
@@ -7047,21 +7404,165 @@ def landing_steps(posts):
                 why = ""
             elif rv != "continue":
                 why = "its review has not said `continue` (%s)" % (("it said " + rv) if rv else "no verdict yet")
-        out.append({"post": pid, "part": p.get("part"), "branch": br, "commit": pr.get("sha") or "", "seen": p.get("review_commit") or "",
-                    "check": p.get("check") or "", "review": rv, "landed": p.get("landed") or "", "held": bool(why), "why": why,
-                    "ready": bool(hold and pr and g.is_complete(p) and not why and not p.get("landed"))})
+        seen, landed, newer = str(p.get("review_commit") or ""), str(p.get("landed") or ""), []
+        if not landed and git:
+            seen = reviewed_commit(pid, p, seen)
+            landed, newer = landed_on_trunk(br, seen)
+            if landed:
+                why = ""                                 # on the trunk is landed, however it got there
+        out.append({"post": pid, "part": p.get("part"), "branch": br, "commit": pr.get("sha") or "", "seen": seen,
+                    "check": p.get("check") or "", "review": rv, "landed": landed, "held": bool(why), "why": why,
+                    "found": bool(landed and not p.get("landed")), "newer": newer,
+                    "ready": bool(hold and pr and g.is_complete(p) and not why and not landed)})
     return out
+
+
+GENERATED = (".kit/manifest.json", ".kit/artifact-files/")          # CL71: out of git; never a reason to review again
+
+
+def _is_generated(f):
+    return any(f == g or (g.endswith("/") and f.startswith(g)) for g in GENERATED)
+
+
+def _only_generated(sha):
+    """The commit changes only generated files (CL71): never a reason to review again."""
+    return all(_is_generated(f) for f in _git_run("diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha).stdout.split() if f)
+
+
+def _git_ok(*a):
+    return _git_run(*a).returncode == 0
+
+
+def _trunk_ref():
+    t = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+    return ("origin/" + t) if _git_ok("rev-parse", "-q", "--verify", "refs/remotes/origin/" + t) else t
+
+
+_MERGES = {}
+
+
+def _trunk_merges(tref):
+    """[(merged commit, subject)] of the trunk's merges (first parent: the trunk's own), newest first; read once."""
+    if tref not in _MERGES:
+        rows = []
+        for ln in _git_run("log", tref, "--merges", "--first-parent", "-n", "3000", "--format=%P%x09%s").stdout.splitlines():
+            par, _, subj = ln.partition("\t")
+            ps = par.split()
+            if len(ps) >= 2:
+                rows.append((ps[1], subj))
+        _MERGES[tref] = rows
+    return _MERGES[tref]
+
+
+def reviewed_commit(pid, p, seen=""):
+    """CL71 (was CL65): the commit the step's last review read: its post's review_commit, or the `commit` of its newest
+    review comment (CR-<post>, CR-<post>-2, ...) when that one is newer (a re-review whose commit never reached the post)."""
+    try:
+        cs = _post_comments(pid)
+    except Exception:  # noqa: BLE001
+        cs = {}
+    rows = sorted((str(c.get("created_at") or ""), str(c.get("commit") or "")) for i, c in cs.items()
+                  if isinstance(c, dict) and (str(i).startswith("CR-") or c.get("kind") == "review") and c.get("commit"))
+    for _, c in reversed(rows):
+        if not _git_ok("cat-file", "-e", c + "^{commit}"):
+            continue
+        if not seen or (c != seen and _git_ok("merge-base", "--is-ancestor", seen, c)):
+            return c
+        break
+    return seen
+
+
+def landed_on_trunk(br, seen):
+    """CL71 (was CL70): (the commit that put the step on the trunk, [later commits of its branch, not reviewed]) or
+    ("", []). On the trunk: the commit its review read; with none recorded, its branch's tip, or a trunk merge that names
+    its branch (a hand merge, a shared branch). Local refs only (what the last fetch saw): cheap enough for resume."""
+    tref = _trunk_ref()
+    tip = _git_run("rev-parse", "-q", "--verify", "refs/remotes/origin/%s^{commit}" % br).stdout.strip() \
+        or _git_run("rev-parse", "-q", "--verify", "refs/heads/%s^{commit}" % br).stdout.strip()
+    sha = ""
+    if seen:
+        if _git_ok("cat-file", "-e", seen + "^{commit}") and _git_ok("merge-base", "--is-ancestor", seen, tref):
+            sha = seen
+    elif tip and _git_ok("merge-base", "--is-ancestor", tip, tref):
+        sha = tip
+    else:
+        b = re.escape(br)
+        rx = re.compile(r"^Merge (?:remote-tracking )?branch '(?:origin/)?%s'|^Merge (?:origin/)?%s(?: |$)(?!.* into (?:origin/)?%s\b)"
+                        r"|^Merge pull request #\d+ from [^/\s]+/%s$" % (b, b, b, b))
+        for merged, subj in _trunk_merges(tref):
+            if rx.search(subj):
+                sha = merged
+                break
+    if not sha:
+        return "", []
+    newer = []
+    if tip and tip != sha:
+        newer = [c for c in _git_run("rev-list", "--no-merges", tip, "^" + sha, "^" + tref).stdout.split()
+                 if c and not _only_generated(c)]
+    return sha, newer
 
 
 def land_lines(posts, train=None, skip=None):
     """The steps whose work is not on the trunk yet, for a session that would build on it or has to land it."""
     out = []
     for s in landing_steps(posts):
+        if s.get("found") and not (train and _norm_train(posts[s["post"]].get("train")) != _norm_train(train)):
+            mark_landed(s)                                # CL71: on the trunk already, said once and marked
+            out.append("- %s (`%s`) is on the trunk (at %s): marked landed%s" % (
+                s["part"], s["post"], s["landed"][:9], "; %d newer commit(s) on `%s`, not reviewed" % (len(s["newer"]), s["branch"])
+                if s["newer"] else ""))
+            continue
         if s["landed"] or s["post"] == skip or not (s["held"] or s["ready"]) or (train and _norm_train(posts[s["post"]].get("train")) != _norm_train(train)):
             continue
         out.append("- %s (`%s`) on branch `%s`: %s" % (s["part"], s["post"], s["branch"], s["why"] if s["held"] else
                                                       "reviewed: `python3 -I .kit/kit.py land %s`" % s["post"]))
     return out
+
+
+def _manifest(root):
+    """CL71: .kit/manifest.json, rebuilt from the tree when this clone has none (it is not in git)."""
+    for cand in (os.path.join(root, ".kit", "kit_manifest.py"), os.path.join(root, "kit", "kit_manifest.py")):
+        if os.path.isfile(cand):
+            try:
+                spec = importlib.util.spec_from_file_location("kit_manifest", cand)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod.load(root)
+            except Exception:  # noqa: BLE001
+                break
+    return _read_json_file(os.path.join(root, ".kit", "manifest.json"))
+
+
+def reviewed(pid, verdict, review_id, commit=None):
+    """CL71 (was CL65): a review's verdict on its step's post, with the commit it read, whatever started the review:
+    `review_commit` on the post and `commit` on its comment, so `land` merges what was read (CL57 needed a third review
+    because the second's commit was never recorded)."""
+    p = _get_post(pid) or {}
+    if not p:
+        return {"ok": False, "why": "no post %s on this board" % pid}
+    br = str((p.get("proof") or {}).get("branch") or p.get("branch") or "")
+    sha = ""
+    if commit:
+        sha = _git_run("rev-parse", "-q", "--verify", commit + "^{commit}").stdout.strip()
+        if not sha:
+            return {"ok": False, "why": "%s is no commit here (fetch it first)" % commit}
+    elif br:
+        _git_run("fetch", "-q", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (br, br), timeout=300)
+        sha = _git_run("rev-parse", "-q", "--verify", "refs/remotes/origin/%s^{commit}" % br).stdout.strip()
+    fields = {"review": verdict, "review_id": review_id}
+    if sha:
+        fields["review_commit"] = sha
+    ok = _board_write("update", "posts", pid, fields)
+    c_ok = _board_write("update", "comments", review_id, {"commit": sha}) if sha else False
+    return {"ok": bool(ok), "post": pid, "review": verdict, "review_commit": sha, "comment_marked": bool(c_ok),
+            "why": "" if sha else "its post names no branch: no commit recorded"}
+
+
+def mark_landed(s):
+    fields = {"landed": s["landed"], "landed_at": _now_z()}
+    if s.get("newer"):
+        fields["landed_newer"] = [c[:9] for c in s["newer"]]
+    return _board_write("update", "posts", s["post"], fields)
 
 
 def _landing(*args):
@@ -7701,6 +8202,8 @@ COMMANDS = [
     ("read the board", "kit.py guide [case]", "one case of the orchestrator's guide, when it comes up (resume lists them)"),
     ("ask him", "kit.py ask --title T --option A --option B --default A --deadline D [--needs N]", "one question post in his lane, whole; never a question in a thread"),
     ("launch and finish", "kit.py land <post>", "a reviewed step's branch onto the trunk, its check run on the two together; never forced"),
+    ("launch and finish", "kit.py reviewed <post> <continue|redirect|stop> --review-id <CR-...>",
+     "a review's verdict on the post, with the commit it read (review_commit, and on its comment): land merges that one (CL71)"),
     ("git copy", "kit.py landing | save | checkpoint", "which steps may reach the trunk; save work in progress to wip/<branch> or checkpoint on the step's branch (CL17)"),
     ("save the board", "kit.py keep", "the board here into git, committed and pushed (git is the record)"),
     ("read the board", "kit.py resume --role orchestrator|part|clerk|review [--post P]", "what that role needs and nothing else: a session starts from it alone (lessons, launch workflow, tests, how to report)"),
@@ -7715,7 +8218,7 @@ COMMANDS = [
     ("read the board", "kit.py since <ISO>", "what changed on the board since a time"),
     ("read the board", "kit.py session <post>", "the session a post names, and what it left"),
     ("read the board", "kit.py search <words>", "find posts and comments by words"),
-    ("read the board", "kit.py queue [--runner R]", "the steps waiting for a runner"),
+    ("read the board", "kit.py queue [--runner R] [--gate]", "the steps waiting for a runner / --gate: the start-now steps not launched nor held (the orchestrator's Stop refuses on them, CL62)"),
     ("launch and finish", "kit.py link <post> [--hours H]", "the one link an outside AI (a runner card, LMArena, another account's app) gets for a post: its invite, scoped to the post: attach files to it (its drop box) and write its result, first (CL56)"),
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor [--fix]", "the board's size, columns, oldest question, missing files / full install, hook parity, conflict & sync health"),
@@ -7738,6 +8241,7 @@ COMMANDS = [
     ("write the board", "kit_cards.py (agent kit-cards)", "rebuild the Where we are card and the Trains card, never by hand"),
     ("launch and finish", "kit.py launch <post>", "start a part: post in progress, Trains row running, then claude --bg or the create_session call"),
     ("launch and finish", "kit.py claim <post>", "take a step explicitly: your address on its post; its part and review report to you (CL49)"),
+    ("launch and finish", "kit.py hold <post> --why W [--release]", "a start-now step not launched yet, with the reason the owner reads (on the post, in resume and the queue, CL62)"),
     ("launch and finish", "kit.py unreached <post> --why W", "a part (or review) could not reach its orchestrator: the post says so, every orchestrator's resume lists it"),
     ("launch and finish", "kit.py capacity / device.py run -- <cmd>", "the device's session cap / run a heavy job when it fits in memory"),
     ("launch and finish", "kit.py done <post>", "check a step's post: format, artifacts, check passes, breaks makes it fail"),
@@ -8847,8 +9351,9 @@ def check_real_project(p, root=ROOT):
                 "from its session (it holds both repos) and writes {\"project\", \"command\", \"output\"} in the post's "
                 "real_project; a part never attaches a repo (CL38)" % (", ".join(areas), cons)]
     if who == "part":
-        return ["real_project: your change touches %s; run the changed command on %s in a scratch local clone (never push) "
-                "and write {\"project\", \"command\", \"output\"} in the post's real_project before Done"
+        return ["real_project: your change touches %s; run the changed command on %s in a scratch local clone or read-only "
+                "(never push) and write {\"project\", \"command\", \"output\"} in the post's real_project "
+                "(`python3 -I .kit/board_cli.py update posts <post> --data '{\"real_project\": ...}'`) before Done"
                 % (", ".join(areas), cons)]
     return ["real_project: your change touches %s; the dry run on a real project (%s) is pending: run it in a local clone "
             "(never push) and write {\"project\", \"command\", \"output\"} in the post's real_project"
@@ -8996,6 +9501,7 @@ def _map_cmd(a):
         if val:
             argv += [flag, val]
     argv += (["--check"] if a.check else []) + (["--no-generators"] if a.no_generators else [])
+    argv += ["--steps", str(a.steps)] if getattr(a, "steps", 0) else []
     return kit_map.main(argv)
 
 
@@ -9475,7 +9981,11 @@ def _checkpoint_commit(post=None, message=None, push=False, on_step_branch=False
         return res
     never = tuple((k.get("guard") or {}).get("never_add") or ()) + _CK_SECRETS
     # Stage tracked modifications and safe untracked files (skip secrets, oversized files, .kit/run/, .kit/board_data/)
-    tracked = _git_run("diff", "--name-only").stdout.splitlines() + _git_run("diff", "--cached", "--name-only").stdout.splitlines()
+    # what is staged already is committed as it is (CL71: an ignored file staged for removal, `git rm --cached`, would
+    # make `git add` fail); the rest is added
+    staged = set(_git_run("diff", "--cached", "--name-only").stdout.splitlines())
+    tracked = [x for x in _git_run("diff", "--name-only").stdout.splitlines() + sorted(staged)
+               if x not in staged or os.path.exists(os.path.join(ROOT, x)) and not _git_ok("check-ignore", "-q", "--no-index", x)]
     untracked = _git_run("ls-files", "--others", "--exclude-standard", "-z").stdout.split("\0")
     to_add, left = [], []
     for f in sorted(set(x for x in tracked + untracked if x)):
@@ -9502,6 +10012,10 @@ def _checkpoint_commit(post=None, message=None, push=False, on_step_branch=False
     if not _git_run("diff", "--cached", "--name-only").stdout.strip():
         return {"ok": True, "committed": False, "branch": br, "why": "nothing staged"}
     la = _landing_mod()
+    marks = la.conflict_hits("HEAD", cached=True, cwd=ROOT) if la and hasattr(la, "conflict_hits") else []
+    if marks:                                  # CL71: a file with a merge's conflict markers is never committed
+        _git_run("reset", "-q", "--", *to_add)
+        return {"ok": False, "committed": False, "refused": True, "branch": br, "why": la.conflict_text(marks)}
     if la and (push or k.get("checkpoint_push")):
         # CL55: what would leave for GitHub is read first; a secret-looking value commits nothing and pushes nothing
         hits = la.secret_hits(la.push_base("HEAD"), cached=True, cwd=ROOT)
@@ -9789,6 +10303,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         pass
     out = []
     if role == "orchestrator":
+        stale = stale_handover_lines(posts, comments)
+        if stale:                                     # CL62: before anything else, a hand-over never overrides the queue
+            out += stale + [""]
         first, then = alarm_lines()
         if first:                                     # M10: his rule said twice, a kind fixed three times: first
             out += ["## First: what keeps coming back (a check to plan, never another patch or memory line)"] + first + [""]
@@ -9903,6 +10420,11 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                            "(it holds both repos) and written in your post's `real_project`; you never attach a repo (CL38). "
                            "A file of that project you need: the Artifact's `kit_docs` (`ArtifactData get`, doc_id = its "
                            "path with `/` written `+2F~`), else ask under your post." % (touched, "/".join(REAL_PROJECT_AREAS), cnames))
+            elif _rule("real_project_run") == "part":
+                out.append("- Real project: %s. A change to %s gets a dry run on %s: run the changed command yourself in a "
+                           "scratch local clone or read-only (never push) and write `{\"project\", \"command\", \"output\"}` "
+                           "in your post's `real_project` before `kit.py done` (done refuses without it)."
+                           % (touched, "/".join(REAL_PROJECT_AREAS), cnames))
             else:
                 out.append("- Real project: %s. A change to %s gets a dry run on %s in a local clone (never push), "
                            "written in your post's `real_project`." % (touched, "/".join(REAL_PROJECT_AREAS), cnames))
@@ -9947,7 +10469,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
             how_real = ("from the orchestrator's session (it holds both repos; a launched session cannot attach one), "
                         "by subagent; write the run in the post's real_project.")
         else:
-            how_real = "in a local clone (never push); write the run in the post's real_project."
+            how_real = "in a scratch local clone or read-only (never push); write the run in the post's real_project."
         out += ["", "## The real-project check",
                 "- Rerun its `check`, then its claim on a real project: %s, %s" % (cnames, how_real),
                 "- Its post says: %s" % (json.dumps(rp, ensure_ascii=False)[:500] if rp else "NO real-project result")]
@@ -10319,6 +10841,7 @@ def main(argv=None):
     s = sp.add_parser("portfolio"); s.add_argument("--config", dest="portfolio_config", default=None); s.add_argument("--roots", nargs="*", default=[])
     s = sp.add_parser("link", help="CL56: the one link an outside AI gets for a post (its invite: drop box, result)"); s.add_argument("post"); s.add_argument("--hours", type=float, default=72); s.add_argument("--url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None); s.add_argument("--unblocked", action="store_true", help="Exclude cards with unresolved blocked_by dependencies")
+    s.add_argument("--gate", action="store_true", help="CL62: the start-now steps this orchestrator neither launched nor held (exit 1 when any), with the commands")
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
     s.add_argument("--brief", action="store_true", help="two lines a step and the current one (the default)")
@@ -10329,6 +10852,9 @@ def main(argv=None):
     s.add_argument("--default", default=""); s.add_argument("--deadline", default=""); s.add_argument("--needs", default="")
     s.add_argument("--about", default=""); s.add_argument("--train", default=""); s.add_argument("--priority", type=int, default=1)
     s = sp.add_parser("land", help="a reviewed step's branch onto the trunk"); s.add_argument("post")
+    s = sp.add_parser("reviewed", help="a review's verdict, with the commit it read (CL71)"); s.add_argument("post")
+    s.add_argument("verdict", choices=("continue", "redirect", "stop")); s.add_argument("--review-id", required=True)
+    s.add_argument("--commit", default=None, help="the commit the review read (default: its branch's tip on origin)")
     s = sp.add_parser("landing", help="JSON: which steps may reach the trunk"); s.add_argument("--post", default=None)
     s.add_argument("--branch", default=None); s.add_argument("--mark", default=None, help="landed at this commit"); s.add_argument("--db", default=None)
     sp.add_parser("save", help="the work in progress to wip/<branch> now")
@@ -10368,6 +10894,7 @@ def main(argv=None):
     s = sp.add_parser("map", help="a map of the project from its code: overview, area cards, joins, map.json (--check: still true?)")
     s.add_argument("--root", default=None); s.add_argument("--out", default=None); s.add_argument("--config", dest="map_config", default=None)
     s.add_argument("--check", action="store_true"); s.add_argument("--no-generators", action="store_true")
+    s.add_argument("--steps", type=int, default=0, help="M3: how many of the last N steps' changed files the map covers")
     s = sp.add_parser("commands", help="the kit's commands: the topics, or those a word finds (`all`)")
     s.add_argument("word", nargs="?", default=None)
     s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
@@ -10390,10 +10917,11 @@ def main(argv=None):
     s.add_argument("--goal", default=""); s.add_argument("--why", default=""); s.add_argument("--db", default=None)
     s = sp.add_parser("capacity", help="the device's session cap (.kit/device.py): --gate exits 1 when no slot is free")
     s.add_argument("--gate", action="store_true"); s.add_argument("--json", action="store_true")
-    s = sp.add_parser("launch", help="start a part: its post in progress + Trains row running, then claude --bg (CLI) "
-                      "or the create_session call (web)")
+    s = sp.add_parser("launch", help="start a part: its post in progress + Trains row running, then claude --bg (CLI), "
+                      "invoke_subagent (agy), or the create_session call (web)")
     s.add_argument("post"); s.add_argument("--session-id", default=None, help="web: the id create_session returned")
     s.add_argument("--web", action="store_true", default=None); s.add_argument("--cli-run", dest="web", action="store_false")
+    s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--model", default=None); s.add_argument("--reset", action="store_true")
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
     s.add_argument("--anyway", default=None, help="R6: launch out of the queue's order; the reason is recorded on the post")
@@ -10404,6 +10932,9 @@ def main(argv=None):
     s = sp.add_parser("claim", help="this orchestrator takes a step: its address on the post, the part and its review report to it (CL49)")
     s.add_argument("post"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s.add_argument("--json", action="store_true")
+    s = sp.add_parser("hold", help="CL62: do not launch this start-now step yet, and say why (on the post, in resume, to the owner)")
+    s.add_argument("post"); s.add_argument("--why", default=""); s.add_argument("--release", action="store_true")
+    s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("unreached", help="a part's report did not reach its orchestrator: its post says so, every resume lists it (CL49)")
     s.add_argument("post"); s.add_argument("--why", default=""); s.add_argument("--board-url", default=None)
     s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
@@ -10600,6 +11131,20 @@ def main(argv=None):
     if a.cmd == "portfolio":
         print(portfolio_summary(config_path=a.portfolio_config, roots=a.roots), end="")
         return 0
+    if a.cmd == "queue" and a.gate:                     # CL62: what the orchestrator's Stop hook asks
+        txt = start_now_refusal(start_now_unlaunched(_all_posts(a.db)))
+        print(txt or "OK: every start-now step is launched or held.")
+        return 1 if txt else 0
+    if a.cmd == "hold":
+        r = hold(a.post, why=a.why, release=a.release, url=a.board_url, token=a.token)
+        if not r.get("ok"):
+            print("Not held: %s" % r.get("error"))
+            return 1
+        print("released: %s goes back in the queue" % a.post if a.release else
+              "held: %s (%s); resume, the queue and the board show it" % (a.post, (r["data"].get("held") or {}).get("why")))
+        for b in r.get("batches") or []:
+            print("`ArtifactData` `batch` %s, then `python3 -I .kit/kit.py artifact sent %s`" % (b, b))
+        return 0
     if a.cmd == "link":
         r = outside_link(a.post, a.url, a.token, hours=a.hours)
         if r.get("error"):
@@ -10775,6 +11320,10 @@ def main(argv=None):
         print(json.dumps(res, ensure_ascii=False))
         print(field_text("ask", "orchestrator"), file=sys.stderr)
         return 1 if res.get("error") else 0
+    if a.cmd == "reviewed":
+        r = reviewed(a.post, a.verdict, a.review_id, a.commit)
+        print(json.dumps(r, ensure_ascii=False))
+        return 0 if r.get("ok") else 1
     if a.cmd == "land":
         rc, txt = _landing("land", a.post)
         print(txt)
@@ -10789,6 +11338,9 @@ def main(argv=None):
             print(json.dumps({"ok": ok, "steps": []}))
             return 0 if ok else 1
         got = landing_steps(_all_posts(a.db))
+        for s in got:
+            if s.get("found"):
+                mark_landed(s)                              # CL71: the step is on the trunk: marked, here too
         print(json.dumps({"steps": [s for s in got if (not a.post or s["post"] == a.post) and (not a.branch or s["branch"] == a.branch)]}, ensure_ascii=False))
         return 0
     if a.cmd == "guide":
@@ -10890,7 +11442,7 @@ def main(argv=None):
         return 0 if r.get("ok") else 1
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset,
-                   post_file=a.post_file, take=a.take, anyway=a.anyway, cont=a.cont)
+                   cli=a.cli, post_file=a.post_file, take=a.take, anyway=a.anyway, cont=a.cont)
         print(field_text("launch", "orchestrator"), file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
         return 0 if r.get("ok") else 1
