@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T02:27:58Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_54e04c9ec2c9",
+ "text": "Covered in `1dba0dd` / `aab9e72` too: any reply to any comment you made on any post now triggers ntfy (including under `full_auto`)."
+}

@@ -6,7 +6,8 @@
  "discussion": "8efbabde7fe74f8a8da5",
  "from": "owner",
  "post_id": "_orchestrator",
- "read": false,
+ "read": true,
+ "read_at": "2026-11-27T02:27:57Z",
  "text": "it should be for replies and messages in ask the orchestrator too",
  "thread_id": "thr_d8704b91ad63"
 }

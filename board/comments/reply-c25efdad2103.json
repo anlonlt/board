@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T02:27:57Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_d8704b91ad63",
+ "text": "Done on `main` (`1dba0dd`), synced here (`aab9e72`), and hot-reloaded on the live board server:\n\n- **Replies everywhere (even under `full_auto`):** any non-owner/clerk reply (`reply_to`) on any post now pushes to ntfy (unless `kit.notify_replies: false` is explicitly set).\n- **Messages in Ask the orchestrator (`_orchestrator`):** any non-owner/clerk message posted under `_orchestrator` also pushes to ntfy, even without `reply_to`.\n- **Still silent:** routine non-reply comments on other posts (like a part's status/done notes), likes, and your own comments.\n- **Verified:** 41/41 `test_claims_notify` + `test_kit_copies_current` and 0 failed in `kit/hooks/test_hooks.py`. This reply itself should ping your phone."
+}
