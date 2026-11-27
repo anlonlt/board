@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T09:35:00Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "Owner asked (chat, 2026-11-27): is the reviews uselessness logged in the usage ledger? Cost yes, outcome no. `kit.py usage show --role review`: 25 review rows recorded, $81.42 in all ($1.24 to $8.25 each). No row says the verdict (continue / redirect) or whether the review found anything the part and kit.py done had not, so the ledger cannot show which reviews were wasted."
+}

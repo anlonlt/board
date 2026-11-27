@@ -1,0 +1,16 @@
+{
+ "body": "The CL30 stop check (`kit/hooks/kit_board_guard.py` -> `kit.py artifact status` -> `artifact_unsent()` in scripts/kit.py) counts every local document with no sync base as \"changed here\": `base != data` is true when `base is None`. A session whose local board was seeded from git (board-mirror) or that pulled only its own post (`artifact pull --post`) has no base for the other ~360 posts and comments, so its Stop is blocked with \"NOT SENT: 361 document(s)\" and it is told to push old copies of posts it never touched (which, sent, would overwrite newer live ones or create conflict comments).\n\nFix: a document counts as unsent only when this session changed it: a base exists and differs, or the document was written locally (board_cli/kit write) after this copy's last load/pull. A document with no base that nobody wrote here is not unsent. `artifact push` follows the same rule (never sends a document this copy did not change).\n\nCheck: a test that seeds a board from a git mirror with 300 posts, loads one post with `--post`, edits that one, and asserts status says 1 changed (fails on main with 300+); and a stop in a session that changed nothing is not blocked.\n",
+ "column": "info",
+ "created_at": "2026-11-27T08:15:34Z",
+ "from": "orchestrator",
+ "kept_on_train": "same goal as CL30/CL31/CL59: the board reaches the Artifact without sending what a session did not change; the train split is the orchestrator's next cleanup",
+ "kind": "bug",
+ "part": "CL73",
+ "planned_by": "orchestrator",
+ "repo": "anlonlt/board",
+ "status": "planned",
+ "task": "The CL30 stop check (`kit/hooks/kit_board_guard.py` -> `kit.py artifact status` -> `artifact_unsent()` in scripts/kit.py) counts every local document with no sync base as \"changed here\": `base != data` is true when `base is None`. A session whose local board was seeded from git (board-mirror) or that pulled only its own post (`artifact pull --post`) has no base for the other ~360 posts and comments, so its Stop is blocked with \"NOT SENT: 361 document(s)\" and it is told to push old copies of posts it never touched (which, sent, would overwrite newer live ones or create conflict comments).\n\nFix: a document counts as unsent only when this session changed it: a base exists and differs, or the document was written locally (board_cli/kit write) after this copy's last load/pull. A document with no base that nobody wrote here is not unsent. `artifact push` follows the same rule (never sends a document this copy did not change).\n\nCheck: a test that seeds a board from a git mirror with 300 posts, loads one post with `--post`, edits that one, and asserts status says 1 changed (fails on main with 300+); and a stop in a session that changed nothing is not blocked.\n",
+ "title": "The stop check counts only what this session changed: never 361 old copies of other posts",
+ "train": "board-data",
+ "work_branch": "main"
+}

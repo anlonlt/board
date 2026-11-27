@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T08:17:06Z",
+ "created_at": "2026-11-27T08:25:55Z",
  "rows": [
   {
    "at": 8,
@@ -104,7 +104,8 @@
     "The orchestrator hands over at its context limit however its session began",
     "Install draws the first map",
     "The workflow on the map: what lives outside the repo, with checks",
-    "Every hook reads the orchestrator role one way: 6 of 6 on the takeover fixture"
+    "Every hook reads the orchestrator role one way: 6 of 6 on the takeover fixture",
+    "The usage ledger says what each review found: verdict and found-new per review row, cos..."
    ],
    "train": "P-memory"
   },
@@ -170,6 +171,18 @@
   {
    "at": 0,
    "key": "G",
+   "name": "Orchestrator: open timers only (2026-11-27 03:18)",
+   "note": "",
+   "post": "P-orchestrator",
+   "state": "idle",
+   "steps": [
+    "next step"
+   ],
+   "train": "P-orchestrator"
+  },
+  {
+   "at": 0,
+   "key": "H",
    "name": "Agy",
    "note": "Next: install_cmd skips linked git worktrees so ~/.local/bin/<cmd> is never overwritten by a part",
    "post": "a1-install-cmd-skips-linked-git-worktrees-s",
@@ -181,7 +194,7 @@
   },
   {
    "at": 6,
-   "key": "H",
+   "key": "I",
    "name": "Demo",
    "note": "Next: Try replying or tapping 👍",
    "post": "demo-todo",
@@ -199,5 +212,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T08:17:06Z"
+ "updated_at": "2026-11-27T08:25:55Z"
 }

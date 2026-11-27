@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T09:25:00Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "Owner asked (chat, 2026-11-27): have the reviews been useful? Count of the 43 review comments on this board: about 35 continue, 8 redirect. Redirects that caught real problems: CL16 (a read could hit the real board-mirror), CL36 (its diagram drew wrong, led to CL57), CL39 (its own test red on main), CL59 (carried unlanded CL16 code), CL60 (never worked on Harmonize until fixed), M12 (two guards still read the role the old way), CL37 (never wired in a real session). The continues mostly confirmed tests, but cost a session each, a merge loop when main moved, and a wait when no session could be started."
+}

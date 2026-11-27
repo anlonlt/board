@@ -1,0 +1,44 @@
+{
+ "conflict": {
+  "doc": "posts/_dashboard",
+  "other": {
+   "column": "info",
+   "created_at": "2026-11-27T08:25:52Z",
+   "rows": [
+    {
+     "at": 0,
+     "key": "A",
+     "name": "Orchestrator: open timers only (2026-11-27 03:18)",
+     "note": "",
+     "post": "P-orchestrator",
+     "state": "idle",
+     "steps": [
+      "next step"
+     ],
+     "train": "P-orchestrator"
+    },
+    {
+     "at": 0,
+     "key": "B",
+     "name": "Memory",
+     "note": "Next: The usage ledger says what each review found: verdict and found-new per review row, cost per useful review",
+     "post": "m14-the-usage-ledger-says-what-each-review-f",
+     "state": "running",
+     "steps": [
+      "The usage ledger says what each review found: verdict and found-new per review row, cos..."
+     ],
+     "train": "P-memory"
+    }
+   ],
+   "title": "Where we are",
+   "updated_at": "2026-11-27T08:25:52Z"
+  },
+  "other_side": "GitHub",
+  "shown": "Artifact"
+ },
+ "created_at": "2026-11-27T08:26:18Z",
+ "from": "kit",
+ "kind": "conflict",
+ "post_id": "_dashboard",
+ "text": "Conflict: post _dashboard changed both on the Artifact and on the GitHub copy (board-mirror) since the last reconcile. The board shows the Artifact copy (newer, 2026-11-27T08:25:55Z); the GitHub copy (2026-11-27T08:25:52Z) is kept here, whole, in this comment's `conflict.other`; nothing was lost. Pick one and write it back to the post.\n\nThe GitHub copy:\n\n> Where we are"
+}
