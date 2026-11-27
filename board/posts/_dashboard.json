@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T03:27:27Z",
+ "created_at": "2026-11-27T03:32:42Z",
  "rows": [
   {
    "at": 4,
@@ -135,7 +135,8 @@
     "On a computer, a part runs its own real-project check before Done",
     "Every rule that differs by platform says where it applies, checked by a test",
     "macOS Install Guide & Script: Connecting GitHub to Antigravity Desktop App",
-    "Antigravity desktop app (local computer, NOT web) — Direct kit support patch & review b..."
+    "Antigravity desktop app (local computer, NOT web) — Direct kit support patch & review b...",
+    "kit.py launch updates runner on takeover and supports agy launches"
    ],
    "train": "P-runners"
   },
@@ -161,20 +162,8 @@
    "train": "P-takeover"
   },
   {
-   "at": 0,
-   "key": "G",
-   "name": "Orchestrator: open timers only (2026-11-27 03:18)",
-   "note": "",
-   "post": "P-orchestrator",
-   "state": "idle",
-   "steps": [
-    "next step"
-   ],
-   "train": "P-orchestrator"
-  },
-  {
    "at": 6,
-   "key": "H",
+   "key": "G",
    "name": "Demo",
    "note": "Next: Try replying or tapping 👍",
    "post": "demo-todo",
@@ -192,5 +181,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T03:27:27Z"
+ "updated_at": "2026-11-27T03:32:42Z"
 }
