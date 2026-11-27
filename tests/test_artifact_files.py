@@ -9,6 +9,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import temp_cleanup  # noqa: E402,F401  CL52: the folders this file makes go at exit
 
 ROOT = Path(__file__).resolve().parent.parent
 SYNC = ROOT / "kit" / "claude" / "kit_artifact_sync.py"

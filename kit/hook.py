@@ -34,8 +34,10 @@ TABLE = [
     # sessions' ArtifactData calls never reached the guard
     ("PreToolUse", "kit_orchestrator_guard.py", {"web": "ArtifactData|" + SESSION, "cli": "ArtifactData"}, GUARD, 25),
     ("PreToolUse", "kit_brief_guard.py", {"web": "ArtifactData|Bash", "cli": "Bash", "agy": "run_command"}, GUARD, 25),
-    ("PostToolUse", "kit_say_it_once.py", {"web": "ArtifactData|mcp__claude-code-remote__send_message",
-                                           "cli": "SendMessage|Bash", "agy": "send_message|run_command"}, PLAIN, 50),
+    # CL60: a part's last steps (Bash: kit.py done, end_session.py, unreached; the send to its orchestrator) get the
+    # "next and last message is a single ·" line here, before the closing message is written
+    ("PostToolUse", "kit_say_it_once.py", {"web": "ArtifactData|Bash|" + SEND, "cli": "Bash|" + SEND,
+                                           "agy": "send_message|run_command"}, PLAIN, 50),
     ("PostToolUse", "kit_brief_guard.py", {"web": "Bash", "cli": "Bash", "agy": "run_command"}, PLAIN, 50),
     ("PostToolUse", "kit_cards_reminder.py", {"web": "ArtifactData|" + SESSION}, PLAIN, 50),
     ("PostToolUse", "kit_notify.py", {"web": "ArtifactData"}, PLAIN, 50),
@@ -61,6 +63,7 @@ TABLE = [
     ("PostInvocation", "kit_memory_jit.py", {"agy": ANY}, PLAIN, 25),
     ("Stop", "kit_board_guard.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("Stop", "kit_stop.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
+    ("Stop", "kit_queue_stop.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 60),  # CL62: a start-now step is launched or held
     ("Stop", "kit_pre_compact.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
     ("Stop", "kit_activity.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 25),
     ("Stop", "kit_wip.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 25),
