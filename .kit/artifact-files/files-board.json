@@ -151,8 +151,8 @@
    "version": 6
   },
   "kit+2F~claude-cli+2F~ORCHESTRATOR.template.md": {
-   "sha": "9e486179a0e1c71e4b8e67789c37d28c14bc6e4c31bc323243e6d228a7b05a0e",
-   "version": 4
+   "sha": "4ece8a733e17e0d82fa73fb27da55336904659e41ad870c9186b5f2f8839db57",
+   "version": 5
   },
   "kit+2F~claude-cli+2F~clerk.template.md": {
    "sha": "59b4e1bbd694497cb67688491769fa00159bd697c0a03b0ca1e29c2076810a72",
@@ -179,8 +179,8 @@
    "version": 4
   },
   "kit+2F~generic+2F~orchestrator.template.md": {
-   "sha": "2ec799ffb78c4ea4ee65b95886b68875455fae06c927e3a2e1be55d86acc9f3f",
-   "version": 2
+   "sha": "f88652a33d0cc3b5899a443931eded11d9d3850769f9b0a678e900d1a3e8605b",
+   "version": 3
   },
   "kit+2F~lessons.md": {
    "sha": "bf8caff727a820056bfc7203eaa38098cea636afd575bd3843fbc11b73c67f7c",
