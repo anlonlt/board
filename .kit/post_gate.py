@@ -59,8 +59,9 @@ def proved(p):
 
 
 def real_runs(p):
-    """The real-project runs a post names whole: the orchestrator writes them after its part's `done`, so they are not in
-    the key; a proof that waits for one (`needs_real`) is no proof without it."""
+    """The real-project runs a post names whole: on the web the orchestrator writes them after its part's `done` (on a
+    computer the part writes them before `done`), so they are not in the key; a proof that waits for one (`needs_real`)
+    is no proof without it."""
     rp = p.get("real_project")
     return [r for r in (rp if isinstance(rp, list) else [rp]) if isinstance(r, dict)
             and all(str(r.get(k) or "").strip() for k in ("project", "command", "output"))]
