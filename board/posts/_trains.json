@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T03:18:19Z",
+ "created_at": "2026-11-27T03:25:52Z",
  "rows": [
   {
    "also": [],
@@ -1060,7 +1060,9 @@
   },
   {
    "also": [],
-   "children": [],
+   "children": [
+    "R7"
+   ],
    "parent": "P-runners",
    "part": "R5",
    "post": "r5-every-rule-that-differs-by-platform-says",
@@ -1266,8 +1268,19 @@
    "session": "session_01AE1HGhL21m74opxVsmtKrx",
    "state": "running",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "R5",
+   "part": "R7",
+   "post": "r7-kit-py-launch-updates-runner-on-takeover",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T03:18:19Z"
+ "updated_at": "2026-11-27T03:25:52Z"
 }
