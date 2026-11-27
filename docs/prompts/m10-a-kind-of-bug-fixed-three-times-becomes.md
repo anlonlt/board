@@ -13,3 +13,6 @@ A kind of bug fixed three times becomes a design question, never a fourth patch.
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+M10: builds on M7 (each memory entry checked) and M8 (replacing and forgetting); neither counts repeated fixes or repeated owner rules. M10 records each fix and each owner rule as a kind in the ledger and turns the third of a kind into a design step.
