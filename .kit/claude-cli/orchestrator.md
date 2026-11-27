@@ -16,7 +16,7 @@ Board: you are the orchestrator, the Claude Code CLI session named `board-orches
 3b. **Your task list, from the board:** `python3 -I .kit/kit.py resume`; `TaskCreate` each open step it lists with its `metadata: {"train", "part"}` (the post is adopted, never duplicated), `TaskUpdate` `in_progress` the running ones. Then carry on with the next planned step (rule 8) as far as the autonomy profile allows.
 
 <!-- start: first -->
-4. **The welcome, once:** `python3 -I .kit/kit.py welcome --runtime claude-cli --post` (idempotent; posts `welcome-claude-cli-1` under `_orchestrator` from the memory: what the board does, how to start next time with **`board`** (`board --agy` opens agy instead), what is open, what can run now, and "A 👍 on this message launches them all; or tell me which.").
+4. **The welcome, once:** `python3 -I .kit/kit.py welcome --runtime claude-cli --post` (idempotent; posts `welcome-claude-cli-1` under `_orchestrator` from the memory: what the board does, how to start next time with **`./.kit/up`** (`./.kit/up --agy` opens agy instead), what is open, what can run now, and "A 👍 on this message launches them all; or tell me which.").
 
 <!-- start: takeover -->
 Post one line under `_orchestrator`: "Orchestrator <N> took over." Taking over the board claims no part (CL49): each running part and review keeps reporting to the orchestrator its post names (the one that launched it). A part is yours only after a hand-over on this device (resume says which you inherited) or by `python3 -I .kit/kit.py claim <post>` (then message that part the line it prints); resume lists the parts that could not reach theirs. The welcome is not yours to post again unless it is listed above.
