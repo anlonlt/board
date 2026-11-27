@@ -1,5 +1,5 @@
 {
- "at": "2026-11-27T08:11:34Z",
+ "at": "2026-11-27T08:25:55Z",
  "docs": {
   "comments/004abd3c5e334e6aac34": "9a926f42c90c194d",
   "comments/0d7buihhnapamdz5rqkz": "e06545c9744f3f81",
@@ -351,7 +351,7 @@
   "posts/_train-memory": "082f34cb0096b501",
   "posts/_train-runners": "b40646e32a6d8afb",
   "posts/_train-takeover": "8d603a421cdb27e7",
-  "posts/_trains": "a23c7835aa17eb6d",
+  "posts/_trains": "f214806c1359b1c9",
   "posts/a1-install-cmd-skips-linked-git-worktrees-s": "cf160bf7e8dc7510",
   "posts/cl1-cli-agnostic-install": "aa13600a261e7fbc",
   "posts/cl10-see-the-new-ui-work-then-stop-tests-touc": "b296f627edafa03e",
@@ -445,6 +445,7 @@
   "posts/m12-the-orchestrator-hands-over-at-its-conte": "a4c6bc2526ab5aaa",
   "posts/m12-the-owner-s-design-decisions-are-never-s": "5c39a53bfe33d8a6",
   "posts/m13-every-hook-reads-the-orchestrator-role-o": "e4bf8a317a6a3b6d",
+  "posts/m14-the-usage-ledger-says-what-each-review-f": "a5ba96ea28c2e330",
   "posts/m2-install-draws-the-first-map": "8159509b83b58be5",
   "posts/m3-done-keeps-the-map-each-part-checks-its": "ca4f86828aedf86f",
   "posts/m4-map-readers-beyond-code-power-bi-documen": "87a7278a2044fccd",
