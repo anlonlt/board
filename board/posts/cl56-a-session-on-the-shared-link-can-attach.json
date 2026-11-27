@@ -1,15 +1,26 @@
 {
  "body": "A session that reaches the board through the shared link can attach files to its post, like any other: today the link (`/_share/<token>`) takes text only (submit, JSON, up to 500 KB) and files need the board's own token (`POST /_api/blob`). On 2026-11-26 the Antigravity desktop app, running on another account's Mac with only the link, could not attach its patch, test file and review guide to R1: it pasted the 61.7 KB patch as a post's text (r1-antigravity-on-the-web-how-far-it-antigravity-app--ed2a38) and explained why at length.\n\nWork on anlonlt/board, branch feat/streamline-doctor-memory.\n\n1. `POST /_share/<token>/blob` takes a file for the post the link was shared for (size cap in the kit config, default 5 MB a file, 20 MB a post), stores it like any attached file and returns its id; the submit route can name those ids, so they show on the post. In kit/board/board_server.py.\n2. The link's own page and the runner guide for link-only platforms say how (one command or one form field), in the guide link-only sessions read.\n3. Nothing else opens: a link still reads only its post's brief and the repo files it already could, and writes only under its post.\n4. Tests: a file sent through a link is stored and listed on its post; one over the cap is refused with the cap named; a link for another post cannot attach to this one.\n",
- "branch": "feat/streamline-doctor-memory",
+ "branch": "cl56",
  "column": "info",
  "created_at": "2026-11-27T00:05:52Z",
+ "differs": "CL56: builds on CL40 (launch without push access) and CL45 (Artifact board on the web); none lets an outside AI with only the shared link attach files to its post. CL56 gives it one invite link with the post's drop box.",
  "from": "orchestrator",
+ "launched_at": "2026-11-27T03:11:26Z",
+ "launched_out_of_order": {
+  "at": "2026-11-27T03:11:26Z",
+  "was": "R2 goes first (place 13, CL56 is 22): feature, by date (no fact sets it apart); launch `r2-gemini-tasks-how-far-it-runs-the-board-k`",
+  "why": "R2/R3 are the agy orchestrator's (owner's split 02:31); this web step shares no file with them"
+ },
+ "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "orchestrator_device": "web",
+ "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
  "part": "CL56",
  "planned_by": "orchestrator",
  "priority": 1,
  "repo": "anlonlt/board",
  "runner": "claude-web",
- "status": "planned",
+ "session_id": "session_01AE1HGjFXDNKgKeG7VX6toq",
+ "status": "in progress",
  "subtasks": [
   {
    "files": [
@@ -42,5 +53,6 @@
  "task": "An outside AI gets one link, the owner's: the invite (`/_invite/<token>.md`, b52f5b6, 2026-11-22: \"1-link AI bootstrap & post-scoped artifact drop-box\"), which gives it a collaborator token and the post's drop box for files (`POST /_api/posts/<post>/artifacts`). The older share link (`/_share/<token>`, d7c448c, 2026-11-21: read a post, submit text up to 500 KB, no files) still exists beside it, and the R1 runner card handed out that one: the Antigravity desktop app (another account's Mac) could not attach its patch and pasted 61.7 KB of it as a post's text (r1-antigravity-on-the-web-how-far-it-antigravity-app--ed2a38).\n\nWork on anlonlt/board, branch feat/streamline-doctor-memory.\n\n1. Every card, prompt or page that gives an outside AI a link (a runner card, \"Link for AI\", the clerk) gives the invite, scoped to its post; in kit/board/board_server.py and scripts/kit.py.\n2. The share link leads to the same: an old `/_share/<token>` answers with the invite's instructions and its drop box (or is retired with a redirect), so one way exists, not two.\n3. The invite's page says, first, how to attach files to the post (the drop box route, one command) and how to write the post's result.\n4. Tests: an outside session with only the link a runner card gives attaches a file to its post and it shows there; an old share link reaches the same drop box.\n\nDone already (75a4f41, by the orchestrator on the computer, checked live over the funnel): `POST /_share/<token>/artifacts` saves a file into the link's post's drop box, and the link's page says how. Left: items 2 and 4 (one way, not two: the share link and the invite agree; the tests), and saying it in the runner guides.",
  "title": "An outside AI gets one link, the owner's invite with the post's drop box",
  "train": "board-data",
- "updated_at": "2026-11-27T00:11:10Z"
+ "updated_at": "2026-11-27T03:11:58Z",
+ "working_by": "owner"
 }
