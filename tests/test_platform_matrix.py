@@ -475,7 +475,7 @@ class ResumeMatrix(unittest.TestCase):
                 self.assertEqual("rebuild with the `kit-cards` agent" in orch, self.kit.PLATFORM_RULES["cards"][pl] == "agent", pl)
                 # 4. resume_role('part') matches part_template, real_project_run, reply_format
                 part = self.kit.resume_role(str(self.root / "m"), "part", post="r5-step", db_path=self.db)
-                self.assertEqual("`kit.py artifact load`" in part, self.kit.PLATFORM_RULES["artifact_steps"][pl], pl)
+                self.assertEqual("kit.py artifact sync" in part, self.kit.PLATFORM_RULES["artifact_steps"][pl], pl)
                 rp_mode = self.kit.PLATFORM_RULES["real_project_run"][pl]
                 self.assertEqual("ArtifactData get" in part, rp_mode == "orchestrator", pl)
                 self.assertEqual("done refuses without it" in part, rp_mode == "part", pl)
@@ -498,10 +498,11 @@ class DoneMatrix(unittest.TestCase):
         kit.check_asked = lambda p, db_path=None: ([], [])
         kit.check_his_words = lambda pid, p, db_path=None: ([], [])
         kit.check_done = lambda p, root=None, body_max=1500: ([], [])
+        kit.check_intent = lambda p, root=None: []        # CL76's gate has its own tests (test_intent_first)
         kit.plain_notes = lambda p: []
         kit.real_project_areas = lambda root=None, base=None: ["resume"]
         kit.consumers = lambda extra=None: [{"github": "anlonlt/harmonize", "name": "harmonize"}]
-        kit.check_trunk_merged = lambda root=None: []
+        kit.check_trunk_merged = lambda *a, **kw: []
         kit.prove_check = lambda p, root=None, timeout=900: ([], [])
         kit._post_gate = lambda: None
         kit._art_dir = lambda: os.path.join(d, "art")
@@ -525,7 +526,7 @@ class DoneMatrix(unittest.TestCase):
                     rp_mode = kit.PLATFORM_RULES["real_project_run"][pl]
                     # Artifact push gate applies iff artifact_steps; missing real_project refuses iff real_project_run == "part"
                     self.assertEqual(rc, 1 if (art or rp_mode == "part") else 0, (pl, out))
-                    self.assertEqual("artifact push" in out, art, (pl, out))
+                    self.assertEqual("artifact sync" in out, art, (pl, out))
                     # real_project wording matches PLATFORM_RULES['real_project_run']
                     self.assertEqual("a part never attaches a repo (CL38)" in out, rp_mode == "orchestrator", (pl, out))
                     self.assertEqual("pending: the orchestrator runs it" in out, rp_mode == "orchestrator", (pl, out))

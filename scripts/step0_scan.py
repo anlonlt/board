@@ -624,6 +624,7 @@ def build_step0_profile(target_dir, home_dir=None):
 
     mcp_info = detect_mcp_readers(target)
     grant = detect_trunk_push(target)
+    wf_info = scan_workflow(target, home_dir=home_dir)
 
     return {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -644,7 +645,134 @@ def build_step0_profile(target_dir, home_dir=None):
         "mcp_readers": mcp_info["readers"],
         "mcp_reader_details": mcp_info["details"],
         "mcp_capabilities": mcp_info["capabilities"],
+        "workflow": wf_info,
         "device": device_survey(),
+    }
+
+
+def _load_kit_map():
+    """Import kit_map from the same directory as step0_scan.py (scripts/ or .kit/)."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kit_map.py")
+    if not os.path.isfile(path):
+        return None
+    spec = importlib.util.spec_from_file_location("kit_map", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def build_workflow_question(project_name, external_data, checks=None, map_rel=".board/map/areas/workflow.md",
+                            workflow_md_rel=".board/memory/workflow.md"):
+    """Build ONE board question for the owner to confirm or correct Step 0's discovered workflow."""
+    things = (external_data or {}).get("things") or []
+    by_kind = {}
+    for t in things:
+        by_kind.setdefault(t.get("kind") or "other", []).append(t)
+
+    def _fmt_list(kinds, limit=8):
+        items = [t for k in kinds for t in by_kind.get(k, [])]
+        if not items:
+            return "(none found)"
+        out = []
+        for t in items[:limit]:
+            refs = t.get("refs") or {}
+            ref = refs.get("url") or refs.get("repo_id") or refs.get("project_id") or refs.get("profile") or ""
+            out.append("`%s`%s" % (t.get("name") or t["id"], (" (%s)" % ref) if ref else ""))
+        if len(items) > limit:
+            out.append("+%d more" % (len(items) - limit))
+        return ", ".join(out)
+
+    secret_locs = []
+    for t in things:
+        for s in ((t.get("refs") or {}).get("secret_locations") or []):
+            label = ("%s -> %s" % (s["name"], s["where"])) if isinstance(s, dict) else str(s)
+            if label not in secret_locs:
+                secret_locs.append(label)
+
+    body_lines = [
+        "Step 0 scanned **%s** and wrote the first version of its workflow onto the map (`%s`) and its concise memory file (`%s`)." % (
+            project_name, map_rel, workflow_md_rel),
+        "",
+        "- **Runners & CLIs:** %s" % _fmt_list(("runner", "external-cli")),
+        "- **Git remotes:** %s" % _fmt_list(("git-remote",)),
+        "- **Deploy & external services:** %s" % _fmt_list(("external-service",)),
+        "- **External data sources:** %s" % _fmt_list(("external-datasource",)),
+        "- **Browser profiles:** %s" % _fmt_list(("browser-profile",)),
+        "- **Secret locations (never values):** %s" % (", ".join(secret_locs[:8]) if secret_locs else "(none found)"),
+    ]
+    if checks:
+        body_lines.append("- **Checks:** %d of %d runnable pass (%d failed); %d browser probe(s) (%d confirmed)." % (
+            checks["passed"], checks["runnable"], checks["failed"], checks["probes_total"], checks["probes_confirmed"]))
+    body_lines += [
+        "",
+        "Tap **Looks right** to keep this workflow, or reply with any missing accounts, browser profiles, services, or project limits.",
+    ]
+    options = [
+        "Looks right — keep this workflow",
+        "Needs corrections — I'll reply with edits",
+        "Re-scan after I log in to missing tools",
+    ]
+    return {
+        "title": "Confirm workflow & external services (%s)" % project_name,
+        "needs": "access",
+        "options": options,
+        "default_option": options[0],
+        "body": "\n".join(body_lines),
+    }
+
+
+def scan_workflow(target_dir, home_dir=None, run_checks=False, network=True):
+    """Discover external workflow things, build concise workflow.md text, and build the owner's confirmation question."""
+    km = _load_kit_map()
+    target = os.path.abspath(target_dir)
+    proj_name = os.path.basename(target.rstrip(os.sep)) or "project"
+    if km is None:
+        return {"summary": "workflow: kit_map.py unavailable", "things": [], "links": [], "checks": None,
+                "workflow_md": "", "confirm_question": build_workflow_question(proj_name, {})}
+    ext = km.scan_external(target, home_dir=home_dir)
+    chk = km.check_external(target, home_dir=home_dir, network=network) if run_checks else None
+    wf_md = km.render_workflow_md(proj_name, ext)
+    q = build_workflow_question(proj_name, ext, checks=chk)
+    return {
+        "summary": ext["summary"],
+        "things": ext["things"],
+        "links": ext["links"],
+        "checks": chk,
+        "workflow_md": wf_md,
+        "confirm_question": q,
+    }
+
+
+def write_workflow_files(target_dir, home_dir=None, memory_dir=None, map_out=None, write_map=True,
+                         force_workflow_md=False, run_checks=False, network=True):
+    """Step 0 writer: populate workflow.md (uncheckable headings only) + .board/map (things, links, checks) + question."""
+    km = _load_kit_map()
+    if km is None:
+        raise RuntimeError("kit_map.py not found next to step0_scan.py")
+    target = os.path.abspath(target_dir)
+    proj_name = os.path.basename(target.rstrip(os.sep)) or "project"
+    ext = km.scan_external(target, home_dir=home_dir)
+    wf_path, wf_text = km.write_workflow_md(target, memory_dir=memory_dir, external_data=ext, home_dir=home_dir,
+                                            force=force_workflow_md)
+    built_out = None
+    if write_map:
+        _, built_out = km.build(target, out=map_out, run_gens=False, home_dir=home_dir)
+    chk = km.check_external(target, out=built_out, home_dir=home_dir, network=network) if run_checks else None
+    wf_rel = os.path.relpath(wf_path, target).replace("\\", "/") if wf_path.startswith(target + os.sep) else wf_path
+    map_rel = ".board/map/areas/workflow.md"
+    if built_out and built_out.startswith(target + os.sep):
+        map_rel = os.path.relpath(os.path.join(built_out, "areas", "workflow.md"), target).replace("\\", "/")
+    q = build_workflow_question(proj_name, ext, checks=chk, map_rel=map_rel, workflow_md_rel=wf_rel)
+    return {
+        "workflow_md_path": wf_path,
+        "workflow_md": wf_text,
+        "map_out": built_out,
+        "summary": ext["summary"],
+        "things": ext["things"],
+        "links": ext["links"],
+        "checks": chk,
+        "confirm_question": q,
     }
 
 
@@ -678,7 +806,8 @@ def detect_mcp_readers(target_dir):
         try:
             if os.path.getsize(fp) > 262144:
                 continue
-            txt = open(fp, encoding="utf-8", errors="ignore").read()
+            with open(fp, encoding="utf-8", errors="ignore") as fh:
+                txt = fh.read()
         except OSError:
             continue
         is_cfg = os.path.basename(fp) in (".mcp.json", "settings.json", "settings.local.json")
@@ -761,6 +890,15 @@ def render_markdown_report(profile):
             dev.get("cores"), dev.get("swap_total_mb"), ", ".join(dev.get("gpus") or []) or "none found"))
         lines.append("- Launches past the cap wait their turn (`.kit/device.py --gate`, the guard). Override on this "
                      "machine: `python3 -I .kit/device.py --set-cap N`.")
+    wf = profile.get("workflow") or {}
+    if wf.get("things"):
+        lines.append("")
+        lines.append("## 6. External Workflow & Services (on the map)")
+        lines.append("- %s" % wf.get("summary", ""))
+        for t in wf["things"][:20]:
+            refs = t.get("refs") or {}
+            ref = refs.get("url") or refs.get("repo_id") or refs.get("project_id") or refs.get("profile") or refs.get("path") or ""
+            lines.append("- **`%s`** (%s)%s" % (t["id"], t.get("kind", ""), (": `%s`" % ref) if ref else ""))
     lines.append("")
     return "\n".join(lines)
 
@@ -771,9 +909,30 @@ def main(argv=None):
     ap.add_argument("--home", default=None, help="Override home directory for transcript/project discovery")
     ap.add_argument("--out-json", default=None, help="Write structured Step 0 profile JSON to path")
     ap.add_argument("--out-report", default=None, help="Write Step 0 Markdown report to path")
+    ap.add_argument("--out-question", default=None, help="Write the Step 0 workflow confirmation board question JSON to path")
+    ap.add_argument("--write-workflow", action="store_true", help="Write workflow.md and .board/map from discovered external things")
+    ap.add_argument("--memory-dir", default=None, help="Override memory directory for --write-workflow")
+    ap.add_argument("--map-out", default=None, help="Override map output directory for --write-workflow")
+    ap.add_argument("--check-external", action="store_true", help="Run live checks on discovered external workflow things")
+    ap.add_argument("--no-network", action="store_true", help="Skip network checks when --check-external is set")
     a = ap.parse_args(argv)
 
     profile = build_step0_profile(a.target, home_dir=a.home)
+    if a.write_workflow:
+        written = write_workflow_files(a.target, home_dir=a.home, memory_dir=a.memory_dir, map_out=a.map_out,
+                                       run_checks=a.check_external, network=not a.no_network)
+        profile["workflow"] = {
+            "summary": written["summary"],
+            "things": written["things"],
+            "links": written["links"],
+            "checks": written["checks"],
+            "workflow_md": written["workflow_md"],
+            "workflow_md_path": written["workflow_md_path"],
+            "map_out": written["map_out"],
+            "confirm_question": written["confirm_question"],
+        }
+    elif a.check_external:
+        profile["workflow"] = scan_workflow(a.target, home_dir=a.home, run_checks=True, network=not a.no_network)
     device_survey(save=True)  # the cap is the machine's: ~/.config/board-kit/device.json, never the repo
     if a.out_json:
         os.makedirs(os.path.dirname(os.path.abspath(a.out_json)), exist_ok=True)
@@ -784,6 +943,11 @@ def main(argv=None):
         os.makedirs(os.path.dirname(os.path.abspath(a.out_report)), exist_ok=True)
         with open(a.out_report, "w", encoding="utf-8") as fh:
             fh.write(render_markdown_report(profile))
+    if a.out_question:
+        os.makedirs(os.path.dirname(os.path.abspath(a.out_question)), exist_ok=True)
+        with open(a.out_question, "w", encoding="utf-8") as fh:
+            json.dump((profile.get("workflow") or {}).get("confirm_question") or {}, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
     print(json.dumps(profile, indent=2, ensure_ascii=False))
     return 0
 

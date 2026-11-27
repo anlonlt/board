@@ -81,12 +81,14 @@ class PresentRuntimes(unittest.TestCase):
         # here, while its other hooks, kit_pre_compact.py, stay as the project has them)
         self.assertEqual(sorted(p.name for p in self.cl.iterdir()),
                          ["kit_activity.py", "kit_board_guard.py", "kit_brief_guard.py", "kit_config.py", "kit_memory_jit.py",
-                          "kit_pre_compact.py", "kit_say_it_once.py", "kit_task_train.py", "kit_usage.py", "kit_wip.py"])  # CL37's usage hook, CL38's message guard, the JIT memory
+                          "kit_pre_compact.py", "kit_queue_stop.py", "kit_say_it_once.py", "kit_task_train.py", "kit_usage.py",
+                          "kit_wip.py"])  # M12: CL62's queue Stop too (this test ran only once kit_pre_compact.py had a past version)  # CL37's usage hook, CL38's message guard, the JIT memory
         st = json.loads((self.t / ".claude" / "settings.json").read_text())
         cmds = [h["command"] for ev in st["hooks"].values() for g in ev for h in g["hooks"]]
         self.assertTrue(cmds and all(any(g in c for g in ("kit_brief_guard.py", "kit_board_guard.py", "kit_task_train.py",
-                                                          "kit_usage.py", "kit_say_it_once.py", "kit_memory_jit.py", "kit_wip.py", "kit_activity.py"))
-                                     for c in cmds), cmds)
+                                                          "kit_usage.py", "kit_say_it_once.py", "kit_memory_jit.py", "kit_wip.py", "kit_activity.py",
+                                                          "kit_queue_stop.py", ".kit/kit.py\" fresh"))
+                                     for c in cmds), cmds)   # M12: CL62's queue Stop and the `kit.py fresh` line too
         self.assertEqual(st["env"]["CLAUDE_CODE_ENABLE_TODO_TOOLS"], "1")
         cfg = json.loads((self.t / ".kit" / "config.json").read_text())
         self.assertEqual((cfg["kit"]["runtime"], cfg["kit"]["cli"]), ("agy", "agy"))

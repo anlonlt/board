@@ -73,7 +73,7 @@
    "context_limit_k": 380
   },
   "review": {
-   "auto": "all",
+   "auto": "milestone",
    "train_every": 4,
    "since": "2026-11-24"
   },
@@ -96,8 +96,8 @@
     "effort": "medium"
    },
    "consultant": {
-    "model": "pro",
-    "effort": "medium"
+    "model": "inherit",
+    "effort": "high"
    },
    "cards": {
     "model": "flash",
@@ -140,7 +140,7 @@
    "orchestrator": true
   },
   "survey": "skipped: the kit's own repo: testing the Claude Code CLI workflow on its own board",
-  "cmd": "board",
+  "cmd": "",
   "memory_dir": ".board/memory",
   "pinned_docs": [
    "AGENTS.md",

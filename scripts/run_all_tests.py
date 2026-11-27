@@ -440,7 +440,8 @@ def note_read(root, commit, fetch=True):
 
 def note_write(root, commit, note):
     """Record the run's progress on the commit (local at once; pushed by note_push)."""
-    return _git(root, "notes", "--ref", NOTES_REF, "add", "-f", "-m", json.dumps(note, sort_keys=True), commit).returncode == 0
+    return _git(root, "-c", "user.name=board kit", "-c", "user.email=kit@localhost",
+                "notes", "--ref", NOTES_REF, "add", "-f", "-m", json.dumps(note, sort_keys=True), commit).returncode == 0
 
 
 def note_push(root, wait=False):

@@ -129,16 +129,61 @@ def inspect_claude_transcript(path):
     return tokens, (None if role == "other" else role)
 
 
+def _usage_module(root):
+    """The kit's usage.py (.kit/usage.py of the project, else the kit repo's scripts/usage.py), or None."""
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    for p in (os.path.join(root, ".kit", "usage.py"), os.path.join(here, "..", "usage.py"),
+              os.path.join(here, "..", "..", "scripts", "usage.py")):
+        if os.path.isfile(p):
+            try:
+                spec = importlib.util.spec_from_file_location("kit_usage_role", p)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                if hasattr(mod, "session_role"):
+                    return mod
+            except Exception:
+                continue
+    return None
+
+
+def session_role(data, root, fallback=None):
+    """M12: the one role function (usage.py `session_role`, the one the usage row uses): the `_orchestrator` post's
+    session_id, a hand-over line, a takeover mid-session (`kit.py resume --role orchestrator`, launch|land, a write of
+    `_orchestrator`), else the first prompt, else KIT_ROLE. Without usage.py: KIT_ROLE, then `fallback` (first message)."""
+    tp = str(data.get("transcript_path") or data.get("transcriptPath") or "")
+    mod = _usage_module(root)
+    if mod and tp and os.path.isfile(tp):
+        try:
+            sid = data.get("session_id") or data.get("conversation_id") or data.get("conversationId")
+            role = mod.session_role(tp, root, sid)
+            if role and role != "other":
+                return role
+        except Exception:
+            pass
+    return os.environ.get("KIT_ROLE") or fallback
+
+
+def project_rules(k, role):
+    """CL61: a project's own hand-over rules (kit.<role>.handover_rules, what install.py --update folded out of a fork
+    of this hook), said after the kit's steps; the kit's hook stays the one that decides."""
+    rules = [str(r).strip() for r in ((k.get(role) or {}).get("handover_rules") or []) if str(r).strip()]
+    return (" This project's rules: " + " ".join(r if r[-1] in ".!?" else r + "." for r in rules)) if rules else ""
+
+
 def claude_handover(data, root):
     """Claude Code Stop: at the role's context limit, block the stop ONCE with the hand-over steps."""
     if data.get("stop_hook_active"):
         return None
-    tokens, role = inspect_claude_transcript(str(data.get("transcript_path") or ""))
-    role = os.environ.get("KIT_ROLE") or role  # set by every launch the kit makes (up, the clerk, parts, reviews)
+    tokens, first_role = inspect_claude_transcript(str(data.get("transcript_path") or ""))
+    k = (config(data).get("kit") or {})
+    limits = {r: int((k.get(r) or {}).get("context_limit_k", d)) for r, d in (("orchestrator", 380), ("clerk", 80))}
+    if tokens < min(limits.values()) * 1000:
+        return None                                    # below every limit: the role is not read (one cheap pass)
+    role = session_role(data, root, first_role)
     if role not in ("orchestrator", "clerk"):
         return None
-    k = (config(data).get("kit") or {})
-    limit_k = int((k.get(role) or {}).get("context_limit_k", 380 if role == "orchestrator" else 80))
+    limit_k = limits[role]
     if tokens < limit_k * 1000:
         return None
     sid = re.sub(r"[^a-zA-Z0-9._-]", "_", str(data.get("session_id") or "session"))
@@ -170,7 +215,7 @@ def claude_handover(data, root):
             "--role clerk` (a fresh clerk, same name, starts and arms its own listener; this session and its listener "
             "stop), then end your turn with \"·\"."
         ) % (used_k, limit_k)
-    return {"decision": "block", "reason": reason}
+    return {"decision": "block", "reason": reason + project_rules(k, role)}
 
 
 def detect_role(data, cid, tp_role, orch_sid):
@@ -221,6 +266,8 @@ def main():
     tokens, tp_role = inspect_transcript(tp)
     orch_sid = orchestrator_session_id(root)
     role = detect_role(data, cid, tp_role, orch_sid)
+    if role not in ("orchestrator", "clerk") and tokens >= 80000:
+        role = session_role(dict(data, transcript_path=tp), root, role)   # M12: a takeover mid-session counts on agy too
     if role not in ("orchestrator", "clerk"):
         print(json.dumps({"decision": "allow"}))
         return 0
@@ -270,7 +317,7 @@ def main():
             "python3 -I .kit/board_cli.py comments watch --off --watcher clerk."
         ) % (used_k, limit_k, target, used_k, limit_k)
 
-    print(json.dumps({"decision": "deny", "reason": reason}, ensure_ascii=False))
+    print(json.dumps({"decision": "deny", "reason": reason + project_rules(k, role)}, ensure_ascii=False))
     return 0
 
 

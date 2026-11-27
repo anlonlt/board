@@ -10,6 +10,8 @@ a write, and a session could end with its changes here only (CL28: "How come you
     `adopt`, `welcome`, `pair`) is followed by the push line;
   - PostToolUse create_session: a part started from `kit.py launch <post>` (its mark .kit/run/launch/<post>.json) gets
     the second half named: `kit.py launch <post> --session-id <id>` (the post and Trains row then carry the session);
+  - PostToolUse ArtifactData (CL72): the versions and the batch outcome the reply names go to .kit/run/artifact/
+    seen.json, where `kit.py artifact sync` reads them (no version is ever copied by hand);
   - Stop (once; `stop_hook_active` lets the second stop through): blocked while a batch file was built and never
     recorded sent, the local copy holds changes the Artifact has not got (`kit.py artifact status`), or a launch
     still waits for its --session-id half.
@@ -24,12 +26,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_config import config, project_dir  # noqa: E402
+import kit_config as kc  # noqa: E402
 
 LOCAL_WRITE = re.compile(r"board_cli\.py\b[^\n;&|]*\b(?:set|update|str-replace|batch|reply|import)\b|"
                          r"kit\.py\b[^\n;&|]*\b(?:step\s+(?:new|start|complete|drop)|adopt|welcome|pair)\b")
 PART_PROMPT = re.compile(r"^Your prompt is docs/prompts/([\w.-]+)\.md\b")
-PUSH = ("`python3 -I .kit/kit.py artifact push`, the ArtifactData batch it prints, then `python3 -I .kit/kit.py "
-        "artifact sent <batch>`")
+PUSH = ("`python3 -I .kit/kit.py artifact sync` (CL72: it prints the calls to make, exactly; run it again until it says "
+        "\"in sync\")")
 
 
 def artifact_board(data):
@@ -124,6 +127,15 @@ def main():
     ti = data.get("tool_input") or {}
     if ev == "PostToolUse" and name.endswith("create_session"):
         on_create_session(root, ti, data.get("tool_response"))
+    elif ev == "PostToolUse" and name == "ArtifactData":
+        # CL72: the versions and the batch outcome this reply names, read here so no session copies a number by hand
+        resp = data.get("tool_response")
+        err = isinstance(resp, dict) and bool(resp.get("is_error") or resp.get("isError"))
+        if kc.board_call(ti):
+            try:
+                kc.seen_record(art_dir(root), ti, resp, error=err)
+            except (OSError, ValueError):
+                pass
     elif ev == "PostToolUse" and name == "Bash":
         resp = data.get("tool_response") or {}
         failed = isinstance(resp, dict) and (resp.get("interrupted") or resp.get("exit_code") not in (None, 0))

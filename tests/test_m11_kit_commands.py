@@ -150,14 +150,15 @@ class Audit(unittest.TestCase):
             row = usage.parse_transcript(transcript(d, "a1", "Your prompt is docs/prompts/m11-x.md", calls))
         row["role"] = "part"
         got = [(f["rule"], f["command"]) for f in usage.audit_row(row)]
-        self.assertEqual(got, [("list-first-pull", "ArtifactData list"), ("write-by-hand", "ArtifactData batch"),
+        # CL72: what the kit printed is never manual, a first pull's list included (it was "list-first-pull")
+        self.assertEqual(got, [("write-by-hand", "ArtifactData batch"),
                                ("list-by-hand", "ArtifactData list"), ("get-by-hand", "ArtifactData get"),
                                ("cli-get-post", "board_cli.py get"), ("file-read", "sh:sed")])
         found = usage.audit_row(row)
-        self.assertEqual(found[2]["tokens"], 2000)                 # 8000 characters, about 2000 tokens
-        self.assertGreater(found[2]["carry_tokens"], 0)
+        self.assertEqual(found[1]["tokens"], 2000)                 # 8000 characters, about 2000 tokens
+        self.assertGreater(found[1]["carry_tokens"], 0)
         txt = usage.render_audit(usage.audit([row]))
-        for want in ("| list-by-hand |", "`kit.py artifact pull` (changes only)", "| a1 | part |", "6 of 12"):
+        for want in ("| list-by-hand |", "`kit.py artifact sync` (changes only)", "| a1 | part |", "5 of 12"):
             self.assertIn(want, txt)
 
     def test_old_rows_without_notes(self):
@@ -167,8 +168,8 @@ class Audit(unittest.TestCase):
             ["kit.py artifact", 0.01], ["ArtifactData list", 0.2], ["git status", 0.0], ["ArtifactData list", 0.4],
             ["board_cli.py get", 0.05], ["kit.py done", 0.0], ["ToolSearch", 0.0], ["ArtifactData batch", 0.0]]}
         got = [f["rule"] for f in usage.audit_row(row)]
-        self.assertEqual(got, ["list-first-pull", "list-by-hand", "cli-get-unknown"])
-        self.assertEqual(usage.audit_row(row)[1]["carry_tokens"], 2000000)   # $0.40 at $0.20/M cache read
+        self.assertEqual(got, ["list-by-hand", "cli-get-unknown"])          # CL72: the kit's own list is not manual
+        self.assertEqual(usage.audit_row(row)[0]["carry_tokens"], 2000000)   # $0.40 at $0.20/M cache read
 
     def test_since_role_and_top3(self):
         rows = [{"session_id": "a", "role": "part", "started": "2026-11-26T10:00", "model": "claude-opus-5-5",
@@ -247,7 +248,7 @@ class Pull(unittest.TestCase):
     def test_a_refused_batch_re_reads_only_what_it_names(self):
         txt = self.k.artifact_push_text({"board": ART, "need_pin": ["posts/m11-x", "posts/_trains"], "batches": ["b.json"]})
         self.assertNotIn("`list`", txt)
-        self.assertIn("`get`", txt)
+        self.assertIn("posts/m11-x, posts/_trains. Run `python3 -I .kit/kit.py artifact sync`", txt)   # CL72: sync reads them
 
 
 class GuardBeforeTheCall(unittest.TestCase):
@@ -272,7 +273,7 @@ class GuardBeforeTheCall(unittest.TestCase):
             for role in ("part", "orchestrator", "review", "clerk"):
                 rc, err = self.hook(proj, ti, role)
                 self.assertEqual(rc, 2, role)
-                self.assertIn("kit.py artifact pull", err)
+                self.assertIn("kit.py artifact sync", err)
             env = dict(os.environ, KIT_ARTIFACT_URL=ART, KIT_ARTIFACT_PREFIX="repos/board/", KIT_BOARD_URL="http://127.0.0.1:9",
                        CLAUDE_CODE_REMOTE="true")         # CL51: the Artifact is a web session's (refused on a computer)
             env.pop("KIT_ARTIFACT_DIR", None)
@@ -281,6 +282,9 @@ class GuardBeforeTheCall(unittest.TestCase):
                 fh.write((ROOT / "scripts" / "kit.py").read_text())
             with open(os.path.join(proj, ".kit", "test_guard.py"), "w") as fh:     # CL48: a test's copy needs it
                 fh.write((ROOT / "kit" / "test_guard.py").read_text())
+            os.makedirs(os.path.join(proj, ".kit", "hooks"))                      # CL72: the one list, the kit's record
+            with open(os.path.join(proj, ".kit", "hooks", "kit_config.py"), "w") as fh:
+                fh.write((ROOT / "kit" / "hooks" / "kit_config.py").read_text())
             r = subprocess.run([sys.executable, "-I", kit, "artifact", "pull", "--full"], capture_output=True, text=True,
                                env=env, cwd=proj, timeout=60)
             self.assertEqual(r.returncode, 0, r.stderr)
@@ -292,7 +296,7 @@ class GuardBeforeTheCall(unittest.TestCase):
                  "query": {"where": [["post_id", "==", "m11-x"]], "limit": 1000}}
             self.assertEqual(self.hook(proj, q)[0], 0)
             self.assertEqual(self.hook(proj, {"action": "get", "url": ART, "collection": "repos/board/posts",
-                                              "doc_id": "m11-x"})[0], 0)          # one document by id: always
+                                              "doc_id": "m11-x"})[0], 2)          # CL72: a get the kit did not print
 
 
 class GuardReviewCases(unittest.TestCase):
@@ -313,6 +317,12 @@ class GuardReviewCases(unittest.TestCase):
         with open(os.path.join(self.art, name), "w") as fh:
             json.dump(doc, fh)
 
+    def printed(self, *calls):
+        """CL72: what the kit printed last (its record .kit/run/artifact/printed.json, kit_config.ledger_record)."""
+        sys.path.insert(0, str(ROOT / "kit" / "hooks"))
+        import kit_config
+        kit_config.ledger_record(self.art, list(calls), "artifact sync")
+
     def hook(self, ti, role="part"):
         env = {k: v for k, v in os.environ.items() if k not in ("KIT_ROLE", "KIT_ARTIFACT_DIR")}
         env.update(CLAUDE_PROJECT_DIR=self.proj, KIT_ROLE=role)
@@ -322,8 +332,7 @@ class GuardReviewCases(unittest.TestCase):
 
     def test_each_printed_call_passes_once_whole(self):
         lst = {"action": "list", "collection": self.C, "query": {"limit": 1000}, "out_dir": self.inn}
-        self.rec("pull.json", {"v": 2, "at": time.time(), "calls": [
-            {"action": "list", "collection": self.C, "where": None, "limit": 1000}]})
+        self.printed(lst)
         self.assertEqual(self.hook(lst), 0)                                    # the pull's own call
         self.assertEqual(self.hook(dict(lst, query={"limit": 1000, "cursor": "c2"})), 0)   # its next page
         self.assertEqual(self.hook(lst), 2)                                    # the same list again: refused
@@ -332,8 +341,8 @@ class GuardReviewCases(unittest.TestCase):
 
     def test_a_post_pull_opens_no_broad_query(self):
         """The review's row 2: after `pull --post` (one query by post_id), a query of comments with no where."""
-        self.rec("pull.json", {"v": 2, "at": time.time(), "calls": [
-            {"action": "query", "collection": self.C, "where": [["post_id", "==", "m11-x"]], "limit": 1000}]})
+        self.printed({"action": "query", "collection": self.C, "out_dir": self.inn,
+                      "query": {"where": [["post_id", "==", "m11-x"]], "limit": 1000}})
         self.assertEqual(self.hook({"action": "query", "collection": self.C, "query": {"limit": 1000}, "out_dir": self.inn}), 2)
         self.assertEqual(self.hook({"action": "query", "collection": self.C, "out_dir": self.inn,
                                     "query": {"where": [["post_id", "==", "other"]], "limit": 1000}}), 2)
@@ -348,15 +357,15 @@ class GuardReviewCases(unittest.TestCase):
         self.assertEqual(self.hook({"action": "list", "collection": self.C, "query": {"limit": 1000}, "out_dir": self.inn}), 2)
 
     def test_after_a_refused_batch_only_get_of_its_ids(self):
-        lst = {"action": "list", "collection": self.C, "query": {"limit": 1000}, "out_dir": self.inn}
-        self.rec("pull.json", {"v": 2, "at": time.time(), "calls": [
-            {"action": "list", "collection": self.C, "where": None, "limit": 1000}]})
-        self.rec("pending.json", {"at": time.time(), "ids": ["repos/board/posts/m11-x", "repos/board/posts/_trains"]})
-        self.assertEqual(self.hook(lst), 2)                                    # even a printed list waits
-        self.assertEqual(self.hook({"action": "get", "collection": "repos/board/posts", "doc_id": "m11-x"}), 0)
-        self.assertEqual(self.hook({"action": "get", "collection": "repos/board/posts", "doc_id": "cl45"}), 2)
-        os.remove(os.path.join(self.art, "pending.json"))                     # `artifact sent`: nothing out
-        self.assertEqual(self.hook({"action": "get", "collection": "repos/board/posts", "doc_id": "cl45"}), 0)
+        """CL72: after a refused batch `artifact sync` prints the gets of the documents it names, and only those pass."""
+        pin = os.path.join(self.art, "pin", "live")
+        get = {"action": "get", "collection": "repos/board/posts", "doc_id": "m11-x", "out_dir": pin}
+        self.printed(get, dict(get, doc_id="_trains"))
+        self.assertEqual(self.hook({"action": "list", "collection": self.C, "query": {"limit": 1000}, "out_dir": self.inn}), 2)
+        self.assertEqual(self.hook(dict(get, doc_id="cl45")), 2)
+        self.assertEqual(self.hook(dict(get, out_dir=self.inn)), 2)          # another folder: not the printed call
+        self.assertEqual(self.hook(get), 0)
+        self.assertEqual(self.hook(get), 2)                                   # once
 
 
 class GuardWiredOnEveryRuntime(unittest.TestCase):
@@ -387,7 +396,7 @@ class GuardWiredOnEveryRuntime(unittest.TestCase):
                                input=json.dumps({"hook_event_name": "PreToolUse", "tool_name": "ArtifactData",
                                                  "tool_input": ti, "session_id": "m11", "cwd": d}))
             self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
-            self.assertIn("kit.py artifact pull", r.stdout + r.stderr)
+            self.assertIn("kit.py artifact sync", r.stdout + r.stderr)
 
 
 class PushAndSentRecords(unittest.TestCase):

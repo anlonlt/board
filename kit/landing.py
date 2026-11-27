@@ -3,7 +3,8 @@
 
     landing.py land POST          merge a reviewed step's branch onto the trunk (the review runs it on `continue`)
     landing.py save [--quiet]     a snapshot of the working tree on wip/<branch>; the tree, index and branch untouched
-    landing.py pre-push           git's own hook, any agent: the trunk takes no step that still waits for its review
+    landing.py pre-push           git's own hook, any agent: the trunk takes no step that still waits for its review, and a
+                                  step's branch no other open step's work (CL78)
     landing.py setup              that hook in this clone (a hook of the project's own keeps running, before it)
 
 Config (`kit` in .kit/config.json): `land`: "after_review" (the default where the kit may push the trunk and reviews run)
@@ -463,6 +464,16 @@ def _untracked(env, left=None):
     return keep
 
 
+def _git_in_progress(cwd=None):
+    """Return active git multi-step op name ('merge', 'rebase', 'cherry-pick', 'revert') if in progress, else ''."""
+    for f, name in (("MERGE_HEAD", "merge"), ("REBASE_HEAD", "rebase"), ("rebase-merge", "rebase"),
+                    ("rebase-apply", "rebase"), ("CHERRY_PICK_HEAD", "cherry-pick"), ("REVERT_HEAD", "revert")):
+        p = out("rev-parse", "--git-path", f, cwd=cwd)
+        if p and os.path.exists(p if os.path.isabs(p) else os.path.join(cwd or ROOT, p)):
+            return name
+    return ""
+
+
 def save():
     """(exit code, text). One commit on wip/<branch>: parents HEAD and the last save, so nothing is ever forced."""
     mode = str(kit_cfg().get("wip") or "auto")
@@ -470,6 +481,9 @@ def save():
     head = out("rev-parse", "-q", "--verify", "HEAD")
     if mode == "off" or not name or not head:
         return 0, "save: nothing (%s)" % ("kit.wip is off" if mode == "off" else "no branch here")
+    op = _git_in_progress()
+    if op:
+        return said(1, "save: skipped: git %s is in progress (resolve and finish it first)" % op)
     left = []
     with tempfile.TemporaryDirectory(prefix="kit-wip-") as d:
         env = {"GIT_INDEX_FILE": os.path.join(d, "index")}
@@ -537,12 +551,94 @@ def wip_lines(branch):
             % (when[:16], ref.replace("refs/remotes/", "").replace("refs/", ""), (" (%s)" % what.strip()) if what else "", ref)]
 
 
+# ---------------------------------------------------------------- CL78: a part's branch holds only its own work and main
+CARRIES = "branch carries another step"            # the kind its refusals are counted under (M10's ledger)
+
+
+def _step_tip(br):
+    for r in ("refs/remotes/origin/" + br, "refs/heads/" + br):
+        x = out("rev-parse", "-q", "--verify", r + "^{commit}")
+        if x:
+            return x
+    return ""
+
+
+def carried(tip, branch, own="", got=None, skip_branches=()):
+    """CL78: [{post, part, branch, merge, n}] the open steps whose commits `tip` holds and the trunk does not: work of
+    another step's branch (a merge of it, or commits copied from it whole), never the part's own. `got`: the board's
+    steps (`kit.py landing`), read when not given. A step marked `after` another may build on it only once it landed:
+    landed work is on the trunk, so it is never counted here."""
+    if not tip or not branch or branch == trunk() or branch.startswith("wip/"):
+        return []
+    got = steps() if got is None else got
+    if not got:
+        return []
+    t = "origin/" + trunk() if out("rev-parse", "-q", "--verify", "refs/remotes/origin/" + trunk()) else trunk()
+    mine = set(out("rev-list", tip, "^" + t).split())
+    if not mine:
+        return []
+    skip = {branch} | {b for b in (skip_branches or ()) if b}
+    found = []
+    for s in got:
+        br = str(s.get("branch") or "")
+        if s.get("landed") or not br or br in skip or s.get("post") == own or br == trunk():
+            continue
+        other = _step_tip(br)
+        if not other:
+            continue
+        theirs = set(out("rev-list", other, "^" + t).split()) & mine
+        if not theirs:
+            continue
+        merge = ""
+        for m in out("rev-list", "--merges", tip, "^" + t).split():          # the merge that brought them in
+            ps = out("rev-list", "--parents", "-n", "1", m).split()[1:]
+            if any(p in theirs for p in ps[1:]):
+                merge = m
+                break
+        found.append({"post": s.get("post"), "part": s.get("part") or s.get("post"), "branch": br, "merge": merge, "n": len(theirs)})
+    return found
+
+
+def carried_text(found, branch, own=""):
+    """The refusal, with the part's three ways out."""
+    if not found:
+        return ""
+    f = found[0]
+    what = ("merge commit %s" % f["merge"][:9]) if f["merge"] else "%d of its commit(s)" % f["n"]
+    return ("REFUSED: branch %s carries step %s's unlanded work (`%s`, branch %s: %s). A part's branch holds only its own work and %s, "
+            "so a reviewed step lands at once. Ways out: (1) build on %s only: `git rebase --onto origin/%s %s` or a new branch from "
+            "origin/%s with your own commits cherry-picked; (2) say you need it and wait: `python3 -I .kit/kit.py ask` under %s naming %s (a step `--after` it), "
+            "and build on it once it lands; (3) copy the one function you need in a commit of your own (not a merge)."
+            % (branch, f["part"], f["post"], f["branch"], what, trunk(), trunk(), trunk(), f["branch"], trunk(), own or "<your step>", f["post"])
+            + ("" if len(found) == 1 else " Also: %s." % ", ".join("%s (%s)" % (x["part"], x["post"]) for x in found[1:])))
+
+
+def _count_refusal(kind, post, summary):
+    """M10/CL78: a refusal is one fix of its kind in the ledger, written here, no model call (never fails the caller)."""
+    try:
+        subprocess.run([sys.executable, "-I", os.path.join(ROOT, ".kit", "kit.py"), "ledger", "fix", "--kind", kind,
+                        "--source", post or "?", "--summary", summary[:200]], capture_output=True, text=True, timeout=60, cwd=ROOT)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 # ---------------------------------------------------------------- pre-push
 def pre_push(lines):
     """(exit code, text). Only the trunk is looked at: never deleted, never rewound, no step that waits for its review."""
     t = "refs/heads/" + trunk()
     for ln in lines:
         p = ln.split()
+        if len(p) == 4 and p[2] != t and p[2].startswith("refs/heads/") and p[1].strip("0"):
+            br = p[2][len("refs/heads/"):]                 # CL78: a step's branch takes no other step's unlanded work
+            local_br = p[0][len("refs/heads/"):] if p[0].startswith("refs/heads/") else ""
+            got = steps()
+            own = next((x.get("post") for x in (got or []) if x.get("branch") in (br, local_br)), "") or recorded_step()
+            found = carried(p[1], br, own, got, skip_branches=(local_br,) if local_br else ())
+            if found:
+                txt = carried_text(found, br, own)
+                _count_refusal(CARRIES, own or br, txt)
+                return 1, "pre-push: " + txt
+            continue
         if len(p) != 4 or p[2] != t:
             continue
         new, old = p[1], p[3]

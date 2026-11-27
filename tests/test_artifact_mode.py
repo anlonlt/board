@@ -61,7 +61,7 @@ class ArtifactMode(unittest.TestCase):
         r = self.push()
         self.assertEqual(r["need_pin"], ["posts/P1"])                           # exists there, version unknown
         self.assertEqual([(e["doc_id"], "if_version" in e) for e in self.entries(r)], [("P2", False)])
-        self.assertIn("artifact pin posts/P1=<N>", kit.artifact_push_text(r))
+        self.assertIn("posts/P1. Run `python3 -I .kit/kit.py artifact sync`", kit.artifact_push_text(r))   # CL72: never a version by hand
 
         self.remote("posts", "P1", {"title": "Step one", "column": "info", "status": "planned"}, where="pin/v3")  # CL31: the get
         kit.artifact_pin(["posts/P1=3"])

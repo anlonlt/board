@@ -115,7 +115,7 @@ class CardPush(unittest.TestCase):
         self.assertEqual(sorted(r["need_pin"]), ["posts/_dashboard", "posts/_trains"])
         # the session does the gets the push text names: each saves the live card in the pin directory
         text = kit.artifact_push_text(r)
-        self.assertIn(str(self.art / "pin"), text)
+        self.assertIn("kit.py artifact sync", text)         # CL72: sync makes these reads and pins itself
         self.remote("posts", "_trains", live_t, where="pin/v7")
         self.remote("posts", "_dashboard", live_d, where="pin/v4")
         self.assertEqual(self.pin("posts/_trains=7", "posts/_dashboard=4"), 2)

@@ -47,9 +47,10 @@ def kit_for_done(post, d):
     kit.check_asked = lambda p, db_path=None: ([], [])
     kit.check_his_words = lambda pid, p, db_path=None: ([], [])
     kit.check_done = lambda p, root=None, body_max=1500: ([], [])
+    kit.check_intent = lambda p, root=None: []        # CL76: its own tests (test_intent_first)
     kit.plain_notes = lambda p: []
     kit.check_real_project = lambda p, root=None: []
-    kit.check_trunk_merged = lambda root=None: []
+    kit.check_trunk_merged = lambda *a, **kw: []
     kit.prove_check = lambda p, root=None, timeout=900: ([], [])
     kit._post_gate = lambda: None
     kit._art_dir = lambda: os.path.join(d, "art")
@@ -106,7 +107,7 @@ class DoneOnAComputer(unittest.TestCase):
             rc, out = kit.done("p1")
             self.assertEqual(rc, 1)
             self.assertIn("not on the board yet", out)
-            self.assertIn("artifact push", out)
+            self.assertIn("artifact sync", out)                    # CL72: the one door
 
 
 class NoArtifactStepOnAComputer(unittest.TestCase):

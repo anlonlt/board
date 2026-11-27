@@ -26,9 +26,10 @@ REMINDER = ("CARDS: %s. Rebuild \"Where we are\" and the trains now: Agent tool,
 
 
 def is_orchestrator(data=None):
-    role = os.environ.get("KIT_ROLE") or ""
-    if role:
-        return role == "orchestrator"
+    """M12: the mark this session wrote, else the guard's test, `session_role` (a takeover mid-session counts;
+    KIT_ROLE only when nothing says)."""
+    if not data and os.environ.get("KIT_ROLE"):
+        return os.environ.get("KIT_ROLE") == "orchestrator"
     try:
         mine = open(MARK, encoding="utf-8").read().strip()
     except OSError:

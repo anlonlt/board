@@ -83,7 +83,7 @@ class Gap1PartsAndClerk(unittest.TestCase):
             rc, _, err = self.pre(ti)
             self.assertEqual(rc, 2, ti)
             self.assertIn("board_cli.py", err)
-            self.assertIn("artifact push", err)
+            self.assertIn("artifact sync", err)                # CL72: the one door
 
     def test_the_clerk_and_a_review_too(self):
         for role in ("clerk", "consultant", "runner"):
@@ -92,9 +92,8 @@ class Gap1PartsAndClerk(unittest.TestCase):
 
     def test_what_has_no_kit_command_passes(self):
         out = str(self.p / ".kit" / "run" / "artifact" / "out" / "docs" / "0000.json")
-        for ti in ({"action": "batch", "writes": [{"op": "set", "collection": "posts", "doc_id": "y", "file_path": out}]},
-                   {"action": "set", "collection": "typing", "doc_id": "cl30-x", "data": {"on": True}},
-                   {"action": "get", "collection": "posts", "doc_id": "cl30-x"},
+        # CL72: a batch passes only when it is the one the kit printed (tests/test_cl72_one_way.py), a raw `get` never
+        for ti in ({"action": "set", "collection": "typing", "doc_id": "cl30-x", "data": {"on": True}},
                    # the clerk's marks: read / waiting note on the owner's comment, the orchestrator's new session id
                    {"action": "update", "collection": "comments", "doc_id": "c1", "data": {"read": True, "read_at": "t"}},
                    {"action": "update", "collection": "comments", "doc_id": "c1", "data": {"waiting_note": "n"}},
@@ -105,7 +104,7 @@ class Gap1PartsAndClerk(unittest.TestCase):
     def test_a_raw_dump_by_a_part_is_refused(self):
         rc, _, err = self.pre({"action": "list", "collection": "posts", "query": {"limit": 1000}})
         self.assertEqual(rc, 2)
-        self.assertIn("artifact pull", err)
+        self.assertIn("artifact sync", err)
 
     def test_subagents_and_the_owner_pass(self):
         ti = {"action": "set", "collection": "posts", "doc_id": "x", "data": {}}
@@ -226,7 +225,7 @@ class Gap3FreshCopyAndSentChanges(unittest.TestCase):
             "command": "python3 -I .kit/board_cli.py update posts cl30-x --data '{\"status\":\"done\"}'"},
             "tool_response": {"exit_code": 0}}, role="part")
         self.assertEqual(rc, 0)
-        self.assertIn("kit.py artifact push", out)
+        self.assertIn("kit.py artifact sync", out)
         rc, out, _ = run_hook(BOARD_GUARD, self.p, {"hook_event_name": "PostToolUse", "tool_name": "Bash",
                                                     "tool_input": {"command": "git status"}}, role="part")
         self.assertEqual(out.strip(), "")
