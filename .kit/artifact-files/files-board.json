@@ -148,11 +148,7 @@
   },
   "kit+2F~claude-cli+2F~clerk.template.md": {
    "sha": "492ef01c4b986a4a330a13957a52b01064ceb8e6482429444d3ca0acf4c9eb57",
-<<<<<<< HEAD
    "version": 5
-=======
-   "version": 1
->>>>>>> origin/main
   },
   "kit+2F~claude-cli+2F~consultant.template.md": {
    "sha": "7190087ac1aba2c89b771aa44817283a01b514d0fc5b0ce6826070fcfda40448",

@@ -202,7 +202,7 @@ def continuation(resume_text, trunk="<trunk>"):
     return ("\n## Steps to continue\n" + "\n".join(lines) +
             "\nContinue each as its own part (a subagent, or a new web session; no device cap in the cloud): \"You continue "
             "step <PART> (post <id>). git fetch origin && git checkout <branch>: it holds your earlier work (the last commit "
-            "may be a WIP save). Your prompt is <prompt>: read it, compare with `git log origin/<trunk>..HEAD` and "
+            "may be a checkpoint). `python3 -I .kit/kit.py resume --role part --post <id>` starts you from the newest of that branch and its last save (wip/<branch>) and says which. Your prompt is <prompt>: read it, compare with `git log origin/<trunk>..HEAD` and "
             "`git diff origin/<trunk>` to see what is done, finish it, push your branch (if a push to that branch is "
             "refused, push the branch you are allowed to and name it in your post), then `kit.py done`.\"\n").replace("<trunk>", trunk)
 
