@@ -94,9 +94,10 @@ def funnel_status(max_age=60):
     return _funnel["status"]
 
 
-def links(cfg, post_id, port=None, repo=""):
+def links(cfg, post_id, port=None, repo="", disc=""):
     """(tap, [(label, url)]): the board written on (the local one when `port` is given, else the Artifact), then the other."""
-    frag = "#/post/" + urllib.parse.quote(post_id, safe="") if post_id else ""
+    frag = ("#/post/" + urllib.parse.quote(post_id, safe="") +
+            ("?disc=" + urllib.parse.quote(str(disc), safe="") if disc else "")) if post_id else ""
     t = TEXT[cfg["lang"]]
     got = funnel_target(funnel_status(), port) if port else None
     base = got[0] if got else cfg["funnel_url"]
@@ -156,8 +157,9 @@ def event(cfg, coll, doc_id, d, prev=None):
         col = "reply" if is_reply else "message"
         title = "%s: %s" % (name, (t["replied"] if is_reply else t["messaged"]) % d.get("from"))
         body = str(d.get("text") or "")[:240] if cfg["detail"] else (t["answered"] if is_reply else t["orchestrator_msg"])
+    disc = str(d.get("discussion") or "").strip() if coll == "comments" and post == "_orchestrator" else ""
     seq = "kit" + hashlib.sha256("|".join((slug(cfg["project"]) if own else repo, coll, doc_id, str(col))).encode()).hexdigest()[:24]
-    return {"kind": col, "post": post, "repo": repo, "seq": seq, "title": title, "body": body}
+    return {"kind": col, "post": post, "repo": repo, "disc": disc, "seq": seq, "title": title, "body": body}
 
 
 def claim(root, seq, always=False):
@@ -231,7 +233,7 @@ def announce(root, cfg, coll, doc_id, d, prev=None, port=None, repo="", known=Fa
     e = event(cfg, ("repos/%s/%s" % (repo, coll)) if repo else coll, doc_id, d, prev)
     if not e or not claim(root, e["seq"], always=known and prev is not None):
         return False, ""
-    tap, buttons = links(cfg, e["post"], port=port, repo=e["repo"])
+    tap, buttons = links(cfg, e["post"], port=port, repo=e["repo"], disc=e.get("disc") or "")
     why = send(cfg["url"], e["title"], e["body"], tap, buttons, e["seq"])
     if why:
         forget(root, e["seq"])

@@ -1719,7 +1719,27 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
         if not NOTIFY or not notify_cfg.get("url") or coll not in ("posts", "comments") or not isinstance(d, dict):
             return
         rid = "" if repo in ("", primary_repo_id) else repo
-        threading.Thread(target=NOTIFY.announce, args=(root_dir, _notify_settings(), coll, doc_id, dict(d)), daemon=True,
+        payload = dict(d)
+        if coll == "comments" and payload.get("post_id") == "_orchestrator" and not payload.get("discussion"):
+            rt = str(payload.get("reply_to") or "").strip()
+            tstore = stores_map.get(repo or primary_repo_id) or store
+            if rt and tstore:
+                try:
+                    found = tstore.list_docs("comments", where=[["thread_id", "==", rt]], limit=1)
+                    rows = (found.get("docs") or []) if isinstance(found, dict) else []
+                    if rows:
+                        pd = rows[0].get("data") or {}
+                        payload["discussion"] = str(pd.get("discussion") or rows[0].get("id") or "")
+                    else:
+                        cur = tstore.get_doc("comments", rt)
+                        if cur.get("exists"):
+                            pd = cur.get("data") or {}
+                            payload["discussion"] = str(pd.get("discussion") or rt)
+                except Exception:
+                    pass
+            if not payload.get("discussion") and not rt:
+                payload["discussion"] = str(doc_id or "")
+        threading.Thread(target=NOTIFY.announce, args=(root_dir, _notify_settings(), coll, doc_id, payload), daemon=True,
                          kwargs={"prev": before[0], "known": before[1], "port": port, "repo": rid}).start()
     primary_repo_id = re.sub(r"[^a-z0-9_-]+", "-", project_name.lower()).strip("-") or "primary"
     stores_map = {primary_repo_id: store}
@@ -2302,7 +2322,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     "<input id=t type=password placeholder='Board token' required style='width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid #233049;background:#0b111e;color:#e6ebf2;font-size:1rem;margin-bottom:12px'>"
                     "<button type=submit style='width:100%;padding:10px;border-radius:999px;border:0;background:#e8894a;color:#1a1206;font-weight:700;font-size:.95rem;cursor:pointer'>Unlock</button>"
                     "<div id=err style='color:#f08a78;font-size:.85rem;margin-top:10px'></div></form>"
-                    "<script>(function(){function go(v){return fetch('/_api/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:v})}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(j){try{localStorage.setItem('kit_board_token',(j&&j.token)||v);}catch(e){}location.replace('/');});}"
+                    "<script>(function(){function go(v){return fetch('/_api/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:v})}).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(j){try{localStorage.setItem('kit_board_token',(j&&j.token)||v);}catch(e){}location.replace('/'+(location.hash||''));});}"
                     "try{var s=localStorage.getItem('kit_board_token');if(s){go(s).catch(function(){});}}catch(e){}"
                     "document.getElementById('uf').addEventListener('submit',function(e){e.preventDefault();var v=document.getElementById('t').value.trim();if(!v)return;document.getElementById('err').textContent='';go(v).catch(function(){document.getElementById('err').textContent='Invalid board token.';});});})();</script>"
                     "</body></html>"
@@ -2587,7 +2607,7 @@ def make_handler(root_dir, store, token=None, notify_url=None, embed_mode=False,
                     body = (
                         "<!doctype html><html><head><meta charset=utf-8><meta name=theme-color content=#0b111e></head>"
                         "<body style='background:#0b111e;color:#e6ebf2;font-family:system-ui;padding:24px'>"
-                        "<script>try{localStorage.setItem('kit_board_token',%s);}catch(e){}location.replace('/');</script>"
+                        "<script>try{localStorage.setItem('kit_board_token',%s);}catch(e){}location.replace('/'+(location.hash||''));</script>"
                         "</body></html>" % json.dumps(own_tok)
                     ).encode("utf-8")
                     self.send_response(200)
