@@ -385,3 +385,17 @@ enforced_by: review
 theme: repeat-counter-manual
 source: orchestrator 4 ledger dedupe find
 created_at: 2026-11-27T09:25:37Z
+
+## F44 (fix, active): Orchestrator 4 found the ledger dropping repeats and only mentioned it; owner had to ask for the step (CL80). Same pattern as the 'good gap' remark of 03:24
+scope: project
+enforced_by: review
+theme: orchestrator-error
+source: orchestrator 4 mentioned-not-added CL80
+created_at: 2026-11-27T09:27:47Z
+
+## F45 (fix, active): Orchestrator 4 created stray duplicate posts twice (cl78-...-a, cl80-...-second) by updating a guessed id instead of the one step new returned
+scope: project
+enforced_by: review
+theme: orchestrator-error
+source: orchestrator 4 stray ids
+created_at: 2026-11-27T09:27:47Z
