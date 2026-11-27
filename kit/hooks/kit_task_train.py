@@ -33,7 +33,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_config import config, project_dir  # noqa: E402
-from kit_pre_compact import inspect_claude_transcript  # noqa: E402
+from kit_pre_compact import inspect_claude_transcript, session_role  # noqa: E402
 
 
 def kit(root, args, raw=False):
@@ -375,11 +375,21 @@ def on_piece(root, st, name, ti, tr, post):
     kit(root, ["sub", post] + args + ["--known"], raw=True)
 
 
+def _transcript_size(data):
+    try:
+        return os.path.getsize(str(data.get("transcript_path") or ""))
+    except OSError:
+        return 0
+
+
 def is_orchestrator(data, st):
+    if st.get("role") not in (None, "", "orchestrator") and _transcript_size(data) - int(st.get("role_size") or 0) >= 200000:
+        st["role"] = ""                                # M12: read again once it has grown: a takeover mid-session counts
     if not st.get("role"):
+        st["role_size"] = _transcript_size(data)
         # UserPromptSubmit comes before the first prompt is in the transcript: what it finds then is not the answer (2026-11-25:
         # "" was kept, and an orchestrator's whole task list never reached the board). "-": read since, and not an orchestrator.
-        st["role"] = os.environ.get("KIT_ROLE") or inspect_claude_transcript(str(data.get("transcript_path") or ""))[1] or ""
+        st["role"] = session_role(data, project_dir(data), inspect_claude_transcript(str(data.get("transcript_path") or ""))[1]) or ""  # M12
         prefix = str((config(data).get("kit") or {}).get("orchestrator_branch_prefix") or "")
         if not st["role"] and prefix:
             # a project that names its orchestrators' branches (Harmonize: orchestrator-<n>)
