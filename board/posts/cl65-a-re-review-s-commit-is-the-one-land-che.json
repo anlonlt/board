@@ -1,0 +1,39 @@
+{
+ "body": "Found 2026-11-27 03:35 by orchestrator 3: CL57's second review (comment CR-cl57-the-board-s-flowchart-draws-the-post-s-g-2) read the branch tip 85884a8 and said continue, but the post's `review_commit` still names the first review's 103a53e, so `kit.py land` (kit/landing.py ~158, `seen` = post.review_commit) refuses with \"1 commit(s) on cl57 after its review\" and asks for a third review. A review session started outside `kit.py review --force` never writes the commit it read.\n\nDone when:\n1. A review records the commit it read on the post (`review_commit`) when it writes its verdict (the CR comment carries `commit`, and `kit.py review`'s verdict path writes it whatever started the session).\n2. `land` takes the commit from the newest CR comment of the step when it is newer than `review_commit`.\n3. Test: a second review at the tip, recorded only in its CR-...-2 comment, lets land proceed; a commit after that review is still refused. `python3 scripts/run_all_tests.py` green.\n",
+ "column": "info",
+ "created_at": "2026-11-27T03:33:05Z",
+ "from": "orchestrator",
+ "kind": "bug",
+ "part": "CL65",
+ "planned_by": "orchestrator",
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "kit.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "A review records the commit it read on the post (review_commit) when it writes its verdict (the CR..."
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "land takes the commit from the newest CR comment of the step when it is newer than review_commit"
+  },
+  {
+   "files": [
+    "scripts/run_all_tests.py"
+   ],
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "Test"
+  }
+ ],
+ "task": "Found 2026-11-27 03:35 by orchestrator 3: CL57's second review (comment CR-cl57-the-board-s-flowchart-draws-the-post-s-g-2) read the branch tip 85884a8 and said continue, but the post's `review_commit` still names the first review's 103a53e, so `kit.py land` (kit/landing.py ~158, `seen` = post.review_commit) refuses with \"1 commit(s) on cl57 after its review\" and asks for a third review. A review session started outside `kit.py review --force` never writes the commit it read.\n\nDone when:\n1. A review records the commit it read on the post (`review_commit`) when it writes its verdict (the CR comment carries `commit`, and `kit.py review`'s verdict path writes it whatever started the session).\n2. `land` takes the commit from the newest CR comment of the step when it is newer than `review_commit`.\n3. Test: a second review at the tip, recorded only in its CR-...-2 comment, lets land proceed; a commit after that review is still refused. `python3 scripts/run_all_tests.py` green.\n",
+ "title": "A re-review's commit is the one land checks: CL57 refused after a continue at its tip",
+ "train": "takeover"
+}

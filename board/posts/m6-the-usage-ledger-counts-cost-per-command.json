@@ -139,6 +139,8 @@
  "created_at": "2026-11-26T19:40:41Z",
  "from": "orchestrator",
  "handoff": "Rows recorded from now on carry `commands` and `cmd_seq`; older rows have none, so `compare --commands` only has an after side until sessions run under this commit. The orchestrator gets the bars by running `usage.py show --commands --role orchestrator --transcripts '~/.claude/projects/*/*.jsonl'` on a computer with its transcripts (the same flag works with `--rows` for saved rows).",
+ "landed": "6b20a2f0",
+ "landed_at": "2026-11-27T03:46:51Z",
  "launched_at": "2026-11-26T21:13:55Z",
  "not_checked": [
   "the two bars on an orchestrator's transcripts: this computer has none, so they are measured where those transcripts are (see handoff)",
@@ -207,7 +209,7 @@
  "task": "The usage ledger counts cost per command, so a waste like rereading the board shows up as a number.\n\n1. For each tool result, the ledger records its size (characters and estimated tokens) grouped by command: `kit.py resume`, `kit.py post`, `kit.py train`, the tests, git, reads of files; in scripts/usage.py with tests/test_cl37_usage.py.\n2. It estimates what each one costs afterwards by staying in the context (its tokens times the calls that followed, at the cache read price).\n3. `usage.py show --commands` and `compare --commands` print the top commands by cost, per role.\n4. Commands repeated across sessions (the same sequence in 3 sessions or more) are listed as candidates for a script, with how often and what they cost.\n\nBars: on this computer's transcripts, the share of an orchestrator's tokens spent on resumes and the five most repeated sequences.\n",
  "title": "The usage ledger counts cost per command",
  "train": "memory",
- "updated_at": "2026-11-26T21:53:46Z",
+ "updated_at": "2026-11-27T03:46:51Z",
  "verdict": "Done: the ledger counts each result by command with its carry cost, lists the top commands per role and the repeated runs; the orchestrator bars need its transcripts, absent from this computer.",
  "working_by": ""
 }

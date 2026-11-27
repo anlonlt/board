@@ -1,17 +1,39 @@
 {
- "body": "Reading the invite and share-link routes in board_server.py to give outside AIs one link with the post's drop box",
+ "artifacts": [
+  "kit/board/board.template.html",
+  "kit/board/board_cli.py",
+  "kit/board/board_server.py",
+  "kit/board/shim.js",
+  "kit/board/strings.en.json",
+  "scripts/kit.py",
+  "tests/test_cl56_one_link.py"
+ ],
+ "bars": [
+  "6 of 6 tests in the new suite pass: runner-card link → file on its post, the link opens its post only, old share link = same page and drop box, the button and the CLI give the invite, a file over 2 MB refused with the cap named, a collaborator invite for a post starts with the drop box",
+  "1 page vs 2 before: the old share link's page is byte-for-byte the invite's (asserted)",
+  "0 of 2 other posts reachable with a card's link (another post's drop box: 403; the board's posts list: 401)",
+  "19,200 of 19,200 bytes of the patch attached as a file, 0 pasted into a comment"
+ ],
+ "body": "An outside AI now gets one link for a card, the card's invite, and the first thing it reads is how to attach its files to the card and how to write its result. The board's \"Link for AI\" button, the board CLI and the kit's runner cards all give that link, and an old share link opens the same page and the same drop box.\n\n### What changed\n- **One page for a card**: `/_invite/<token>.md` now accepts a card's token (the kind \"Link for AI\" mints) as well as a collaborator's. For a card it shows, in this order: 1. attach your files to the card (one shell command a file, or the same POST without a shell), 2. write the card's result (the existing write-back), then the card, its task, its comments, its shared files, and the paste-a-block fallback last.\n- **One drop box route**: the post's drop box (`POST /_api/posts/<post>/artifacts`, the owner's b52f5b6 design) now accepts a card's token in `X-Kit-Token`, for that card only (another post: 403; nothing else of the board opens with it). `GET` on the same route lists what is attached.\n- **The old share link** `/_share/<token>` answers with the same page (not a redirect, so links and tests already handed out keep working), and its `POST …/artifacts` (75a4f41) now goes through the same code and into the card's own board (it wrote to the main board even for an attached repo's card).\n- **Who hands the link out**: the board's \"Link for AI\" button copies the invite; the shares panel copies the invite; `board_cli.py share create` prints it as `url`; `/_api/shares` answers carry `invite`. In the kit: a new `kit.py link <post>` prints the invite for a post (public address from `$KIT_FUNNEL_URL`, `kit.funnel_url`, or the Tailscale funnel), and `kit.py launch` on a card runner's step now says \"give <runner> this one link: …\" instead of only \"taken\".\n- **A collaborator's invite** (`/_invite/<their token>.md`) starts with \"First: attach your files to your post, then write its result\"; with `?post=<id>` it names that post in the command.\n\n### Why not a collaborator account per runner\nThe invite of b52f5b6 is a person's token: it reads the whole board and writes as them. A card's link stays scoped to its one card, so the invite page and drop box are shared but the reach is not widened.\n\n### Branch\nBuilt on `feat/streamline-doctor-memory` (merged into `cl56`, which is where this session may push; the merge kept this step's prompt with its \"What this does differently\").\n\n### Tests\n`tests/test_cl56_one_link.py` (5 tests); the full suite with `--all` before the push. The strings table was re-extracted for the button's new copy text.",
  "branch": "cl56",
+ "breaks": "revert",
+ "check": "python3 -I .kit/device.py run --kind tests -- python3 tests/test_cl56_one_link.py",
  "claimed_at": "2026-11-27T03:27:30Z",
  "column": "info",
  "created_at": "2026-11-27T00:05:52Z",
  "differs": "CL56: builds on CL40 (launch without push access) and CL45 (Artifact board on the web); none lets an outside AI with only the shared link attach files to its post. CL56 gives it one invite link with the post's drop box.",
  "from": "orchestrator",
+ "handoff": "For a runner card (any runner `kit.py launch` does not start: lmarena, antigravity-web, claude-chrome…), write the link `kit.py link <post>` prints (or the one `kit.py launch <post>` now prints when it refuses a card runner). It needs the board reachable from outside: the funnel, or `kit.funnel_url` in the config; it warns when it can only give this computer's own address.",
  "launched_at": "2026-11-27T03:11:26Z",
  "launched_out_of_order": {
   "at": "2026-11-27T03:11:26Z",
   "was": "R2 goes first (place 13, CL56 is 22): feature, by date (no fact sets it apart); launch `r2-gemini-tasks-how-far-it-runs-the-board-k`",
   "why": "R2/R3 are the agy orchestrator's (owner's split 02:31); this web step shares no file with them"
  },
+ "not_checked": [
+  "Not run over the real Tailscale funnel with a real outside app (Antigravity, LMArena): the test runs the page's own command against a local board; the next runner card is the live check.",
+  "The Artifact board's own \"Link for AI\" (claude.ai page, no server, no drop box) is unchanged: it has no board server to attach to."
+ ],
  "orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "orchestrator_device": "web",
  "orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
@@ -19,6 +41,14 @@
  "part": "CL56",
  "planned_by": "orchestrator",
  "priority": 1,
+ "proof": {
+  "at": "2026-11-27T03:33:57Z",
+  "branch": "cl56",
+  "commit": "17595b7",
+  "key": "55eb1e1939bb78f2",
+  "needs_real": true,
+  "sha": "17595b7e1d11ffc072c07dd43e835d9590acdf62"
+ },
  "repo": "anlonlt/board",
  "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "review_orchestrator_device": "web",
@@ -34,31 +64,33 @@
    ],
    "from": "task",
    "n": 1,
-   "status": "open",
-   "title": "POST /_share/<token>/blob takes a file for the post the link was shared for (size cap in the kit..."
+   "status": "dropped",
+   "title": "POST /_share/<token>/blob takes a file for the post the link was shared for (size cap in the kit...",
+   "why": "superseded by the prompt's revision (941e242): files go to the post's drop box with the link's token (POST /_api/posts/<post>/artifacts, its card only, 2 MB a file, the cap named on refusal), not a se"
   },
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "The link's own page and the runner guide for link-only platforms say how (one command or one form..."
   },
   {
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "Nothing else opens"
   },
   {
    "from": "task",
    "n": 4,
-   "status": "open",
+   "status": "done",
    "title": "Tests"
   }
  ],
  "task": "An outside AI gets one link, the owner's: the invite (`/_invite/<token>.md`, b52f5b6, 2026-11-22: \"1-link AI bootstrap & post-scoped artifact drop-box\"), which gives it a collaborator token and the post's drop box for files (`POST /_api/posts/<post>/artifacts`). The older share link (`/_share/<token>`, d7c448c, 2026-11-21: read a post, submit text up to 500 KB, no files) still exists beside it, and the R1 runner card handed out that one: the Antigravity desktop app (another account's Mac) could not attach its patch and pasted 61.7 KB of it as a post's text (r1-antigravity-on-the-web-how-far-it-antigravity-app--ed2a38).\n\nWork on anlonlt/board, branch feat/streamline-doctor-memory.\n\n1. Every card, prompt or page that gives an outside AI a link (a runner card, \"Link for AI\", the clerk) gives the invite, scoped to its post; in kit/board/board_server.py and scripts/kit.py.\n2. The share link leads to the same: an old `/_share/<token>` answers with the invite's instructions and its drop box (or is retired with a redirect), so one way exists, not two.\n3. The invite's page says, first, how to attach files to the post (the drop box route, one command) and how to write the post's result.\n4. Tests: an outside session with only the link a runner card gives attaches a file to its post and it shows there; an old share link reaches the same drop box.\n\nDone already (75a4f41, by the orchestrator on the computer, checked live over the funnel): `POST /_share/<token>/artifacts` saves a file into the link's post's drop box, and the link's page says how. Left: items 2 and 4 (one way, not two: the share link and the invite agree; the tests), and saying it in the runner guides.",
  "title": "An outside AI gets one link, the owner's invite with the post's drop box",
  "train": "board-data",
- "updated_at": "2026-11-27T03:12:26Z",
+ "updated_at": "2026-11-27T03:33:57Z",
+ "verdict": "Yes: with only the link a runner card gives, an outside session attached a 19 KB patch to its post in one command, and it shows there; an old share link reaches the same drop box.",
  "working_by": "owner"
 }

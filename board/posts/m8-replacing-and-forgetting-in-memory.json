@@ -144,6 +144,8 @@
  "created_at": "2026-11-26T20:01:02Z",
  "from": "orchestrator",
  "handoff": "M9 and the orchestrator: run `kit.py lessons check` on Harmonize (the French repo) and put its contradicting pairs in this post's real_project. To answer a pair, run `kit.py lessons replace <winner> <loser>`. To confirm an entry still holds, run `kit.py lessons keep <id>`. To put the review list on the board, run `kit.py lessons review --post`. M7 (memory checked against reality) can date a passing check with `keep`, which resets the 90-day count.",
+ "landed": "313466ad",
+ "landed_at": "2026-11-27T03:46:52Z",
  "launched_at": "2026-11-26T21:13:57Z",
  "not_checked": [
   "The real French memory (anlonlt/harmonize): a launched part never attaches a repo, so the orchestrator runs `python3 -I .kit/kit.py lessons check` in a clone of it.",
@@ -209,7 +211,7 @@
  "task": "Replacing and forgetting: an entry that replaces another names it, and the old one leaves the memory, so a session never meets two rules that disagree (the French repo: two docs each claiming to rank first).\n\n1. A lesson, decision or principle can say `replaces: <id>`; the replaced one moves to the archive with a pointer to its successor, in kit/ledger.py with tests/test_memory_replace.py.\n2. `kit.py lessons check` flags two live entries on the same files or theme that contradict each other (opposite verbs on the same subject, the same setting with different values) and asks which one wins.\n3. An entry unconfirmed for longer than a number of days set in the kit config goes to a review list on the board, never deleted silently.\n4. Guides and memory files say which one is the authority in one place only; a second claim of authority is flagged.\n\nBars: on the kit's and the French repo's memory, contradicting pairs found.\n",
  "title": "Replacing and forgetting in memory",
  "train": "memory",
- "updated_at": "2026-11-26T22:02:26Z",
+ "updated_at": "2026-11-27T03:46:52Z",
  "verdict": "Done: replacing archives the old entry with a pointer to its successor, contradictions and second authority claims are flagged with a which-wins question, and stale entries go to a board review list.",
  "working_by": ""
 }

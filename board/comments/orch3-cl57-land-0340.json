@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T03:33:44Z",
+ "from": "orchestrator",
+ "post_id": "cl57-the-board-s-flowchart-draws-the-post-s-g",
+ "text": "Not landed yet: its second review said continue at the branch tip 85884a8, but the post still records the first review's commit 103a53e, so `kit.py land` asks for a third review. I did not change that record by hand (the session's safety check refused it as touching a review gate). Fix planned as **CL65** `cl65-a-re-review-s-commit-is-the-one-land-che`. Your call meanwhile: a third review now (one session, ~10 min), or wait for CL65."
+}

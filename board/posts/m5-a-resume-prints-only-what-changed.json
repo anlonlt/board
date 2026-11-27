@@ -141,6 +141,8 @@
  "created_at": "2026-11-26T19:40:33Z",
  "from": "orchestrator",
  "handoff": "`kit.py resume_delta(m, role, session, ...)` returns the delta text or None (print whole) and saves the session's snapshot in .kit/run/resume/<role>-<session>.json; a hand-over is detected by .kit/handover-<role>.gen changing, a compaction deletes the file (kit_session_start.py). M6's ledger can count resume characters per call from there.",
+ "landed": "6b20a2f0",
+ "landed_at": "2026-11-27T03:46:51Z",
  "launched_at": "2026-11-26T21:13:48Z",
  "not_checked": [
   "the dry run on anlonlt/harmonize (the orchestrator's, from its session: `real_project`)",
@@ -201,7 +203,7 @@
  "task": "A resume prints only what changed since the session's last one: the orchestrator stays current before answering the owner, without rereading the whole board each time.\n\n1. `kit.py resume` in a session that already ran one prints what changed since then (steps, sessions, questions, the owner's comments, other writers), or one line \"nothing new since HH:MM\"; `--full` prints it all. In scripts/kit.py with tests/test_resume_delta.py.\n2. The brief guard accepts that read as fresh, in kit/hooks/kit_brief_guard.py.\n3. The first resume of a session, a hand-over and a takeover still print it whole.\n\nBars: characters of a second resume with nothing new and with one change, against the full one (19,800 characters for the orchestrator's now).\n",
  "title": "A resume prints only what changed",
  "train": "memory",
- "updated_at": "2026-11-26T21:52:25Z",
+ "updated_at": "2026-11-27T03:46:51Z",
  "verdict": "Done: a repeat resume prints only what changed (93 characters when nothing did, 204 with one new comment, against 21,633 for the whole), and the reply guard counts it as a fresh read.",
  "working_by": ""
 }

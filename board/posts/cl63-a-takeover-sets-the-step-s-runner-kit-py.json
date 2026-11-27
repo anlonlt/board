@@ -6,6 +6,7 @@
  "kind": "bug",
  "part": "CL63",
  "planned_by": "orchestrator",
+ "removed": true,
  "sources": [
   "87cc065f6207400db520",
   "a8fe6866519d4719b283"
@@ -51,5 +52,6 @@
  ],
  "task": "Owner asked (2026-11-27 03:22, 03:24): why was R5 still shown as claude-web after an agy took it over, and why say \"a good gap to close\" instead of adding a part.\n\nFound: `kit.py launch --take` (scripts/kit.py ~5335) writes status, session_id, branch, working_by, updated_at but never `runner`; and on a computer `kit.py launch` hard-codes `claude --bg`, so an agy takeover (invoke_subagent) has no kit command to record itself and the orchestrator edited session_id by hand.\n\nDone when:\n1. `kit.py launch <post> --take [--session-id ID] [--runner R]` writes the post's `runner` (detected from the running platform when not given) along with session_id.\n2. On a computer under agy, `kit.py launch` prints the agy launch (invoke_subagent) instead of `claude --bg`, then records the take with the subagent's id.\n3. `kit.py resume` flags a step whose runner disagrees with its session's platform (runner claude-web, session id an agy uuid).\n4. Tests: a take from agy on a post planned claude-web ends with runner agy; a mismatch shows in resume. `python3 scripts/run_all_tests.py` green.\n",
  "title": "A takeover sets the step's runner: kit.py launch --take records who runs it",
- "train": "takeover"
+ "train": "takeover",
+ "updated_at": "2026-11-27T03:29:55Z"
 }
