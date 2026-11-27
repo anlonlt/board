@@ -21,6 +21,7 @@ HOOK = os.path.join(ROOT, "kit", "hooks", "kit_say_it_once.py")
 FIX = os.path.join(ROOT, "tests", "fixtures", "cl60")
 sys.path.insert(0, os.path.join(ROOT, "kit", "hooks"))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
+sys.path.insert(0, ROOT)
 import closing_audit  # noqa: E402
 import kit_say_it_once as say  # noqa: E402
 
@@ -29,10 +30,14 @@ LAUNCH = ("Your prompt is docs/prompts/m12-x.md: run `python3 -I .kit/kit.py res
           "prints it, and do it.")
 
 
-def run(payload, env=None):
-    e = {k: v for k, v in os.environ.items() if k not in ("KIT_ROLE", "KIT_CHAT_VERBOSE")}
+def run(payload, env=None, setup=False):
+    e = {k: v for k, v in os.environ.items() if k not in ("KIT_ROLE", "KIT_CHAT_VERBOSE", "KIT_PROJECT_DIR")}
     e.update(env or {})
     with tempfile.TemporaryDirectory() as d:
+        if setup:                                        # Harmonize: kit.setup is true
+            os.makedirs(os.path.join(d, ".kit"))
+            with open(os.path.join(d, ".kit", "config.json"), "w") as fh:
+                json.dump({"kit": {"setup": True}}, fh)
         e["CLAUDE_PROJECT_DIR"] = d
         p = subprocess.run([sys.executable, "-I", HOOK], input=json.dumps(payload), capture_output=True, text=True,
                            env=e, cwd=d, timeout=30)
@@ -73,6 +78,14 @@ class LastSteps(unittest.TestCase):
             for tool in ("SendMessage", "mcp__claude-code-remote__send_message"):
                 self.assertIn(LAST, run(post(tool, tp)), tool)
 
+    def test_setup_mode_keeps_the_line(self):
+        # CL60 on Harmonize (kit.setup true): the line after a last step and the launch rule still hold
+        self.assertIn(LAST, run(post("Bash", self.part, "python3 -I .kit/kit.py done x"), setup=True))
+        self.assertIn(LAST, run(post("mcp__claude-code-remote__send_message", self.part), setup=True))
+        self.assertIn("did not type this turn", run({"hook_event_name": "UserPromptSubmit", "session_id": "s",
+                                                     "prompt": LAUNCH}, setup=True))
+        self.assertEqual(run(post("Bash", self.part, "ls"), setup=True).strip(), "")
+
     def test_the_review_role_too(self):
         self.assertIn(LAST, run(post("Bash", self.owner, "python3 -I .kit/board_cli.py set comments CR-x --data '{}'"),
                                 {"KIT_ROLE": "review"}))
@@ -95,6 +108,38 @@ class LastSteps(unittest.TestCase):
         p = ("<tools-used-before-summary>x</tools-used-before-summary>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\n"
              + "y" * 500 + "\n<task-notification>\n<task-id>a</task-id>")
         self.assertIn("did not type this turn", run({"hook_event_name": "UserPromptSubmit", "session_id": "s", "prompt": p}))
+
+
+class UpdateWires(unittest.TestCase):
+    def test_update_widens_an_old_say_it_once_line(self):
+        # CL60 on Harmonize: a non-unified install (runtime agy, Claude Code present) whose say-it-once PostToolUse was
+        # on its old tools; --update must widen it to the last steps (Bash) and both send tools
+        import install
+        env = dict(os.environ, KIT_TEST="1")
+        env.pop("KIT_PROJECT_DIR", None)
+
+        def inst(t, *args):
+            return subprocess.run([sys.executable, "-I", os.path.join(ROOT, "install.py"), t, "--no-cmd", *args],
+                                  capture_output=True, text=True, env=env, timeout=600, stdin=subprocess.DEVNULL)
+        with tempfile.TemporaryDirectory() as d:
+            t = os.path.join(d, "proj")
+            os.makedirs(t)
+            subprocess.run(["git", "init", "-q", t], check=True)
+            r = inst(t, "--quick", "--project", "Proj", "--runtime", "agy", "--no-survey", "test")
+            self.assertEqual(r.returncode, 0, r.stdout[-1500:] + r.stderr[-1500:])
+            hk = os.path.join(t, ".claude", "hooks", "kit")
+            os.makedirs(hk, exist_ok=True)
+            open(os.path.join(hk, "kit_say_it_once.py"), "w").close()
+            cmd = install.CLAUDE_CMD % "kit_say_it_once.py"
+            with open(os.path.join(t, ".claude", "settings.json"), "w") as fh:
+                json.dump({"hooks": {"PostToolUse": [{"matcher": "SendMessage",
+                                                      "hooks": [{"type": "command", "command": cmd}]}]}}, fh)
+            r = inst(t, "--update")
+            self.assertEqual(r.returncode, 0, r.stdout[-1500:] + r.stderr[-1500:])
+            got = json.load(open(os.path.join(t, ".claude", "settings.json")))["hooks"]["PostToolUse"]
+            m = [g["matcher"] for g in got if any(h["command"] == cmd for h in g["hooks"])]
+            self.assertEqual(len(m), 1, got)
+            self.assertTrue({"Bash", "SendMessage", "mcp__claude-code-remote__send_message"} <= set(m[0].split("|")), m)
 
 
 class Resume(unittest.TestCase):

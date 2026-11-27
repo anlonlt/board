@@ -294,7 +294,8 @@ class O55Gaps(unittest.TestCase):
             s = settings(t)
             kit_evs = [(ev, g.get("matcher")) for ev, gs in s["hooks"].items() for g in gs
                        for h in g["hooks"] if "kit/kit_say_it_once.py" in h["command"]]
-            self.assertEqual(kit_evs, [("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage")])
+            self.assertEqual(kit_evs[0], ("PreToolUse", "mcp__claude-code-remote__send_message|SendMessage"))
+            self.assertEqual([e for e, _ in kit_evs[1:]], ["PostToolUse"])   # CL60: the "·" line after last steps
             self.assertEqual(s["hooks"]["Stop"][0]["hooks"][0]["command"], own)     # its own hook kept
             lim = json.loads(cp.read_text())["kit"]["limits"]
             self.assertEqual((lim["message_chars"], lim["done_message_chars"]), (200, 200))

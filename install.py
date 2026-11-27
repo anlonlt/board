@@ -1653,6 +1653,11 @@ def main(argv=None):
         spec = [x for x in (CLAUDE_SETTINGS if web else CLAUDE_CLI_SETTINGS) if x[2] in added_h]
         if message_guard and not any(x[2] == MESSAGE_GUARD and x[0] == "PreToolUse" for x in spec):
             spec.append(("PreToolUse", SEND_TOOLS, MESSAGE_GUARD))
+        # CL60: the "·" line after a part's last steps (Harmonize's --update left this PostToolUse on its old tools);
+        # only that line: a project's own Stop or prompt hook is kept, never doubled
+        if os.path.isfile(os.path.join(t, RUNTIME_HOOK_DIRS["claude"], MESSAGE_GUARD)):
+            spec += [x for x in (CLAUDE_SETTINGS if web else CLAUDE_CLI_SETTINGS)
+                     if x[2] == MESSAGE_GUARD and x[0] == "PostToolUse" and x not in spec]
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], spec)
     if ".kit/kit.py" in ins.touched and (want_claude or "claude" in present):
         merge_fresh_line(t, a.dry_run, ins.log)

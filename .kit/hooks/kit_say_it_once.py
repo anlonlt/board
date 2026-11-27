@@ -208,8 +208,21 @@ def main():
     ev = data.get("hookEventName") or data.get("hook_event_name") or ""
     cid = str(data.get("conversationId") or data.get("session_id") or "x")
 
-    # Setup turns the checks off, except the "·" rule of a background session (the clerk talked unchecked in setup).
-    if in_setup(data) and not (background() and ev == "Stop") and ev in ("PreInvocation", "UserPromptSubmit", "PostToolUse", "PostInvocation", "Stop"):
+    # Setup turns the checks off, except the "·" rule where the owner is not the one talking: a background session's
+    # Stop (the clerk talked unchecked in setup), and (CL60: Harmonize is in setup, and its parts never got the line)
+    # the line after a last step and the rule on a turn the owner did not type.
+    ti = data.get("tool_input") or {}
+    tc0 = data.get("toolCall") or {}
+    last_step = ev == "PostToolUse" and (
+        str(data.get("tool_name") or tc0.get("name") or "") in SEND_TOOLS
+        or bool(LAST_STEP_RE.search(str(ti.get("command") or (tc0.get("args") or {}).get("CommandLine") or ""))))
+    if ev == "PostInvocation":
+        try:
+            last_step = open(os.path.join(tempfile.gettempdir(), "kit-post-%s" % cid), encoding="utf-8").read() == "last"
+        except OSError:
+            pass
+    untyped = ev in ("PreInvocation", "UserPromptSubmit") and not_typed(str(data.get("lastUserInput") or data.get("prompt") or ""))
+    if in_setup(data) and not (background() and ev == "Stop") and not last_step and not untyped and ev in ("PreInvocation", "UserPromptSubmit", "PostToolUse", "PostInvocation", "Stop"):
         if claude:
             return 0
         if ev == "Stop":
