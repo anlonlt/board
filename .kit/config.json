@@ -131,6 +131,7 @@
    }
   },
   "claude_permission_mode": "best",
+  "agy_mode": "skip-permissions",
   "setup": false,
   "parts": {
    "memory": true,

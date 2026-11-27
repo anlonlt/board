@@ -3351,7 +3351,7 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
     # then fall back to _load_board_docs (which reads local SQLite -> mirror worktree -> git board-mirror).
     if db_path is None and not has_local_db and not has_mirror_dir and os.path.isfile(os.path.join(ROOT, ".kit", "config.json")):
         try:
-            r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
+            r = _board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
             posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or [] if not str(d.get("id") or "").startswith("_")}
         except Exception:
             posts = {}
@@ -4236,7 +4236,7 @@ def _slug(s, n=40):
 def _get_post(pid, db_path=None):
     """A post's data: from the board server (works from a part's worktree), else the local database."""
     try:
-        r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "doc/posts/" + urllib.parse.quote(pid, safe=""),
+        r = _board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")), "doc/posts/" + urllib.parse.quote(pid, safe=""),
                            token=_resolve_board_token(None))
         if r.get("exists") is not False and isinstance(r.get("data"), dict):
             return r["data"]
@@ -4249,7 +4249,7 @@ def _get_post(pid, db_path=None):
 def _get_comment(cid, db_path=None):
     """A comment's data, from the board server or the local database; None when it is not on this board."""
     try:
-        r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "doc/comments/" + urllib.parse.quote(cid, safe=""),
+        r = _board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")), "doc/comments/" + urllib.parse.quote(cid, safe=""),
                            token=_resolve_board_token(None))
         if r.get("exists") is not False and isinstance(r.get("data"), dict):
             return r["data"]
@@ -4285,7 +4285,7 @@ def _post_gate():
 def _post_comments(pid, db_path=None):
     """{id: comment} under a post: from the board server (a part's worktree has no database), else the local database."""
     try:
-        r = _board_request(_resolve_board_url(_kit_config().get("board_url")),
+        r = _board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")),
                            "db/comments?" + urllib.parse.urlencode({"where": json.dumps([["post_id", "==", pid]]), "limit": "500"}),
                            token=_resolve_board_token(None))
         if isinstance(r.get("docs"), list):
@@ -5211,7 +5211,7 @@ def _all_posts(db_path=None):
     posts, _ = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=db_path)
     if not posts and not db_path and os.path.isfile(os.path.join(ROOT, ".kit", "config.json")):
         try:                                      # a part's worktree (or empty local DB): the board server holds it
-            r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
+            r = _board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
             posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or []}
         except Exception as e:  # noqa: BLE001 - kept, never swallowed: resume --role part stops on it
             BOARD_ERRORS.append("the board server refused or failed: %s" % e)
@@ -6524,6 +6524,47 @@ def _saved_mins(branch):
     return best
 
 
+def _public_board_base(url):
+    """The board's address from outside this computer: $KIT_FUNNEL_URL, `kit.funnel_url`, the Tailscale funnel that
+    points at this board's port, else the board's own address ('' when none)."""
+    k = _kit_config().get("kit") or {}
+    got = str(os.environ.get("KIT_FUNNEL_URL") or k.get("funnel_url") or "").rstrip("/")
+    if got:
+        return got
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path in (os.path.join(here, "notify.py"), os.path.join(here, "..", "kit", "notify.py")):
+        if os.path.isfile(path) and shutil.which("tailscale"):
+            try:
+                spec = importlib.util.spec_from_file_location("kit_notify_link", path)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                port = urllib.parse.urlsplit(url).port
+                ft = mod.funnel_target(mod.funnel_status(max_age=0), port)
+                if ft:
+                    return ft[0]
+            except Exception:
+                pass
+            break
+    return str(url or "").rstrip("/")
+
+
+def outside_link(pid, url=None, token=None, hours=72):
+    """CL56: the one link an outside AI (a runner card: lmarena, antigravity-web, claude-chrome...) gets for a step:
+    the board's invite scoped to its post, `/_invite/<token>.md`: how to attach files to the post (its drop box) and
+    write its result come first. {"link": ...} or {"error": ...}."""
+    url = url or local_board_url()
+    try:
+        r = _board_request(url, "shares", {"post_id": pid, "ttl_hours": hours, "allow_write": True, "max_submissions": 20},
+                           token=_resolve_board_token(token))
+    except Exception as e:
+        return {"error": "no link: the board at %s did not answer (%s)" % (url, str(e)[:120])}
+    base = _public_board_base(url)
+    out = {"link": base + (r.get("invite") or "/_invite/%s.md" % r.get("token")), "expires_at": r.get("expires_at")}
+    if re.match(r"^https?://(127\.|localhost|0\.0\.0\.0|\[::1\])", base):
+        out["warning"] = "this address is this computer's own: start the funnel (or set kit.funnel_url) so the runner can reach it"
+    return out
+
+
 def step_holder(pid, p, me=None, people=(), alive=None, saved=None, session=None):
     """Who holds this step besides the one asking, as text ('' : nobody). From what the post already carries: `for` and
     `working_by` (people), `runner` (who executes it), `session_id` (the session on it)."""
@@ -6557,9 +6598,108 @@ def step_holder(pid, p, me=None, people=(), alive=None, saved=None, session=None
     return "session %s is on it (%s)%s" % (sess, seen, ": check it with get_session" if sess.startswith("session_") else "")
 
 
+def _continue_worktree(branch, base):
+    """CL17: a worktree on the part's own branch, as it was left (its commits, and its uncommitted files when the old
+    worktree is still there): never reset. A branch only on origin is taken from there. No branch: a fresh one."""
+    path = _worktree_for(branch)
+    if path and os.path.isdir(path):
+        return path, None
+    _git_run("worktree", "prune")
+    path = os.path.join(ROOT, ".claude", "worktrees", branch)
+    if _git_run("rev-parse", "--verify", "--quiet", "refs/heads/" + branch).returncode == 0:
+        r = _git_run("worktree", "add", "-q", path, branch)
+    else:
+        _git_run("fetch", "-q", "origin", branch, timeout=120)
+        if _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + branch).returncode != 0:
+            return _make_worktree(branch, base)
+        r = _git_run("worktree", "add", "-q", "-b", branch, path, "origin/" + branch)
+    return (path, None) if r.returncode == 0 else (None, r.stderr.strip() or "git worktree add failed")
+
+
+def checklist(p):
+    """CL17: a part's checklist is its post's pieces (`kit.py sub`): {done, of, doing, next} or None (no pieces)."""
+    rows = [x for x in pieces_of(p) if x.get("status") != "dropped"]
+    if not rows:
+        return None
+    doing = [x for x in rows if x.get("status") == "doing"]
+    todo = [x for x in rows if x.get("status") not in ("done", "doing")]
+    return {"done": sum(x.get("status") == "done" for x in rows), "of": len(rows),
+            "doing": ("%d. %s" % (doing[0]["n"], doing[0]["title"])) if doing else "",
+            "next": ("%d. %s" % (todo[0]["n"], todo[0]["title"])) if todo else ""}
+
+
+def checklist_text(p):
+    c = checklist(p)
+    if not c:
+        return ""
+    return "checklist %d/%d done%s%s" % (c["done"], c["of"], (" · doing: %s" % _short(c["doing"], 70)) if c["doing"] else "",
+                                          (" · next: %s" % _short(c["next"], 70)) if c["next"] else "")
+
+
+def continue_text(p, branch):
+    """What a relaunched part is told after its prompt line (CL17)."""
+    ck = p.get("checkpoint") if isinstance(p.get("checkpoint"), dict) else {}
+    c = checklist(p)
+    return (" You continue a part that stopped (crash or closed session): continue from the checklist in your post "
+            "(`kit.py sub`%s); your branch `%s` has your work%s. Do not start again." % (
+                ("; next: %s" % (c["doing"] or c["next"])) if c and (c["doing"] or c["next"]) else "", branch,
+                (" (last checkpoint %s, %s)" % (ck.get("sha"), str(ck.get("at") or "")[:16].replace("T", " "))) if ck.get("sha") else ""))
+
+
+WAIT_RE = re.compile(r"\b(wait(s|ing)? (on|for) (the )?owner|asks? the owner|held for (the )?owner|needs the owner)\b", re.I)
+
+
+def waits_on_owner(pid, p, posts=None):
+    """CL17: why this step is waiting on the owner ('' : it is not), so a crashed part is relaunched without asking only
+    when nothing of his is pending: its column (question / todo), its status, or an open question post naming it."""
+    if step_state(p) == "you":
+        return "its column is %s" % p.get("column")
+    st = str(p.get("status") or "")
+    if WAIT_RE.search(st) or p.get("waits_on_owner"):
+        return "its status: %s" % _short(st or "waits_on_owner", 60)
+    part = str(p.get("part") or "")
+    for qid, q in (posts or {}).items():
+        if qid == pid or not isinstance(q, dict) or q.get("column") != "question" or step_state(q) != "you" or q.get("removed"):
+            continue
+        if q.get("parent") == pid or q.get("post") == pid or (len(part) >= 3 and re.search(
+                r"(?<![\w-])%s(?![\w])" % re.escape(part), str(q.get("title") or ""))):
+            return "question `%s` is open" % qid
+    return ""
+
+
+def _transcript_of(sess):
+    """A Claude Code transcript of this session id on this machine, or ''."""
+    if not sess or not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-", sess):
+        return ""
+    hits = glob.glob(os.path.join(os.path.expanduser("~"), ".claude", "projects", "*", sess + ".jsonl"))
+    return hits[0] if hits else ""
+
+
+def relaunch_lines(pid, p, posts=None, unknown=False):
+    """CL17: under a step whose session is not running: its last checkpoint, its checklist, and the relaunch line (or why
+    it waits on the owner). `unknown`: a web session whose life only get_session knows."""
+    out = []
+    ck = p.get("checkpoint") if isinstance(p.get("checkpoint"), dict) else None
+    if ck and ck.get("sha"):
+        out.append("  last checkpoint `%s` on `%s` (%s, %s)" % (ck["sha"], ck.get("branch") or p.get("branch") or "?",
+                   str(ck.get("at") or "")[:16].replace("T", " "), "pushed" if ck.get("pushed") else "NOT pushed"))
+    cl = checklist_text(p)
+    out.append("  " + (cl or "no checklist on its post (no pieces): the relaunched part reads its branch's commits"))
+    wait = waits_on_owner(pid, p, posts)
+    if wait:
+        out.append("  waits on the owner (%s): do not relaunch; his answer first" % wait)
+        return out
+    out.append("  relaunch%s: `python3 -I .kit/kit.py launch %s --continue`" % (
+        " (once its session is confirmed ended: get_session on the web)" if unknown else "", pid))
+    tr = _transcript_of(str(p.get("session_id") or ""))
+    if tr:
+        out.append("  or here, same machine, its transcript still exists: `claude --resume %s`" % p["session_id"])
+    return out
+
+
 def launch(pid, url=None, token=None, web=None, session_id=None, model=None, reset=False, gate=True, cli=None, post_file=None,
-           take=False, anyway=None):
-    """`kit.py launch <post>`: the one way a part starts (CL13, R7). Writes status in progress, session_id, runner,
+           take=False, anyway=None, cont=False):
+    """`kit.py launch <post>`: the one way a part starts (CL13, CL17, R7). Writes status in progress, session_id, runner,
     launched_at and branch on its post and marks its Trains row running (the local copy; with an attached Artifact
     board, the batch that carries both there), then starts it: CLI, `claude --bg` inside a worktree made from the
     current branch; agy, checks device capacity, prepares or adopts the step branch, and prints `invoke_subagent`;
@@ -6605,7 +6745,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         runner = "claude-web" if str(session_id).startswith("session_") else str(post.get("runner") or "")
     part = str(post.get("part") or pid)
     rel = "docs/prompts/%s.md" % pid
-    branch = str(post.get("branch") or "").strip() if (session_id or take) else ""
+    branch = str(post.get("branch") or "").strip() if (session_id or take or cont) else ""
     branch = branch or _slug(part, 24)
     c = _kit_config()
     name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
@@ -6615,10 +6755,26 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     base = _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "HEAD"
     text = _launch_text(rel)
     me, people = _my_person(url, token)
-    if not session_id and not take:
-        alive = _alive_sessions() if _rule("alive_check", pl) == "claude_agents" else None
+    alive = _alive_sessions() if _rule("alive_check", pl) == "claude_agents" else None
+    if cont and not session_id:                     # CL17: a crashed part continues on its branch, from its post's checklist
+        old = str(post.get("session_id") or "")
+        if old and old in (alive or ()):
+            return dict(out, ok=False, error="%s's session %s still runs: nothing to continue" % (pid, old))
+        wait = waits_on_owner(pid, post)
+        if wait:
+            return dict(out, ok=False, error="%s waits on the owner (%s): answer that, then continue it" % (pid, wait))
+        text += continue_text(post, branch)
+        out["continued"] = True
+    if not session_id and not take and not cont:
         held = step_holder(pid, post, me=me, people=people, alive=alive, saved=_saved_mins(branch))
         if held:
+            post_runner = str(post.get("runner") or "").strip().lower()
+            if post_runner not in LAUNCH_RUNNERS and not isinstance(given, dict):
+                lk = outside_link(pid, url, token)          # CL56: its card's runner gets one link, the post's invite
+                if lk.get("link"):
+                    return dict(out, ok=False, link_for_ai=lk["link"], error="%s is %s's card: give %s this one link (its post, "
+                                "its drop box for files, its result): %s%s" % (pid, post_runner, post_runner, lk["link"],
+                                (" (%s)" % lk["warning"]) if lk.get("warning") else ""))
             return dict(out, ok=False, error="%s is taken: %s. If that session ended or its person agrees, "
                         "`kit.py launch %s --take`" % (pid, held, pid))
     cons = consumers(post.get("consumers"))
@@ -6639,7 +6795,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         if why:
             return dict(out, ok=False, error=why)
         # R6: launched from the top of the queue; out of order only with the reason recorded
-        late = None if (post.get("launched_at") or take) else order_problem(dict(lp, **{pid: post}), pid)
+        late = None if (post.get("launched_at") or take or cont) else order_problem(dict(lp, **{pid: post}), pid)
         if late and not anyway:
             return dict(out, ok=False, error="out of order: %s. (Launch it anyway: `kit.py launch %s --anyway \"<why>\"`, "
                                              "recorded on its post.)" % (late, pid), queue=True)
@@ -6648,8 +6804,11 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         if mode == "create_session":
             if _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + base).returncode != 0 and base != "HEAD":
                 out["warning"] = "branch %s is not pushed: push it first, the new session clones it from GitHub" % base
+            src = base
+            if cont and _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + branch).returncode == 0:
+                src = branch                           # CL17: the new session clones the part's own branch, its work
             out["create_session"] = {"title": ("%s %s" % (part, str(post.get("title") or "")[:60])).strip(),
-                                     "source_url": _github_url(), "source_revision": base, "outcome_branch": branch,
+                                     "source_url": _github_url(), "source_revision": src, "outcome_branch": branch,
                                      "prompt": text}
             sess = "pending: create_session (%s)" % name
             launch_mark(pid, text)                     # CL30: the orchestrator guard lets this create_session out
@@ -6664,7 +6823,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                     ok, why = True, ""
                 if not ok:
                     return dict(out, ok=False, error="device cap: " + why)
-            bstatus, why = _prepare_agy_branch(branch, base, reset=reset, take=take)
+            bstatus, why = _prepare_agy_branch(branch, base, reset=reset, take=take or cont)
             if why:
                 return dict(out, ok=False, error=why)
             out["branch_status"] = bstatus
@@ -6684,7 +6843,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                     ok, why = True, ""
                 if not ok:
                     return dict(out, ok=False, error="device cap: " + why)
-            wt, why = _make_worktree(branch, base, reset=reset)
+            wt, why = _continue_worktree(branch, base) if cont and not reset else _make_worktree(branch, base, reset=reset)
             if why:
                 return dict(out, ok=False, error=why)
             out["worktree"] = wt
@@ -6728,6 +6887,9 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         out["warning"] = "%s already named session %s: if it still runs, two are on this step; stop one" % (pid, had)
     if not session_id or not post.get("launched_at"):
         fields["launched_at"] = now
+    if cont:
+        fields["relaunched"] = {"at": now, "from": str(post.get("session_id") or ""), "n": int((post.get("relaunched") or {}).get("n") or 0) + 1
+                                if isinstance(post.get("relaunched"), dict) else 1}
     out["session_id"] = sess
     if isinstance(given, dict):
         return dict(out, trains=False)
@@ -7135,6 +7297,11 @@ def _train_lines(posts, alive, h="##", board=None):
                 out.extend(_attached_step_detail(board, pid, p, "running" not in who or "not running" in who))
             elif st in ("planned", "in progress") or "progress" in st:
                 out.extend(_step_location_lines(pid, p))
+                if "progress" in st and sess and not sess.startswith("pending"):
+                    if alive is None or sess.startswith("session_"):        # a web session: only get_session knows
+                        out.extend(relaunch_lines(pid, p, posts, unknown=True))
+                    elif sess not in alive:
+                        out.extend(relaunch_lines(pid, p, posts))
         got = found_so_far(posts, t)
         if got:
             out.append("%s# Found so far (do not repeat it; a new step near one says what it does differently)" % h)
@@ -7475,6 +7642,7 @@ COMMANDS = [
     ("read the board", "kit.py session <post>", "the session a post names, and what it left"),
     ("read the board", "kit.py search <words>", "find posts and comments by words"),
     ("read the board", "kit.py queue [--runner R]", "the steps waiting for a runner"),
+    ("launch and finish", "kit.py link <post> [--hours H]", "the one link an outside AI (a runner card, LMArena, another account's app) gets for a post: its invite, scoped to the post: attach files to it (its drop box) and write its result, first (CL56)"),
     ("read the board", "kit.py sections", "which ## sections the owner opens and folds"),
     ("read the board", "kit.py report / doctor [--fix]", "the board's size, columns, oldest question, missing files / full install, hook parity, conflict & sync health"),
     ("sessions", "kit.py permission-mode", "the mode the kit starts Claude Code sessions in: every check off once he accepted it, else auto"),
@@ -7801,14 +7969,16 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
         out.append("Rebuild your task list: one TaskCreate per open step above ([r] too: its task completed starts its review), subject \"<PART> <title>\", metadata "
                    "{\"board\": \"<id>\", \"train\": \"<train>\", \"part\": \"<PART>\"} (board: this board's id \"%s\", or the "
                    "attached board's id from its heading; the existing post is adopted, not duplicated); TaskUpdate "
-                   "in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it (an attached "
-                   "board's step from its own clone, with its relaunch line) or ask the owner."
+                   "in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it with its relaunch "
+                   "line (`kit.py launch <post> --continue`; an attached board's step from its own clone), within the device "
+                   "cap, without asking; only a step that waits on the owner waits for his answer (CL17)."
                    % (_repo_id(_kit_config().get("project") or os.path.basename(ROOT))))
     else:
         out.append("Rebuild your task list: one TaskCreate per open step above ([r] too: its task completed starts its review), subject \"<PART> <title>\", metadata "
                    "{\"train\": \"<train>\", \"part\": \"<PART>\"} (the existing post is adopted, not duplicated); "
-                   "TaskUpdate in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it or "
-                   "ask the owner.")
+                   "TaskUpdate in_progress for each [~]. A step whose session is \"not running\" and not done: relaunch it with its "
+                   "relaunch line (`kit.py launch <post> --continue`), within the device cap, without asking; only a step that "
+                   "waits on the owner waits for his answer (CL17).")
     return "\n".join(out) + "\n"
 
 
@@ -8987,7 +9157,7 @@ def autonomy_lines():
 def _board_answers():
     """The board server of this project answers (a part's worktree has no database of its own)."""
     try:
-        return bool(_board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=1", token=_resolve_board_token(None)))
+        return bool(_board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")), "db/posts?limit=1", token=_resolve_board_token(None)))
     except Exception:
         return False
 
@@ -9184,9 +9354,29 @@ _CK_SECRETS = (".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*
 _CK_MAX_FILE = 2 * 1024 * 1024
 
 
-def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=False):
+def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=False, stamp=False, url=None, token=None):
     """CL44 (item 10 / CL17): commit in-progress work on the step's branch (never on the trunk or detached HEAD)
-    so a session limit or crash never leaves work only uncommitted in a worktree."""
+    so a session limit or crash never leaves work only uncommitted in a worktree. `stamp` (CL17, `kit.py checkpoint
+    <post>`): the post then carries `checkpoint` {branch, sha, at, pushed}, what a relaunched part continues from."""
+    res = _checkpoint_commit(post=post, message=message, push=push, on_step_branch=on_step_branch)
+    if stamp and post and res.get("ok") and res.get("branch"):
+        sha = res.get("sha") or _git_run("rev-parse", "--short", "HEAD").stdout.strip()
+        pushed = res.get("pushed")
+        if pushed is None and not res.get("committed"):          # a clean tree: is this commit on origin already?
+            pushed = _git_run("branch", "-r", "--contains", "HEAD", "--list", "origin/" + res["branch"]).stdout.strip() != ""
+        ck = {"branch": res["branch"], "sha": sha, "at": _now_z(), "pushed": bool(pushed)}
+        fields = {"checkpoint": ck, "branch": res["branch"], "updated_at": ck["at"]}
+        try:
+            done = _local_update(url or local_board_url(), _resolve_board_token(token), "posts", post, fields) is not None
+        except Exception:
+            done = False
+        if not done:
+            done = _board_write("update", "posts", post, fields)
+        res = dict(res, stamped=ck if done else False)
+    return res
+
+
+def _checkpoint_commit(post=None, message=None, push=False, on_step_branch=False):
     cfg = _kit_config()
     k = cfg.get("kit") or {}
     trunk = str(k.get("main_branch") or "main")
@@ -10047,6 +10237,7 @@ def main(argv=None):
     s.add_argument("--no-board", action="store_true", help="post nothing: open awaits points and issues stay in memory")
     s = sp.add_parser("report"); s.add_argument("--db", default=None)
     s = sp.add_parser("portfolio"); s.add_argument("--config", dest="portfolio_config", default=None); s.add_argument("--roots", nargs="*", default=[])
+    s = sp.add_parser("link", help="CL56: the one link an outside AI gets for a post (its invite: drop box, result)"); s.add_argument("post"); s.add_argument("--hours", type=float, default=72); s.add_argument("--url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("queue"); s.add_argument("--runner", default=None); s.add_argument("--for", dest="for_owner", default=None); s.add_argument("--db", default=None); s.add_argument("--unblocked", action="store_true", help="Exclude cards with unresolved blocked_by dependencies")
     s = sp.add_parser("search"); s.add_argument("query"); s.add_argument("--db", default=None); s.add_argument("--limit", type=int, default=25)
     s = sp.add_parser("train"); s.add_argument("target"); s.add_argument("--zoom", default=None); s.add_argument("--db", default=None); s.add_argument("--json", dest="as_json", action="store_true")
@@ -10061,9 +10252,12 @@ def main(argv=None):
     s = sp.add_parser("landing", help="JSON: which steps may reach the trunk"); s.add_argument("--post", default=None)
     s.add_argument("--branch", default=None); s.add_argument("--mark", default=None, help="landed at this commit"); s.add_argument("--db", default=None)
     sp.add_parser("save", help="the work in progress to wip/<branch> now")
-    s = sp.add_parser("checkpoint", help="commit in-progress work on the step's branch (never on trunk)")
+    s = sp.add_parser("checkpoint", help="commit in-progress work on the step's branch (never on trunk); with the post: "
+                      "pushed, and the post stamped with branch, commit and time (CL17)")
+    s.add_argument("post_id", nargs="?", default=None, help="the step's post: push and stamp it (CL17)")
     s.add_argument("--post", default=None); s.add_argument("-m", "--message", default=None)
-    s.add_argument("--push", action="store_true"); s.add_argument("--quiet", action="store_true")
+    s.add_argument("--push", action="store_true"); s.add_argument("--no-push", action="store_true")
+    s.add_argument("--quiet", action="store_true")
     s.add_argument("--on-step-branch", action="store_true")
     sp.add_parser("keep", help="the board here into git: committed and pushed")
     s = sp.add_parser("guide", help="a case of the orchestrator's guide (no case: their list)"); s.add_argument("case", nargs="?", default=None)
@@ -10124,6 +10318,8 @@ def main(argv=None):
     s.add_argument("--model", default=None); s.add_argument("--reset", action="store_true")
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
     s.add_argument("--anyway", default=None, help="R6: launch out of the queue's order; the reason is recorded on the post")
+    s.add_argument("--continue", dest="cont", action="store_true", help="CL17: a crashed part, again on its own branch "
+                   "(its work and checkpoints), told to continue from the checklist in its post")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s.add_argument("--post-file", default=None, help=argparse.SUPPRESS)
     s = sp.add_parser("claim", help="this orchestrator takes a step: its address on the post, the part and its review report to it (CL49)")
@@ -10325,6 +10521,13 @@ def main(argv=None):
     if a.cmd == "portfolio":
         print(portfolio_summary(config_path=a.portfolio_config, roots=a.roots), end="")
         return 0
+    if a.cmd == "link":
+        r = outside_link(a.post, a.url, a.token, hours=a.hours)
+        if r.get("error"):
+            print(r["error"])
+            return 1
+        print(r["link"] + (("\nWarning: " + r["warning"]) if r.get("warning") else ""))
+        return 0
     if a.cmd == "queue":
         if not a.runner and not a.for_owner:          # R6: the steps, ranked, each place with its why
             posts = _all_posts(a.db)
@@ -10380,7 +10583,8 @@ def main(argv=None):
         print(json.dumps(res, ensure_ascii=False))
         return 1 if res.get("error") else 0
     if a.cmd == "checkpoint":
-        res = checkpoint(post=a.post, message=a.message, push=a.push, quiet=a.quiet, on_step_branch=a.on_step_branch)
+        res = checkpoint(post=a.post_id or a.post, message=a.message, push=(a.push or bool(a.post_id)) and not a.no_push,
+                         quiet=a.quiet, on_step_branch=a.on_step_branch, stamp=bool(a.post_id))
         if not a.quiet:
             print(json.dumps(res, ensure_ascii=False))
         return 0 if res.get("ok") else 1
@@ -10603,7 +10807,7 @@ def main(argv=None):
         return 0 if r.get("ok") else 1
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset,
-                   cli=a.cli, post_file=a.post_file, take=a.take, anyway=a.anyway)
+                   cli=a.cli, post_file=a.post_file, take=a.take, anyway=a.anyway, cont=a.cont)
         print(field_text("launch", "orchestrator"), file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
         return 0 if r.get("ok") else 1
