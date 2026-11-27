@@ -15,7 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FLAGS = {"cli": ["--cli", "claude"], "agy": ["--cli", "agy"], "web": ["--runtime", "claude"],
          "arena": ["--runtime", "arena", "--setup-done"], "generic": ["--runtime", "generic", "--setup-done"]}
-ENV = {"cli": {"CLAUDECODE": "1"}, "agy": {"AGY_PID": "1"}, "web": {"CLAUDECODE": "1", "CLAUDE_CODE_REMOTE": "true"}, "arena": {}, "generic": {}}
+ENV = {"cli": {"CLAUDECODE": "1"}, "agy": {"AGY_PID": "1"}, "web": {"CLAUDECODE": "1", "CLAUDE_CODE_REMOTE": "true"},
+       "arena": {"KIT_EMBED_PREVIEW": "1"}, "generic": {"KIT_PLATFORM": "generic"}}
 AGY = re.compile(r"invoke_subagent|define_subagent|run_command|WaitMsBeforeAsync")
 TRUNK = "work/app-x1"
 
@@ -28,7 +29,7 @@ class NewInstall(unittest.TestCase):
         for b in ("claude", "agy"):
             (self.t / "stub" / b).write_text("#!/bin/sh\necho '[]'\n")
             (self.t / "stub" / b).chmod(0o755)
-        keep = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE", "KIT_", "AGY", "GIT_", "XDG"))}
+        keep = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE", "KIT_", "AGY", "ANTIGRAVITY", "LMARENA", "ARENA_", "GIT_", "XDG"))}
         path = ":".join(p for p in keep["PATH"].split(":") if not any(os.path.exists(os.path.join(p, b)) for b in ("claude", "agy")))
         self.base = dict(keep, PATH=path, HOME=str(self.t / "home"), KIT_NO_FUNNEL="1", KIT_USAGE_PUSH="0", KIT_BIN_DIR=str(self.t / "bin"),
                          KIT_BOARD_URL="http://127.0.0.1:9", GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
