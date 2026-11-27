@@ -812,8 +812,13 @@ details.md-sec:not([open]) > summary.md-sec-h > .md-sec-peek { display: block; }
 .sheet-in { max-width: 860px; padding-bottom: 96px !important; }
 .sheet .body { max-width: none !important; width: 100%; }
 .tbl { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; margin: 0 0 .9em; border: 1px solid var(--line); border-radius: 10px; }
-.tbl table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: .88rem; font-variant-numeric: tabular-nums; }
+.tbl table { border-collapse: collapse; width: auto; min-width: 100%; font-size: .88rem; font-variant-numeric: tabular-nums; }
 .tbl th, .tbl td { border: 0; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; white-space: nowrap; word-break: normal; overflow-wrap: normal; }
+/* CL57 (CR-cl36: "the table's now column is cut at the phone width"): a body cell wraps between words, so a table fits
+   the phone when its words can; headers stay on one line, nothing breaks mid-word, and a table that still cannot fit
+   scrolls sideways in its own box */
+.tbl td { white-space: normal; min-width: 5.5em; }
+.tbl td code { white-space: nowrap; }
 .tbl th:last-child, .tbl td:last-child { border-right: 0; }
 .tbl tr:last-child td { border-bottom: 0; }
 .sheet h2 { font-weight: 800; letter-spacing: -0.02em; line-height: 1.24; }
@@ -1508,18 +1513,36 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
     return typeof window._kitAssetUrl === "function" ? window._kitAssetUrl(src) : src;
   }
   function inline(s) {
-    var pics = [];
-    s = str(s).split(/(`[^`]+`)/).map(function (part, k) {   /* a picture written in a code span stays text */
-      return k % 2 ? part : part.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, function (all, alt, src) {
+    function kitCodeSpans(s) {   /* CL57: a code span opens with a run of N backticks and closes at the next run of exactly N
+         (so ```` ```mermaid ```` is the code ```mermaid); one space inside each end is dropped; an unclosed run stays text */
+      var parts = [], re = /`+/g, m, last = 0;
+      while ((m = re.exec(s)) !== null) {
+        var n = m[0].length, re2 = /`+/g, m2, close = -1;
+        re2.lastIndex = m.index + n;
+        while ((m2 = re2.exec(s)) !== null) { if (m2[0].length === n) { close = m2.index; break; } }
+        if (close < 0) continue;
+        var c = s.slice(m.index + n, close);
+        if (/^ [\s\S]* $/.test(c) && /[^ ]/.test(c)) c = c.slice(1, -1);
+        parts.push({ t: s.slice(last, m.index) }, { code: c });
+        last = close + n; re.lastIndex = last;
+      }
+      parts.push({ t: s.slice(last) });
+      return parts;
+    }
+    var pics = [], codes = [];
+    s = kitCodeSpans(str(s)).map(function (seg) {   /* a picture written in a code span stays text */
+      if (seg.code !== undefined) { codes.push("<code>" + esc(seg.code) + "</code>"); return "\u0002" + (codes.length - 1) + "\u0002"; }
+      return seg.t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, function (all, alt, src) {
         if (/^\s*javascript:/i.test(src)) return all;
         pics.push('<img class="md-img" src="' + esc(picUrl(src)) + '" alt="' + esc(alt) + '" loading="lazy">');
         return "\u0001" + (pics.length - 1) + "\u0001";
       });
     }).join("");
-    return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    return esc(s).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
       .replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/_blob\/)[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
       .replace(/(^|[\s(])(https?:\/\/[^\s<)]+[^\s<).,;:])/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
-      .replace(/\u0001(\d+)\u0001/g, function (_, n) { return pics[Number(n)] || ""; });
+      .replace(/\u0001(\d+)\u0001/g, function (_, n) { return pics[Number(n)] || ""; })
+      .replace(/\u0002(\d+)\u0002/g, function (_, n) { return codes[Number(n)] || ""; });
   }
   /* Collapsible sections. Each ##/###/#### heading folds what follows it, up to the next heading of its level or
      higher; the text above the first heading (the lead: what he must know) always shows. Open or folded, in order:
