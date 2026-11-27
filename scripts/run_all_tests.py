@@ -616,10 +616,17 @@ def run(todo, memo, files, jobs, keep_going, env, out=print, listen=True, on_don
 # room, each with a project copy and its own board token. The kit's own prefixes are made only by its tests and its
 # runner; Python's bare mkdtemp() ("tmp" and 8 letters) is anyone's, so such a folder counts only when it holds what a
 # test makes there (a project copy, a board, a git repository).
-TEST_PREFIXES = ("kit-", "kitmap-", "cl30-", "cl48-", "playwright-artifacts-", "playwright_chromiumdev_profile-")
+TEST_PREFIXES = ("kit-tests-", "kit-test-bin-", "kit-test-jobs-", "kit-xdg-", "kit-cl11-", "kit-cl36-", "kit-body-", "kit-ux-",
+                 "kit-page-", "kit-demo-", "kit-new-", "kit-back-", "kit-cheap-", "kit-compact-", "kit-mirror-", "kit-sync-db-",
+                 "kit-update-board-", "kit-usage-index-", "kitmap-", "cl30-", "cl48-",
+                 # the throwaway copies the kit's own commands make (done's breaks, land, pair, a wip save): gone when old
+                 "kit-breaks-", "kit-land-", "kit-pair-", "kit-wip-",
+                 "playwright-artifacts-", "playwright_chromiumdev_profile-")
 TEST_MARKS = (".kit", ".git", ".board", ".claude", "board_data", "board.db", "AGENTS.md", "CLAUDE.md", "repo", "proj",
               "project", "home", "kit")
 BARE_TMP = re.compile(r"^tmp[a-z0-9_]{8}$")
+# what the kit's hooks keep in the temp folder for a live session (any session working now writes them): not a test's
+SESSION_STATE = ("kit-orch-role-", "kit-handover-", "kit-memory-jit-", "kit-ledger-")
 
 
 def newest(path):
@@ -772,6 +779,9 @@ def main(argv=None):
     os.makedirs(env["KIT_JOBS_DIR"])
     real_bin = os.path.expanduser("~/.local/bin")
     before = bin_snapshot(real_bin)
+    # CL52: what a suite writes straight into the computer's temp folder, past its own TMPDIR (a path written as /tmp)
+    temp_root = os.path.dirname(work)
+    temp_before = set(os.listdir(temp_root))
     last_push = [0.0]
 
     def record(name, ok, dt):
@@ -799,6 +809,11 @@ def main(argv=None):
     changed = bin_changes(before, bin_snapshot(real_bin))
     if changed:
         print("[FAIL] files written to %s by the suites: %s" % (real_bin, ", ".join(changed)))
+    strayed = sorted(n for n in set(os.listdir(temp_root)) - temp_before if (n.startswith(TEST_PREFIXES) or BARE_TMP.match(n)
+                     or re.match(r"^(?:kit|cl\d)", n)) and not n.startswith(SESSION_STATE))
+    if strayed:
+        print("[FAIL] left in %s past the suites' own temp folders: %s" % (temp_root, ", ".join(strayed[:8])))
+        changed = changed + strayed
     failed = [n for n, ok, _ in results if not ok]
     print("=" * 60)
     print("SUMMARY: %d passed, %d failed%s, %d unchanged since they passed%s (%.0f s)" % (

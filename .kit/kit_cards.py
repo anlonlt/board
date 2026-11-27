@@ -25,6 +25,7 @@ import argparse
 import glob
 import json
 import os
+import tempfile
 import re
 import sys
 from datetime import datetime, timezone
@@ -454,8 +455,8 @@ def build(now, board=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--write", default="/tmp/kit-dashboard.json")
-    ap.add_argument("--trains", default="/tmp/kit-trains.json")
+    ap.add_argument("--write", default=os.path.join(tempfile.gettempdir(), "kit-dashboard.json"))   # CL52: TMPDIR, not /tmp
+    ap.add_argument("--trains", default=os.path.join(tempfile.gettempdir(), "kit-trains.json"))
     ap.add_argument("--board", help="posts saved by ArtifactData list (DIR/posts/*.json) or the board's git copy")
     ap.add_argument("--now", default=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
     ap.add_argument("--force", action="store_true", help="allow overwriting a non-empty _dashboard with 0 or placeholder rows")
