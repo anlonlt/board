@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T02:45:12Z",
+ "created_at": "2026-11-27T02:45:17Z",
  "rows": [
   {
    "also": [],
@@ -1187,14 +1187,14 @@
    "also": [],
    "children": [],
    "parent": "P-cli",
-   "part": "CL57",
-   "post": "cl57-the-board-s-flowchart-draws-the-post-s-g",
+   "part": "CL58",
+   "post": "cl58-a-delta-resume-still-shows-the-web-envir",
    "prompt": "",
-   "session": "session_01AE1HGgdMHf6k4dHXTky4HD",
+   "session": "session_01AE1HGhcpK68znY8XoLCUm8",
    "state": "running",
    "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T02:45:12Z"
+ "updated_at": "2026-11-27T02:45:17Z"
 }

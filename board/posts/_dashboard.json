@@ -1,20 +1,20 @@
 {
  "column": "info",
- "created_at": "2026-11-27T02:45:12Z",
+ "created_at": "2026-11-27T02:45:17Z",
  "rows": [
   {
    "at": 0,
    "key": "A",
    "name": "Cli",
-   "note": "Next: The board's flowchart draws the post's graph: each node once, every edge",
-   "post": "cl57-the-board-s-flowchart-draws-the-post-s-g",
+   "note": "Next: A delta resume still shows the web environment: CL39's test green with a session id",
+   "post": "cl58-a-delta-resume-still-shows-the-web-envir",
    "state": "running",
    "steps": [
-    "The board's flowchart draws the post's graph: each node once, every edge"
+    "A delta resume still shows the web environment: CL39's test green with a session id"
    ],
    "train": "P-cli"
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T02:45:12Z"
+ "updated_at": "2026-11-27T02:45:17Z"
 }
