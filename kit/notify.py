@@ -1,7 +1,8 @@
 """Phone notifications (ntfy or any webhook), one rule for both boards: the local server (board_server.py) and the
 Artifact (hooks/kit_notify.py, in the session that writes there) notify the same topic through this file.
 
-- What: a post that ENTERS To do or Waiting on you; and, unless autonomy is full_auto, a session's answer (`reply_to`).
+- What: a post that ENTERS To do or Waiting on you; a session's answer (`reply_to`); and a non-owner message in
+  Ask the orchestrator (`_orchestrator`), unless `kit.notify_replies` is false.
   Not a post already there, not a copy that arrives from the other board, not the owner's own post, not a part's "done".
 - Once: both boards give the notification the same ntfy id (X-Sequence-ID), so a second one replaces the first; on one
   machine .kit/run/notified.json stops it, and a post written over an hour ago is never announced by a late copy.
@@ -22,9 +23,11 @@ import urllib.request
 from datetime import datetime, timezone
 
 TEXT = {"en": {"todo": "To do", "question": "Waiting on you", "post": "A post needs you.", "replied": "%s replied",
-               "answered": "A session answered under a post.", "artifact": "Claude board", "local": "Local board"},
+               "answered": "A session answered under a post.", "messaged": "%s posted in Ask the orchestrator",
+               "orchestrator_msg": "A message in Ask the orchestrator.", "artifact": "Claude board", "local": "Local board"},
         "fr": {"todo": "À faire", "question": "En attente de toi", "post": "Une publication t'attend.", "replied": "%s a répondu",
-               "answered": "Une session a répondu sous une publication.", "artifact": "Tableau Claude", "local": "Tableau local"}}
+               "answered": "Une session a répondu sous une publication.", "messaged": "%s a écrit dans Demander à l'orchestrateur",
+               "orchestrator_msg": "Un message dans Demander à l'orchestrateur.", "artifact": "Tableau Claude", "local": "Tableau local"}}
 COLS = ("todo", "question")
 FRESH_S = 3600
 
@@ -47,7 +50,7 @@ def settings(root, config=None):
     return {"url": topic(root, k), "detail": bool(k.get("notify_detail")), "project": str(c.get("project") or "board"),
             "lang": "fr" if talk.startswith("fr") else "en", "artifact": art, "board_url": board,
             "funnel_url": str(os.environ.get("KIT_FUNNEL_URL") or k.get("funnel_url") or "").rstrip("/"),
-            "replies": level != "full_auto"}
+            "replies": k.get("notify_replies", True) is not False}
 
 
 def topic_file(root):
@@ -144,12 +147,15 @@ def event(cfg, coll, doc_id, d, prev=None):
         body = (str(d.get("title") or doc_id) + "\n" + str(d.get("body") or "")[:240]) if cfg["detail"] else t["post"]
         post, title = doc_id, "%s: %s" % (name, t[col])
     else:
-        if not cfg["replies"] or not d.get("reply_to") or d.get("like") or \
+        post = str(d.get("post_id") or "")
+        is_reply = bool(d.get("reply_to"))
+        is_orch = post == "_orchestrator"
+        if not cfg["replies"] or (not is_reply and not is_orch) or d.get("like") or \
                 str(d.get("from") or "") in ("", "owner", "viewer", "clerk") or _stale(d):
             return None
-        post, col = str(d.get("post_id") or ""), "reply"
-        title = "%s: %s" % (name, t["replied"] % d.get("from"))
-        body = str(d.get("text") or "")[:240] if cfg["detail"] else t["answered"]
+        col = "reply" if is_reply else "message"
+        title = "%s: %s" % (name, (t["replied"] if is_reply else t["messaged"]) % d.get("from"))
+        body = str(d.get("text") or "")[:240] if cfg["detail"] else (t["answered"] if is_reply else t["orchestrator_msg"])
     seq = "kit" + hashlib.sha256("|".join((slug(cfg["project"]) if own else repo, coll, doc_id, str(col))).encode()).hexdigest()[:24]
     return {"kind": col, "post": post, "repo": repo, "seq": seq, "title": title, "body": body}
 
