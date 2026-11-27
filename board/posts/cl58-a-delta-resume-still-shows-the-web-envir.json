@@ -27,6 +27,8 @@
  "handoff": "Another orchestrator section that has to show in a delta goes in RESUME_SECTIONS in the kit script, with its maker in the sections helper. CL39's K2 Harmonize run is next on that train.",
  "kept_on_train": "fix asked by CL39's review redirect on this train",
  "kind": "bug",
+ "landed": "001d44d14e4bcd236e95d61a9e646ff7136ca291",
+ "landed_at": "2026-11-27T03:06:31Z",
  "launched_at": "2026-11-27T02:44:31Z",
  "not_checked": [
   "CL39's Harmonize hand-over run (K2) and the real question post or environment id record: still undone, outside this step",
@@ -50,7 +52,9 @@
   "output": "PASS. resume 1: full (64 lines, 'Web environment ... not created yet'); resume 2: 'Resume: nothing new since 02:54 UTC'; web-env: 'environment env_01RpTest recorded in .kit/config.json'; resume 3: '## Web environment (several repos) / Web environment env_01RpTest holds anlonlt/harmonize, anlonlt/board'. Without KIT_STALE_OK resume exits 3 (STALE: Artifact copy never loaded). Harmonize tests: 19 scripts pass; test_next_clerk fails only on commit 759281a4 missing from the shallow clone.",
   "project": "anlonlt/harmonize"
  },
+ "review": "continue",
  "review_commit": "7eb544598c717ececf76eb313dd2d180d1e6a9e1",
+ "review_id": "CR-cl58-a-delta-resume-still-shows-the-web-envir",
  "review_orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
  "review_orchestrator_device": "web",
  "review_orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
@@ -85,7 +89,7 @@
  "task": "CL39's test is green again: a delta resume still shows what the orchestrator must act on.\n\nCR-cl39 (redirect, 2026-11-27): `tests.test_cl39_web_multi.test_resume_has_no_add_repo_line` fails on main in any session with a session id: M5's delta resume (`_resume_snapshot`, scripts/kit.py) holds posts, comments and sessions only, so recording a web environment id prints \"nothing new\" and hides the Web environment section.\n\n1. The resume snapshot covers every section an orchestrator acts on (the web environment record at least; list the others checked), so a change in one shows in the delta.\n2. The test runs with and without a session id (both must pass); it fails on today's main with one set.\n3. Run the full suite with CLAUDE_CODE_SESSION_ID set, as a web session has it, and say what else that turns red.\n",
  "title": "A delta resume still shows the web environment: CL39's test green with a session id",
  "train": "cli",
- "updated_at": "2026-11-27T02:56:22Z",
+ "updated_at": "2026-11-27T03:06:31Z",
  "verdict": "Fixed: the short re-read now compares the web environment and three other orchestrator sections, and CL39's test passes with and without a session id; the whole suite is green with one set.",
  "working_by": ""
 }

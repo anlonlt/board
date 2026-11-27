@@ -1,12 +1,19 @@
 {
  "body": "Readers beyond code, so the map fits any project: Power BI apps made in a browser, a thesis, a folder of documents. Waits on M1.\n\n1. A Power BI reader, in scripts/kit_map.py: from a project saved as PBIP (model files and report files), things are sources, tables, relationships, measures, pages, visuals, apps; links are a visual using a measure, a measure reading a table, a table loading a source; flags are a visual using a missing measure, an unused measure, an ambiguous or missing relationship, a source on a personal file. When the project lives only in the service, say what is needed (PBIP export or the service's API) instead of mapping nothing.\n2. A documents reader (Markdown, LaTeX, Word): sections, claims with citations, figures, data and the script that made each figure, research questions; flags are a citation missing from the bibliography, a figure never referenced, a question no chapter answers, a figure whose script is gone.\n3. A generic reader for any folder: headings, links, references, sizes; a thing too big to read whole is flagged.\n4. Small fixtures for each, in tests/test_map_readers.py with scripts/kit_map.py.\n\nBars: per fixture, the flags found out of the faults planted in it.\n",
+ "branch": "m4",
  "column": "info",
  "created_at": "2026-11-26T19:40:29Z",
+ "differs": "M4: builds on M1 (a map generated from code); M1 reads code only, M4 adds readers for Power BI, documents and any folder to the same map.",
  "from": "orchestrator",
+ "launched_at": "2026-11-27T03:09:03Z",
+ "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "orchestrator_device": "web",
+ "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
  "part": "M4",
  "planned_by": "orchestrator",
  "priority": 3,
- "status": "planned",
+ "session_id": "session_01AE1HGkQsonWYxAQwEs9trU",
+ "status": "in progress",
  "subtasks": [
   {
    "files": [
@@ -43,5 +50,6 @@
  "task": "Readers beyond code, so the map fits any project: Power BI apps made in a browser, a thesis, a folder of documents. Waits on M1.\n\n1. A Power BI reader, in scripts/kit_map.py: from a project saved as PBIP (model files and report files), things are sources, tables, relationships, measures, pages, visuals, apps; links are a visual using a measure, a measure reading a table, a table loading a source; flags are a visual using a missing measure, an unused measure, an ambiguous or missing relationship, a source on a personal file. When the project lives only in the service, say what is needed (PBIP export or the service's API) instead of mapping nothing.\n2. A documents reader (Markdown, LaTeX, Word): sections, claims with citations, figures, data and the script that made each figure, research questions; flags are a citation missing from the bibliography, a figure never referenced, a question no chapter answers, a figure whose script is gone.\n3. A generic reader for any folder: headings, links, references, sizes; a thing too big to read whole is flagged.\n4. Small fixtures for each, in tests/test_map_readers.py with scripts/kit_map.py.\n\nBars: per fixture, the flags found out of the faults planted in it.\n",
  "title": "Map readers beyond code: Power BI, documents, any folder",
  "train": "memory",
- "updated_at": "2026-11-26T22:44:52Z"
+ "updated_at": "2026-11-27T03:09:25Z",
+ "working_by": "owner"
 }
