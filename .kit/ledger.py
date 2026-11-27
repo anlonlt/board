@@ -43,7 +43,7 @@ except ImportError:      # Windows
     fcntl = None
     import msvcrt
 
-KINDS = ("observation", "rule", "decision", "principle", "lesson", "field")
+KINDS = ("observation", "rule", "decision", "principle", "lesson", "field", "fix")
 MOMENTS = ("ask", "report", "launch", "review")
 STATUSES = ("active", "proposed", "subsumed", "replaced", "archived", "dropped")
 LIVE = ("active", "proposed")
@@ -198,6 +198,7 @@ def parse_ledger(text, source=""):
                 "opens": "",
                 "not_for": "",
                 "broke": "",
+                "design": "",
                 "created_at": "",
                 "_file": source,
             }
@@ -236,7 +237,7 @@ def render_ledger(entries):
             out.append("enforced_by: %s" % e["enforced_by"])
         if e.get("theme"):
             out.append("theme: %s" % e["theme"])
-        for k in ("quote", "source", "because", "rejected", "opens", "not_for", "broke", "confirmed_by"):
+        for k in ("quote", "source", "because", "rejected", "opens", "not_for", "broke", "design", "confirmed_by"):
             if not e.get(k):
                 continue
             if k not in MULTILINE:
@@ -325,7 +326,7 @@ def find_conflicts(entries, summary, scope, theme=""):
     kw = _keywords(summary)
     conflicts = []
     for e in entries:
-        if e.get("status") != "active":
+        if e.get("status") != "active" or e.get("kind") == "fix":      # a fix is a count, never a rule to conflict with
             continue
         if not _scopes_overlap(e.get("scope"), scope):
             continue
@@ -368,7 +369,7 @@ def _observe(memory_dir, summary, quote, source, scope, theme, kind, enforced_by
     entries = load_entries(memory_dir)
     scopes = _norm_scopes(scope)
     conflicts = find_conflicts(entries, summary, scopes, theme=theme.strip().lower())
-    prefix = {"observation": "O", "rule": "R", "decision": "D", "principle": "P", "lesson": "L"}[kind]
+    prefix = {"observation": "O", "rule": "R", "decision": "D", "principle": "P", "lesson": "L", "fix": "F"}[kind]
     eid = entry_id or _next_id(entries, prefix)
     if any(e["id"] == eid for e in entries):
         return {"error": "entry %s already exists" % eid}
@@ -783,7 +784,7 @@ def for_files(memory_dir, file_paths, kit_root=None, role=None, train=None):
         groups = [g for g in scope_groups(e.get("scope")) if _is_files_group(g)]
         if groups and _matches_scope({"scope": " | ".join(", ".join(g) for g in groups)}, role, train=train, files=file_paths):
             hits.append(e)
-    hits.sort(key=lambda x: (-scope_priority(x.get("scope")), x["id"]))
+    hits.sort(key=lambda x: (x.get("kind") != "decision", -scope_priority(x.get("scope")), x["id"]))   # M10: his decisions first
     return hits
 
 
@@ -810,7 +811,7 @@ def for_resume(memory_dir, role, train=None, files=None, kit_root=None, skip_fil
             if role == "orchestrator":
                 proposed.append(e)
             continue
-        if st != "active" or e.get("kind") == "field":
+        if st != "active" or e.get("kind") in ("field", "fix"):
             continue
         if is_hook_enforced(e):
             hook_count += 1
@@ -1108,7 +1109,7 @@ def entry_items(entries):
     """Live ledger entries as the generic items the checks read: {id, text, files, theme, source, confirmed}."""
     out = []
     for e in entries:
-        if e.get("status") not in LIVE or e.get("kind") == "field":
+        if e.get("status") not in LIVE or e.get("kind") in ("field", "fix"):
             continue
         files = [s.split(":", 1)[1].strip() for g in scope_groups(e.get("scope")) for s in g if s.lower().startswith("files:")]
         out.append({"id": e["id"], "text": e.get("summary", ""), "files": files, "theme": e.get("theme", ""),
@@ -1572,3 +1573,181 @@ def propose_check(root, title, text, files=()):
         if hits:
             return "code:%s" % os.path.relpath(hits[0], root)
     return ""
+
+
+# -- M10: a kind of bug fixed three times, a rule the owner says twice, a decision of his: each becomes a check
+FIX_RAISE = 3           # the third fix of one kind is a design question, never a fourth patch
+RULE_RAISE = 2          # the owner's second statement of one rule: nothing enforces it
+FIX_TRAILER = re.compile(r"(?mi)^fix-kind\s*:\s*(.+?)\s*$")
+SAYS_FIX = re.compile(r"(?i)^(?:fix(?:es|ed)?\b|[\w-]+\s*:\s*fix(?:es|ed)?\b|.*\bfix(?:es|ed)?\s+(?:a|the)\s+(?:bug|regression|leak)\b)")
+
+
+def kind_key(kind):
+    """The theme a kind is counted under: lower case, single spaces, no trailing s ('platform leaks' = 'platform leak')."""
+    k = re.sub(r"\s+", " ", str(kind or "").strip().lower()).strip(" .:;")
+    return re.sub(r"(?<=[a-z]{3})s$", "", k)
+
+
+def record_fix(memory_dir, kind, summary, source, quote="", scope="project"):
+    """One fix of one kind (`kit.py done` for a step that fixes a bug, a commit with a `Fix-kind:` line, or the seed).
+    Its source (a post id, a commit) records it once: a second call with the same kind and source changes nothing."""
+    th = kind_key(kind)
+    if not th:
+        return {"error": "a fix names its kind: a short theme (platform leak, silent error, two copies out of sync)"}
+    src = _flat(source)
+    if not src:
+        return {"error": "a fix names its source: the post or the commit that fixed it"}
+    with _locked(memory_dir):
+        for e in load_entries(memory_dir):
+            if e["kind"] == "fix" and kind_key(e.get("theme")) == th and e.get("source") == src:
+                return {"ok": True, "entry": e, "existing": True}
+        return _observe(memory_dir, summary or src, quote, src, scope, th, "fix", "review", "", "", "", None)
+
+
+def commit_fixes(log_text):
+    """[(sha, kind, subject)] of the commits in `git log --format=%H%x1f%B%x1e` output whose message names the kind of bug
+    it fixes (`Fix-kind: <kind>`), and [(sha, subject)] of those that say they fix one without naming its kind."""
+    named, unnamed = [], []
+    for rec in str(log_text or "").split("\x1e"):
+        if "\x1f" not in rec:
+            continue
+        sha, msg = rec.strip("\n").split("\x1f", 1)
+        subject = (msg.strip().splitlines() or [""])[0].strip()
+        kinds = FIX_TRAILER.findall(msg)
+        if kinds:
+            named += [(sha.strip(), kind_key(k), subject) for k in kinds]
+        elif SAYS_FIX.match(subject):
+            unnamed.append((sha.strip(), subject))
+    return named, unnamed
+
+
+def _checked(e):
+    return bool(check_specs(e.get("enforced_by")))
+
+
+def _theme_checked(entries, th):
+    """The check that enforces a theme: a live rule, decision or principle on it that names one ('' when none)."""
+    for e in entries:
+        if e.get("status") in LIVE and e.get("kind") in ("rule", "decision", "principle", "lesson") and kind_key(e.get("theme")) == th and _checked(e):
+            return e["enforced_by"]
+    return ""
+
+
+def fix_kinds(memory_dir, kit_root=None, threshold=FIX_RAISE):
+    """[{kind, count, ids, sources, raised, design}] per kind of fix: `count` the fixes no design step covers yet
+    (a fix whose `design:` names a step is covered), `raised` when it reaches `threshold`. Most first."""
+    entries = load_entries(memory_dir, kit_root=kit_root)
+    by = {}
+    for e in entries:
+        if e.get("kind") != "fix" or e.get("status") != "active":
+            continue
+        th = kind_key(e.get("theme"))
+        d = by.setdefault(th, {"kind": th, "count": 0, "total": 0, "ids": [], "sources": [], "design": ""})
+        d["total"] += 1
+        if e.get("design"):
+            d["design"] = e["design"]
+            continue
+        d["count"] += 1
+        d["ids"].append(e["id"])
+        d["sources"].append(e.get("source") or e["id"])
+    out = sorted(by.values(), key=lambda d: (-d["count"], d["kind"]))
+    for d in out:
+        d["raised"] = d["count"] >= threshold
+    return out
+
+
+def owner_rules(memory_dir, kit_root=None):
+    """[{theme, count, ids, quotes, check, design, raised, plan}] the owner's rules (kind rule, his words in `quote`),
+    grouped by theme (a rule with none is its own theme). `check`: what enforces the theme, if anything. `plan` (said
+    once, nothing enforces it): plan its check now; `raised` (said `RULE_RAISE` times or more, nothing enforces it): the
+    orchestrator's resume says so first."""
+    entries = load_entries(memory_dir, kit_root=kit_root)
+    by = {}
+    for e in entries:
+        if e.get("kind") != "rule" or e.get("status") not in ("active", "subsumed") or not str(e.get("quote") or "").strip():
+            continue
+        th = kind_key(e.get("theme")) or kind_key(e["summary"])
+        d = by.setdefault(th, {"theme": th, "count": 0, "ids": [], "quotes": [], "check": "", "design": "", "summary": e["summary"]})
+        d["count"] += 1
+        d["ids"].append(e["id"])
+        d["quotes"].append(_flat(e["quote"].splitlines()[0]))
+        d["check"] = d["check"] or (e["enforced_by"] if _checked(e) else "")
+        d["design"] = d["design"] or e.get("design") or ""
+    out = []
+    for th, d in by.items():
+        d["check"] = d["check"] or _theme_checked(entries, th)
+        open_ = not d["check"] and not d["design"]
+        d["raised"] = open_ and d["count"] >= RULE_RAISE
+        d["plan"] = open_ and d["count"] < RULE_RAISE
+        out.append(d)
+    return sorted(out, key=lambda d: (-d["count"], d["theme"]))
+
+
+def decisions(memory_dir, kit_root=None):
+    """[entry] the owner's live decisions, each with `check` (what enforces it, '' when nothing does) and `files`."""
+    out = []
+    for e in load_entries(memory_dir, kit_root=kit_root):
+        if e.get("kind") != "decision" or e.get("status") != "active":
+            continue
+        files = [s.split(":", 1)[1].strip() for g in scope_groups(e.get("scope")) for s in g if s.lower().startswith("files:")]
+        out.append(dict(e, check=e["enforced_by"] if _checked(e) else "", files=files))
+    return out
+
+
+def decisions_for_files(memory_dir, paths, kit_root=None):
+    """The live decisions whose `files:` scope covers one of `paths` (what a step that changed them must not break)."""
+    return [d for d in decisions(memory_dir, kit_root=kit_root)
+            if d["files"] and any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(os.path.basename(f), g) for g in d["files"] for f in paths)]
+
+
+def mark_designed(memory_dir, theme, post):
+    """A design step is planned for a kind (or a check step for a rule): its open fixes and rules name it, so the kind
+    stops being raised until three new fixes (or a new statement) come without one."""
+    th = kind_key(theme)
+    if not th or not str(post or "").strip():
+        return {"error": "design needs the kind (or the rule's theme) and the post of the step planned for it"}
+    with _locked(memory_dir):
+        entries = load_entries(memory_dir)
+        hit = []
+        for e in entries:
+            if e.get("_file") != ledger_path(memory_dir) or e.get("status") not in ("active", "subsumed") or e.get("design"):
+                continue
+            if e["kind"] == "fix" and kind_key(e.get("theme")) == th or \
+               e["kind"] == "rule" and (kind_key(e.get("theme")) or kind_key(e["summary"])) == th:
+                e["design"] = str(post).strip()
+                hit.append(e["id"])
+        if not hit:
+            return {"error": "no open fix or rule of kind %r (`kit.py ledger kinds`)" % th}
+        save_entries(memory_dir, [e for e in entries if e.get("_file") == ledger_path(memory_dir)])
+        return {"ok": True, "theme": th, "post": str(post).strip(), "ids": hit}
+
+
+def design_task(kind):
+    """The task of the design step for a kind raised by `fix_kinds` (`kit.py ledger design`)."""
+    return ("Fixed %d times, the same kind of bug: %s (%s). A fourth patch is refused: find what all of them share, and "
+            "make the change that makes this kind impossible (a check that fails on it: a test, a hook, a refusal), then "
+            "record it: `kit.py ledger observe --kind rule --theme \"%s\" --enforced-by <check> ...`."
+            % (kind["count"], kind["kind"], ", ".join(kind["sources"]), kind["kind"]))
+
+
+def alarm_lines(memory_dir, kit_root=None):
+    """(first, then) for the orchestrator's resume: `first` the owner's rules said twice that nothing enforces and the
+    kinds of fixes that reached three, said before anything else; `then` his rules said once with no check yet, and his
+    decisions with none (one line each). Empty lists when the ledger has nothing to say."""
+    first, then = [], []
+    for r in owner_rules(memory_dir, kit_root=kit_root):
+        if r["raised"]:
+            first.append("- The owner said it %d times and nothing enforces it: \"%s\" (%s). Plan a step that makes it a check "
+                         "(a hook, a refusal, a test), never another memory line; then `kit.py ledger design \"%s\" --post <step>`."
+                         % (r["count"], min(r["quotes"], key=len)[:140], ", ".join(r["ids"]), r["theme"]))
+        elif r["plan"]:
+            then.append("- His rule, said once, has no check yet: \"%s\" (%s): plan its check now (`kit.py ledger design \"%s\" --post <step>`)."
+                        % (r["quotes"][-1][:140], r["ids"][0], r["theme"]))
+    for k in fix_kinds(memory_dir, kit_root=kit_root):
+        if k["raised"]:
+            first.append("- Fixed %d times, one kind of bug: %s (%s): plan a design step, not a fourth patch: `kit.py ledger design \"%s\" --train <train>`."
+                         % (k["count"], k["kind"], ", ".join(k["sources"])[:200], k["kind"]))
+    for d in decisions(memory_dir, kit_root=kit_root):
+        if not d["check"] and not d.get("design"):
+            then.append("- His decision %s has no check: %s: give it one (`--enforced-by test:...|hook:...|refusal:...`)." % (d["id"], d["summary"][:140]))
+    return first, then
