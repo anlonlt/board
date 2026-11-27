@@ -14,3 +14,6 @@ CR-cl36 (redirect, 2026-11-27): on CL36's own post at 390 px, `renderMermaidBloc
 
 ## What this step answers (the owner's words, or a review's)
 - comment `CR-cl36-a-part-s-result-lives-in-its-post-post-b`: read it with `python3 -I .kit/board_cli.py get comments CR-cl36-a-part-s-result-lives-in-its-post-post-b --out-dir /tmp/src`
+
+## What this does differently
+CL57: builds on CL36, which made post bodies render mermaid at all; CL57 makes the renderer draw the graph itself (each node once, every edge, picture labels), tested on CL36's own post.

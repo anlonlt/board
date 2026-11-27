@@ -13,3 +13,6 @@ CR-cl39 (redirect, 2026-11-27): `tests.test_cl39_web_multi.test_resume_has_no_ad
 
 ## What this step answers (the owner's words, or a review's)
 - comment `CR-cl39-install-for-several-repos-on-the-web-one`: read it with `python3 -I .kit/board_cli.py get comments CR-cl39-install-for-several-repos-on-the-web-one --out-dir /tmp/src`
+
+## What this does differently
+CL58: builds on CL39 (web environment record in resume) and M5 (delta resume); neither saw the other: CL58 adds the environment record to M5's snapshot so the delta shows it.
