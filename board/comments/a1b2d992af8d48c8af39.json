@@ -1,0 +1,12 @@
+{
+ "created_at": "2026-11-27T07:25:20.903Z",
+ "delivered": true,
+ "delivered_at": "2026-11-27T07:25:21.098Z",
+ "delivery_error": "",
+ "discussion": "orch-agy-takeover-20261127072214",
+ "from": "owner",
+ "post_id": "_orchestrator",
+ "read": false,
+ "text": "fix bin board (why did it change to a worktree ?) and launch R4, then a common review of R7 and R4 together",
+ "thread_id": "thr_01f65ae55209"
+}
