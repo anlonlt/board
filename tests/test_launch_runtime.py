@@ -27,7 +27,8 @@ from test_handoff import ROOT, TOKEN  # noqa: E402
 
 AGY_CONFIG = {"project": "Harmonize", "board_url": "http://127.0.0.1:8765",
               "kit": {"runtime": "agy", "cli": "agy", "review": {"auto": "all", "train_every": 0}}}
-LAUNCH_ENV = ("CLAUDE_CODE_REMOTE", "KIT_CLI", "KIT_NO_LAUNCH", "CLAUDECODE", "CLAUDE_PID", "CLAUDE_CODE_SESSION_ID",
+# CL71: every variable _platform() reads, or a web container (CLAUDE_CODE_REMOTE_SESSION_ID) turns "not on the web" into web
+LAUNCH_ENV = ("CLAUDE_CODE_REMOTE", "CLAUDE_CODE_REMOTE_SESSION_ID", "KIT_PLATFORM", "CLAUDE_PROJECT_DIR", "KIT_CLI", "KIT_NO_LAUNCH", "CLAUDECODE", "CLAUDE_PID", "CLAUDE_CODE_SESSION_ID",
               "CLAUDE_CODE_ENTRYPOINT", "AGY_PID")
 
 
@@ -104,6 +105,7 @@ class Runtime(Base):
         self.assertFalse((self.tmp / "agy.log").exists())
 
     def test_review_runs_agy_where_agy_runs(self):
+        os.environ["AGY_PID"] = "1"      # CL71: where agy runs, said; not left to the parent processes (claude in a web container)
         rc, msg = self.review(tool_dir(self.tmp, "agy", "claude"))
         self.assertEqual(rc, 0, msg)
         self.assertIn("-p", self.wait_log("agy").splitlines())
