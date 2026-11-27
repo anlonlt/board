@@ -185,6 +185,20 @@
     "confirmed": null
    },
    "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "git:generated-out-of-git",
+   "kind": "config",
+   "for": "CL71: the generated manifest and the Artifact's files map are not in git (ignored; install untracks them; readers rebuild them)",
+   "files": [
+    ".gitignore",
+    "kit/kit_manifest.py"
+   ],
+   "check": {
+    "file": ".gitignore",
+    "contains": ".kit/manifest.json"
+   },
+   "by": "cl71-no-merge-friction-generated-files-are-no"
   }
  ],
  "links": []

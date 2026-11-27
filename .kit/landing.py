@@ -126,8 +126,51 @@ class _Tree:
             pass
 
 
+GENERATED = (".kit/manifest.json", ".kit/artifact-files/")      # CL71: out of git, rebuilt; never merged, never reviewed
+
+
+def is_generated(f):
+    return any(f == g or (g.endswith("/") and f.startswith(g)) for g in GENERATED)
+
+
+def only_generated(sha, cwd=None):
+    """CL71: the commit changes nothing but generated files (a manifest or files map regenerated after the review)."""
+    return all(is_generated(f) for f in out("diff-tree", "--no-commit-id", "--name-only", "-r", "--root", sha, cwd=cwd).split() if f)
+
+
+def _resolve_generated(w, t):
+    """CL71: a merge whose only conflicts are generated files: concluded with them out of git (`git rm --cached`; the
+    trunk's copy of one is never kept tracked: it is generated, rebuilt where it is missing). True when concluded."""
+    files = out("diff", "--name-only", "--diff-filter=U", cwd=w).split()
+    if not files or not all(is_generated(f) for f in files):
+        return False
+    for f in files:
+        git("rm", "-q", "--cached", "--force", "--", f, cwd=w)
+        try:
+            os.remove(os.path.join(w, f))
+        except OSError:
+            pass
+    return git("-c", "user.name=board kit", "-c", "user.email=kit@localhost", "commit", "-q", "--no-edit", cwd=w).returncode == 0
+
+
+def _untrack_generated(w, tip):
+    """CL71: the step's branch keeps the generated files out of git; a trunk that still tracks one (it changed it, so
+    the merge took its side without a conflict) loses it in the same merge commit. True when it changed the commit."""
+    left = [f for f in out("ls-files", "--", *[g.rstrip("/") for g in GENERATED], cwd=w).split()
+            if f and git("cat-file", "-e", "%s:%s" % (tip, f), cwd=w).returncode != 0]
+    if not left:
+        return False
+    git("rm", "-q", "--cached", "--", *left, cwd=w)
+    return git("-c", "user.name=board kit", "-c", "user.email=kit@localhost", "commit", "-q", "--amend", "--no-edit", cwd=w).returncode == 0
+
+
 def land(pid):
     """(exit code, text). Merged on the trunk as it is now, never forced, nothing pushed on a conflict."""
+    pre = steps("--post", pid)                          # its branch, to fetch before the board is read again
+    br0 = next((x.get("branch") or "" for x in (pre or []) if x["post"] == pid), "")
+    _fetch(trunk())                                     # CL71: kit.py landing reads the trunk as fetched now
+    if br0:
+        _fetch(br0)
     got = steps("--post", pid)
     if got is None:
         return 1, "land %s: NOT LANDED: the board cannot be read here" % pid
@@ -135,6 +178,10 @@ def land(pid):
     if s is None:
         return 1, "land %s: no such step on this board" % pid
     if s.get("landed"):
+        if s.get("found"):                              # CL71: its reviewed commit was on the trunk already: marked now
+            return 0, "land %s: already on the trunk at %s (marked landed)%s" % (pid, str(s["landed"])[:9], (
+                "; %d newer commit(s) on %s, not reviewed: %s" % (len(s["newer"]), s.get("branch"), " ".join(c[:9] for c in s["newer"][:5]))
+                if s.get("newer") else ""))
         return 0, "land %s: already on the trunk" % pid
     if s["held"]:
         return 1, "land %s: NOT LANDED: %s" % (pid, s["why"])
@@ -156,6 +203,8 @@ def land(pid):
             return _landed(pid, br, t, tip)
         seen = s.get("seen") or ""
         new = out("rev-list", "--no-merges", tip, "^" + seen, "^origin/" + t).split() if seen and out("cat-file", "-t", seen) else []
+        gen = [c for c in new if only_generated(c)]       # CL71: a manifest regenerated after the review asks for no review
+        new = [c for c in new if c not in gen]
         if seen and not out("cat-file", "-t", seen):
             return 1, "land %s: NOT LANDED: the commit its review read (%s) is not on %s any more" % (pid, seen[:9], br)
         if new:
@@ -164,11 +213,15 @@ def land(pid):
         with _Tree("origin/" + t) as w:
             m = git("-c", "user.name=board kit", "-c", "user.email=kit@localhost", "merge", "-q", "--no-edit", "-m",
                     "Land %s (%s), reviewed" % (s.get("part") or pid, pid), tip, cwd=w)
+            if m.returncode and _resolve_generated(w, t):
+                m = m.__class__(m.args, 0, m.stdout, m.stderr)     # CL71: only generated files conflicted: the trunk's kept
             if m.returncode:
                 files = out("diff", "--name-only", "--diff-filter=U", cwd=w).split()
                 git("merge", "--abort", cwd=w)
                 return 1, "land %s: NOT LANDED: conflict with %s in %s: its part merges origin/%s on %s, reruns its check, pushes, then land again" % (
                     pid, t, " ".join(files) or "?", t, br)
+            if out("rev-parse", "HEAD^2", cwd=w):          # a merge commit of its own (not a fast-forward): amend it
+                _untrack_generated(w, tip)
             head = out("rev-parse", "HEAD", cwd=w)
             cmd = str(s.get("check") or "").strip()
             if cmd and not cmd.lower().startswith("manual:") and head != tip:            # the trunk moved: the two together
@@ -181,7 +234,9 @@ def land(pid):
                         return 1, ("land %s: NOT LANDED: its check passes on %s and fails merged with %s (exit %d): %s" % (pid, br, t, rc, tail))
                     print("land %s: its check cannot run in a bare checkout (it fails on %s alone too): not a reason to hold it" % (pid, br))
             if git("push", "origin", "%s:refs/heads/%s" % (head, t), cwd=w, timeout=300).returncode == 0:
-                return _landed(pid, br, t, head)
+                rc, txt = _landed(pid, br, t, head)
+                return rc, txt + ("; after its review only generated files changed (%s): not a reason to review again"
+                                  % " ".join(c[:9] for c in gen) if gen else "")
         time.sleep(2 + turn)
     return 1, "land %s: NOT LANDED: %s was refused at the push 5 times: run it again" % (pid, t)
 
@@ -228,6 +283,33 @@ def secret_hits(base, target=None, cached=False, cwd=None):
                         break
             n += 1
     return hits
+
+
+MARK_OPEN, MARK_CLOSE = re.compile(r"^<{7}(?: |$)"), re.compile(r"^>{7}(?: |$)")
+
+
+def conflict_hits(base, target=None, cached=False, cwd=None):
+    """CL71: [files] this save would commit with a merge's conflict markers in them: a file still unmerged in the index,
+    or one whose added lines hold both a `<<<<<<<` and a `>>>>>>>` line (the save hook committed the manifest so, twice)."""
+    bad = [x for x in git("diff", "--name-only", "--diff-filter=U", cwd=cwd).stdout.split() if x]
+    args = ["diff", "--no-color", "--no-ext-diff", "--no-renames", "-U0"] + (["--cached", base] if cached else [base, target])
+    f, seen = "", {}
+    for ln in git(*args, cwd=cwd, timeout=120).stdout.splitlines():
+        if ln.startswith("+++ "):
+            f = ln[6:] if ln.startswith("+++ b/") else ""
+        elif ln.startswith("+") and f:
+            if MARK_OPEN.match(ln[1:]):
+                seen.setdefault(f, set()).add("<")
+            elif MARK_CLOSE.match(ln[1:]):
+                seen.setdefault(f, set()).add(">")
+    bad += [x for x, m in sorted(seen.items()) if m == {"<", ">"} and x not in bad]
+    return bad
+
+
+def conflict_text(files):
+    return ("REFUSED: nothing committed: %s still hold%s a merge's conflict markers (<<<<<<< ... >>>>>>>): resolve %s, "
+            "then the next save commits" % (", ".join(files[:6]) + (" and %d more" % (len(files) - 6) if len(files) > 6 else ""),
+                                            "s" if len(files) == 1 else "", "it" if len(files) == 1 else "them"))
 
 
 def hits_text(hits):
@@ -399,6 +481,9 @@ def save():
         tree = out("write-tree", env=env)
     if not tree:
         return 1, "save: FAILED: could not write the tree"
+    marks = conflict_hits(head, tree)                          # CL71: never a commit with conflict markers in it
+    if marks:
+        return said(1, "save: %s" % conflict_text(marks))
     pb = part_branch() if mode != "local" else ""
     if pb:
         hits = secret_hits(push_base(head), tree)             # read here too, whatever kit.py this clone has

@@ -111,6 +111,14 @@ def _installed(f):
         with open(os.path.join(HERE, "manifest.json"), encoding="utf-8") as fh:
             return ".kit/hooks/" + f in json.load(fh)
     except (OSError, ValueError):
+        pass
+    # CL71: the manifest is not in git; a clone without one: tracked by git is the kit's (no rebuild on a hook's path)
+    try:
+        import subprocess
+        r = subprocess.run(["git", "-C", os.path.dirname(HERE), "ls-files", "--error-unmatch", ".kit/hooks/" + f],
+                           capture_output=True, timeout=5)
+        return r.returncode == 0
+    except (OSError, ValueError, Exception):  # noqa: BLE001
         return False
 
 

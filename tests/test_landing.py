@@ -470,7 +470,7 @@ class Told(unittest.TestCase):
         for rel in ("kit/claude/consultant.template.md", "kit/claude-cli/consultant.template.md", "kit/consultant.template.md"):
             t = (ROOT / rel).read_text()
             self.assertIn("kit.py land <POST_ID>", t, rel)
-            self.assertRegex(t, r"update posts <POST_ID>[^\n]*\"review\":", rel)
+            self.assertRegex(t, r"kit\.py reviewed <POST_ID> <continue\|redirect\|stop> --review-id", rel)   # CL71: with its commit
 
     def test_the_guard_refuses_ways_round(self):
         kg = load("kg_l", "kit/hooks/kit_guard.py")

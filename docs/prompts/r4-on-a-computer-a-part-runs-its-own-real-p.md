@@ -11,3 +11,6 @@ On a computer, a part runs its own real-project check before Done; only on the w
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+Builds on R5's central PLATFORM_RULES table and branches on top of origin/main + origin/r7 so R7 and R4 can be reviewed together. Unlike R5 (centralized platform detection, kept real_project_run='computer') and R7 (wired kit.py launch to PLATFORM_RULES and agy), R4 switches real_project_run for local computer runners (cli/agy) to 'part', enforces real_project in kit.py done on a computer, updates part templates and lesson K2, and adds tests.
