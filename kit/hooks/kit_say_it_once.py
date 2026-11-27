@@ -48,6 +48,13 @@ def message_shape(msg):
 # (and a session started by hand, no KIT_ROLE) has the owner typing.
 FOREGROUND_ROLES = ("", "orchestrator")
 BOARD_WRITE_RE = re.compile(r"board_cli\.py\b.*\b(set|update|str-replace|batch)\b")
+# CL60: a part's or a review's last steps. A Stop hook runs after the closing message is on screen (M12 wrote 2,696
+# characters, then "·" on the retry), so the rule must reach the session right after these, before it writes.
+# Only a command that runs one (at the start of the command or after ; & | && ( ), never a text that names one.
+LAST_STEP_RE = re.compile(r"(?:^|[;&|(]\s*)(?:\w+=\S*\s+)*python3?(?:\s+-\w+)*\s+\"?\S*(?:kit\.py\"?\s+(?:done|unreached|"
+                          r"artifact\s+sent)\b|end_session\.py\b|board_cli\.py\"?\s+set\s+comments\b)", re.M)
+SEND_TOOLS = ("SendMessage", "mcp__claude-code-remote__send_message", "send_message")
+LAST_LINE = "Your next and last message is a single \"\u00b7\": nothing before it, no summary (the post holds it)."
 
 
 def talk(data):
@@ -124,8 +131,8 @@ def turn_opener(path):
                     c = str(c or "")
                     okind = (e.get("origin") or {}).get("kind")
                     opener = str(e.get("uuid") or n)
-                    human = (okind == "human") if okind else not (
-                        c.lstrip().startswith("<task-notification>")
+                    human = (okind == "human" and not LAUNCH_RE.match(c)) if okind else not (
+                        bool(LAUNCH_RE.match(c)) or c.lstrip().startswith("<task-notification>")
                         or "SYSTEM NOTIFICATION" in c[:300]
                         or "<cross-session" in c[:300]
                         or c.startswith(FORWARD)
@@ -140,7 +147,10 @@ def background():
     return os.environ.get("KIT_ROLE", "").strip().lower() not in FOREGROUND_ROLES
 
 
-LAUNCH_RE = re.compile(r"^\s*Your prompt is \S+: read it and (do|follow) it\.?\s*$")
+# The kit's launch line: "Your prompt is <file>: read it and do it." or (CL60) "Your prompt is <file>: run `python3 -I
+# .kit/kit.py resume --role part ...`, which prints it, and do it. ..." (a web part's create_session prompt).
+LAUNCH_RE = re.compile(r"^\s*Your prompt is \S+: (read it and (do|follow) it\.?\s*$|run `[^`]*kit\.py\"? resume --role "
+                       r"(part|review)\b)")
 
 
 def not_typed(prompt):
@@ -148,8 +158,11 @@ def not_typed(prompt):
     session's, the clerk's forward, another session's message, a timer or task notice, or the kit's launch line (a web
     part, started by create_session, has no KIT_ROLE to tell it is in the background)."""
     head = prompt.lstrip()[:400]
+    # CL60: a notice can open with reminder blocks (<system-reminder>, <tools-used-before-summary>) before its own
+    # marker, so the harness's own markers count anywhere in the prompt
     return (background() or prompt.startswith(FORWARD) or "<cross-session" in head or "SYSTEM NOTIFICATION" in head
-            or head.startswith("<task-notification>") or bool(LAUNCH_RE.match(prompt)))
+            or head.startswith("<task-notification>") or bool(LAUNCH_RE.match(prompt))
+            or "[SYSTEM NOTIFICATION - NOT USER INPUT]" in prompt or "\n<task-notification>" in prompt)
 
 
 def owner_typed(path):
@@ -195,8 +208,21 @@ def main():
     ev = data.get("hookEventName") or data.get("hook_event_name") or ""
     cid = str(data.get("conversationId") or data.get("session_id") or "x")
 
-    # Setup turns the checks off, except the "·" rule of a background session (the clerk talked unchecked in setup).
-    if in_setup(data) and not (background() and ev == "Stop") and ev in ("PreInvocation", "UserPromptSubmit", "PostToolUse", "PostInvocation", "Stop"):
+    # Setup turns the checks off, except the "·" rule where the owner is not the one talking: a background session's
+    # Stop (the clerk talked unchecked in setup), and (CL60: Harmonize is in setup, and its parts never got the line)
+    # the line after a last step and the rule on a turn the owner did not type.
+    ti = data.get("tool_input") or {}
+    tc0 = data.get("toolCall") or {}
+    last_step = ev == "PostToolUse" and (
+        str(data.get("tool_name") or tc0.get("name") or "") in SEND_TOOLS
+        or bool(LAST_STEP_RE.search(str(ti.get("command") or (tc0.get("args") or {}).get("CommandLine") or ""))))
+    if ev == "PostInvocation":
+        try:
+            last_step = open(os.path.join(tempfile.gettempdir(), "kit-post-%s" % cid), encoding="utf-8").read() == "last"
+        except OSError:
+            pass
+    untyped = ev in ("PreInvocation", "UserPromptSubmit") and not_typed(str(data.get("lastUserInput") or data.get("prompt") or ""))
+    if in_setup(data) and not (background() and ev == "Stop") and not last_step and not untyped and ev in ("PreInvocation", "UserPromptSubmit", "PostToolUse", "PostInvocation", "Stop"):
         if claude:
             return 0
         if ev == "Stop":
@@ -273,11 +299,17 @@ def main():
 
     if ev == "PostToolUse":
         if claude and "toolCall" not in data:
-            # Claude Code CLI (--runtime local): Bash fires on every command; only a board_cli.py write counts.
-            if data.get("tool_name") == "Bash" and not BOARD_WRITE_RE.search(str((data.get("tool_input") or {}).get("command") or "")):
+            tool = str(data.get("tool_name") or "")
+            cmd = str((data.get("tool_input") or {}).get("command") or "")
+            last = tool in SEND_TOOLS or (tool == "Bash" and bool(LAST_STEP_RE.search(cmd)))
+            # Claude Code: Bash fires on every command; only a board_cli.py write or a last step counts.
+            if tool == "Bash" and not last and not BOARD_WRITE_RE.search(cmd):
                 return 0
             if owner_typed(str(data.get("transcript_path") or "")):
                 return 0                         # the owner typed this turn: he gets a short answer, not "·"
+            if last:
+                claude_context(ev, LAST_LINE)    # CL60: said before the closing message, not refused after it
+                return 0
             claude_context(ev, "SAY IT ONCE: it is on the board or sent: if you end your turn now, end it with a single \"·\" "
                                "and nothing else.")
             return 0
@@ -285,10 +317,11 @@ def main():
         name = tc.get("name") or ""
         args = tc.get("args") or {}
         cmd = str(args.get("CommandLine") or "")
-        if name == "send_message" or (name == "run_command" and BOARD_WRITE_RE.search(cmd)):
+        if name == "send_message" or (name == "run_command" and (BOARD_WRITE_RE.search(cmd) or LAST_STEP_RE.search(cmd))):
             mark = os.path.join(tempfile.gettempdir(), "kit-post-%s" % cid)
             try:
-                open(mark, "w", encoding="utf-8").write(str(data.get("stepIdx", "1")))
+                last = name == "send_message" or bool(LAST_STEP_RE.search(cmd))
+                open(mark, "w", encoding="utf-8").write("last" if last else str(data.get("stepIdx", "1")))
             except OSError:
                 pass
         print("{}")
@@ -298,14 +331,18 @@ def main():
         mark = os.path.join(tempfile.gettempdir(), "kit-post-%s" % cid)
         if os.path.exists(mark):
             try:
+                last = open(mark, encoding="utf-8").read() == "last"
+            except OSError:
+                last = False
+            try:
                 os.remove(mark)
             except OSError:
                 pass
             if owner_typed(str(data.get("transcriptPath") or data.get("transcript_path") or "")):
                 print("{}")                      # the owner typed this turn: he gets a short answer, not "·"
                 return 0
-            inject("SAY IT ONCE: it is on the board or sent: if you end your turn now, end it with a single \"·\" "
-                   "and nothing else.")
+            inject(LAST_LINE if last else "SAY IT ONCE: it is on the board or sent: if you end your turn now, end it "
+                   "with a single \"·\" and nothing else.")
             return 0
         print("{}")
         return 0

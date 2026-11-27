@@ -66,18 +66,6 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "SendMessage|Bash|TaskCreate|TaskUpdate|ArtifactData|Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.kit/hook.py\" cli PostToolUse",
-            "timeout": 140
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Bash|Edit|Write|MultiEdit|mcp__claude-code-remote__send_message|SendMessage|ArtifactData",
@@ -86,6 +74,18 @@
             "type": "command",
             "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.kit/hook.py\" cli PreToolUse",
             "timeout": 35
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|mcp__claude-code-remote__send_message|SendMessage|TaskCreate|TaskUpdate|ArtifactData|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I \"$CLAUDE_PROJECT_DIR/.kit/hook.py\" cli PostToolUse",
+            "timeout": 140
           }
         ]
       }

@@ -60,7 +60,7 @@
  ".kit/end_session.py": "32d7a2faa9aa8d9cd39372bde98b0ac67085a26f44cd69ed31729e0a47a63c44",
  ".kit/git_watch.py": "0573bbb27c983c40a7394b695944b92068f69f15611561ee384e4e2ac9a0b08c",
  ".kit/handover.py": "ed6af5b35be2daec014f18b907387bf7339263a69745f26324c6af7e10d9e171",
- ".kit/hook.py": "d86d245722ddfe97b3879d0bc0e39f95a9a9e49acddc511bbad21ce592e6790f",
+ ".kit/hook.py": "f1bb27267879c56469bc618b81cc1e5e4bbed343333528a8086260d89175ff6c",
  ".kit/hooks/kit_activity.py": "f6184d3491f3a3a686fc67e8670dbc417b9b04b10ca161b65163913156668824",
  ".kit/hooks/kit_board_guard.py": "727e4a3fe57ca314f2bc4c4ebc8f19c2bb76f52eb00a46791d0dc1cfd719b0f0",
  ".kit/hooks/kit_board_typing.py": "b96bc2ffa26ede4d87dcf018d67092f5c9fb8d07c196d4c6f88843340d4811a9",
@@ -73,7 +73,7 @@
  ".kit/hooks/kit_orchestrator_guard.py": "551d6a7872b67992206d203b05de71c9b65f8de2047b4355fcd26d560e20e809",
  ".kit/hooks/kit_pre_compact.py": "c551faed424640d90abbaf91d89bbcb0f3b56be696c0882cef8161d69c8ae213",
  ".kit/hooks/kit_queue_stop.py": "ee2f541874112df3a48ad1e723edf47c3fa54aa0fef6349563ee7fba79e4786d",
- ".kit/hooks/kit_say_it_once.py": "6bb08ed6e02c0a3b3eb74abff64c504275e3657544f95557ad4b71285d501a1e",
+ ".kit/hooks/kit_say_it_once.py": "fddb4af3f7db146785c55e8ebb684b055ec2e2af9986692cd124775e764648d1",
  ".kit/hooks/kit_session_start.py": "9c5708982bf6d447a457791e86a627ea36b1b00d465ab4ba3e1ec655d1ba6c2d",
  ".kit/hooks/kit_stop.py": "30d8613fa8e400f3bba20e455a24af2fdedd2398552f7317753a3e128d955d89",
  ".kit/hooks/kit_task_train.py": "89fbf85037f481f4a54a3214ce624cbd7d4b6cc5d764e92e76dd323f6ac8eff3",
@@ -81,9 +81,9 @@
  ".kit/hooks/kit_web_save.py": "74229a81f846eb4ccb4bd8834d320e3adb605458ed49534cce1916eb0237bbf6",
  ".kit/hooks/kit_wip.py": "d135c3b669a1d6e4727ada175cffc05bfd0dbe68a43f3dbe6df29eea09bacf0a",
  ".kit/hooks/test_hooks.py": "778123d6f729d1363c6ddad76c18cdb44cbe4fc4b6e9b2275211b1c62f53e654",
- ".kit/kit.py": "381abc1e405d714334c9bba2dc4ce13d4f9f8e63416d3da10fb19b0a801eea67",
+ ".kit/kit.py": "47dbb168f43a2e63801dcd798d7ab412a87f7e3d15b0a1860857d98696a27fcc",
  ".kit/kit_artifact_sync.py": "64760e0f0ff2e3e3aca193ddcbbf501ec30474179b5ea838a4e34dc5b8b2ca67",
- ".kit/kit_cards.py": "f7352a5317a42f958167146364539996603f8f8926a12da71f36ef6d4fa07ca8",
+ ".kit/kit_cards.py": "e53153952c0ef1443e69d9bf99053791521c13f937a89ab0a461e631476a1ff0",
  ".kit/kit_import.py": "7ee7050f20af4343885704ca613b86945472e9ceec08ec8e0fb47645578ba809",
  ".kit/kit_map.py": "77ae6e67cbb5eb4dcf9823d735baa70601b078793865e1999bc8c136d7f29b15",
  ".kit/landing.py": "abfe7e07eebd967e8292c890005fe2bbbc343e199147c0b0f2707d457b099186",
@@ -106,5 +106,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "6b98364bd05586e3d6a5d328d0e59658638bb115d81c03b3c7cd2b266d8541f0",
- "_kit_commit": "700d65b3 2026-11-27T04:09:29+00:00"
+ "_kit_commit": "aace41aa 2026-11-27T08:05:52+00:00"
 }

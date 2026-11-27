@@ -35,8 +35,10 @@ TABLE = [
     # CL72: Bash too (a raw `board_cli.py get|list|query posts` on an Artifact board)
     ("PreToolUse", "kit_orchestrator_guard.py", {"web": "ArtifactData|Bash|" + SESSION, "cli": "ArtifactData|Bash"}, GUARD, 25),
     ("PreToolUse", "kit_brief_guard.py", {"web": "ArtifactData|Bash", "cli": "Bash", "agy": "run_command"}, GUARD, 25),
-    ("PostToolUse", "kit_say_it_once.py", {"web": "ArtifactData|mcp__claude-code-remote__send_message",
-                                           "cli": "SendMessage|Bash", "agy": "send_message|run_command"}, PLAIN, 50),
+    # CL60: a part's last steps (Bash: kit.py done, end_session.py, unreached; the send to its orchestrator) get the
+    # "next and last message is a single ·" line here, before the closing message is written
+    ("PostToolUse", "kit_say_it_once.py", {"web": "ArtifactData|Bash|" + SEND, "cli": "Bash|" + SEND,
+                                           "agy": "send_message|run_command"}, PLAIN, 50),
     ("PostToolUse", "kit_brief_guard.py", {"web": "Bash", "cli": "Bash", "agy": "run_command"}, PLAIN, 50),
     ("PostToolUse", "kit_cards_reminder.py", {"web": "ArtifactData|" + SESSION}, PLAIN, 50),
     ("PostToolUse", "kit_notify.py", {"web": "ArtifactData"}, PLAIN, 50),
