@@ -273,11 +273,14 @@ class GuardBeforeTheCall(unittest.TestCase):
                 rc, err = self.hook(proj, ti, role)
                 self.assertEqual(rc, 2, role)
                 self.assertIn("kit.py artifact pull", err)
-            env = dict(os.environ, KIT_ARTIFACT_URL=ART, KIT_ARTIFACT_PREFIX="repos/board/", KIT_BOARD_URL="http://127.0.0.1:9")
+            env = dict(os.environ, KIT_ARTIFACT_URL=ART, KIT_ARTIFACT_PREFIX="repos/board/", KIT_BOARD_URL="http://127.0.0.1:9",
+                       CLAUDE_CODE_REMOTE="true")         # CL51: the Artifact is a web session's (refused on a computer)
             env.pop("KIT_ARTIFACT_DIR", None)
             kit = os.path.join(proj, ".kit", "kit.py")
             with open(kit, "w") as fh:
                 fh.write((ROOT / "scripts" / "kit.py").read_text())
+            with open(os.path.join(proj, ".kit", "test_guard.py"), "w") as fh:     # CL48: a test's copy needs it
+                fh.write((ROOT / "kit" / "test_guard.py").read_text())
             r = subprocess.run([sys.executable, "-I", kit, "artifact", "pull", "--full"], capture_output=True, text=True,
                                env=env, cwd=proj, timeout=60)
             self.assertEqual(r.returncode, 0, r.stderr)
