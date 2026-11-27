@@ -22,6 +22,8 @@
  "created_at": "2026-11-24T04:02:13Z",
  "from": "orchestrator",
  "handoff": "Orchestrator (K2): in a clone of Harmonize, `python3 -I <kit>/install.py . --update --web-multi yes --web-repos anlonlt/harmonize,anlonlt/board`, then `python3 -I .kit/user_hooks.py install --settings /tmp/u.json` twice (expect 23, then 0 changed), and write it in real_project. Harmonize already has env_01VxiCbR7EgEi8Qv5VQKXq1v, so skip `web-env ask` and record it: `kit.py web-env --id env_01VxiCbR7EgEi8Qv5VQKXq1v`, commit. Its setup script can then call .kit/user_hooks.py in place of scripts/env/user_hooks.py. Commands checked: kit.py commands question/environment/hook, attach, install ask_yes_no/put, handover.py, _board_write.",
+ "landed": "6f66480137c61543dd97a6b067c4241906de358d",
+ "landed_at": "2026-11-27T09:00:01Z",
  "launched_at": "2026-11-24T04:15:44Z",
  "not_checked": [
   "Harmonize's own scripts/env/user_hooks.py (O56) was not reachable here (not in kit_docs), so it was not compared line by line: the kit's version was built from the prompt's description",
@@ -38,6 +40,6 @@
  "status_fixed": "was \"in progress\": its work landed (5e296cf, 6f66480 'CL39: post done') and its verdict is written (owner's go, 2026-11-26)",
  "title": "Install for several repos on the web: one environment with every repo, hooks at user level",
  "train": "cli",
- "updated_at": "2026-11-27T02:41:26Z",
+ "updated_at": "2026-11-27T09:00:01Z",
  "verdict": "install --web-multi puts a project's hooks at user level (23 on a Harmonize-shaped copy, idempotent, a long message refused from the parent folder, skipped in the repo); the hand-over starts the successor in that environment, no add_repo."
 }

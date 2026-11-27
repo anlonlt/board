@@ -32,6 +32,8 @@
  "created_at": "2026-11-24T01:47:40Z",
  "from": "orchestrator",
  "handoff": "Next: install the kit in Harmonize (install.py --update) so every session writes its row. In a week, run `python3 -I .kit/kit.py usage compare --before b15d577 --after <next kit commit> --role part` (and --role orchestrator) on real ledger rows with tool and board columns. Two questions from the data for the orchestrator: (1) orchestrator cost per hour doubled ($3.3 to $6.3); the next cut is what it reads per part. (2) Reviews stopped after the cut: 15 review sessions in the before window, 0 after. Commands checked: kit.py commands usage/cost/token/transcript/hook/session (none existed); Harmonize scripts/board-cost.py (M1) kept for the per-channel character split, its get_session usage read is the same one import-ccr makes.",
+ "landed": "a49184ea90458817993944393d0c5aeeb84eb1d9",
+ "landed_at": "2026-11-27T09:00:00Z",
  "launched_at": "2026-11-24T01:48:07Z",
  "not_checked": [
   "a push of the kit-usage branch to a real GitHub remote (tested on a local bare repo; on the Harmonize copy the push was disabled on purpose)",
@@ -53,6 +55,6 @@
  "status": "complete",
  "title": "Usage ledger: tokens, tools, agents per session, recorded without tokens; before/after the board's update",
  "train": "cli",
- "updated_at": "2026-11-24T03:54:51Z",
+ "updated_at": "2026-11-27T09:00:01Z",
  "verdict": "Every session now records its tokens, cost, tools and work with no model call; across the board's update a part costs 31% less per line changed for as many commits, and an orchestrator 63% more per commit."
 }

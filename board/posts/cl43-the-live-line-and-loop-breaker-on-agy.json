@@ -20,6 +20,8 @@
  "commit": "3902d1e",
  "created_at": "2026-11-26T00:19:30Z",
  "from": "claude-cli",
+ "landed": "3902d1ec237d015bee6430cd98401d28f425199a",
+ "landed_at": "2026-11-27T09:00:02Z",
  "not_checked": [
   "Live agy pieces non-empty transition when step is created via kit.py step new (verified via tests/test_post_gate.py against real board_server.py; live demo harness seeded via PUT)",
   "Full 62-suite run_all_tests.py stopped on pre-existing parallel flake in tests/test_arena_out_of_box.py"
@@ -67,6 +69,6 @@
  "task": "The code is on branch feat/streamline-doctor-memory (309ba6c): `kit/hooks/kit_activity.py`, its rows in `kit/hook.py` TABLE, the page's `kit-now` line.\n\n1. Find how an agy part's hook payload names its tool and input (run_command, edit_file, write_file) and its post.\n2. Adapt `kit_activity.py` to them, with the same limits: no model call, at most one write every 15 s, nothing said but the loop line.\n3. Wire it in the agy rows of the TABLE and test it the way tests/test_post_gate.py tests the Claude Code one.\n4. Run one real agy part and record what the board showed, every few seconds.",
  "title": "The live line and the loop breaker on agy",
  "train": "cli",
- "updated_at": "2026-11-26T05:07:42Z",
+ "updated_at": "2026-11-27T09:00:02Z",
  "verdict": "Live activity line and 8-repeat loop breaker now work on agy parts (no model call, 15 s throttle, PostInvocation delivery); commit 3902d1e on branch cl43 passed independent review (continue)."
 }
