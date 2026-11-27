@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T00:05:53Z",
+ "created_at": "2026-11-27T00:08:20Z",
  "rows": [
   {
    "at": 0,
@@ -17,7 +17,7 @@
     "A test never writes to the real board",
     "A session on a computer never writes to the Artifact",
     "Tests clean up after themselves",
-    "A session on the shared link can attach files to its post"
+    "An outside AI gets one link, the owner's invite with the post's drop box"
    ],
    "train": "P-board-data"
   },
@@ -170,5 +170,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T00:05:53Z"
+ "updated_at": "2026-11-27T00:08:20Z"
 }
