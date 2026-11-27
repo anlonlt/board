@@ -260,34 +260,17 @@ def cmd_save(quiet=False):
             print("save: not pushed: %s. This session's board is its own project's." % why)
         return 0
     ensure_mirror_worktree()
-    rc, out = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "sync-db", "--commit"], timeout=180)
-    if rc != 0:
-        print("save: sync-db FAILED: %s" % out[-400:])
+    # CL16: one path for every save (kit.py mirror-sync): sync-db + commit, push, and when both sides wrote (web +
+    # computer) a merge post by post (the newer updated_at wins, nothing lost), then push again; never forced.
+    rc, out = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "mirror-sync", "--final"], timeout=240)
+    line = (out.strip().splitlines() or ["mirror-sync: no output"])[-1]
+    if rc != 0 or "NOT DONE" in line:
+        print("save: THE BOARD IS NOT ON GITHUB (origin/%s): %s\nIts changes are committed in %s; the next save or "
+              "sync retries. If this web session may only push its own branch, tell the owner: the board cannot leave "
+              "this session." % (mirror_branch(), line, mirror_path()))
         return 1
-    m = mirror_path()
-    rc, ahead = sh(["git", "-C", m, "rev-list", "--count", "origin/%s..HEAD" % mirror_branch()])
-    if rc != 0:                                              # the first save: the remote has no copy yet
-        ahead = sh(["git", "-C", m, "rev-list", "--count", "HEAD"])[1]
-    if rc == 0 and ahead.strip() == "0":
-        if not quiet:
-            print("save: the board is already in git (origin/%s)." % mirror_branch())
-        return 0
-    rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % mirror_branch()], timeout=120)
-    if rc != 0:
-        # Both sides wrote (web + computer): merge; a conflicting hunk keeps this side (board/sync.json, the sync log,
-        # always conflicts). A per-post merge by updated_at is CL16's.
-        rc2, out2 = sh(["git", "-C", m, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", mirror_branch()],
-                       timeout=120)
-        if rc2 != 0:
-            sh(["git", "-C", m, "merge", "--abort"])
-        if rc2 == 0:
-            rc, out = sh(["git", "-C", m, "push", "origin", "HEAD:%s" % mirror_branch()], timeout=120)
-    if rc != 0:
-        print("save: PUSH OF %s REFUSED: %s\nThe board's changes are committed in %s but not on GitHub. If this web "
-              "session may only push its own branch, tell the owner: the board cannot leave this session." % (
-                  mirror_branch(), out[-400:], m))
-        return 1
-    print("save: the board is in git (origin/%s, %s commit%s pushed)." % (mirror_branch(), ahead, "" if ahead == "1" else "s"))
+    if not quiet or "pushed" not in line:
+        print("save: the board is in git (origin/%s): %s" % (mirror_branch(), line.split(": ", 1)[-1]))
     return 0
 
 

@@ -245,6 +245,28 @@ def _export_blobs_to_mirror(db_path, m, max_bytes=5 * 1024 * 1024):
     return copied
 
 
+SYNC_LOG_KEEP = 100     # CL16: sync.json keeps its last 100 runs (it had grown to 86 KB in git)
+
+
+def _db_identity(conn):
+    """CL16: this board.db's own id (a random hex made once, kept in its kit_meta table): the key of its delta cursor."""
+    import uuid
+    conn.execute("CREATE TABLE IF NOT EXISTS kit_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    row = conn.execute("SELECT value FROM kit_meta WHERE key='db_id'").fetchone()
+    if row:
+        return row[0]
+    conn.execute("INSERT OR IGNORE INTO kit_meta(key, value) VALUES ('db_id', ?)", (uuid.uuid4().hex,))
+    conn.commit()
+    return conn.execute("SELECT value FROM kit_meta WHERE key='db_id'").fetchone()[0]
+
+
+def _doc_time(doc):
+    """A document's last write time (updated_at, else created_at) as a comparable UTC string; '' when it has none."""
+    if not isinstance(doc, dict):
+        return ""
+    return _utc(doc.get("updated_at") or doc.get("created_at") or "") or ""
+
+
 def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
     """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full)."""
     if _TEST_GUARD:     # CL48: a test run writes a board's git copy under a temp folder only
@@ -257,12 +279,17 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
         raise SystemExit("kit sync-db: %s does not exist" % db)
     now = at or zstamp(datetime.now(timezone.utc))
     st = read_state(m)
-    last_seq = int(st.get("db_seq") or 0)
     conn = sqlite3.connect(db, timeout=5)
     try:
+        # CL16: the delta cursor counts THIS board.db's changes, so it is kept per database (db_seqs[<its id>]).
+        # It used to be one db_seq in sync.json, which travels in git: another machine's (or a web session's) higher
+        # number made every delta here ask for seq > it and silently write nothing.
+        db_id = _db_identity(conn)
+        st.pop("db_seq", None)
+        last_seq = int((st.get("db_seqs") or {}).get(db_id) or 0)
         latest_seq = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM changes").fetchone()[0]
         min_seq = conn.execute("SELECT COALESCE(MIN(seq), 0) FROM changes").fetchone()[0]
-        can_delta = (not full) and bool(st.get("cursor")) and last_seq > 0 and (min_seq == 0 or last_seq >= min_seq - 1)
+        can_delta = (not full) and bool(st.get("cursor")) and 0 < last_seq <= latest_seq and (min_seq == 0 or last_seq >= min_seq - 1)
         if not can_delta:
             # CL44 (item 7): a full sync never deletes a mirror file that git added or changed unless the board
             # explicitly deleted it (its changes log). Missing files not deleted by the board are kept and imported.
@@ -278,11 +305,18 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
                 for coll in ("posts", "comments"):
                     os.makedirs(os.path.join(tmp, coll), exist_ok=True)
                     db_docs = {}
-                    for doc_id, raw in conn.execute("SELECT doc_id, data FROM docs WHERE collection=?", (coll,)):
+                    old_mirror = load_dir(m + "/board", coll)
+                    for doc_id, raw, wrote in conn.execute("SELECT doc_id, data, updated_at FROM docs WHERE collection=?", (coll,)):
                         doc = json.loads(raw)
                         db_docs[doc_id] = doc
+                        # CL16: a full sync never writes an older copy over a newer one git holds (made elsewhere
+                        # after this board last wrote its own copy): git's stays, and `kit.py reconcile` (up, web
+                        # takeover, a refused push, the server's start) brings it here. "Last wrote" is this
+                        # board.db's own write time, not the post's date field (a change here always counts).
+                        mdoc = old_mirror.get(doc_id)
+                        if mdoc is not None and mdoc != doc and _doc_time(mdoc) > (_utc(wrote) or _doc_time(doc)):
+                            doc = mdoc
                         write_doc(os.path.join(tmp, coll, doc_id + ".json"), doc)
-                    old_mirror = load_dir(m + "/board", coll)
                     for doc_id, mdoc in old_mirror.items():
                         if doc_id not in db_docs and (coll, doc_id) not in deleted:
                             write_doc(os.path.join(tmp, coll, doc_id + ".json"), mdoc)
@@ -300,7 +334,9 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
             if with_blobs:
                 _export_blobs_to_mirror(db, m)
             st2 = read_state(m)
-            st2["db_seq"] = latest_seq
+            st2.pop("db_seq", None)
+            st2.setdefault("db_seqs", {})[db_id] = latest_seq
+            st2["log"] = (st2.get("log") or [])[-SYNC_LOG_KEEP:]
             write_doc(os.path.join(m, "board", "sync.json"), st2)
             return res
 
@@ -348,10 +384,11 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
                     if old_s.get(user) != doc:
                         write_doc(os.path.join(sdir, user + ".json"), doc)
         st["cursor"] = now
-        st["db_seq"] = latest_seq
-        st["log"].append({"at": now, "full": False, "db_seq": latest_seq, "posts": len(old_p) - pr,
-                          "posts_written": pw, "posts_removed": pr, "comments_read": len(rows),
-                          "new": new, "changed": changed, "removed": removed})
+        st.setdefault("db_seqs", {})[db_id] = latest_seq
+        st["log"] = (st.get("log") or [])[-(SYNC_LOG_KEEP - 1):] + [
+            {"at": now, "full": False, "db": db_id[:8], "db_seq": latest_seq, "posts": len(old_p) - pr,
+             "posts_written": pw, "posts_removed": pr, "comments_read": len(rows),
+             "new": new, "changed": changed, "removed": removed}]
         write_doc(os.path.join(m, "board", "sync.json"), st)
         return pw, pr, new, changed, removed
     finally:
@@ -761,6 +798,274 @@ def publish(m, url=None, db_path=None, branch=None, token=None, at=None):
 
 
 
+# ---------------------------------------------------------------- CL16: the board travels in git, always current
+# Every step change, `done`, end_session and handover bring the board to its git copy (board-mirror) and push it:
+# in the background, at most once a minute, a final one at the end of a session guaranteed, never blocking the tool
+# on the network (a refused or failed push is retried at the next sync and said once). A push that git refused
+# because the other side moved is merged post by post (the newer updated_at wins; nothing is lost), then pushed again.
+MIRROR_DEBOUNCE_S = 60
+
+
+def _ms_dir():
+    return os.path.join(ROOT, ".kit", "run")
+
+
+def _ms_state():
+    try:
+        with open(os.path.join(_ms_dir(), "mirror-sync.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _ms_save(st):
+    os.makedirs(_ms_dir(), exist_ok=True)
+    write_doc(os.path.join(_ms_dir(), "mirror-sync.json"), st)
+
+
+def mirror_push_allowed():
+    """(True, "") when this checkout may push its board to board-mirror (the same rules as web_takeover.owns_board)."""
+    role = str(os.environ.get("KIT_ROLE") or "").strip().lower()
+    if str(os.environ.get("KIT_NO_BOARD_PUSH") or "").lower() in ("1", "true", "yes"):
+        return False, "KIT_NO_BOARD_PUSH is set"
+    if role in ("review", "check", "consultant"):
+        return False, "a %s never pushes a board" % role
+    if os.environ.get("KIT_ATTACHED_CLONE"):
+        return False, "this clone serves a launch from another project"
+    art = (_kit_config().get("kit") or {}).get("artifact")
+    if isinstance(art, dict) and str(art.get("prefix") or "").strip("/"):
+        return False, "this board is attached to the Artifact board %s (its git copy is the Artifact's)" % (art.get("url") or "?")
+    proj = os.environ.get("CLAUDE_PROJECT_DIR")
+    if proj and os.path.realpath(proj) != os.path.realpath(ROOT):
+        return False, "this clone is not this session's project"
+    return True, ""
+
+
+def _merge_json_side(path, ours, theirs):
+    """The merged content of one board file changed on both sides: a post or a comment is taken whole from the side
+    that wrote it last (updated_at; a tie keeps ours); read marks are merged; sync.json keeps every cursor."""
+    try:
+        o = json.loads(ours) if ours is not None else None
+        t = json.loads(theirs) if theirs is not None else None
+    except ValueError:
+        return ours if ours is not None else theirs
+    if o is None or t is None:                       # deleted on one side: never lost, the remaining copy stays
+        return ours if ours is not None else theirs
+    parts = path.split("/")
+    if len(parts) == 3 and parts[1] in ("posts", "comments"):
+        return theirs if _doc_time(t) > _doc_time(o) else ours
+    if len(parts) == 3 and parts[1] == "seen":
+        return json.dumps(merge_board_seen(o, t), ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+    if path == "board/sync.json":
+        seqs = dict(t.get("db_seqs") or {})
+        for k, v in (o.get("db_seqs") or {}).items():
+            seqs[k] = max(int(v or 0), int(seqs.get(k) or 0))
+        log = {json.dumps(e, sort_keys=True): e for e in (t.get("log") or []) + (o.get("log") or [])}
+        merged = dict(o, db_seqs=seqs, log=sorted(log.values(), key=lambda e: str(e.get("at") or ""))[-SYNC_LOG_KEEP:],
+                      cursor=max(str(o.get("cursor") or ""), str(t.get("cursor") or "")) or None)
+        merged.pop("db_seq", None)
+        return json.dumps(merged, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+    return ours
+
+
+def merge_mirror_per_post(m, branch=None):
+    """Merge origin/<branch> into the git copy at m, post by post (see _merge_json_side). Returns (ok, message)."""
+    branch = branch or BRANCH
+    f = git(m, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (branch, branch))
+    if f.returncode != 0:
+        return False, "fetch failed: " + (f.stdout + f.stderr).strip()[-200:]
+    theirs = "origin/" + branch
+    if git(m, "merge-base", "--is-ancestor", theirs, "HEAD").returncode == 0:
+        return True, "already contains %s" % theirs
+    if git(m, "merge-base", "--is-ancestor", "HEAD", theirs).returncode == 0:
+        r = git(m, "merge", "-q", "--ff-only", theirs)
+        return r.returncode == 0, "fast-forwarded to %s" % theirs if r.returncode == 0 else (r.stdout + r.stderr).strip()[-200:]
+    base = git(m, "merge-base", "HEAD", theirs).stdout.strip()
+    ch_o = set(git(m, "diff", "--name-only", base, "HEAD", "--", "board").stdout.split()) if base else set()
+    ch_t = set(git(m, "diff", "--name-only", base, theirs, "--", "board").stdout.split()) if base else set()
+    git(m, "merge", "-q", "--no-ff", "--no-commit", theirs)
+    both = (ch_o & ch_t) | set(git(m, "diff", "--name-only", "--diff-filter=U").stdout.split())
+
+    def show(ref, path):
+        r = git(m, "show", "%s:%s" % (ref, path))
+        return r.stdout if r.returncode == 0 else None
+    for path in sorted(both):
+        content = _merge_json_side(path, show("HEAD", path), show(theirs, path))
+        full = os.path.join(m, path)
+        if content is None:
+            continue
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        git(m, "add", "--", path)
+    if git(m, "diff", "--name-only", "--diff-filter=U").stdout.strip():
+        git(m, "merge", "--abort")
+        return False, "the merge left conflicts outside the board's files"
+    r = git(m, "commit", "-q", "--no-edit", "-m", "kit mirror-sync: merged %s post by post (newer wins)" % theirs)
+    if r.returncode != 0:
+        git(m, "merge", "--abort")
+        return False, "merge commit failed: " + (r.stdout + r.stderr).strip()[-200:]
+    return True, "merged %s post by post (%d file(s) changed on both sides)" % (theirs, len(both))
+
+
+def mirror_sync_now(m, db_path=None, branch=None):
+    """One sync of the board to origin/<branch>: sync-db + commit (when this machine has a board.db), push, and on a
+    refused push a per-post merge and one more push. Never raises; returns {ok, pushed, why}."""
+    branch = branch or BRANCH
+    ok, why = mirror_push_allowed()
+    if not ok:
+        return {"ok": True, "pushed": False, "why": "not pushed: " + why}
+    try:
+        if not os.path.exists(os.path.join(m, ".git")):
+            # never made as a side effect: `kit.py init` (up, web takeover, a write with no server) makes it
+            return {"ok": True, "pushed": False, "why": "no git copy here (%s): `python3 -I .kit/kit.py init` makes it" % m}
+        db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+        with _sync_lock(m):
+            if os.path.isfile(db):
+                sync_db(m, db_path=db, at=zstamp(datetime.now(timezone.utc)))
+                commit(m, "kit mirror-sync %s" % zstamp(datetime.now(timezone.utc)), branch=branch)
+            r = git(m, "push", "-q", "origin", "HEAD:" + branch)
+            if r.returncode != 0:
+                out = (r.stdout + r.stderr).strip()
+                if not re.search(r"rejected|non-fast-forward|fetch first|stale info", out):
+                    return {"ok": False, "pushed": False, "why": "push failed (retried at the next sync): " + out[-200:]}
+                mok, mmsg = merge_mirror_per_post(m, branch)
+                if not mok:
+                    return {"ok": False, "pushed": False, "why": "push refused and the merge failed: " + mmsg}
+                r = git(m, "push", "-q", "origin", "HEAD:" + branch)
+                if r.returncode != 0:
+                    return {"ok": False, "pushed": False, "why": "push refused after the merge (never forced): "
+                                                                 + (r.stdout + r.stderr).strip()[-200:]}
+                return {"ok": True, "pushed": True, "why": mmsg + ", pushed"}
+        return {"ok": True, "pushed": True, "why": "pushed to origin/%s" % branch}
+    except (SystemExit, Exception) as e:  # noqa: BLE001 - a sync never breaks the tool that asked for it
+        return {"ok": False, "pushed": False, "why": "%s" % (e,)}
+
+
+def _ms_record(res, quiet=False):
+    """Keep the result; say a failure once (the same cause again stays quiet until it clears)."""
+    st = _ms_state()
+    prev = st.get("last_error") or ""
+    now = _now_z()
+    if res.get("ok"):
+        st.update(last_ok_at=now, last_error="", pending=False)
+        if res.get("pushed"):
+            st["last_push_at"] = now
+        line = ("board: in git again (%s)" % res["why"]) if prev else ""
+    else:
+        st.update(last_error=res.get("why") or "?", last_error_at=now, pending=True)
+        line = "" if prev == st["last_error"] else "board: NOT in git yet, retried at the next sync: %s" % st["last_error"]
+    _ms_save(st)
+    if line and not quiet:
+        print(line, file=sys.stderr)
+    return line
+
+
+def _ms_enabled():
+    v = str(os.environ.get("KIT_MIRROR_SYNC") or "").strip().lower()
+    if v in ("0", "off", "no", "false"):
+        return ""
+    if v in ("inline", "1", "on", "bg"):
+        return "inline" if v == "inline" else "bg"
+    if os.environ.get("KIT_TEST"):                 # a test run turns it on by name only (KIT_MIRROR_SYNC=inline)
+        return ""
+    if (_kit_config().get("mirror") or {}).get("auto") is False:
+        return ""
+    return "bg"
+
+
+def mirror_sync_soon(db_path=None):
+    """After a board change: the git copy follows, in the background (a detached worker, debounced)."""
+    mode = _ms_enabled()
+    if not mode or db_path:
+        return
+    if mode == "inline":
+        _ms_record(mirror_sync_now(mirror_dir(argparse.Namespace(mirror=None))), quiet=True)
+        return
+    try:
+        os.makedirs(_ms_dir(), exist_ok=True)
+        open(os.path.join(_ms_dir(), "mirror-sync.pending"), "a").close()
+        log = open(os.path.join(_ms_dir(), "mirror-sync.log"), "a")
+        subprocess.Popen([sys.executable, "-I", os.path.abspath(__file__), "mirror-sync", "--worker"], cwd=ROOT,
+                         stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+    except OSError:
+        pass
+
+
+def mirror_write(coll, doc_id, data, replace=False, m=None):
+    """CL16: a write made where no board server runs (another computer, a web session without one): it goes to the git
+    copy (board-mirror worktree), stamped updated_at, committed and pushed in the background; the board server imports
+    it at its next start (`kit.py reconcile`: per post, the newer wins). -> {id, version, via} or {error}."""
+    if coll not in ("posts", "comments") or not re.fullmatch(r"[A-Za-z0-9_.:@+~-]{1,200}", str(doc_id or "")):
+        return {"error": "only posts and comments go to the git copy (%s/%s)" % (coll, doc_id)}
+    ok, why = mirror_push_allowed()
+    if not ok:
+        return {"error": "no board server here, and its git copy is not this session's to write: " + why}
+    m = m or mirror_dir(argparse.Namespace(mirror=None))
+    if not os.path.exists(os.path.join(m, ".git")):
+        msg = init(m)
+        if not os.path.exists(os.path.join(m, ".git")):
+            return {"error": "no board server here and no git copy: " + msg}
+    path = os.path.join(m, "board", coll, str(doc_id) + ".json")
+    with _sync_lock(m):
+        git(m, "merge", "-q", "--ff-only", "origin/" + BRANCH)          # start from what the others pushed, if it can
+        old = {}
+        if os.path.isfile(path):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    old = json.load(fh)
+            except (OSError, ValueError):
+                old = {}
+        doc = dict(data) if replace else dict(old, **data)
+        doc = {k: v for k, v in doc.items() if not (isinstance(v, dict) and v.get("__delete__") is True)}
+        now = _now_z()
+        doc.setdefault("created_at", old.get("created_at") or now)
+        doc["updated_at"] = now
+        write_doc(path, doc)
+        commit(m, "kit board (no board server here): %s %s/%s" % ("set" if replace else "update", coll, doc_id))
+    _GIT_COPY_CACHE.clear()
+    mirror_sync_soon()
+    return {"id": doc_id, "version": 0, "via": "git copy %s (no board server here: the board imports it at its next start)" % BRANCH}
+
+
+def mirror_sync_worker(m):
+    """The one background worker: while a change waits, sync at most once per MIRROR_DEBOUNCE_S."""
+    if fcntl is None:
+        _ms_record(mirror_sync_now(m))
+        return 0
+    os.makedirs(_ms_dir(), exist_ok=True)
+    fh = open(os.path.join(_ms_dir(), "mirror-sync.lock"), "a+")
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return 0                                   # the running worker sees the pending mark
+    pend = os.path.join(_ms_dir(), "mirror-sync.pending")
+    debounce = float(os.environ.get("KIT_MIRROR_SYNC_DEBOUNCE") or MIRROR_DEBOUNCE_S)
+    try:
+        for _ in range(100):
+            if not os.path.exists(pend):
+                break
+            last = _utc(_ms_state().get("last_push_at") or "")
+            if last:
+                wait = debounce - (datetime.now(timezone.utc) - datetime.strptime(last, "%Y-%m-%dT%H:%M:%SZ")
+                                   .replace(tzinfo=timezone.utc)).total_seconds()
+                if wait > 0:
+                    time.sleep(min(wait, debounce))
+            try:
+                os.remove(pend)
+            except OSError:
+                pass
+            res = mirror_sync_now(m)
+            line = _ms_record(res, quiet=True)
+            if line:
+                print("%s %s" % (_now_z(), line), flush=True)
+            if not res.get("ok"):
+                break                              # retried at the next change or the final sync, said once
+    finally:
+        fh.close()
+    return 0
+
+
 def _git_board_docs(repo, ref):
     """{(coll, id): (data, commit time)} of posts, comments and seen at ref, read from git objects only."""
     import io
@@ -904,10 +1209,7 @@ def reconcile(m, url=None, token=None, branch=None, db_path=None, push=True):
         # the git copy: origin's history first, then this board in full on top (it now holds both sides)
         if git(m, "status", "--porcelain", "board").stdout.strip():
             commit(m, "kit reconcile: this board before taking origin", branch=branch)
-        if git(m, "merge", "--ff-only", "origin/" + branch).returncode != 0:
-            r = git(m, "merge", "--no-edit", "-X", "ours", "origin/" + branch)
-            if r.returncode != 0:
-                git(m, "merge", "--abort")
+        merge_mirror_per_post(m, branch)       # CL16: post by post, the newer wins (was -X ours: git's newer lost)
         if os.path.isfile(db):
             sync_db(m, db_path=db, at=zstamp(datetime.now(timezone.utc)), full=True)
             if git(m, "status", "--porcelain", "board").stdout.strip():
@@ -3909,11 +4211,117 @@ def portfolio_summary(config_path=None, roots=None):
     return "\n".join(lines) + "\n"
 
 
+BOARD_SOURCE = {}       # CL16: where the last read of the board came from, and its age (resume and train say it)
+_GIT_COPY_CACHE = {}
+
+
+def _git_ref_time(repo, ref):
+    r = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%cI", ref, "--"], capture_output=True, text=True, timeout=10)
+    return _utc(r.stdout.strip()) if r.returncode == 0 else ""
+
+
+def _git_copy_docs(m):
+    """The board as its git copy holds it: the newer of origin/<branch> and the local <branch> (git objects only, no
+    network), with the mirror worktree's files on top where they are newer. -> (posts, comments, info)."""
+    key = os.path.abspath(str(m or ""))
+    if key in _GIT_COPY_CACHE:
+        return _GIT_COPY_CACHE[key]
+    import io
+    import tarfile
+    branch = str((CONFIG.get("mirror") or {}).get("branch") or BRANCH or "board-mirror")
+    posts, comments, info = {}, {}, {"ref": "", "at": ""}
+
+    def put(coll, did, data):
+        tgt = posts if coll == "posts" else comments
+        if did not in tgt or _doc_time(data) > _doc_time(tgt[did]):
+            tgt[did] = data
+    try:
+        refs = [(r, _git_ref_time(ROOT, r)) for r in ("origin/" + branch, branch)
+                if subprocess.run(["git", "-C", ROOT, "rev-parse", "--verify", "--quiet", r + "^{commit}"],
+                                  capture_output=True, timeout=5).returncode == 0]
+        for ref, at in sorted(refs, key=lambda x: x[1]):          # the newer ref last: it wins a same-time tie
+            arc = subprocess.run(["git", "-C", ROOT, "archive", "--format=tar", ref, "board"], capture_output=True, timeout=30)
+            if arc.returncode != 0 or not arc.stdout:
+                continue
+            if at >= info["at"]:
+                info.update(ref=ref, at=at)
+            with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
+                for mem in tf.getmembers():
+                    parts = tar_name(mem.name).split("/")
+                    if not mem.isfile() or len(parts) != 3 or parts[0] != "board" or parts[1] not in ("posts", "comments") \
+                            or not parts[2].endswith(".json"):
+                        continue
+                    try:
+                        data = json.loads(tf.extractfile(mem).read().decode("utf-8"))
+                    except (ValueError, UnicodeDecodeError, AttributeError):
+                        continue
+                    if isinstance(data, dict) and isinstance(data.get("data"), dict) and set(data) <= {"id", "data", "version", "updated_at"}:
+                        data = data["data"]
+                    if isinstance(data, dict):
+                        put(parts[1], parts[2][:-5], data)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    for coll in ("posts", "comments"):
+        d = os.path.join(str(m or ""), "board", coll)
+        if not os.path.isdir(d):
+            continue
+        if not info["ref"]:
+            info.update(ref=d, at=_git_ref_time(str(m), "HEAD") if os.path.exists(os.path.join(str(m), ".git")) else "")
+        for fn in sorted(os.listdir(d)):
+            if fn.endswith(".json"):
+                try:
+                    with open(os.path.join(d, fn), encoding="utf-8") as fh:
+                        put(coll, fn[:-5], json.load(fh))
+                except (OSError, ValueError):
+                    pass
+    _GIT_COPY_CACHE[key] = (posts, comments, info)
+    return posts, comments, info
+
+
+def _copy_age(at):
+    t = _utc(at)
+    if not t:
+        return "age unknown"
+    s = (datetime.now(timezone.utc) - datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)).total_seconds()
+    s = max(0, int(s))
+    return "%d s old" % s if s < 120 else "%d min old" % (s // 60) if s < 7200 else "%d h old" % (s // 3600) if s < 172800 \
+        else "%d days old" % (s // 86400)
+
+
+def fetch_board_copy(force=False):
+    """CL16: bring origin/board-mirror here (at most every 5 minutes, or now when there is no local board), so a fresh
+    clone or a web session reads the board everyone writes. Never blocks long: 20 s, a failure only noted."""
+    branch = str((CONFIG.get("mirror") or {}).get("branch") or BRANCH or "board-mirror")
+    stamp = os.path.join(ROOT, ".kit", "run", "mirror-fetch.stamp")
+    if not force and os.path.exists(stamp) and time.time() - os.path.getmtime(stamp) < 300:
+        return ""
+    try:
+        r = subprocess.run(["git", "-C", ROOT, "fetch", "-q", "--no-tags", "origin",
+                            "+refs/heads/%s:refs/remotes/origin/%s" % (branch, branch)], capture_output=True, text=True, timeout=20)
+        os.makedirs(os.path.dirname(stamp), exist_ok=True)
+        open(stamp, "a").close()
+        os.utime(stamp, None)
+        _GIT_COPY_CACHE.clear()
+        return "" if r.returncode == 0 else "fetch of origin/%s failed: %s" % (branch, (r.stderr or r.stdout).strip()[-160:])
+    except (OSError, subprocess.SubprocessError) as e:
+        return "fetch of origin/%s failed: %s" % (branch, e)
+
+
+def board_source_line():
+    s = BOARD_SOURCE
+    if not s:
+        return ""
+    return "(board read from %s)" % s.get("text", "?")
+
+
 def _load_board_docs(m, db_path=None):
-    """Load posts and comments dicts from local SQLite DB, falling back to mirror worktree (or local git board-mirror)
-    when board.db is missing or has 0 docs."""
+    """Load posts and comments from the local SQLite board.db and, for the project's own board, its git copy
+    (board-mirror: origin's and the local branch, and the worktree): per document the newer copy wins (updated_at),
+    so a post made elsewhere (web, another computer) is read here before the board server imports it, and nothing is
+    lost. With no board.db (a fresh clone), the git copy alone. BOARD_SOURCE says which and how old (CL16)."""
     posts, comments = {}, {}
     db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
+    gone = set()
     if os.path.isfile(db):
         try:
             conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=5)
@@ -3927,55 +4335,54 @@ def _load_board_docs(m, db_path=None):
                         posts[did] = doc
                     else:
                         comments[did] = doc
+                try:
+                    gone = {(c, i) for c, i in conn.execute(
+                        "SELECT DISTINCT collection, doc_id FROM changes WHERE op='delete' AND collection IN ('posts','comments')")}
+                except sqlite3.Error:
+                    gone = set()
             finally:
                 conn.close()
         except sqlite3.Error:
             posts, comments = {}, {}
-        if posts or comments:
-            return posts, comments
-    for coll, target in (("posts", posts), ("comments", comments)):
-        d = os.path.join(m, "board", coll)
-        if not os.path.isdir(d):
-            continue
-        for fn in sorted(os.listdir(d)):
-            if not fn.endswith(".json"):
-                continue
-            try:
-                target[fn[:-5]] = json.load(open(os.path.join(d, fn), encoding="utf-8"))
-            except (OSError, ValueError):
-                pass
+    own_board = db_path is None and os.path.basename(str(m or "")) != "board-mirror-missing" \
+        and str(os.environ.get("KIT_BOARD_GIT_READ") or "1") != "0"
     if posts or comments:
+        BOARD_SOURCE.clear()
+        BOARD_SOURCE.update(kind="db", text="the local board (%s)" % os.path.relpath(db, ROOT))
+        if not own_board:
+            return posts, comments
+        gp, gc, info = _git_copy_docs(m)
+        newer = 0
+        for tgt, src, coll in ((posts, gp, "posts"), (comments, gc, "comments")):
+            for did, gdoc in src.items():
+                if (coll, did) in gone and did not in tgt:
+                    continue                       # deleted on this board: its git copy does not bring it back
+                if did not in tgt or _doc_time(gdoc) > _doc_time(tgt[did]):
+                    newer += 1
+                    tgt[did] = gdoc
+        if info.get("ref"):
+            BOARD_SOURCE.update(kind="db+git", text="the local board and its git copy %s (%s): %d document(s) newer in git" % (
+                info["ref"], _copy_age(info["at"]), newer) if newer else "the local board (git copy %s, %s, adds nothing newer)" % (
+                info["ref"], _copy_age(info["at"])))
         return posts, comments
-    # CL44: if local SQLite has 0 docs and no mirror worktree is checked out on disk, read local git board-mirror
-    # objects (offline, no network fetch) unless caller passed an explicit --db or suppressed mirror fallback.
-    if db_path is None and os.path.basename(str(m or "")) != "board-mirror-missing":
-        branch = str((CONFIG.get("mirror") or {}).get("branch") or BRANCH or "board-mirror")
-        try:
-            ref = next((r for r in (branch, "origin/" + branch)
-                        if subprocess.run(["git", "-C", ROOT, "rev-parse", "--verify", "--quiet", r],
-                                          capture_output=True, timeout=5).returncode == 0), None)
-            if ref:
-                arc = subprocess.run(["git", "-C", ROOT, "archive", "--format=tar", ref, "board"],
-                                     capture_output=True, timeout=15)
-                if arc.returncode == 0 and arc.stdout:
-                    import io
-                    import tarfile
-                    with tarfile.open(fileobj=io.BytesIO(arc.stdout), mode="r:*") as tf:
-                        for mem in tf.getmembers():
-                            parts = tar_name(mem.name).split("/")
-                            if not mem.isfile() or len(parts) != 3 or parts[0] != "board" or parts[1] not in ("posts", "comments") or not parts[2].endswith(".json"):
-                                continue
-                            try:
-                                data = json.loads(tf.extractfile(mem).read().decode("utf-8"))
-                            except (ValueError, UnicodeDecodeError, AttributeError):
-                                continue
-                            if isinstance(data, dict) and isinstance(data.get("data"), dict) and set(data) <= {"id", "data", "version", "updated_at"}:
-                                data = data["data"]
-                            if isinstance(data, dict):
-                                (posts if parts[1] == "posts" else comments)[parts[2][:-5]] = data
-        except (OSError, subprocess.SubprocessError):
-            pass
-    return posts, comments
+    if db_path is not None or os.path.basename(str(m or "")) == "board-mirror-missing":
+        # an explicit --db, or a caller that asks the board server next: the worktree's files only (no git objects)
+        for coll, target in (("posts", posts), ("comments", comments)):
+            d = os.path.join(m, "board", coll)
+            if not os.path.isdir(d):
+                continue
+            for fn in sorted(os.listdir(d)):
+                if fn.endswith(".json"):
+                    try:
+                        target[fn[:-5]] = json.load(open(os.path.join(d, fn), encoding="utf-8"))
+                    except (OSError, ValueError):
+                        pass
+        return posts, comments
+    gp, gc, info = _git_copy_docs(m)
+    if gp or gc:
+        BOARD_SOURCE.clear()
+        BOARD_SOURCE.update(kind="git", text="its git copy %s (%s; no local board here)" % (info.get("ref") or "?", _copy_age(info.get("at"))))
+    return dict(gp), dict(gc)
 
 
 def _first_summary_line(body):
@@ -4992,7 +5399,10 @@ def _all_posts(db_path=None):
             r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
             posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or []}
         except Exception as e:  # noqa: BLE001 - kept, never swallowed: resume --role part stops on it
-            BOARD_ERRORS.append("the board server refused or failed: %s" % e)
+            # CL16: no board server here (a fresh clone, another computer): the board's git copy, if there is one
+            posts, _ = _load_board_docs(mirror_dir(argparse.Namespace(mirror=None)))
+            if not posts:
+                BOARD_ERRORS.append("the board server refused or failed: %s" % e)
     return posts
 
 
@@ -7188,7 +7598,7 @@ COMMANDS = [
     ("Artifact and web", "kit.py reconcile", "the board here vs its git copy: the newer copy of each document wins"),
     ("Artifact and web", "kit_artifact_sync.py", "the repo's documents and files into the Artifact for its viewers"),
     ("Artifact and web", "update_board.py", "the Artifact's page to the kit's current page"),
-    ("git copy", "kit.py init|sync|sync-db|reads|receive|publish|diff|push", "the board's git copy (board-mirror): make it, fill it, compare it, send it"),
+    ("git copy", "kit.py init|sync|sync-db|mirror-sync|reads|receive|publish|diff|push", "the board's git copy (board-mirror): make it, fill it, compare it, send it (mirror-sync: after every step change, debounced; --final at a session's end)"),
     ("memory", "kit.py compact", "post every open awaits point (a question post) and open issue (an issue post, never doubled) on the board, then archive the awaits file, the states and issues the board now holds, and old lessons; on an Artifact board nothing leaves memory until `artifact push` sent the posts; refused if the project's memory checker goes red (--dry-run lists the posts)"),
     ("memory", "kit.py ledger show|observe|decide|distil|propose|field|broke|moves|open|confirm|check|init", "3-layer memory ledger: silent scoped observations -> mechanical invariants (hooks) -> owner-confirmed distilled principles"),
     ("setup", "kit.py welcome [--post]", "the welcome post: what the board does and what can run now"),
@@ -9444,8 +9854,13 @@ def commit(m, msg, branch=None):
     if git(m, "symbolic-ref", "--short", "HEAD").stdout.strip() != target_branch:
         raise SystemExit("kit: %s is not on branch %s; refusing to commit the copy anywhere else" % (m, target_branch))
     git(m, "add", "-A", "board")
+    if git(m, "diff", "--cached", "--quiet", "--", "board").returncode == 0:
+        return "nothing to commit"
     r = git(m, "commit", "-q", "-m", msg)
-    return (r.stdout + r.stderr).strip() or "committed"
+    out = (r.stdout + r.stderr).strip()
+    if r.returncode != 0:   # CL16: a refused commit (no identity, a lock, a merge in progress) is an error, never "committed"
+        raise SystemExit("kit: the commit in %s failed: %s" % (m, out[-300:] or "git exit %d" % r.returncode))
+    return out or "committed"
 
 
 def _usage_self():
@@ -9506,6 +9921,10 @@ def main(argv=None):
     sp.add_parser("push")
     s = sp.add_parser("sync"); s.add_argument("dir"); s.add_argument("--at", required=True)
     s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true")
+    s = sp.add_parser("mirror-sync", help="CL16: the board to its git copy (board-mirror) and pushed; --final now, else debounced in the background")
+    s.add_argument("--final", action="store_true", help="now, waiting for it (end of a session)")
+    s.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    s.add_argument("--db", default=None)
     s = sp.add_parser("sync-db"); s.add_argument("--db", default=None); s.add_argument("--at", default=None)
     s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true"); s.add_argument("--with-blobs", action="store_true")
     s = sp.add_parser("receive"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
@@ -9714,6 +10133,20 @@ def main(argv=None):
             if a.commit:
                 print(commit(m, "kit sync %s%s" % (a.at, " (full)" if a.full else "")))
         return 0
+    if a.cmd == "mirror-sync":
+        if a.worker:
+            return mirror_sync_worker(m)
+        if not a.final:
+            mirror_sync_soon(db_path=a.db)
+            print("mirror-sync: queued (debounced, in the background; log .kit/run/mirror-sync.log)")
+            return 0
+        if not _ms_enabled():
+            print("mirror-sync: off here (KIT_MIRROR_SYNC=0, a test run, or mirror.auto false)")
+            return 0
+        res = mirror_sync_now(m, db_path=a.db)
+        _ms_record(res, quiet=True)
+        print("mirror-sync: %s%s" % ("" if res.get("ok") else "NOT DONE: ", res.get("why")))
+        return 0                                   # never blocks the caller on the network; the line says it
     if a.cmd == "sync-db":
         at_val = a.at or zstamp(datetime.now(timezone.utc))
         with _sync_lock(m):
@@ -9852,7 +10285,10 @@ def main(argv=None):
         else:
             res = step_complete(a.post, db_path=a.db, cli=a.cli)
         print(json.dumps(res, ensure_ascii=False))
-        return 1 if res.get("error") or res.get("ok") is False else 0
+        bad = res.get("error") or res.get("ok") is False
+        if not bad and a.action in ("new", "start", "complete", "drop") and not res.get("artifact_write"):
+            mirror_sync_soon(db_path=a.db)         # CL16: the git copy follows every step change
+        return 1 if bad else 0
     if a.cmd == "sections":
         print(sections(db_path=a.db))
         return 0
@@ -9878,6 +10314,8 @@ def main(argv=None):
             print(ft + "\n")
         rc, msg = done(a.post, db_path=a.db)
         print(msg)
+        if rc == 0:
+            mirror_sync_soon(db_path=a.db)         # CL16
         return rc
     if a.cmd == "pair":
         rc, msg = pair(a.post, answer=a.answer, db_path=a.db)
@@ -9996,6 +10434,19 @@ def main(argv=None):
         txt, ok = keep(m)
         print(txt)
         return 0 if ok else 1
+    if a.cmd in ("resume", "train") and not getattr(a, "db", None):
+        # CL16: the board's git copy, fetched (now when this clone has no local board, else at most every 5 min)
+        _no_db = not os.path.isfile(os.path.join(ROOT, ".kit", "board_data", "board.db"))
+        _fetch_note = fetch_board_copy(force=_no_db) if not os.environ.get("KIT_TEST") or os.environ.get("KIT_MIRROR_FETCH") else ""
+        import atexit
+
+        def _say_source():
+            line = board_source_line()
+            if line and BOARD_SOURCE.get("kind") != "db":
+                print(line + (" [%s]" % _fetch_note if _fetch_note else ""), file=sys.stderr if getattr(a, "as_json", False) else sys.stdout)
+            elif _no_db and not BOARD_SOURCE:
+                print("(no board here: no local board and no git copy origin/%s%s)" % (BRANCH, "; " + _fetch_note if _fetch_note else ""))
+        atexit.register(_say_source)
     if a.cmd == "resume":
         # the _orchestrator check is the orchestrator's (a part's own session is never named there)
         sess = a.session or (os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")

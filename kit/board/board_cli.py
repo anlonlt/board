@@ -213,6 +213,50 @@ def req(base, method, path, body=None, headers=None, timeout=60, token=None):
         raise SystemExit("board_cli: cannot reach board server at %s (%s). Start it with: python3 -I .kit/board_server.py.%s" % (base, e.reason, _no_server_hint()))
 
 
+_KIT_MOD = []
+
+
+def _kit_mod():
+    """CL16: kit.py (the git copy's reader and writer), loaded once; None when this checkout has none."""
+    if _KIT_MOD:
+        return _KIT_MOD[0]
+    import importlib.util
+    mod = None
+    for f in (os.path.join(ROOT, ".kit", "kit.py"), os.path.join(ROOT, "scripts", "kit.py")):
+        if os.path.isfile(f):
+            spec = importlib.util.spec_from_file_location("kit_for_board_cli", f)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mod.configure(os.path.join(mod.ROOT, ".kit", "config.json")) if os.path.isfile(os.path.join(mod.ROOT, ".kit", "config.json")) else None
+            break
+    _KIT_MOD.append(mod)
+    return mod
+
+
+def git_copy_allowed(a, err):
+    """A read or a write of posts/comments goes to the board's git copy when the default board server does not answer
+    (a fresh clone, another computer, a web session without one): never for an explicit --url (nor a remote
+    KIT_BOARD_URL), an attached Artifact
+    board, the done gate, or KIT_BOARD_GIT_FALLBACK=0; a KIT_BOARD_URL on this machine where nothing answers counts)."""
+    env_url = os.environ.get("KIT_BOARD_URL") or ""
+    return ("cannot reach board server" in str(err) and a.url is None
+            and (not env_url or urllib.parse.urlparse(env_url).hostname in ("127.0.0.1", "localhost", "::1"))
+            and not attached_board() and os.environ.get("KIT_GATE") != "done"
+            and str(os.environ.get("KIT_BOARD_GIT_FALLBACK") or "1") != "0"
+            and getattr(a, "collection", "") in ("posts", "comments") and _kit_mod() is not None)
+
+
+def git_copy_docs(coll):
+    k = _kit_mod()
+    posts, comments = k._load_board_docs(k.mirror_dir(argparse.Namespace(mirror=None)))
+    return posts if coll == "posts" else comments
+
+
+def git_copy_note():
+    k = _kit_mod()
+    print("board_cli: no board server answers: %s" % (k.board_source_line() or "(no git copy either)"), file=sys.stderr)
+
+
 def load_json_arg(data_str, file_path):
     if file_path:
         if file_path == "-":
@@ -528,7 +572,14 @@ def main(argv=None):
         return 0
 
     if a.cmd == "get":
-        res = call("GET", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)))
+        try:
+            res = call("GET", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)))
+        except SystemExit as e:
+            if not git_copy_allowed(a, e):
+                raise
+            d = git_copy_docs(a.collection).get(a.doc_id)       # CL16: the git copy, the newer of each side
+            res = {"exists": d is not None, "id": a.doc_id, "version": 0, "data": d, "via": "git"} if d is not None else {"exists": False}
+            git_copy_note()
         if a.out_dir and res.get("exists"):
             path = write_out(a.out_dir, a.collection, a.doc_id, res["data"])
             print(json.dumps({"exists": True, "id": a.doc_id, "version": res["version"], "path": path}))
@@ -551,7 +602,14 @@ def main(argv=None):
                     qs["order_by"] = a.order_by
                     qs["dir"] = a.dir
             path = "/_api/db/%s?%s" % (urllib.parse.quote(a.collection), urllib.parse.urlencode(qs))
-            res = call("GET", path)
+            try:
+                res = call("GET", path)
+            except SystemExit as e:
+                if not git_copy_allowed(a, e) or (a.cmd == "query" and json.loads(a.where or "[]")):
+                    raise
+                got = git_copy_docs(a.collection)                     # CL16: the git copy (no filter: a list)
+                res = {"docs": [{"id": i, "version": 0, "data": got[i]} for i in sorted(got)], "next_cursor": None, "via": "git"}
+                git_copy_note()
             docs.extend(res.get("docs") or [])
             nxt = res.get("next_cursor")
             if not fetch_all or not nxt:
@@ -572,18 +630,38 @@ def main(argv=None):
         return 0
 
     if a.cmd == "set":
-        payload = {"data": gated(call, a.collection, a.doc_id, load_json_arg(a.data, a.file), replace=True)}
-        if a.if_version is not None:
-            payload["if_version"] = a.if_version
-        res = call("PUT", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
+        data = load_json_arg(a.data, a.file)
+        try:
+            payload = {"data": gated(call, a.collection, a.doc_id, data, replace=True)}
+            if a.if_version is not None:
+                payload["if_version"] = a.if_version
+            res = call("PUT", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
+        except SystemExit as e:
+            if not git_copy_allowed(a, e):
+                raise
+            gcall = lambda m_, p_, body=None, headers=None, timeout=60: {"data": git_copy_docs(p_.split("/")[3]).get(urllib.parse.unquote(p_.split("/")[4]))}  # noqa: E731
+            res = _kit_mod().mirror_write(a.collection, a.doc_id, gated(gcall, a.collection, a.doc_id, data, replace=True), replace=True)
+            if res.get("error"):
+                raise SystemExit("board_cli: " + res["error"])
+            print("board_cli: no board server answers: written to the %s" % res["via"], file=sys.stderr)
         print(json.dumps({"id": res["id"], "version": res["version"]}))
         return 0
 
     if a.cmd == "update":
-        payload = {"data": gated(call, a.collection, a.doc_id, load_json_arg(a.data, a.file))}
-        if a.if_version is not None:
-            payload["if_version"] = a.if_version
-        res = call("PATCH", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
+        data = load_json_arg(a.data, a.file)
+        try:
+            payload = {"data": gated(call, a.collection, a.doc_id, data)}
+            if a.if_version is not None:
+                payload["if_version"] = a.if_version
+            res = call("PATCH", "/_api/db/%s/%s" % (urllib.parse.quote(a.collection), urllib.parse.quote(a.doc_id)), payload)
+        except SystemExit as e:
+            if not git_copy_allowed(a, e):
+                raise
+            gcall = lambda m_, p_, body=None, headers=None, timeout=60: {"data": git_copy_docs(p_.split("/")[3]).get(urllib.parse.unquote(p_.split("/")[4]))}  # noqa: E731
+            res = _kit_mod().mirror_write(a.collection, a.doc_id, gated(gcall, a.collection, a.doc_id, data), replace=False)
+            if res.get("error"):
+                raise SystemExit("board_cli: " + res["error"])
+            print("board_cli: no board server answers: written to the %s" % res["via"], file=sys.stderr)
         print(json.dumps({"id": res["id"], "version": res["version"]}))
         return 0
 

@@ -138,6 +138,20 @@ def predecessor(name, env=None):
     return {"from": sid, "device": dev, "name": name, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
 
+
+def final_board_sync():
+    """CL16: the board's last state to its git copy (board-mirror) before this session ends; never blocks on the
+    network (the line says what happened; a failure is retried by the next sync)."""
+    kit = os.path.join(ROOT, ".kit", "kit.py")
+    if not os.path.isfile(kit):
+        return ""
+    try:
+        r = subprocess.run([sys.executable, "-I", kit, "mirror-sync", "--final"], capture_output=True, text=True,
+                           timeout=150, cwd=ROOT)
+        return (r.stdout.strip().splitlines() or [r.stderr.strip()[-200:] or "mirror-sync: no output"])[-1]
+    except (OSError, subprocess.SubprocessError) as e:
+        return "mirror-sync: NOT DONE: %s" % e
+
 def record_predecessor(name, env=None):
     """The successor orchestrator's resume reads this and inherits, on this device only, every part its predecessor owned
     (kit.py inherit_lines): the parts keep reaching the orchestrator running now."""
@@ -175,6 +189,8 @@ def main():
     prompt = successor_prompt(a.role, gen, cli=cli)
     if a.role == "orchestrator" and not a.dry_run:
         record_predecessor(name)
+    if not a.dry_run:
+        print("handover: board: " + final_board_sync())
 
     if cli == "web":
         # CL26: a script cannot start a cloud session, and killing CLAUDE_PID would end this one with no successor.
