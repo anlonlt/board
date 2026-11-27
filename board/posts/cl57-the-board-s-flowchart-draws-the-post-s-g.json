@@ -1,0 +1,55 @@
+{
+ "body": "The board's flowchart renderer draws the graph a post's mermaid block says: each node once, every edge, picture labels kept.\n\nCR-cl36 (redirect, 2026-11-27): on CL36's own post at 390 px, `renderMermaidBlock` (kit/board/shim.js) drew 8 boxes in one column for a 6-node, 5-edge hub; \"Post body\" appeared 4 times and the edge `E[\"![picture](repo/path.png)\"] --> B` was missing. Four-backtick inline code (```` ```mermaid ````) shows as broken backtick fragments; the table's \"now\" column is cut at phone width.\n\n1. `renderMermaidBlock` draws a graph: one box per node id, every edge, a label holding `![..](..)` or brackets kept as text.\n2. Inline code spans with 3+ backticks render as code.\n3. Tests (kit/board/test_page_body.js) on CL36's post body as the fixture: count nodes (6, each once) and edges (5); they must fail on today's renderer before the fix.\n4. Check it at 390 px and desktop on the local board page; a picture of each in the post.\n",
+ "branch": "cl57",
+ "column": "info",
+ "created_at": "2026-11-27T02:44:08Z",
+ "differs": "CL57: builds on CL36, which made post bodies render mermaid at all; CL57 makes the renderer draw the graph itself (each node once, every edge, picture labels), tested on CL36's own post.",
+ "from": "orchestrator",
+ "kept_on_train": "fix asked by CL36's review redirect on this train",
+ "kind": "bug",
+ "launched_at": "2026-11-27T02:44:29Z",
+ "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "orchestrator_device": "web",
+ "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "part": "CL57",
+ "planned_by": "orchestrator",
+ "session_id": "session_01AE1HGgdMHf6k4dHXTky4HD",
+ "sources": [
+  "CR-cl36-a-part-s-result-lives-in-its-post-post-b"
+ ],
+ "status": "in progress",
+ "subtasks": [
+  {
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "renderMermaidBlock draws a graph"
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "Inline code spans with 3+ backticks render as code"
+  },
+  {
+   "files": [
+    "kit/board/test_page_body.js"
+   ],
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "Tests (kit/board/test_page_body.js) on CL36's post body as the fixture"
+  },
+  {
+   "from": "task",
+   "n": 4,
+   "status": "open",
+   "title": "Check it at 390 px and desktop on the local board page"
+  }
+ ],
+ "task": "The board's flowchart renderer draws the graph a post's mermaid block says: each node once, every edge, picture labels kept.\n\nCR-cl36 (redirect, 2026-11-27): on CL36's own post at 390 px, `renderMermaidBlock` (kit/board/shim.js) drew 8 boxes in one column for a 6-node, 5-edge hub; \"Post body\" appeared 4 times and the edge `E[\"![picture](repo/path.png)\"] --> B` was missing. Four-backtick inline code (```` ```mermaid ````) shows as broken backtick fragments; the table's \"now\" column is cut at phone width.\n\n1. `renderMermaidBlock` draws a graph: one box per node id, every edge, a label holding `![..](..)` or brackets kept as text.\n2. Inline code spans with 3+ backticks render as code.\n3. Tests (kit/board/test_page_body.js) on CL36's post body as the fixture: count nodes (6, each once) and edges (5); they must fail on today's renderer before the fix.\n4. Check it at 390 px and desktop on the local board page; a picture of each in the post.\n",
+ "title": "The board's flowchart draws the post's graph: each node once, every edge",
+ "train": "cli",
+ "updated_at": "2026-11-27T02:44:48Z",
+ "working_by": "owner"
+}
