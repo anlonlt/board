@@ -120,8 +120,14 @@ def mirror_dir(a):
     return a.mirror or os.environ.get("KIT_MIRROR") or (os.path.join(ROOT, mp) if mp else os.path.join(os.path.dirname(ROOT), "board-mirror"))
 
 
+NAMED_DB = None     # CR-cl16: `--db X` makes X the whole board for that command (no git copy, no worktree)
+
+
 def board_docs(m, coll):
     """A collection of the board's git copy, or, with no git copy (an Artifact board's local copy), of the local board."""
+    if NAMED_DB:
+        posts, comments = _load_board_docs(m, db_path=NAMED_DB)
+        return posts if coll == "posts" else comments
     if os.path.isdir(os.path.join(m, "board", coll)):
         return load_dir(m + "/board", coll)
     posts, comments = _load_board_docs(m)
@@ -1063,6 +1069,10 @@ def mirror_sync_worker(m):
                 break                              # retried at the next change or the final sync, said once
     finally:
         fh.close()
+    if os.path.exists(pend) and not getattr(mirror_sync_worker, "_again", False):
+        # CR-cl16: a change marked while this worker was finishing (its own worker found the lock taken): once more
+        mirror_sync_worker._again = True
+        return mirror_sync_worker(m)
     return 0
 
 
@@ -4320,6 +4330,7 @@ def _load_board_docs(m, db_path=None):
     so a post made elsewhere (web, another computer) is read here before the board server imports it, and nothing is
     lost. With no board.db (a fresh clone), the git copy alone. BOARD_SOURCE says which and how old (CL16)."""
     posts, comments = {}, {}
+    db_path = db_path or NAMED_DB
     db = db_path or os.path.join(ROOT, ".kit", "board_data", "board.db")
     gone = set()
     if os.path.isfile(db):
@@ -4344,15 +4355,19 @@ def _load_board_docs(m, db_path=None):
                 conn.close()
         except sqlite3.Error:
             posts, comments = {}, {}
+    # the project's own git copy is read only for the project's own board: never for an explicit --db, a caller's
+    # folder (m other than the configured mirror), the sentinel, or KIT_BOARD_GIT_READ=0 (CR-cl16: a read pointed at
+    # a temp folder showed the owner's real comments from origin/board-mirror)
     own_board = db_path is None and os.path.basename(str(m or "")) != "board-mirror-missing" \
         and str(os.environ.get("KIT_BOARD_GIT_READ") or "1") != "0"
+    if own_board:
+        try:
+            own_board = os.path.realpath(str(m)) == os.path.realpath(mirror_dir(argparse.Namespace(mirror=None)))
+        except (OSError, TypeError):
+            own_board = False
     if posts or comments:
         BOARD_SOURCE.clear()
         BOARD_SOURCE.update(kind="db", text="the local board (%s)" % os.path.relpath(db, ROOT))
-        try:                                       # merged only for the project's own git copy, never a caller's dir
-            own_board = own_board and os.path.realpath(str(m)) == os.path.realpath(mirror_dir(argparse.Namespace(mirror=None)))
-        except (OSError, TypeError):
-            own_board = False
         if not own_board:
             return posts, comments
         gp, gc, info = _git_copy_docs(m)
@@ -4369,8 +4384,8 @@ def _load_board_docs(m, db_path=None):
                 info["ref"], _copy_age(info["at"]), newer) if newer else "the local board (git copy %s, %s, adds nothing newer)" % (
                 info["ref"], _copy_age(info["at"])))
         return posts, comments
-    if db_path is not None or os.path.basename(str(m or "")) == "board-mirror-missing":
-        # an explicit --db, or a caller that asks the board server next: the worktree's files only (no git objects)
+    if not own_board:
+        # an explicit --db, a caller's folder, or a caller that asks the board server next: m's files only (no git)
         for coll, target in (("posts", posts), ("comments", comments)):
             d = os.path.join(m, "board", coll)
             if not os.path.isdir(d):
@@ -10438,6 +10453,10 @@ def main(argv=None):
         txt, ok = keep(m)
         print(txt)
         return 0 if ok else 1
+    if getattr(a, "db", None):
+        global NAMED_DB
+        NAMED_DB = a.db                            # CR-cl16: a named database is the whole board for this command
+        os.environ["KIT_BOARD_GIT_READ"] = "0"
     if a.cmd in ("resume", "train") and not getattr(a, "db", None):
         # CL16: the board's git copy, fetched (now when this clone has no local board, else at most every 5 min)
         _no_db = not os.path.isfile(os.path.join(ROOT, ".kit", "board_data", "board.db"))

@@ -237,6 +237,33 @@ class Board(unittest.TestCase):
         self.assertIsNotNone(found, "the git-side post never reached the local board (log: %s)" % log.read()[-600:])
         self.assertEqual(found["title"], "written where no server runs")
 
+    # ------------------------------------------------------------------ CR-cl16: a named database reads only itself
+    def test_resume_with_db_never_shows_an_owner_comment_from_origin(self):
+        m = os.path.join(self.t, "src-mirror")
+        Path(m, "board", "posts").mkdir(parents=True, exist_ok=True)
+        Path(m, "board", "comments").mkdir(parents=True, exist_ok=True)
+        Path(m, "board", "posts", "p-real.json").write_text(json.dumps(
+            {"title": "the real board", "column": "info", "created_at": "2026-11-27T01:00:00Z"}))
+        Path(m, "board", "comments", "c-owner.json").write_text(json.dumps(
+            {"post_id": "p-real", "from": "owner", "text": "LEAK-MARKER-CL16 is this on?", "created_at": "2026-11-27T02:00:00Z"}))
+        self.g("add", "-A", "board", d=m)
+        self.g("commit", "-qm", "the owner's comment", d=m)
+        self.assertEqual(self.g("push", "-q", "origin", "HEAD:board-mirror", d=m).returncode, 0)
+        import sqlite3
+        db = os.path.join(self.t, "named.db")
+        c = sqlite3.connect(db)
+        c.execute("CREATE TABLE docs (collection TEXT, doc_id TEXT, version INTEGER, data TEXT, updated_at TEXT)")
+        c.execute("INSERT INTO docs VALUES ('posts', 'p-named', 1, ?, '2026-11-27T00:00:00Z')",
+                  (json.dumps({"title": "named db only", "column": "info", "created_at": "2026-11-27T00:00:00Z"}),))
+        c.commit()
+        c.close()
+        named = self.kit("resume", "--db", db, KIT_MIRROR_FETCH="1")
+        self.assertNotIn("LEAK-MARKER-CL16", named.stdout + named.stderr)
+        fresh = os.path.join(self.t, "fresh")                  # the control: the project's own read does show it
+        subprocess.run(["git", "clone", "-q", self.o, fresh], check=True, env=self.env)
+        own = self.kit("resume", d=fresh, KIT_MIRROR_FETCH="1", KIT_BOARD_URL="http://127.0.0.1:9")
+        self.assertIn("LEAK-MARKER-CL16", own.stdout)
+
     # ------------------------------------------------------------------ both sides wrote: per post, newer wins
     def test_both_sides_wrote_the_newer_copy_of_each_post_wins_nothing_lost(self):
         m = os.path.join(self.t, "src-mirror")
