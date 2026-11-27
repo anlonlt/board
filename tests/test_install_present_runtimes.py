@@ -117,8 +117,8 @@ class PresentRuntimes(unittest.TestCase):
         self.assertEqual(r.returncode, 0, out)
         self.assertEqual((self.cl / "kit_brief_guard.py").read_bytes(), (HOOKS / "kit_brief_guard.py").read_bytes(), out)
         self.assertEqual(sorted(p.name for p in self.cl.iterdir()), ["kit_activity.py", "kit_board_guard.py", "kit_brief_guard.py",
-                                                                      "kit_config.py", "kit_memory_jit.py", "kit_say_it_once.py",
-                                                                      "kit_usage.py", "kit_wip.py"])  # CL30's, CL37's, CL38's, the JIT memory
+                                                                      "kit_config.py", "kit_memory_jit.py", "kit_queue_stop.py", "kit_say_it_once.py",
+                                                                      "kit_usage.py", "kit_wip.py"])  # CL30's, CL37's, CL38's, the JIT memory, CL62's queue Stop
         s = json.loads(st.read_text())
         # the project's own rules kept, first; CL38 adds the add_repo rule once
         self.assertEqual(s["permissions"], {"allow": ["Bash(git status)", "mcp__claude-code-remote__add_repo"]})
@@ -127,7 +127,8 @@ class PresentRuntimes(unittest.TestCase):
         self.assertEqual(sum("kit_brief_guard.py" in c for c in cmds), 2, cmds)
         self.assertEqual(sum("kit_board_guard.py" in c for c in cmds), 2, cmds)   # CL30's new hook: Post Bash, Stop
         self.assertEqual(sum("kit_usage.py" in c for c in cmds), 2, cmds)         # CL37: Stop and SessionEnd
-        self.assertEqual(sum("/hooks/kit/" in c for c in cmds), 13, cmds)  # + what a part does now (PreToolUse, PostToolUse, Stop) + CL38's message guard, the JIT memory (PreToolUse)  # no other kit hook added
+        self.assertEqual(sum("/hooks/kit/" in c for c in cmds), 15, cmds)  # + what a part does now (PreToolUse, PostToolUse, Stop, CL62 queue Stop) + CL38's message guard, the JIT memory (PreToolUse), CL60's "·" line (PostToolUse)  # no other kit hook added
+        self.assertEqual(sum("kit_say_it_once.py" in c for c in cmds), 2, cmds)   # CL60: PreToolUse guard + PostToolUse line
         # the target's Claude Code hooks are the web ones (an ArtifactData guard is there): the reply tool is matched too
         st.write_text(json.dumps({"hooks": {"PreToolUse": [{"matcher": "ArtifactData|mcp__claude-code-remote__create_session",
                       "hooks": [{"type": "command", "command": "python3 -I x/.claude/hooks/kit/kit_orchestrator_guard.py"}]}]}}))
