@@ -40,6 +40,7 @@ working tree never changes (a Stop hook that dirtied it would make kit_stop and 
 """
 import argparse
 import glob
+import importlib.util
 import json
 import os
 import re
@@ -758,54 +759,73 @@ def render_compare_commands(rows, t_before, t_after, label_b, label_a, role=None
 
 # each manual action where a kit command exists: (rule, what it did, the command to use)
 AUDIT_RULES = {
-    "list-first-pull": ("a full-board `ArtifactData list` a first pull printed",
-                        "`kit.py artifact pull --post <id>` (a part: only its own documents), or a pull in a copy "
-                        "already loaded (changes only)"),
-    "list-by-hand": ("a full-board `ArtifactData list` made by hand", "`kit.py artifact pull` (changes only)"),
+    "list-by-hand": ("a full-board `ArtifactData list` made by hand", "`kit.py artifact sync` (changes only)"),
     "get-by-hand": ("a post or comment read raw with `ArtifactData get|query`",
                     "`kit.py train <train> --sections|--full <part>`, `kit.py resume` (they read the loaded copy)"),
-    "cli-get-post": ("a post read raw with `board_cli.py get posts`", "`kit.py train <train> --sections|--full <part>`"),
+    "cli-get-post": ("a post read raw with `board_cli.py get|list|query posts`", "`kit.py post <id>`, "
+                     "`kit.py train <train> --sections|--full <part>`"),
     "cli-get-unknown": ("`board_cli.py get` (a row before M11: what it read was not recorded)",
                         "`kit.py train <train> --full <part>` for a post; a comment's own line is fine"),
     "file-read": ("a board file read with sed/cat/Read", "`kit.py train --full <part>`, `board_cli.py get`"),
-    "write-by-hand": ("a board write not built by `kit.py artifact push` (a hand-built pin or batch)",
-                      "`kit.py artifact push`, its batch, `kit.py artifact sent`; on a refusal `kit.py artifact pin`"),
+    "write-by-hand": ("a board write not built by the kit (a hand-built pin or batch)",
+                      "`kit.py artifact sync`: it prints the batch, reads the versions, pins and records sent itself"),
 }
 _PASS = ("Read", "Artifact", "ToolSearch", "ReadNotifications", "TaskCreate", "TaskUpdate")
 _READERS = ("sh:sed", "sh:cat", "sh:head", "sh:tail", "sh:jq", "sh:less", "sh:awk", "Read", "py:-c")
 
 
-_KIT_KEYS = ("kit.py", "board_cli.py", "web_takeover.py", "end_session.py")
+def _kc():
+    """CL72: the one list of the board calls the kit allows (kit_config.py), shared with the guard."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (os.path.join(here, "hooks"), os.path.join(os.path.dirname(here), "kit", "hooks"),
+              os.path.join(os.path.dirname(here), ".kit", "hooks")):
+        p = os.path.join(d, "kit_config.py")
+        if os.path.isfile(p):
+            spec = importlib.util.spec_from_file_location("kit_config_audit", p)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            if hasattr(mod, "kit_printed"):
+                return mod
+    return None
 
 
 def audit_row(r, conf=None):
-    """One row's manual actions where a kit command exists, from its `cmd_seq` (in order). An ArtifactData call is the
-    kit's when the last command before it (tool searches and notifications aside) was a kit script that printed it
-    (`artifact pull|push`, `done`, `web_takeover.py`); after anything else (a python one-liner, a sed, a message) it
-    was made by hand. -> [{"rule", "at", "command", "note", "tokens", "carry_usd", "carry_tokens"}]."""
-    out, last = [], ""
+    """One row's manual actions where a kit command exists, from its `cmd_seq` (in order). CL72: by the guard's own
+    list (kit_config.py): an ArtifactData call is the kit's when the last command before it (tool searches and
+    notifications aside) was one of the kit's printers (`kit_printed`: `artifact sync|pull|push`, `web_takeover.py`...,
+    or a command line that ended in one); a call with no kit form (`free_note`) is never manual; what the kit printed is
+    never counted, a list included. -> [{"rule", "at", "command", "note", "tokens", "carry_usd", "carry_tokens"}]."""
+    kc = _kc()
+    out, last, last_note = [], "", ""
     p = price(r.get("model"), conf)
     for i, ent in enumerate(r.get("cmd_seq") or []):
         key, usd = ent[0], float(ent[1] or 0)
         tok = ent[2] if len(ent) > 2 else None
         note = ent[3] if len(ent) > 3 else ""
         rule = None
-        kit_printed = last.startswith(_KIT_KEYS)
-        coll = note.split()[0] if note and not note.startswith("batch") else ""
+        kit_printed = kc.kit_printed(last, last_note) if kc else last.startswith(("kit.py", "web_takeover.py"))
+        parts = note.split() if note and not note.startswith("batch") else []
+        coll = parts[0] if parts else ""
+        did = parts[1] if len(parts) > 1 else ""
         board_coll = not coll or coll.endswith(("posts", "comments"))
-        if key == "ArtifactData list" and board_coll:
-            rule = "list-first-pull" if kit_printed else "list-by-hand"
+        op = key[len("ArtifactData "):] if key.startswith("ArtifactData ") else ""
+        free = bool(kc and op and coll and kc.free_note(op, coll, did))
+        if key == "ArtifactData list" and board_coll and not kit_printed:
+            rule = "list-by-hand"
         elif key in ("ArtifactData get", "ArtifactData query") and board_coll and not kit_printed:
             rule = "get-by-hand"
-        elif key in ("ArtifactData batch", "ArtifactData set", "ArtifactData update", "ArtifactData str_replace",
-                     "ArtifactData delete") and not kit_printed and (board_coll or note.startswith("batch")):
+        elif op in ("batch", "set", "update", "str_replace", "delete") and not kit_printed and not free \
+                and (board_coll or note.startswith("batch")):
             rule = "write-by-hand"
-        elif key == "board_cli.py get":
-            rule = "cli-get-post" if note.startswith("posts") else (None if note else "cli-get-unknown")
+        elif key.startswith("board_cli.py") and key.split()[-1] in ("get", "list", "query"):
+            if kc and kc.cli_raw_read("board_cli.py %s %s" % (key.split()[-1], note)):
+                rule = "cli-get-post"
+            elif not note and key == "board_cli.py get":
+                rule = "cli-get-unknown"
         elif key in _READERS and note and BOARD_PATH.search(" " + note) and not note.startswith("artifact "):
             rule = "file-read"
         if not key.startswith("ArtifactData") and key not in _PASS:
-            last = key
+            last, last_note = key, note
         if rule:
             out.append({"rule": rule, "at": i, "command": key, "note": note, "tokens": tok, "carry_usd": usd,
                         "carry_tokens": int(round(usd / p[2] * 1e6)) if p and p[2] else None})

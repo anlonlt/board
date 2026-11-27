@@ -106,7 +106,7 @@ class DoneOnAComputer(unittest.TestCase):
             rc, out = kit.done("p1")
             self.assertEqual(rc, 1)
             self.assertIn("not on the board yet", out)
-            self.assertIn("artifact push", out)
+            self.assertIn("artifact sync", out)                    # CL72: the one door
 
 
 class NoArtifactStepOnAComputer(unittest.TestCase):

@@ -1,0 +1,2457 @@
+{
+"what": "orchestrator 3's board work on 2026-11-27 (usage audit 03:00-07:30), from the usage ledger (branch kit-usage, usage/2026-11-27.jsonl), session f7f9349f-2da9-549d-8362-d1c989f99ec5",
+"session": "f7f9349f-2da9-549d-8362-d1c989f99ec5",
+"audit_before": null,
+"events": [
+{
+"at": 1,
+"kind": "pull"
+},
+{
+"at": 15,
+"kind": "push",
+"docs": [
+"_dashboard",
+"_trains",
+"r5-every-rule-that-differs-by-platform-says",
+"1c6d182a887"
+],
+"refused_first": false
+},
+{
+"at": 39,
+"kind": "push",
+"docs": [
+"_dashboard",
+"_orchestrator",
+"_trains",
+"cl63-a-takeover-sets-the-step-s-runner-ki"
+],
+"refused_first": true
+},
+{
+"at": 69,
+"kind": "push",
+"docs": [
+"cl16-the-board-travels-in-git-always-current",
+"cl17-a-crashed-part-is-contin"
+],
+"refused_first": true
+},
+{
+"at": 88,
+"kind": "push",
+"docs": [
+"_dashboard",
+"_trains",
+"cl63-a-takeover-sets-the-step-s-runner-kit-py",
+"cl64-resu"
+],
+"refused_first": true
+},
+{
+"at": 120,
+"kind": "push",
+"docs": [
+"_dashboard",
+"_trains",
+"cl65-a-re-review-s-commit-is-the-one-land-che"
+],
+"refused_first": true
+},
+{
+"at": 128,
+"kind": "push",
+"docs": [
+"orch3-cl57-land-0340"
+],
+"refused_first": false
+},
+{
+"at": 132,
+"kind": "push",
+"docs": [
+"_orchestrator",
+"orch3-undo-0350"
+],
+"refused_first": false
+},
+{
+"at": 135,
+"kind": "push",
+"docs": [
+"_trains",
+"cl66-two-orchestrators-each-keep-their-addres"
+],
+"refused_first": true
+},
+{
+"at": 140,
+"kind": "pull"
+},
+{
+"at": 148,
+"kind": "push",
+"docs": [
+"58fee3122e9f4088aed5",
+"conflict-",
+"conflict-0f9fe692c8f6f2d7",
+"conflict-f6dee163586220d1",
+"r",
+"r7-kit-py-launch-updates-runner-on-takeover"
+],
+"refused_first": true
+},
+{
+"at": 162,
+"kind": "push",
+"docs": [
+"m4-map-readers-beyond-code-power-bi-documen",
+"orch3-realproj-0340"
+],
+"refused_first": false
+},
+{
+"at": 169,
+"kind": "push",
+"docs": [
+"orch3-realproj-0340"
+],
+"refused_first": false
+},
+{
+"at": 172,
+"kind": "push",
+"docs": [
+"cl67-the-orchestrator-s-push-never-sends-the"
+],
+"refused_first": false
+},
+{
+"at": 177,
+"kind": "push",
+"docs": [
+"orch3-realproj-0340"
+],
+"refused_first": false
+},
+{
+"at": 185,
+"kind": "push",
+"docs": [
+"cl68-harmonize-is-in-every-web-session-from-t"
+],
+"refused_first": false
+},
+{
+"at": 191,
+"kind": "push",
+"docs": [
+"cl68-harmonize-is-in-every-web-session-from-t",
+"cl69-a-real-project-run-is-d"
+],
+"refused_first": false
+},
+{
+"at": 208,
+"kind": "push",
+"docs": [
+"m4-map-readers-beyond-code-power-bi-documen"
+],
+"refused_first": false
+},
+{
+"at": 220,
+"kind": "push",
+"docs": [
+"cl51-a-session-on-a-computer-never-writes-to",
+"cl57-the-board-s-flowchart-dr"
+],
+"refused_first": false
+},
+{
+"at": 239,
+"kind": "push",
+"docs": [
+"cl41-review-and-adopt-four-local-commits",
+"cl44-agy-runtime-startup-mcp-usag"
+],
+"refused_first": false
+},
+{
+"at": 240,
+"kind": "push",
+"docs": [
+"cl17-a-crashed-part-is-continued-from-its-las",
+"cl50-a-part-launched-in-the-"
+],
+"refused_first": true
+},
+{
+"at": 282,
+"kind": "push",
+"docs": [
+".kit+2F~board.html",
+"cl57-the-board-s-flowchart-draws-the-post-s-g",
+"kit+2F~bo",
+"kit+2F~board+2F~board.template.html",
+"tests+2F~fixtures+2"
+],
+"refused_first": true
+},
+{
+"at": 308,
+"kind": "push",
+"docs": [
+"cl50-a-part-launched-in-the-background-knows"
+],
+"refused_first": false
+},
+{
+"at": 332,
+"kind": "push",
+"docs": [
+"cl56-a-session-on-the-shared-link-can-attach"
+],
+"refused_first": false
+},
+{
+"at": 343,
+"kind": "push",
+"docs": [
+"cl17-a-crashed-part-is-continued-from-its-las"
+],
+"refused_first": false
+},
+{
+"at": 355,
+"kind": "pull"
+},
+{
+"at": 362,
+"kind": "push",
+"docs": [
+"cl54-a-step-s-task-is-written-once-in-its-pos"
+],
+"refused_first": false
+},
+{
+"at": 368,
+"kind": "push",
+"docs": [
+"cl71-no-merge-friction-generated-files-are-no"
+],
+"refused_first": false
+},
+{
+"at": 377,
+"kind": "push",
+"docs": [
+"cl65-a-re-review-s-commit-is-the-one-land-che",
+"cl70-a-merged-step-is-shown-"
+],
+"refused_first": false
+},
+{
+"at": 385,
+"kind": "push",
+"docs": [
+"cl72-one-way-to-touch-the-board-the-kit-print"
+],
+"refused_first": false
+},
+{
+"at": 389,
+"kind": "push",
+"docs": [
+"cl72-one-way-to-touch-the-board-the-kit-print",
+".board+2F~memory+2F~ledger.m"
+],
+"refused_first": false
+}
+],
+"row": {
+"model": "claude-opus-5-5",
+"role": "orchestrator",
+"cmd_seq": [
+[
+"kit.py resume",
+0.00623,
+89
+],
+[
+"kit.py artifact",
+0.018427,
+264,
+"artifact pull"
+],
+[
+"ToolSearch",
+0.0,
+0
+],
+[
+"ArtifactData list",
+0.190295,
+2742,
+"repos/board/posts"
+],
+[
+"ArtifactData list",
+0.238597,
+3438,
+"repos/board/comments"
+],
+[
+"ArtifactData get",
+0.005621,
+81,
+"repos/board/kit_docs _index"
+],
+[
+"kit.py artifact",
+0.039859,
+576
+],
+[
+"ArtifactData get",
+0.005727,
+83,
+"repos/board/posts _dashboard"
+],
+[
+"ArtifactData get",
+0.005658,
+82,
+"repos/board/posts _trains"
+],
+[
+"ArtifactData get",
+0.006831,
+99,
+"repos/board/posts r5-every-rule-that-differs-by-platform-says"
+],
+[
+"ArtifactData get",
+0.00621,
+90,
+"repos/board/comments 1c6d182a887643dab24f"
+],
+[
+"kit.py artifact",
+0.01548,
+225,
+"artifact pin"
+],
+[
+"kit.py artifact",
+0.022912,
+334,
+"artifact push"
+],
+[
+"sh:cat",
+0.027223,
+398,
+".kit/run/artifact/out/batch-01.json"
+],
+[
+"sh:wc",
+0.01098,
+161,
+".kit/run/artifact/out/docs"
+],
+[
+"ArtifactData batch",
+0.013192,
+194,
+"batch _dashboard,_trains,r5-every-rule-that-differs-by-platform-says,1c6d182a887"
+],
+[
+"kit.py artifact",
+0.487075,
+7184,
+"artifact sent"
+],
+[
+"mcp:get_session",
+0.033124,
+490
+],
+[
+"kit.py since",
+0.120125,
+1777
+],
+[
+"py:\"",
+0.035048,
+520,
+".kit/run/artifact/in/repos/board/comments"
+],
+[
+"py:\"",
+0.01391,
+207,
+".kit/run/artifact/pin/v51/repos/board/posts/_dashboard.json'))"
+],
+[
+"ArtifactData get",
+0.012194,
+182,
+"repos/board/posts _orchestrator"
+],
+[
+"ArtifactData update",
+0.011156,
+167,
+"repos/board/posts _orchestrator"
+],
+[
+"kit.py commands",
+0.038811,
+581
+],
+[
+"board_cli.py",
+0.024176,
+363
+],
+[
+"ToolSearch",
+0.0,
+0
+],
+[
+"TaskCreate",
+0.002185,
+33
+],
+[
+"kit.py post",
+0.030492,
+462
+],
+[
+"sh:ls",
+0.002632,
+40
+],
+[
+"sh:ls",
+0.067568,
+1030
+],
+[
+"kit.py step",
+0.013603,
+208
+],
+[
+"kit.py step",
+0.030057,
+461
+],
+[
+"board_cli.py reply",
+0.009425,
+145
+],
+[
+"board_cli.py reply",
+0.02741,
+423,
+"artifact push"
+],
+[
+"board_cli.py get",
+0.001098,
+17,
+"comments orch3-cl63-0345"
+],
+[
+"board_cli.py reply",
+0.002383,
+37
+],
+[
+"ArtifactData get",
+0.005393,
+84,
+"repos/board/posts _orchestrator"
+],
+[
+"kit.py artifact",
+0.014528,
+227,
+"artifact pin"
+],
+[
+"py:\"import",
+0.018438,
+289,
+".kit/run/artifact/out/batch-01.json'))))\";"
+],
+[
+"ArtifactData batch",
+0.007568,
+119,
+"batch _dashboard,_orchestrator,_trains,cl63-a-takeover-sets-the-step-s-runner-ki"
+],
+[
+"ArtifactData get",
+0.005326,
+84,
+"repos/board/posts _dashboard"
+],
+[
+"ArtifactData get",
+0.005262,
+83,
+"repos/board/posts _trains"
+],
+[
+"kit.py artifact",
+0.018265,
+289,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.009954,
+158,
+"batch _dashboard,_orchestrator,_trains,cl63-a-takeover-sets-the-step-s-runner-ki"
+],
+[
+"kit.py artifact",
+0.003014,
+48,
+"artifact sent"
+],
+[
+"Agent",
+0.016328,
+260
+],
+[
+"mcp:list_sessions",
+0.321034,
+5112
+],
+[
+"kit.py claim",
+0.070738,
+1130
+],
+[
+"mcp:send_message",
+0.000374,
+6
+],
+[
+"mcp:send_message",
+0.000374,
+6
+],
+[
+"mcp:send_message",
+0.000374,
+6
+],
+[
+"mcp:send_message",
+0.000374,
+6
+],
+[
+"mcp:send_message",
+0.000374,
+6
+],
+[
+"mcp:send_later",
+0.001685,
+27
+],
+[
+"kit.py artifact",
+0.028488,
+458,
+"artifact push"
+],
+[
+"ArtifactData query",
+0.012958,
+209,
+"repos/board/posts"
+],
+[
+"ArtifactData get",
+0.006304,
+102,
+"repos/board/posts cl16-the-board-travels-in-git-always-current"
+],
+[
+"ArtifactData get",
+0.006304,
+102,
+"repos/board/posts cl17-a-crashed-part-is-continued-from-its-las"
+],
+[
+"ArtifactData get",
+0.006242,
+101,
+"repos/board/posts cl50-a-part-launched-in-the-background-knows"
+],
+[
+"ArtifactData get",
+0.005995,
+97,
+"repos/board/posts cl52-tests-clean-up-after-themselves"
+],
+[
+"ArtifactData get",
+0.006304,
+102,
+"repos/board/posts cl54-a-step-s-task-is-written-once-in-its-pos"
+],
+[
+"ArtifactData get",
+0.006242,
+101,
+"repos/board/posts cl56-a-session-on-the-shared-link-can-attach"
+],
+[
+"ArtifactData get",
+0.006304,
+102,
+"repos/board/posts cl59-a-part-pushes-only-its-own-post-a-pull-n"
+],
+[
+"ArtifactData get",
+0.006304,
+102,
+"repos/board/posts cl60-a-part-s-last-chat-message-is-a-single-d"
+],
+[
+"ArtifactData get",
+0.006304,
+102,
+"repos/board/posts cl61-a-kit-fix-reaches-every-project-on-updat"
+],
+[
+"ArtifactData get",
+0.006242,
+101,
+"repos/board/posts cl62-the-orchestrator-cannot-end-a-turn-with"
+],
+[
+"ArtifactData get",
+0.00618,
+100,
+"repos/board/posts m3-done-keeps-the-map-each-part-checks-its"
+],
+[
+"ArtifactData get",
+0.006242,
+101,
+"repos/board/posts m4-map-readers-beyond-code-power-bi-documen"
+],
+[
+"kit.py artifact",
+0.039547,
+642,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.007859,
+128,
+"batch cl16-the-board-travels-in-git-always-current,cl17-a-crashed-part-is-contin"
+],
+[
+"ArtifactData get",
+0.00612,
+100,
+"repos/board/posts cl50-a-part-launched-in-the-background-knows"
+],
+[
+"ArtifactData get",
+0.005936,
+97,
+"repos/board/posts cl52-tests-clean-up-after-themselves"
+],
+[
+"ArtifactData get",
+0.006242,
+102,
+"repos/board/posts cl54-a-step-s-task-is-written-once-in-its-pos"
+],
+[
+"ArtifactData get",
+0.006181,
+101,
+"repos/board/posts cl56-a-session-on-the-shared-link-can-attach"
+],
+[
+"ArtifactData get",
+0.006181,
+101,
+"repos/board/posts cl62-the-orchestrator-cannot-end-a-turn-with"
+],
+[
+"kit.py artifact",
+0.037454,
+614,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.017693,
+291,
+"batch cl16-the-board-travels-in-git-always-current,cl17-a-crashed-part-is-contin"
+],
+[
+"kit.py artifact",
+0.000303,
+5,
+"artifact sent"
+],
+[
+"git status",
+0.000963,
+16
+],
+[
+"git fetch",
+0.00324,
+54
+],
+[
+"git show",
+0.028824,
+482
+],
+[
+"kit.py post",
+0.001967,
+33
+],
+[
+"sh:grep",
+0.013261,
+224
+],
+[
+"sh:sed",
+0.021535,
+365
+],
+[
+"sh:sed",
+0.028224,
+480
+],
+[
+"kit.py step",
+0.012658,
+216
+],
+[
+"kit.py step",
+0.010395,
+178
+],
+[
+"board_cli.py reply",
+0.024328,
+418,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.006902,
+119,
+"batch _dashboard,_trains,cl63-a-takeover-sets-the-step-s-runner-kit-py,cl64-resu"
+],
+[
+"ArtifactData get",
+0.004855,
+84,
+"repos/board/posts _dashboard"
+],
+[
+"ArtifactData get",
+0.004797,
+83,
+"repos/board/posts _trains"
+],
+[
+"kit.py artifact",
+0.014515,
+252,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.007692,
+134,
+"batch _dashboard,_trains,cl63-a-takeover-sets-the-step-s-runner-kit-py,cl64-resu"
+],
+[
+"kit.py artifact",
+0.000229,
+4,
+"artifact sent"
+],
+[
+"TaskUpdate",
+0.000342,
+6
+],
+[
+"ReadNotifications",
+0.148405,
+2622
+],
+[
+"kit.py guide",
+0.012521,
+222
+],
+[
+"kit.py done",
+0.043049,
+766
+],
+[
+"kit.py done",
+0.002352,
+42
+],
+[
+"kit.py config",
+0.00067,
+12
+],
+[
+"kit.py done",
+0.057046,
+1026,
+".kit/board_data/board.db"
+],
+[
+"kit.py step",
+0.003546,
+64
+],
+[
+"mcp:send_message",
+0.000331,
+6
+],
+[
+"mcp:send_message",
+0.000331,
+6
+],
+[
+"mcp:send_message",
+0.000331,
+6
+],
+[
+"mcp:send_message",
+0.000331,
+6
+],
+[
+"mcp:send_message",
+0.000331,
+6
+],
+[
+"mcp:send_message",
+0.000331,
+6
+],
+[
+"mcp:send_message",
+0.000331,
+6
+],
+[
+"kit.py land",
+0.003465,
+63
+],
+[
+"sh:grep",
+0.00411,
+75
+],
+[
+"sh:grep",
+0.000437,
+8
+],
+[
+"sh:grep",
+0.007942,
+146
+],
+[
+"sh:sed",
+0.031165,
+575
+],
+[
+"sh:grep",
+0.006696,
+124
+],
+[
+"kit.py steps",
+0.012697,
+236
+],
+[
+"board_cli.py get",
+0.010666,
+199,
+"comments CR-cl57-the-board-s-flowchart-draws-the-post-s-g-2"
+],
+[
+"board_cli.py update",
+0.01367,
+256
+],
+[
+"kit.py step",
+0.000585,
+11
+],
+[
+"kit.py artifact",
+0.007473,
+141,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.006283,
+119,
+"batch _dashboard,_trains,cl65-a-re-review-s-commit-is-the-one-land-che"
+],
+[
+"ArtifactData get",
+0.004418,
+84,
+"repos/board/posts _dashboard"
+],
+[
+"ArtifactData get",
+0.004366,
+83,
+"repos/board/posts _trains"
+],
+[
+"kit.py artifact",
+0.010008,
+191,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.004437,
+85,
+"batch _trains,cl65-a-re-review-s-commit-is-the-one-land-che"
+],
+[
+"Agent",
+0.013572,
+260
+],
+[
+"board_cli.py reply",
+0.002184,
+42
+],
+[
+"kit.py artifact",
+0.011352,
+220,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.003444,
+67,
+"batch orch3-cl57-land-0340"
+],
+[
+"kit.py artifact",
+0.000205,
+4,
+"artifact sent"
+],
+[
+"board_cli.py update",
+0.006198,
+122,
+"artifact push"
+],
+[
+"py:\"import",
+0.000455,
+9,
+".kit/run/artifact/out/docs/0000.json'));print(d.get('session_id'))"
+],
+[
+"ArtifactData batch",
+0.004032,
+80,
+"batch _orchestrator,orch3-undo-0350"
+],
+[
+"kit.py artifact",
+0.000201,
+4,
+"artifact sent"
+],
+[
+"kit.py step",
+0.0068,
+136,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.005876,
+118,
+"batch _trains,cl66-two-orchestrators-each-keep-their-addres"
+],
+[
+"ArtifactData batch",
+0.003571,
+72,
+"batch cl66-two-orchestrators-each-keep-their-addres"
+],
+[
+"Agent",
+0.012896,
+260
+],
+[
+"kit.py artifact",
+0.000198,
+4,
+"artifact sent"
+],
+[
+"ReadNotifications",
+0.08428,
+1720
+],
+[
+"ArtifactData list",
+0.008784,
+180,
+"repos/board/posts"
+],
+[
+"ArtifactData list",
+0.008833,
+181,
+"repos/board/comments"
+],
+[
+"kit.py artifact",
+0.014969,
+308,
+"artifact pull"
+],
+[
+"ArtifactData query",
+0.039494,
+816,
+"repos/board/posts"
+],
+[
+"ArtifactData query",
+0.02933,
+606,
+"repos/board/comments"
+],
+[
+"ArtifactData get",
+0.00392,
+81,
+"repos/board/kit_docs _index"
+],
+[
+"kit.py artifact",
+0.028534,
+592
+],
+[
+"py:\"import",
+0.009744,
+203,
+".kit/run/artifact/out/batch-01.json'))))"
+],
+[
+"ArtifactData batch",
+0.005784,
+121,
+"batch r7-kit-py-launch-updates-runner-on-takeover,58fee3122e9f4088aed5,conflict-"
+],
+[
+"ArtifactData get",
+0.000857,
+18,
+"repos/board/comments reply-fb2532f54d60"
+],
+[
+"ArtifactData get",
+0.000857,
+18,
+"repos/board/comments 58fee3122e9f4088aed5"
+],
+[
+"ArtifactData get",
+0.004808,
+101,
+"repos/board/posts r7-kit-py-launch-updates-runner-on-takeover"
+],
+[
+"kit.py artifact",
+0.008959,
+189,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.005522,
+117,
+"batch 58fee3122e9f4088aed5,conflict-0f9fe692c8f6f2d7,conflict-f6dee163586220d1,r"
+],
+[
+"kit.py artifact",
+0.020774,
+442,
+"artifact sent"
+],
+[
+"mcp:create_session",
+0.009079,
+194
+],
+[
+"kit.py review",
+0.001864,
+40
+],
+[
+"board_cli.py get",
+0.00051,
+11,
+"posts $p"
+],
+[
+"sh:grep",
+0.00231,
+50
+],
+[
+"sh:sed",
+0.031648,
+688
+],
+[
+"mcp:add_repo",
+0.012045,
+263
+],
+[
+"board_cli.py reply",
+0.009166,
+201,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.003995,
+88,
+"batch m4-map-readers-beyond-code-power-bi-documen,orch3-realproj-0340"
+],
+[
+"Agent",
+0.011804,
+260
+],
+[
+"kit.py artifact",
+0.000181,
+4,
+"artifact sent"
+],
+[
+"ReadNotifications",
+0.056314,
+1257
+],
+[
+"kit.py step",
+0.002854,
+64
+],
+[
+"board_cli.py str-replace",
+0.004129,
+93
+],
+[
+"board_cli.py str-replace",
+0.002873,
+65,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.002288,
+52,
+"batch orch3-realproj-0340"
+],
+[
+"kit.py artifact",
+0.000175,
+4,
+"artifact sent"
+],
+[
+"kit.py step",
+0.00243,
+56,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.00311,
+72,
+"batch cl67-the-orchestrator-s-push-never-sends-the"
+],
+[
+"kit.py artifact",
+0.000172,
+4,
+"artifact sent"
+],
+[
+"ReadNotifications",
+0.033782,
+793
+],
+[
+"kit.py step",
+0.002714,
+64
+],
+[
+"board_cli.py str-replace",
+0.002743,
+65,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.002184,
+52,
+"batch orch3-realproj-0340"
+],
+[
+"kit.py artifact",
+0.000167,
+4,
+"artifact sent"
+],
+[
+"kit.py attach",
+0.010598,
+256
+],
+[
+"sh:grep",
+0.00033,
+8
+],
+[
+"kit.py search",
+0.022878,
+558
+],
+[
+"sh:grep",
+0.002407,
+59
+],
+[
+"kit.py web-env",
+0.00341,
+84
+],
+[
+"kit.py step",
+0.002262,
+56,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.002894,
+72,
+"batch cl68-harmonize-is-in-every-web-session-from-t"
+],
+[
+"kit.py artifact",
+0.00016,
+4,
+"artifact sent"
+],
+[
+"kit.py search",
+0.011326,
+286
+],
+[
+"kit.py post",
+0.063237,
+1605
+],
+[
+"kit.py step",
+0.002078,
+53
+],
+[
+"kit.py artifact",
+0.003666,
+94,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.003647,
+94,
+"batch cl68-harmonize-is-in-every-web-session-from-t,cl69-a-real-project-run-is-d"
+],
+[
+"kit.py artifact",
+0.000154,
+4,
+"artifact sent"
+],
+[
+"ReadNotifications",
+0.039804,
+1042
+],
+[
+"kit.py land",
+0.003534,
+93
+],
+[
+"ArtifactData get",
+0.003818,
+101,
+"repos/board/comments CR-m4-map-readers-beyond-code-power-bi-documen"
+],
+[
+"ArtifactData get",
+0.003667,
+97,
+"repos/board/posts m4-map-readers-beyond-code-power-bi-documen"
+],
+[
+"kit.py artifact",
+0.005753,
+153,
+"artifact load"
+],
+[
+"ReadNotifications",
+0.029658,
+793
+],
+[
+"mcp:add_repo",
+0.046165,
+1241
+],
+[
+"git clone",
+0.004773,
+129
+],
+[
+"mcp:register_repo_root",
+0.004958,
+134
+],
+[
+"Agent",
+0.009568,
+260
+],
+[
+"kit.py artifact",
+0.001747,
+48,
+"artifact push"
+],
+[
+"git fetch",
+0.002824,
+78,
+".kit/run/artifact/out/docs/0000.json'));print(d.get('status'),d.get('landed'),d."
+],
+[
+"kit.py artifact",
+0.004248,
+118,
+"artifact pin"
+],
+[
+"ArtifactData get",
+0.003544,
+99,
+"repos/board/posts m4-map-readers-beyond-code-power-bi-documen"
+],
+[
+"kit.py artifact",
+0.001816,
+51,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.002053,
+58,
+"batch m4-map-readers-beyond-code-power-bi-documen"
+],
+[
+"kit.py artifact",
+0.000141,
+4,
+"artifact sent"
+],
+[
+"ReadNotifications",
+0.027527,
+791
+],
+[
+"kit.py land",
+0.014998,
+436
+],
+[
+"git fetch",
+0.010807,
+316
+],
+[
+"board_cli.py get",
+0.003808,
+112,
+"posts $p"
+],
+[
+"kit.py review",
+0.006152,
+182,
+"posts cl44-agy-runtime-startup-mcp-usage-and-mirror-fixes"
+],
+[
+"mcp:create_session",
+0.006552,
+195
+],
+[
+"kit.py review",
+0.010421,
+312,
+"artifact push"
+],
+[
+"ArtifactData get",
+0.003386,
+102,
+"repos/board/posts cl51-a-session-on-a-computer-never-writes-to"
+],
+[
+"ArtifactData get",
+0.003386,
+102,
+"repos/board/posts cl57-the-board-s-flowchart-draws-the-post-s-g"
+],
+[
+"kit.py artifact",
+0.0033,
+100,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.002624,
+80,
+"batch cl51-a-session-on-a-computer-never-writes-to,cl57-the-board-s-flowchart-dr"
+],
+[
+"kit.py artifact",
+0.00013,
+4,
+"artifact sent"
+],
+[
+"kit.py search",
+0.002834,
+88
+],
+[
+"tests",
+0.00576,
+180
+],
+[
+"kit.py landing",
+0.001972,
+62
+],
+[
+"sh:grep",
+0.001485,
+47
+],
+[
+"sh:grep",
+0.001225,
+39
+],
+[
+"sh:sed",
+0.008424,
+270
+],
+[
+"kit.py landing",
+0.001209,
+39
+],
+[
+"kit.py step",
+0.004897,
+159,
+"artifact push"
+],
+[
+"kit.py step",
+0.001928,
+63
+],
+[
+"kit.py step",
+0.00073,
+24
+],
+[
+"ArtifactData get",
+0.00302,
+100,
+"repos/board/posts cl41-review-and-adopt-four-local-commits"
+],
+[
+"ArtifactData get",
+0.003171,
+105,
+"repos/board/posts cl44-agy-runtime-startup-mcp-usage-and-mirror-fixes"
+],
+[
+"ArtifactData get",
+0.00296,
+98,
+"repos/board/posts m5-a-resume-prints-only-what-changed"
+],
+[
+"ArtifactData get",
+0.00305,
+101,
+"repos/board/posts m6-the-usage-ledger-counts-cost-per-command"
+],
+[
+"ArtifactData get",
+0.00305,
+101,
+"repos/board/posts m7-every-memory-entry-is-checked-against-re"
+],
+[
+"ArtifactData get",
+0.00296,
+98,
+"repos/board/posts m8-replacing-and-forgetting-in-memory"
+],
+[
+"kit.py artifact",
+0.02184,
+728,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.006526,
+219,
+"batch cl41-review-and-adopt-four-local-commits,cl44-agy-runtime-startup-mcp-usag"
+],
+[
+"ArtifactData batch",
+0.003763,
+128,
+"batch cl17-a-crashed-part-is-continued-from-its-las,cl50-a-part-launched-in-the-"
+],
+[
+"mcp:create_session",
+0.005694,
+195
+],
+[
+"mcp:create_session",
+0.005694,
+195
+],
+[
+"mcp:create_session",
+0.005694,
+195
+],
+[
+"mcp:create_session",
+0.005694,
+195
+],
+[
+"mcp:create_session",
+0.005694,
+195
+],
+[
+"mcp:send_message",
+0.001869,
+64
+],
+[
+"mcp:send_message",
+0.001869,
+64
+],
+[
+"mcp:send_message",
+0.000174,
+6
+],
+[
+"mcp:send_message",
+0.000174,
+6
+],
+[
+"kit.py review",
+0.013166,
+454
+],
+[
+"git ls-remote",
+0.000576,
+20
+],
+[
+"mcp:create_session",
+0.005205,
+182
+],
+[
+"kit.py review",
+0.00409,
+144,
+"artifact push"
+],
+[
+"kit.py review",
+0.000761,
+27,
+"artifact push"
+],
+[
+"kit.py artifact",
+0.005068,
+181,
+"artifact push"
+],
+[
+"py:\"import",
+0.020183,
+726,
+".kit/run/artifact/out/batch-01.json'))"
+],
+[
+"ArtifactData get",
+0.002815,
+102,
+"repos/board/posts cl17-a-crashed-part-is-continued-from-its-las"
+],
+[
+"ArtifactData get",
+0.002788,
+101,
+"repos/board/posts cl50-a-part-launched-in-the-background-knows"
+],
+[
+"ArtifactData get",
+0.002815,
+102,
+"repos/board/posts cl54-a-step-s-task-is-written-once-in-its-pos"
+],
+[
+"ArtifactData get",
+0.002788,
+101,
+"repos/board/posts cl56-a-session-on-the-shared-link-can-attach"
+],
+[
+"ArtifactData get",
+0.002815,
+102,
+"repos/board/posts cl59-a-part-pushes-only-its-own-post-a-pull-n"
+],
+[
+"ArtifactData get",
+0.002815,
+102,
+"repos/board/posts cl60-a-part-s-last-chat-message-is-a-single-d"
+],
+[
+"ArtifactData get",
+0.002815,
+102,
+"repos/board/posts cl61-a-kit-fix-reaches-every-project-on-updat"
+],
+[
+"ArtifactData get",
+0.002815,
+102,
+"repos/board/posts cl66-two-orchestrators-each-keep-their-addres"
+],
+[
+"kit.py artifact",
+0.010796,
+394,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.005658,
+208,
+"batch cl17-a-crashed-part-is-continued-from-its-las,cl50-a-part-launched-in-the-"
+],
+[
+"kit.py artifact",
+0.000135,
+5,
+"artifact sent"
+],
+[
+"ReadNotifications",
+0.033968,
+1277
+],
+[
+"ArtifactData get",
+0.002719,
+103,
+"repos/board/comments CR-cl57-the-board-s-flowchart-draws-the-post-s-g-3"
+],
+[
+"ArtifactData get",
+0.002587,
+98,
+"repos/board/posts cl57-the-board-s-flowchart-draws-the-post-s-g"
+],
+[
+"ArtifactData get",
+0.002561,
+97,
+"repos/board/posts m3-done-keeps-the-map-each-part-checks-its"
+],
+[
+"mcp:send_message",
+0.000158,
+6
+],
+[
+"kit.py artifact",
+0.004506,
+172,
+"artifact load"
+],
+[
+"git fetch",
+0.000702,
+27
+],
+[
+"tests",
+0.001084,
+42
+],
+[
+"tests",
+0.002662,
+104
+],
+[
+"kit.py landing",
+0.000864,
+34
+],
+[
+"kit.py artifact",
+0.004612,
+183,
+"artifact push"
+],
+[
+"sh:mkdir",
+0.0002,
+8,
+".kit/run/artifact/pin"
+],
+[
+"ArtifactData get",
+0.002505,
+101,
+"repos/board/posts cl57-the-board-s-flowchart-draws-the-post-s-g"
+],
+[
+"kit.py artifact",
+0.004576,
+186,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.003074,
+126,
+"batch cl57-the-board-s-flowchart-draws-the-post-s-g,.kit+2F~board.html,kit+2F~bo"
+],
+[
+"ArtifactData batch",
+0.001404,
+58,
+"batch cl57-the-board-s-flowchart-draws-the-post-s-g"
+],
+[
+"mcp:delete_trigger",
+0.00696,
+290
+],
+[
+"ArtifactData get",
+0.00262,
+111,
+"repos/board/kit_docs kit+2F~board+2F~board.template.html"
+],
+[
+"ArtifactData get",
+0.002431,
+103,
+"repos/board/kit_docs .kit+2F~board.html"
+],
+[
+"kit.py artifact",
+0.004352,
+186,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.002784,
+120,
+"batch .kit+2F~board.html,kit+2F~board+2F~board.template.html,tests+2F~fixtures+2"
+],
+[
+"kit.py artifact",
+9.2e-05,
+4,
+"artifact sent"
+],
+[
+"ReadNotifications",
+0.029109,
+1288
+],
+[
+"ArtifactData get",
+0.002285,
+102,
+"repos/board/comments CR-cl17-a-crashed-part-is-continued-from-its-las"
+],
+[
+"ArtifactData get",
+0.002195,
+98,
+"repos/board/posts cl17-a-crashed-part-is-continued-from-its-las"
+],
+[
+"kit.py artifact",
+0.00202,
+91,
+"artifact load"
+],
+[
+"mcp:send_message",
+0.000132,
+6
+],
+[
+"git status",
+0.000778,
+36
+],
+[
+"git add",
+0.0003,
+14
+],
+[
+"mcp:send_message",
+0.00546,
+260
+],
+[
+"ReadNotifications",
+0.021877,
+1062
+],
+[
+"ArtifactData get",
+0.002081,
+102,
+"repos/board/comments CR-cl50-a-part-launched-in-the-background-knows"
+],
+[
+"ArtifactData get",
+0.002081,
+102,
+"repos/board/comments CR-cl54-a-step-s-task-is-written-once-in-its-pos"
+],
+[
+"ArtifactData get",
+0.001999,
+98,
+"repos/board/posts cl50-a-part-launched-in-the-background-knows"
+],
+[
+"ArtifactData get",
+0.001999,
+98,
+"repos/board/posts cl54-a-step-s-task-is-written-once-in-its-pos"
+],
+[
+"kit.py artifact",
+0.002202,
+109,
+"artifact load"
+],
+[
+"mcp:send_message",
+0.00012,
+6
+],
+[
+"kit.py artifact",
+0.00098,
+49,
+"artifact push"
+],
+[
+"ArtifactData get",
+0.00198,
+100,
+"repos/board/posts cl50-a-part-launched-in-the-background-knows"
+],
+[
+"kit.py artifact",
+0.001,
+51,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.001125,
+58,
+"batch cl50-a-part-launched-in-the-background-knows"
+],
+[
+"kit.py artifact",
+7.7e-05,
+4,
+"artifact sent"
+],
+[
+"ReadNotifications",
+0.015454,
+822
+],
+[
+"ArtifactData get",
+0.001897,
+102,
+"repos/board/comments CR-cl56-a-session-on-the-shared-link-can-attach"
+],
+[
+"ArtifactData get",
+0.001823,
+98,
+"repos/board/posts cl56-a-session-on-the-shared-link-can-attach"
+],
+[
+"kit.py artifact",
+0.00184,
+100,
+"artifact load"
+],
+[
+"mcp:send_message",
+0.000109,
+6
+],
+[
+"ReadNotifications",
+0.014115,
+793
+],
+[
+"kit.py land",
+0.001091,
+62
+],
+[
+"board_cli.py get",
+0.002297,
+132,
+"posts cl56-a-session-on-the-shared-link-can-attach"
+],
+[
+"git show",
+0.002769,
+161
+],
+[
+"git pull",
+0.001292,
+76
+],
+[
+"sh:grep",
+0.00037,
+22
+],
+[
+"git log",
+0.002789,
+168
+],
+[
+"git checkout",
+0.001148,
+70
+],
+[
+"tests",
+0.00162,
+100
+],
+[
+"tests",
+0.004144,
+259
+],
+[
+"tests",
+0.005435,
+344
+],
+[
+"tests",
+0.000421,
+27
+],
+[
+"tests",
+0.000832,
+54
+],
+[
+"kit.py landing",
+0.001976,
+130
+],
+[
+"git status",
+0.00123,
+82
+],
+[
+"ArtifactData get",
+0.00151,
+102,
+"repos/board/posts cl56-a-session-on-the-shared-link-can-attach"
+],
+[
+"kit.py artifact",
+0.000759,
+52,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.000835,
+58,
+"batch cl56-a-session-on-the-shared-link-can-attach"
+],
+[
+"kit.py artifact",
+0.000213,
+15,
+"artifact sent"
+],
+[
+"git add",
+0.000168,
+12
+],
+[
+"ReadNotifications",
+0.010785,
+793
+],
+[
+"kit.py land",
+0.000844,
+63
+],
+[
+"git show",
+0.000515,
+39
+],
+[
+"git pull",
+0.000104,
+8
+],
+[
+"tests",
+0.001101,
+86
+],
+[
+"kit.py landing",
+0.000101,
+8
+],
+[
+"ArtifactData get",
+0.001265,
+102,
+"repos/board/posts cl17-a-crashed-part-is-continued-from-its-las"
+],
+[
+"kit.py artifact",
+0.000634,
+52,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.000696,
+58,
+"batch cl17-a-crashed-part-is-continued-from-its-las"
+],
+[
+"kit.py artifact",
+0.000165,
+14,
+"artifact sent"
+],
+[
+"ReadNotifications",
+0.00904,
+793
+],
+[
+"ReadNotifications",
+0.008882,
+793
+],
+[
+"kit.py land",
+0.00099,
+90
+],
+[
+"board_cli.py get",
+0.004234,
+392,
+"posts cl54-a-step-s-task-is-written-once-in-its-pos"
+],
+[
+"git show",
+0.000509,
+48
+],
+[
+"git checkout",
+0.000229,
+22
+],
+[
+"tests",
+0.00053,
+52
+],
+[
+"tests",
+0.00095,
+95
+],
+[
+"kit.py landing",
+7.8e-05,
+8
+],
+[
+"web_takeover.py",
+0.001373,
+143
+],
+[
+"kit.py artifact",
+0.000244,
+26,
+"artifact pull"
+],
+[
+"ArtifactData query",
+0.005207,
+566,
+"repos/board/posts"
+],
+[
+"ArtifactData query",
+0.004471,
+486,
+"repos/board/comments"
+],
+[
+"ArtifactData get",
+0.000745,
+81,
+"repos/board/kit_docs _index"
+],
+[
+"kit.py artifact",
+0.001134,
+126,
+"artifact load"
+],
+[
+"ArtifactData get",
+0.000889,
+101,
+"repos/board/posts cl54-a-step-s-task-is-written-once-in-its-pos"
+],
+[
+"kit.py artifact",
+0.000447,
+52,
+"artifact pin"
+],
+[
+"ArtifactData batch",
+0.000487,
+58,
+"batch cl54-a-step-s-task-is-written-once-in-its-pos"
+],
+[
+"kit.py artifact",
+0.000115,
+14,
+"artifact sent"
+],
+[
+"git add",
+6.4e-05,
+8
+],
+[
+"ReadNotifications",
+0.006027,
+793
+],
+[
+"kit.py step",
+7.9e-05,
+11
+],
+[
+"kit.py artifact",
+0.000427,
+61,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.00049,
+72,
+"batch cl71-no-merge-friction-generated-files-are-no"
+],
+[
+"kit.py artifact",
+2.6e-05,
+4,
+"artifact sent"
+],
+[
+"kit.py step",
+0.000365,
+63
+],
+[
+"kit.py post",
+0.000224,
+40,
+"posts cl71-no-merge-friction-generated-files-are-no"
+],
+[
+"board_cli.py",
+0.001723,
+319
+],
+[
+"kit.py step",
+0.000499,
+96
+],
+[
+"kit.py launch",
+0.00181,
+362
+],
+[
+"mcp:create_session",
+0.000979,
+204
+],
+[
+"kit.py launch",
+0.001247,
+271,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.000444,
+101,
+"batch cl65-a-re-review-s-commit-is-the-one-land-che,cl70-a-merged-step-is-shown-"
+],
+[
+"kit.py artifact",
+1.7e-05,
+4,
+"artifact sent"
+],
+[
+"git log",
+0.00019,
+50
+],
+[
+"kit.py commands",
+0.000683,
+201
+],
+[
+"kit.py usage",
+0.003117,
+974
+],
+[
+"kit.py usage",
+0.000144,
+48
+],
+[
+"kit.py usage",
+0.002206,
+788
+],
+[
+"kit.py step",
+0.000123,
+56,
+"artifact push"
+],
+[
+"ArtifactData batch",
+0.000144,
+72,
+"batch cl72-one-way-to-touch-the-board-the-kit-print"
+],
+[
+"kit.py artifact",
+7e-06,
+4,
+"artifact sent"
+],
+[
+"kit.py ledger",
+6e-06,
+5
+],
+[
+"board_cli.py",
+0.000113,
+113,
+"artifact push"
+],
+[
+"ArtifactData batch",
+6.1e-05,
+76,
+"batch cl72-one-way-to-touch-the-board-the-kit-print,.board+2F~memory+2F~ledger.m"
+],
+[
+"kit.py artifact",
+1.9e-05,
+31,
+"artifact sent"
+],
+[
+"git add",
+0.0,
+0
+]
+]
+}
+}
