@@ -14,3 +14,6 @@ Check: a test that seeds a board from a git mirror with 300 posts, loads one pos
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+CL59: CL59 makes a part push only its own post; CL73 makes the stop check and artifact push count only documents this session changed, for every role, and folds in CL59's push fix split from CL16.
