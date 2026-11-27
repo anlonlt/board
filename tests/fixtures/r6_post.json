@@ -1,0 +1,30 @@
+{
+ "part": "R6",
+ "title": "Every new step is measured against every open one: queue order and what runs together",
+ "train": "runners",
+ "task": "Every new step is measured against every open step, for its place in the queue and for what can run beside it; the queue is re-ranked at each new step, never ordered by date. Today the kit sorts steps by train, then by date (scripts/kit.py); the priority the workstreams had on 11-20 (P1-P3, sorted) was lost on 11-22 when the train became the task list (2e74fce), and nobody noticed. On 2026-11-26 the web orchestrator launched M5 to M8 (features) while CL51 waited; CL51's bug then overwrote 11 posts. Concurrency is not measured between steps either: the split check (0eca719) looks inside one step only; between steps the guide just says \"launch several at once when they do not touch the same files\".\n\n1. At `step new` (and at each resume while steps are open) the new step is compared with each open one, pair by pair, on facts: does it repair damage (data lost or wrong, found by a review, a done or the owner) or put data at risk; does the other wait on it (it changes what the other builds on, or the other would redo or undo its work); do they touch the same files or the same area of the map (M1); is one a bug in what the other builds. In scripts/kit.py.\n2. From those pairs: the queue order (damage first; then what unblocks the most steps; then bugs before features; date only to break a tie), and the running sets: two steps that share files or an area never run at the same time; the later one waits, named.\n3. Every new step re-ranks the whole queue; resume and `kit.py queue` show it with one line of why for each place (\"before M2: M2 builds on the format this fixes\"); the orchestrator launches from its top, and a launch out of order is refused with the step that should go first named (`--anyway \"<why>\"` records it).\n4. A step already running that a new P1 step would undo or redo gets a message to pause at its next save point.\n5. Tests on a fixture board: a new damage step goes to the top; a step that two others wait on goes before them; two steps on the same file never both run; a launch out of order is refused.",
+ "verdict": "Yes: the queue is re-ranked at every new step and every resume, a reason on each line; same-file steps never run together; an out-of-order launch is refused, naming the step to launch first.",
+ "bars": [
+  "7 of 7 checks pass on a fixture board (the 7th: questions and issues filed under a train are not steps): a repair goes to the top and pauses the running step it would undo, a step two others wait on goes first, a bug comes before a feature on its files, two same-file steps never both run, an out-of-order launch is refused and the override is recorded, and a new step re-ranks the queue",
+  "this board (anlonlt/board) today: 25 of 25 open steps ranked (26 before the fix: the question cl27-q-trains-view was counted); 10 of 25 running, 9 of 25 can start now, 6 of 25 wait with the blocking step named. On Harmonize the orchestrator counted 17 steps, and its questions (F5, VR5, HL5, O56) were ranked until this fix",
+  "0 of the 26 live steps are marked as repairs by their wording: CL51 would need `--damage` to go first (the reason for the flag)",
+  "76 of 77 suites pass in the full run after merging main (CL49); the one that fails, tests/test_cl48_test_guard.py, fails the same on origin/main alone"
+ ],
+ "check": "python3 -m unittest discover -s tests -p test_queue_rank.py",
+ "breaks": "sed -i 's/    damage = bool(q.get(\"damage\")) or bool(said)/    damage = False/' scripts/kit.py",
+ "not_checked": [
+  "the real 11-26 replay (M5 to M8 against CL51) on the board as it was then: the fixture test reproduces its shape, not the posts themselves",
+  "the agy orchestrator path (`invoke_subagent`): it does not go through `kit.py launch`, so the order check only reaches it through the guide and resume"
+ ],
+ "artifacts": [
+  "kit/claude-cli/orchestrator.template.md",
+  "kit/orchestrator.template.md",
+  "scripts/kit.py",
+  "tests/test_queue_rank.py",
+  "tests/test_resume_attached_boards.py"
+ ],
+ "branch": "r6",
+ "status": "complete",
+ "completed_at": "2026-11-27T00:37:19Z",
+ "_source": "board-mirror board/posts/r6-the-next-step-is-the-most-important-one.json, as it was when R6 completed (2026-11-27)"
+}

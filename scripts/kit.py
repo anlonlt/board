@@ -5086,8 +5086,8 @@ def first_code_commit_at(root):
     base = _step_base(root)
     if not base:
         return None
-    r = _git_run("-C", root, "log", "--first-parent", "--no-merges", "--format=%cI", "%s..HEAD" % base, "--", ".",
-                 *[":!%s" % d.rstrip("/") for d in _NOT_CODE])
+    r = _git_run("log", "--first-parent", "--no-merges", "--format=%cI", "%s..HEAD" % base, "--", ".",
+                 *[":!%s" % d.rstrip("/") for d in _NOT_CODE], cwd=root)
     dates = [d.strip() for d in (r.stdout or "").splitlines() if d.strip()]
     return dates[-1] if dates else None
 
