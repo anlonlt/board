@@ -133,11 +133,13 @@ def is_orchestrator(data):
             seen = fh.read().strip()
     except OSError:
         seen = ""
-    if seen == "orchestrator":
+    said, _, rest = seen.partition("|")             # "<role>|<KIT_ROLE>|<bytes read>": kept while KIT_ROLE is the same
+    seen_env, _, upto = rest.partition("|")
+    if said == "orchestrator" and seen_env == env:
         return True
-    if seen.startswith("other") and env == seen[5:].partition(":")[0]:
+    if said == "other" and seen_env == env:
         try:
-            upto = int(seen.rpartition(":")[2])
+            upto = int(upto)
         except ValueError:
             upto = -1
         if upto >= 0 and (size <= upto or not TAKEOVER_TEXT.search(_new_text(tp, upto))):
@@ -161,7 +163,7 @@ def is_orchestrator(data):
             found = (env or first) == "orchestrator"
     try:
         with open(cache, "w", encoding="utf-8") as fh:
-            fh.write("orchestrator" if found else "other%s:%d" % (env, size))
+            fh.write("%s|%s|%d" % ("orchestrator" if found else "other", env, size))
     except OSError:
         pass
     return found

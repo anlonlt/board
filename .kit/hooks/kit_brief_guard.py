@@ -61,9 +61,7 @@ def brief_age_min(data):
 
 
 def is_orchestrator(data):
-    role = os.environ.get("KIT_ROLE") or ""
-    if role:
-        return role == "orchestrator"
+    """M12: the guard's test, `session_role` (a takeover mid-session counts; KIT_ROLE only when nothing says)."""
     try:
         import kit_orchestrator_guard
         return kit_orchestrator_guard.is_orchestrator(data)
