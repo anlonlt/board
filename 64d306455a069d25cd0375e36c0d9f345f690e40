@@ -1,0 +1,1 @@
+{"at": "2026-11-27T09:03:10Z", "commit": "64d306455a069d25cd0375e36c0d9f345f690e40", "failed": [], "passed": {"tests/test_artifact_assets_into.py": 1.3}, "total": 87}
