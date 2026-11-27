@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T08:09:41Z",
+ "created_at": "2026-11-27T08:10:13Z",
  "rows": [
   {
    "at": 8,
@@ -140,7 +140,8 @@
     "The kit suggests where a step runs, from the devices and platforms it remembers",
     "On a computer, a part runs its own real-project check before Done",
     "macOS Install Guide & Script: Connecting GitHub to Antigravity Desktop App",
-    "Antigravity desktop app (local computer, NOT web) — Direct kit support patch & review b..."
+    "Antigravity desktop app (local computer, NOT web) — Direct kit support patch & review b...",
+    "Queue and launch enforce cross-step prerequisites so a step never shows [start now] whi..."
    ],
    "train": "P-runners"
   },
@@ -198,5 +199,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T08:09:41Z"
+ "updated_at": "2026-11-27T08:10:13Z"
 }

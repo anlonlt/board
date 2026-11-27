@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T08:09:41Z",
+ "created_at": "2026-11-27T08:10:13Z",
  "rows": [
   {
    "also": [],
@@ -1125,7 +1125,9 @@
   },
   {
    "also": [],
-   "children": [],
+   "children": [
+    "R8"
+   ],
    "parent": "P-runners",
    "part": "R6",
    "post": "r6-the-next-step-is-the-most-important-one",
@@ -1375,8 +1377,19 @@
    "session": "session_01AE1HGkF2ieYqR2ZtyxfSbR",
    "state": "running",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "R6",
+   "part": "R8",
+   "post": "r8-queue-and-launch-enforce-cross-step-prer",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T08:09:41Z"
+ "updated_at": "2026-11-27T08:10:13Z"
 }

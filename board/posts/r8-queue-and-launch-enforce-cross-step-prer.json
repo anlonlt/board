@@ -1,0 +1,47 @@
+{
+ "body": "R3 explicitly depended on M9 (\"in the workflow memory and the map (M9)\") and R1/R2, yet R6's `kit.py queue` marked R3 `[start now]` while M9 was still open because dependencies only lived in prose and `blocked_by` was neither populated nor checked by the queue ranker.\n\n1. Add `--blocked-by <part-or-post>` to `kit.py step new` and auto-extract explicit prerequisite references from the task text (e.g. `Waits on <PART>`, `after <PART>`, `(<PART>)` matching open/existing step parts) into the post's `blocked_by` list (deduped, skipping self-refs), in `scripts/kit.py`.\n2. In R6's queue ranker (`rank_queue` / `cmd_queue`) and `kit.py launch`, treat any unresolved `blocked_by` step as a hard waiter: show `[waits: blocked by <PART> (not done)]` instead of `[start now]`, rank prerequisites ahead of the steps they unblock (\"unblocks R3\"), and refuse an out-of-order launch unless overridden.\n3. Add unit tests in `tests/test_queue_prereqs.py` replaying the R3-depends-on-M9 case: M9 ranks ahead of R3 with reason \"unblocks R3\", R3 shows `[waits: ... M9]` instead of `[start now]`, and once M9 is complete R3 flips to `[start now]`.",
+ "column": "info",
+ "created_at": "2026-11-27T08:10:12Z",
+ "from": "orchestrator",
+ "kept_on_train": "Extends R6 (on train runners) so the ranked queue enforces cross-step prerequisites before suggesting [start now]",
+ "parent": "R6",
+ "part": "R8",
+ "planned_by": "orchestrator",
+ "sources": [
+  "ea0ffa2eae664637891f"
+ ],
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "kit.py",
+    "scripts/kit.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "Add --blocked-by <part-or-post> to kit.py step new and auto-extract explicit prerequisite..."
+  },
+  {
+   "files": [
+    "kit.py"
+   ],
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "In R6's queue ranker (rank_queue / cmd_queue) and kit.py launch, treat any unresolved blocked_by..."
+  },
+  {
+   "files": [
+    "tests/test_queue_prereqs.py"
+   ],
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "Add unit tests in tests/test_queue_prereqs.py replaying the R3-depends-on-M9 case"
+  }
+ ],
+ "task": "R3 explicitly depended on M9 (\"in the workflow memory and the map (M9)\") and R1/R2, yet R6's `kit.py queue` marked R3 `[start now]` while M9 was still open because dependencies only lived in prose and `blocked_by` was neither populated nor checked by the queue ranker.\n\n1. Add `--blocked-by <part-or-post>` to `kit.py step new` and auto-extract explicit prerequisite references from the task text (e.g. `Waits on <PART>`, `after <PART>`, `(<PART>)` matching open/existing step parts) into the post's `blocked_by` list (deduped, skipping self-refs), in `scripts/kit.py`.\n2. In R6's queue ranker (`rank_queue` / `cmd_queue`) and `kit.py launch`, treat any unresolved `blocked_by` step as a hard waiter: show `[waits: blocked by <PART> (not done)]` instead of `[start now]`, rank prerequisites ahead of the steps they unblock (\"unblocks R3\"), and refuse an out-of-order launch unless overridden.\n3. Add unit tests in `tests/test_queue_prereqs.py` replaying the R3-depends-on-M9 case: M9 ranks ahead of R3 with reason \"unblocks R3\", R3 shows `[waits: ... M9]` instead of `[start now]`, and once M9 is complete R3 flips to `[start now]`.",
+ "title": "Queue and launch enforce cross-step prerequisites so a step never shows [start now] while its dependency is open",
+ "train": "runners"
+}
