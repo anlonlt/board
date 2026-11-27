@@ -6,7 +6,7 @@
  "from": "orchestrator",
  "part": "CL56",
  "planned_by": "orchestrator",
- "priority": 2,
+ "priority": 1,
  "repo": "anlonlt/board",
  "runner": "claude-web",
  "status": "planned",
@@ -39,8 +39,8 @@
    "title": "Tests"
   }
  ],
- "task": "An outside AI gets one link, the owner's: the invite (`/_invite/<token>.md`, b52f5b6, 2026-11-22: \"1-link AI bootstrap & post-scoped artifact drop-box\"), which gives it a collaborator token and the post's drop box for files (`POST /_api/posts/<post>/artifacts`). The older share link (`/_share/<token>`, d7c448c, 2026-11-21: read a post, submit text up to 500 KB, no files) still exists beside it, and the R1 runner card handed out that one: the Antigravity desktop app (another account's Mac) could not attach its patch and pasted 61.7 KB of it as a post's text (r1-antigravity-on-the-web-how-far-it-antigravity-app--ed2a38).\n\nWork on anlonlt/board, branch feat/streamline-doctor-memory.\n\n1. Every card, prompt or page that gives an outside AI a link (a runner card, \"Link for AI\", the clerk) gives the invite, scoped to its post; in kit/board/board_server.py and scripts/kit.py.\n2. The share link leads to the same: an old `/_share/<token>` answers with the invite's instructions and its drop box (or is retired with a redirect), so one way exists, not two.\n3. The invite's page says, first, how to attach files to the post (the drop box route, one command) and how to write the post's result.\n4. Tests: an outside session with only the link a runner card gives attaches a file to its post and it shows there; an old share link reaches the same drop box.",
+ "task": "An outside AI gets one link, the owner's: the invite (`/_invite/<token>.md`, b52f5b6, 2026-11-22: \"1-link AI bootstrap & post-scoped artifact drop-box\"), which gives it a collaborator token and the post's drop box for files (`POST /_api/posts/<post>/artifacts`). The older share link (`/_share/<token>`, d7c448c, 2026-11-21: read a post, submit text up to 500 KB, no files) still exists beside it, and the R1 runner card handed out that one: the Antigravity desktop app (another account's Mac) could not attach its patch and pasted 61.7 KB of it as a post's text (r1-antigravity-on-the-web-how-far-it-antigravity-app--ed2a38).\n\nWork on anlonlt/board, branch feat/streamline-doctor-memory.\n\n1. Every card, prompt or page that gives an outside AI a link (a runner card, \"Link for AI\", the clerk) gives the invite, scoped to its post; in kit/board/board_server.py and scripts/kit.py.\n2. The share link leads to the same: an old `/_share/<token>` answers with the invite's instructions and its drop box (or is retired with a redirect), so one way exists, not two.\n3. The invite's page says, first, how to attach files to the post (the drop box route, one command) and how to write the post's result.\n4. Tests: an outside session with only the link a runner card gives attaches a file to its post and it shows there; an old share link reaches the same drop box.\n\nDone already (75a4f41, by the orchestrator on the computer, checked live over the funnel): `POST /_share/<token>/artifacts` saves a file into the link's post's drop box, and the link's page says how. Left: items 2 and 4 (one way, not two: the share link and the invite agree; the tests), and saying it in the runner guides.",
  "title": "An outside AI gets one link, the owner's invite with the post's drop box",
  "train": "board-data",
- "updated_at": "2026-11-27T00:08:20Z"
+ "updated_at": "2026-11-27T00:11:10Z"
 }
