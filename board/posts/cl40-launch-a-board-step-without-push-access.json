@@ -16,6 +16,8 @@
  "created_at": "2026-11-24T04:28:01Z",
  "from": "orchestrator",
  "handoff": "Orchestrator: (1) in Harmonize, `install.py --update` so .kit/kit.py has CL40; then, from a read-only clone of anlonlt/board next to it, `kit.py launch <a board post>`: expect 'The prompt could not be pushed to the board' and a create_session whose prompt holds the text; write it in real_project. (2) In Harmonize, drop the add_repo step from the orchestrator-handoff skill and _handover: clone the board read-only (public, `git clone https://github.com/anlonlt/board ../board`), launches go through this path. Commands checked: kit.py commands launch/attach, _launch_attached, _prompt_branch, launch_text, web-env.",
+ "landed": "1bd5d5552cbdc9aa7cffe2c908a990d9303f0cc3",
+ "landed_at": "2026-11-27T02:41:33Z",
  "launched_at": "2026-11-24T04:28:28Z",
  "not_checked": [
   "A real refused push from a session that cannot push anlonlt/board: this session can push it, so the denial is simulated with a pre-receive hook that prints the O57 message. The orchestrator's run in Harmonize is the real one (real_project).",
@@ -23,10 +25,12 @@
  ],
  "part": "CL40",
  "planned_by": "orchestrator",
+ "review": "continue",
+ "review_id": "CR-cl40-launch-a-board-step-without-push-access",
  "session_id": "session_01AE1HGkUeWvWVe78XUTnTta",
  "status": "complete",
  "title": "Launch a board step without push access to the board (prompt carried in the start message)",
  "train": "cli",
- "updated_at": "2026-11-24T04:51:03Z",
+ "updated_at": "2026-11-27T02:41:33Z",
  "verdict": "kit.py launch now starts a board step from a read-only clone: when the prompt push is refused for access, the create_session prompt carries the prompt's full text and the session commits it first."
 }
