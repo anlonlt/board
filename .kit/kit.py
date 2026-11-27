@@ -6143,6 +6143,8 @@ def _trains_mark(trains, pid, post, session, prompt_rel):
         rows.append(row)
         by[part] = row
     row.update({"post": pid, "session": session, "state": "running", "prompt": prompt_rel or row.get("prompt") or ""})
+    if post.get("runner"):
+        row["runner"] = post["runner"]
     par = by.get(str(row.get("parent") or ""))
     if par is not None:
         par["children"] = list(par.get("children") or [])
@@ -6213,6 +6215,45 @@ def _make_worktree(branch, base, reset=False):
                           "--reset to start it again from %s" % (branch, own, base))
     r = _git_run("worktree", "add", "-q", "-B", branch, path, base)
     return (path, None) if r.returncode == 0 else (None, r.stderr.strip() or "git worktree add failed")
+
+
+def _prepare_agy_branch(branch, base, reset=False, take=False):
+    """R7: prepare or adopt `branch` for an agy subagent (`Workspace=\"share\"`) without switching the orchestrator's
+    working tree or locking `branch` in a `.claude/worktrees/` checkout. Returns (status, error)."""
+    if _git_run("remote", "get-url", "origin").returncode == 0:
+        _git_run("fetch", "-q", "origin", branch, timeout=20)
+    has_local = _git_run("rev-parse", "--verify", "--quiet", "refs/heads/" + branch).returncode == 0
+    has_remote = _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + branch).returncode == 0
+    wt = _worktree_for(branch)
+    if reset:
+        if wt:
+            if _git_run("status", "--porcelain", cwd=wt).stdout.strip():
+                return None, "worktree %s (branch %s) has uncommitted work: commit or keep it, then launch again" % (wt, branch)
+            r = _git_run("reset", "-q", "--hard", base, cwd=wt)
+        else:
+            r = _git_run("branch", "-f", branch, base)
+        return ("reset", None) if r.returncode == 0 else (None, (r.stderr or r.stdout).strip() or "git branch reset failed")
+    if not has_local:
+        start = ("origin/" + branch) if has_remote else base
+        r = _git_run("branch", branch, start)
+        if r.returncode != 0:
+            return None, (r.stderr or r.stdout).strip() or "git branch failed"
+        return ("adopted_remote" if has_remote else "created"), None
+    if has_remote and not wt:
+        loc_sha = _git_run("rev-parse", "refs/heads/" + branch).stdout.strip()
+        rem_sha = _git_run("rev-parse", "refs/remotes/origin/" + branch).stdout.strip()
+        if loc_sha != rem_sha and _git_run("merge-base", "--is-ancestor", "refs/heads/" + branch, "refs/remotes/origin/" + branch).returncode == 0:
+            r = _git_run("branch", "-f", branch, "refs/remotes/origin/" + branch)
+            if r.returncode != 0:
+                return None, (r.stderr or r.stdout).strip() or "git branch fast-forward failed"
+            return "adopted_remote", None
+    own = _git_run("rev-list", "--count", "%s..%s" % (base, branch)).stdout.strip()
+    if own in ("", "0") and not wt:
+        r = _git_run("branch", "-f", branch, base)
+        if r.returncode != 0:
+            return None, (r.stderr or r.stdout).strip() or "git branch update failed"
+        return "prepared", None
+    return "adopted", None
 
 
 def _github_url():
@@ -6292,7 +6333,7 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
             return dict(out, error=why)
     restore = []      # the branch the clone was on: it goes back there whatever happens
     try:
-        return _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset, take)
+        return _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset, take, cli=cli)
     finally:
         if restore:
             g("checkout", "-q", restore[0])
@@ -6318,7 +6359,7 @@ def _inline_prompt(text, rel, body):
             "it and do it.%s\n\n<prompt path=\"%s\">\n%s\n</prompt>" % (rel, (" " + rest) if rest else "", rel, body.rstrip()))
 
 
-def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset, take=False):
+def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset, take=False, cli=None):
     inline = None
     if not session_id and not os.path.isfile(os.path.join(clone, rel)):
         if not os.path.isfile(mine):
@@ -6369,6 +6410,8 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         cmd.append("--reset")
     if take:
         cmd.append("--take")
+    if cli:
+        cmd += ["--cli", cli]
     if web is True:
         cmd.append("--web")
     elif web is False:
@@ -6404,6 +6447,8 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
     # the last pull saw, so the board shows the launch (the orchestrator guard lets this file through)
     fields = {"status": "in progress", "session_id": res.get("session_id"), "branch": res.get("branch"),
               "updated_at": _now_z()}
+    if res.get("runner"):
+        fields["runner"] = res["runner"]
     if not post.get("launched_at"):
         fields["launched_at"] = fields["updated_at"]
     pulled = _read_json(os.path.join(_art_dir(), "in", "repos", b["id"], "posts", pid + ".json")) or {}
@@ -6512,9 +6557,10 @@ def step_holder(pid, p, me=None, people=(), alive=None, saved=None, session=None
 
 def launch(pid, url=None, token=None, web=None, session_id=None, model=None, reset=False, gate=True, cli=None, post_file=None,
            take=False, anyway=None):
-    """`kit.py launch <post>`: the one way a part starts (CL13). Writes status in progress, session_id, launched_at
-    and branch on its post and marks its Trains row running (the local copy; with an attached Artifact board, the
-    batch that carries both there), then starts it: CLI, `claude --bg` inside a worktree made from the current branch;
+    """`kit.py launch <post>`: the one way a part starts (CL13, R7). Writes status in progress, session_id, runner,
+    launched_at and branch on its post and marks its Trains row running (the local copy; with an attached Artifact
+    board, the batch that carries both there), then starts it: CLI, `claude --bg` inside a worktree made from the
+    current branch; agy, checks device capacity, prepares or adopts the step branch, and prints `invoke_subagent`;
     web, the create_session call to make (a script cannot call it), and `launch <post> --session-id <id>` once it
     answered. Refuses a prompt that is not committed."""
     url = url or local_board_url()
@@ -6522,7 +6568,18 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     pl = _platform(cli)
     lmode = _rule("launcher", pl)
     run = _launcher(cli)
-    web = (lmode == "create_session") if web is None else web
+    if web is True or (web is None and lmode == "create_session"):
+        mode = "create_session"
+    elif web is False and cli is None:
+        mode = "claude_bg" if (run is not None or lmode != "self") else "self"
+    elif lmode == "invoke_subagent":
+        mode = "invoke_subagent"
+    elif lmode == "claude_bg":
+        mode = "claude_bg"
+    else:
+        mode = "self"
+    web = (mode == "create_session")
+    runner = {"create_session": "claude-web", "invoke_subagent": "agy", "claude_bg": "claude-cli"}.get(mode)
     given = _read_json(post_file) if post_file else None    # CL32: the host's copy of this board's post (from the Artifact)
     if isinstance(given, dict):
         # launched for another project: no board server here (none seeded, none to auto-push); the host writes the
@@ -6542,13 +6599,17 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                 "Artifact pull (.kit/run/artifact/in/repos/<id>/posts): run `python3 -I .kit/kit.py artifact pull`, make its "
                 "calls, then launch again" % (pid, (" (no local board at %s)" % url) if d.get("_error") else "",
                                               ", ".join(_attached_ids()) or "none attached")}
+    if not runner and session_id:
+        runner = "claude-web" if str(session_id).startswith("session_") else str(post.get("runner") or "")
     part = str(post.get("part") or pid)
     rel = "docs/prompts/%s.md" % pid
-    branch = str(post.get("branch") or "") if session_id else ""
+    branch = str(post.get("branch") or "").strip() if (session_id or take) else ""
     branch = branch or _slug(part, 24)
     c = _kit_config()
     name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
     out = {"ok": True, "post": pid, "part": part, "branch": branch, "web": web, "prompt": rel}
+    if runner:
+        out["runner"] = runner
     base = _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "HEAD"
     text = _launch_text(rel)
     me, people = _my_person(url, token)
@@ -6581,7 +6642,7 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                                              "recorded on its post.)" % (late, pid), queue=True)
         if late:
             out["out_of_order"] = late
-        if web:
+        if mode == "create_session":
             if _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + base).returncode != 0 and base != "HEAD":
                 out["warning"] = "branch %s is not pushed: push it first, the new session clones it from GitHub" % base
             out["create_session"] = {"title": ("%s %s" % (part, str(post.get("title") or "")[:60])).strip(),
@@ -6589,8 +6650,28 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
                                      "prompt": text}
             sess = "pending: create_session (%s)" % name
             launch_mark(pid, text)                     # CL30: the orchestrator guard lets this create_session out
-        else:
-            if pl == "arena" or not shutil.which("claude"):     # CL26 / R5: never an OSError on an absent binary or self-only platform
+        elif mode == "invoke_subagent":
+            if not shutil.which("agy"):                # CL26 / R7: never an OSError on an absent binary
+                return dict(out, ok=False, error=(NO_RUNTIME.replace("neither `claude` nor `agy`", "no `agy`") +
+                            "; an agy orchestrator starts a part with: %s" % _launch_line(part, rel, model, cli="agy")))
+            if gate and _rule("device_cap_gate", pl) and _device() is not None:
+                try:
+                    ok, why = _device().gate(_device().survey())
+                except Exception:
+                    ok, why = True, ""
+                if not ok:
+                    return dict(out, ok=False, error="device cap: " + why)
+            bstatus, why = _prepare_agy_branch(branch, base, reset=reset, take=take)
+            if why:
+                return dict(out, ok=False, error=why)
+            out["branch_status"] = bstatus
+            k = c.get("kit") or {}
+            agy_model = str(model or ((k.get("roles") or {}).get("part") or {}).get("model") or "inherit")
+            out["invoke_subagent"] = ('invoke_subagent(TypeName="self", Role="Part: %s", Model="%s", Workspace="share", '
+                                      'Prompt="%s")') % (part, agy_model, text)
+            sess = "pending: invoke_subagent (%s)" % name
+        elif mode == "claude_bg":
+            if not shutil.which("claude"):             # CL26 / R5: never an OSError on an absent binary
                 return dict(out, ok=False, error=(NO_RUNTIME.replace("neither `claude` nor `agy`", "no `claude`") +
                             "; an agy orchestrator starts a part with: %s" % _launch_line(part, rel, model, cli="agy")))
             if gate and _rule("device_cap_gate", pl) and _device() is not None:
@@ -6623,8 +6704,13 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
             if r.returncode != 0:
                 return dict(out, ok=False, error="claude --bg failed: %s" % (r.stderr or r.stdout).strip()[:300])
             sess = name
+        else:
+            return dict(out, ok=False, error=(NO_RUNTIME.replace("neither `claude` nor `agy`", "no `claude`") +
+                        "; an agy orchestrator starts a part with: %s" % _launch_line(part, rel, model, cli="agy")))
     now = _now_z()
     fields = {"status": "in progress", "session_id": sess, "branch": branch, "working_by": me, "updated_at": now}
+    if runner:
+        fields["runner"] = runner
     if out.get("out_of_order"):
         fields["launched_out_of_order"] = {"why": str(anyway), "was": out["out_of_order"], "at": now}
         out["launched_out_of_order"] = fields["launched_out_of_order"]
@@ -6661,8 +6747,10 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
 def launch_text(r):
     if not r.get("ok"):
         return "Not launched: %s\n" % r.get("error")
-    lines = ["%s launched: post %s in progress, session %s, branch %s%s." % (
-        r["part"], r["post"], r["session_id"], r["branch"], "" if r.get("trains") else " (no Trains card here to mark)")]
+    runner_note = (", runner %s" % r["runner"]) if r.get("runner") else ""
+    lines = ["%s launched: post %s in progress, session %s, branch %s%s%s." % (
+        r["part"], r["post"], r["session_id"], r["branch"], runner_note,
+        "" if r.get("trains") else " (no Trains card here to mark)")]
     if r.get("attached"):
         lines.append("It is a step of board %s: launched from its clone %s (no seeded board, no board-mirror push there)."
                      % (r["attached"]["id"], r["attached"]["clone"]))
@@ -6675,6 +6763,8 @@ def launch_text(r):
     if r.get("prompt_inline"):
         lines.append("The prompt could not be pushed to the board (%s): the start message carries its full text and the "
                      "session commits it on its branch (CL40)." % r["prompt_inline"]["reason"][:160])
+    if r.get("invoke_subagent"):
+        lines.append("Now start it: %s" % r["invoke_subagent"])
     if r.get("create_session"):
         lines.append("Now start it: the claude-code-remote `create_session` tool with %s; then "
                      "`python3 -I .kit/kit.py launch %s --session-id <the session_id it returned>`."
@@ -10023,10 +10113,11 @@ def main(argv=None):
     s.add_argument("--goal", default=""); s.add_argument("--why", default=""); s.add_argument("--db", default=None)
     s = sp.add_parser("capacity", help="the device's session cap (.kit/device.py): --gate exits 1 when no slot is free")
     s.add_argument("--gate", action="store_true"); s.add_argument("--json", action="store_true")
-    s = sp.add_parser("launch", help="start a part: its post in progress + Trains row running, then claude --bg (CLI) "
-                      "or the create_session call (web)")
+    s = sp.add_parser("launch", help="start a part: its post in progress + Trains row running, then claude --bg (CLI), "
+                      "invoke_subagent (agy), or the create_session call (web)")
     s.add_argument("post"); s.add_argument("--session-id", default=None, help="web: the id create_session returned")
     s.add_argument("--web", action="store_true", default=None); s.add_argument("--cli-run", dest="web", action="store_false")
+    s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--model", default=None); s.add_argument("--reset", action="store_true")
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
     s.add_argument("--anyway", default=None, help="R6: launch out of the queue's order; the reason is recorded on the post")
@@ -10509,7 +10600,7 @@ def main(argv=None):
         return 0 if r.get("ok") else 1
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset,
-                   post_file=a.post_file, take=a.take, anyway=a.anyway)
+                   cli=a.cli, post_file=a.post_file, take=a.take, anyway=a.anyway)
         print(field_text("launch", "orchestrator"), file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
         return 0 if r.get("ok") else 1

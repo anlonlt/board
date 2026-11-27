@@ -70,6 +70,139 @@ GUARDED_ENV_KEYS = {
     "KIT_PLATFORM", "KIT_EMBED_PREVIEW", "LMARENA", "ARENA_SANDBOX",
 }
 
+# Pinned literal copy of scripts/kit.py::PLATFORM_RULES (CR-r5-every-rule-that-differs-by-platform-says-2 / R7):
+# any change to a platform-rules row requires editing this pinned table on purpose.
+_EXPECTED_OWNER_PAGE = "read, look at pictures and documents, play audio, Like, tap an answer, comment under a post"
+_EXPECTED_OWNER_ASK = "A question for him is a question post with its options, a default and a deadline: one tap answers it and reaches you."
+EXPECTED_PLATFORM_RULES = {
+    "artifact_steps": {
+        "web": True,
+        "cli": False,
+        "agy": False,
+        "arena": False,
+        "generic": False,
+    },
+    "stale_gate": {
+        "web": True,
+        "cli": False,
+        "agy": False,
+        "arena": False,
+        "generic": False,
+    },
+    "device_cap_gate": {
+        "web": False,
+        "cli": True,
+        "agy": True,
+        "arena": False,
+        "generic": False,
+    },
+    "real_project_run": {
+        "web": "orchestrator",
+        "cli": "computer",
+        "agy": "computer",
+        "arena": "computer",
+        "generic": "computer",
+    },
+    "cards": {
+        "web": "agent",
+        "cli": "server",
+        "agy": "server",
+        "arena": "server",
+        "generic": "server",
+    },
+    "launcher": {
+        "web": "create_session",
+        "cli": "claude_bg",
+        "agy": "invoke_subagent",
+        "arena": "self",
+        "generic": "self",
+    },
+    "reply_format": {
+        "web": "claude_remote",
+        "cli": "claude_cli",
+        "agy": "agy",
+        "arena": "none",
+        "generic": "none",
+    },
+    "hook_runtime": {
+        "web": "web",
+        "cli": "cli",
+        "agy": "agy",
+        "arena": None,
+        "generic": None,
+    },
+    "task_list": {
+        "web": "claude_tasks",
+        "cli": "claude_tasks",
+        "agy": "agy_step",
+        "arena": "step_cli",
+        "generic": "step_cli",
+    },
+    "alive_check": {
+        "web": "claude_agents",
+        "cli": "claude_agents",
+        "agy": "subagents",
+        "arena": "none",
+        "generic": "none",
+    },
+    "part_template": {
+        "web": ("claude-web/part.md", "claude-cli/part.md", "part.md"),
+        "cli": ("claude-cli/part.md", "part.md", "claude-web/part.md"),
+        "agy": ("part.md", "claude-cli/part.md", "claude-web/part.md"),
+        "arena": ("part.md", "claude-cli/part.md", "claude-web/part.md"),
+        "generic": ("part.md", "claude-cli/part.md", "claude-web/part.md"),
+    },
+    "orchestrator_guide": {
+        "web": ("claude-web/orchestrator.md", "claude-cli/takeover.md", "orchestrator.md"),
+        "cli": ("claude-cli/orchestrator.md", "orchestrator.md"),
+        "agy": ("orchestrator.md",),
+        "arena": ("orchestrator.md",),
+        "generic": ("orchestrator.md",),
+    },
+    "consultant_template": {
+        "web": ("claude-cli/consultant.md", "consultant.md"),
+        "cli": ("claude-cli/consultant.md", "consultant.md"),
+        "agy": ("consultant.md", "claude-cli/consultant.md"),
+        "arena": ("consultant.md", "claude-cli/consultant.md"),
+        "generic": ("consultant.md", "claude-cli/consultant.md"),
+    },
+    "checkout_refetch": {
+        "web": False,
+        "cli": True,
+        "agy": True,
+        "arena": True,
+        "generic": True,
+    },
+    "welcome_runtime": {
+        "web": "claude",
+        "cli": "claude-cli",
+        "agy": "agy",
+        "arena": "arena",
+        "generic": "generic",
+    },
+    "owner_surface": {
+        "web": (
+            ["on the board page, usually from his phone: " + _EXPECTED_OWNER_PAGE],
+            ["run a command, open a file of this container, attach a repository or approve a tool for you"],
+            _EXPECTED_OWNER_ASK,
+        ),
+        "cli": (
+            ["on the board page (this computer, or his phone over his private network): " + _EXPECTED_OWNER_PAGE,
+             "type in the orchestrator's terminal, only when he is at the computer"],
+            ["see a path under /tmp or in a part's worktree, or answer in a part's chat"],
+            _EXPECTED_OWNER_ASK,
+        ),
+        "agy": (
+            ["on the board page (this computer, or his phone over his private network): " + _EXPECTED_OWNER_PAGE,
+             "type in the agy terminal, only when he is at the computer"],
+            ["see a path under /tmp or in a subagent's worktree, or answer in a subagent's chat"],
+            _EXPECTED_OWNER_ASK,
+        ),
+        "arena": (["type in this chat while a turn runs; use the embedded board"], [], ""),
+        "generic": (["use the board page"], [], ""),
+    },
+}
+
 
 def load_mod(name, path):
     spec = importlib.util.spec_from_file_location(name, str(path))
@@ -222,6 +355,9 @@ class TableContract(unittest.TestCase):
         self.assertTrue(required_rows <= set(self.kit.PLATFORM_RULES), required_rows - set(self.kit.PLATFORM_RULES))
         for name, row in self.kit.PLATFORM_RULES.items():
             self.assertEqual(set(row.keys()), expected_platforms, "row %r must declare every platform" % name)
+
+    def test_platform_rules_matches_expected_literal_table(self):
+        self.assertEqual(self.kit.PLATFORM_RULES, EXPECTED_PLATFORM_RULES)
 
     def test_unknown_rule_is_refused(self):
         with self.assertRaises(KeyError):
@@ -452,6 +588,17 @@ class LaunchAndStepNewMatrix(Base):
             src = shutil.which(real)
             if src:
                 os.symlink(src, self.bindir_claude / real)
+        self.bindir_agy = self.tmp / "bin-agy"
+        self.bindir_agy.mkdir()
+        self.agy_claude_marker = self.tmp / "agy-claude-called.log"
+        (self.bindir_agy / "agy").write_text("#!/bin/sh\nexit 0\n")
+        (self.bindir_agy / "agy").chmod(0o755)
+        (self.bindir_agy / "claude").write_text("#!/bin/sh\necho called > %s\nexit 0\n" % self.agy_claude_marker)
+        (self.bindir_agy / "claude").chmod(0o755)
+        for real in ("git", "sh", "env"):
+            src = shutil.which(real)
+            if src:
+                os.symlink(src, self.bindir_agy / real)
         self.bindir_empty = self.tmp / "bin-empty"
         self.bindir_empty.mkdir()
         for real in ("git", "sh", "env"):
@@ -487,15 +634,15 @@ class LaunchAndStepNewMatrix(Base):
         k = self.kit_in(self.repo)
         for idx, (pl, (env, anc)) in enumerate(PLATFORM_FIXTURES.items(), 1):
             pid = "cl99-launch-me"
-            self.local("posts/" + pid, dict(POST, part="CL99", status="planned", session_id=None, launched_at=None))
+            self.local("posts/" + pid, dict(POST, part="CL99", status="planned", runner="claude-web", session_id=None, launched_at=None))
             pushed = []
 
             def fake_push(*a, **kw):
                 pushed.append(pl)
                 return {"batches": [], "need_pin": [], "board": ART["url"]}
 
-            # Give CLI fake `claude` on PATH; arena/generic/agy get no `claude` so self/agy refusal is exercised cleanly
-            path_dir = str(self.bindir_claude) if pl == "cli" else str(self.bindir_empty)
+            # Give CLI fake `claude`, agy fake `agy` (+ trap `claude`), arena/generic empty PATH
+            path_dir = str(self.bindir_claude) if pl == "cli" else (str(self.bindir_agy) if pl == "agy" else str(self.bindir_empty))
             with self.subTest(pl), fake_platform(k, dict(env, PATH=path_dir), ancestor=anc), \
                     mock.patch.object(k, "artifact_push", side_effect=fake_push), \
                     mock.patch.object(k, "_device", return_value=None):
@@ -506,17 +653,42 @@ class LaunchAndStepNewMatrix(Base):
                     self.assertTrue(r["ok"], r)
                     self.assertIn("create_session", r)
                     self.assertIn("Never attach a repo", r["create_session"]["prompt"])
+                    self.assertEqual(r["runner"], "claude-web")
+                    self.assertEqual(self.local("posts/" + pid)["data"]["runner"], "claude-web")
                     self.assertEqual(pushed, [pl])
                 elif lmode == "claude_bg":
                     self.assertTrue(r["ok"], r)
                     self.assertIn("worktree", r)
+                    self.assertEqual(r["runner"], "claude-cli")
+                    self.assertEqual(self.local("posts/" + pid)["data"]["runner"], "claude-cli")
+                    self.assertEqual(pushed, [])
+                elif lmode == "invoke_subagent":
+                    self.assertTrue(r["ok"], r)
+                    self.assertIn("invoke_subagent", r)
+                    self.assertIn("invoke_subagent(", k.launch_text(r))
+                    self.assertEqual(r["runner"], "agy")
+                    self.assertEqual(self.local("posts/" + pid)["data"]["runner"], "agy")
+                    self.assertFalse(self.agy_claude_marker.exists())
                     self.assertEqual(pushed, [])
                 else:
-                    # agy / arena / generic without claude: loud refusal, never an OSError, never touches Artifact
+                    # arena / generic without launcher: loud refusal, never an OSError, never touches Artifact
                     self.assertFalse(r["ok"], r)
                     self.assertIn("NOT STARTED", r["error"])
                     self.assertEqual(pushed, [])
                 self.assertEqual(bool(pushed), art, pl)
+
+    def test_agy_launch_without_agy_on_path_refuses_loudly(self):
+        k = self.kit_in(self.repo)
+        pid = "cl99-launch-me"
+        self.local("posts/" + pid, dict(POST, part="CL99", status="planned", runner="claude-web", session_id=None, launched_at=None))
+        env, anc = PLATFORM_FIXTURES["agy"]
+        # Even with `claude` on PATH, agy without `agy` refuses loudly and never spawns `claude --bg`
+        with fake_platform(k, dict(env, PATH=str(self.bindir_claude)), ancestor=anc), \
+                mock.patch.object(k, "_device", return_value=None):
+            r = k.launch(pid, url=self.url, token=TOKEN, gate=False, reset=True, anyway="matrix test")
+        self.assertFalse(r["ok"], r)
+        self.assertIn("NOT STARTED", r["error"])
+        self.assertEqual(self.local("posts/" + pid)["data"]["status"], "planned")
 
 
 class GuidesNameTheTable(unittest.TestCase):

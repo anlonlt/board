@@ -20,15 +20,17 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_launch import POST, Base, git, make_repo  # noqa: E402
+from test_launch import POST, TRAINS, Base, git, make_repo  # noqa: E402
 from test_handoff import ROOT, TOKEN  # noqa: E402
 
 AGY_CONFIG = {"project": "Harmonize", "board_url": "http://127.0.0.1:8765",
               "kit": {"runtime": "agy", "cli": "agy", "review": {"auto": "all", "train_every": 0}}}
-LAUNCH_ENV = ("CLAUDE_CODE_REMOTE", "KIT_CLI", "KIT_NO_LAUNCH", "CLAUDECODE", "CLAUDE_PID", "CLAUDE_CODE_SESSION_ID",
-              "CLAUDE_CODE_ENTRYPOINT", "AGY_PID")
+LAUNCH_ENV = ("CLAUDE_CODE_REMOTE", "CLAUDE_CODE_REMOTE_SESSION_ID", "KIT_PLATFORM", "KIT_CLI", "KIT_NO_LAUNCH",
+              "CLAUDECODE", "CLAUDE_PID", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_PROJECT_DIR",
+              "AGY_PID", "ANTIGRAVITY_AGENT", "ANTIGRAVITY_CONVERSATION_ID")
 
 
 def tool_dir(tmp, *names):
@@ -136,6 +138,136 @@ class Runtime(Base):
         r = k.launch("cl99-launch-me", url=self.url, token=TOKEN, gate=False)
         self.assertTrue(r["ok"], r)
         self.assertIn("create_session", r)
+        self.assertEqual(r["runner"], "claude-web")
+        self.assertEqual(self.local("posts/cl99-launch-me")["data"]["runner"], "claude-web")
+
+    def test_takeover_updates_runner_from_claude_web_to_agy_and_prints_invoke_subagent(self):
+        repo = self.repo({"project": "Board", "kit": {"runtime": "local", "cli": "agy"}})
+        # Seed a running claude-web step with an existing commit on its step branch
+        git(repo, "checkout", "-q", "-b", "cl99")
+        (repo / "wip.txt").write_text("from web\n")
+        git(repo, "add", "wip.txt")
+        git(repo, "commit", "-q", "-m", "web progress")
+        prior_sha = git(repo, "rev-parse", "cl99").strip()
+        git(repo, "checkout", "-q", "work")
+        self.local("posts/cl99-launch-me", dict(
+            POST, status="in progress", runner="claude-web", session_id="session_01WEB",
+            branch="cl99", updated_at="2026-11-26T00:00:00Z",
+        ))
+        self.local("posts/_trains", dict(TRAINS, rows=TRAINS["rows"] + [{
+            "part": "CL99", "parent": "P-cli", "also": [], "children": [], "post": "cl99-launch-me",
+            "prompt": "docs/prompts/cl99-launch-me.md", "session": "session_01WEB", "state": "running",
+            "runner": "claude-web", "store": [],
+        }]))
+        k = self.kit_in(repo)
+        os.environ["ANTIGRAVITY_AGENT"] = "1"
+        os.environ["PATH"] = tool_dir(self.tmp, "agy", "claude")
+        r = k.launch("cl99-launch-me", url=self.url, token=TOKEN, take=True, gate=False)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["runner"], "agy")
+        self.assertEqual(r["branch"], "cl99")
+        self.assertEqual(r["branch_status"], "adopted")
+        self.assertIn("invoke_subagent", r)
+        self.assertIn("invoke_subagent(", r["invoke_subagent"])
+        self.assertIn("invoke_subagent(", k.launch_text(r))
+        self.assertFalse((self.tmp / "claude.log").exists())       # never spawns claude --bg
+        self.assertEqual(git(repo, "rev-parse", "cl99").strip(), prior_sha)  # existing work preserved
+        p = self.local("posts/cl99-launch-me")["data"]
+        self.assertEqual(p["runner"], "agy")
+        self.assertEqual(p["status"], "in progress")
+        rows = {row["part"]: row for row in self.local("posts/_trains")["data"]["rows"]}
+        self.assertEqual(rows["CL99"]["runner"], "agy")
+
+    def test_agy_launch_with_cli_flag_checks_device_cap_and_prepares_branch(self):
+        repo = self.repo({"project": "Board", "kit": {"runtime": "local", "cli": "claude"}})
+        self.local("posts/cl99-launch-me", dict(POST, runner="claude-web"))
+        self.local("posts/_trains", TRAINS)
+        k = self.kit_in(repo)
+        os.environ["CLAUDECODE"] = "1"                             # caller is CLI, but explicitly passes --cli agy
+        os.environ["PATH"] = tool_dir(self.tmp, "agy", "claude")
+        fake_dev_full = mock.Mock(survey=lambda: {}, gate=lambda s: (False, "RAM full"))
+        with mock.patch.object(k, "_device", return_value=fake_dev_full):
+            blocked = k.launch("cl99-launch-me", url=self.url, token=TOKEN, cli="agy", gate=True)
+        self.assertFalse(blocked["ok"])
+        self.assertIn("device cap", blocked["error"])
+        self.assertEqual(self.local("posts/cl99-launch-me")["data"]["runner"], "claude-web")
+        fake_dev_ok = mock.Mock(survey=lambda: {}, gate=lambda s: (True, ""))
+        with mock.patch.object(k, "_device", return_value=fake_dev_ok):
+            r = k.launch("cl99-launch-me", url=self.url, token=TOKEN, cli="agy", gate=True)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["runner"], "agy")
+        self.assertEqual(r["branch_status"], "created")
+        self.assertEqual(git(repo, "rev-parse", "cl99").strip(), git(repo, "rev-parse", "work").strip())
+        self.assertIn("invoke_subagent(", k.launch_text(r))
+        self.assertFalse((self.tmp / "claude.log").exists())
+        self.assertEqual(self.local("posts/cl99-launch-me")["data"]["runner"], "agy")
+
+    def test_takeover_updates_runner_from_claude_web_to_claude_cli(self):
+        repo = self.repo({"project": "Board", "kit": {"runtime": "local", "cli": "claude"}})
+        self.local("posts/cl99-launch-me", dict(
+            POST, status="in progress", runner="claude-web", session_id="session_01WEB",
+            updated_at="2026-11-26T00:00:00Z",
+        ))
+        self.local("posts/_trains", TRAINS)
+        k = self.kit_in(repo)
+        os.environ["CLAUDECODE"] = "1"
+        os.environ["PATH"] = tool_dir(self.tmp, "claude")
+        r = k.launch("cl99-launch-me", url=self.url, token=TOKEN, cli="claude", take=True, gate=False)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["runner"], "claude-cli")
+        self.assertIn("--bg", self.wait_log("claude").splitlines())
+        self.assertEqual(self.local("posts/cl99-launch-me")["data"]["runner"], "claude-cli")
+        rows = {row["part"]: row for row in self.local("posts/_trains")["data"]["rows"]}
+        self.assertEqual(rows["CL99"]["runner"], "claude-cli")
+
+    def test_web_launch_keeps_runner_claude_web(self):
+        repo = self.repo({"project": "Board", "kit": {"runtime": "local", "cli": "agy"}})
+        self.local("posts/cl99-launch-me", dict(POST, runner="agy"))
+        self.local("posts/_trains", TRAINS)
+        k = self.kit_in(repo)
+        os.environ["PATH"] = tool_dir(self.tmp, "agy", "claude")
+        r = k.launch("cl99-launch-me", url=self.url, token=TOKEN, web=True, gate=False)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["runner"], "claude-web")
+        self.assertEqual(self.local("posts/cl99-launch-me")["data"]["runner"], "claude-web")
+        r2 = k.launch("cl99-launch-me", url=self.url, token=TOKEN, web=True, session_id="session_01WEB2")
+        self.assertTrue(r2["ok"], r2)
+        self.assertEqual(self.local("posts/cl99-launch-me")["data"]["runner"], "claude-web")
+        self.assertFalse((self.tmp / "claude.log").exists())
+
+    def test_launch_cli_parses_cli_agy_flag_and_adopts_remote_branch(self):
+        repo = self.repo({"project": "Board", "kit": {"runtime": "local", "cli": "claude"}})
+        bare = self.tmp / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+        git(repo, "remote", "add", "origin", str(bare))
+        git(repo, "checkout", "-q", "-b", "cl99")
+        (repo / "remote-wip.txt").write_text("from remote web\n")
+        git(repo, "add", "remote-wip.txt")
+        git(repo, "commit", "-q", "-m", "remote web commit")
+        remote_sha = git(repo, "rev-parse", "cl99").strip()
+        git(repo, "push", "-q", "origin", "cl99")
+        git(repo, "checkout", "-q", "work")
+        git(repo, "branch", "-D", "cl99")                          # no local cl99 branch yet, only origin/cl99
+        self.local("posts/cl99-launch-me", dict(
+            POST, status="in progress", runner="claude-web", session_id="session_01WEB",
+            branch="cl99", updated_at="2026-11-26T00:00:00Z",
+        ))
+        self.local("posts/_trains", TRAINS)
+        k = self.kit_in(repo)
+        os.environ["CLAUDECODE"] = "1"
+        os.environ["PATH"] = tool_dir(self.tmp, "agy", "claude")
+        with mock.patch.object(k, "_device", return_value=None):
+            import io
+            buf = io.StringIO()
+            with mock.patch.object(sys, "stdout", buf):
+                rc = k.main(["launch", "cl99-launch-me", "--cli", "agy", "--take", "--board-url", self.url, "--token", TOKEN])
+        out = buf.getvalue()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("invoke_subagent(", out)
+        self.assertIn("runner agy", out)
+        self.assertFalse((self.tmp / "claude.log").exists())
+        self.assertEqual(git(repo, "rev-parse", "cl99").strip(), remote_sha)
+        self.assertEqual(self.local("posts/cl99-launch-me")["data"]["runner"], "agy")
 
 
 class HandoverOnTheWeb(unittest.TestCase):
