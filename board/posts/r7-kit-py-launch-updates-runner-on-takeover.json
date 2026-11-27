@@ -31,6 +31,14 @@
  "parent": "R5",
  "part": "R7",
  "planned_by": "orchestrator",
+ "proof": {
+  "at": "2026-11-27T04:42:34Z",
+  "branch": "r7",
+  "commit": "7e5ad06",
+  "key": "14522bc7ae02e600",
+  "needs_real": false,
+  "sha": "7e5ad06f9a57cd40d5be4aede90f393cf1b91eb0"
+ },
  "runner": "agy",
  "session_id": "6caee8ac-37bc-43bc-9723-01390950372e",
  "sources": [
@@ -70,6 +78,6 @@
  "task": "When a step is launched or taken over on a computer (CLI or agy), kit.py launch must update the post runner field to the actual runner taking it (agy, claude-cli, or claude-web) and support agy launches/takeovers without hard-coding claude --bg.\n\n1. In scripts/kit.py (`launch`), update `runner` in the post fields on every launch and `--take` (`claude-web`, `agy`, or `claude-cli`) so a step planned for one runner never stays stale after another runner takes it over.\n2. When running on agy (or with `--cli agy`), `launch` in scripts/kit.py checks device capacity, prepares or adopts the step branch, records the takeover cleanly (`runner: \"agy\"`), and prints the exact `invoke_subagent` call instead of spawning `claude --bg`.\n3. Tests in `tests/test_launch_runtime.py`: takeover updates `runner` from `claude-web` to `agy` and `claude-cli`; agy launch/takeover never invokes `claude --bg`; `--web` launch keeps `runner: \"claude-web\"`.",
  "title": "kit.py launch updates runner on takeover and supports agy launches",
  "train": "runners",
- "updated_at": "2026-11-27T04:36:12Z",
+ "updated_at": "2026-11-27T04:42:35Z",
  "verdict": "Launching or taking over any step now updates its runner to the actual launcher taking it, and Antigravity launches prepare or adopt the branch and print the subagent launch call instead of running Claude in the background."
 }
