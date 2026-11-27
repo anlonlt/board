@@ -35,8 +35,8 @@
    "version": 5
   },
   ".kit+2F~claude-cli+2F~part.md": {
-   "sha": "1a9b03495a80c65244586fce1fcccab236b35f5b92861d5af538b3ea1d87bd95",
-   "version": 8
+   "sha": "fa61a1349918b11191347f9523126d106aabf85100f01434e3bd069c7758d913",
+   "version": 9
   },
   ".kit+2F~claude-cli+2F~takeover.md": {
    "sha": "d80abd018b630a43799fd04bc5de0222f88394c7807933121d98296bbf117ae8",
@@ -51,8 +51,8 @@
    "version": 6
   },
   ".kit+2F~part.md": {
-   "sha": "29f0b722cc23ccb7c927a0f89cf380539282199bb8547a22f075f69d6c2b74c5",
-   "version": 7
+   "sha": "7af4fa43ab52c2d0057d77dcd39383369154af59151a9156bce023a2e3fa7fde",
+   "version": 8
   },
   "AGENTS.md": {
    "sha": "c5f984b5b918280d7156e13102aad947f22129c15953fc81f9592a885f460c15",
@@ -147,8 +147,8 @@
    "version": 6
   },
   "kit+2F~claude+2F~part.template.md": {
-   "sha": "4bc3137af9f2fa8eeaf5ef8ead90b89f8161bc01dee1b4674071cdf658ab6fd6",
-   "version": 4
+   "sha": "09092642464ee950632c23a7b6cfc4a8e8fd96432d5c3862bc732bbd08b54ab3",
+   "version": 5
   },
   "kit+2F~claude-cli+2F~ORCHESTRATOR.template.md": {
    "sha": "9e486179a0e1c71e4b8e67789c37d28c14bc6e4c31bc323243e6d228a7b05a0e",
@@ -167,8 +167,8 @@
    "version": 8
   },
   "kit+2F~claude-cli+2F~part.template.md": {
-   "sha": "987bef766546d7d132936aff02be63b8bac98aebe81400688aa2b26a788cae8c",
-   "version": 8
+   "sha": "1085552c2494bab85e9f657facd8836352cb94b64220fc91a720800f8ed99c29",
+   "version": 9
   },
   "kit+2F~claude-cli+2F~takeover.template.md": {
    "sha": "300fea006a383684a0ae536f89fa9e7d89fcfd5139e025523de6351c4a36a353",
@@ -191,8 +191,8 @@
    "version": 7
   },
   "kit+2F~part.template.md": {
-   "sha": "398854c3f4f7dbc76d80f923665783ccfc3116108d7ab6a5399ed3411c1b617b",
-   "version": 6
+   "sha": "0d06c0b083322432fe446c2e23e7594f863e932412f1fdd711aef18b0cb5758f",
+   "version": 7
   },
   "kit+2F~skills+2F~board+2F~SKILL.md": {
    "sha": "0f665527b19f263b7f36ed722d51883a81cddcb0a4b55fb5696259a4973fdd74",
