@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T04:44:41Z",
+ "created_at": "2026-11-27T07:26:54Z",
  "rows": [
   {
    "also": [],
@@ -157,6 +157,19 @@
    "prompt": "",
    "session": "",
    "state": "running",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
+    "A1"
+   ],
+   "parent": "",
+   "part": "P-agy",
+   "post": "a1-install-cmd-skips-linked-git-worktrees-s",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -1351,8 +1364,19 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-agy",
+   "part": "A1",
+   "post": "a1-install-cmd-skips-linked-git-worktrees-s",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T04:44:41Z"
+ "updated_at": "2026-11-27T07:26:54Z"
 }

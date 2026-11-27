@@ -1,0 +1,35 @@
+{
+ "body": "When a part subagent runs `install.py . --update` inside a linked git worktree (e.g. `~/.gemini/antigravity-cli/worktrees/...` or `.claude/worktrees/...`), `install_cmd()` in `install.py` only checks `under_tempdir(t)` and overwrites `~/.local/bin/<cmd>` to point at the ephemeral worktree, breaking the one-word launcher once the worktree is removed.\n\n1. In `install.py` (`install_cmd`), detect linked git worktrees (`.git` is a file, or `git rev-parse --git-dir` differs from `--git-common-dir`, or path under `/.gemini/antigravity-cli/worktrees/` or `/.claude/worktrees/`) and skip writing `~/.local/bin/<cmd>` when `KIT_BIN_DIR` is not explicitly set, logging a clear `SKIPPED command ... is a git worktree` line (matching `under_tempdir`).\n2. Add unit tests in `tests/test_install_worktree_cmd.py` covering: a linked git worktree skips `~/.local/bin/<cmd>` and leaves an existing launcher untouched; a main checkout still installs/updates it; explicit `KIT_BIN_DIR` still overrides the skip.",
+ "column": "info",
+ "created_at": "2026-11-27T07:26:53Z",
+ "from": "orchestrator",
+ "part": "A1",
+ "planned_by": "orchestrator",
+ "sources": [
+  "a1b2d992af8d48c8af39"
+ ],
+ "status": "planned",
+ "subtasks": [
+  {
+   "files": [
+    "install.py"
+   ],
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "In install.py (install_cmd), detect linked git worktrees (.git is a file, or git rev-parse..."
+  },
+  {
+   "files": [
+    "tests/test_install_worktree_cmd.py"
+   ],
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "Add unit tests in tests/test_install_worktree_cmd.py covering"
+  }
+ ],
+ "task": "When a part subagent runs `install.py . --update` inside a linked git worktree (e.g. `~/.gemini/antigravity-cli/worktrees/...` or `.claude/worktrees/...`), `install_cmd()` in `install.py` only checks `under_tempdir(t)` and overwrites `~/.local/bin/<cmd>` to point at the ephemeral worktree, breaking the one-word launcher once the worktree is removed.\n\n1. In `install.py` (`install_cmd`), detect linked git worktrees (`.git` is a file, or `git rev-parse --git-dir` differs from `--git-common-dir`, or path under `/.gemini/antigravity-cli/worktrees/` or `/.claude/worktrees/`) and skip writing `~/.local/bin/<cmd>` when `KIT_BIN_DIR` is not explicitly set, logging a clear `SKIPPED command ... is a git worktree` line (matching `under_tempdir`).\n2. Add unit tests in `tests/test_install_worktree_cmd.py` covering: a linked git worktree skips `~/.local/bin/<cmd>` and leaves an existing launcher untouched; a main checkout still installs/updates it; explicit `KIT_BIN_DIR` still overrides the skip.",
+ "title": "install_cmd skips linked git worktrees so ~/.local/bin/<cmd> is never overwritten by a part",
+ "train": "agy"
+}
