@@ -660,10 +660,9 @@ class LaunchAndStepNewMatrix(Base):
                                damage="lost data (owner)")
                 self.assertNotIn("error", r, r)
                 lmode = k.PLATFORM_RULES["launcher"][pl]
-                if lmode == "invoke_subagent":
-                    self.assertIn("invoke_subagent", r["launch"], pl)
-                elif lmode in ("create_session", "claude_bg"):
+                if lmode in ("create_session", "claude_bg", "invoke_subagent"):
                     self.assertIn("kit.py launch", r["launch"], pl)
+                    self.assertNotIn("step prompt", r["launch"], pl)
                 else:
                     self.assertIn("work on a branch of its own", r["launch"], pl)
                     self.assertNotIn("invoke_subagent", r["launch"], pl)

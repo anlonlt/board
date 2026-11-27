@@ -271,6 +271,45 @@ class Runtime(Base):
         self.assertEqual(git(repo, "rev-parse", "cl99").strip(), remote_sha)
         self.assertEqual(self.local("posts/cl99-launch-me")["data"]["runner"], "agy")
 
+    def test_launch_line_for_agy_points_at_kit_py_launch(self):
+        repo = self.repo({"project": "Board", "kit": {"runtime": "agy", "cli": "agy"}})
+        k = self.kit_in(repo)
+        os.environ["ANTIGRAVITY_AGENT"] = "1"
+        line = k._launch_line("A2", "docs/prompts/a2-test-step.md")
+        self.assertEqual(line, "python3 -I .kit/kit.py launch a2-test-step")
+        self.assertNotIn("invoke_subagent", line)
+        self.assertNotIn("step prompt", line)
+        # Explicit model flag and explicit cli="agy" both route through kit.py launch
+        line_model = k._launch_line("A2", "docs/prompts/a2-test-step.md", model="pro", cli="agy")
+        self.assertEqual(line_model, "python3 -I .kit/kit.py launch a2-test-step --model pro")
+        # Configured kit.roles.part.model is preserved when non-inherit
+        with mock.patch.object(k, "_kit_config", return_value={
+            "project": "Board", "kit": {"runtime": "agy", "cli": "agy", "roles": {"part": {"model": "pro"}}},
+        }):
+            self.assertEqual(k._launch_line("A2", "docs/prompts/a2-test-step.md", cli="agy"),
+                             "python3 -I .kit/kit.py launch a2-test-step --model pro")
+        # Without a derivable post id, falls back to invoke_subagent(...)
+        fallback = k._launch_line("A2", "no-post", cli="agy")
+        self.assertIn("invoke_subagent(", fallback)
+        self.assertIn('Workspace="share"', fallback)
+
+    def test_agy_orchestrator_guide_and_launch_workflow_point_at_kit_py_launch(self):
+        repo = self.repo({"project": "Board", "kit": {"runtime": "agy", "cli": "agy"}})
+        k = self.kit_in(repo)
+        os.environ["ANTIGRAVITY_AGENT"] = "1"
+        wf = "\n".join(k._launch_workflow())
+        self.assertIn("python3 -I .kit/kit.py launch <post>", wf)
+        self.assertIn("prints the `invoke_subagent` call", wf)
+        self.assertNotIn("`step new` prints the `invoke_subagent` call", wf)
+        for rel in ("kit/orchestrator.template.md", ".kit/orchestrator.md"):
+            p = ROOT / rel
+            if not p.is_file():
+                continue
+            txt = p.read_text(encoding="utf-8")
+            self.assertIn("python3 -I .kit/kit.py launch <post id>", txt, rel)
+            self.assertNotIn("the `Prompt` that `kit.py step new` prints", txt, rel)
+            self.assertNotIn("mark it `kit.py step start <post>`, then launch each part with `invoke_subagent`", txt, rel)
+
 
 class HandoverOnTheWeb(unittest.TestCase):
     """handover.py (orchestrator and clerk successors): on the web it never kills the session's own process."""

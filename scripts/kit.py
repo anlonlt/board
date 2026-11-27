@@ -5556,10 +5556,10 @@ def _launch_line(part, rel, model=None, cli=None, post=None):
     post = post or (os.path.basename(rel)[:-3] if rel and rel.endswith(".md") else None)
     if lmode == "invoke_subagent":
         agy_model = str(model or ((k.get("roles") or {}).get("part") or {}).get("model") or "inherit")
-        pid = os.path.basename(rel)[:-3] if rel and rel.endswith(".md") else ""
-        # CL54: the prompt is generated from the post first (and committed), then the part starts from it
-        return ('%sinvoke_subagent(TypeName="self", Role="Part: %s", Model="%s", Workspace="share", '
-                'Prompt="%s")') % (("python3 -I .kit/kit.py step prompt %s, then " % pid) if pid else "", part, agy_model, _launch_text(rel))
+        if post:   # CL13 / A2: one launch command writes the post, Trains row, runner=agy, branch and prints invoke_subagent
+            return "python3 -I .kit/kit.py launch %s%s" % (post, (" --model %s" % agy_model) if agy_model != "inherit" else "")
+        return ('invoke_subagent(TypeName="self", Role="Part: %s", Model="%s", Workspace="share", '
+                'Prompt="%s")') % (part, agy_model, _launch_text(rel))
     if lmode == "self":
         return ("`python3 -I .kit/kit.py step prompt %s` (the prompt from its post, committed), then work on a branch of its own "
                 "from %s (`python3 -I .kit/kit.py resume --role part --post %s`)" % (post or part, rel, post or part))
@@ -8536,7 +8536,7 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
         out.append("Resume in agy: cross-check each session UUID above with `manage_subagents(Action=\"list\")`. "
                    "Plan and update steps with `python3 -I .kit/kit.py step new|start|complete|drop` (the train IS your "
                    "task list). A step whose session is not running and not done: check its branch (`git branch -a`) "
-                   "and continue it with `invoke_subagent(..., Workspace=\"share\")` or ask the owner."
+                   "and continue it with `python3 -I .kit/kit.py launch <post> --continue` (or `--take` from another runner) or ask the owner."
                    + (" Each step belongs to a board: this one (\"%s\") or the attached board named in its heading; "
                       "an attached board's step is planned, updated and continued in that board's clone (its relaunch "
                       "line), and a reply to the owner's comment there goes to repos/<id>/comments."
@@ -9440,9 +9440,9 @@ def _launch_workflow():
     elif alone:
         lines.append("2. You do the step yourself, from its prompt, on a branch of its own.")
     elif lmode == "invoke_subagent":
-        lines.append("2. `step new` prints the `invoke_subagent` call after `step prompt <post>` (it generates the prompt from "
-                     "the post and commits it): run that first, then make the call (the device cap: "
-                     "`python3 -I .kit/kit.py capacity`, past it the step waits planned).")
+        lines.append("2. `python3 -I .kit/kit.py launch <post>`: it generates the prompt from the post, checks the device cap "
+                     "(past it the step waits planned), prepares or adopts the branch, marks the post (`runner: \"agy\"`), "
+                     "and prints the `invoke_subagent` call to make.")
     else:
         lines.append("2. `python3 -I .kit/kit.py launch <post>`: it marks the post and starts `claude --bg` in a worktree "
                      "(the device cap refuses past it: the step waits planned).")

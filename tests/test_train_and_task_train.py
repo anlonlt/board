@@ -301,7 +301,7 @@ class PostFormat(unittest.TestCase):
             self.assertIn("agy --mode auto -p", out_a)
             self.assertIn("send_message", out_a)
             self.assertNotIn("<POST_ID>", out_a)
-            # agy parity: _launch_line and _write_step_prompt use .kit/part.md + invoke_subagent
+            # agy parity: _launch_line points at kit.py launch <post> and _write_step_prompt uses .kit/part.md
             with open(os.path.join(ROOT, "kit", "part.template.md")) as src, \
                     open(os.path.join(root, ".kit", "part.md"), "w") as dst:
                 dst.write(src.read().replace("{{PROJECT}}", "Demo").replace("{{TALK}}", "English"))
@@ -313,8 +313,8 @@ class PostFormat(unittest.TestCase):
             self.assertIn("send_message", ptxt)
             self.assertIn("device.py run", ptxt)
             launch_a = self.kit._launch_line("PL9", rel, cli="agy")
-            self.assertIn("invoke_subagent", launch_a)
-            self.assertIn('Workspace="share"', launch_a)
+            self.assertEqual(launch_a, "python3 -I .kit/kit.py launch pl9-agy")
+            self.assertIn("invoke_subagent", self.kit._launch_line("PL9", "no-post", cli="agy"))
         finally:
             self.kit.ROOT = old_root
             if old_env is None:
