@@ -1289,6 +1289,11 @@
    "sig": "1efuksx.46",
    "v": []
   },
+  "r7-kit-py-launch-updates-runner-on-takeover": {
+   "at": "",
+   "bt": "2026-11-27T04:47:16.419Z",
+   "sig": "1h1vhwo.2j3"
+  },
   "test-image": {
    "at": "2026-11-20T03:08:38Z",
    "bt": "2026-11-20T03:08:38Z",
