@@ -1598,6 +1598,7 @@ def artifact_load(url=None, token=None, in_dir=None, versions=None):
     token = _resolve_board_token(token)            # after the start: a first start writes the token
     in_dir = in_dir or os.path.join(_art_dir(), "in")
     st = _art_state()
+    _written_here(url, token, st)              # CL73: what this copy wrote before this load (or the first mark)
     taken = kept = merged = 0
     unmerged = []
     read = set(st.get("read") or [])
@@ -1647,7 +1648,7 @@ def artifact_load(url=None, token=None, in_dir=None, versions=None):
     stale = set(st.get("not_there") or [])
     # CL59: what this copy wrote and has not sent yet is not a seed: a dropped batch's documents, and in a partial
     # copy a create under the post it works on (never compared with anything else, so never sent outside it)
-    mine = set((st.get("rebuild") or {}).get("keys") or [])
+    mine = set((st.get("rebuild") or {}).get("keys") or []) | set(st.get("written_here") or [])
     for coll in ART_COLLS:
         for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
             key = "%s/%s" % (coll, row["id"])
@@ -1661,6 +1662,9 @@ def artifact_load(url=None, token=None, in_dir=None, versions=None):
     st["not_there"] = sorted(stale)
     st["read"] = sorted(read)
     st["loaded_at"] = zstamp(datetime.now(timezone.utc))
+    with contextlib.suppress(urllib.error.URLError, OSError, ValueError):
+        # CL73: this load's own writes are the Artifact's copy, not changes made here: the mark moves past them
+        st["seen_seq"] = int(_board_request(url, "changes?since=0&limit=1", token=token).get("latest_seq") or 0)
     rebuild = st.pop("rebuild", None)
     _art_save(st)
     files_card_sync(url, token)                         # CL71: the files map from the board, in a clone that has none
@@ -1819,12 +1823,51 @@ def stale_copy():
     return "STALE: this copy of the Artifact board was loaded %d min ago (more than %d): %s." % (age, cap, way)
 
 
+def _written_here(url, token, st, init=False):
+    """CL73: the documents this copy wrote itself (board_cli, kit write, the page), from the local board's own changes
+    log, since the mark `artifact load` leaves after its own writes. A seed from git (board-mirror) or anything before
+    the first load is not a change made here, so a document with no sync base counts as unsent only when it is in this
+    set. Kept in the state (st["written_here"]) across loads until sent; `init` (a load's start) sets the mark the first
+    time without counting what came before it. Returns the set of `<collection>/<id>` keys."""
+    mine = set(st.get("written_here") or [])
+    try:
+        since = st.get("seen_seq")
+        if since is None:
+            r = _board_request(url, "changes?since=0&limit=1", token=token)
+            st["seen_seq"] = int(r.get("latest_seq") or 0)
+            return mine
+        since = int(since)
+        while True:
+            r = _board_request(url, "changes?since=%d&limit=1000" % since, token=token)
+            ch = r.get("changes") or []
+            for c in ch:
+                if c.get("collection") in ART_COLLS and c.get("op") != "delete":
+                    mine.add("%s/%s" % (c["collection"], c["doc_id"]))
+                since = max(since, int(c.get("seq") or 0))
+            if len(ch) < 1000:
+                break
+        st["seen_seq"] = since
+    except (urllib.error.URLError, OSError, ValueError, KeyError):
+        pass
+    st["written_here"] = sorted(mine)
+    return mine
+
+
+def _counts_as_changed(coll, did, base, data, mine):
+    """CL73: a document this copy changed: its base exists and differs, or it has no base and this copy wrote it."""
+    if base is None:
+        return "%s/%s" % (coll, did) in mine
+    return base != data
+
+
 def artifact_unsent(url=None, token=None):
     """CL30: how many documents of the local copy differ from what the Artifact last had, and the batch files built
     but never recorded sent: {"changed": n, "batches": [paths]}."""
     url = url or local_board_url()
     token = _resolve_board_token(token)
     st = _art_state()
+    mine = _written_here(url, token, st)
+    _art_save(st)
     n = 0
     for coll in ART_COLLS:
         for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
@@ -1832,6 +1875,8 @@ def artifact_unsent(url=None, token=None):
             data = row.get("data") or {}
             if not _in_read_scope(st, coll, row["id"], data):
                 continue                       # CL59: never read from the Artifact: never sent, so never "unsent"
+            if not _counts_as_changed(coll, row["id"], base, data, mine):
+                continue                       # CL73: no base and never written here (a git seed, an unread post)
             if base != data and not (_is_card(row["id"]) and base is not None and _card_older(data, base)):
                 n += 1                         # CL31: an older card here is dropped at push, not unsent
     return {"changed": n, "batches": sorted(glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")))}
@@ -1882,6 +1927,8 @@ def artifact_push(url=None, token=None, out_dir=None, post=None):
         os.remove(f)
     files_card_sync(url, token)                         # CL71: what changed in the files map rides this push
     st = _art_state()
+    mine = _written_here(url, token, st)                # CL73: what this copy wrote itself
+    _art_save(st)
     entries, need_pin, every, dropped, unread = [], [], [], [], []
     for coll in ART_COLLS:
         res = _board_request(url, "db/%s" % coll, token=token)
@@ -1895,6 +1942,8 @@ def artifact_push(url=None, token=None, out_dir=None, post=None):
             if base == data:
                 continue
             key = "%s/%s" % (coll, did)
+            if not _counts_as_changed(coll, did, base, data, mine):
+                continue                                 # CL73: no base, never written here: an old copy, never sent
             if not post and not _in_read_scope(st, coll, did, data):
                 unread.append(key)                       # CL59: never read from the Artifact: never sent from here
                 continue
