@@ -1,0 +1,13 @@
+{
+ "created_at": "2026-11-27T01:05:00.366Z",
+ "delivered": true,
+ "delivered_at": "2026-11-27T01:05:00.554Z",
+ "delivery_error": "",
+ "discussion": "orch-status-20261127010420",
+ "from": "owner",
+ "post_id": "_orchestrator",
+ "read": true,
+ "read_at": "2026-11-27T01:05:00Z",
+ "text": "why didn't it start in fully auto mode ????",
+ "thread_id": "thr_f5d8f02b57cb"
+}
