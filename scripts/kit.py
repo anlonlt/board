@@ -1718,10 +1718,10 @@ def artifact_blobs_text(r):
 
 
 def stale_copy():
-    """CL30: '' when the scripts may read the local copy, else why not (an Artifact board whose copy was never loaded,
+    """CL30 / R5: '' when the scripts may read the local copy, else why not (an Artifact board whose copy was never loaded,
     or loaded longer ago than kit.artifact.fresh_min, 15). $KIT_STALE_OK=1 reads it anyway.
-    CL44/CL51: a session on a computer (outside Claude Code web) is never held by it: the Artifact is the web's."""
-    if not artifact_here() or os.environ.get("KIT_STALE_OK"):    # CL51: never on a computer, whatever kit.mode says
+    Gated by PLATFORM_RULES['stale_gate']: only platforms that use the Artifact are ever held by it."""
+    if not _rule("stale_gate") or not artifact_here() or os.environ.get("KIT_STALE_OK"):
         return ""
     k = _kit_config().get("kit") or {}
     try:
@@ -1732,7 +1732,7 @@ def stale_copy():
     way = ("run `python3 -I .kit/kit.py artifact pull`, make the ArtifactData calls it prints, then `python3 -I "
            ".kit/kit.py artifact load`; then this command again (KIT_STALE_OK=1 reads the old copy anyway)")
     if not at:
-        if _is_web():      # CL45: a web session's first load is its reconcile with GitHub
+        if _rule("artifact_steps"):      # CL45: a web session's first load is its reconcile with GitHub
             way = way.replace("kit.py artifact load`", "kit.py artifact reconcile` (the Artifact against GitHub, both ways)")
         return "STALE: this copy of the Artifact board (%s) was never loaded here: %s." % (artifact_url(), way)
     try:
@@ -2825,7 +2825,7 @@ REVIEW_OWNER_KEYS = ("review_orchestrator", "review_orchestrator_name", "review_
 def my_device():
     """The device this session runs on: `web` for a Claude Code cloud session (send_message reaches it by its id from
     anywhere), else KIT_DEVICE, else the host name."""
-    if os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID"):
+    if _platform() == "web":
         return "web"
     if os.environ.get("KIT_DEVICE"):
         return os.environ["KIT_DEVICE"]
@@ -2871,8 +2871,13 @@ def report_lines(pid, p, posts=None, review=False):
         return ["", "## Where you report", "- No orchestrator owns %s and the board names none: `python3 -I .kit/kit.py unreached %s "
                 "--why \"no owner named\"`, then say so in your post; do not wait." % (who, pid)]
     dev, here = o["device"], my_device()
+    rfmt = _rule("reply_format")
     if dev == "web" or o["address"].startswith(("session_", "cse_")):
         how = "`send_message` (claude-code-remote) with `session_id` `%s`" % o["address"]
+    elif rfmt == "agy":
+        how = "`send_message` to `%s`" % o["address"]
+    elif rfmt == "none":
+        how = "the board post (no inter-session message tool on this platform)"
     elif dev and dev != here:
         how = ("`SendMessage` to `%s`, only the row of device `%s` (a Remote Control row of that machine); a row of another "
                "machine with the same name is NOT it" % (o["name"], dev))
@@ -2890,7 +2895,7 @@ def report_lines(pid, p, posts=None, review=False):
 
 def _owner_write(pid, fields, url=None, token=None, drop=()):
     """Merge `fields` into a post of the local board (`drop`: written as null, which reads as absent); with an attached
-    Artifact board, the batch too."""
+    Artifact board on the web, the batch too."""
     url = url or local_board_url()
     token = _resolve_board_token(token)
     try:
@@ -2900,7 +2905,7 @@ def _owner_write(pid, fields, url=None, token=None, drop=()):
     if data is None:
         return {"ok": False, "post": pid, "error": "no post %s on this board" % pid}
     out = {"ok": True, "post": pid, "data": data}
-    if attached_board():
+    if artifact_here():
         try:
             r = artifact_push(url=url, token=token)
             out.update({"batches": r["batches"], "need_pin": r["need_pin"]})
@@ -4922,12 +4927,14 @@ def done(pid, db_path=None, root=None):
         err.append("pieces still open: %s. Finished: `python3 -I .kit/kit.py sub %s %s --status done`; not needed: `--status drop --why \"...\"`" % (
             "; ".join("%d. %s" % (x["n"], x["title"][:60]) for x in left)[:300], pid, " ".join(str(x["n"]) for x in left)))
     pending_real = check_real_project(p, root=root)
-    warn += pending_real         # CL32/CL38: a real project too, run by the orchestrator (pending)
+    if _rule("real_project_run") == "part":
+        err += pending_real
+    else:
+        warn += pending_real     # CL32/CL38: a real project too (pending)
     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
     strip = lambda d: {k: v for k, v in (d or {}).items() if k not in ("proof", "updated_at")}  # noqa: E731
     if not artifact_here():
-        # CL51: on a computer the board is the local one and git carries it: the post is on the local board (read
-        # above) and in the git copy, never a step on the Artifact
+        # CL51 / R5: on a platform without artifact_steps, the board is the local one and git carries it
         err += git_copy_has(pid, p, strip)
     elif strip(_read_json(_base_path("posts", pid))) != strip(p):
         # CL28: a part updated its post on the local copy only and said "Done": the live board (the Artifact) still
@@ -4951,56 +4958,35 @@ def done(pid, db_path=None, root=None):
     lines = (["NOT READY: %s" % pid] if err else ["OK: %s follows the post format" % pid])
     lines += ["  fix: " + e for e in err] + ["  note: " + w for w in warn]
     if not err:
-        lines.append("Next: commit and push, run .kit/end_session.py, then %s the orchestrator: Done. Check post %s." % (
-            "SendMessage" if _launcher() == "claude" else "message", pid))
+        rfmt = _rule("reply_format")
+        if rfmt == "none":
+            lines.append("Next: commit and push, run .kit/end_session.py (post %s is complete on the board)." % pid)
+        else:
+            tool = {"claude_cli": "SendMessage", "claude_remote": "send_message", "agy": "send_message"}[rfmt]
+            lines.append("Next: commit and push, run .kit/end_session.py, then %s the orchestrator: Done. Check post %s." % (
+                tool, pid))
     return (1 if err else 0), "\n".join(lines)
 
 
 def _active_cli(explicit=None):
-    if explicit in ("agy", "claude"):
-        return explicit
-    if _is_web():          # CL32: a web session is Claude Code whatever the project's cli (Harmonize's is agy)
-        return "claude"
-    env_cli = str(os.environ.get("KIT_CLI") or "").strip().lower()
-    if env_cli in ("agy", "claude"):
-        return env_cli
-    k = _kit_config().get("kit") or {}
-    cfg_cli = str(k.get("cli") or "").strip().lower()
-    return cfg_cli if cfg_cli in ("agy", "claude") else "claude"
-
-
-def _ancestor(comm_name):
-    """True when a process named `comm_name` (e.g. agy) encloses this one (/proc; False where there is none)."""
-    pid, seen = os.getppid(), set()
-    while pid > 1 and pid not in seen and os.path.exists("/proc/%d/comm" % pid):
-        seen.add(pid)
-        try:
-            with open("/proc/%d/comm" % pid, encoding="utf-8") as fh:
-                if fh.read().strip() == comm_name:
-                    return True
-            with open("/proc/%d/stat" % pid, encoding="utf-8") as fh:
-                st = fh.read()
-            pid = int(st[st.rindex(")") + 2:].split()[1])
-        except (OSError, ValueError, IndexError):
-            return False
-    return False
+    pl = _platform(explicit)
+    return "agy" if pl == "agy" else "claude"
 
 
 def _launcher(explicit=None):
-    """CL26: the runtime a launcher (review, part, clerk) starts a session with: the one it runs in, never a binary
-    that is absent. "web" (a Claude Code web/cloud session: a script cannot start one, the orchestrator makes the
-    create_session call), "agy", "claude" (`claude --bg`), or None (nothing runnable here: the caller says so).
-    Order: the web; inside agy with agy on PATH; inside Claude Code with claude on PATH; the preferred CLI (explicit,
-    $KIT_CLI, kit.cli) when on PATH; any CLI on PATH."""
-    if _is_web():
+    """CL26 / R5: the runtime a launcher (review, part, clerk) starts a session with: read from
+    PLATFORM_RULES['launcher'] for _platform(), never a binary that is absent."""
+    pl = _platform(explicit)
+    mode = _rule("launcher", pl)
+    if mode == "create_session":
         return "web"
     have = lambda b: shutil.which(b) is not None  # noqa: E731
-    if os.environ.get("AGY_PID") and have("agy"):
-        return "agy"
-    if (os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_SESSION_ID")) and have("claude"):
-        return "claude"
-    if _ancestor("agy") and have("agy"):
-        return "agy"
+    if mode == "invoke_subagent":
+        return "agy" if have("agy") else ("claude" if have("claude") else None)
+    if mode == "claude_bg":
+        return "claude" if have("claude") else ("agy" if have("agy") else None)
+    if pl == "arena":
+        return None
     pref = [explicit, os.environ.get("KIT_CLI"), (_kit_config().get("kit") or {}).get("cli")]
     for b in [str(x or "").strip().lower() for x in pref] + ["claude", "agy"]:
         if b in ("agy", "claude") and have(b):
@@ -5070,7 +5056,7 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
     (pid) or a whole-train review (train). Idempotent: a review already started is not started again."""
     c = _kit_config()
     k = c.get("kit") or {}
-    active = _active_cli(cli)
+    pl = _platform(cli)
     slug = _slug(c.get("project") or "project")
     if train and not pid:
         posts, _ = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=db_path)
@@ -5089,7 +5075,7 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
         scope = ("The step `%s` (part %s, train `%s`) is complete: review it AND the question its train serves, not only "
                  "this step." % (pid, part, project))
         scope = scope + review_brief(dict(p, _id=pid))
-        if attached_board():   # M11 (CR-m11): a review's first pull reads only the step's documents, never the whole board
+        if artifact_here():   # M11 (CR-m11) / R5: web review's first pull reads only the step's documents
             scope += (" The board, on the web: `python3 -I .kit/kit.py artifact pull --post %s` (only this step's documents, "
                       "by id), the calls it prints, `python3 -I .kit/kit.py artifact load`." % pid)
         br = str((p.get("proof") or {}).get("branch") or p.get("branch") or "")
@@ -5105,11 +5091,9 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
     session = "%s-review-%s" % (slug, _slug(rid[3:], 30))
     # a dry run shows what an explicitly named CLI would run (nothing runs, so its binary need not be here)
     run = cli if (dry_run and cli in ("agy", "claude")) else _launcher(cli)
-    # the guide of the runtime that runs the review; on the web, kit.cli's (Harmonize: agy's send_message <ORCH_ID>)
-    if (run if run in ("agy", "claude") else active) == "agy":
-        cands = (os.path.join(ROOT, ".kit", "consultant.md"), os.path.join(ROOT, ".kit", "claude-cli", "consultant.md"))
-    else:
-        cands = (os.path.join(ROOT, ".kit", "claude-cli", "consultant.md"), os.path.join(ROOT, ".kit", "consultant.md"))
+    # the guide of the runtime that runs the review (PLATFORM_RULES['consultant_template'])
+    tpl_pl = run if run in ("agy", "claude") else pl
+    cands = tuple(os.path.join(ROOT, ".kit", rel) for rel in _rule("consultant_template", tpl_pl))
     tpl, tpl_path = None, cands[0]
     for cand in cands:
         if os.path.isfile(cand):
@@ -5355,13 +5339,10 @@ def _launch_text(rel):
 
 
 def _part_template(cli=None):
-    """This platform's part prompt (.kit/part.md agy, .kit/claude-cli/part.md, .kit/claude-web/part.md an Artifact board worked
-    from the web): its text, or None."""
-    kit = os.path.join(ROOT, ".kit")
-    mine, web = os.path.join(kit, "part.md"), os.path.join(kit, "claude-web", "part.md")
-    local = os.path.join(kit, "claude-cli", "part.md")
-    cands = (mine, local) if _active_cli(cli) == "agy" else (local, mine)
-    for cand in (web,) + cands if _launcher() == "web" else cands + (web,):
+    """This platform's part prompt (PLATFORM_RULES['part_template']): its text, or None."""
+    kit_dir = os.path.join(ROOT, ".kit")
+    for rel in _rule("part_template", cli):
+        cand = os.path.join(kit_dir, rel)
         if os.path.isfile(cand):
             with open(cand, encoding="utf-8") as fh:
                 return fh.read()
@@ -5413,18 +5394,20 @@ def part_prompt(pid, p, cli=None):
 def _launch_line(part, rel, model=None, cli=None, post=None):
     c = _kit_config()
     k = c.get("kit") or {}
-    active = _active_cli(cli)
+    lmode = _rule("launcher", cli)
     mode = permission_mode(k)
     name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
-    if active == "agy":
+    post = post or (os.path.basename(rel)[:-3] if rel and rel.endswith(".md") else None)
+    if lmode == "invoke_subagent":
         agy_model = str(model or ((k.get("roles") or {}).get("part") or {}).get("model") or "inherit")
         return ('invoke_subagent(TypeName="self", Role="Part: %s", Model="%s", Workspace="share", '
                 'Prompt="%s")') % (part, agy_model, _launch_text(rel))
+    if lmode == "self":
+        return "work on a branch of its own from %s (`python3 -I .kit/kit.py resume --role part --post %s`)" % (rel, post or part)
     model = str(model or ((k.get("claude_cli_roles") or {}).get("part") or {}).get("model") or "inherit")
-    post = post or (os.path.basename(rel)[:-3] if rel and rel.endswith(".md") else None)
     if post:   # CL13: one launch command writes the post and the Trains row, then starts the part (CLI or web)
         return "python3 -I .kit/kit.py launch %s%s" % (post, (" --model %s" % model) if model != "inherit" else "")
-    gate = "python3 -I .kit/device.py --gate && " if _device() is not None else ""
+    gate = "python3 -I .kit/device.py --gate && " if (_rule("device_cap_gate", cli) and _device() is not None) else ""
     return "%sCLAUDE_CODE_TASK_LIST_ID= KIT_ROLE=part claude --bg -n %s -w %s --permission-mode %s%s \"%s\"" % (
         gate, name, _slug(part, 24), mode, (" --model %s" % model) if model != "inherit" else "", _launch_text(rel).replace("`", "\\`"))
 
@@ -5991,8 +5974,14 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
     pauses = pause_messages(ranked, pid)
     if pauses:
         res["pause"] = pauses
-        res["next_pause"] = ("for each `pause` entry: send_message (claude-code-remote) to its session_id (agy: send_message "
-                             "to its conversation) with its message; it pauses at its next save point")
+        rfmt = _rule("reply_format", cli)
+        pause_how = {
+            "claude_remote": "send_message (claude-code-remote) to its session_id",
+            "claude_cli": "SendMessage to its session_id",
+            "agy": "send_message to its conversation",
+            "none": "post a comment on its step (no inter-session message on this platform)",
+        }[rfmt]
+        res["next_pause"] = "for each `pause` entry: %s with its message; it pauses at its next save point" % pause_how
     if att:
         res.update({"board": att, "artifact_write": write,
                     "next": "send the post: ArtifactData %s (no other way: a hand-written step post is refused)"
