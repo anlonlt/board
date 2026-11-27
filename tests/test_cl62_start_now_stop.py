@@ -160,6 +160,38 @@ class StaleHandover(unittest.TestCase):
         self.assertEqual(self.kit.stale_handover_lines(posts, {}, areas={}), [])
 
 
+class NoHandoverText(unittest.TestCase):
+    """The owner, 2026-11-27 03:18: no free-text hand-over. A step-state claim under _orchestrator is refused when written."""
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("gate_cl62", str(ROOT / "kit" / "board" / "post_gate.py"))
+        cls.g = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.g)
+
+    def refused(self, text, post_id="_orchestrator", who="orchestrator"):
+        return self.g.check_comment("c", {"post_id": post_id, "from": who, "text": text})
+
+    def test_the_claim_that_misled_orchestrator_2_is_refused(self):
+        why = self.refused("M5 is reviewed. M2 and M3 wait on M1: my question in chat.")
+        self.assertIn("resume --role orchestrator", why or "")
+        self.assertIn("kit.py hold", why)
+        self.assertTrue(self.refused("CL61 is blocked by CL41."))
+
+    def test_what_is_not_step_state_passes(self):
+        self.assertIsNone(self.refused("Orchestrator 3 took over."))
+        self.assertIsNone(self.refused('The owner said "M2 waits on M1" at 02:00.'))   # a quote is his words
+        self.assertIsNone(self.refused("M2 waits on M1", post_id="m2-install", who="part"))
+        self.assertIsNone(self.refused("M2 waits on M1", who="owner"))
+
+    def test_the_guides_say_resume_and_nothing_else(self):
+        for f in ("kit/claude-cli/orchestrator.template.md", "kit/claude/orchestrator.template.md", "kit/orchestrator.template.md"):
+            hand = (ROOT / f).read_text().split("case: hand-over", 1)[1].split("<!--", 1)[0]
+            self.assertIn("No hand-over text (CL62", hand, f)
+            self.assertNotIn("Hand-over: orchestrator <N+1>", hand, f)
+            self.assertNotIn("post one line under `_orchestrator`", hand, f)
+
+
 class StopHook(unittest.TestCase):
     """The hook end to end: a project with the kit and a board of 2 start-now steps, one launched, one not."""
 
