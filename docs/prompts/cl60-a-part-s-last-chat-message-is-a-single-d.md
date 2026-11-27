@@ -13,3 +13,6 @@ Owner, 2026-11-27: "what is up with all the sessions not respecting the characte
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+CL60: builds on CL14 (chat ends with a single dot) and CL49 (who a part reports to); CL14's rule is checked only by a Stop hook after the message is shown, CL60 delivers it before the last message is written.
