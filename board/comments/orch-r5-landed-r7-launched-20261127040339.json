@@ -1,0 +1,6 @@
+{
+ "created_at": "2026-11-27T04:03:38Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "text": "**R5 landed on `main`** at `107736c18` (Claude Code review: `continue`, 54/54 checks green; `origin/r5` dropped).\n\n**R7 launched on `agy`** (`r7-kit-py-launch-updates-runner-on-takeover`, session `6caee8ac-37bc-43bc-9723-01390950372e`, branch `r7` from `origin/main`). Includes the R5 reviewer's `EXPECTED_PLATFORM_RULES` pin in `tests/test_platform_matrix.py` + agy-on-PATH launch test so `PLATFORM_RULES` is locked before **R4** runs next."
+}
