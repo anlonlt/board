@@ -481,6 +481,7 @@ class LaunchAndStepNewMatrix(Base):
                 self.assertEqual("claude-code-remote" in np, rfmt == "claude_remote", (pl, np))
                 self.assertEqual("to its conversation" in np, rfmt == "agy", (pl, np))
                 self.assertEqual("no inter-session message" in np, rfmt == "none", (pl, np))
+                self.local("posts/" + r["post"], {"title": "done", "removed": True})
 
     def test_launch_matches_table_on_every_platform(self):
         k = self.kit_in(self.repo)
