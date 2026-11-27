@@ -11,3 +11,6 @@ Tests clean up after themselves: /tmp held about 5,600 folders left by test runs
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+CL52: builds on CL48 (a test never writes the real board); CL48 refuses writes outside temp, CL52 makes every test remove what it creates (temp dirs, worktrees, branches, processes).
