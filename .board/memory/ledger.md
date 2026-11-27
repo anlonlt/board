@@ -72,6 +72,7 @@ scope: project
 enforced_by: review
 theme: silent error
 source: commit bd6791b
+design: cl71-no-merge-friction-generated-files-are-no
 created_at: 2026-11-27T02:42:05Z
 
 ## F12 (fix, active): M1: the map's overview said nothing of the 568 files it could not read
@@ -79,6 +80,7 @@ scope: project
 enforced_by: review
 theme: silent error
 source: commit 376fa17
+design: cl71-no-merge-friction-generated-files-are-no
 created_at: 2026-11-27T02:42:05Z
 
 ## F13 (fix, active): Page tests went on when a seeded post was refused
@@ -86,6 +88,7 @@ scope: project
 enforced_by: review
 theme: silent error
 source: commit 0703d5e
+design: cl71-no-merge-friction-generated-files-are-no
 created_at: 2026-11-27T02:42:06Z
 
 ## F14 (fix, active): A post updated on the local copy only: the Artifact still showed it planned (K4)
@@ -93,6 +96,7 @@ scope: project
 enforced_by: review
 theme: two copies out of sync
 source: CL28
+design: cl72-one-way-to-touch-the-board-the-kit-print
 created_at: 2026-11-27T02:42:06Z
 
 ## F15 (fix, active): artifact load wrote the Artifact's older copies over 11 newer local posts
@@ -100,6 +104,7 @@ scope: project
 enforced_by: review
 theme: two copies out of sync
 source: CL51
+design: cl72-one-way-to-touch-the-board-the-kit-print
 created_at: 2026-11-27T02:42:06Z
 
 ## F16 (fix, active): The Artifact and the board's git copy drifted apart with nothing reconciling them
@@ -107,6 +112,7 @@ scope: project
 enforced_by: review
 theme: two copies out of sync
 source: CL45
+design: cl72-one-way-to-touch-the-board-the-kit-print
 created_at: 2026-11-27T02:42:06Z
 
 ## F17 (fix, active): The installed .kit copies were older than kit/ after a merge (CL44)
@@ -114,6 +120,7 @@ scope: project
 enforced_by: review
 theme: two copies out of sync
 source: commit cfe798c
+design: cl72-one-way-to-touch-the-board-the-kit-print
 created_at: 2026-11-27T02:42:06Z
 
 ## F18 (fix, active): The kit's own .kit copies were older than kit/ (CL33)
@@ -121,6 +128,7 @@ scope: project
 enforced_by: review
 theme: two copies out of sync
 source: commit 7821ba3
+design: cl72-one-way-to-touch-the-board-the-kit-print
 created_at: 2026-11-27T02:42:07Z
 
 ## F19 (fix, active): A second copy of the orchestrator's guide beside resume
@@ -128,6 +136,7 @@ scope: project
 enforced_by: review
 theme: two copies out of sync
 source: commit 22e889c
+design: cl72-one-way-to-touch-the-board-the-kit-print
 created_at: 2026-11-27T02:42:07Z
 
 ## R1 (rule, active): Git is the one store of the board and the memory: no second copy that nothing keeps equal

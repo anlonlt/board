@@ -204,3 +204,65 @@ class Runner(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CleansUp(Runner):
+    """CL52: tests clean up after themselves. /tmp held about 5,600 folders left by test runs (cl30-inst-*, tmp*,
+    kit-tests-*, scratch boards), each with a project copy and its own board token."""
+
+    def test_a_suite_that_leaves_a_folder_or_a_process_fails_and_the_run_leaves_nothing(self):
+        tmp = self.d / "tmp"
+        tmp.mkdir()
+        self.suite("leaves_dir", "import tempfile; d = tempfile.mkdtemp(prefix='proj-'); open(d + '/token', 'w').write('x')")
+        self.suite("leaves_proc", "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'], start_new_session=True)")
+        self.suite("clean_one", "import tempfile; d = tempfile.TemporaryDirectory(); open(d.name + '/x', 'w').write('x'); d.cleanup(); "
+                                "open(os.path.join(tempfile.gettempdir(), 'kit-ledger-1.lock'), 'w')")
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        env["TMPDIR"] = str(tmp)
+        r = subprocess.run([sys.executable, str(self.d / "scripts" / "run_all_tests.py"), "--keep-going", "leaves_", "clean_one"],
+                           capture_output=True, text=True, env=env, timeout=120)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        line = {n: next(x for x in r.stdout.splitlines() if "test_%s.py" % n in x) for n in ("leaves_dir", "leaves_proc", "clean_one")}
+        self.assertRegex(line["leaves_dir"], r"^\[FAIL\] .* LEFT 1: proj-\w+/$")
+        self.assertRegex(line["leaves_proc"], r"^\[FAIL\] .* LEFT 1: process: python3? -c import time")
+        self.assertTrue(line["clean_one"].startswith("[PASS]"), "a lock file the kit keeps by name is swept, not a failure")
+        self.assertFalse(subprocess.run(["pgrep", "-f", "time.sleep\\(300\\)"], capture_output=True).stdout, "the stray process is killed")
+        self.assertEqual(os.listdir(tmp), [], "the run's own folder (each suite's TMPDIR, logs, launchers, jobs) is gone")
+
+    def test_a_suite_that_writes_past_its_temp_folder_fails_the_run(self):
+        tmp = self.d / "tmp"
+        tmp.mkdir()
+        self.suite("strays", "os.makedirs(%r)" % str(tmp / "kit-stray"))
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        env["TMPDIR"] = str(tmp)
+        r = subprocess.run([sys.executable, str(self.d / "scripts" / "run_all_tests.py"), "strays"], capture_output=True, text=True,
+                           env=env, timeout=120)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("[FAIL] left in %s past the suites' own temp folders: kit-stray" % tmp, r.stdout)
+
+    def test_one_command_removes_past_runs_leftovers_after_a_dry_run(self):
+        root = self.d / "tmp"
+        old = time.time() - 5 * 3600
+        made = {}
+        for name, inside in (("cl30-inst-ab12cd34", ".kit"), ("kit-tests-zz", "a.log"), ("kit-xdg-q1", "board-kit"),
+                             ("tmpab12cd34", ".git"), ("cl48-board-x", "board_data"),
+                             ("tmpzz99yy88", "photo.jpg"),          # Python's name, but nothing a test makes: someone else's
+                             ("other-tool-1", ".kit"), ("kit-new-fresh", ".kit")):
+            d = root / name
+            (d / inside).mkdir(parents=True)
+            made[name] = d
+            if name != "kit-new-fresh":                          # a run going on now: touched a minute ago
+                for p in (d / inside, d):
+                    os.utime(p, (old, old))
+        cmd = [sys.executable, str(self.d / "scripts" / "run_all_tests.py"), "--clean", "--root", str(root)]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        gone = {"cl30-inst-ab12cd34", "kit-tests-zz", "kit-xdg-q1", "tmpab12cd34", "cl48-board-x"}
+        for n in gone:
+            self.assertIn("would remove %s" % made[n], r.stdout)
+        self.assertIn("5 folder(s) of past test runs", r.stdout)
+        self.assertIn("dry run", r.stdout)
+        self.assertEqual(sorted(os.listdir(root)), sorted(made), "a dry run removes nothing")
+        r = subprocess.run(cmd + ["--yes"], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(sorted(os.listdir(root)), sorted(set(made) - gone), "only old folders a test run makes, by name")
