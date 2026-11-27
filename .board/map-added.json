@@ -1,0 +1,191 @@
+{
+ "about": "What parts add to the map by hand (M3): things no reader sees, each with its files and its check. A check: {file, contains} | {exists: [paths]} | {run: cmd} | {probe: what a browser part does, confirmed: YYYY-MM-DD or null}.",
+ "things": [
+  {
+   "id": "guides:part",
+   "kind": "guide",
+   "for": "what a part reads first; says: confirm your stretch, add what you built with its check",
+   "files": [
+    "kit/part.template.md",
+    "kit/claude-cli/part.template.md",
+    "kit/claude/part.template.md"
+   ],
+   "check": {
+    "file": "kit/part.template.md",
+    "contains": "Confirm your stretch of the map"
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "guides:roles",
+   "kind": "guide",
+   "for": "the other roles' guides (orchestrator, review, clerk, runner, takeover, kit-cards), installed by install.py",
+   "files": [
+    "kit/*.template.md",
+    "kit/*/*.template.md",
+    "kit/agents/*.md",
+    "kit/claude/kit-cards.md",
+    "kit/claude/SKILL.board.md"
+   ],
+   "check": {
+    "file": "install.py",
+    "contains": "\"part.template.md\""
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "skills",
+   "kind": "guide",
+   "for": "the board, memory and story skills, installed under .claude/skills and .agents/skills",
+   "files": [
+    "kit/skills/*/SKILL.md"
+   ],
+   "check": {
+    "file": "install.py",
+    "contains": "\"skills\", \"memory\", \"SKILL.md\""
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "lessons:kit",
+   "kind": "memory",
+   "for": "the kit's own lessons, shipped to every project as .kit/lessons.md",
+   "files": [
+    "kit/lessons.md"
+   ],
+   "check": {
+    "file": "install.py",
+    "contains": "rd(\"kit\", \"lessons.md\")"
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "launcher:up",
+   "kind": "script",
+   "for": "./.kit/up, the launcher a project runs",
+   "files": [
+    "kit/up"
+   ],
+   "check": {
+    "file": "install.py",
+    "contains": "rd(\"kit\", \"up\")"
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "board:page",
+   "kind": "page",
+   "for": "the board's page and its English strings",
+   "files": [
+    "kit/board/board.template.html",
+    "kit/board/strings.en.json"
+   ],
+   "check": {
+    "file": "kit/board/strings.py",
+    "contains": "strings.en.json"
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "prompts",
+   "kind": "doc",
+   "for": "each step's prompt, written by the orchestrator, read by its part",
+   "files": [
+    "docs/prompts/*.md"
+   ],
+   "check": {
+    "file": "scripts/kit.py",
+    "contains": "\"docs/prompts/\""
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "docs:kit",
+   "kind": "doc",
+   "for": "the kit's design principles, goals, script index, what not to break, step notes",
+   "files": [
+    "docs/*.md",
+    "docs/*.json",
+    "docs/*.jsonl",
+    "docs/*.example",
+    "README.md",
+    "AGENTS.md",
+    "LICENSE"
+   ],
+   "check": {
+    "file": "AGENTS.md",
+    "contains": "docs/DESIGN-PRINCIPLES.md"
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "docs:evidence",
+   "kind": "doc",
+   "for": "pictures and captures that steps' posts point to",
+   "files": [
+    "docs/assets/*",
+    "docs/assets/*/*",
+    "docs/cl*/*",
+    "docs/posts/*"
+   ],
+   "check": {
+    "exists": [
+     "docs/assets"
+    ]
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "step0",
+   "kind": "guide",
+   "for": "the step 0 survey a project runs before install",
+   "files": [
+    "step0/*.md",
+    "survey/README.md"
+   ],
+   "check": {
+    "file": "install.py",
+    "contains": "step0/survey-code.md"
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "config:example",
+   "kind": "config",
+   "for": "the config install starts from",
+   "files": [
+    "config/example.json"
+   ],
+   "check": {
+    "file": "install.py",
+    "contains": "\"config\", \"example.json\""
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "tests:fixtures",
+   "kind": "test",
+   "for": "fixtures the tests read",
+   "files": [
+    "tests/fixtures/*"
+   ],
+   "check": {
+    "file": "tests/test_cl33_compact_posts.py",
+    "contains": "cl33_awaits.md"
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  },
+  {
+   "id": "page:artifact-board",
+   "kind": "page",
+   "for": "the board as a claude.ai Artifact: only a browser sees the page and who it is shared with",
+   "files": [],
+   "check": {
+    "probe": "Open the Artifact board named in .kit/config.json (kit.artifact): the trains and this step's post show; Share says private (only the owner)",
+    "confirmed": null
+   },
+   "by": "m3-done-keeps-the-map-each-part-checks-its"
+  }
+ ],
+ "links": []
+}
