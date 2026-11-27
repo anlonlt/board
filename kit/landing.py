@@ -248,12 +248,81 @@ def said(rc, txt):
     return rc, txt
 
 
+STEP_FILE = os.path.join(".kit", "run", "step")
+STEP_SAID = os.path.join(".kit", "run", "step-disagree.json")
+
+
+def recorded_step(root=None):
+    """CL50: the step this worktree is for, as recorded on disk: `.kit/run/step` (written by `kit.py launch` before
+    `claude --bg`, and by `resume --role part --post`), else the post `resume --role part` marked for this branch
+    (part-branch.json), else ''. Never the environment: `claude --bg` can hand the work to a warm spare process whose
+    environment came from another launch (CL44's part carried M1's KIT_POST)."""
+    root = root or ROOT
+    try:
+        with open(os.path.join(root, STEP_FILE), encoding="utf-8") as fh:
+            first = (fh.read().strip().splitlines() or [""])[0].strip()
+        if first:
+            return first
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(root, ".kit", "run", "part-branch.json"), encoding="utf-8") as fh:
+            d = json.load(fh) or {}
+        if d.get("post") and d.get("branch") and d["branch"] == out("symbolic-ref", "--short", "-q", "HEAD", cwd=root):
+            return str(d["post"])
+    except (OSError, ValueError, AttributeError):
+        pass
+    return ""
+
+
+def write_step(root, pid):
+    """CL50: record `pid` as this worktree's step (`.kit/run/step`). True when written."""
+    try:
+        path = os.path.join(root, STEP_FILE)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(str(pid).strip() + "\n")
+        return True
+    except OSError:
+        return False
+
+
+def own_step(root=None, branch_post=""):
+    """CL50: (step, note). The step recorded for this worktree wins (recorded_step, else `branch_post`, the post whose
+    branch this is, when the caller knows it); KIT_POST only when nothing is recorded, or when it agrees. When the two
+    disagree the note says so, once per (environment, step) pair in this worktree; afterwards it is ''."""
+    root = root or ROOT
+    env = str(os.environ.get("KIT_POST") or "").strip()
+    rec = recorded_step(root) or str(branch_post or "").strip()
+    if not rec:
+        return env, ""
+    if not env or env == rec:
+        return rec, ""
+    pair = {"env": env, "step": rec}
+    path = os.path.join(root, STEP_SAID)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            if json.load(fh) == pair:
+                return rec, ""
+    except (OSError, ValueError):
+        pass
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(pair, fh)
+    except OSError:
+        pass
+    return rec, ("STEP: this session's environment names step %s (KIT_POST), but this worktree is step %s (%s): "
+                 "working as %s, its saves are labelled %s. A `claude --bg` launch can start in a process made for "
+                 "another launch; nothing to do (said once)." % (env, rec, STEP_FILE, rec, rec))
+
+
 def part_branch():
-    """This clone's branch when a part works on it (KIT_POST, or `resume --role part` marked it), else ''."""
+    """This clone's branch when a part works on it (its recorded step, KIT_POST, or `resume --role part` marked it), else ''."""
     br = out("symbolic-ref", "--short", "-q", "HEAD")
     if not br or br == trunk() or br.startswith("wip/") or br in ("main", "master", "board-mirror", "kit-usage"):
         return ""
-    if os.environ.get("KIT_POST"):
+    if os.environ.get("KIT_POST") or recorded_step():
         return br
     try:
         with open(os.path.join(ROOT, ".kit", "run", "part-branch.json"), encoding="utf-8") as fh:
@@ -273,10 +342,11 @@ def checkpoint_save(br):
         res = json.loads((r.stdout.strip().splitlines() or ["{}"])[-1])
     except (OSError, ValueError, subprocess.SubprocessError):
         return 1, "", True
+    note = (" " + res["step_note"]) if res.get("step_note") else ""      # CL50: said once, with the save
     if res.get("refused"):
-        return 1, "save: %s on %s: %s" % ("checkpoint " + res["sha"] if res.get("sha") else "nothing committed", br, res["why"]), False
+        return 1, "save: %s on %s: %s%s" % ("checkpoint " + res["sha"] if res.get("sha") else "nothing committed", br, res["why"], note), False
     if res.get("pushed"):
-        return 0, "save: %s on origin/%s (%s)" % (res.get("sha") or "HEAD", br, "a checkpoint commit" if res.get("committed") else "its commits"), False
+        return 0, "save: %s on origin/%s (%s)%s" % (res.get("sha") or "HEAD", br, "a checkpoint commit" if res.get("committed") else "its commits", note), False
     if not res.get("ok"):
         return 1, "", True
     return 1, "", True                                   # committed or clean but origin did not take it: wip/ keeps it
