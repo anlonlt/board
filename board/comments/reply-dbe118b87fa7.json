@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T03:12:38Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_1255c533788d",
+ "text": "Fixed on `main` (`f8b1811`) and here (`543db7e`):\n\n- **Pricing added:** `gemini-3.5-flash-lite` ($0.10 / $0.40 / $0.025 per 1M), `gemini-3.5-flash`, and `gemini-3-flash-lite` in `scripts/usage.py` and `.kit/usage.py`.\n- **Role detection fixed:** agy `clerk` and `review` subagents that inherit `KIT_ROLE=orchestrator` from `kit/up` now classify as `clerk` / `review` instead of `orchestrator`.\n- **Verified:** 37/37 tests green (`Bug4AgyUsageParsingAndHookWiring`, `test_kit_copies_current`, `test_cl37_usage`), and today's live clerk row re-recorded cleanly: `role: clerk`, `gemini-3.5-flash-lite`, **$0.052** across 52 calls."
+}
