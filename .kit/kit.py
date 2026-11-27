@@ -5835,13 +5835,19 @@ def _mins_since(stamp):
 def _saved_mins(branch):
     """Minutes since a session last saved its work on wip/<branch> at GitHub (None: never, or not reachable): the sign
     of life every platform shares, newer than this copy of the board."""
-    ref = "refs/remotes/origin/wip/" + branch
-    try:
-        _git_run("fetch", "-q", "--no-tags", "origin", "+refs/heads/wip/%s:%s" % (branch, ref), timeout=20)
-        t = _git_run("log", "-1", "--format=%ct", ref, timeout=10)
-        return max(0, int((time.time() - int(t.stdout.strip())) // 60)) if t.returncode == 0 and t.stdout.strip() else None
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
+    # CL55: a part's saves are checkpoint commits on its branch itself, another session's on wip/<branch>: the newest counts
+    best = None
+    for src in ("wip/" + branch, branch):
+        ref = "refs/remotes/origin/" + src
+        try:
+            _git_run("fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:%s" % (src, ref), timeout=20)
+            t = _git_run("log", "-1", "--format=%ct", ref, timeout=10)
+            if t.returncode == 0 and t.stdout.strip() and (src != branch or _git_run("log", "-1", "--format=%s", ref).stdout.startswith("checkpoint(")):
+                m = max(0, int((time.time() - int(t.stdout.strip())) // 60))
+                best = m if best is None else min(best, m)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    return best
 
 
 def step_holder(pid, p, me=None, people=(), alive=None, saved=None, session=None):
@@ -8296,17 +8302,23 @@ def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=
         return {"ok": False, "committed": False, "why": "refusing to checkpoint on branch %s (use a step branch)" % br}
     st = _git_run("status", "--porcelain", "--untracked-files=all")
     if st.returncode != 0 or not st.stdout.strip():
-        return {"ok": True, "committed": False, "branch": br, "why": "working tree clean"}
+        res = {"ok": True, "committed": False, "branch": br, "why": "working tree clean"}
+        if (push or k.get("checkpoint_push")) and _git_run("rev-list", "-1", "HEAD", "--not", "--remotes=origin").stdout.strip():
+            pushed = _checkpoint_push(br, _landing_mod())
+            return dict(res, **pushed) if isinstance(pushed, dict) else dict(res, pushed=pushed)
+        return res
     never = tuple((k.get("guard") or {}).get("never_add") or ()) + _CK_SECRETS
     # Stage tracked modifications and safe untracked files (skip secrets, oversized files, .kit/run/, .kit/board_data/)
     tracked = _git_run("diff", "--name-only").stdout.splitlines() + _git_run("diff", "--cached", "--name-only").stdout.splitlines()
     untracked = _git_run("ls-files", "--others", "--exclude-standard", "-z").stdout.split("\0")
-    to_add = []
+    to_add, left = [], []
     for f in sorted(set(x for x in tracked + untracked if x)):
         low = f.lower().replace("\\", "/")
         if low.startswith(".kit/run/") or low.startswith(".kit/board_data/"):
             continue
         if any(fnmatch.fnmatch(low, p.lower()) or fnmatch.fnmatch(os.path.basename(low), p.lower()) for p in never):
+            if not low.startswith(".kit/"):
+                left.append(f)
             continue
         fp = os.path.join(ROOT, f)
         if os.path.isfile(fp):
@@ -8323,8 +8335,17 @@ def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=
         return {"ok": False, "committed": False, "branch": br, "why": add_r.stderr.strip() or "git add failed"}
     if not _git_run("diff", "--cached", "--name-only").stdout.strip():
         return {"ok": True, "committed": False, "branch": br, "why": "nothing staged"}
+    la = _landing_mod()
+    if la and (push or k.get("checkpoint_push")):
+        # CL55: what would leave for GitHub is read first; a secret-looking value commits nothing and pushes nothing
+        hits = la.secret_hits(la.push_base("HEAD"), cached=True, cwd=ROOT)
+        if hits:
+            _git_run("reset", "-q", "--", *to_add)
+            return {"ok": False, "committed": False, "refused": True, "branch": br, "why": la.hits_text(hits)}
     label = str(post or os.environ.get("KIT_POST") or br)
     msg = "checkpoint(%s): %s" % (label, str(message or "save progress").strip()[:120])
+    if left:
+        msg += "\n\nLeft out (secret-named, never committed): %s" % ", ".join(left[:20])
     c_args = []
     if not _git_run("config", "user.name").stdout.strip():
         c_args += ["-c", "user.name=board kit"]
@@ -8341,11 +8362,37 @@ def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=
         os.utime(stamp, None)
     except OSError:
         pass
-    pushed = False
-    if push or k.get("checkpoint_push"):
-        pr = _git_run("push", "-q", "-u", "origin", "HEAD", timeout=120)
-        pushed = pr.returncode == 0
-    return {"ok": True, "committed": True, "branch": br, "sha": sha, "message": msg, "pushed": pushed}
+    pushed = _checkpoint_push(br, la) if (push or k.get("checkpoint_push")) else False
+    if isinstance(pushed, dict):
+        return dict(pushed, committed=True, sha=sha, message=msg)
+    return {"ok": True, "committed": True, "branch": br, "sha": sha, "message": msg, "pushed": pushed, "left_out": left}
+
+
+def _landing_mod():
+    """.kit/landing.py as a module (its secret check), or None."""
+    for d in (os.path.join(ROOT, ".kit"), os.path.dirname(os.path.abspath(__file__)), os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "kit")):
+        f = os.path.join(d, "landing.py")
+        if os.path.isfile(f):
+            try:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("kit_landing_mod", f)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                mod.ROOT = ROOT
+                return mod
+            except Exception:
+                return None
+    return None
+
+
+def _checkpoint_push(br, la=None):
+    """The step's branch to origin, never forced; True, False (origin did not take it), or a refusal (a secret in commits
+    origin lacks: the session's own, made before this checkpoint)."""
+    if la:
+        hits = la.secret_hits(la.push_base("HEAD"), "HEAD", cwd=ROOT)
+        if hits:
+            return {"ok": False, "refused": True, "branch": br, "pushed": False, "why": la.hits_text(hits)}
+    return _git_run("push", "-q", "-u", "origin", "HEAD:refs/heads/%s" % br, timeout=120).returncode == 0
 
 
 def pieces_file(pid, p):
@@ -8379,6 +8426,19 @@ def subtask_lines(p, taking_over=False):
 
 
 def take_step_branch(p):
+    """The step's branch brought in (`_take_branch`), then its last save looked at (CL55)."""
+    lines = _take_branch(p)
+    br = str(p.get("branch") or "")
+    cur = _git_run("branch", "--show-current").stdout.strip()
+    if br and not any(x.startswith("## FIRST") for x in lines) and (cur == br or (_slug(str(p.get("part") or ""), 24) or "\0") in cur.lower()):
+        try:
+            lines += take_last_save(br)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    return lines
+
+
+def _take_branch(p):
     """A part starts on the newest work of its step (CL44 item 13), whatever started it (agy, claude --bg -w, the web):
     when the post names a branch whose commits this checkout lacks, bring them in now (fast-forward, else a merge);
     when that cannot be done safely (uncommitted changes, a conflict), the first lines say so and what to run."""
@@ -8423,6 +8483,53 @@ def take_step_branch(p):
             return stop("a merge conflict, so nothing was changed")
     return ["## Your step's work is here: `%s` brought into this checkout (%s, %s -> %s)" % (
         ref, how, head, _git_run("rev-parse", "--short", "HEAD").stdout.strip()), ""]
+
+
+def mark_part_branch(pid, p):
+    """CL55: this clone's branch is a part's: the save hook commits its work there (CL44's checkpoint) and pushes it,
+    instead of a snapshot on wip/<branch>."""
+    cur = _git_run("branch", "--show-current").stdout.strip()
+    trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+    if not cur or cur in (trunk, "main", "master", "board-mirror", "kit-usage") or cur.startswith("wip/"):
+        return
+    try:
+        path = os.path.join(ROOT, ".kit", "run", "part-branch.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"branch": cur, "post": pid, "step_branch": str(p.get("branch") or "")}, fh)
+    except OSError:
+        pass
+
+
+def take_last_save(br):
+    """CL55: a takeover starts from the newest of the step's branch and its last save (wip/<branch>, at origin or in this
+    clone), and says which. A save that continues this checkout's commit and is newer is put in the working tree."""
+    have = lambda x: _git_run("rev-parse", "--verify", "--quiet", x).returncode == 0  # noqa: E731
+    _git_run("fetch", "-q", "--no-tags", "origin", "+refs/heads/wip/%s:refs/remotes/origin/wip/%s" % (br, br), timeout=30)
+    saves = [x for x in ("refs/remotes/origin/wip/" + br, "refs/wip/" + br) if have(x)]
+    when = lambda x: int(_git_run("log", "-1", "--format=%ct", x).stdout.strip() or 0)  # noqa: E731
+    stamp = lambda x: datetime.fromtimestamp(when(x), timezone.utc).strftime("%Y-%m-%d %H:%M UTC")  # noqa: E731
+    head = _git_run("rev-parse", "--short", "HEAD").stdout.strip()
+    tree = _git_run("rev-parse", "HEAD^{tree}").stdout.strip()
+    if not saves:
+        return []                                         # no save of this step anywhere: its branch is all there is
+    fresh = [x for x in saves if _git_run("rev-parse", x + "^{tree}").stdout.strip() != tree and when(x) > when("HEAD")]
+    if not fresh:
+        last = max(saves, key=when)
+        return ["## Started from your step's branch `%s` (%s, %s): the newest; its last save: %s" % (
+            br, head, stamp("HEAD"), "`%s`, %s, older or the same" % (last.replace("refs/remotes/", "").replace("refs/", ""), stamp(last))), ""]
+    s = max(fresh, key=when)
+    name = s.replace("refs/remotes/", "").replace("refs/", "")
+    cont = _git_run("merge-base", "--is-ancestor", "HEAD", s).returncode == 0
+    clean = not _git_run("status", "--porcelain", "--untracked-files=no").stdout.strip()
+    if cont and clean and _git_run("restore", "--source", s, "--worktree", "--", ".").returncode == 0:
+        stat = _git_run("diff", "--shortstat").stdout.strip()
+        return ["## Started from your step's last save `%s` (%s), newer than its branch `%s` (%s, %s): its changes are in this "
+                "working tree, not committed (%s): read `git diff`, then commit what holds" % (name, stamp(s), br, head, stamp("HEAD"), stat or "?"), ""]
+    why = "uncommitted changes here" if not clean else "the branch has commits the save lacks"
+    return ["## Your step's last save `%s` (%s) is newer than its branch `%s` (%s, %s), and was not put in (%s): read "
+            "`git diff HEAD %s`, then `git restore --source %s --worktree -- <files>` for what holds" % (
+                name, stamp(s), br, head, stamp("HEAD"), why, s, s), ""]
 
 
 def continues_lines(p, session=None, pid=None):
@@ -8546,6 +8653,8 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         p = posts[pid]
         rel = "docs/prompts/%s.md" % pid
         took = take_step_branch(p)
+        if db_path is None:                               # a test's board never marks this clone
+            mark_part_branch(pid, p)
         files = sorted(set(_changed_files()) | {str(a).split(" §")[0].strip("` ") for a in _as_list(p.get("artifacts"))})
         out += took + ["# Resume: part %s (post `%s`)" % (p.get("part") or pid, pid),
                 "%s · train `%s` · status %s%s" % (p.get("title") or pid, p.get("train") or "?", p.get("status") or "?",
