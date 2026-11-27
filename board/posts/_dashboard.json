@@ -1,20 +1,20 @@
 {
  "column": "info",
- "created_at": "2026-11-27T03:25:52Z",
+ "created_at": "2026-11-27T03:27:27Z",
  "rows": [
   {
-   "at": 5,
+   "at": 4,
    "key": "A",
    "name": "Board data",
-   "note": "Next: end_session says why a push failed",
-   "post": "cl46-end-session-says-why-a-push-failed",
+   "note": "Next: The board travels in git, always current (mirror synced on every step)",
+   "post": "cl16-the-board-travels-in-git-always-current",
    "state": "running",
    "steps": [
-    "The board travels in git, always current (mirror synced on every step)",
     "A web session reconciles its Artifact with GitHub at its start",
     "CL41's redirect resolved, so the trunk can move",
     "A test never writes to the real board",
     "A session on a computer never writes to the Artifact",
+    "The board travels in git, always current (mirror synced on every step)",
     "end_session says why a push failed",
     "Tests clean up after themselves",
     "An outside AI gets one link, the owner's invite with the post's drop box",
@@ -135,8 +135,7 @@
     "On a computer, a part runs its own real-project check before Done",
     "Every rule that differs by platform says where it applies, checked by a test",
     "macOS Install Guide & Script: Connecting GitHub to Antigravity Desktop App",
-    "Antigravity desktop app (local computer, NOT web) — Direct kit support patch & review b...",
-    "kit.py launch updates runner on takeover and supports agy launches"
+    "Antigravity desktop app (local computer, NOT web) — Direct kit support patch & review b..."
    ],
    "train": "P-runners"
   },
@@ -156,13 +155,26 @@
     "A step's task is written once, in its post; the prompt is generated at launch",
     "A part's last chat message is a single dot the first time, not after a refusal",
     "A kit fix reaches every project on update: no project keeps a fork of a kit hook",
-    "The orchestrator cannot end a turn with a start-now step not launched or held"
+    "The orchestrator cannot end a turn with a start-now step not launched or held",
+    "A takeover sets the step's runner: kit.py launch --take records who runs it"
    ],
    "train": "P-takeover"
   },
   {
-   "at": 6,
+   "at": 0,
    "key": "G",
+   "name": "Orchestrator: open timers only (2026-11-27 03:18)",
+   "note": "",
+   "post": "P-orchestrator",
+   "state": "idle",
+   "steps": [
+    "next step"
+   ],
+   "train": "P-orchestrator"
+  },
+  {
+   "at": 6,
+   "key": "H",
    "name": "Demo",
    "note": "Next: Try replying or tapping 👍",
    "post": "demo-todo",
@@ -180,5 +192,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T03:25:52Z"
+ "updated_at": "2026-11-27T03:27:27Z"
 }

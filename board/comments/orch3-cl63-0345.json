@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T03:26:31Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "87cc065f6207400db520",
+ "text": "You're right: that should have been a part, not a remark. Added: **CL63** `cl63-a-takeover-sets-the-step-s-runner-kit-py` (train takeover). `kit.py launch --take` will write the post's `runner` with the session id; on a computer under agy, `launch` prints the agy call instead of `claude --bg`; and resume flags a step whose runner disagrees with its session. It is #2 in the queue and starts once CL16 and CL52 (same test runner file) are done."
+}

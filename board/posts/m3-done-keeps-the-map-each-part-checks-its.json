@@ -1,17 +1,51 @@
 {
- "body": "Reading the map (M1) and kit.py done to wire the map check into done",
+ "artifacts": [
+  ".board/map-added.json",
+  "kit/claude-cli/part.template.md",
+  "kit/claude/part.template.md",
+  "kit/part.template.md",
+  "scripts/kit.py",
+  "scripts/kit_map.py",
+  "tests/test_map_done.py"
+ ],
+ "bars": [
+  "the last 10 steps' changed files on the map, on the kit itself: 18 of 18 (8 of 18 before this step's added entries; `kit.py map --steps 10`)",
+  "seconds done spends on the map check, on the kit: 1.1 s per done (vs about 1.3 s for `kit.py map` alone; 161 code files, 140 link checks)",
+  "tests for this step: 11 of 11 pass (tests/test_map_done.py); M1's map tests 17 of 17 still pass",
+  "full suite (`run_all_tests.py --all`) after merging main: 81 of 81 suites pass"
+ ],
+ "body": "A part can no longer finish while the map is wrong or missing what it built. Finishing now rebuilds the map, reruns every link's check and refuses on one that fails, naming it; a changed file nobody put on the map, or a new entry with no check, is refused too. What only a browser sees carries an instruction for the next browser part and a date, and shows as unconfirmed once that date is too old.\n\n### What done does now\n1. Rebuilds the map (`.board/map/`) and reruns every link's check, the hand-added ones read fresh from `.board/map-added.json`. A failing one refuses, named as `from -kind-> to: why`.\n2. Takes the files the step changed (its commits since it left the trunk, plus what is not committed) and refuses those not on the map: a code file is on it by itself; any other file must be named, by path or glob, by an added thing. Dot folders and deleted files are not asked for.\n3. Refuses an added thing or link with no check.\n4. Lists, as notes, the probes never confirmed or older than `map.confirm_days`; `map --check` then starts with UNCONFIRMED and never says the map is fresh.\n\n### The kit's own entries\n13 things in `.board/map-added.json`: the part guides (checked by the new two lines), the other roles' guides, skills, lessons, the launcher, the board page, prompts, docs, evidence pictures, step 0, the example config, test fixtures, and the Artifact board page (a probe, never confirmed yet).\n\n### The guides\nTwo lines, 3b and 3c, in kit/part.template.md, kit/claude-cli/part.template.md and kit/claude/part.template.md: confirm your stretch of the map; add what you built with its check.\n\n### Board sync note\nThis session's first reconcile came after a pull of only this post and proposed 363 writes (the rest of the board looked missing); I discarded them, did a full pull, and the reconcile then sent 12 real ones.",
  "branch": "m3",
+ "breaks": "sed -i 's/    _, unc = covers(root, paths, d, added)/    unc = []/' scripts/kit_map.py",
+ "check": "python3 -I tests/test_map_done.py && python3 -I tests/test_map.py",
+ "claimed_at": "2026-11-27T03:27:32Z",
  "column": "info",
  "created_at": "2026-11-26T19:41:04Z",
  "differs": "M3: builds on M1 (the map) and M7 (entries checked against reality); M3 makes kit.py done check the part's stretch of the map and add what it built.",
  "from": "orchestrator",
+ "handoff": "- What a part adds goes in `.board/map-added.json` (committed; only `.board/map/` is ignored): things with `id`, `kind`, `files` (paths or globs), `check`; links with `from`, `to`, `kind`, `check`. A check is `{file, contains}`, `{exists: [...]}`, `{run: cmd}` or `{probe, confirmed}`.\n- `kit_map.stretch(root, changed)` is what done calls (through `kit.check_map`); `kit_map.covers()` says which files are on the map; `kit.py map --steps N` is the coverage bar.\n- Probes: `map.confirm_days` in .kit/config.json (default 14). M9 (the workflow outside the repo) can put its runners, accounts and services in the same file as things with probes.\n- M2 (install draws the first map) can seed `.board/map-added.json` for a project's non-code files so its first done is not a wall of refusals.",
  "launched_at": "2026-11-27T03:09:04Z",
- "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "not_checked": [
+  "the Artifact board's probe (the page shows, sharing is owner-only) was not performed: no browser here; it shows as never confirmed until a browser part does it",
+  "not run on Harmonize (anlonlt/harmonize): its first done will ask its parts to add its non-code files; the orchestrator can measure that with `kit.py map --steps 10` there"
+ ],
+ "orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "orchestrator_device": "web",
- "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "part": "M3",
  "planned_by": "orchestrator",
  "priority": 3,
+ "proof": {
+  "at": "2026-11-27T03:24:51Z",
+  "branch": "m3",
+  "commit": "af0848b",
+  "key": "984aeb7597c4bd84",
+  "needs_real": true,
+  "sha": "af0848bee85971f647d51d35bb75ceb23990b30f"
+ },
+ "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_orchestrator_device": "web",
+ "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "session_id": "session_01AE1HGh1fxKykMgMsMPiU9R",
  "started_at": "2026-11-27T03:10:16Z",
  "status": "in progress",
@@ -24,19 +58,19 @@
    ],
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "kit.py done runs kit.py map --check and refuses on a check that fails, naming the link, in..."
   },
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "It refuses when files the step changed are not on the map, or a new thing has no check (the part..."
   },
   {
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "A thing only a browser sees (a page in a web app, a sharing setting) carries a probe, an..."
   },
   {
@@ -46,13 +80,14 @@
    ],
    "from": "task",
    "n": 4,
-   "status": "open",
+   "status": "done",
    "title": "The part's guides say it in two lines"
   }
  ],
  "task": "Done keeps the map: every part checks its stretch of the plumbing and adds what it built or found, or its step is refused. Waits on M1.\n\n1. `kit.py done` runs `kit.py map --check` and refuses on a check that fails, naming the link, in scripts/kit.py with tests/test_map_done.py.\n2. It refuses when files the step changed are not on the map, or a new thing has no check (the part adds them, each link with its check).\n3. A thing only a browser sees (a page in a web app, a sharing setting) carries a probe, an instruction the next browser part performs, and \"last confirmed\" with its date; past a number of days set in the kit config it shows as unconfirmed, never as fine.\n4. The part's guides say it in two lines: confirm your stretch, add what you built with its check, in kit/part.template.md and kit/claude-cli/part.template.md.\n\nBars: on the kit itself, how many of the last 10 steps' changed files the map covers; how many seconds `done` spends on the map check.\n",
  "title": "Done keeps the map: each part checks its stretch and adds what it built",
  "train": "memory",
- "updated_at": "2026-11-27T03:10:16Z",
+ "updated_at": "2026-11-27T03:24:51Z",
+ "verdict": "Yes: done now checks the part's stretch of the map and refuses until what it built is on it with a check; on the kit, the last 10 steps' changed files on the map went from 8 of 18 to 18 of 18.",
  "working_by": "owner"
 }

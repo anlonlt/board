@@ -1,48 +1,87 @@
 {
- "body": "A part launched with `claude --bg` knows its own step. CL44's part was started while M1's part had just been launched, and its environment named M1's post (KIT_POST): its automatic save commits were labelled with M1's name. A likely cause: `claude --bg` hands the work to a warm spare process made earlier, whose environment is not the one the launch passed (the launch sets KIT_POST, KIT_ROLE and the task list id in its subprocess environment).\n\n1. Confirm the cause: launch two parts one after the other and read each session's KIT_POST.\n2. A part's step never rests on the environment alone: the launch records the worktree's step (`.kit/run/step` in the worktree, or the branch's post), and the hooks read that first; KIT_POST only when it agrees.\n3. When the two disagree, the hooks say so once, never label commits with the other step.\n",
+ "artifacts": [
+  "kit/hooks/kit_activity.py",
+  "kit/hooks/kit_task_train.py",
+  "kit/landing.py",
+  "scripts/kit.py",
+  "tests/test_bg_step.py",
+  "tests/test_cl32_roles.py",
+  "tests/test_post_gate.py"
+ ],
+ "bars": [
+  "CL44's case replayed (worktree of one step, environment of another): the save is labelled with the worktree's step, 1 of 1, and the other name appears in 0 commit messages",
+  "disagreement said: 1 of 2 saves (the second says nothing)",
+  "the launch's session finds its step file at its very start: 1 of 1 (a stand-in `claude` reads it before doing anything)",
+  "hooks (task list and activity) name the worktree's step, not the environment's: 2 of 2 calls, note said 1 time",
+  "old behaviour kept when nothing is recorded or the two agree: 2 of 2 cases",
+  "5 of 5 new tests pass; project suites: see check"
+ ],
+ "body": "A part started in the background now takes its step from its own worktree, not from the environment it inherited: its saves carry its own name even if it started inside a process made for another part. If the two disagree, the part is told once and keeps working as its own step. The live two-launch probe still has to be run on your laptop: this container refused to start background sessions.\n\n### What changed\n- `kit.py launch` writes `.kit/run/step` (the post id) in the part's worktree before it runs `claude --bg`. `resume --role part --post X` writes it too, since the prompt names the right step even when the environment does not.\n- One reading of \"which step is this worktree\": `own_step` in `kit/landing.py`. Order: `.kit/run/step`, then the post `resume --role part` marked for this branch, then (when the caller knows it) the post whose branch this is, and KIT_POST only when none of those exists or it agrees.\n- Users of it: `kit.py checkpoint` (the commit label, which was `KIT_POST or branch`), `_my_post`, the save hook's \"is this a part's branch\", `kit_task_train.part_post`, `kit_activity`. Without `.kit/landing.py` each falls back to KIT_POST as before.\n- When KIT_POST names another step: a single STEP note (\"this session's environment names step M1, but this worktree is step CL44: working as CL44, its saves are labelled CL44\"), recorded in `.kit/run/step-disagree.json` so it is said once per pair.\n\n### Probe (step 1, for the laptop)\nIn two scratch folders a and b that Claude Code trusts, each with a `.claude/settings.json` SessionStart hook `echo \"KIT_POST=$KIT_POST\" >> seen.txt`, run one right after the other:\n`KIT_POST=POST-A claude --bg -n probe-a --model haiku \"Reply ok.\"` in a, then `KIT_POST=POST-B claude --bg -n probe-b ...` in b; then read a/seen.txt and b/seen.txt. A warm spare shows POST-A in b (or nothing).\n\n### Board copy\nThe first pull read only this post. The reconcile it asked for then wanted to write 372 documents (the whole board, as if the Artifact had none of them): not sent, kept outside the repo; reconcile belongs to a full pull.",
  "branch": "cl50",
+ "breaks": "revert",
+ "check": "python3 -m unittest tests.test_bg_step -v",
+ "claimed_at": "2026-11-27T03:27:29Z",
  "column": "info",
  "created_at": "2026-11-26T21:33:05Z",
  "differs": "CL50: builds on CL49 (a part reports to the orchestrator that launched it); CL49 names the launcher, CL50 makes a part started with claude --bg know its own step instead of guessing it.",
  "from": "orchestrator",
+ "handoff": "Reinstall the kit on each project (`install.py . --update`) so `.kit/kit.py`, `.kit/landing.py` and the hooks carry this. Run the probe below once on the laptop and add its two lines to this post: if both sessions show their own KIT_POST, the warm-spare guess is wrong and CL44's mix-up came from elsewhere (the fix still holds).",
  "launched_at": "2026-11-27T03:11:22Z",
  "launched_out_of_order": {
   "at": "2026-11-27T03:11:22Z",
   "was": "R2 goes first (place 13, CL50 is 16): feature, by date (no fact sets it apart); launch `r2-gemini-tasks-how-far-it-runs-the-board-k`",
   "why": "R2/R3 are the agy orchestrator's (owner's split 02:31); this web step shares no file with them"
  },
- "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "not_checked": [
+  "Step 1 live: launching two real `claude --bg` parts one after the other and reading each session's KIT_POST. Here, trusting a scratch workspace for a background session was refused by the permission classifier, so the warm-spare cause stays likely, not proved. The fix does not depend on it: the worktree's record wins whatever the environment says. The probe for the laptop is under \"Probe\" below.",
+  "A part whose save falls back to wip/ (origin refused the push): the once-only note can be spent without being shown."
+ ],
+ "orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "orchestrator_device": "web",
- "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "part": "CL50",
  "planned_by": "orchestrator",
  "priority": 2,
+ "proof": {
+  "at": "2026-11-27T03:28:18Z",
+  "branch": "cl50",
+  "commit": "50b00a6",
+  "key": "d572ae856238cb22",
+  "needs_real": true,
+  "sha": "50b00a6a572626d10bb7266cf348f70a284d6ff9"
+ },
+ "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_orchestrator_device": "web",
+ "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "runner": "claude-web",
  "session_id": "session_01AE1HGj6WUrysNPM7yLUF7w",
+ "started_at": "2026-11-27T03:12:31Z",
  "status": "in progress",
  "subtasks": [
   {
    "from": "task",
    "n": 1,
-   "status": "open",
-   "title": "Confirm the cause"
+   "status": "dropped",
+   "title": "Confirm the cause",
+   "why": "not confirmable here: this container refused to start background claude sessions; the probe for the laptop is in the post, and the fix holds whatever the cause"
   },
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "A part's step never rests on the environment alone"
   },
   {
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "When the two disagree, the hooks say so once, never label commits with the other step"
   }
  ],
  "task": "A part launched with `claude --bg` knows its own step. CL44's part was started while M1's part had just been launched, and its environment named M1's post (KIT_POST): its automatic save commits were labelled with M1's name. A likely cause: `claude --bg` hands the work to a warm spare process made earlier, whose environment is not the one the launch passed (the launch sets KIT_POST, KIT_ROLE and the task list id in its subprocess environment).\n\n1. Confirm the cause: launch two parts one after the other and read each session's KIT_POST.\n2. A part's step never rests on the environment alone: the launch records the worktree's step (`.kit/run/step` in the worktree, or the branch's post), and the hooks read that first; KIT_POST only when it agrees.\n3. When the two disagree, the hooks say so once, never label commits with the other step.\n",
  "title": "A part launched in the background knows its own step",
  "train": "takeover",
- "updated_at": "2026-11-27T03:12:01Z",
+ "updated_at": "2026-11-27T03:28:18Z",
+ "verdict": "Yes for the fix: the launch writes the step into the worktree before the session starts, saves and hooks read it first, and a disagreeing environment is said once; the cause itself is not yet confirmed live.",
  "working_by": "owner"
 }

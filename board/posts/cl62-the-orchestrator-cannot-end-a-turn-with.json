@@ -1,19 +1,68 @@
 {
- "body": "The orchestrator cannot end a turn while a \"start now\" step is neither launched nor held with a reason: the queue is enforced, not read.\n\nOwner, 2026-11-27: \"Why didn't you launch it when it told you? This needs a permanent fix that doesn't depend on your stupidity.\" Measured: web orchestrator 2's resume at 02:28 listed M2, M4, M3 (and CL50, CL52, CL54, CL56) as [start now]; it followed the previous hand-over's stale line \"M2 and M3 wait on M1\" (M1 had landed at 02:19) and its own split, and launched them only at 03:09 and 03:11 after the owner asked.\n\n1. A Stop hook for the orchestrator role (same role function as M12/M13): while `kit.py queue` has a [start now] step that is not launched and not held (`kit.py hold <post> --why \"...\"`, recorded on the post, shown in resume and to the owner), the stop is refused once with the list and the exact launch commands. Steps owned by another orchestrator (a split recorded on _orchestrator) count as held for this one.\n2. A hand-over line never overrides the queue: resume compares each \"waits on X\" claim in the last hand-over with the board and prints the stale ones first (\"M2 waits on M1: M1 landed 02:19, start now\").\n3. The queue's out-of-order refusal stays; the Stop check is what makes \"start now\" impossible to skip.\n4. Tests: a fixture board with 2 start-now steps, one launched, one not: Stop refused, naming it; after hold: passes. A stale hand-over claim is flagged.\n",
+ "artifacts": [
+  "install.py",
+  "kit/board/post_gate.py",
+  "kit/claude-cli/orchestrator.template.md",
+  "kit/claude/orchestrator.template.md",
+  "kit/hook.py",
+  "kit/hooks/kit_queue_stop.py",
+  "kit/orchestrator.template.md",
+  "scripts/kit.py",
+  "test_install.py",
+  "tests/test_cl39_web_multi.py",
+  "tests/test_cl62_start_now_stop.py",
+  "tests/test_install_present_runtimes.py",
+  "tests/test_unified_hooks.py"
+ ],
+ "asked": [
+  {
+   "id": "orch2-cl62-handover-0316",
+   "quote": "the owner (03:15) \"Why was there a handover instead of it just asking you to run the resume command?\": a step-state line under `_orchestrator` is refused when written"
+  },
+  {
+   "id": "orch2-cl62-nohandover-0318",
+   "quote": "the owner (03:18) \"in what situation would a handover actually be necessary?\": the three orchestrator guides now say no hand-over text, successor runs resume and nothing else"
+  }
+ ],
+ "bars": [
+  "Stop refused on the fixture board (2 start-now steps, 1 launched): 1 of 1, naming only the unlaunched one and its launch command; second stop in the same turn passes; a part's stop is never refused",
+  "After `hold` with a reason: stop passes, 1 of 1; the queue shows that step `[held: <reason>]`",
+  "Split on `_orchestrator`: the other orchestrator's step counts as held for this one, 2 of 2 cases",
+  "Stale hand-over on the real board copy (git, as of 02:28): 2 claims found (M2, M3 wait on M1), M1 landed 02:18; M3 printed \"start now\", M2 printed what it really waits on now (CL61, which shares install.py)",
+  "Out-of-order launch refusal: unchanged (test still passes), and a held step is never named as \"goes first\"",
+  "No hand-over text (asked orch2-cl62-nohandover-0318): the comment that misled orchestrator 2 (\"M2 and M3 wait on M1\") is refused when written, 1 of 1; quotes, part comments and the owner's own pass, 4 of 4; 3 of 3 orchestrator guides say successor = resume and nothing else",
+  "Tests: 11 of 11 in tests/test_cl62_start_now_stop.py; full suite 81 of 81 suites pass (21 rerun after the last edit, 60 unchanged)"
+ ],
+ "body": "The orchestrator can no longer end a turn while the queue says \"start now\" for a step it has not launched: its stop is refused once, with the list and the exact launch lines. To not launch one, it must hold it with a reason, written on the post, which you see on the board and in its resume. As you asked at 03:18, there is no written hand-over any more: a new orchestrator runs resume and nothing else, and a line like \"M2 and M3 wait on M1\" under the orchestrator's thread is refused when written (old ones are checked against the board and shown first when wrong).\n\n### What changed\n- **Stop hook, orchestrator only** (`kit/hooks/kit_queue_stop.py`, wired for web, cli and agy in `kit/hook.py`, installed by `install.py`): runs `kit.py queue --gate`; while it names a start-now step that is neither launched nor held, the stop is refused once per turn with the list and `python3 -I .kit/kit.py launch <post>` for each. A gate that fails (no board, timeout) blocks nothing. Other roles never see it.\n- **Launched** means: running on the board, or `kit.py launch` left its mark in `.kit/run/launch/<post>.json` (the board copy can lag).\n- **Held** means: `kit.py hold <post> --why \"...\"` (refused with no reason), or a status written \"held: ...\", or a split on `_orchestrator` giving the step to another orchestrator. `--release` puts the step back in the queue with its old status.\n- **Queue**: a held step shows `[held: <reason>]`, is never \"start now\", and never blocks another step or the out-of-order check.\n- **Resume**: `resume --role orchestrator` now opens with \"First: hand-over lines the board contradicts\" when an orchestrator comment under `_orchestrator` (last 48 h) says \"X waits on Y\" and Y has landed or is complete, with what X really is now (start now and its launch line, running, held, or what it waits on).\n\n### The incident, replayed\nOn the board copy in git, keeping only the comments before 02:28 and M2, M3, M4 unlaunched:\n```\n## First: hand-over lines the board contradicts (the queue wins)\n- M2 waits on M1 (said 22:31): M1 landed 02:18, waits: CL61 first (a bug in what M2 builds (install.py)); CL61 runs (shares install.py)\n- M3 waits on M1 (said 22:31): M1 landed 02:18, start now: `python3 -I .kit/kit.py launch m3-done-keeps-the-map-each-part-checks-its`\n```\nand the Stop gate on that board lists M4, M3, R2, R3 with their launch lines.\n\n### No hand-over text (the owner, 03:15 and 03:18)\n- `post_gate.check_comment`: an agent's comment under `_orchestrator` that states a step's state (\"X waits on / is blocked by / goes after Y\") is refused, with the way out (resume; `kit.py hold`; his decision under the post it concerns). Quoted text is his words and passes.\n- The hand-over case in the three orchestrator guides (Claude Code CLI, web, agy) no longer asks for a hand-over line: successor runs `kit.py resume --role orchestrator` and nothing else.\n\n### Tests changed\n- `tests/test_cl39_web_multi.py` and `tests/test_install_present_runtimes.py`: one more kit hook (33 to 34 user hooks, 13 to 14 hook lines, the new file in the installed list).",
  "branch": "cl62",
+ "breaks": "sed -i 's/if seen == key:/if False:/; s/if not reason:/if True:/' kit/hooks/kit_queue_stop.py",
+ "check": "python3 -I -m unittest discover -s tests -p test_cl62_start_now_stop.py",
+ "claimed_at": "2026-11-27T03:27:32Z",
  "column": "info",
  "created_at": "2026-11-27T03:13:38Z",
  "differs": "CL62: builds on R6 (the queue ranks every step) and CL53; R6 only lists and refuses out-of-order launches, CL62 makes an unlaunched start-now step block the orchestrator's stop and flags stale hand-over claims.",
  "from": "orchestrator",
+ "handoff": "`kit.py queue --gate` (exit 1 with the refusal text when a start-now step is neither launched nor held) is what the new Stop hook `kit_queue_stop.py` runs for the orchestrator role (role from kit_orchestrator_guard.is_orchestrator). `kit.py hold <post> --why \"...\" [--release]` records `held: {why, at, by}`, status \"held: <why>\" and `held_prev_status` on the post; queue_rank treats a held step as neither startable nor blocking. `stale_handover_lines` prints first in `resume --role orchestrator`. A split owner list lives in `_orchestrator.split`; a command to write it is the obvious next piece.",
  "kept_on_train": "the orchestrator skipped start-now steps after a hand-over (owner, 2026-11-27)",
  "kind": "bug",
  "launched_at": "2026-11-27T03:13:43Z",
- "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "not_checked": [
+  "Not seen live in a real orchestrator turn on the web: the hook was run end to end against a fixture project and its board database, not inside a Claude Code session.",
+  "Not tried in a clone of another project that consumes the kit (real_project pending, lesson K2): a part attaches no repo.",
+  "\"A half-done action must be kit state resume shows\" (03:18 note): not built here; an unsent batch is already shown (NOT SENT), a created session not recorded is not checked by this step.",
+  "The split on `_orchestrator` has no command yet that writes it: the field is `split: {<orchestrator address>: [<post id or part>, ...]}`, read only."
+ ],
+ "orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "orchestrator_device": "web",
- "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "orchestrator_unreached": null,
  "part": "CL62",
  "planned_by": "orchestrator",
+ "review_orchestrator": "session_01AE1HGjVN9PG3jzbVAonQ71",
+ "review_orchestrator_device": "web",
+ "review_orchestrator_name": "session_01AE1HGjVN9PG3jzbVAonQ71",
  "session_id": "session_01AE1HGhL21m74opxVsmtKrx",
+ "started_at": "2026-11-27T03:14:32Z",
  "status": "in progress",
  "subtasks": [
   {
@@ -22,31 +71,32 @@
    ],
    "from": "task",
    "n": 1,
-   "status": "open",
+   "status": "done",
    "title": "A Stop hook for the orchestrator role (same role function as M12/M13)"
   },
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "done",
    "title": "A hand-over line never overrides the queue"
   },
   {
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "The queue's out-of-order refusal stays"
   },
   {
    "from": "task",
    "n": 4,
-   "status": "open",
+   "status": "done",
    "title": "Tests"
   }
  ],
  "task": "The orchestrator cannot end a turn while a \"start now\" step is neither launched nor held with a reason: the queue is enforced, not read.\n\nOwner, 2026-11-27: \"Why didn't you launch it when it told you? This needs a permanent fix that doesn't depend on your stupidity.\" Measured: web orchestrator 2's resume at 02:28 listed M2, M4, M3 (and CL50, CL52, CL54, CL56) as [start now]; it followed the previous hand-over's stale line \"M2 and M3 wait on M1\" (M1 had landed at 02:19) and its own split, and launched them only at 03:09 and 03:11 after the owner asked.\n\n1. A Stop hook for the orchestrator role (same role function as M12/M13): while `kit.py queue` has a [start now] step that is not launched and not held (`kit.py hold <post> --why \"...\"`, recorded on the post, shown in resume and to the owner), the stop is refused once with the list and the exact launch commands. Steps owned by another orchestrator (a split recorded on _orchestrator) count as held for this one.\n2. A hand-over line never overrides the queue: resume compares each \"waits on X\" claim in the last hand-over with the board and prints the stale ones first (\"M2 waits on M1: M1 landed 02:19, start now\").\n3. The queue's out-of-order refusal stays; the Stop check is what makes \"start now\" impossible to skip.\n4. Tests: a fixture board with 2 start-now steps, one launched, one not: Stop refused, naming it; after hold: passes. A stale hand-over claim is flagged.\n",
  "title": "The orchestrator cannot end a turn with a start-now step not launched or held",
  "train": "takeover",
- "updated_at": "2026-11-27T03:13:54Z",
+ "updated_at": "2026-11-27T03:30:12Z",
+ "verdict": "Yes: on a test board with two start-now steps, one launched, the orchestrator's stop is refused naming the other; after a hold with a reason it passes; on the real board as of 02:28 it would have flagged \"M3 waits on M1: M1 landed 02:18, start now\".",
  "working_by": "owner"
 }
