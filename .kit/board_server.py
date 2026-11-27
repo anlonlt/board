@@ -474,6 +474,34 @@ class BoardStore:
             self._auto_sync_log(False, "run", "%s: %s" % (type(e).__name__, e))
         return False
 
+    def import_git_at_start(self, delay=1.5):
+        """CL16: what was written to the git copy while this server was not running (another computer, a web session,
+        a write with no server) comes onto this board at start: `kit.py reconcile` (per post, the newer wins; nothing
+        deleted), in the background once the server answers; the result is said in the server log."""
+        def run():
+            time.sleep(delay)
+            root = getattr(self, "_auto_sync_root", None)
+            m = self._resolve_mirror_dir()
+            kit_py = os.path.join(root or "", ".kit", "kit.py")
+            if not root or not os.path.isfile(kit_py):
+                kit_py = os.path.join(root or "", "scripts", "kit.py")
+            if not root or not os.path.isfile(kit_py):
+                return
+            env = dict(os.environ, KIT_BOARD_URL=self._auto_sync_url)
+            if getattr(self, "_auto_sync_token", ""):
+                env["KIT_BOARD_TOKEN"] = self._auto_sync_token
+            try:
+                r = subprocess.run([sys.executable, "-I", kit_py] + (["--mirror", m] if m else []) + ["reconcile", "--db", self.db_path],
+                                   cwd=root, capture_output=True, text=True, timeout=300, env=env)
+                out = " ".join((r.stdout + r.stderr).split())[-300:]
+                print("[auto-sync] %s import from git at start: %s" % (
+                    time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), out if r.returncode == 0 else "FAILED: " + out),
+                    file=sys.stderr, flush=True)
+            except Exception as e:  # noqa: BLE001 - said in the log
+                print("[auto-sync] import from git at start FAILED: %s" % e, file=sys.stderr, flush=True)
+        self._import_thread = threading.Thread(target=run, daemon=True)
+        self._import_thread.start()
+
     def _auto_sync_worker(self):
         while True:
             with self._auto_sync_cond:
@@ -3945,6 +3973,8 @@ def start_server(root_dir, host="127.0.0.1", port=8765, token=None, notify_url=N
             if actual_port:
                 store._auto_sync_url = "http://127.0.0.1:%d" % int(actual_port)
                 store._auto_sync_token = token or ""
+                if auto_sync_push and str(os.environ.get("KIT_IMPORT_AT_START") or "1") != "0":
+                    store.import_git_at_start()
         attach_specs = dict(attach or {})
         cfg_path = os.path.join(root_dir, ".kit", "config.json")
         try:
