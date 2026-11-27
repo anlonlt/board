@@ -1,0 +1,12 @@
+{
+ "created_at": "2026-11-27T02:58:08.364Z",
+ "delivered": true,
+ "delivered_at": "2026-11-27T02:58:08.780Z",
+ "delivery_error": "",
+ "discussion": "3aec2f488e424ae59968",
+ "from": "owner",
+ "post_id": "_orchestrator",
+ "read": false,
+ "text": "Also, is there a reason why ntfy notification doesn't open discussions automatically? Weren't tags put on the site for just that ? Also, why do I feel like every ntfy notification I open has a token different from the one my device already has ?",
+ "thread_id": "thr_c1738303b046"
+}
