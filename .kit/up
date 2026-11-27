@@ -172,8 +172,12 @@ fi
 AGY_MODE_ARGS=()
 resolve_agy_mode() {
   local want="${KIT_AGY_MODE:-}"
-  if [ -z "$want" ] && [ -f ".kit/config.json" ]; then
-    want="$(python3 -I -c 'import json; print((json.load(open(".kit/config.json")).get("kit") or {}).get("agy_mode") or "")' 2>/dev/null || true)"
+  local autonomy_level=""
+  if [ -f ".kit/config.json" ]; then
+    if [ -z "$want" ]; then
+      want="$(python3 -I -c 'import json; print((json.load(open(".kit/config.json")).get("kit") or {}).get("agy_mode") or "")' 2>/dev/null || true)"
+    fi
+    autonomy_level="$(python3 -I -c 'import json; print((((json.load(open(".kit/config.json")).get("kit") or {}).get("autonomy") or {}).get("level") or ""))' 2>/dev/null || true)"
   fi
   [ -z "$want" ] && want="auto"
   local help_txt
@@ -191,20 +195,21 @@ resolve_agy_mode() {
       AGY_MODE_ARGS=()
       return 0
       ;;
-    auto)
+    auto|best)
       ;;
     *)
-      echo "ERROR: unknown KIT_AGY_MODE / kit.agy_mode '${want}' (use auto, accept-edits, skip-permissions, or interactive)." >&2
+      echo "ERROR: unknown KIT_AGY_MODE / kit.agy_mode '${want}' (use auto, best, accept-edits, skip-permissions, or interactive)." >&2
       exit 1
       ;;
   esac
 
   local unavail=""
-  local has_mode_flag=0 has_auto=0 has_accept_edits=0 has_print_timeout=0
-  printf '%s\n' "$help_txt" | grep -q -- '--mode' && has_mode_flag=1
-  printf '%s\n' "$help_txt" | grep -Eq -- '--mode.*\bauto\b|\bauto\b.*--mode' && has_auto=1
-  printf '%s\n' "$help_txt" | grep -q -- 'accept-edits' && has_accept_edits=1
-  printf '%s\n' "$help_txt" | grep -q -- '--print-timeout' && has_print_timeout=1
+  local has_mode_flag=0 has_auto=0 has_accept_edits=0 has_skip_permissions=0 has_print_timeout=0
+  grep -q -- '--mode' <<<"$help_txt" && has_mode_flag=1
+  grep -Eq -- '--mode.*\bauto\b|\bauto\b.*--mode' <<<"$help_txt" && has_auto=1
+  grep -q -- 'accept-edits' <<<"$help_txt" && has_accept_edits=1
+  grep -q -- '--dangerously-skip-permissions' <<<"$help_txt" && has_skip_permissions=1
+  grep -q -- '--print-timeout' <<<"$help_txt" && has_print_timeout=1
 
   if [ -z "$help_txt" ]; then
     AGY_MODE_ARGS=(--mode auto)
@@ -228,7 +233,7 @@ resolve_agy_mode() {
       if [ "$has_print_timeout" -eq 1 ]; then
         probe_out="$($to_cmd agy --mode auto --print-timeout 1ms -p "ping" </dev/null 2>&1 || true)"
       fi
-      if printf '%s\n' "$probe_out" | grep -Eiq '(--mode auto is (not available|unavailable)|unknown flag.*--mode|invalid.*mode.*auto)'; then
+      if grep -Eiq '(--mode auto is (not available|unavailable)|unknown flag.*--mode|invalid.*mode.*auto)' <<<"$probe_out"; then
         unavail="not available for this account"
         mkdir -p "$(dirname "$cache_file")" 2>/dev/null || true
         python3 -I -c 'import json,sys,time; open(sys.argv[1],"w").write(json.dumps({"sig":sys.argv[2],"state":"unavailable","at":time.time()}))' "$cache_file" "$bin_sig" 2>/dev/null || true
@@ -240,7 +245,10 @@ resolve_agy_mode() {
   fi
 
   if [ -n "$unavail" ]; then
-    if [ "$has_accept_edits" -eq 1 ]; then
+    if [ "$has_skip_permissions" -eq 1 ] && { [ "$want" = "best" ] || [ "$autonomy_level" = "full_auto" ]; }; then
+      echo "kit/up: agy --mode auto is unavailable (${unavail}); using --dangerously-skip-permissions (full_auto; kit_guard.py active)." >&2
+      AGY_MODE_ARGS=(--dangerously-skip-permissions)
+    elif [ "$has_accept_edits" -eq 1 ]; then
       echo "kit/up: agy --mode auto is unavailable (${unavail}); using --mode accept-edits instead (set KIT_AGY_MODE=interactive for default mode or KIT_AGY_MODE=skip-permissions for full unattended mode)." >&2
       AGY_MODE_ARGS=(--mode accept-edits)
     else

@@ -278,12 +278,15 @@ class Bug4AgyUsageParsingAndHookWiring(unittest.TestCase):
 
 
 class Bug5KitUpAgyModeHandling(unittest.TestCase):
-    def _run_up(self, td, fake_agy_script, env_extra=None):
+    def _run_up(self, td, fake_agy_script, env_extra=None, kit_extra=None):
         p = Path(td)
         (p / ".kit").mkdir(exist_ok=True)
+        kit_cfg = {"runtime": "agy", "cli": "agy", "parts": {"board": False, "clerk": False, "orchestrator": False}}
+        if kit_extra:
+            kit_cfg.update(kit_extra)
         (p / ".kit" / "config.json").write_text(json.dumps({
             "project": "TestUp",
-            "kit": {"runtime": "agy", "cli": "agy", "parts": {"board": False, "clerk": False, "orchestrator": False}},
+            "kit": kit_cfg,
         }))
         up = p / ".kit" / "up"
         up.write_text((ROOT / "kit" / "up").read_text())
@@ -362,6 +365,54 @@ class Bug5KitUpAgyModeHandling(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertEqual(len(invoked), 1)
             self.assertIn("--mode auto", invoked[0])
+
+    def test_unavailable_mode_auto_full_auto_uses_skip_permissions(self):
+        fake = (
+            "#!/usr/bin/env bash\n"
+            "if [ \"$1\" = \"--help\" ]; then\n"
+            "  echo '  --dangerously-skip-permissions  Auto-approve all tool permission requests'\n"
+            "  echo '  --mode  Set mode (accept-edits, auto, plan)'\n"
+            "  echo '  --print-timeout  Timeout'\n"
+            "  exit 0\n"
+            "fi\n"
+            "if printf '%s\\n' \"$*\" | grep -q -- '--print-timeout'; then\n"
+            "  echo 'warning: --mode auto is not available for this account; continuing in the default mode.' >&2\n"
+            "  exit 0\n"
+            "fi\n"
+            "echo \"$*\" >> \"$AGY_LOG\"\n"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            r, invoked = self._run_up(td, fake, kit_extra={"autonomy": {"level": "full_auto"}})
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("agy --mode auto is unavailable", r.stderr)
+            self.assertIn("--dangerously-skip-permissions", r.stderr)
+            self.assertEqual(len(invoked), 1)
+            self.assertIn("--dangerously-skip-permissions", invoked[0])
+            self.assertNotIn("--mode accept-edits", invoked[0])
+            self.assertNotIn("--mode auto", invoked[0])
+
+    def test_agy_mode_args_for_reviews(self):
+        kit = _load("kit_cl44_b5_agy_args", ROOT / "scripts" / "kit.py")
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td) / "agy-mode-auto"
+            old_cache = os.environ.get("KIT_AGY_MODE_CACHE")
+            old_mode = os.environ.pop("KIT_AGY_MODE", None)
+            os.environ["KIT_AGY_MODE_CACHE"] = str(cache)
+            try:
+                self.assertEqual(kit._agy_mode_args({"agy_mode": "skip-permissions"}), ["--dangerously-skip-permissions"])
+                self.assertEqual(kit._agy_mode_args({"agy_mode": "accept-edits"}), ["--mode", "accept-edits"])
+                self.assertEqual(kit._agy_mode_args({"agy_mode": "interactive"}), [])
+                self.assertEqual(kit._agy_mode_args({"autonomy": {"level": "full_auto"}}), ["--mode", "auto"])
+                cache.write_text(json.dumps({"state": "unavailable", "at": 0}))
+                self.assertEqual(kit._agy_mode_args({"autonomy": {"level": "full_auto"}}), ["--dangerously-skip-permissions"])
+                self.assertEqual(kit._agy_mode_args({}), ["--mode", "auto"])
+            finally:
+                if old_cache is None:
+                    os.environ.pop("KIT_AGY_MODE_CACHE", None)
+                else:
+                    os.environ["KIT_AGY_MODE_CACHE"] = old_cache
+                if old_mode is not None:
+                    os.environ["KIT_AGY_MODE"] = old_mode
 
 
 class Bug7MirrorLoss(unittest.TestCase):

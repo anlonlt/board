@@ -4927,7 +4927,7 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
                  "now with the claude-code-remote `create_session` tool: %s then `python3 -I .kit/kit.py review %s --session-id <its id>`"
                  % (rid, os.path.relpath(out, ROOT), json.dumps(call, ensure_ascii=False), pid or "--train %s" % train))
     elif run == "agy":
-        cmd = ["agy", "--mode", "auto", "-p", text]
+        cmd = ["agy"] + _agy_mode_args(k) + ["-p", text]
     elif run is None:
         start = None
     else:
@@ -5092,6 +5092,31 @@ def permission_mode(k=None):
     except (OSError, ValueError, AttributeError):
         ok = False
     return "bypassPermissions" if ok else "auto"
+
+
+def _agy_mode_args(k=None):
+    """CLI mode flags when launching agy (reviews, etc.): honors KIT_AGY_MODE / kit.agy_mode, and falls back to
+    --dangerously-skip-permissions under full_auto (or best) when the cached probe says --mode auto is unavailable."""
+    k = k if k is not None else (_kit_config().get("kit") or {})
+    want = str(os.environ.get("KIT_AGY_MODE") or k.get("agy_mode") or "auto").strip()
+    if want in ("skip-permissions", "bypass", "dangerously-skip-permissions"):
+        return ["--dangerously-skip-permissions"]
+    if want == "accept-edits":
+        return ["--mode", "accept-edits"]
+    if want in ("interactive", "default"):
+        return []
+    autonomy = str(((k.get("autonomy") or {}).get("level") or "")).strip()
+    if want == "best" or autonomy == "full_auto":
+        cache = os.environ.get("KIT_AGY_MODE_CACHE") or os.path.join(
+            os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache"),
+            "board-kit", "agy-mode-auto")
+        try:
+            with open(cache, encoding="utf-8") as fh:
+                if json.load(fh).get("state") == "unavailable":
+                    return ["--dangerously-skip-permissions"]
+        except (OSError, ValueError, AttributeError):
+            pass
+    return ["--mode", "auto"]
 
 
 def part_list(pid):
