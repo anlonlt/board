@@ -1,5 +1,5 @@
 {
- "at": "2026-11-27T08:26:18Z",
+ "at": "2026-11-27T08:49:06Z",
  "docs": {
   "comments/004abd3c5e334e6aac34": "9a926f42c90c194d",
   "comments/0d7buihhnapamdz5rqkz": "e06545c9744f3f81",
@@ -361,7 +361,7 @@
   "posts/_train-memory": "082f34cb0096b501",
   "posts/_train-runners": "b40646e32a6d8afb",
   "posts/_train-takeover": "8d603a421cdb27e7",
-  "posts/_trains": "f214806c1359b1c9",
+  "posts/_trains": "93a8359b393b343d",
   "posts/a1-install-cmd-skips-linked-git-worktrees-s": "cf160bf7e8dc7510",
   "posts/cl1-cli-agnostic-install": "aa13600a261e7fbc",
   "posts/cl10-see-the-new-ui-work-then-stop-tests-touc": "b296f627edafa03e",
@@ -435,6 +435,7 @@
   "posts/cl71-no-merge-friction-generated-files-are-no": "d09448bc8fb3005e",
   "posts/cl72-one-way-to-touch-the-board-the-kit-print": "fe4f12d826aa7a58",
   "posts/cl73-the-stop-check-counts-only-what-this-ses": "fde6586e88c1654e",
+  "posts/cl76-every-part-gets-the-idea-first-the-owner": "f9c46acaf009a1af",
   "posts/cl8-design-principles-complete-and-no-emoji": "ff80ffd0a55854d3",
   "posts/cl9-checks-that-must-be-able-to-fail-breaks": "519d0fa01ff5e220",
   "posts/cl9b-cheap-breaks-revert-asked-pair-sample": "9d2d959c48fef61f",
