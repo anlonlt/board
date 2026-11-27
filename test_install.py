@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory() as d:
     s = json.load(open(os.path.join(t, ".agents", "hooks.json")))
     check("hooks.json: the project's own named hook kept", s.get("my-linter") == mine["my-linter"])
     cmds = all_hook_cmds(s)
-    check("hooks.json: 23 kit handlers merged into kit-board", sum("hooks/kit/" in c for c in cmds) == 23)   # CL44: + update_steps, PostInvocation memory JIT, Stop usage
+    check("hooks.json: 24 kit handlers merged into kit-board", sum("hooks/kit/" in c for c in cmds) == 24)   # CL44: + update_steps, PostInvocation memory JIT, Stop usage; CL62: Stop queue
     check("a project's own skill is not overwritten", open(os.path.join(t, ".agents", "skills", "memory", "SKILL.md")).read() == "my own memory skill\n"
           and "KEPT" in out)
     page = open(os.path.join(t, ".kit", "board.html"), encoding="utf-8").read()

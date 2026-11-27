@@ -63,6 +63,7 @@ TABLE = [
     ("PostInvocation", "kit_memory_jit.py", {"agy": ANY}, PLAIN, 25),
     ("Stop", "kit_board_guard.py", {"web": ANY, "cli": ANY}, PLAIN, 50),
     ("Stop", "kit_stop.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
+    ("Stop", "kit_queue_stop.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 60),  # CL62: a start-now step is launched or held
     ("Stop", "kit_pre_compact.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 50),
     ("Stop", "kit_activity.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 25),
     ("Stop", "kit_wip.py", {"web": ANY, "cli": ANY, "agy": ANY}, PLAIN, 25),

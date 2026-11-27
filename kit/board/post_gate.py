@@ -131,10 +131,25 @@ def check_post(doc_id, new, old=None, cfg=None, may_prove=False):
     return new, notes, None
 
 
+# CL62 (the owner, 2026-11-27 03:15 and 03:18: "Why was there a handover instead of it just asking you to run the resume
+# command?"): no free-text hand-over. A step-state claim ("M2 and M3 wait on M1") under _orchestrator went stale within
+# minutes and a successor followed it over the queue; resume computes step state from the board, so it is never written.
+STEP_STATE = re.compile(r"\b[A-Z]{1,4}\d+[a-z]?(?:\s*(?:,|and|&|\+)\s*[A-Z]{1,4}\d+[a-z]?)*\s+(?:still\s+)?"
+                        r"(?:waits?|waiting|are waiting|is waiting|stays? behind|(?:is |are )?blocked|(?:is |are )?held|go(?:es)? after|come?s? after)"
+                        r"\s+(?:on|for|behind|by|until)?\s*[A-Z]{1,4}\d+[a-z]?\b")
+
+
 def check_comment(doc_id, c, post=None):
     """Why this agent's comment is refused, or None."""
     if not isinstance(c, dict) or c.get("from") == "owner" or c.get("like"):          # no `from`: an agent that left it out
         return None
+    if c.get("post_id") == "_orchestrator":
+        hit = STEP_STATE.search(QUOTED.sub("", str(c.get("text") or "")))
+        if hit:
+            return ("a step's state under _orchestrator (%r) is a hand-over line, and there is none (CL62): resume computes what "
+                    "waits on what from the board, and a successor runs `python3 -I .kit/kit.py resume --role orchestrator` and "
+                    "nothing else. A step that should not start: `python3 -I .kit/kit.py hold <post> --why \"...\"`; the owner's "
+                    "decision: a comment under the post it concerns, quoting him." % hit.group(0).strip()[:60])
     if str(doc_id).startswith("welcome-") or c.get("kind") == "review" or (post or {}).get("column") == "question":
         return None
     hit = ASK.search(QUOTED.sub("", str(c.get("text") or "")))
