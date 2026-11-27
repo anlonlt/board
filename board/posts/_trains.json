@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T02:16:25Z",
+ "created_at": "2026-11-27T02:18:41Z",
  "rows": [
   {
    "also": [],
@@ -1055,7 +1055,7 @@
    "parent": "P-runners",
    "part": "R5",
    "post": "r5-every-rule-that-differs-by-platform-says",
-   "prompt": "docs/prompts/r5-every-rule-that-differs-by-platform-says.md",
+   "prompt": "",
    "session": "board-r5",
    "state": "running",
    "store": []
@@ -1161,5 +1161,5 @@
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T02:16:25Z"
+ "updated_at": "2026-11-27T02:18:41Z"
 }
