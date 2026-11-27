@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T00:05:53Z",
+ "created_at": "2026-11-27T00:11:59Z",
  "rows": [
   {
    "also": [],
@@ -73,6 +73,29 @@
   {
    "also": [],
    "children": [
+    "M1",
+    "M2",
+    "M4",
+    "M5",
+    "M6",
+    "M3",
+    "M7",
+    "M8",
+    "M9",
+    "M10",
+    "M12"
+   ],
+   "parent": "",
+   "part": "P-memory",
+   "post": "m2-install-draws-the-first-map",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
+  },
+  {
+   "also": [],
+   "children": [
     "R1",
     "R0"
    ],
@@ -136,28 +159,6 @@
    "prompt": "",
    "session": "",
    "state": "done",
-   "store": []
-  },
-  {
-   "also": [],
-   "children": [
-    "M1",
-    "M2",
-    "M4",
-    "M5",
-    "M6",
-    "M3",
-    "M7",
-    "M8",
-    "M9",
-    "M10"
-   ],
-   "parent": "",
-   "part": "P-memory",
-   "post": "m2-install-draws-the-first-map",
-   "prompt": "",
-   "session": "",
-   "state": "idle",
    "store": []
   },
   {
@@ -1158,8 +1159,19 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-memory",
+   "part": "M12",
+   "post": "m12-the-owner-s-design-decisions-are-never-s",
+   "prompt": "",
+   "session": "",
+   "state": "idle",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T00:05:53Z"
+ "updated_at": "2026-11-27T00:11:59Z"
 }
