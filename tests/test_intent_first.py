@@ -105,6 +105,13 @@ class Cases(unittest.TestCase):
         err = kit.check_intent(with_intent(r6(), text), added=TOPIC_TEST, code_at="")
         self.assertEqual(err, [])
 
+    def test_stress_I4_every_case_not_covered_is_refused(self):
+        """stress I4: a plan that "honestly" covers none of the cases is a plan that ignores what he meant: refused."""
+        text = ('goal: "g"\n- I1: a | not covered: later\n- I2: b | not covered: later\n- I3 [outside]: c | not covered: '
+                'later\nreal: none: no data\n')
+        err = kit.check_intent(with_intent(r6(), text), added="", code_at="")
+        self.assertTrue(any("every case is `not covered`" in e for e in err), err)
+
     def test_stress_I4_not_covered_without_a_reason_is_refused(self):
         """stress I4: `not covered:` with nothing after it is refused, and the case is not silently skipped."""
         text = R6_INTENT + "- I4: a step on another repo | not covered:\n"
@@ -264,11 +271,29 @@ class Gaming(unittest.TestCase):
         err = kit.check_intent(with_intent(r6(), at="2999-01-01T00:00:00Z"), root=self.d, added=TOPIC_TEST)
         self.assertTrue(any("after the step's first code commit" in e for e in err), err)
 
-    def test_stress_I6_on_the_trunk_no_step_to_compare(self):
-        """stress I6: run on the trunk itself (no step branch): said plainly, never a silent pass."""
+    def test_stress_I6_on_the_trunk_no_start_date_said_plainly(self):
+        """stress I6: run on the trunk itself with no start date on the post: said plainly, never a silent pass."""
         git(self.d, "checkout", "-q", "main")
         err = kit.check_intent(with_intent(r6()), root=self.d, code_at="")
         self.assertTrue(any("no trunk to compare with" in e for e in err), err)
+
+    def test_stress_I3_a_part_working_on_the_trunk_counts_its_commits_since_it_started(self):
+        """stress I3: a part on the trunk itself (the web parts' `main`): only its commits since `started_at` count; the
+        trunk's old I1 test still does not."""
+        git(self.d, "checkout", "-q", "main")
+        p = dict(with_intent(r6()), started_at="2000-01-01T00:00:00Z")
+        old = subprocess.run(["git", "log", "-1", "--format=%cI"], cwd=self.d, capture_output=True, text=True).stdout.strip()
+        p["started_at"] = old                                        # the trunk commit is at (not after) the start
+        env = dict(os.environ, GIT_COMMITTER_DATE="2999-01-01T00:00:00Z", GIT_AUTHOR_DATE="2999-01-01T00:00:00Z")
+        with open(os.path.join(self.d, "tests", "test_new.py"), "w") as fh:
+            fh.write("# I2 stress I2 I3 stress I3\n")
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "x"], cwd=self.d, env=env)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A"], cwd=self.d)
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "step test"], cwd=self.d, env=env)
+        p["started_at"] = "2998-01-01T00:00:00Z"
+        err = kit.check_intent(p, root=self.d, code_at="")
+        self.assertEqual(len(err), 1, err)
+        self.assertIn("I1 has no test", err[0])
 
 
 class DoneRefuses(unittest.TestCase):

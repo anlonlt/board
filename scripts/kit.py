@@ -5055,10 +5055,27 @@ def _step_base(root):
 _NOT_CODE = ("docs/", ".kit/", ".board/", ".claude/", ".agents/")
 
 
-def step_tests_added(root):
+def _since_base(root, since):
+    """A part that works on the trunk itself: its base is the parent of its first commit after `since` (the step's start);
+    HEAD when it has committed nothing since."""
+    if not _iso_utc(since):
+        return None
+    r = _git_run("rev-list", "--first-parent", "--reverse", "--since=%s" % since, "HEAD", cwd=root)
+    first = (r.stdout or "").split()
+    if r.returncode != 0:
+        return None
+    if not first:
+        h = _git_run("rev-parse", "HEAD", cwd=root)
+        return h.stdout.strip() if h.returncode == 0 else None
+    par = _git_run("rev-parse", "-q", "--verify", first[0] + "^", cwd=root)
+    return par.stdout.strip() if par.returncode == 0 else None
+
+
+def step_tests_added(root, since=None):
     """The lines this step ADDED to test files (its commits since the trunk, uncommitted and untracked files): a case id
-    already on the trunk, in the post or in a file that is not a test does not count. None with no trunk to compare."""
-    base = _step_base(root)
+    already on the trunk, in the post or in a file that is not a test does not count. On the trunk itself, its commits since
+    `since` (when it started). None when neither tells where the step began."""
+    base = _step_base(root) or _since_base(root, since)
     if not base:
         return None
     g = lambda *a: subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=60)  # noqa: E731
@@ -5081,9 +5098,9 @@ def step_tests_added(root):
     return "\n".join(out)
 
 
-def first_code_commit_at(root):
+def first_code_commit_at(root, since=None):
     """When this step first committed code (not docs/, .kit/, .board/): the oldest of its own commits, or None."""
-    base = _step_base(root)
+    base = _step_base(root) or _since_base(root, since)
     if not base:
         return None
     r = _git_run("log", "--first-parent", "--no-merges", "--format=%cI", "%s..HEAD" % base, "--", ".",
@@ -5124,15 +5141,20 @@ def check_intent(p, root=ROOT, added=None, code_at=None):
     dup = sorted({i for i in ids if ids.count(i) > 1})
     if dup:
         err.append("intent: case id(s) used twice: %s" % ", ".join(dup))
-    first = code_at if code_at is not None else first_code_commit_at(root)
+    since = p.get("started_at") or p.get("launched_at")
+    first = code_at if code_at is not None else first_code_commit_at(root, since)
     at, fc = _iso_utc(it.get("at")), _iso_utc(first)
     if at and fc and fc < at:
         err.append("intent: written %s, after the step's first code commit (%s): the intent comes first, before any code" % (
             it.get("at"), first))
     if added is None:
-        added = step_tests_added(root)
+        added = step_tests_added(root, since)
     if added is None:
-        return err + ["intent: no trunk to compare with: the tests this step added cannot be read, so no case is proved tested"]
+        return err + ["intent: no trunk to compare with and no start date on the post: the tests this step added cannot be "
+                      "read, so no case is proved tested (work on a branch of the trunk)"]
+    tested = [c for c in cases if not c.get("not_covered")]
+    if cases and not tested:
+        err.append("intent: every case is `not covered`: the plan covers none of what he meant; test at least one")
     untested, unstressed = [], []
     for c in cases:
         if c.get("not_covered") == "":
