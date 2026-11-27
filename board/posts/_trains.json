@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T03:13:04Z",
+ "created_at": "2026-11-27T03:14:27Z",
  "rows": [
   {
    "also": [],
@@ -1031,8 +1031,8 @@
    "part": "CL50",
    "post": "cl50-a-part-launched-in-the-background-knows",
    "prompt": "",
-   "session": "session_01AE1HGj6WUrysNPM7yLUF7w",
-   "state": "running",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -1086,8 +1086,8 @@
    "part": "CL52",
    "post": "cl52-tests-clean-up-after-themselves",
    "prompt": "",
-   "session": "session_01AE1HGia6d8GJWcTSt6rRLs",
-   "state": "running",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -1119,8 +1119,8 @@
    "part": "CL54",
    "post": "cl54-a-step-s-task-is-written-once-in-its-pos",
    "prompt": "",
-   "session": "session_01AE1HGjRnr9HjFKPVLAiSso",
-   "state": "running",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -1174,8 +1174,8 @@
    "part": "CL56",
    "post": "cl56-a-session-on-the-shared-link-can-attach",
    "prompt": "",
-   "session": "session_01AE1HGjFXDNKgKeG7VX6toq",
-   "state": "running",
+   "session": "",
+   "state": "idle",
    "store": []
   },
   {
@@ -1254,8 +1254,19 @@
    "session": "",
    "state": "idle",
    "store": []
+  },
+  {
+   "also": [],
+   "children": [],
+   "parent": "P-takeover",
+   "part": "CL62",
+   "post": "cl62-the-orchestrator-cannot-end-a-turn-with",
+   "prompt": "",
+   "session": "session_01AE1HGhL21m74opxVsmtKrx",
+   "state": "running",
+   "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-27T03:13:04Z"
+ "updated_at": "2026-11-27T03:14:27Z"
 }
