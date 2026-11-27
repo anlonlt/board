@@ -3120,7 +3120,7 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
     # then fall back to _load_board_docs (which reads local SQLite -> mirror worktree -> git board-mirror).
     if db_path is None and not has_local_db and not has_mirror_dir and os.path.isfile(os.path.join(ROOT, ".kit", "config.json")):
         try:
-            r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
+            r = _board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
             posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or [] if not str(d.get("id") or "").startswith("_")}
         except Exception:
             posts = {}
@@ -4005,7 +4005,7 @@ def _slug(s, n=40):
 def _get_post(pid, db_path=None):
     """A post's data: from the board server (works from a part's worktree), else the local database."""
     try:
-        r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "doc/posts/" + urllib.parse.quote(pid, safe=""),
+        r = _board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")), "doc/posts/" + urllib.parse.quote(pid, safe=""),
                            token=_resolve_board_token(None))
         if r.get("exists") is not False and isinstance(r.get("data"), dict):
             return r["data"]
@@ -4018,7 +4018,7 @@ def _get_post(pid, db_path=None):
 def _get_comment(cid, db_path=None):
     """A comment's data, from the board server or the local database; None when it is not on this board."""
     try:
-        r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "doc/comments/" + urllib.parse.quote(cid, safe=""),
+        r = _board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")), "doc/comments/" + urllib.parse.quote(cid, safe=""),
                            token=_resolve_board_token(None))
         if r.get("exists") is not False and isinstance(r.get("data"), dict):
             return r["data"]
@@ -4054,7 +4054,7 @@ def _post_gate():
 def _post_comments(pid, db_path=None):
     """{id: comment} under a post: from the board server (a part's worktree has no database), else the local database."""
     try:
-        r = _board_request(_resolve_board_url(_kit_config().get("board_url")),
+        r = _board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")),
                            "db/comments?" + urllib.parse.urlencode({"where": json.dumps([["post_id", "==", pid]]), "limit": "500"}),
                            token=_resolve_board_token(None))
         if isinstance(r.get("docs"), list):
@@ -5001,7 +5001,7 @@ def _all_posts(db_path=None):
     posts, _ = _load_board_docs(os.path.join(ROOT, "board-mirror-missing"), db_path=db_path)
     if not posts and not db_path and os.path.isfile(os.path.join(ROOT, ".kit", "config.json")):
         try:                                      # a part's worktree (or empty local DB): the board server holds it
-            r = _board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
+            r = _board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")), "db/posts?limit=5000", token=_resolve_board_token(None))
             posts = {d["id"]: d.get("data") or {} for d in r.get("docs") or []}
         except Exception as e:  # noqa: BLE001 - kept, never swallowed: resume --role part stops on it
             BOARD_ERRORS.append("the board server refused or failed: %s" % e)
@@ -8801,7 +8801,7 @@ def autonomy_lines():
 def _board_answers():
     """The board server of this project answers (a part's worktree has no database of its own)."""
     try:
-        return bool(_board_request(_resolve_board_url(_kit_config().get("board_url")), "db/posts?limit=1", token=_resolve_board_token(None)))
+        return bool(_board_request(_resolve_board_url(os.environ.get("KIT_BOARD_URL") or _kit_config().get("board_url")), "db/posts?limit=1", token=_resolve_board_token(None)))
     except Exception:
         return False
 
