@@ -44,7 +44,7 @@ MEMORY_HOOKS = {"kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_st
 HOOKS = ["kit_web_save.py", "kit_config.py", "kit_guard.py", "kit_session_start.py", "kit_stop.py", "kit_pre_compact.py",
          "kit_say_it_once.py", "kit_board_typing.py", "kit_cards_reminder.py", "kit_notify.py", "kit_task_train.py",
          "kit_orchestrator_guard.py", "kit_brief_guard.py", "kit_board_guard.py", "kit_memory_jit.py", "kit_usage.py", "kit_wip.py",
-         "kit_activity.py", "test_hooks.py"]
+         "kit_activity.py", "kit_queue_stop.py", "test_hooks.py"]
 # CL30: the kit's guards. One whose file is in a present Claude Code runtime but that has no settings.json line (or a
 # narrower matcher than the kit's) is a hole, not a choice (Harmonize: kit_cards_reminder.py wired nowhere, the brief
 # guard on Bash only): --update wires it. Other kit hooks (a project's own hand-over, its Stop) are left as they are.
@@ -1675,6 +1675,11 @@ def main(argv=None):
         spec = [x for x in (CLAUDE_SETTINGS if web else CLAUDE_CLI_SETTINGS) if x[2] in added_h]
         if message_guard and not any(x[2] == MESSAGE_GUARD and x[0] == "PreToolUse" for x in spec):
             spec.append(("PreToolUse", SEND_TOOLS, MESSAGE_GUARD))
+        # CL60: the "·" line after a part's last steps (Harmonize's --update left this PostToolUse on its old tools);
+        # only that line: a project's own Stop or prompt hook is kept, never doubled
+        if os.path.isfile(os.path.join(t, RUNTIME_HOOK_DIRS["claude"], MESSAGE_GUARD)):
+            spec += [x for x in (CLAUDE_SETTINGS if web else CLAUDE_CLI_SETTINGS)
+                     if x[2] == MESSAGE_GUARD and x[0] == "PostToolUse" and x not in spec]
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], spec)
     if ".kit/kit.py" in ins.touched and (want_claude or "claude" in present):
         merge_fresh_line(t, a.dry_run, ins.log)
