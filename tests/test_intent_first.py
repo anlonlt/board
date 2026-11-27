@@ -279,22 +279,27 @@ class Gaming(unittest.TestCase):
 
     def test_stress_I3_a_part_working_on_the_trunk_counts_its_commits_since_it_started(self):
         """stress I3: a part on the trunk itself (the web parts' `main`): only its commits since `started_at` count; the
-        trunk's old I1 test still does not."""
-        git(self.d, "checkout", "-q", "main")
-        p = dict(with_intent(r6()), started_at="2000-01-01T00:00:00Z")
-        old = subprocess.run(["git", "log", "-1", "--format=%cI"], cwd=self.d, capture_output=True, text=True).stdout.strip()
-        p["started_at"] = old                                        # the trunk commit is at (not after) the start
-        env = dict(os.environ, GIT_COMMITTER_DATE="2999-01-01T00:00:00Z", GIT_AUTHOR_DATE="2999-01-01T00:00:00Z")
-        with open(os.path.join(self.d, "tests", "test_new.py"), "w") as fh:
+        trunk's old I1 test, committed before the step started, still does not."""
+        d = os.path.join(self.d, "solo")
+        os.makedirs(os.path.join(d, "tests"))
+        dated = lambda when: dict(os.environ, GIT_COMMITTER_DATE=when, GIT_AUTHOR_DATE=when)  # noqa: E731
+        g = lambda when, *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]  # noqa: E731
+                                            + list(a), cwd=d, env=dated(when), capture_output=True, text=True, check=True)
+        g("2026-01-01T00:00:00Z", "init", "-q", "-b", "main")
+        with open(os.path.join(d, "tests", "test_old.py"), "w") as fh:
+            fh.write("# I1 stress I1\n")
+        g("2026-01-01T00:00:00Z", "add", "-A")
+        g("2026-01-01T00:00:00Z", "commit", "-qm", "trunk")
+        with open(os.path.join(d, "tests", "test_new.py"), "w") as fh:
             fh.write("# I2 stress I2 I3 stress I3\n")
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "x"], cwd=self.d, env=env)
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A"], cwd=self.d)
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "step test"], cwd=self.d, env=env)
-        p["started_at"] = "2998-01-01T00:00:00Z"
-        err = kit.check_intent(p, root=self.d, code_at="")
+        g("2026-06-01T00:00:00Z", "add", "-A")
+        g("2026-06-01T00:00:00Z", "commit", "-qm", "the step's test")
+        p = dict(with_intent(r6(), at="2026-03-01T00:00:00Z"), started_at="2026-03-01T00:00:00Z")
+        err = kit.check_intent(p, root=d)
         self.assertEqual(len(err), 1, err)
         self.assertIn("I1 has no test", err[0])
-
+        err = kit.check_intent(dict(p, intent=dict(p["intent"], at="2026-07-01T00:00:00Z")), root=d)
+        self.assertTrue(any("after the step's first code commit" in e for e in err), err)
 
 class DoneRefuses(unittest.TestCase):
     """real: `done` itself calls the intent check (not only the helper)."""

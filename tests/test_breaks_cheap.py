@@ -25,11 +25,19 @@ def git(cwd, *args):
                           cwd=cwd, capture_output=True, text=True, check=True)
 
 
+# CL76: a demo step written the new way: his intent first, a test naming each case and a stress variant
+DEMO_INTENT = {"goal": "\"the demo works\"", "real": "none: a demo", "at": "2000-01-01T00:00:00Z",
+               "cases": [{"id": "I1", "text": "a", "outside": False, "not_covered": None},
+                         {"id": "I2", "text": "b", "outside": False, "not_covered": None},
+                         {"id": "I3", "text": "c", "outside": True, "not_covered": None}]}
+DEMO_TEST = "# I1 stress I1 I2 stress I2 I3 stress I3\n"
+
+
 def post(**kw):
     p = {"title": "demo", "part": "DM2", "train": "demo", "column": "info",
          "verdict": "mul() multiplies two numbers.", "bars": ["6 of 6 products right"], "artifacts": ["calc.py"],
          "not_checked": ["floats"], "check": MUL_OK, "breaks": "revert", "handoff": "use calc.mul",
-         "body": "For you: nothing to do."}
+         "body": "For you: nothing to do.", "intent": DEMO_INTENT}
     p.update(kw)
     return p
 
@@ -50,6 +58,9 @@ class Demo(unittest.TestCase):
         git(self.repo, "commit", "-q", "-m", "trunk")
         git(self.repo, "checkout", "-q", "-b", "step")
         self.write("def add(a, b):\n    return a + b\n\ndef mul(a, b):\n    return a * b\n\ndef draw():\n    return 'sky:aurora-green'\n")
+        with open(os.path.join(self.repo, "test_calc.py"), "w") as fh:
+            fh.write(DEMO_TEST)
+        git(self.repo, "add", "-A")
         git(self.repo, "commit", "-qam", "step: mul and the aurora")
         self.db = os.path.join(self.tmp, "board.db")
         self.comments = {}
@@ -105,7 +116,9 @@ class Revert(Demo):
 
     def test_nothing_to_revert_is_refused(self):
         git(self.repo, "checkout", "-q", "main")
-        rc, out = self.done(post(check="python3 -c \"import calc; assert calc.add(2, 2) == 4\""))
+        with open(os.path.join(self.repo, "test_calc.py"), "w") as fh:   # CL76: a part on the trunk, its test not committed yet
+            fh.write(DEMO_TEST)
+        rc, out = self.done(post(check="python3 -c \"import calc; assert calc.add(2, 2) == 4\"", started_at="2000-01-01T00:00:00Z"))
         self.assertEqual(rc, 1, out)
         self.assertIn("nothing to revert", out)
 

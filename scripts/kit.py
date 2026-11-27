@@ -5058,9 +5058,11 @@ _NOT_CODE = ("docs/", ".kit/", ".board/", ".claude/", ".agents/")
 def _since_base(root, since):
     """A part that works on the trunk itself: its base is the parent of its first commit after `since` (the step's start);
     HEAD when it has committed nothing since."""
-    if not _iso_utc(since):
+    start = _iso_utc(since)
+    if not start:
         return None
-    r = _git_run("rev-list", "--first-parent", "--reverse", "--since=%s" % since, "HEAD", cwd=root)
+    # strictly after the start: a trunk commit made in the very second the step started is not the step's
+    r = _git_run("rev-list", "--first-parent", "--reverse", "--since=%s" % (start + timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S +0000"), "HEAD", cwd=root)
     first = (r.stdout or "").split()
     if r.returncode != 0:
         return None
@@ -5068,19 +5070,32 @@ def _since_base(root, since):
         h = _git_run("rev-parse", "HEAD", cwd=root)
         return h.stdout.strip() if h.returncode == 0 else None
     par = _git_run("rev-parse", "-q", "--verify", first[0] + "^", cwd=root)
-    return par.stdout.strip() if par.returncode == 0 else None
+    if par.returncode != 0:                              # the repo's first commit is the step's: compare with nothing
+        e = _git_run("hash-object", "-t", "tree", "/dev/null", cwd=root)
+        return e.stdout.strip() if e.returncode == 0 else None
+    return par.stdout.strip()
 
 
 def step_tests_added(root, since=None):
     """The lines this step ADDED to test files (its commits since the trunk, uncommitted and untracked files): a case id
     already on the trunk, in the post or in a file that is not a test does not count. On the trunk itself, its commits since
     `since` (when it started). None when neither tells where the step began."""
+    is_test = lambda n: "test" in os.path.basename(n).lower() and not n.startswith(_NOT_CODE)  # noqa: E731
+    out = []
+    if _git_run("rev-parse", "--is-inside-work-tree", cwd=root).returncode != 0:
+        # a project outside git: no history to tell old tests from new, so every test file there is read
+        for dp, dns, fns in os.walk(root):
+            dns[:] = [x for x in dns if not x.startswith(".") and x not in ("node_modules", "__pycache__")]
+            for fn in fns:
+                rel = os.path.relpath(os.path.join(dp, fn), root)
+                if is_test(rel) and fn.endswith((".py", ".js", ".ts", ".sh", ".mjs", ".cjs", ".kt", ".java", ".rb", ".go", ".rs")):
+                    with open(os.path.join(dp, fn), encoding="utf-8", errors="replace") as fh:
+                        out.append(fh.read())
+        return "\n".join(out)
     base = _step_base(root) or _since_base(root, since)
     if not base:
         return None
     g = lambda *a: subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=60)  # noqa: E731
-    is_test = lambda n: "test" in os.path.basename(n).lower() and not n.startswith(_NOT_CODE)  # noqa: E731
-    out = []
     try:
         diff = g("diff", "-U0", base, "--", ".").stdout            # commits and the working tree, against the trunk's base
         cur = None
