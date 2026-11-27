@@ -1,1 +1,1 @@
-{"at": "2026-11-27T09:03:31Z", "commit": "64d306455a069d25cd0375e36c0d9f345f690e40", "failed": [], "passed": {"tests/test_artifact_assets_into.py": 1.3, "tests/test_artifact_cross_repo.py": 20.0}, "total": 87}
+{"at": "2026-11-27T09:03:39Z", "commit": "64d306455a069d25cd0375e36c0d9f345f690e40", "failed": [], "passed": {"tests/test_artifact_assets_into.py": 1.3, "tests/test_artifact_cross_repo.py": 20.0, "tests/test_artifact_files.py": 8.1}, "total": 87}
