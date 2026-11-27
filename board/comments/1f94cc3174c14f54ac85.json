@@ -6,7 +6,8 @@
  "discussion": "3aec2f488e424ae59968",
  "from": "owner",
  "post_id": "_orchestrator",
- "read": false,
+ "read": true,
+ "read_at": "2026-11-27T03:06:19Z",
  "text": "Also, wasn't there a part on token cost measuring in any specifically, since token cost was only measured per Claude code costs ? Was that done ?",
  "thread_id": "thr_b8f1afa0c628"
 }
