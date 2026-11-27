@@ -209,7 +209,8 @@ class Project(unittest.TestCase):
         (out / "batch-01.json").write_text("[]")
         (out / "batch-02.json").write_text("[]")
         os.environ["KIT_ARTIFACT_DIR"] = str(self.root / "art")
-        with mock.patch.object(kit, "keep", return_value=("KEPT", True)) as k, mock.patch("builtins.print"):
+        with mock.patch.object(kit, "keep", return_value=("KEPT", True)) as k, mock.patch("builtins.print"), \
+                mock.patch.dict(os.environ, {"CLAUDE_CODE_REMOTE": "true"}):           # CL51: `artifact` is the web's
             kit.main(["artifact", "sent", str(out / "batch-01.json")])
             self.assertEqual(k.call_count, 0)                                              # one more to send
             kit.main(["artifact", "sent", str(out / "batch-02.json")])

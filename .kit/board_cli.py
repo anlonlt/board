@@ -33,6 +33,30 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+def _test_guard():
+    """CL48: in a test run (KIT_TEST set) a write to a board, a mirror or a remote outside a temp folder is refused
+    (kit/test_guard.py, every git command checked first); None outside a test run."""
+    if not os.environ.get("KIT_TEST"):
+        return None
+    if sys.modules.get("kit_test_guard"):
+        return sys.modules["kit_test_guard"]
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    for f in [os.path.join(d, "test_guard.py") for d in (here, os.path.join(here, "..", "kit"), os.path.join(here, ".."))] + \
+            [os.environ.get("KIT_TEST_GUARD") or ""]:     # a test's hand-made copy of a few scripts: the runner's
+        if f and os.path.isfile(f):
+            spec = importlib.util.spec_from_file_location("kit_test_guard", f)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["kit_test_guard"] = mod
+            spec.loader.exec_module(mod)
+            mod.install()
+            return mod
+    raise SystemExit("KIT_TEST: REFUSED: test_guard.py is not next to %s: a test run writes nothing without it" % __file__)
+
+
+_TEST_GUARD = _test_guard()
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -157,6 +181,8 @@ def default_token():
 
 
 def req(base, method, path, body=None, headers=None, timeout=60, token=None):
+    if _TEST_GUARD:     # CL48: a test run writes only to a test's board, never to the real one
+        _TEST_GUARD.check_board(base, method or ("POST" if body is not None else "GET"))
     url = base.rstrip("/") + path
     hdrs = dict(headers or {})
     if token:

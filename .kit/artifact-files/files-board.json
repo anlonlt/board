@@ -23,8 +23,8 @@
    "version": 9
   },
   ".kit+2F~claude-cli+2F~orchestrator.md": {
-   "sha": "bcfcab3726f3048c242e14c38c1244f197ec31b0c5ea2539f51c516f6bccc4a8",
-   "version": 3
+   "sha": "cea430ec2bbc63f6516c052e2be03f6e71dbf364f015ef202f031b4d32751c80",
+   "version": 4
   },
   ".kit+2F~claude-cli+2F~part.md": {
    "sha": "dec2e7004fc2062992f7e4ec81b8c55dc060b31b3c8e6972738e7585b2951c4d",
@@ -86,6 +86,10 @@
    "sha": "08163f92391e1658bcb3b364ea3901aaa2659b76daeb60fa7b75ff1b64ca14c2",
    "version": 1
   },
+  "docs+2F~prompts+2F~r1-antigravity-on-the-web-how-far-it-runs-t.md": {
+   "sha": "e1696f88994eadd40c568e88f7a289ef9198f6e8d77bd58f1ee3da6fe60af118",
+   "version": 5
+  },
   "kit+2F~AGENTS.template.md": {
    "sha": "5cb9e84c45f6368cca0aa3c2a125ca8e71722513719b5f865a139941d6a534fa",
    "version": 1
@@ -138,13 +142,17 @@
    "sha": "9e486179a0e1c71e4b8e67789c37d28c14bc6e4c31bc323243e6d228a7b05a0e",
    "version": 4
   },
+  "kit+2F~claude-cli+2F~clerk.template.md": {
+   "sha": "492ef01c4b986a4a330a13957a52b01064ceb8e6482429444d3ca0acf4c9eb57",
+   "version": 2
+  },
   "kit+2F~claude-cli+2F~consultant.template.md": {
    "sha": "7190087ac1aba2c89b771aa44817283a01b514d0fc5b0ce6826070fcfda40448",
    "version": 3
   },
   "kit+2F~claude-cli+2F~orchestrator.template.md": {
-   "sha": "9dde5b1023b543c8b9bac26745eb07e3cf2b4dba598e05b26b05893b28d7f7b2",
-   "version": 6
+   "sha": "713f1a7f5ddf54c9d247d88d1de21303e9e522c09a10d3db2562646090f82662",
+   "version": 7
   },
   "kit+2F~claude-cli+2F~part.template.md": {
    "sha": "22f50ced1a224a58deef91968ea06ea5c2703dc580852af9633359d56befabc2",

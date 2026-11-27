@@ -269,6 +269,12 @@ class AdoptOnAnArtifactBoard(unittest.TestCase):
     """A web container: adopt goes the kit's own way (the local board started as `artifact load` does, then
     `artifact push`), never a write path of its own."""
 
+    def setUp(self):                                      # CL51: an Artifact step happens on the web only
+        from unittest import mock
+        p = mock.patch.dict(os.environ, {"CLAUDE_CODE_REMOTE": "true"})
+        p.start()
+        self.addCleanup(p.stop)
+
     def test_reuses_the_local_board_and_artifact_push(self):
         kit = load_kit()
         posts = json.loads(json.dumps(POSTS))
@@ -297,6 +303,12 @@ class AdoptOnAnArtifactBoard(unittest.TestCase):
 class DoneOnlyWhenOnTheBoard(unittest.TestCase):
     """The owner, 2026-11-23: "How come you said you posted when you didn't?": a part's post changed only on the
     local copy; `kit.py done` said OK and the live board (the Artifact) still showed it planned."""
+
+    def setUp(self):                                      # CL51: an Artifact step happens on the web only
+        from unittest import mock
+        p = mock.patch.dict(os.environ, {"CLAUDE_CODE_REMOTE": "true"})
+        p.start()
+        self.addCleanup(p.stop)
 
     def test_done_refuses_a_post_the_artifact_has_not_got(self):
         kit = load_kit()
