@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T02:51:37Z",
+ "created_at": "2026-11-27T02:58:20Z",
  "rows": [
   {
    "at": 4,
@@ -17,7 +17,8 @@
     "The board travels in git, always current (mirror synced on every step)",
     "end_session says why a push failed",
     "Tests clean up after themselves",
-    "An outside AI gets one link, the owner's invite with the post's drop box"
+    "An outside AI gets one link, the owner's invite with the post's drop box",
+    "A part pushes only its own post; a pull never deadlocks on waiting batches"
    ],
    "train": "P-board-data"
   },
@@ -150,7 +151,8 @@
     "Work in progress is on GitHub within minutes, public repos included",
     "A crashed part is continued from its last checkpoint",
     "A part launched in the background knows its own step",
-    "A step's task is written once, in its post; the prompt is generated at launch"
+    "A step's task is written once, in its post; the prompt is generated at launch",
+    "A part's last chat message is a single dot the first time, not after a refusal"
    ],
    "train": "P-takeover"
   },
@@ -174,5 +176,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T02:51:37Z"
+ "updated_at": "2026-11-27T02:58:20Z"
 }
