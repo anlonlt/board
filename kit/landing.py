@@ -7,8 +7,14 @@
     landing.py setup              that hook in this clone (a hook of the project's own keeps running, before it)
 
 Config (`kit` in .kit/config.json): `land`: "after_review" (the default where the kit may push the trunk and reviews run)
-or "at_done"; `wip`: "auto" (the default: pushed only when the GitHub repo is private, else kept in this clone under
-refs/wip/), "push", "local" or "off", and `wip_minutes` (5); `pre_push`: false leaves git's hooks alone.
+or "at_done"; `wip`: "auto" (the default) or "push": pushed, public repos included, after the secret check (CL55), "local"
+(kept in this clone under refs/wip/) or "off", and `wip_minutes` (5); `pre_push`: false leaves git's hooks alone.
+
+A part's save (`resume --role part` marks its branch, or KIT_POST) is CL44's checkpoint: a commit on its step's branch,
+pushed there; any other session's is a snapshot on wip/<branch>. Before anything leaves for GitHub, the lines it adds to
+what origin already has are read: a secret-looking value (a token, a private key) refuses the push, said in the save's
+text and in .kit/run/wip-status.json, which the save hook tells the session once. A line that is no secret says so with
+`kit: not a secret`. Secret-named files (.env, *.pem, ...) are left out and named in the save's message.
 """
 import fnmatch
 import json
@@ -18,8 +24,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import urllib.error
-import urllib.request
 
 KIT = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.environ.get("KIT_LANDING_ROOT") or os.path.dirname(KIT)
@@ -27,6 +31,21 @@ MARK = "# board kit: pre-push"
 SECRETS = (".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "keystore.properties", "id_rsa*", "id_ed25519*",
            "*credentials*.json", "*secret*", ".netrc", ".npmrc", ".pypirc")
 MAX_FILE = 2 * 1024 * 1024
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+# What a secret looks like inside a file: high-precision shapes only, so a save is refused for a real reason.
+VALUES = (
+    ("a GitHub token", r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{50,})"),
+    ("an AWS access key", r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+    ("a private key", r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----"),
+    ("a Slack token", r"\bxox[abposr]-[A-Za-z0-9-]{10,}"),
+    ("an Anthropic or OpenAI key", r"\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{32,}"),
+    ("a Google API key", r"\bAIza[0-9A-Za-z_-]{35}\b"),
+    ("a Stripe live key", r"\b[rs]k_live_[0-9A-Za-z]{20,}"),
+    ("a Hugging Face token", r"\bhf_[A-Za-z0-9]{34,}\b"),
+    ("a password or key in the clear", r"(?i)\b(?:api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|"
+                                       r"password)\b[\"']?\s*[:=]\s*[\"']((?=[^\"'\s]*\d)(?=[^\"'\s]*[A-Za-z])[A-Za-z0-9/+_\-.]{20,})[\"']"),
+)
+NOT_SECRET = "kit: not a secret"
 SHIM = """#!/bin/sh
 %s (landing.py setup wrote this; a hook of the project's own is pre-push.local, run first)
 input=$(cat)
@@ -180,35 +199,87 @@ def _landed(pid, br, t, sha):
 
 
 # ---------------------------------------------------------------- save
-def _private():
-    """True only when GitHub says a stranger cannot see this repo (404). Anything else (public, no network, rate limit,
-    another host) is False: nothing is pushed on a guess."""
-    url = out("remote", "get-url", "origin")
-    m = re.search(r"(?:github\.com[:/]|/git/)([\w.-]+)/([\w.-]+?)(?:\.git)?/?$", url)
-    if not m:
-        return False
-    memo = os.path.join(ROOT, ".kit", "run", "wip-private.json")
+def push_base(head="HEAD"):
+    """What origin already has of `head`: the parent of its oldest commit no origin branch holds (`head` itself when all
+    of it is there, the empty tree when none is)."""
+    new = out("rev-list", "--reverse", head, "--not", "--remotes=origin").split()
+    if not new:
+        return out("rev-parse", "-q", "--verify", head) or EMPTY_TREE
+    return out("rev-parse", "-q", "--verify", new[0] + "^") or EMPTY_TREE
+
+
+def secret_hits(base, target=None, cached=False, cwd=None):
+    """[(file, line, what)]: the secret-looking values in the lines `target` (a commit or a tree; the index when `cached`)
+    adds to `base`. Only added lines: what origin has already is not this save's to refuse."""
+    args = ["diff", "--no-color", "--no-ext-diff", "--no-renames", "-U0"] + (["--cached", base] if cached else [base, target])
+    r = git(*args, cwd=cwd, timeout=120)
+    hits, f, n = [], "", 0
+    for ln in r.stdout.splitlines():
+        if ln.startswith("+++ "):
+            f = ln[6:] if ln.startswith("+++ b/") else ""
+        elif ln.startswith("@@"):
+            m = re.match(r"@@ -\S+ \+(\d+)", ln)
+            n = int(m.group(1)) if m else 0
+        elif ln.startswith("+") and f:
+            if NOT_SECRET not in ln:
+                for what, rx in VALUES:
+                    if re.search(rx, ln):
+                        hits.append((f, n, what))
+                        break
+            n += 1
+    return hits
+
+
+def hits_text(hits):
+    shown = ", ".join("%s:%d (%s)" % h for h in hits[:4]) + (" and %d more" % (len(hits) - 4) if len(hits) > 4 else "")
+    return ("REFUSED: not pushed, it would carry a secret: %s. Take it out (or, if it is none, end its line with `%s`); "
+            "the next save pushes" % (shown, NOT_SECRET))
+
+
+def said(rc, txt):
+    """The last save, for the save hook to tell the session (a refusal is never silent)."""
+    path = os.path.join(ROOT, ".kit", "run", "wip-status.json")
     try:
-        with open(memo, encoding="utf-8") as fh:
-            d = json.load(fh)
-        if d.get("url") == url and time.time() - float(d.get("at") or 0) < 6 * 3600:
-            return bool(d.get("private"))
-    except (OSError, ValueError, TypeError):
-        pass
-    try:
-        urllib.request.urlopen(urllib.request.Request("https://api.github.com/repos/%s/%s" % m.groups(), headers={"User-Agent": "git"}), timeout=8)
-        private = False
-    except urllib.error.HTTPError as e:
-        private = e.code == 404
-    except (OSError, ValueError):
-        return False
-    try:
-        os.makedirs(os.path.dirname(memo), exist_ok=True)
-        with open(memo, "w", encoding="utf-8") as fh:
-            json.dump({"url": url, "private": private, "at": time.time()}, fh)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"at": time.time(), "rc": rc, "text": txt, "told": rc == 0}, fh)
     except OSError:
         pass
-    return private
+    return rc, txt
+
+
+def part_branch():
+    """This clone's branch when a part works on it (KIT_POST, or `resume --role part` marked it), else ''."""
+    br = out("symbolic-ref", "--short", "-q", "HEAD")
+    if not br or br == trunk() or br.startswith("wip/") or br in ("main", "master", "board-mirror", "kit-usage"):
+        return ""
+    if os.environ.get("KIT_POST"):
+        return br
+    try:
+        with open(os.path.join(ROOT, ".kit", "run", "part-branch.json"), encoding="utf-8") as fh:
+            return br if (json.load(fh) or {}).get("branch") == br else ""
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def checkpoint_save(br):
+    """A part's save: CL44's checkpoint on its step's branch, pushed there. (rc, text, fall back to wip/)."""
+    kit = os.path.join(ROOT, ".kit", "kit.py")
+    if not os.path.isfile(kit):
+        return 1, "", True
+    try:
+        r = subprocess.run([sys.executable, "-I", kit, "checkpoint", "--on-step-branch", "--push", "--message", "saved by the save hook"],
+                           capture_output=True, text=True, timeout=300, cwd=ROOT)
+        res = json.loads((r.stdout.strip().splitlines() or ["{}"])[-1])
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 1, "", True
+    if res.get("refused"):
+        return 1, "save: %s on %s: %s" % ("checkpoint " + res["sha"] if res.get("sha") else "nothing committed", br, res["why"]), False
+    if res.get("pushed"):
+        return 0, "save: %s on origin/%s (%s)" % (res.get("sha") or "HEAD", br, "a checkpoint commit" if res.get("committed") else "its commits"), False
+    if not res.get("ok"):
+        return 1, "", True
+    return 1, "", True                                   # committed or clean but origin did not take it: wip/ keeps it
 
 
 def wip_name():
@@ -221,12 +292,16 @@ def wip_name():
     return "wip/" + br
 
 
-def _untracked(env):
+def _untracked(env, left=None):
     never = tuple((kit_cfg().get("guard") or {}).get("never_add") or ()) + SECRETS
     keep = []
     for f in git("ls-files", "--others", "--exclude-standard", "-z", env=env).stdout.split("\0"):
         low = f.lower()
-        if not f or any(fnmatch.fnmatch(low, p.lower()) or fnmatch.fnmatch(os.path.basename(low), p.lower()) for p in never):
+        if not f:
+            continue
+        if any(fnmatch.fnmatch(low, p.lower()) or fnmatch.fnmatch(os.path.basename(low), p.lower()) for p in never):
+            if left is not None and not low.startswith(".kit/"):
+                left.append(f)
             continue
         try:
             if os.path.getsize(os.path.join(ROOT, f)) <= MAX_FILE:
@@ -243,31 +318,45 @@ def save():
     head = out("rev-parse", "-q", "--verify", "HEAD")
     if mode == "off" or not name or not head:
         return 0, "save: nothing (%s)" % ("kit.wip is off" if mode == "off" else "no branch here")
+    left = []
     with tempfile.TemporaryDirectory(prefix="kit-wip-") as d:
         env = {"GIT_INDEX_FILE": os.path.join(d, "index")}
         if git("read-tree", "HEAD", env=env).returncode or git("add", "-u", env=env).returncode:
             return 1, "save: FAILED: could not read the working tree"
-        new = _untracked(env)
+        new = _untracked(env, left)
         if new:
             git("update-index", "--add", "-z", "--stdin", env=env, data="\0".join(new) + "\0")
         tree = out("write-tree", env=env)
     if not tree:
         return 1, "save: FAILED: could not write the tree"
+    pb = part_branch() if mode != "local" else ""
+    if pb:
+        hits = secret_hits(push_base(head), tree)             # read here too, whatever kit.py this clone has
+        if hits:
+            return said(1, "save: nothing committed on %s; %s" % (pb, hits_text(hits)))
+        rc, txt, fall = checkpoint_save(pb)
+        if not fall:
+            return said(rc, txt)
     last = out("rev-parse", "-q", "--verify", "refs/" + name)
     if tree == out("rev-parse", "HEAD^{tree}") and out("branch", "-r", "--contains", head):
         return 0, "save: nothing (all of it is committed and on origin)"
     if not (last and out("rev-parse", last + "^{tree}") == tree and contains(head, last)):
         parents = ["-p", head] + (["-p", last] if last and not contains(last, head) else [])
-        c = out("-c", "user.name=board kit", "-c", "user.email=kit@localhost", "commit-tree", tree, *parents, "-m", "wip: unfinished work on %s" % name[4:])
+        msg = "wip: unfinished work on %s" % name[4:] + ("\n\nLeft out (secret-named, never saved): %s" % ", ".join(left[:20]) if left else "")
+        c = out("-c", "user.name=board kit", "-c", "user.email=kit@localhost", "commit-tree", tree, *parents, "-m", msg)
         if not c or git("update-ref", "refs/" + name, c).returncode:
             return 1, "save: FAILED: could not write refs/%s" % name
         last = c
-    if mode == "local" or (mode != "push" and not _private()):
-        return 0, "save: %s kept in this clone (refs/%s)%s" % (last[:9], name, "" if mode == "local" else "; not pushed: this repo is not known to be private")
+    if mode == "local":
+        return 0, "save: %s kept in this clone (refs/%s)" % (last[:9], name)
+    hits = secret_hits(push_base(head), tree)
+    if hits:
+        return said(1, "save: %s kept in this clone (refs/%s); %s" % (last[:9], name, hits_text(hits)))
+    lo = (" (left out: %s)" % ", ".join(left[:6])) if left else ""
     for _ in range(2):
         if git("push", "-q", "origin", "%s:refs/heads/%s" % (last, name), timeout=120, env={"KIT_WIP_PUSH": "1"}).returncode == 0:
             git("update-ref", "refs/remotes/origin/" + name, last)
-            return 0, "save: %s on origin/%s" % (last[:9], name)
+            return said(0, "save: %s on origin/%s%s" % (last[:9], name, lo))
         if not _fetch(name):                                     # another clone saved there: keep its save too, under ours
             break
         theirs = out("rev-parse", "origin/" + name)
@@ -275,7 +364,7 @@ def save():
             break
         last = out("-c", "user.name=board kit", "-c", "user.email=kit@localhost", "commit-tree", last + "^{tree}", "-p", last, "-p", theirs, "-m", "wip")
         git("update-ref", "refs/" + name, last)
-    return 1, "save: %s kept in this clone; origin did not take it" % last[:9]
+    return said(1, "save: %s kept in this clone; origin did not take it" % last[:9])
 
 
 def wip_lines(branch):

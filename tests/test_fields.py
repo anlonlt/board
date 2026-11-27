@@ -32,7 +32,7 @@ class Base(unittest.TestCase):
         return r
 
     def row(self, i):
-        return next(e for e in led.load_entries(self.m) if e["id"] == i)
+        return next(e for e in led.load_entries(self.m) + led.load_archive(self.m) if e["id"] == i)   # M8: a replaced one is archived
 
     def text(self, role="part", **k):
         return "\n".join(led.format_resume(self.m, role, **k))
@@ -67,6 +67,7 @@ class Principles(Base):
         self.assertIn("Say it once, on the board", self.text())
         self.ok(led.confirm_principle(self.m, "P2", "his-yes-2"))
         self.assertEqual((self.row("P1")["status"], self.row("P2")["keeps"], self.row("P2")["not_for"]), ("replaced", ["R1"], "his own chat"))
+        self.assertEqual((self.row("P1")["replaced_by"], [e["id"] for e in led.load_entries(self.m) if e["id"] == "P1"]), ("P2", []))
         self.assertEqual([self.row(i)["subsumed_by"] for i in ("R2", "R9")], ["P2", "P2"])
         self.assertEqual(led.moves(self.m), [])
         self.assertEqual(led.check_ledger(self.m)["errors"], [])

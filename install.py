@@ -85,6 +85,8 @@ DEFAULT_KIT = {
     "orchestrator": {"context_limit_k": 380},
     # Reviews (Claude Code CLI): each completed step, and every train_every completed steps of a train a cross review.
     "review": {"auto": "all", "train_every": 4},
+    # Memory (M8): an entry nobody confirmed for longer than this goes to a review list on the board, never deleted.
+    "memory": {"review_days": 90},
     # Above this a post body gets a nudge from `kit.py done` (never an error: the post is where the detail goes).
     "post_body_max": 1500,
     "clerk": {"wait_minutes": 5, "context_limit_k": 80, "orchestrator_idle_minutes": 30},
@@ -191,8 +193,7 @@ def present_runtimes(t):
 
 # Files the kit once installed and no longer does where this run did not put them (an update would otherwise leave the old
 # copy behind for ever): removed when unchanged since the kit wrote them, else KEPT and named.
-RETIRED = {".kit/agents/kit-cards.md": "the board server builds the cards; `kit.py cards` checks them",
-           ".claude/agents/kit-cards.md": "the board server builds the cards; `kit.py cards` checks them"}
+RETIRED = {".kit/agents/kit-cards.md": "the board server builds the cards; `kit.py cards` checks them"}
 
 
 class Installer:
@@ -870,6 +871,31 @@ def merge_claude_settings(t, dry, log, board=True, spec=None):
                 fh.write("\n")
 
 
+FRESH_CMD = 'python3 -I "$CLAUDE_PROJECT_DIR/.kit/kit.py" fresh'
+
+
+def merge_fresh_line(t, dry, log):
+    """CL53b: a Claude Code project whose SessionStart is its own script (Harmonize's session-start.sh) never runs the
+    kit's hook, so its sessions started on old code without a word. Its settings get one SessionStart line of the kit's:
+    `kit.py fresh` (the CHECKOUT line, or nothing). Not added where the kit's SessionStart hook already runs."""
+    p = os.path.join(t, ".claude", "settings.json")
+    if not os.path.isfile(p):
+        return
+    with open(p, encoding="utf-8") as fh:
+        s = json.load(fh)
+    groups = (s.get("hooks") or {}).get("SessionStart") or []
+    cmds = [str(h.get("command") or "") for g in groups for h in (g.get("hooks") or [])]
+    if any(c == FRESH_CMD or "kit_session_start.py" in c or ("/.kit/hook.py" in c and "SessionStart" in c) for c in cmds):
+        return
+    s.setdefault("hooks", {}).setdefault("SessionStart", []).append(
+        {"hooks": [{"type": "command", "command": FRESH_CMD, "timeout": 45}]})
+    log.append(".claude/settings.json: SessionStart runs `kit.py fresh` (CL53: its own session-start script does not run the kit's hook)")
+    if not dry:
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(s, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+
+
 def under_tempdir(t):
     """True when t is inside the system temp folder (tempfile.gettempdir(), /tmp, $TMPDIR)."""
     import tempfile
@@ -1175,6 +1201,7 @@ def main(argv=None):
     claude_cli_hooks = rt == "local"
     ins.put(".kit/end_session.py", rd("kit", "end_session.py"))
     ins.put(".kit/kit_map.py", rd("scripts", "kit_map.py"))   # M1: kit.py map, the project's map from its code
+    ins.put(".kit/test_guard.py", rd("kit", "test_guard.py"))  # CL48: a test run (KIT_TEST) writes only under a temp folder
     ins.put(".kit/usage.py", rd("scripts", "usage.py"))       # CL37: the usage ledger (kit.py usage)
     ins.put(".kit/ledger.py", rd("kit", "ledger.py"))        # 3-layer memory ledger (observations -> principles)
     ins.put(".kit/kit_import.py", rd("kit", "import", "kit_import.py"))
@@ -1289,8 +1316,9 @@ def main(argv=None):
         if want_agy:
             ins.put(".agents/skills/board/SKILL.md", rd("kit", "skills", "board", "SKILL.md"))
         if want_claude:
-            if claude_only:
-                ins.put(".claude/agents/kit-cards.md", cards_tpl)
+            # Claude Code on the web opens any repo on GitHub, computer installs included, and has no board server
+            # to build the cards: its orchestrator's guide uses this agent. On a computer nothing calls it.
+            ins.put(".claude/agents/kit-cards.md", rd("kit", "claude", "kit-cards.md"))
             ins.put(".claude/skills/board/SKILL.md", rd("kit", "claude", "SKILL.board.md") if claude_only else rd("kit", "skills", "board", "SKILL.md"))
     if parts["clerk"]:
         ins.put(".kit/clerk_pending.py", rd("kit", "clerk", "clerk_pending.py"))
@@ -1626,6 +1654,8 @@ def main(argv=None):
         if message_guard and not any(x[2] == MESSAGE_GUARD and x[0] == "PreToolUse" for x in spec):
             spec.append(("PreToolUse", SEND_TOOLS, MESSAGE_GUARD))
         merge_claude_settings(t, a.dry_run, ins.log, parts["board"], spec)
+    if ".kit/kit.py" in ins.touched and (want_claude or "claude" in present):
+        merge_fresh_line(t, a.dry_run, ins.log)
     if new_hooks.get(RUNTIME_HOOK_DIRS["agy"]):
         ins.log.append(".agents/hooks/kit/: new kit hook(s) %s copied; run --update with --runtime agy to wire them in "
                        ".agents/hooks.json" % ", ".join(new_hooks[RUNTIME_HOOK_DIRS["agy"]]))

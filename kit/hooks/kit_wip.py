@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """PostToolUse (what changes files) and Stop, every runtime: the work in progress is saved to git every few minutes
 (`.kit/landing.py save`, kit.wip_minutes, default 5), detached, so a session cut in the middle of a turn (a usage limit, a
-container gone) loses at most that. It never waits, says nothing and blocks nothing."""
+container gone) loses at most that, public repos included (CL55). It never waits and blocks nothing; it says something
+only when a save was refused (a secret-looking value) or origin did not take it, once."""
 import json
 import os
 import subprocess
@@ -10,6 +11,22 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kit_config import config, is_claude_payload, project_dir  # noqa: E402
+
+
+def refused(root):
+    """The last save's refusal, once (landing.py writes .kit/run/wip-status.json): '' when there is none to tell."""
+    path = os.path.join(root, ".kit", "run", "wip-status.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            st = json.load(fh)
+        if st.get("told") or not st.get("rc"):
+            return ""
+        st["told"] = True
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(st, fh)
+        return "Work in progress NOT on GitHub: " + str(st.get("text") or "the last save failed")
+    except (OSError, ValueError, AttributeError):
+        return ""
 
 
 def main():
@@ -37,26 +54,16 @@ def main():
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         except (OSError, ValueError):
             pass
-    # CL44 (item 10): periodic checkpoint commit on a part's step branch (default every 15 min) so session limits never
-    # leave work uncommitted in a worktree. Never commits on the trunk or detached HEAD (--on-step-branch).
-    kit_py = os.path.join(root, ".kit", "kit.py")
-    if os.environ.get("KIT_CHECKPOINT") != "0" and str(k.get("checkpoint") or "auto") != "off" and os.path.isfile(kit_py):
-        ck_stamp = os.path.join(root, ".kit", "run", "checkpoint-last")
-        try:
-            ck_age = time.time() - os.path.getmtime(ck_stamp)
-        except OSError:
-            ck_age = None
-        try:
-            if ck_age is None:
-                os.makedirs(os.path.dirname(ck_stamp), exist_ok=True)
-                open(ck_stamp, "w").close()
-            elif ck_age >= 60 * float(k.get("checkpoint_minutes") or 15):
-                os.utime(ck_stamp, None)
-                subprocess.Popen([sys.executable, "-I", kit_py, "checkpoint", "--quiet", "--on-step-branch"],
-                                 cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, start_new_session=True)
-        except (OSError, ValueError):
-            pass
+    # CL55: a part's save is CL44's checkpoint on its step's branch (landing.py save decides, on the same 5-minute
+    # clock), so the checkpoint has no clock of its own any more. A save that was refused is told here, once.
+    told = refused(root)
+    if told:
+        if is_claude_payload(data):
+            ev = str(data.get("hook_event_name") or "PostToolUse")
+            print(json.dumps({"systemMessage": told} if ev == "Stop" else
+                             {"hookSpecificOutput": {"hookEventName": ev, "additionalContext": told}}))
+            return 0
+        print(told, file=sys.stderr)
     if not is_claude_payload(data) and data.get("hookEventName"):
         print(json.dumps({"decision": "allow"} if "Stop" in str(data.get("hookEventName")) else {}))
     return 0

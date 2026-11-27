@@ -181,6 +181,20 @@ class TestBoardToken(Sandbox):
         self.assertEqual(r.stdout.strip(), "OK")
 
 
+class TestRetiredTokens(Sandbox):
+    def test_a_rewritten_project_token_is_kept_as_retired_never_the_current_one(self):
+        a = self.project("old")
+        os.makedirs(os.path.join(a, ".kit", "board_data"))
+        with open(os.path.join(a, ".kit", "board_data", "token"), "w") as fh:
+            fh.write("aphonehasthis\n")
+        m = board_token.machine_token(self.env)
+        board_token.ensure(a, self.env)
+        self.assertEqual(board_token.retired(self.env), ["aphonehasthis"])
+        self.assertEqual(mode(board_token.retired_path(self.env)), 0o600)
+        self.assertFalse(board_token.retire(m, self.env), "the current token is never retired")
+        self.assertFalse(board_token.retire("aphonehasthis", self.env), "kept once")
+
+
 class TestServedToken(Sandbox):
     """The running server's token reaches every checkout of its repo, and only those (a separate checkout with its
     own token file got 401: CL44's token fallback picked the main checkout's token, not the server's)."""

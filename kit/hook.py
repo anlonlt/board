@@ -30,7 +30,9 @@ TABLE = [
     ("PreToolUse", "kit_memory_jit.py", {"web": "Edit|Write|MultiEdit", "cli": "Edit|Write|MultiEdit",
                                          "agy": "edit_file|write_file"}, PLAIN, 25),
     ("PreToolUse", "kit_say_it_once.py", {"web": SEND, "cli": SEND, "agy": "send_message"}, GUARD, 25),
-    ("PreToolUse", "kit_orchestrator_guard.py", {"web": "ArtifactData|" + SESSION}, GUARD, 25),
+    # M11: "cli" too: a repo installed for a computer (this kit's own) also works its Artifact board on the web, and its
+    # sessions' ArtifactData calls never reached the guard
+    ("PreToolUse", "kit_orchestrator_guard.py", {"web": "ArtifactData|" + SESSION, "cli": "ArtifactData"}, GUARD, 25),
     ("PreToolUse", "kit_brief_guard.py", {"web": "ArtifactData|Bash", "cli": "Bash", "agy": "run_command"}, GUARD, 25),
     ("PostToolUse", "kit_say_it_once.py", {"web": "ArtifactData|mcp__claude-code-remote__send_message",
                                            "cli": "SendMessage|Bash", "agy": "send_message|run_command"}, PLAIN, 50),

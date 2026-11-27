@@ -190,6 +190,28 @@ def read_token(root, env=None):
     return tok or None
 
 
+def retired_path(env=None):
+    return os.path.join(machine_dir(env), "retired_tokens")
+
+
+def retired(env=None):
+    """Tokens this machine's boards used before (one a line, mode 600): a device that saved one unlocks with it once
+    and is handed the token now, so nobody types a token again after tokens were merged."""
+    try:
+        with open(retired_path(env), encoding="utf-8") as fh:
+            return [x.strip() for x in fh if x.strip()]
+    except OSError:
+        return []
+
+
+def retire(tok, env=None):
+    tok = (tok or "").strip()
+    if not tok or tok == _read(machine_token_path(env)) or tok in retired(env):
+        return False
+    _write_600(retired_path(env), "\n".join(retired(env) + [tok]))
+    return True
+
+
 def ensure(root, env=None):
     """The project's token path, holding the machine token. Returns (path, source): "same" (already the machine's),
     "adopted" (the project's own became the machine token: there was none), "machine" (written or rewritten)."""
@@ -199,6 +221,8 @@ def ensure(root, env=None):
     tok = machine_token(env, adopt=own)
     if own == tok:
         return path, ("same" if had_machine else "adopted")
+    if own:
+        retire(own, env)                  # a device may hold it: it still unlocks once, then gets the machine's
     _write_600(path, tok)
     return path, "machine"
 
@@ -209,9 +233,11 @@ def use(root, env=None):
     own = _read(project_token_path(root))
     if not own:
         raise SystemExit("no token in %s" % project_token_path(root))
-    if _read(machine_token_path(env)) == own:
+    old = _read(machine_token_path(env))
+    if old == own:
         return False
     _write_600(machine_token_path(env), own)
+    retire(old, env)
     return True
 
 
@@ -221,6 +247,8 @@ def main(argv=None):
     e = sub.add_parser("ensure", help="give the project a token (its own, else the machine's); prints only where it came from")
     e.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     e.add_argument("--quiet", action="store_true")
+    r = sub.add_parser("retire", help="keep an old token (read from a file, never an argument) so devices that saved it unlock once")
+    r.add_argument("--from-file", required=True)
     u = sub.add_parser("use", help="make this project's token the machine's (the one the phone has); prints no token")
     u.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     a = ap.parse_args(argv)
@@ -229,6 +257,9 @@ def main(argv=None):
         if not a.quiet:
             print("board token: %s (%s)" % ({"same": "the machine's", "adopted": "the project's, now the machine's",
                                              "machine": "the machine's, written"}[src], os.path.relpath(path, a.root)))
+        return 0
+    if a.cmd == "retire":
+        print("board token: %s" % ("kept as retired" if retire(_read(a.from_file)) else "already known"))
         return 0
     if a.cmd == "use":
         print("board token: this project's is the machine's%s" % ("" if use(a.root) else " (already)"))

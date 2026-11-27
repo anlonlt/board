@@ -9,6 +9,7 @@ lessons' count.
 import glob
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -26,6 +27,14 @@ def main():
     claude = is_claude_payload(data)
     k = c.get("kit", {})
     out = []
+    if str((data or {}).get("source") or "") in ("compact", "clear"):
+        # M5: a resume after this prints whole again (its delta is against a context this session no longer holds)
+        sid = re.sub(r"[^A-Za-z0-9._-]", "_", str((data or {}).get("session_id") or ""))
+        for p in (glob.glob(os.path.join(root, ".kit", "run", "resume", "*-%s.json" % sid)) if sid else []):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
     if claude and str((data or {}).get("source") or "") == "compact":
         # a compaction is the safety net past the kit's limit, never how a role goes on: its context is now a summary
         role = os.environ.get("KIT_ROLE") or inspect_claude_transcript(str(data.get("transcript_path") or ""))[1]
@@ -65,7 +74,8 @@ def main():
            for v in ("CLAUDE_CODE_REMOTE", "KIT_REMOTE", "AGY_REMOTE")) and os.path.exists(
             os.path.join(root, ".kit", "web_takeover.py")):
         out.append("WEB: this is a remote/web session: no board server yet until you run "
-                   "`python3 -I .kit/web_takeover.py` (the board from git + the steps to continue). The orchestrator then "
+                   "`python3 -I .kit/web_takeover.py` (the board from git + the steps to continue; an Artifact board: the pull it "
+                   "prints, then `python3 -I .kit/kit.py artifact reconcile`, the Artifact against GitHub both ways). The orchestrator then "
                    "starts from `python3 -I .kit/kit.py resume --role orchestrator`. A part continues on its "
                    "branch; the board goes back to git with `python3 -I .kit/web_takeover.py save` (the Stop hook runs it too).")
     landing = os.path.join(root, ".kit", "landing.py")
@@ -84,12 +94,24 @@ def main():
     out.append("END: finish with `python3 -I .kit/end_session.py`: %s" % (
         "it merges your work onto %s and pushes it, never forced (the owner's standing permission)" % trunk
         if k.get("trunk_push") else "it pushes your branch (the owner has not given the permission to push %s)" % trunk))
-    try:
-        b = subprocess.run(["git", "-C", root, "rev-list", "--count", "HEAD..@{u}"], capture_output=True, text=True, timeout=10)
-        if b.returncode == 0 and b.stdout.strip() not in ("", "0"):
-            out.append("CLONE: %s commits behind its remote: git pull --no-rebase first." % b.stdout.strip())
-    except (OSError, subprocess.SubprocessError):
-        pass
+    fresh = []                                     # CL53: the checkout on the newest code, said before anything else
+    kitpy = os.path.join(root, ".kit", "kit.py")
+    if os.path.isfile(kitpy):
+        try:
+            sid = str((data or {}).get("session_id") or "") if isinstance(data, dict) else ""
+            r = subprocess.run([sys.executable, "-I", kitpy, "fresh"] + (["--session", sid] if sid else []),
+                               capture_output=True, text=True, timeout=40, cwd=root)
+            fresh = [l for l in r.stdout.splitlines() if l.startswith("CHECKOUT: ")]
+        except (OSError, subprocess.SubprocessError):
+            pass
+    else:
+        try:
+            b = subprocess.run(["git", "-C", root, "rev-list", "--count", "HEAD..@{u}"], capture_output=True, text=True, timeout=10)
+            if b.returncode == 0 and b.stdout.strip() not in ("", "0"):
+                fresh.append("CLONE: %s commits behind its remote: git pull --no-rebase first." % b.stdout.strip())
+        except (OSError, subprocess.SubprocessError):
+            pass
+    out[:0] = fresh
     mdir = memory_dir(data)
     mrel = os.path.relpath(mdir, root)
     if os.path.exists(os.path.join(mdir, "workflow.md")):

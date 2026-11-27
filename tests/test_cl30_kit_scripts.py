@@ -178,6 +178,10 @@ class Gap2ReplyNeedsAFreshResume(unittest.TestCase):
 
 class Gap3FreshCopyAndSentChanges(unittest.TestCase):
     def setUp(self):
+        from unittest import mock                        # CL51: the STALE gate and the push are the web's
+        e = mock.patch.dict(os.environ, {"CLAUDE_CODE_REMOTE": "true"})
+        e.start()
+        self.addCleanup(e.stop)
         self.p = project()
         self.art = self.p / ".kit" / "run" / "artifact"
 

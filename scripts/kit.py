@@ -73,6 +73,30 @@ try:
 except ImportError:
     fcntl = None
 
+def _test_guard():
+    """CL48: in a test run (KIT_TEST set) a write to a board, a mirror or a remote outside a temp folder is refused
+    (kit/test_guard.py, every git command checked first); None outside a test run."""
+    if not os.environ.get("KIT_TEST"):
+        return None
+    if sys.modules.get("kit_test_guard"):
+        return sys.modules["kit_test_guard"]
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    for f in [os.path.join(d, "test_guard.py") for d in (here, os.path.join(here, "..", "kit"), os.path.join(here, ".."))] + \
+            [os.environ.get("KIT_TEST_GUARD") or ""]:     # a test's hand-made copy of a few scripts: the runner's
+        if f and os.path.isfile(f):
+            spec = importlib.util.spec_from_file_location("kit_test_guard", f)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["kit_test_guard"] = mod
+            spec.loader.exec_module(mod)
+            mod.install()
+            return mod
+    raise SystemExit("KIT_TEST: REFUSED: test_guard.py is not next to %s: a test run writes nothing without it" % __file__)
+
+
+_TEST_GUARD = _test_guard()
+
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG = {}
 BRANCH = "board-mirror"
@@ -138,6 +162,8 @@ def read_state(m):
 # ---------------------------------------------------------------- sync
 def sync(m, d, at, full=False):
     """Overlay DIR on the copy. Returns (posts written, posts removed, comments new, comments changed, comments removed)."""
+    if _TEST_GUARD:     # CL48: a test run writes a board's git copy under a temp folder only
+        _TEST_GUARD.check_path(m, "to a board's git copy")
     posts = load_dir(d, "posts")
     if not posts:
         raise SystemExit("kit sync: %s/posts is empty: the posts must be listed in full at every sync" % d)
@@ -221,6 +247,8 @@ def _export_blobs_to_mirror(db_path, m, max_bytes=5 * 1024 * 1024):
 
 def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
     """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full)."""
+    if _TEST_GUARD:     # CL48: a test run writes a board's git copy under a temp folder only
+        _TEST_GUARD.check_path(m, "to a board's git copy")
     import sqlite3
     import tempfile
 
@@ -552,6 +580,8 @@ def _resolve_board_token(explicit=None):
 
 
 def _board_request(url, path, body=None, token=None, method=None):
+    if _TEST_GUARD:     # CL48: a test run writes only to a test's board, never to the real one
+        _TEST_GUARD.check_board(url, method or ("POST" if body is not None else "GET"))
     hdr = {"Content-Type": "application/json"}
     if token:
         hdr["X-Kit-Token"] = token
@@ -919,6 +949,13 @@ def _art_save(st):
     write_doc(os.path.join(_art_dir(), "state.json"), st)
 
 
+def artifact_here():
+    """CL51 (the owner's rule): the Artifact is the Claude Code web session's. On a computer, a session works with the
+    local board, which reaches GitHub (board-mirror), and never writes to or waits on the Artifact: no STALE gate, no
+    push at launch or adopt, no "not on the board yet" at done. The attached board on the web, else None."""
+    return attached_board() if _is_web() else None
+
+
 def attached_board():
     """The Artifact this repo's board lives in, from config alone (CL13): {"url", "prefix"} or None.
     `kit.artifact: {"url": <claude.ai/artifact/...>, "prefix": "repos/<id>/"}` (or `"repo": "<id>"`) says the board is
@@ -981,13 +1018,96 @@ def _read_json(p):
         return None
 
 
-def artifact_pull(full=False):
+SCOPE_CARDS = ("_orchestrator", "_trains", "_dashboard", "_prefs")
+
+
+def _scope_post(post=None):
+    """M11: the post a part's first pull is scoped to: --post, else the one `resume --role part --post X` named here."""
+    return post or str(_art_state().get("scope_post") or "")
+
+
+def _scoped_pull_lines(board, d, pre, post):
+    """M11: a part's first pull in a fresh copy: only the documents it works on (its post, its comments, the cards,
+    its train's post), each by id, instead of a list of the whole board (~10k characters a call in the reply, 48
+    calls in 20 of 20 sessions on 11-26). The rest of the copy is the git seed; later pulls bring every change."""
+    ids = [post] + list(SCOPE_CARDS)
+    try:
+        doc = _board_request(local_board_url(), "doc/posts/%s" % urllib.parse.quote(post, safe=""),
+                             token=_resolve_board_token(None))
+        tr = _norm_train((doc.get("data") or {}).get("train")) if doc.get("exists") else ""
+        if tr:
+            ids.append("_train-" + tr)
+    except Exception:
+        pass
+    lines = ["# The board from the Artifact to this copy (%s): only post %s and what it needs (a first pull; "
+             "`--full` for the whole board)" % (board, post), ""]
+    for did in ids:
+        lines.append("- `ArtifactData` `get`, `url` %s, `collection: \"%sposts\"`, `doc_id: \"%s\"`, `out_dir: \"%s\"` "
+                     "(\"No document\" is fine)." % (board, pre, did, d))
+    lines.append("- `ArtifactData` `query`, `url` %s, `collection: \"%scomments\"`, `query: {where: [[\"post_id\", \"==\", "
+                 "\"%s\"]], limit: 1000}`, `out_dir: \"%s\"`." % (board, pre, post, d))
+    lines.append("- `ArtifactData` `get`, `url` %s, `collection: \"%skit_docs\"`, `doc_id: \"_index\"`, `out_dir: \"%s\"` "
+                 "(the files' map; \"No document\" is fine)." % (board, pre, d))
+    lines += ["", "Then: `python3 -I .kit/kit.py artifact load` (starts the local board if needed; your own unsent changes "
+              "stay). Every later pull brings what changed on the whole board since this one."]
+    return "\n".join(lines) + "\n"
+
+
+PULL_CALL = re.compile(r"`ArtifactData` `(list|query)`, `url` \S+, `collection: \"([^\"]+)\"`, `query: \{(?:where: (\[\[.*?\]\]), )?"
+                       r"limit: (\d+)\}`")
+
+
+def _pull_record(text):
+    """M11: each whole-collection call this pull printed, whole (action, collection, where, limit), for the guard:
+    kit_orchestrator_guard.py lets each through once, in the next 30 minutes (version 2 of the record)."""
+    calls = []
+    for a, c, w, lim in PULL_CALL.findall(text):
+        try:
+            where = json.loads(w) if w else None
+        except ValueError:
+            continue
+        calls.append({"action": a, "collection": c, "where": where, "limit": int(lim)})
+    try:
+        os.makedirs(_art_dir(), exist_ok=True)
+        write_doc(os.path.join(_art_dir(), "pull.json"), {"v": 2, "at": time.time(), "calls": calls})
+    except OSError:
+        pass
+    return text
+
+
+def _pending_record(r):
+    """M11 (CR-m11): the documents the batches of this push name (and those it asks to pin), so the guard lets only
+    `get` of them through until `artifact sent` records the last batch; removed when nothing is out."""
+    pre = _art_prefix()
+    ids = ["%s%s" % (pre, k) for k in r.get("need_pin") or []]
+    for b in r.get("batches") or []:
+        for e in _read_json(b) or []:
+            if isinstance(e, dict):
+                ids.append("%s/%s" % (e.get("collection"), e.get("doc_id")))
+    p = os.path.join(_art_dir(), "pending.json")
+    try:
+        if ids:
+            write_doc(p, {"at": time.time(), "ids": sorted(set(ids))})
+        elif os.path.exists(p):
+            os.remove(p)
+    except OSError:
+        pass
+    return r
+
+
+def artifact_pull(full=False, post=None):
     """The calls that bring the board here. After a first full pull, only what changed since the last load (a full
-    list of a big board costs ~20 tokens a document in the tool's reply: 1,500 documents, ~30k)."""
+    list of a big board costs ~20 tokens a document in the tool's reply: 1,500 documents, ~30k). M11: a part's first
+    pull (its post known: --post or its resume) gets only its own documents by id."""
     board = artifact_url() or "<the board's claude.ai/artifact url>"
     d = os.path.join(_art_dir(), "in")
     since = "" if full else str(_art_state().get("loaded_at") or "")
     pre = _art_prefix()
+    scope = "" if full or since else _scope_post(post)
+    if scope:
+        for f in glob.glob(os.path.join(d, "*", "*.json")) + glob.glob(os.path.join(d, "repos", "*", "*", "*.json")):
+            os.remove(f)
+        return _scoped_pull_lines(board, d, pre, scope)
     attached = [] if pre else _attached_ids()          # before the delta pull clears in/kit_repos/_index.json
     if since:
         t = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) - timedelta(minutes=10)
@@ -1027,7 +1147,12 @@ def artifact_pull(full=False):
     if since:
         lines.append("(A post changed on the page without a new `updated_at`, or a comment edited later, comes with "
                      "`kit.py artifact pull --full`: do it once a day or when something looks stale.)")
-    lines += ["", "Then: `python3 -I .kit/kit.py artifact load` (starts the local board if needed; your own unsent changes stay)."]
+    if _is_web():
+        # CL45: a web session's start reconciles the Artifact with GitHub (board-mirror), not only loads it
+        lines += ["", "Then: `python3 -I .kit/kit.py artifact reconcile` (it runs `artifact load`, then the Artifact against "
+                  "origin/board-mirror both ways, and prints the batches to send; your own unsent changes stay)."]
+    else:
+        lines += ["", "Then: `python3 -I .kit/kit.py artifact load` (starts the local board if needed; your own unsent changes stay)."]
     return "\n".join(lines) + "\n"
 
 
@@ -1146,6 +1271,43 @@ def _merge_doc(did, remote, local, base, lost=None):
     return _merge_fields(remote, local, base)
 
 
+_CLOSED = ("complete", "completed", "done", "dropped", "shipped", "merged", "closed")
+
+
+def _status_rank(st):
+    st = str(st or "").strip().lower()
+    if not st:
+        return None
+    if st in _CLOSED:
+        return 3
+    if "review" in st:
+        return 2
+    if "progress" in st or st in ("running", "doing", "held", "blocked"):
+        return 1
+    return 0 if st in ("planned", "open", "todo", "queued") else None
+
+
+def keep_newer(incoming, here):
+    """CL51 (the 20:23Z overwrite: CL44's local part loaded the Artifact's older copies over 11 newer posts of the local
+    board, CL43 back to planned): the copy a load writes. The newer of the two by updated_at stands, with only the fields
+    it lacks taken from the other; a status (or a done column) is never lowered."""
+    if not isinstance(here, dict) or not isinstance(incoming, dict):
+        return incoming if incoming is not None else here
+    a, b = here.get("updated_at"), incoming.get("updated_at")
+    newer_here = isinstance(a, str) and (not isinstance(b, str) or a > b)
+    first, other = (here, incoming) if newer_here else (incoming, here)
+    out = dict(first)
+    for k, v in other.items():
+        if k not in out:
+            out[k] = v
+    rh, ro = _status_rank(here.get("status")), _status_rank(out.get("status"))
+    if rh is not None and (ro is None or ro < rh):
+        out["status"] = here["status"]
+    if here.get("column") == "done" and out.get("column") != "done":
+        out["column"] = "done"
+    return out
+
+
 def artifact_load(url=None, token=None, in_dir=None):
     url = url or local_board_url()
     if not _ensure_local_board(url):
@@ -1176,11 +1338,13 @@ def artifact_load(url=None, token=None, in_dir=None):
                     except OSError:
                         pass
                     continue
+                new = keep_newer(new, local)
                 merged += new != local
                 kept += new == local
             else:
-                new = remote
-                taken += local != remote
+                new = keep_newer(remote, local)       # CL51: an older copy there never goes back over a newer one here
+                taken += new != local
+                kept += local is not None and new == local and local != remote
             if new != local:
                 _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": new,
                                                              "if_version": d.get("version", 0)}], "sync": True}, token=token)
@@ -1261,6 +1425,8 @@ def _local_blob(url, bid, token):
 
 
 def _put_blob(url, bid, raw, name, token):
+    if _TEST_GUARD:     # CL48
+        _TEST_GUARD.check_board(url, "POST")
     req = urllib.request.Request(url.rstrip("/") + "/_api/blobs", data=raw, method="POST", headers={
         "X-Kit-Token": token or "", "X-Blob-Id": bid, "X-Filename": urllib.parse.quote(name),
         "Content-Type": BLOB_TYPES.get(os.path.splitext(name)[1].lower(), "application/octet-stream")})
@@ -1328,17 +1494,10 @@ def artifact_blobs_text(r):
 def stale_copy():
     """CL30: '' when the scripts may read the local copy, else why not (an Artifact board whose copy was never loaded,
     or loaded longer ago than kit.artifact.fresh_min, 15). $KIT_STALE_OK=1 reads it anyway.
-    CL44: local agy / local CLI sessions running against a local board server (`kit.mode == 'local'` with a non-claude.ai
-    board_url, outside Claude Code Web) are not blocked by the Claude-Web Artifact STALE gate unless KIT_ARTIFACT_URL is
-    explicitly forced."""
-    if not attached_board() or os.environ.get("KIT_STALE_OK"):
+    CL44/CL51: a session on a computer (outside Claude Code web) is never held by it: the Artifact is the web's."""
+    if not artifact_here() or os.environ.get("KIT_STALE_OK"):    # CL51: never on a computer, whatever kit.mode says
         return ""
     k = _kit_config().get("kit") or {}
-    # CL44: in local mode (local agy or local CLI) with a local board server, kit.artifact.url may be set for web
-    # sessions or cross-sync; do not block local sessions with the Claude-Web Artifact pull/load STALE gate unless
-    # running in Claude Code Web (_is_web()) or KIT_ARTIFACT_URL is explicitly forced in the environment.
-    if str(k.get("mode") or "").strip().lower() == "local" and not _is_web() and not os.environ.get("KIT_ARTIFACT_URL"):
-        return ""
     try:
         cap = float(((k.get("artifact") if isinstance(k.get("artifact"), dict) else {}) or {}).get("fresh_min", 15))
     except (TypeError, ValueError):
@@ -1347,6 +1506,8 @@ def stale_copy():
     way = ("run `python3 -I .kit/kit.py artifact pull`, make the ArtifactData calls it prints, then `python3 -I "
            ".kit/kit.py artifact load`; then this command again (KIT_STALE_OK=1 reads the old copy anyway)")
     if not at:
+        if _is_web():      # CL45: a web session's first load is its reconcile with GitHub
+            way = way.replace("kit.py artifact load`", "kit.py artifact reconcile` (the Artifact against GitHub, both ways)")
         return "STALE: this copy of the Artifact board (%s) was never loaded here: %s." % (artifact_url(), way)
     try:
         age = (datetime.now(timezone.utc) - datetime.strptime(at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -1600,6 +1761,238 @@ def artifact_sent(batch_path):
     except OSError:
         pass
     return len(batch)
+
+
+# ---------------------------------------------------------------- CL45: a web session reconciles its Artifact with git
+# The Artifact (the web's record) and origin/board-mirror (the computer's record) each gain posts the other lacks. At a
+# web session's start, after the pull: load the Artifact here, then each post and comment against git: in one side only,
+# it goes to the other; changed on one side since the last reconcile, that side wins; changed on BOTH (the base, kept in
+# git as board/artifact-reconciled.json, says what both had), the newer copy shows and the other is kept in a comment.
+ART_RECONCILED = "board/artifact-reconciled.json"
+
+
+def _doc_hash(d):
+    return hashlib.sha256(json.dumps(d, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+
+
+def _doc_stamp(d, fallback=""):
+    d = d if isinstance(d, dict) else {}
+    return _utc(d.get("updated_at") or d.get("created_at") or "") or fallback or ""
+
+
+def _conflict_comment(kind, did, kept, kept_side, other, other_side):
+    """The copy that lost a both-sides change, kept as a comment under its post (the board shows it there)."""
+    cid = "conflict-%s" % _doc_hash([kind, did, other])
+    post = did if kind == "posts" else str((other or {}).get("post_id") or (kept or {}).get("post_id") or did)
+    excerpt = str((other or {}).get("body") or (other or {}).get("text") or (other or {}).get("title") or "")
+    if len(excerpt) > 1500:
+        excerpt = excerpt[:1500] + "…"
+    text = ("Conflict: %s %s changed both on the %s and on the %s since the last reconcile. The board shows the %s copy "
+            "(newer, %s); the %s copy (%s) is kept here, whole, in this comment's `conflict.other`; nothing was lost. "
+            "Pick one and write it back to the %s." % (
+                "post" if kind == "posts" else "comment", did, "Artifact", "GitHub copy (board-mirror)", kept_side,
+                _doc_stamp(kept) or "no date", other_side, _doc_stamp(other) or "no date", kind[:-1]))
+    if excerpt:
+        text += "\n\nThe %s copy:\n\n> %s" % (other_side, excerpt.replace("\n", "\n> "))
+    return cid, {"post_id": post, "from": "kit", "kind": "conflict", "text": text, "created_at": _now_z(),
+                 "conflict": {"doc": "%s/%s" % (kind, did), "shown": kept_side, "other_side": other_side, "other": other}}
+
+
+def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
+    """`kit.py artifact reconcile` (after `artifact pull` and its ArtifactData calls): the Artifact against
+    origin/<branch>, both ways, nothing lost. Returns the counts and the artifact push (the batches to send)."""
+    if not attached_board():
+        raise Conflict("this board has no Artifact (kit.artifact / a claude.ai board_url in .kit/config.json)")
+    url = url or local_board_url()
+    if not _ensure_local_board(url):
+        raise Conflict("no local board at %s (run `python3 -I .kit/web_takeover.py` first)" % url)
+    tok0 = _resolve_board_token(token)
+    # CL45+CL51 (the review's redirect): the Artifact's side is its raw pulled copy, taken BEFORE the load: CL51's load
+    # keeps the newer of the Artifact's copy and this board's (a git seed at a web start) and never lowers a status, so
+    # after it a both-sides change or a reopen made on the Artifact could no longer be seen here
+    pre = _art_prefix()
+    raw, base_before, here_before = {}, {}, {}
+    for coll in ART_COLLS:
+        for f in glob.glob(os.path.join(_art_dir(), "in", *(pre + coll).split("/"), "*.json")):
+            d = _read_json(f)
+            if isinstance(d, dict):
+                raw[(coll, os.path.basename(f)[:-5])] = d
+        for f in glob.glob(os.path.join(_art_dir(), "base", coll, "*.json")):
+            d = _read_json(f)
+            if isinstance(d, dict):
+                base_before[(coll, os.path.basename(f)[:-5])] = d
+        for row in _board_request(url, "db/%s" % coll, token=tok0).get("docs") or []:
+            here_before[(coll, row["id"])] = row.get("data") or {}
+    not_there_before = set(_art_state().get("not_there") or [])
+    # a review never writes the git copy (CR-cl45: a web review, launched by create_session, has no KIT_ROLE; the post
+    # it reviews names it in review_session)
+    me = whoami()
+    reviewing = sorted(k[1] for k, d in list(raw.items()) + list(here_before.items())
+                       if me and k[0] == "posts" and isinstance(d, dict) and d.get("review_session") == me)
+    loaded = artifact_load(url=url, token=token)
+    token = _resolve_board_token(token)
+    branch = branch or BRANCH
+    repo = m if os.path.exists(os.path.join(m, ".git")) else ROOT
+    remote_ref = "refs/remotes/origin/" + branch
+    git(repo, "fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:%s" % (branch, remote_ref))
+    has_remote = git(repo, "rev-parse", "--verify", "--quiet", remote_ref).returncode == 0
+    gdocs = {k: v for k, v in (_git_board_docs(repo, remote_ref) if has_remote else {}).items() if k[0] in ART_COLLS}
+    base = {}
+    if has_remote:
+        r = git(repo, "show", "%s:%s" % (remote_ref, ART_RECONCILED))
+        try:
+            base = (json.loads(r.stdout) or {}).get("docs") or {} if r.returncode == 0 else {}
+        except ValueError:
+            base = {}
+    st = _art_state()
+    not_there = set(st.get("not_there") or [])
+    here, art, side = {}, {}, {}
+    for coll in ART_COLLS:
+        for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
+            k = (coll, row["id"])
+            here[k] = (row.get("data") or {}, row.get("version", 0))
+    for k in set(here) | set(raw) | set(base_before):
+        key = "%s/%s" % k
+        if k in raw:
+            art[k] = raw[k]                    # pulled now: the Artifact's copy as it is
+        elif k in base_before and key not in not_there_before:
+            art[k] = base_before[k]            # not in a delta pull: what it last had
+    for k in set(here) | set(art):
+        a = art.get(k)
+        hb, bb, g = here_before.get(k), base_before.get(k), gdocs.get(k, (None,))[0]
+        if hb is not None and bb is not None and hb != bb and hb != g and "%s/%s" % k not in not_there_before:
+            # this session's own edit, not yet sent (a git seed equals git's copy, and is no edit)
+            side[k] = _merge_doc(k[1], a, hb, bb) if a is not None and a != bb else hb
+        elif a is not None:
+            side[k] = a
+        elif k in here:
+            side[k] = here[k][0]               # only on this board
+    writes, to_git, conflicts, decided_by_date = {}, {}, [], 0
+    final, got = {}, set()
+    for k in sorted(set(side) | set(gdocs)):
+        kind, did = k
+        l = side.get(k)
+        g, gt = gdocs.get(k, (None, ""))
+        key = "%s/%s" % k
+        if g is None:
+            final[k] = l
+            if key not in not_there or k in art:
+                to_git[k] = l                  # the Artifact's (or this session's) document: git gets it
+            continue
+        if l is None:
+            writes[k] = g                      # in git only: here, then the Artifact
+            final[k] = g
+            got.add(k)
+            continue
+        if l == g:
+            final[k] = l
+            continue
+        b = base.get(key)
+        hl, hg = _doc_hash(l), _doc_hash(g)
+        if b and hg == b:
+            win = "here"
+        elif b and hl == b:
+            win = "git"
+        else:
+            sl, sg = _doc_stamp(l), _doc_stamp(g, gt)
+            win = "git" if sg > sl else "here"
+            if b:                              # both changed since the last reconcile: never silent
+                kept, other = (g, l) if win == "git" else (l, g)
+                cid, cdoc = _conflict_comment(kind, did, kept, "GitHub" if win == "git" else "Artifact", other,
+                                              "Artifact" if win == "git" else "GitHub")
+                if ("comments", cid) not in here and ("comments", cid) not in gdocs:
+                    writes[("comments", cid)] = cdoc
+                    to_git[("comments", cid)] = cdoc
+                    final[("comments", cid)] = cdoc
+                conflicts.append(key)
+            else:
+                decided_by_date += 1
+        if win == "git":
+            writes[k] = g
+            final[k] = g
+            got.add(k)
+        else:
+            to_git[k] = l
+            final[k] = l
+    # the board here shows each final copy, whatever the load kept (CL51's keep_newer is for a plain load)
+    for k, f in final.items():
+        if f is not None and k not in writes and here.get(k, (None,))[0] != f:
+            writes[k] = f
+    # here: one document at a time, pinned to the version read before it (a post's write can touch a card)
+    for (coll, did), data in sorted(writes.items()):
+        api = "doc/%s/%s" % (coll, urllib.parse.quote(did, safe=""))
+        for attempt in (1, 2):
+            cur = _board_request(url, api, token=token)
+            try:
+                _board_request(url, "db/batch", {"writes": [{"op": "set", "collection": coll, "doc_id": did, "data": data,
+                                                             "if_version": cur.get("version", 0)}], "sync": True}, token=token)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code != 409 or attempt == 2:
+                    raise Conflict("the board kept changing under %s/%s; run it again" % (coll, did)) from e
+        key = "%s/%s" % (coll, did)
+        if key in not_there and (coll, did) not in art:
+            # O53 kept a document the Artifact never had from being sent; one git holds goes now, as a create
+            not_there.discard(key)
+            try:
+                os.remove(_base_path(coll, did))
+            except OSError:
+                pass
+    # what this copy held that only git also holds (a git seed made before this): the Artifact gets it too
+    for k, (g, _gt) in gdocs.items():
+        key = "%s/%s" % k
+        if key in not_there and k not in art and k not in writes and here.get(k, (None,))[0] == g:
+            not_there.discard(key)
+            try:
+                os.remove(_base_path(*k))
+            except OSError:
+                pass
+    st = _art_state()
+    st["not_there"] = sorted(not_there)
+    _art_save(st)
+    # git: the documents it lacks or holds older, and the base (each document both sides will hold), in one commit
+    pushed = "git copy not updated (--no-push)"
+    if push and reviewing:
+        pushed = "git copy not updated (this session reviews %s: a review never writes it)" % reviewing[0]
+    elif push:
+        if not os.path.exists(os.path.join(m, ".git")):
+            pushed = "git copy not updated (no board-mirror worktree at %s)" % m
+        else:
+            git(m, "fetch", "-q", "--no-tags", "origin", branch)
+            if has_remote and git(m, "merge", "--ff-only", "origin/" + branch).returncode != 0:
+                if git(m, "merge", "--no-edit", "-X", "ours", "origin/" + branch).returncode != 0:
+                    git(m, "merge", "--abort")
+            new_base = dict(base)
+            for k, f in final.items():
+                if f is not None and art.get(k) == f and (to_git.get(k, gdocs.get(k, (None,))[0]) == f):
+                    new_base["%s/%s" % k] = _doc_hash(f)   # both sides hold it: the next reconcile's base
+            for (coll, did), data in to_git.items():
+                write_doc(os.path.join(m, "board", coll, did + ".json"), data)
+            write_doc(os.path.join(m, ART_RECONCILED), {"docs": dict(sorted(new_base.items())), "at": _now_z()})
+            if git(m, "status", "--porcelain", "board").stdout.strip():
+                git(m, "add", "board")
+                git(m, "commit", "-q", "-m", "kit artifact reconcile: %d to git, %d conflict(s)" % (len(to_git), len(conflicts)))
+                r = git(m, "push", "-q", "origin", "HEAD:" + branch)
+                pushed = "pushed to origin/%s" % branch if r.returncode == 0 else \
+                    "push to origin/%s refused: %s" % (branch, (r.stdout + r.stderr).strip()[-200:])
+            else:
+                pushed = "git copy already current"
+    out = artifact_push(url=url, token=token)
+    from_git = sorted("%s/%s" % k for k in got)
+    return {"loaded": loaded, "from_git": from_git, "to_git": sorted("%s/%s" % k for k in to_git), "conflicts": conflicts,
+            "by_date": decided_by_date, "git": pushed, "push": out}
+
+
+def artifact_reconcile_line(r):
+    """The one line: what came from GitHub, what went to it, the conflicts kept."""
+    def few(xs):
+        return ("" if not xs else " (%s%s)" % (", ".join(x.split("/", 1)[1] for x in xs[:6]), ", …" if len(xs) > 6 else ""))
+    p = r.get("push") or {}
+    return ("Artifact vs GitHub: %d from GitHub%s; %d to GitHub%s, %s; %d conflict(s)%s%s; to the Artifact: %d write(s) in "
+            "%d batch(es)." % (len(r["from_git"]), few(r["from_git"]), len(r["to_git"]), few(r["to_git"]), r["git"],
+                               len(r["conflicts"]), few(r["conflicts"]),
+                               " (both kept, see each post's conflict comment)" if r["conflicts"] else "",
+                               p.get("writes", 0), len(p.get("batches") or [])))
 
 
 def _pin_dir():
@@ -1944,6 +2337,8 @@ def _sync_lock(m):
 
 
 def init(m):
+    if _TEST_GUARD:     # CL48: a test run writes a board's git copy under a temp folder only
+        _TEST_GUARD.check_path(m, "to a board's git copy")
     if os.path.exists(os.path.join(m, ".git")):
         br = git(m, "symbolic-ref", "--short", "HEAD").stdout.strip() or BRANCH
         return "init: mirror already exists at %s (branch %s). Next: python3 -I .kit/kit.py sync-db --commit" % (m, br)
@@ -2193,6 +2588,207 @@ def whoami(name=""):
     if rid:
         return "session_" + rid.split("_", 1)[1] if rid.startswith("cse_") else rid
     return os.environ.get("KIT_SESSION_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID") or name or ""
+
+
+# CL49: a part reports to the orchestrator that started it, on the device that started it, unless another claimed it.
+# A fixed name (`<slug>-orchestrator`) matched dead sessions on another computer; the post now records its owner.
+OWNER_KEYS = ("orchestrator", "orchestrator_name", "orchestrator_device")
+REVIEW_OWNER_KEYS = ("review_orchestrator", "review_orchestrator_name", "review_orchestrator_device")
+
+
+def my_device():
+    """The device this session runs on: `web` for a Claude Code cloud session (send_message reaches it by its id from
+    anywhere), else KIT_DEVICE, else the host name."""
+    if os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID"):
+        return "web"
+    if os.environ.get("KIT_DEVICE"):
+        return os.environ["KIT_DEVICE"]
+    import socket
+    return socket.gethostname() or "unknown"
+
+
+def orchestrator_here():
+    """This orchestrator's address as a post records it: {orchestrator: its id (whoami), orchestrator_name: the session
+    name a CLI SendMessage takes, orchestrator_device}. Empty when no id is known (never a made-up one)."""
+    slug = _slug(_kit_config().get("project") or "project")
+    dev = my_device()
+    name = "" if dev == "web" else "%s-orchestrator" % slug
+    addr = whoami(name)
+    if not addr:
+        return {}
+    return {"orchestrator": addr, "orchestrator_name": name or addr, "orchestrator_device": dev}
+
+
+def step_owner(p, posts=None, review=False):
+    """Who a step's part (review=True: its review) reports to: {address, name, device, how}. The post's own record
+    (written by `launch`, `review` or `claim`); a post from before CL49 has none: the board's `_orchestrator`."""
+    p = p if isinstance(p, dict) else {}
+    if review and p.get("review_orchestrator"):
+        return {"address": str(p["review_orchestrator"]), "name": str(p.get("review_orchestrator_name") or p["review_orchestrator"]),
+                "device": str(p.get("review_orchestrator_device") or ""), "how": "it launched the review"}
+    if p.get("orchestrator"):
+        return {"address": str(p["orchestrator"]), "name": str(p.get("orchestrator_name") or p["orchestrator"]),
+                "device": str(p.get("orchestrator_device") or ""),
+                "how": "it claimed the step" if p.get("claimed_at") else "it launched the step"}
+    o = (posts or {}).get("_orchestrator") if isinstance(posts, dict) else None
+    o = o if isinstance(o, dict) else {}
+    sid = str(o.get("session_id") or "")
+    return {"address": sid, "name": sid, "device": str(o.get("device") or ""),
+            "how": "no owner on the post (launched before CL49): the board's orchestrator" if sid else "nobody named"}
+
+
+def report_lines(pid, p, posts=None, review=False):
+    """`resume`'s "Where you report": the step's owner now, how to reach that one session, and what to do when it fails."""
+    o = step_owner(p, posts, review=review)
+    who = "your review" if review else "your step"
+    if not o["address"]:
+        return ["", "## Where you report", "- No orchestrator owns %s and the board names none: `python3 -I .kit/kit.py unreached %s "
+                "--why \"no owner named\"`, then say so in your post; do not wait." % (who, pid)]
+    dev, here = o["device"], my_device()
+    if dev == "web" or o["address"].startswith(("session_", "cse_")):
+        how = "`send_message` (claude-code-remote) with `session_id` `%s`" % o["address"]
+    elif dev and dev != here:
+        how = ("`SendMessage` to `%s`, only the row of device `%s` (a Remote Control row of that machine); a row of another "
+               "machine with the same name is NOT it" % (o["name"], dev))
+    else:
+        how = ("`SendMessage` to `%s`, the session on this computer (`%s`); a row of another machine, or a cloud row, with the "
+               "same name is NOT it" % (o["name"], here))
+    return ["", "## Where you report",
+            "- The orchestrator that owns %s: `%s`%s, device `%s` (%s)." % (
+                who, o["address"], (" (session name `%s`)" % o["name"]) if o["name"] != o["address"] else "", dev or "not recorded", o["how"]),
+            "- Reach it with %s: `Done. Check post %s.`" % (how, pid),
+            "- The send fails, or no live session matches (ListAgents shows none on that device, or only stale ones): "
+            "`python3 -I .kit/kit.py unreached %s --why \"<what failed>\"`; your post then says so and every orchestrator's resume "
+            "lists it to claim. Do not wait, do not send to a look-alike." % pid]
+
+
+def _owner_write(pid, fields, url=None, token=None, drop=()):
+    """Merge `fields` into a post of the local board (`drop`: written as null, which reads as absent); with an attached
+    Artifact board, the batch too."""
+    url = url or local_board_url()
+    token = _resolve_board_token(token)
+    try:
+        data = _local_update(url, token, "posts", pid, dict(fields, **{k: None for k in drop}))
+    except Exception as e:
+        return {"ok": False, "post": pid, "error": "cannot write the board at %s: %s" % (url, e)}
+    if data is None:
+        return {"ok": False, "post": pid, "error": "no post %s on this board" % pid}
+    out = {"ok": True, "post": pid, "data": data}
+    if attached_board():
+        try:
+            r = artifact_push(url=url, token=token)
+            out.update({"batches": r["batches"], "need_pin": r["need_pin"]})
+        except Exception as e:
+            out["push_error"] = str(e)
+    return out
+
+
+def claim(pid, url=None, token=None):
+    """`kit.py claim <post>`: this orchestrator takes a step explicitly (CL49): writes its own address on the post (the
+    part's and the review's owner) and says what to tell the part. Taking over the board alone claims nothing."""
+    me = orchestrator_here()
+    if not me:
+        return {"ok": False, "post": pid, "error": "no session id here (kit.py whoami prints none): a claim needs your address"}
+    fields = dict(me, claimed_at=_now_z(), review_orchestrator=me["orchestrator"],
+                  review_orchestrator_name=me["orchestrator_name"], review_orchestrator_device=me["orchestrator_device"])
+    r = _owner_write(pid, fields, url=url, token=token, drop=("orchestrator_unreached",))
+    if r.get("ok"):
+        sid = str(r["data"].get("session_id") or "")
+        r["tell"] = ("message the part%s: \"%s on %s claimed post %s: report to it from now on (`kit.py resume --role part` "
+                     "names it).\"" % ((" (session `%s`)" % sid) if sid and not sid.startswith("pending") else "",
+                                        me["orchestrator"], me["orchestrator_device"], pid))
+    return r
+
+
+def unreached(pid, why="", url=None, token=None):
+    """`kit.py unreached <post>`: the part could not reach its owner (the send failed, or no live session matches): its
+    post says so (`orchestrator_unreached`), and every orchestrator's resume lists it to claim (CL49)."""
+    try:
+        d = _board_request(url or local_board_url(), "doc/posts/" + urllib.parse.quote(pid, safe=""), token=_resolve_board_token(token))
+        p = d.get("data") if isinstance(d.get("data"), dict) else {}
+        o = _board_request(url or local_board_url(), "doc/posts/_orchestrator", token=_resolve_board_token(token)).get("data")
+    except Exception:
+        p, o = {}, None
+    o = step_owner(p, {"_orchestrator": o} if isinstance(o, dict) else None)
+    note = {"at": _now_z(), "to": o["address"], "device": o["device"], "why": str(why or "the send failed")[:300]}
+    return _owner_write(pid, {"orchestrator_unreached": note}, url=url, token=token)
+
+
+def owner_text(cmd, r):
+    if not r.get("ok"):
+        return "Not %s: %s\n" % ("claimed" if cmd == "claim" else "written", r.get("error"))
+    d = r["data"]
+    if cmd == "claim":
+        out = ["claimed: %s is yours (%s on %s)" % (r["post"], d.get("orchestrator"), d.get("orchestrator_device")), r.get("tell", "")]
+    else:
+        u = d.get("orchestrator_unreached") or {}
+        out = ["written: %s could not reach %s (%s); every orchestrator's resume lists it to claim" % (
+            r["post"], u.get("to") or "its orchestrator", u.get("why"))]
+    for b in r.get("batches") or []:
+        out.append("`ArtifactData` `batch` %s, then `python3 -I .kit/kit.py artifact sent %s`" % (b, b))
+    if r.get("push_error"):
+        out.append("artifact push failed (%s): run `kit.py artifact push`" % r["push_error"])
+    return "\n".join(x for x in out if x) + "\n"
+
+
+def unreached_lines(posts):
+    """Every orchestrator's resume: the open steps whose part could not reach its owner, to claim (CL49)."""
+    out = []
+    for pid, p in sorted((posts or {}).items()):
+        if pid.startswith("_") or not isinstance(p, dict) or not isinstance(p.get("orchestrator_unreached"), dict):
+            continue
+        if str(p.get("status") or "").lower() in ("dropped",) or p.get("removed"):
+            continue
+        u = p["orchestrator_unreached"]
+        out.append("- `%s` (%s): could not reach `%s`%s at %s (%s): `python3 -I .kit/kit.py claim %s`, then message its part" % (
+            pid, p.get("part") or pid, u.get("to") or "?", (" on " + u["device"]) if u.get("device") else "", u.get("at") or "?",
+            u.get("why") or "?", pid))
+    return ["", "## Parts that could not reach their orchestrator (claim one to answer it)"] + out if out else []
+
+
+HANDOVER_FROM = os.path.join(".kit", "run", "handover-from.json")
+
+
+def inherit_lines(posts, url=None, token=None):
+    """A successor orchestrator on the same device, after a hand-over (handover.py wrote who it replaces), inherits every
+    part its predecessor owned there (CL49): their posts get its address. Another device's parts are never taken."""
+    path = os.path.join(ROOT, HANDOVER_FROM)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            h = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    me = orchestrator_here()
+    old, dev = str(h.get("from") or ""), str(h.get("device") or "")
+    if not me or not old or old == me["orchestrator"]:
+        return []
+    if dev != me["orchestrator_device"]:
+        return ["", "## Hand-over", "- %s names a predecessor on device `%s`, not this one (`%s`): nothing inherited" % (
+            HANDOVER_FROM, dev, me["orchestrator_device"])]
+    took, failed = [], []
+    for pid, p in sorted((posts or {}).items()):
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("_board"):
+            continue
+        f = {}
+        if str(p.get("orchestrator") or "") == old and str(p.get("orchestrator_device") or "") == dev:
+            f.update(me)
+        if str(p.get("review_orchestrator") or "") == old and str(p.get("review_orchestrator_device") or "") == dev:
+            f.update(review_orchestrator=me["orchestrator"], review_orchestrator_name=me["orchestrator_name"],
+                     review_orchestrator_device=me["orchestrator_device"])
+        if not f:
+            continue
+        r = _owner_write(pid, dict(f, inherited_from=old), url=url, token=token)
+        (took if r.get("ok") else failed).append(pid)
+    if not failed:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    return ["", "## Hand-over: the parts your predecessor owned here are yours",
+            "- from `%s` on `%s`: %s%s" % (old, dev, ", ".join("`%s`" % x for x in took) or "none open",
+                                          ("; NOT written (run resume again): " + ", ".join(failed)) if failed else "")]
 
 
 def _is_kit_source_repo(root):
@@ -2681,7 +3277,7 @@ class _LocalBoard:
 
     def __init__(self, db_path=None):
         self.db_path = db_path
-        self.artifact = bool(attached_board())
+        self.artifact = bool(artifact_here())
 
     def posts(self):
         return _all_posts(self.db_path)
@@ -3438,7 +4034,7 @@ def field_text(moment, role="part", train=None):
     if led is None or not hasattr(led, "open_fields"):
         return ""
     try:
-        lines = led.field_lines(led.open_fields(_resolve_memory_dir(), role, moment=moment, kit_root=ROOT, train=train))
+        lines = led.field_lines(led.open_fields(_resolve_memory_dir(), role, moment=moment, kit_root=ROOT, train=train), ROOT)
     except (OSError, ValueError, KeyError):
         return ""
     return "\n".join(lines).strip()
@@ -4055,6 +4651,28 @@ def plain_notes(p):
     return out
 
 
+def _mirror_path():
+    mp = (CONFIG.get("mirror") or {}).get("path")
+    return os.environ.get("KIT_MIRROR") or (os.path.join(ROOT, mp) if mp else os.path.join(os.path.dirname(ROOT), "board-mirror"))
+
+
+def git_copy_has(pid, p, strip, m=None):
+    """CL51: done on a computer: the post as the local board has it is in the board's git copy (board-mirror); if not,
+    it is kept there now (`kit.py keep`, what end_session does) and read again. [] when it is there, or when this clone
+    has no git copy (said by `resume`); else why not."""
+    m = m or _mirror_path()
+    f = os.path.join(m, "board", "posts", pid + ".json")
+    if not os.path.isdir(os.path.join(m, "board")):
+        return []
+    if strip(_read_json(f)) == strip(p):
+        return []
+    txt, ok = keep(m)
+    if strip(_read_json(f)) == strip(p):
+        return []
+    return ["the post is not in the board's git copy yet (%s): `python3 -I .kit/kit.py keep` said: %s; then done again"
+            % (BRANCH, (txt or "nothing")[-200:])]
+
+
 def done(pid, db_path=None, root=None):
     p = _get_post(pid, db_path=db_path)
     if not p:
@@ -4081,7 +4699,11 @@ def done(pid, db_path=None, root=None):
     warn += pending_real         # CL32/CL38: a real project too, run by the orchestrator (pending)
     err += check_trunk_merged(root)                  # CL38: a part that started on an older kit merges the trunk first
     strip = lambda d: {k: v for k, v in (d or {}).items() if k not in ("proof", "updated_at")}  # noqa: E731
-    if attached_board() and strip(_read_json(_base_path("posts", pid))) != strip(p):
+    if not artifact_here():
+        # CL51: on a computer the board is the local one and git carries it: the post is on the local board (read
+        # above) and in the git copy, never a step on the Artifact
+        err += git_copy_has(pid, p, strip)
+    elif strip(_read_json(_base_path("posts", pid))) != strip(p):
         # CL28: a part updated its post on the local copy only and said "Done": the live board (the Artifact) still
         # showed it planned, with none of its results (the owner: "How come you said you posted when you didn't?")
         err.append("the post is not on the board yet (%s): its local copy differs from what the Artifact last had. Run "
@@ -4098,7 +4720,7 @@ def done(pid, db_path=None, root=None):
                                                            "branch": _git_run("symbolic-ref", "--short", "-q", "HEAD").stdout.strip(),
                                                            "needs_real": bool(pending_real)}}, env={"KIT_GATE": "done"}):
             warn.append("proof: the board did not take it (is the board server running?): the step cannot be completed without it")
-        elif attached_board():
+        elif artifact_here():
             warn.append("proof: written here; send it: `python3 -I .kit/kit.py artifact push`")
     lines = (["NOT READY: %s" % pid] if err else ["OK: %s follows the post format" % pid])
     lines += ["  fix: " + e for e in err] + ["  note: " + w for w in warn]
@@ -4241,6 +4863,9 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
         scope = ("The step `%s` (part %s, train `%s`) is complete: review it AND the question its train serves, not only "
                  "this step." % (pid, part, project))
         scope = scope + review_brief(dict(p, _id=pid))
+        if attached_board():   # M11 (CR-m11): a review's first pull reads only the step's documents, never the whole board
+            scope += (" The board, on the web: `python3 -I .kit/kit.py artifact pull --post %s` (only this step's documents, "
+                      "by id), the calls it prints, `python3 -I .kit/kit.py artifact load`." % pid)
         br = str((p.get("proof") or {}).get("branch") or p.get("branch") or "")
         if br and lands_after_review():
             scope += (" Its work is on branch `%s`%s, not on the trunk: read and run it there (`git fetch origin %s && git worktree add "
@@ -4269,7 +4894,12 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
     if tpl is None:
         return 1, "no %s (reinstall the kit)" % tpl_path
     orch_doc = _get_post("_orchestrator", db_path=db_path) or {}
-    orch_id = str(orch_doc.get("session_id") or ("%s-orchestrator" % slug))
+    # CL49: the review reports to the orchestrator that launched it (this session), unless another claims the step
+    launcher = orchestrator_here()
+    orch_id = launcher.get("orchestrator") or step_owner(_get_post(pid, db_path=db_path) if pid else {},
+                                                         {"_orchestrator": orch_doc}, review=True)["address"] or ("%s-orchestrator" % slug)
+    if launcher.get("orchestrator_name") and launcher["orchestrator_name"] != orch_id:
+        orch_id = "%s (session name `%s`, device `%s`)" % (orch_id, launcher["orchestrator_name"], launcher["orchestrator_device"])
     for key, val in (("<SCOPE>", scope), ("<SESSION>", session), ("<REVIEW_ID>", rid), ("<POST_ID>", pid),
                      ("<PART>", part), ("<PROJECT_ID>", project or "(none)"), ("<ORCH_ID>", orch_id)):
         tpl = tpl.replace(key, val)
@@ -4297,7 +4927,7 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
                  "now with the claude-code-remote `create_session` tool: %s then `python3 -I .kit/kit.py review %s --session-id <its id>`"
                  % (rid, os.path.relpath(out, ROOT), json.dumps(call, ensure_ascii=False), pid or "--train %s" % train))
     elif run == "agy":
-        cmd = ["agy", "--mode", "auto", "-p", text]
+        cmd = ["agy"] + _agy_mode_args(k) + ["-p", text]
     elif run is None:
         start = None
     else:
@@ -4315,6 +4945,10 @@ def review(pid=None, train=None, dry_run=False, force=False, db_path=None, cli=N
         fh.write(tpl)
     if os.environ.get("KIT_NO_LAUNCH"):
         return 0, "review %s prompt written (KIT_NO_LAUNCH: not started)" % rid
+    if launcher and pid and not pid.startswith("_"):     # CL49: who this review reports to, on the step's post
+        _board_write("update", "posts", pid, {"review_orchestrator": launcher["orchestrator"],
+                                              "review_orchestrator_name": launcher["orchestrator_name"],
+                                              "review_orchestrator_device": launcher["orchestrator_device"]})
     if run == "web":
         return 0, start
     if run is None:
@@ -4460,6 +5094,31 @@ def permission_mode(k=None):
     return "bypassPermissions" if ok else "auto"
 
 
+def _agy_mode_args(k=None):
+    """CLI mode flags when launching agy (reviews, etc.): honors KIT_AGY_MODE / kit.agy_mode, and falls back to
+    --dangerously-skip-permissions under full_auto (or best) when the cached probe says --mode auto is unavailable."""
+    k = k if k is not None else (_kit_config().get("kit") or {})
+    want = str(os.environ.get("KIT_AGY_MODE") or k.get("agy_mode") or "auto").strip()
+    if want in ("skip-permissions", "bypass", "dangerously-skip-permissions"):
+        return ["--dangerously-skip-permissions"]
+    if want == "accept-edits":
+        return ["--mode", "accept-edits"]
+    if want in ("interactive", "default"):
+        return []
+    autonomy = str(((k.get("autonomy") or {}).get("level") or "")).strip()
+    if want == "best" or autonomy == "full_auto":
+        cache = os.environ.get("KIT_AGY_MODE_CACHE") or os.path.join(
+            os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache"),
+            "board-kit", "agy-mode-auto")
+        try:
+            with open(cache, encoding="utf-8") as fh:
+                if json.load(fh).get("state") == "unavailable":
+                    return ["--dangerously-skip-permissions"]
+        except (OSError, ValueError, AttributeError):
+            pass
+    return ["--mode", "auto"]
+
+
 def part_list(pid):
     return "%s-%s" % (_slug(_kit_config().get("project") or "project"), _slug(pid, 60))
 
@@ -4497,7 +5156,7 @@ def _fill_part(tpl, pid, doc):
     vals = {"<PART>": str(doc.get("part") or pid), "<TITLE>": str(doc.get("title") or pid), "<TRAIN>": str(doc.get("train") or ""), "<POST_ID>": pid,
             "<AFTER>": (", after `%s`" % doc["parent"]) if doc.get("parent") else "",
             "<TASK>": str(doc.get("task") or doc.get("body") or "").strip() or str(doc.get("title") or pid), "<SOURCES>": src,
-            "<ORCH_ID>": str(orch_doc.get("session_id") or "<orchestrator conversationId>"),
+            "<ORCH_ID>": step_owner(doc, {"_orchestrator": orch_doc})["address"] or "<orchestrator conversationId>",
             # CL38: the session_id a part writes is its real session (a web part: `session_<id>`), worked out by the
             # part's own shell at turn 1; the `<project>-<part>` name only where no session id exists (O54/O55)
             "<SESSION>": "'\"$(python3 -I .kit/kit.py whoami %s-%s)\"'" % (_slug(c.get("project") or "project"), _slug(str(doc.get("part") or pid), 24))}
@@ -4746,8 +5405,287 @@ def split_check(pieces):
                                                          "\n".join(rows)))
 
 
+# ---------------------------------------------------------------- R6: the queue, re-ranked at each new step
+# The owner, 2026-11-26: every new step is measured against every open step, for its place in the queue and for what can
+# run beside it; never ordered by date. On 11-26 M5 to M8 (features) were launched while CL51 waited, and CL51's bug then
+# overwrote 11 posts. Facts per pair: does one repair damage; does one wait on the other; do they share files or an area;
+# is one a bug in what the other builds. Order: damage first, then what unblocks the most, then bugs before features, date
+# only to break a tie. Two steps that share files or an area never run at the same time.
+QUEUE_DAMAGE = re.compile(r"\b(overwr(?:o|i)te\w*|overwrit\w*|data (?:loss|lost|at risk)|(?:lost|loses?|losing|dropp?(?:ed|s)?) "
+                          r"(?:data|posts?|comments?|work|rows?|cards?|answers?)|corrupt\w*|wiped?|wipes|erased?|erases|"
+                          r"deleted? (?:posts?|comments?|data|rows?)|wrong data|damage[sd]?|"
+                          r"(?:posts?|comments?|data|rows?|work|cards?|answers?) (?:were |was |are |is |got )?"
+                          r"(?:lost|overwritten|wiped|erased|deleted|dropped))\b", re.I)
+QUEUE_NOT = re.compile(r"\b(?:never|not|no|without|nor|cannot|can't|won't|doesn't|don't)\b(?:\s+\S+){0,2}\s*$", re.I)
+QUEUE_BLOCKS_ALL = re.compile(r"\b(?:every|all|each)\s+(?:other\s+)?steps?\b[^.]{0,60}\bwait|\bnothing\s+(?:reaches|lands|merges|"
+                              r"goes)\b[^.]{0,40}\buntil\b", re.I)
+QUEUE_BUG = re.compile(r"\b(bug|bugs|fix|fixe[sd]|broken|regress\w*|crash\w*|wrong|wrongly|leaks?)\b", re.I)
+QUEUE_PATH = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w-]+\.(?:py|js|json|md|html|sh|ts|css|toml|ya?ml))\b")
+
+
+def _q_text(q):
+    return "%s\n%s" % (q.get("title") or "", q.get("task") or q.get("body") or "")
+
+
+def _q_files(q):
+    """The files a step touches, by name (kit.py, .kit/kit.py and scripts/kit.py are one file: the kit copies it)."""
+    fs = set()
+    for x in q.get("subtasks") or []:
+        if isinstance(x, dict):
+            fs.update(str(f) for f in x.get("files") or [])
+    fs.update(str(f) for f in q.get("files") or [])
+    fs.update(QUEUE_PATH.findall(_q_text(q)))
+    return {os.path.basename(f.strip().strip("`")) for f in fs if f.strip()}
+
+
+def _q_paths(q):
+    fs = set()
+    for x in q.get("subtasks") or []:
+        if isinstance(x, dict):
+            fs.update(str(f) for f in x.get("files") or [])
+    fs.update(str(f) for f in q.get("files") or [])
+    fs.update(QUEUE_PATH.findall(_q_text(q)))
+    return {f.strip().strip("`") for f in fs if f.strip()}
+
+
+def _q_areas(q, areas=None):
+    """The areas of the map (M1: `map.areas` globs in .kit/config.json) a step's files fall in; without a map, none
+    (the shared files alone decide)."""
+    if areas is None:
+        areas = ((_kit_config().get("map") or {}).get("areas") or {}) if os.path.isfile(os.path.join(ROOT, ".kit", "config.json")) else {}
+    out = set()
+    for f in _q_paths(q):
+        for name, globs in (areas or {}).items():
+            if any(fnmatch.fnmatch(f, g) or fnmatch.fnmatch(os.path.basename(f), g) for g in ([globs] if isinstance(globs, str) else globs or [])):
+                out.add(str(name))
+    return out
+
+
+QUEUE_WAIT_BEFORE = (r"(?:after|builds? on|built on|on top of|waits? (?:on|for|behind)|waiting (?:on|for|behind)|once|needs|"
+                     r"requires|depends on|until|blocked by|behind)\s+(?:the\s+|step\s+|part\s+)?")
+QUEUE_WAIT_AFTER = r"(?:'s)?\s+(?:first|lands|landed|is done|must land|merges|is merged)\b"
+
+
+def _q_names(q, part):
+    """Does this step say it waits on that part ("waits on M1", "after CL51", "builds on M3", "once CL47 lands")? A mere
+    mention is history (CL51's task tells what CL44's part did), not a wait. A part has a digit and two characters."""
+    part = str(part or "")
+    if not re.search(r"\d", part) or len(part) < 2:
+        return False
+    p = r"(?<![\w-])%s(?![\w-])" % re.escape(part)
+    return re.search(QUEUE_WAIT_BEFORE + p + "|" + p + QUEUE_WAIT_AFTER, _q_text(q), re.I) is not None
+
+
+def _q_lead(q):
+    """The title and the task's first two sentences: what the step is for, not the history it tells."""
+    t = re.sub(r"\s+", " ", str(q.get("task") or q.get("body") or "")).strip()
+    return "%s. %s" % (q.get("title") or "", " ".join(re.split(r"(?<=[.!?])\s+", t)[:2]))
+
+
+def _q_damage(text):
+    """The first damage word the text says happened (not "never overwrites": a negation two words before it is none)."""
+    for m in QUEUE_DAMAGE.finditer(text):
+        if not QUEUE_NOT.search(text[max(0, m.start() - 40):m.start()]):
+            return m.group(0)
+    return ""
+
+
+def step_facts(pid, q, areas=None):
+    """The facts the queue reads about one step: damage, bug, files, areas, the parts it says it comes after."""
+    text = _q_lead(q)
+    kind = str(q.get("kind") or "").lower()
+    said = _q_damage(text) if kind != "feature" else ""
+    damage = bool(q.get("damage")) or bool(said)
+    bug = damage or kind == "bug" or (kind != "feature" and QUEUE_BUG.search(text) is not None)
+    after = q.get("after") or q.get("blocked_by") or []
+    after = [after] if isinstance(after, str) else list(after)
+    st = str(q.get("status") or "").lower()
+    return {"id": pid, "part": str(q.get("part") or pid), "damage": damage, "bug": bug, "files": _q_files(q),
+            "areas": _q_areas(q, areas), "after": [str(x) for x in after], "created": str(q.get("created_at") or ""),
+            "running": "progress" in st, "damage_why": str(q.get("damage") or said),
+            "blocks_all": QUEUE_BLOCKS_ALL.search(_q_text(q)) is not None}
+
+
+def step_pair(a, b, qa, qb):
+    """What two open steps are to each other, from facts: {first: id that must go first or None, why, shares: files,
+    areas: areas}. One waits on the other when it says so (after/blocked_by), names the other's part (it builds on it),
+    or is a feature on the files of the other's bug fix."""
+    first, why = None, ""
+    a_on_b = b["part"] in a["after"] or b["id"] in a["after"] or _q_names(qa, b["part"])
+    b_on_a = a["part"] in b["after"] or a["id"] in b["after"] or _q_names(qb, a["part"])
+    if a_on_b and b_on_a:                     # each names the other: the older one is what the newer builds on
+        a_on_b, b_on_a = a["created"] > b["created"], a["created"] <= b["created"]
+    shares = sorted(a["files"] & b["files"])
+    areas = sorted(a["areas"] & b["areas"])
+    if b_on_a:
+        first, why = a["id"], "%s builds on it (names %s)" % (b["part"], a["part"])
+    elif a_on_b:
+        first, why = b["id"], "%s builds on it (names %s)" % (a["part"], b["part"])
+    elif (shares or areas) and a["bug"] != b["bug"]:
+        bug, feat = (a, b) if a["bug"] else (b, a)
+        first, why = bug["id"], "a bug in what %s builds (%s)" % (feat["part"], ", ".join(shares or areas)[:60])
+    return {"first": first, "why": why, "shares": shares, "areas": areas}
+
+
+def _q_is_step(q):
+    """A step, not a question, an issue or a report filed under a train (Harmonize's F5, VR5, HL5, O56 are questions)."""
+    return str(q.get("kind") or "").lower() not in ("question", "issue", "report", "awaits") and \
+        str(q.get("column") or "").lower() != "question"
+
+
+def queue_facts(posts, areas=None):
+    """(open steps, their facts, the hub): a file or area most open steps name (more than half, 4 steps or more: kit.py
+    here) is not shared by itself, as in the split check (different functions of one big file merge cleanly);
+    `kit.queue.strict_files: true` in .kit/config.json counts it too."""
+    open_ = {pid: q for pid, q in posts.items() if isinstance(q, dict) and not pid.startswith("_") and not q.get("removed")
+             and str(q.get("train") or "").strip() and _step_open(q) and _q_is_step(q)}
+    f = {pid: step_facts(pid, q, areas) for pid, q in open_.items()}
+    strict = bool(((_kit_config().get("kit") or {}).get("queue") or {}).get("strict_files")) if os.path.isfile(
+        os.path.join(ROOT, ".kit", "config.json")) else False
+    count = {}
+    for x in f.values():
+        for k in x["files"] | {"area " + a for a in x["areas"]}:
+            count[k] = count.get(k, 0) + 1
+    hub = set() if strict else {k for k, c in count.items() if len(f) >= 4 and c * 2 > len(f)}
+    for x in f.values():
+        x["files"] -= hub
+        x["areas"] -= {k[5:] for k in hub if k.startswith("area ")}
+    return open_, f, hub
+
+
+def queue_rank(posts, areas=None):
+    """Every open train step, ranked: [{id, part, place, why, running, can_start, waits}] (place 1 is launched first).
+    Re-ranked whole at each call: nothing is kept between two rankings."""
+    open_, f, _hub = queue_facts(posts, areas)
+    deps = {pid: {} for pid in open_}          # pid -> {id it waits on: why}
+    clash = {pid: {} for pid in open_}         # pid -> {id it cannot run beside: files/areas}
+    ids = sorted(open_)
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            p = step_pair(f[a], f[b], open_[a], open_[b])
+            if p["first"]:
+                later = b if p["first"] == a else a
+                deps[later][p["first"]] = p["why"]
+            if p["shares"] or p["areas"]:
+                clash[a][b] = clash[b][a] = ", ".join(p["shares"] + ["area " + x for x in p["areas"]])
+    waiters = {pid: set() for pid in open_}    # who waits on pid, directly or not
+    for pid in open_:
+        seen, todo = set(), list(deps[pid])
+        while todo:
+            x = todo.pop()
+            if x in seen:
+                continue
+            seen.add(x)
+            todo.extend(deps.get(x) or [])
+        for x in seen:
+            waiters[x].add(pid)
+    for pid in open_:                          # "every step since 11-24 waits behind it" (CL47): it unblocks them all
+        if f[pid]["blocks_all"]:
+            waiters[pid] |= set(open_) - {pid}
+    key = lambda pid: (0 if f[pid]["damage"] else 1, -len(waiters[pid]), 0 if f[pid]["bug"] else 1, f[pid]["created"], pid)  # noqa: E731
+    order, left = [], set(open_)
+    while left:
+        ready = [p for p in left if not (set(deps[p]) & left)] or list(left)    # a cycle: the best of what is left
+        nxt = min(ready, key=key)
+        order.append(nxt)
+        left.discard(nxt)
+    running = {p for p in open_ if f[p]["running"]}
+    rows, started = [], set(running)
+    for n, pid in enumerate(order, 1):
+        why = []
+        if f[pid]["damage"]:
+            why.append("repairs damage (%s)" % _short(f[pid]["damage_why"], 40))
+        before = [x for x in order[n:] if pid in deps[x]]
+        if before:
+            why.append("before %s: %s" % (", ".join(f[x]["part"] for x in before[:4]) + (" ..." if len(before) > 4 else ""),
+                                           deps[before[0]][pid]))
+        if deps[pid]:
+            why.append("after %s" % ", ".join(f[x]["part"] for x in deps[pid] if x in open_))
+        if f[pid]["blocks_all"]:
+            why.append("every other step waits behind it (its task says so)")
+        if not why:
+            why.append("bug before features" if f[pid]["bug"] else "feature, by date (no fact sets it apart)")
+        waits = []
+        if pid not in running:
+            waits += ["%s first (%s)" % (f[x]["part"], deps[pid][x]) for x in deps[pid] if x in open_]
+            waits += ["%s %s (shares %s)" % (f[x]["part"], "runs" if x in running else "goes first", clash[pid][x])
+                      for x in clash[pid] if x in started]
+        can = pid not in running and not waits
+        if can:
+            started.add(pid)                   # what can run beside it is measured against it from here on
+        rows.append({"id": pid, "part": f[pid]["part"], "place": n, "why": "; ".join(why), "running": pid in running,
+                     "can_start": can, "waits": waits, "damage": f[pid]["damage"], "bug": f[pid]["bug"]})
+    return rows
+
+
+def queue_lines(posts, areas=None, limit=40):
+    rows = queue_rank(posts, areas)
+    if not rows:
+        return ["No open step."]
+    out = []
+    for r in rows[:limit]:
+        tag = "running" if r["running"] else ("start now" if r["can_start"] else "waits: " + "; ".join(r["waits"])[:160])
+        out.append("%d. %s `%s` [%s] %s" % (r["place"], r["part"], r["id"], tag, r["why"]))
+    if len(rows) > limit:
+        out.append("(%d more)" % (len(rows) - limit))
+    return out
+
+
+def _resume_queue(posts):
+    """R6, the orchestrator's resume: launch from the top; every new step re-ranks it."""
+    return ["", "## The queue (launch from the top; `kit.py queue` for all of it, a launch out of order is refused)"] + \
+        queue_lines(posts, limit=12)
+
+
+def queue_text(posts, areas=None):
+    hub = queue_facts(posts, areas)[2]
+    return "\n".join(["# The queue (every open step against every other: damage first, then what unblocks the most, "
+                      "then bugs before features, date only for a tie; launch from the top)"] + queue_lines(posts, areas)
+                     + (["(Named by most open steps, not a clash by itself: %s; `kit.queue.strict_files` counts it.)"
+                         % ", ".join(sorted(hub))] if hub else [])) + "\n"
+
+
+def order_problem(posts, pid, areas=None):
+    """None, or why launching this step now is out of order: a step ranked before it could start now, it waits on an
+    open step, or it shares files with a running one. The step to launch instead is named."""
+    rows = queue_rank(posts, areas)
+    me = next((r for r in rows if r["id"] == pid), None)
+    if me is None or me["running"]:
+        return None
+    if me["waits"]:
+        return "%s waits: %s" % (me["part"], "; ".join(me["waits"]))
+    first = next((r for r in rows if r["place"] < me["place"] and r["can_start"]), None)
+    if first:
+        return "%s goes first (place %d, %s is %d): %s; launch `%s`" % (first["part"], first["place"], me["part"], me["place"],
+                                                                      first["why"], first["id"])
+    return None
+
+
+def pause_messages(posts, new_pid, areas=None):
+    """A new damage step: the running steps it would undo or redo (they build on it, or share its files) are asked to
+    pause at their next save point. [{post, part, session_id, message}]."""
+    q = posts.get(new_pid) or {}
+    open_, f, _hub = queue_facts(posts, areas)
+    fn = f.get(new_pid) or step_facts(new_pid, q, areas)
+    if not fn["damage"]:
+        return []
+    out = []
+    for pid, r in open_.items():
+        fr = f[pid]
+        if pid == new_pid or not fr["running"]:
+            continue
+        p = step_pair(fn, fr, q, r)
+        if p["first"] == new_pid or p["shares"] or p["areas"]:
+            why = p["why"] or "it shares %s" % ", ".join(p["shares"] + p["areas"])
+            out.append({"post": pid, "part": fr["part"], "session_id": str(r.get("session_id") or ""),
+                        "message": "Pause at your next save point (commit and push your branch, update your post): %s repairs "
+                                   "damage (%s) and %s. Continue when it is done; `kit.py queue` shows the order."
+                                   % (fn["part"], _short(fn["damage_why"], 50), why)})
+    return out
+
+
 def step_new(train, part, title, task="", parent=None, sources=(), model=None, review=True, db_path=None, cli=None,
-             board=None, keep_whole=None, keep_train=None):
+             board=None, keep_whole=None, keep_train=None, damage=None, after=(), kind=None):
     """A train step: its post (adopted when the train already has one for that part, never duplicated) and its
     generated prompt. Returns {post, adopted, prompt, prompt_written, launch} or {error}. On an attached board (CL25)
     also {board, artifact_write}: the post is a file under .kit/run/artifact/out/repos/<id>/posts/, sent by the one
@@ -4801,6 +5739,12 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         doc["sources"] = list(sources)
     if review is False:
         doc["review_auto"] = False
+    if damage:                                     # R6: what was lost or put at risk, and who found it
+        doc["damage"] = str(damage)
+    if after:
+        doc["after"] = [str(x) for x in after]
+    if kind in ("bug", "feature"):
+        doc["kind"] = kind
     write = None
     if att:
         fp = os.path.join(os.path.abspath(_art_dir()), "out", "repos", att, "posts", pid + ".json")
@@ -4815,6 +5759,14 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
     res = {"post": pid, "adopted": False, "pieces": len(doc.get("subtasks") or []), "prompt": rel, "prompt_written": made,
            "train_goal": (rec or {}).get("goal") or "(none written: `kit.py trains new`)",
            "launch": _launch_line(part, rel, model, cli=cli) if rel else None}
+    # R6: the new step against every open one: the whole queue re-ranked, and the running steps it would undo told to pause
+    ranked = dict(posts, **{pid: doc})
+    res["queue"] = queue_lines(ranked, limit=12)
+    pauses = pause_messages(ranked, pid)
+    if pauses:
+        res["pause"] = pauses
+        res["next_pause"] = ("for each `pause` entry: send_message (claude-code-remote) to its session_id (agy: send_message "
+                             "to its conversation) with its message; it pauses at its next save point")
     if att:
         res.update({"board": att, "artifact_write": write,
                     "next": "send the post: ArtifactData %s (no other way: a hand-written step post is refused)"
@@ -4847,6 +5799,104 @@ def step_drop(pid, db_path=None):
 # ---------------------------------------------------------------- launch (CL13): a launched part is always on the board
 def _is_web():
     return str(os.environ.get("CLAUDE_CODE_REMOTE") or "").lower() in ("1", "true", "yes")
+
+
+# ---------------------------------------------------------------- CL53: a session starts on the newest code from GitHub
+STALE_BRANCH_DAYS = 2      # ~/harmonize sat two days on a merged branch while its trunk moved (11-22 to 11-24)
+
+
+def checkout_fresh(root=None, trunk=None, fetch=True, move=True, days=None, now=None):
+    """Fetch origin; say in one line when this checkout is behind its trunk, or on a stale branch; move it forward by
+    itself only when that loses nothing: clean, on the trunk itself, with no commit of its own (CR-cl53). Returns
+    (lines, blocked): `blocked` is True when it stays behind and the session has something to do first."""
+    root = root or ROOT
+    k = _kit_config().get("kit") or {}
+    trunk = trunk or str(k.get("main_branch") or "main")
+    days = STALE_BRANCH_DAYS if days is None else days
+    now = now or time.time()
+
+    def g(*a, **kw):
+        try:
+            r = subprocess.run(["git", "-C", root] + list(a), capture_output=True, text=True, timeout=kw.get("timeout", 30))
+            return r.returncode, (r.stdout or "").strip(), (r.stderr or "").strip()
+        except (OSError, subprocess.SubprocessError) as e:
+            return 1, "", str(e)
+
+    if g("rev-parse", "--is-inside-work-tree")[1] != "true" or g("remote", "get-url", "origin")[0]:
+        return [], False
+    up = "refs/remotes/origin/" + trunk
+    if fetch:
+        rc, _, err = g("fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:%s" % (trunk, up), timeout=25)
+        if rc:
+            return ["CHECKOUT: could not fetch origin (%s): this checkout may be on old code." % (err.splitlines() or ["?"])[-1][:160]], False
+    if g("rev-parse", "-q", "--verify", up)[0]:
+        return [], False
+    branch = g("symbolic-ref", "-q", "--short", "HEAD")[1]
+    behind = int(g("rev-list", "--count", "HEAD.." + up)[1] or 0)
+    own = int(g("rev-list", "--count", up + "..HEAD")[1] or 0)
+    if not behind:
+        return [], False
+    newest = g("log", "-1", "--format=%h %cs %s", up)[1][:90]
+    what = "%d newer commit%s on origin/%s (newest %s)" % (behind, "" if behind == 1 else "s", trunk, newest)
+    dirty = bool(g("status", "--porcelain", "--untracked-files=no")[1]) or any(
+        os.path.exists(os.path.join(g("rev-parse", "--absolute-git-dir")[1] or os.path.join(root, ".git"), f)) for f in ("MERGE_HEAD", "REBASE_HEAD", "rebase-merge", "rebase-apply"))
+    here = "branch %s" % branch if branch else "a detached HEAD"
+    if not own:                                   # the trunk itself, or a branch merged into it: nothing of its own
+        if dirty:
+            return ["CHECKOUT: %s is behind: %s. Not moved: it has uncommitted changes; commit or stash them, then "
+                    "`git checkout %s && git merge --ff-only origin/%s`." % (here, what, trunk, trunk)], True
+        if branch != trunk:
+            # CR-cl53: no commit of its own is not "merged": a part's new worktree branch or a review's detached HEAD
+            # looks the same, and switching it would put its work on the trunk. Only the trunk moves by itself.
+            return ["CHECKOUT: %s is behind: %s; it has no commit of its own: `git checkout %s && git merge --ff-only "
+                    "origin/%s` if it is done (not switched: it may be a new branch)." % (here, what, trunk, trunk)], False
+        if not move or "/.claude/worktrees/" in os.path.abspath(root).replace(os.sep, "/") + "/":
+            return ["CHECKOUT: %s is behind: %s." % (here, what)], True
+        rc, _, err = g("merge", "-q", "--ff-only", up)
+        if rc:
+            return ["CHECKOUT: %s is behind (%s) and could not be moved (`git merge --ff-only origin/%s`: %s): do it by "
+                    "hand." % (here, what, trunk, (err.splitlines() or ["?"])[-1][:160])], True
+        return ["CHECKOUT: moved %s forward: %s." % (trunk, what)], False
+    last = int(g("log", "-1", "--format=%ct", "HEAD")[1] or now)
+    trunk_last = int(g("log", "-1", "--format=%ct", up)[1] or 0)
+    age = int((now - last) // 86400)
+    if branch == trunk:
+        return ["CHECKOUT: %s has %d commit%s of its own not on origin, and is behind: %s. Not moved: `git pull --no-rebase`, "
+                "then push." % (trunk, own, "" if own == 1 else "s", what)], True
+    if age >= days and trunk_last > last:
+        return ["CHECKOUT: %s is stale: no commit for %d days while %s moved: %s. Not moved (%d commit%s of its own%s): merge "
+                "the trunk (`git merge --no-edit origin/%s`) or finish it, before you work here." % (
+                    here, age, trunk, what, own, "" if own == 1 else "s", ", uncommitted changes" if dirty else "", trunk)], True
+    return ["CHECKOUT: %s is behind its trunk: %s; its %d commit%s are its own: merge `origin/%s` before you build on what "
+            "changed there." % (here, what, own, "" if own == 1 else "s", trunk)], False
+
+
+def checkout_fresh_once(session=None, root=None, now=None):
+    """Once a session (the SessionStart hook or its first resume, whichever comes first): fetch and move. Later calls
+    look again without fetching and repeat only a line that still asks something. A web clone is fresh: nothing."""
+    if _is_web() or str(os.environ.get("KIT_REMOTE") or os.environ.get("AGY_REMOTE") or "").lower() in ("1", "true", "yes"):
+        return [], False
+    root = root or ROOT
+    now = now or time.time()
+    sid = re.sub(r"[^A-Za-z0-9._-]", "_", str(session or os.environ.get("CLAUDE_CODE_SESSION_ID")
+                                                  or os.environ.get("KIT_SESSION_ID") or ""))
+    d = os.path.join(root, ".kit", "run", "fresh")
+    mark = os.path.join(d, (sid or "_nosession") + ".done")
+    try:
+        first = not os.path.exists(mark) or (not sid and now - os.path.getmtime(mark) > 600)
+    except OSError:
+        first = True
+    if not first:
+        lines, blocked = checkout_fresh(root=root, fetch=False, move=False, now=now)
+        return (lines, blocked) if blocked else ([], False)
+    lines, blocked = checkout_fresh(root=root, now=now)
+    try:
+        os.makedirs(d, exist_ok=True)
+        with open(mark, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+    except OSError:
+        pass
+    return lines, blocked
 
 
 def _git_run(*args, cwd=None, timeout=60):
@@ -5189,13 +6239,19 @@ def _mins_since(stamp):
 def _saved_mins(branch):
     """Minutes since a session last saved its work on wip/<branch> at GitHub (None: never, or not reachable): the sign
     of life every platform shares, newer than this copy of the board."""
-    ref = "refs/remotes/origin/wip/" + branch
-    try:
-        _git_run("fetch", "-q", "--no-tags", "origin", "+refs/heads/wip/%s:%s" % (branch, ref), timeout=20)
-        t = _git_run("log", "-1", "--format=%ct", ref, timeout=10)
-        return max(0, int((time.time() - int(t.stdout.strip())) // 60)) if t.returncode == 0 and t.stdout.strip() else None
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
+    # CL55: a part's saves are checkpoint commits on its branch itself, another session's on wip/<branch>: the newest counts
+    best = None
+    for src in ("wip/" + branch, branch):
+        ref = "refs/remotes/origin/" + src
+        try:
+            _git_run("fetch", "-q", "--no-tags", "origin", "+refs/heads/%s:%s" % (src, ref), timeout=20)
+            t = _git_run("log", "-1", "--format=%ct", ref, timeout=10)
+            if t.returncode == 0 and t.stdout.strip() and (src != branch or _git_run("log", "-1", "--format=%s", ref).stdout.startswith("checkpoint(")):
+                m = max(0, int((time.time() - int(t.stdout.strip())) // 60))
+                best = m if best is None else min(best, m)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    return best
 
 
 def step_holder(pid, p, me=None, people=(), alive=None, saved=None, session=None):
@@ -5232,7 +6288,7 @@ def step_holder(pid, p, me=None, people=(), alive=None, saved=None, session=None
 
 
 def launch(pid, url=None, token=None, web=None, session_id=None, model=None, reset=False, gate=True, cli=None, post_file=None,
-           take=False):
+           take=False, anyway=None):
     """`kit.py launch <post>`: the one way a part starts (CL13). Writes status in progress, session_id, launched_at
     and branch on its post and marks its Trains row running (the local copy; with an attached Artifact board, the
     batch that carries both there), then starts it: CLI, `claude --bg` inside a worktree made from the current branch;
@@ -5289,9 +6345,17 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         sess = session_id
         launch_mark(pid, None)
     else:
-        why = _prompt_problem(rel) or circle_gate(_launch_posts(post), pid, post, os.path.join(ROOT, rel))
+        lp = _launch_posts(post)
+        why = _prompt_problem(rel) or circle_gate(lp, pid, post, os.path.join(ROOT, rel))
         if why:
             return dict(out, ok=False, error=why)
+        # R6: launched from the top of the queue; out of order only with the reason recorded
+        late = None if (post.get("launched_at") or take) else order_problem(dict(lp, **{pid: post}), pid)
+        if late and not anyway:
+            return dict(out, ok=False, error="out of order: %s. (Launch it anyway: `kit.py launch %s --anyway \"<why>\"`, "
+                                             "recorded on its post.)" % (late, pid), queue=True)
+        if late:
+            out["out_of_order"] = late
         if web:
             if _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + base).returncode != 0 and base != "HEAD":
                 out["warning"] = "branch %s is not pushed: push it first, the new session clones it from GitHub" % base
@@ -5333,6 +6397,15 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
             sess = name
     now = _now_z()
     fields = {"status": "in progress", "session_id": sess, "branch": branch, "working_by": me, "updated_at": now}
+    if out.get("out_of_order"):
+        fields["launched_out_of_order"] = {"why": str(anyway), "was": out["out_of_order"], "at": now}
+        out["launched_out_of_order"] = fields["launched_out_of_order"]
+    owner = orchestrator_here()       # CL49: the part reports to this session, on this device, unless another claims it
+    if owner:
+        fields.update(owner)
+        out["orchestrator"] = owner
+    else:
+        out["warning_owner"] = "no session id here (kit.py whoami): the post names no owner; the part reports to `_orchestrator`"
     had = str(post.get("session_id") or "")
     if session_id and not take and had and had != session_id and not had.startswith("pending") and not marked:
         out["warning"] = "%s already named session %s: if it still runs, two are on this step; stop one" % (pid, had)
@@ -5341,11 +6414,13 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
     out["session_id"] = sess
     if isinstance(given, dict):
         return dict(out, trains=False)
+    if owner and post.get("orchestrator_unreached"):
+        fields["orchestrator_unreached"] = None      # a fresh launch is reached by its launcher
     _local_update(url, token, "posts", pid, fields)
     tr = _local_update(url, token, "posts", "_trains", lambda t: _trains_mark(t, pid, dict(post, **fields), sess, rel))
     out["session_id"] = sess
     out["trains"] = tr is not None
-    if attached_board():
+    if artifact_here():                        # CL51: on a computer, launch sends nothing to the Artifact
         out.update({"batches": [], "need_pin": []})
         try:
             r = artifact_push(url=url, token=token)
@@ -6035,7 +7110,7 @@ def adopt_trains(url=None, token=None, dry_run=False, db_path=None, m=None):
             if _local_update(url, token, "posts", pid, {"train": t}) is not None:
                 n += 1
     out = {"trains": plan, "written": n}
-    if attached_board():
+    if artifact_here():
         out["push"] = artifact_push(url=url, token=token)
     return out
 
@@ -6060,14 +7135,16 @@ def adopt_text(r):
 # keeps every kit.py command in it, so it cannot go stale.
 COMMANDS = [
     # (need, command, what it does)
-    ("read the board", "kit.py resume", "every train's open steps (the task list), live sessions, open questions (age, default, what each blocks), the owner's decisions of the last 3 days, the owner's unanswered comments, attached boards; run it before answering the owner"),
+    ("read the board", "kit.py resume", "every train's open steps (the task list), live sessions, open questions (age, default, what each blocks), the owner's decisions of the last 3 days, the owner's unanswered comments, attached boards; run it before answering the owner; again in the same session it prints only what changed since the last one (`--full`: all of it)"),
     ("read the board", "kit.py guide [case]", "one case of the orchestrator's guide, when it comes up (resume lists them)"),
     ("ask him", "kit.py ask --title T --option A --option B --default A --deadline D [--needs N]", "one question post in his lane, whole; never a question in a thread"),
     ("launch and finish", "kit.py land <post>", "a reviewed step's branch onto the trunk, its check run on the two together; never forced"),
     ("git copy", "kit.py landing | save | checkpoint", "which steps may reach the trunk; save work in progress to wip/<branch> or checkpoint on the step's branch (CL17)"),
     ("save the board", "kit.py keep", "the board here into git, committed and pushed (git is the record)"),
     ("read the board", "kit.py resume --role orchestrator|part|clerk|review [--post P]", "what that role needs and nothing else: a session starts from it alone (lessons, launch workflow, tests, how to report)"),
-    ("memory", "kit.py lessons [--role R] [--files F...] | lessons check", "the lessons a role needs / refuse untagged ones and ones only a project doc holds"),
+    ("memory", "kit.py lessons [--role R] [--files F...] | lessons check [--ask]", "the lessons a role needs / refuse untagged ones, ones only a project doc holds, a \"be careful\" remedy, and run every entry's check (test:, hook:, code:, refusal:): flags one whose test is gone or fails or whose code no longer exists, lists the unchecked (M7); flags two live entries that contradict and a second claim of authority, and asks which wins (M8)"),
+    ("memory", "kit.py lessons replace <wins> <goes> | lesson add ... --replaces <id> | ledger observe ... --replaces <id>", "an entry replaces another: the old one goes to the archive with a pointer to its successor"),
+    ("memory", "kit.py lessons review [--post] [--days N] | lessons keep <id>", "entries unconfirmed for more than kit.memory.review_days, as a question post on the board (never deleted) / say one still holds"),
     ("memory", "kit.py lesson add <id> --roles R,.. --title T --text X [--files G,..] [--from \"doc id\"]", "a lesson into the memory, tagged with its roles"),
     ("read the board", "kit.py train <train> [--zoom <part>] [--brief | --sections [PART..] | --full PART..]", "a train's steps at three depths: two lines each; their seven fields; a step whole"),
     ("read the board", "kit.py post <id> [--head N]", "one post and its comments"),
@@ -6084,6 +7161,7 @@ COMMANDS = [
     ("write the board", "kit.py sub <post> <number>... | \"<piece>\" [--status doing|done|drop] [--why \"...\"]", "a step's pieces by number (the task's numbered lines) or title, lines on its post; done refuses an open one; a piece the task names drops only with --why"),
     ("launch and finish", "kit.py form <post> [--doing \"...\"]", "a step's result as a file, half filled; `done` sends and checks it"),
     ("launch and finish", "kit.py whoami [name]", "this session's id for a post's session_id (web: session_<id>; else the name given)"),
+    ("git copy", "kit.py fresh [--again]", "fetch origin: say when it is behind its trunk or on a stale branch, move the trunk forward when clean (CL53; the SessionStart hook and the first resume run it once a session)"),
     ("launch and finish", "kit.py branches [--delete]", "origin's branches fully on the trunk (finished parts), and with --delete removes them"),
     ("launch and finish", "kit.py web-env [ask] [--id env_...]", "several repos on the web (CL39): the create_environment call (every repo, hooks at user level), its question post, its id for the hand-over"),
     ("launch and finish", "kit.py attach <owner/repo>", "attach another repo (web: the add_repo call, clone next to this project, register, record in the portfolio)"),
@@ -6096,6 +7174,8 @@ COMMANDS = [
     ("write the board", "board_cli.py reply <post> <comment> --text T", "answer the owner's comment in the owner's thread (marks it read)"),
     ("write the board", "kit_cards.py (agent kit-cards)", "rebuild the Where we are card and the Trains card, never by hand"),
     ("launch and finish", "kit.py launch <post>", "start a part: post in progress, Trains row running, then claude --bg or the create_session call"),
+    ("launch and finish", "kit.py claim <post>", "take a step explicitly: your address on its post; its part and review report to you (CL49)"),
+    ("launch and finish", "kit.py unreached <post> --why W", "a part (or review) could not reach its orchestrator: the post says so, every orchestrator's resume lists it"),
     ("launch and finish", "kit.py capacity / device.py run -- <cmd>", "the device's session cap / run a heavy job when it fits in memory"),
     ("launch and finish", "kit.py done <post>", "check a step's post: format, artifacts, check passes, breaks makes it fail"),
     ("launch and finish", "kit.py review <post> | --train T", "start the review of a step or a train"),
@@ -6104,6 +7184,7 @@ COMMANDS = [
     ("launch and finish", "handover.py --role R", "a context reset: a fresh session under the same name"),
     ("Artifact and web", "web_takeover.py [save]", "a web session: the board from git and the steps to continue / the board back to git"),
     ("Artifact and web", "kit.py artifact pull|load|push|sent|pin", "the Artifact board to the local copy (starts the local board) and back, as pinned batches"),
+    ("Artifact and web", "kit.py artifact reconcile", "a web session's start, after the pull: the Artifact vs origin/board-mirror, both ways, newer wins, a both-sides change kept twice"),
     ("Artifact and web", "kit.py reconcile", "the board here vs its git copy: the newer copy of each document wins"),
     ("Artifact and web", "kit_artifact_sync.py", "the repo's documents and files into the Artifact for its viewers"),
     ("Artifact and web", "update_board.py", "the Artifact's page to the kit's current page"),
@@ -6114,6 +7195,7 @@ COMMANDS = [
     ("setup", "install.py <project> [--update]", "install or update the kit in a project (every present runtime)"),
     ("setup", "kit_import.py / step0_scan.py", "a person's state from their chats / a project's step 0 profile"),
     ("measure", "kit.py usage compare --before <kit commit|date> --after <...> [--role part|orchestrator|clerk|review]", "tokens, cost, turns, tool calls, board bytes per role, median and total with n, before vs after a kit change (CL37)"),
+    ("measure", "kit.py usage show --commands [--role R] [--transcripts GLOB] / compare ... --commands", "cost per command: each result's size and its carry (tokens x calls after it, cache read price), top commands per role, runs of commands repeated in 3+ sessions as script candidates (M6)"),
     ("measure", "kit.py usage record|show|push|import-ccr", "one session's usage row from its transcript (the Stop/SessionEnd hook does it, no model call) / the rows / onto the ledger branch kit-usage / rows from saved get_session records"),
     ("read the code", "kit.py map [--root DIR] [--out DIR] [--config F] [--check]", "a map of any project generated from its code (M1): overview.md in one screen, a card per area and feature, joins.md (UI fields sent vs schema accepted, handler, tables, tests; dropped fields, write routes with no CSRF/auth, uncalled handlers, files over 1,500 lines), map.json things/links/flags; --check fails when the code changed or a link check fails"),
     ("index", "kit.py commands [word|all]", "the topics / the commands a word finds / every one"),
@@ -6332,6 +7414,8 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
     if not n_active:
         out.append("")
         out.append("No train has an open step.")
+    else:
+        out += _resume_queue(posts)
     out.extend(_resume_extras(posts, comments, now=now, session=session))
     dl = device_line()
     if dl:
@@ -6376,9 +7460,8 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
                    % ", ".join(skipped))
     if boards and artifact_url() and not glob.glob(os.path.join(_art_dir(), "in", "repos", "*")):
         out.append("")
-        out.append("(Comments written on the Artifact page on an attached board live only there: `ArtifactData` `list`, `url` "
-                   "%s, `collection: \"repos/<id>/comments\"` (and `repos/<id>/posts`), `out_dir: \"%s\"`, then resume again.)"
-                   % (artifact_url(), os.path.join(_art_dir(), "in", "repos", "<id>", "comments")))
+        out.append("(Comments written on the Artifact page on an attached board live only there: `python3 -I .kit/kit.py "
+                   "artifact pull` brings them (changes only), then `kit.py artifact load`, then resume again.)")
     out.append("")
     if active == "agy":
         out.append("Resume in agy: cross-check each session UUID above with `manage_subagents(Action=\"list\")`. "
@@ -6404,6 +7487,168 @@ def resume(m, db_path=None, alive=None, cli=None, session=None, now=None):
     return "\n".join(out) + "\n"
 
 
+# ---------------------------------------------------------------- M5: a resume prints only what changed
+# A session that already ran `resume` gets what changed since its last one (steps, sessions, questions, the owner's
+# comments, other writers), or one line; `--full` prints it whole. The first resume of a session, a hand-over (a new
+# generation in .kit/handover-<role>.gen) and a takeover (a new session id) print it whole; a compaction clears the
+# session's state (kit_session_start.py), so the summary-holder reads it whole again.
+RESUME_DELTA_ROLES = (None, "orchestrator")
+
+
+def resume_state_path(session, role=None):
+    sid = re.sub(r"[^A-Za-z0-9._-]", "_", str(session or ""))
+    return os.path.join(ROOT, ".kit", "run", "resume", "%s-%s.json" % (role or "orchestrator", sid)) if sid else ""
+
+
+def _handover_gen(role=None):
+    try:
+        with open(os.path.join(ROOT, ".kit", "handover-%s.gen" % (role or "orchestrator")), encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
+
+
+def _resume_snapshot(posts, comments, alive=None):
+    """What a delta compares: per post its state, per comment who and what, his open comments, the running sessions."""
+    ad = answer_delay()
+    ps = {}
+    for pid, p in (posts or {}).items():
+        if not isinstance(p, dict):
+            continue
+        ps[pid] = {k: str(p.get(k) or "") for k in ("title", "part", "train", "status", "column", "kind", "session_id",
+                                                     "updated_at", "done_at", "from", "_board")}
+    cs = {}
+    for cid, c in (comments or {}).items():
+        if isinstance(c, dict) and c.get("post_id"):
+            cs[cid] = {"post_id": str(c.get("post_id") or ""), "from": str(c.get("from") or ""),
+                       "his": bool(ad.is_his(c)), "like": bool(c.get("like")), "answer": str(c.get("answer") or ""),
+                       "text": (c.get("text") or "").replace("\n", " ")[:100], "board": str(c.get("_board") or "")}
+    try:
+        opn = sorted(x.split(" ", 1)[0] for x in _open_of({k: v for k, v in (comments or {}).items()
+                                                            if isinstance(v, dict)}, empty=False))
+    except Exception:  # noqa: BLE001 - a malformed comment never loses the delta
+        opn = []
+    return {"posts": ps, "comments": cs, "open": opn, "alive": sorted(alive) if alive is not None else None}
+
+
+def _resume_docs(m, db_path=None):
+    """The host's posts and comments, and each attached board's under `repo:<id>/` (so a change there shows too)."""
+    posts, comments = _load_board_docs(m, db_path=db_path)
+    posts, comments = dict(posts or {}), dict(comments or {})
+    try:
+        for b in _attached_boards()[0]:
+            for pid, p in (b.get("posts") or {}).items():
+                posts["repo:%s/%s" % (b["id"], pid)] = dict(p, _board=b["id"])
+            for cid, c in (b.get("comments") or {}).items():
+                comments["repo:%s/%s" % (b["id"], cid)] = dict(c, _board=b["id"])
+    except Exception:  # noqa: BLE001 - never lose the host's delta over an attached board
+        pass
+    return posts, comments
+
+
+def _is_q(p):
+    return p.get("kind") == "question" or p.get("column") == "question"
+
+
+def resume_delta_lines(old, new, since_hhmm, me=None):
+    """What changed between two snapshots, grouped; [] when nothing did."""
+    op, np_ = old.get("posts") or {}, new.get("posts") or {}
+    steps, qs, sess, his, others = [], [], [], [], []
+
+    def name(pid, p):
+        return "%s%s" % (("%s " % p["part"]) if p.get("part") else "", (p.get("title") or pid)[:70]) + " (`%s`)" % pid
+
+    for pid in sorted(set(op) | set(np_)):
+        a, b = op.get(pid), np_.get(pid)
+        if a == b:
+            continue
+        p = b or a
+        bucket = qs if _is_q(p) else steps if (p.get("part") or p.get("train")) and not pid.split("/")[-1].startswith("_") else others
+        if a is None:
+            bucket.append("- new: %s, %s" % (name(pid, b), b.get("status") or b.get("column") or "open"))
+            continue
+        if b is None:
+            bucket.append("- gone: %s" % name(pid, a))
+            continue
+        what = []
+        for k in ("status", "column"):
+            if a.get(k) != b.get(k):
+                what.append("%s %s -> %s" % (k, a.get(k) or "-", b.get(k) or "-"))
+        if a.get("session_id") != b.get("session_id"):
+            sess.append("- %s: session %s -> %s" % (name(pid, b), a.get("session_id") or "none", b.get("session_id") or "none"))
+        if not what and a.get("updated_at") != b.get("updated_at"):
+            what.append("updated%s" % ((" by %s" % b["from"]) if b.get("from") and b.get("from") != me else ""))
+        if what:
+            bucket.append("- %s: %s" % (name(pid, b), ", ".join(what)))
+    oa, na = old.get("alive"), new.get("alive")
+    if oa is not None and na is not None and oa != na:
+        sess += ["- now running: %s" % x for x in sorted(set(na) - set(oa))]
+        sess += ["- ended: %s" % x for x in sorted(set(oa) - set(na))]
+    oc, nc = old.get("comments") or {}, new.get("comments") or {}
+    per_post = {}
+    for cid in sorted(set(nc) - set(oc)):
+        c = nc[cid]
+        if c["his"]:
+            his.append("- %s on %s: %s" % (cid, c["post_id"], c["text"]))
+        elif c["from"] == "owner":
+            his.append("- %s on %s: %s" % (cid, c["post_id"], "a Like" if c["like"] else "answered %s" % c["answer"] if c["answer"] else c["text"]))
+        else:
+            per_post.setdefault((c["post_id"], c["from"]), []).append(cid)
+    for (pid, frm), ids in sorted(per_post.items()):
+        others.append("- %s wrote %d comment%s on %s (%s)" % (frm or "someone", len(ids), "" if len(ids) == 1 else "s", pid,
+                                                               ", ".join(ids[:3]) + (", ..." if len(ids) > 3 else "")))
+    gone_open = sorted(set(old.get("open") or []) - set(new.get("open") or []))
+    if gone_open:
+        his.append("- answered since: %s" % ", ".join(gone_open))
+    still = sorted(set(new.get("open") or []) & set(old.get("open") or []))
+    out = []
+    for head, rows in (("Steps", steps), ("Sessions", sess), ("Questions", qs), ("The owner's comments", his),
+                       ("Other writers", others)):
+        if rows:
+            out += ["", "## %s" % head] + rows
+    if out and still:
+        out += ["", "Still unanswered of his (from before): %s" % ", ".join(still)]
+    return out
+
+
+def resume_delta(m, role=None, session=None, db_path=None, cli=None, full=False, now=None, alive=None):
+    """-> the text to print instead of the whole resume, or None (print it whole). Saves this read's snapshot either
+    way, so the next resume of this session prints only what changed since this one."""
+    if role not in RESUME_DELTA_ROLES:
+        return None
+    path = resume_state_path(session, role)
+    if not path:
+        return None                                     # no session id: every resume is whole
+    now = now or datetime.now(timezone.utc)
+    posts, comments = _resume_docs(m, db_path=db_path)
+    if alive is None:
+        alive = None if _active_cli(cli) == "agy" else _alive_sessions()
+    snap = _resume_snapshot(posts, comments, alive)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            old = json.load(fh)
+    except (OSError, ValueError):
+        old = None
+    gen = _handover_gen(role)
+    state = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "gen": gen, "db": db_path or "", "snap": snap}
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump(state, fh, ensure_ascii=False)
+        os.replace(path + ".tmp", path)
+    except OSError:
+        return None
+    if full or not isinstance(old, dict) or old.get("gen", "") != gen or old.get("db", "") != (db_path or ""):
+        return None                                     # the first of this session, a hand-over, or asked whole
+    hhmm = str(old.get("at") or "")[11:16] or "?"
+    rows = resume_delta_lines(old.get("snap") or {}, snap, hhmm, me=role or "orchestrator")
+    if not rows:
+        return "Resume: nothing new since %s UTC (the whole: `kit.py resume%s --full`).\n" % (
+            hhmm, " --role %s" % role if role else "")
+    return "\n".join(["# Resume: what changed since %s UTC (the whole: `kit.py resume%s --full`)" % (
+        hhmm, " --role %s" % role if role else "")] + rows) + "\n"
+
+
 # ---------------------------------------------------------------- CL32: resume per role, the lessons, real-project tests
 ROLES = ("orchestrator", "part", "clerk", "review")
 LESSON_HEAD = re.compile(r"^##\s+([A-Za-z0-9][\w.-]*)\s*:\s*(.+?)\s*$")
@@ -6423,22 +7668,24 @@ def _kit_lessons_paths():
 
 
 def parse_lessons(text, source=""):
-    """[{id, title, roles, files, from, where, text, source}] from lesson Markdown: `## <id>: <title>`, then `roles:`,
-    optional `files:` (globs), `from:` (where it was first written) and `where: attached` (only a project that has another
-    repo attached, or the kit's own) lines, then the lesson itself."""
+    """[{id, title, roles, files, from, where, check, text, source}] from lesson Markdown: `## <id>: <title>`, then `roles:`,
+    optional `files:` (globs), `from:` (where it was first written), `where: attached` (only a project that has another
+    repo attached, or the kit's own) and `check:` (what enforces it, M7: test:/hook:/code:/refusal:) lines, then the
+    lesson itself."""
     out, cur = [], None
-    for line in text.splitlines():
+    for n, line in enumerate(text.splitlines(), 1):
         m = LESSON_HEAD.match(line)
         if m:
-            cur = {"id": m.group(1), "title": m.group(2), "roles": [], "files": [], "from": "", "where": "", "text": [], "source": source}
+            cur = {"id": m.group(1), "title": m.group(2), "roles": [], "files": [], "from": "", "where": "", "check": "", "replaces": "",
+                   "replaced_by": "", "confirmed": "", "text": [], "source": source, "_file": source, "line": n}
             out.append(cur)
             continue
         if cur is None:
             continue
-        kv = re.match(r"^(roles|files|from|where)\s*:\s*(.*)$", line.strip(), re.I)
+        kv = re.match(r"^(roles|files|from|where|check|replaces|replaced_by|confirmed)\s*:\s*(.*)$", line.strip(), re.I)
         if kv and not cur["text"]:
             k, v = kv.group(1).lower(), kv.group(2).strip()
-            cur[k] = v if k in ("from", "where") else [x.strip() for x in re.split(r"[,\s]+", v) if x.strip()]
+            cur[k] = [x.strip() for x in re.split(r"[,\s]+", v) if x.strip()] if k in ("roles", "files") else v
             continue
         if line.strip() or cur["text"]:
             cur["text"].append(line.rstrip())
@@ -6449,6 +7696,7 @@ def parse_lessons(text, source=""):
 
 
 def all_lessons():
+    """The live lessons: a lesson the archive holds as replaced is gone, even from an installed .kit/lessons.md (M8)."""
     out = []
     for p in _kit_lessons_paths():
         try:
@@ -6456,7 +7704,20 @@ def all_lessons():
                 out += parse_lessons(fh.read(), os.path.relpath(p, ROOT))
         except OSError:
             continue
-    return out
+    gone = {x["id"] for x in archived_lessons() if x.get("replaced_by")}
+    return [x for x in out if x["id"] not in gone]
+
+
+def _lessons_archive():
+    return os.path.join(_resolve_memory_dir(), "archive", "lessons.md")
+
+
+def archived_lessons():
+    try:
+        with open(_lessons_archive(), encoding="utf-8") as fh:
+            return parse_lessons(fh.read(), os.path.relpath(_lessons_archive(), ROOT))
+    except OSError:
+        return []
 
 
 def _touches(globs, files):
@@ -6494,11 +7755,82 @@ def lessons_check():
         bad = [r for r in x["roles"] if r not in ROLES and r != "all"]
         if bad:
             err.append("lesson %s (%s): unknown role %s (roles: %s, all)" % (x["id"], x["source"], ", ".join(bad), ", ".join(ROLES)))
+    for x in les:
+        why = _led_call("check_error", x.get("check"))
+        if why:
+            err.append("lesson %s (%s): %s" % (x["id"], x["source"], why))
+        vague = _led_call("vague_remedy", x["text"], x.get("check"))
+        if vague:
+            err.append("lesson %s (%s): its remedy is %r: a lesson names the test, hook, refusal or code that keeps the mistake "
+                       "from coming back (`check:` under its heading)" % (x["id"], x["source"], vague))
     for i, rel in _doc_only_lessons(les):
         err.append("lesson %s lives only in %s: move it into the memory, tagged with its roles: "
                    "`python3 -I .kit/kit.py lesson add %s --roles <roles> --from \"%s %s\" --title ... --text ...`"
                    % (i, rel, i, rel, i))
     return err
+
+
+def _led_call(name, *args, **kw):
+    """A kit/ledger.py function, or None when this install has no ledger (an old copy)."""
+    led = _load_ledger_mod()
+    f = getattr(led, name, None) if led is not None else None
+    return f(*args, **kw) if f else None
+
+
+def _whole_file_lessons():
+    """The memory's lesson files written as one lesson a file (`lessons/<date>-<slug>.md`: symptom, cause, remedy; no
+    `## <id>:` heading): each is an entry, its id the file's name, its check a `check:` line in it, its date in its name."""
+    out = []
+    for p in sorted(glob.glob(os.path.join(_resolve_memory_dir(), "lessons", "*.md"))):
+        try:
+            with open(p, encoding="utf-8") as fh:
+                text = fh.read()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if parse_lessons(text):
+            continue
+        m = re.search(r"(?mi)^\s*check\s*:\s*(.+?)\s*$", text)
+        t = re.search(r"(?m)^#+\s*(.+?)\s*$", text)
+        out.append({"id": os.path.splitext(os.path.basename(p))[0], "title": t.group(1) if t else "", "roles": [], "files": [],
+                    "from": "", "where": "", "check": m.group(1) if m else "", "text": text.strip(),
+                    "source": os.path.relpath(p, ROOT), "_file": os.path.relpath(p, ROOT)})
+    return out
+
+
+def memory_entries():
+    """M7: every memory entry a check can hold: the lessons (a heading each, or one a file), and the ledger's live rows
+    (fields excepted)."""
+    out = list(all_lessons()) + _whole_file_lessons()
+    led = _load_ledger_mod()
+    if led is not None:
+        try:
+            rows = led.load_entries(_resolve_memory_dir(), kit_root=ROOT)
+        except (OSError, ValueError):
+            rows = []
+        out += [r for r in rows if r.get("status") == "active" and r.get("kind") in getattr(led, "CHECKED_KINDS", ())]
+    return out
+
+
+def memory_checks(run=False):
+    """[{id, status: ok|fail|unchecked, why, since, checks}] for every memory entry; run=True runs the tests and keeps
+    their results (.kit/run/memory-checks.json) for the resume and the hook, which never run one."""
+    led = _load_ledger_mod()
+    if led is None or not hasattr(led, "check_entry"):
+        return []
+    ents = memory_entries()
+    cache = led.read_checks_cache(ROOT)
+    res = [led.check_entry(ROOT, e, run=run, cache=cache) for e in ents]
+    if run:
+        led.write_checks_cache(ROOT, res, {e["id"]: led.entry_check_value(e) or "" for e in ents})
+    return res
+
+
+def memory_line():
+    """The orchestrator's one line: entries checked, failing, unchecked."""
+    led = _load_ledger_mod()
+    if led is None or not hasattr(led, "memory_line"):
+        return ""
+    return led.memory_line(memory_checks(run=False), led.read_checks_cache(ROOT).get("at", ""))
 
 
 def _doc_only_lessons(les):
@@ -6531,7 +7863,17 @@ def _refused_lines():
     return out
 
 
-def lesson_add(lid, roles, title, text, files=(), frm=""):
+def lesson_add(lid, roles, title, text, files=(), frm="", check="", replaces=""):
+    res = _lesson_add(lid, roles, title, text, files, frm, check)
+    if res.get("ok") and replaces:
+        r = memory_replace(res["lesson"], replaces)
+        res.update({"replaced": r} if r.get("ok") else {"error": r.get("error")})
+    return res
+
+
+def _lesson_add(lid, roles, title, text, files=(), frm="", check=""):
+    """A lesson into the memory. It names its check (M7): without one it is written "unchecked" and the answer proposes
+    one; a remedy that is only "be careful" with no check is refused."""
     roles = [r.strip().lower() for r in roles if r.strip()]
     if not roles:
         return {"error": "a lesson needs its roles (--roles %s): one no role reads is never read" % ",".join(ROLES)}
@@ -6541,6 +7883,20 @@ def lesson_add(lid, roles, title, text, files=(), frm=""):
     lid = re.sub(r"[^\w.-]+", "-", str(lid)).strip("-")
     if not lid or not str(title).strip() or not str(text).strip():
         return {"error": "a lesson needs an id, a title and its text"}
+    check = str(check or "").strip()
+    why = _led_call("check_error", check)
+    if why:
+        return {"error": why}
+    proposed = "" if check else (_led_call("propose_check", ROOT, title, text, list(files)) or "")
+    vague = _led_call("vague_remedy", "%s %s" % (title, text), check)
+    if vague:
+        return {"error": "the remedy is %r: name what keeps the mistake from coming back (a test, a hook, a refusal in a "
+                         "command, the code) with --check%s" % (vague, (", e.g. --check \"%s\"" % proposed) if proposed else ""),
+                "proposed_check": proposed}
+    if check:
+        r = _led_call("check_entry", ROOT, {"id": lid, "check": check}, run=False)
+        if r and r["status"] == "fail":
+            return {"error": "--check %s: %s" % (check, r["why"])}
     d = os.path.join(_resolve_memory_dir(), "lessons")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, "%s.md" % lid)
@@ -6549,18 +7905,268 @@ def lesson_add(lid, roles, title, text, files=(), frm=""):
         body.append("files: %s" % ", ".join(files))
     if frm:
         body.append("from: %s" % frm)
+    if check:
+        body.append("check: %s" % check)
+    body.append("confirmed: %s" % datetime.now(timezone.utc).strftime("%Y-%m-%d"))     # M8: dated from the day it is written
     body += ["", text.strip(), ""]
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(body))
-    return {"ok": True, "lesson": lid, "path": os.path.relpath(path, ROOT)}
+    out = {"ok": True, "lesson": lid, "path": os.path.relpath(path, ROOT)}
+    if not check:
+        out["unchecked"] = ("nothing runs it: it is given to sessions as unchecked. Add its check: a `check:` line under its "
+                            "heading%s" % ((", proposed: `check: %s`" % proposed) if proposed else ""))
+        out["proposed_check"] = proposed
+    return out
 
 
 def _lesson_lines(les):
     out = []
+    led = _load_ledger_mod()
+    note = getattr(led, "check_note", None) if led is not None else None
+    cache = led.read_checks_cache(ROOT) if note else {}
     for x in les:
-        out.append("- **%s** %s%s: %s" % (x["id"], x["title"], (" (files %s)" % ", ".join(x["files"])) if x["files"] else "",
-                                          x["text"].replace("\n", " ")))
+        out.append("- **%s** %s%s: %s%s" % (x["id"], x["title"], (" (files %s)" % ", ".join(x["files"])) if x["files"] else "",
+                                            x["text"].replace("\n", " "), note(ROOT, x, cache) if note else ""))
     return out or ["- (none tagged for this role)"]
+
+
+# ---------------------------------------------------------------- M8: replacing and forgetting in memory
+MEMORY_REVIEW_DAYS = 90
+MEMORY_REVIEW_POST = "q-memory-to-review"
+
+
+def _memory_review_days():
+    mem = (_kit_config().get("kit") or {}).get("memory") or {}
+    try:
+        return int(mem.get("review_days", MEMORY_REVIEW_DAYS))
+    except (TypeError, ValueError):
+        return MEMORY_REVIEW_DAYS
+
+
+def _lesson_file(lid):
+    """(path, lines, start, end) of the file holding lesson `lid`'s section, or None."""
+    for p in _kit_lessons_paths():
+        try:
+            with open(p, encoding="utf-8") as fh:
+                lines = fh.read().split("\n")
+        except OSError:
+            continue
+        for i, line in enumerate(lines):
+            m = LESSON_HEAD.match(line)
+            if m and m.group(1) == lid:
+                j = next((k for k in range(i + 1, len(lines)) if LESSON_HEAD.match(lines[k])), len(lines))
+                return p, lines, i, j
+    return None
+
+
+def _write_lines(path, lines):
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(lines))
+
+
+def _set_lesson_key(lid, key, value):
+    """Put `key: value` among lesson `lid`'s meta lines (replacing one there). False: no file of the memory holds it."""
+    hit = _lesson_file(lid)
+    if not hit:
+        return False
+    p, lines, i, j = hit
+    k = i + 1
+    while k < j and re.match(r"^(roles|files|from|where|replaces|replaced_by|confirmed)\s*:", lines[k].strip(), re.I):
+        if lines[k].strip().lower().startswith(key + ":"):
+            lines[k] = "%s: %s" % (key, value)
+            _write_lines(p, lines)
+            return True
+        k += 1
+    lines.insert(k, "%s: %s" % (key, value))
+    _write_lines(p, lines)
+    return True
+
+
+def memory_replace(winner, loser):
+    """`winner` stays, `loser` leaves the memory for the archive with `replaced_by: winner` (a lesson or a ledger entry
+    either side). A lesson leaves its file (the installed .kit/lessons.md keeps its text but `all_lessons` skips it)."""
+    if not winner or not loser or winner == loser:
+        return {"error": "replace needs two different ids: the one that wins, then the one that goes"}
+    led, mdir = _load_ledger_mod(), _resolve_memory_dir()
+    ledger_ids = {e["id"] for e in led.load_entries(mdir)} if led else set()
+    lessons = {x["id"] for x in all_lessons()}
+    if winner not in ledger_ids | lessons:
+        return {"error": "%s: no live lesson or ledger entry has that id" % winner}
+    if loser in ledger_ids and winner in ledger_ids:
+        return led.replace(mdir, winner, loser)
+    if loser in ledger_ids:                                          # a lesson wins over a ledger row
+        entries = led.load_entries(mdir)
+        led._retire(mdir, entries, loser, winner)
+        led.save_entries(mdir, entries)
+    elif loser in lessons:
+        hit = _lesson_file(loser)
+        if not hit:
+            return {"error": "%s: its file was not found" % loser}
+        p, lines, i, j = hit
+        section = [l for l in lines[i:j]]
+        while section and not section[-1].strip():
+            section.pop()
+        section.insert(1, "replaced_by: %s" % winner)
+        installed = os.path.normpath(p) == os.path.normpath(os.path.join(ROOT, ".kit", "lessons.md")) and not _is_kit_source_repo(ROOT)
+        rest = lines[:i] + lines[j:]
+        if not installed and not any(l.strip() for l in rest) and \
+                os.path.realpath(p).startswith(os.path.realpath(_resolve_memory_dir()) + os.sep):
+            os.remove(p)                                             # a memory file that held only it
+        elif not installed:                                          # the kit's update would put it back: the archive hides it
+            _write_lines(p, rest)
+        arch = _lessons_archive()
+        os.makedirs(os.path.dirname(arch), exist_ok=True)
+        old = open(arch, encoding="utf-8").read().rstrip("\n") if os.path.isfile(arch) else \
+            "# Lessons archive (replaced, each with its successor)"
+        with open(arch, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(old + "\n\n" + "\n".join(section) + "\n")
+    else:
+        return {"error": "%s: no live lesson or ledger entry has that id" % loser}
+    if winner in lessons:
+        _set_lesson_key(winner, "replaces", loser)
+    else:
+        entries = led.load_entries(mdir)
+        for e in entries:
+            if e["id"] == winner:
+                e["replaces"] = loser
+        led.save_entries(mdir, entries)
+    return {"ok": True, "kept": winner, "archived": loser}
+
+
+def _blame_dates(path):
+    """{line number: commit date (YYYY-MM-DD)} for a file, from one `git blame`; {} outside git."""
+    r = subprocess.run(["git", "-C", ROOT, "blame", "--line-porcelain", "--", os.path.relpath(path, ROOT)],
+                       capture_output=True, text=True)
+    out, n, when = {}, 0, ""
+    for line in r.stdout.splitlines() if r.returncode == 0 else []:
+        m = re.match(r"^[0-9a-f]{40} \d+ (\d+)", line)
+        if m:
+            n = int(m.group(1))
+        elif line.startswith("committer-time "):
+            when = datetime.fromtimestamp(int(line.split()[1]), tz=timezone.utc).strftime("%Y-%m-%d")
+        elif line.startswith("\t"):
+            out[n] = when
+    return out
+
+
+def memory_items():
+    """Every live entry of the memory, lessons and ledger rows alike, as {id, text, files, theme, source, confirmed}:
+    `confirmed` is its `confirmed:` date, else the date its `from:` names, else the day git last touched its heading."""
+    out, blames = [], {}
+    for x in all_lessons():
+        when = x.get("confirmed") or (x["from"] if re.search(r"\d{4}-\d{2}-\d{2}", x.get("from") or "") else "")
+        if not when:
+            p = os.path.join(ROOT, x["source"])
+            if p not in blames:
+                blames[p] = _blame_dates(p)
+            when = blames[p].get(x.get("line") or 0, "")
+            if not when and os.path.isfile(p):                       # not committed yet: the day the file was written
+                when = datetime.fromtimestamp(os.path.getmtime(p), tz=timezone.utc).strftime("%Y-%m-%d")
+        out.append({"id": x["id"], "text": "%s. %s" % (x["title"], x["text"]), "files": x["files"], "theme": "",
+                    "source": x["source"], "confirmed": when, "kind": "lesson"})
+    led = _load_ledger_mod()
+    if led:
+        out += [dict(i, kind="ledger", source=os.path.relpath(i["source"], ROOT) if i["source"] else "")
+                for i in led.entry_items(led.load_entries(_resolve_memory_dir(), kit_root=ROOT))]
+    return out
+
+
+def _guide_paths():
+    """The guides and memory files that may say what ranks first: CLAUDE.md, AGENTS.md and the other top-level .md,
+    docs/ (not the prompts), the kit's own guides (kit/ in the kit's repo, .kit/ in a project), the memory's .md."""
+    ps = glob.glob(os.path.join(ROOT, "*.md"))
+    ps += [p for p in glob.glob(os.path.join(ROOT, "docs", "**", "*.md"), recursive=True)
+           if os.sep + "prompts" + os.sep not in p and os.sep + "posts" + os.sep not in p]
+    kit_dir = os.path.join(ROOT, "kit") if _is_kit_source_repo(ROOT) else os.path.join(ROOT, ".kit")
+    ps += glob.glob(os.path.join(kit_dir, "*.md")) + glob.glob(os.path.join(kit_dir, "skills", "**", "*.md"), recursive=True)
+    mdir = _resolve_memory_dir()
+    ps += [p for p in glob.glob(os.path.join(mdir, "**", "*.md"), recursive=True) if os.sep + "archive" + os.sep not in p]
+    return sorted(set(ps))
+
+
+def memory_conflicts():
+    """What the memory says twice in disagreement: [{kind, ids|where, why, ask}] (M8). `contradiction`: two live entries
+    on the same subject, opposite verbs or one setting with two values; `still-live`: an entry another names in
+    `replaces:`; `authority`: two docs each ranking first; `repeat`: one authority claimed in several files."""
+    led = _load_ledger_mod()
+    if not led:
+        return []
+    items = memory_items()
+    out = []
+    live = {i["id"] for i in items}
+    for x in all_lessons():
+        if x.get("replaces") and x["replaces"] in live:
+            out.append({"kind": "still-live", "ids": [x["id"], x["replaces"]],
+                        "why": "%s replaces %s, which is still live" % (x["id"], x["replaces"]),
+                        "ask": "python3 -I .kit/kit.py lessons replace %s %s" % (x["id"], x["replaces"])})
+    for c in led.contradictions(items):
+        out.append({"kind": "contradiction", "ids": [c["a"], c["b"]], "why": c["why"],
+                    "where": [c["a_source"], c["b_source"]],
+                    "ask": "which one wins? `python3 -I .kit/kit.py lessons replace %s %s` (%s wins) or `... replace %s %s`"
+                           % (c["a"], c["b"], c["a"], c["b"], c["a"])})
+    for c in led.authority_conflicts(led.authority_claims(_guide_paths(), root=ROOT)):
+        out.append({"kind": "authority" if c["kind"] == "conflict" else "repeat", "where": c["where"], "why": c["why"],
+                    "ask": "which one ranks first? Keep that claim in one file, the others point to it"})
+    return out
+
+
+def memory_stale(days=None):
+    days = _memory_review_days() if days is None else int(days)
+    led = _load_ledger_mod()
+    return days, (led.stale(memory_items(), days) if led else [])
+
+
+def memory_keep(eid):
+    """`eid` still holds: a lesson gets `confirmed: <today>`, a ledger row `confirmed_at`."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if any(x["id"] == eid for x in all_lessons()):
+        return {"ok": True, "entry": eid, "confirmed": today} if _set_lesson_key(eid, "confirmed", today) else \
+            {"error": "%s: its file was not found" % eid}
+    led = _load_ledger_mod()
+    return led.keep(_resolve_memory_dir(), eid) if led else {"error": "ledger.py not found"}
+
+
+def memory_review_post(days=None, db_path=None):
+    """The entries nobody confirmed for more than `days` days, as one question post on the board (kept, not doubled:
+    an open one is updated). Nothing is deleted: the default is to keep them."""
+    days, old = memory_stale(days)
+    if not old:
+        return {"ok": True, "post": None, "count": 0, "days": days}
+    body = ("%d memory entries nobody confirmed for more than %d days (kit config `kit.memory.review_days`). Nothing "
+            "leaves the memory unless you say so.\n\n" % (len(old), days)) + "\n".join(
+        "- **%s** (%s, %s): %s. Still true: `python3 -I .kit/kit.py lessons keep %s`; replaced: `python3 -I .kit/kit.py "
+        "lessons replace <new> %s`" % (i["id"], i["source"] or i["kind"], ("%d days" % i["age"]) if i["age"] is not None
+                                        else "never dated", _short(i["text"], 110), i["id"], i["id"]) for i in old)
+    title = "Memory to review: %d entries unconfirmed for %d+ days" % (len(old), days)
+    cur = _all_posts(db_path).get(MEMORY_REVIEW_POST)
+    if cur and str(cur.get("status") or "open") == "open":
+        ok = _board_write("update", "posts", MEMORY_REVIEW_POST, {"title": title, "body": body, "updated_at": _now_z()})
+        return {"ok": ok, "post": MEMORY_REVIEW_POST, "count": len(old), "days": days, "updated": True}
+    deadline = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+    g = _post_gate()
+    doc = {"title": title, "body": body, "kind": "question", "column": "question", "options": ["Keep them all", "Review each"],
+           "default_option": "Keep them all", "deadline": deadline, "status": "open", "priority": 2, "train": "memory",
+           "from": "orchestrator", "created_at": _now_z(), "needs": "direction"}
+    err = g.check_post("q", doc, None, _kit_config())[2] if g else None
+    if err:
+        return {"error": err}
+    ok = _board_write("set", "posts", MEMORY_REVIEW_POST, doc)
+    return {"ok": ok, "post": MEMORY_REVIEW_POST, "count": len(old), "days": days} if ok else \
+        {"error": "the board did not take it (is the board server running?)"}
+
+
+def memory_check_text(days=None):
+    """`kit.py lessons check`'s report: refused lessons, then what disagrees (each with the question it asks), then the
+    count of entries waiting for a review."""
+    out = ["REFUSED: " + e for e in lessons_check()]
+    for c in memory_conflicts():
+        label = {"contradiction": "CONTRADICTS", "still-live": "STILL LIVE", "authority": "AUTHORITY", "repeat": "SAID TWICE"}[c["kind"]]
+        out.append("%s: %s. %s" % (label, c["why"], c["ask"][:1].upper() + c["ask"][1:]))
+    days, old = memory_stale(days)
+    if old:
+        out.append("REVIEW: %d entries unconfirmed for more than %d days (%s): `python3 -I .kit/kit.py lessons review --post` "
+                   "lists them on the board" % (len(old), days, ", ".join(i["id"] for i in old[:8]) + (", ..." if len(old) > 8 else "")))
+    return out
 
 
 def _changed_files(root=ROOT, base=None):
@@ -7131,17 +8737,23 @@ def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=
         return {"ok": False, "committed": False, "why": "refusing to checkpoint on branch %s (use a step branch)" % br}
     st = _git_run("status", "--porcelain", "--untracked-files=all")
     if st.returncode != 0 or not st.stdout.strip():
-        return {"ok": True, "committed": False, "branch": br, "why": "working tree clean"}
+        res = {"ok": True, "committed": False, "branch": br, "why": "working tree clean"}
+        if (push or k.get("checkpoint_push")) and _git_run("rev-list", "-1", "HEAD", "--not", "--remotes=origin").stdout.strip():
+            pushed = _checkpoint_push(br, _landing_mod())
+            return dict(res, **pushed) if isinstance(pushed, dict) else dict(res, pushed=pushed)
+        return res
     never = tuple((k.get("guard") or {}).get("never_add") or ()) + _CK_SECRETS
     # Stage tracked modifications and safe untracked files (skip secrets, oversized files, .kit/run/, .kit/board_data/)
     tracked = _git_run("diff", "--name-only").stdout.splitlines() + _git_run("diff", "--cached", "--name-only").stdout.splitlines()
     untracked = _git_run("ls-files", "--others", "--exclude-standard", "-z").stdout.split("\0")
-    to_add = []
+    to_add, left = [], []
     for f in sorted(set(x for x in tracked + untracked if x)):
         low = f.lower().replace("\\", "/")
         if low.startswith(".kit/run/") or low.startswith(".kit/board_data/"):
             continue
         if any(fnmatch.fnmatch(low, p.lower()) or fnmatch.fnmatch(os.path.basename(low), p.lower()) for p in never):
+            if not low.startswith(".kit/"):
+                left.append(f)
             continue
         fp = os.path.join(ROOT, f)
         if os.path.isfile(fp):
@@ -7158,8 +8770,17 @@ def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=
         return {"ok": False, "committed": False, "branch": br, "why": add_r.stderr.strip() or "git add failed"}
     if not _git_run("diff", "--cached", "--name-only").stdout.strip():
         return {"ok": True, "committed": False, "branch": br, "why": "nothing staged"}
+    la = _landing_mod()
+    if la and (push or k.get("checkpoint_push")):
+        # CL55: what would leave for GitHub is read first; a secret-looking value commits nothing and pushes nothing
+        hits = la.secret_hits(la.push_base("HEAD"), cached=True, cwd=ROOT)
+        if hits:
+            _git_run("reset", "-q", "--", *to_add)
+            return {"ok": False, "committed": False, "refused": True, "branch": br, "why": la.hits_text(hits)}
     label = str(post or os.environ.get("KIT_POST") or br)
     msg = "checkpoint(%s): %s" % (label, str(message or "save progress").strip()[:120])
+    if left:
+        msg += "\n\nLeft out (secret-named, never committed): %s" % ", ".join(left[:20])
     c_args = []
     if not _git_run("config", "user.name").stdout.strip():
         c_args += ["-c", "user.name=board kit"]
@@ -7176,11 +8797,37 @@ def checkpoint(post=None, message=None, push=False, quiet=False, on_step_branch=
         os.utime(stamp, None)
     except OSError:
         pass
-    pushed = False
-    if push or k.get("checkpoint_push"):
-        pr = _git_run("push", "-q", "-u", "origin", "HEAD", timeout=120)
-        pushed = pr.returncode == 0
-    return {"ok": True, "committed": True, "branch": br, "sha": sha, "message": msg, "pushed": pushed}
+    pushed = _checkpoint_push(br, la) if (push or k.get("checkpoint_push")) else False
+    if isinstance(pushed, dict):
+        return dict(pushed, committed=True, sha=sha, message=msg)
+    return {"ok": True, "committed": True, "branch": br, "sha": sha, "message": msg, "pushed": pushed, "left_out": left}
+
+
+def _landing_mod():
+    """.kit/landing.py as a module (its secret check), or None."""
+    for d in (os.path.join(ROOT, ".kit"), os.path.dirname(os.path.abspath(__file__)), os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "kit")):
+        f = os.path.join(d, "landing.py")
+        if os.path.isfile(f):
+            try:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("kit_landing_mod", f)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                mod.ROOT = ROOT
+                return mod
+            except Exception:
+                return None
+    return None
+
+
+def _checkpoint_push(br, la=None):
+    """The step's branch to origin, never forced; True, False (origin did not take it), or a refusal (a secret in commits
+    origin lacks: the session's own, made before this checkpoint)."""
+    if la:
+        hits = la.secret_hits(la.push_base("HEAD"), "HEAD", cwd=ROOT)
+        if hits:
+            return {"ok": False, "refused": True, "branch": br, "pushed": False, "why": la.hits_text(hits)}
+    return _git_run("push", "-q", "-u", "origin", "HEAD:refs/heads/%s" % br, timeout=120).returncode == 0
 
 
 def pieces_file(pid, p):
@@ -7214,6 +8861,19 @@ def subtask_lines(p, taking_over=False):
 
 
 def take_step_branch(p):
+    """The step's branch brought in (`_take_branch`), then its last save looked at (CL55)."""
+    lines = _take_branch(p)
+    br = str(p.get("branch") or "")
+    cur = _git_run("branch", "--show-current").stdout.strip()
+    if br and not any(x.startswith("## FIRST") for x in lines) and (cur == br or (_slug(str(p.get("part") or ""), 24) or "\0") in cur.lower()):
+        try:
+            lines += take_last_save(br)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+    return lines
+
+
+def _take_branch(p):
     """A part starts on the newest work of its step (CL44 item 13), whatever started it (agy, claude --bg -w, the web):
     when the post names a branch whose commits this checkout lacks, bring them in now (fast-forward, else a merge);
     when that cannot be done safely (uncommitted changes, a conflict), the first lines say so and what to run."""
@@ -7258,6 +8918,53 @@ def take_step_branch(p):
             return stop("a merge conflict, so nothing was changed")
     return ["## Your step's work is here: `%s` brought into this checkout (%s, %s -> %s)" % (
         ref, how, head, _git_run("rev-parse", "--short", "HEAD").stdout.strip()), ""]
+
+
+def mark_part_branch(pid, p):
+    """CL55: this clone's branch is a part's: the save hook commits its work there (CL44's checkpoint) and pushes it,
+    instead of a snapshot on wip/<branch>."""
+    cur = _git_run("branch", "--show-current").stdout.strip()
+    trunk = str((_kit_config().get("kit") or {}).get("main_branch") or "main")
+    if not cur or cur in (trunk, "main", "master", "board-mirror", "kit-usage") or cur.startswith("wip/"):
+        return
+    try:
+        path = os.path.join(ROOT, ".kit", "run", "part-branch.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"branch": cur, "post": pid, "step_branch": str(p.get("branch") or "")}, fh)
+    except OSError:
+        pass
+
+
+def take_last_save(br):
+    """CL55: a takeover starts from the newest of the step's branch and its last save (wip/<branch>, at origin or in this
+    clone), and says which. A save that continues this checkout's commit and is newer is put in the working tree."""
+    have = lambda x: _git_run("rev-parse", "--verify", "--quiet", x).returncode == 0  # noqa: E731
+    _git_run("fetch", "-q", "--no-tags", "origin", "+refs/heads/wip/%s:refs/remotes/origin/wip/%s" % (br, br), timeout=30)
+    saves = [x for x in ("refs/remotes/origin/wip/" + br, "refs/wip/" + br) if have(x)]
+    when = lambda x: int(_git_run("log", "-1", "--format=%ct", x).stdout.strip() or 0)  # noqa: E731
+    stamp = lambda x: datetime.fromtimestamp(when(x), timezone.utc).strftime("%Y-%m-%d %H:%M UTC")  # noqa: E731
+    head = _git_run("rev-parse", "--short", "HEAD").stdout.strip()
+    tree = _git_run("rev-parse", "HEAD^{tree}").stdout.strip()
+    if not saves:
+        return []                                         # no save of this step anywhere: its branch is all there is
+    fresh = [x for x in saves if _git_run("rev-parse", x + "^{tree}").stdout.strip() != tree and when(x) > when("HEAD")]
+    if not fresh:
+        last = max(saves, key=when)
+        return ["## Started from your step's branch `%s` (%s, %s): the newest; its last save: %s" % (
+            br, head, stamp("HEAD"), "`%s`, %s, older or the same" % (last.replace("refs/remotes/", "").replace("refs/", ""), stamp(last))), ""]
+    s = max(fresh, key=when)
+    name = s.replace("refs/remotes/", "").replace("refs/", "")
+    cont = _git_run("merge-base", "--is-ancestor", "HEAD", s).returncode == 0
+    clean = not _git_run("status", "--porcelain", "--untracked-files=no").stdout.strip()
+    if cont and clean and _git_run("restore", "--source", s, "--worktree", "--", ".").returncode == 0:
+        stat = _git_run("diff", "--shortstat").stdout.strip()
+        return ["## Started from your step's last save `%s` (%s), newer than its branch `%s` (%s, %s): its changes are in this "
+                "working tree, not committed (%s): read `git diff`, then commit what holds" % (name, stamp(s), br, head, stamp("HEAD"), stat or "?"), ""]
+    why = "uncommitted changes here" if not clean else "the branch has commits the save lacks"
+    return ["## Your step's last save `%s` (%s) is newer than its branch `%s` (%s, %s), and was not put in (%s): read "
+            "`git diff HEAD %s`, then `git restore --source %s --worktree -- <files>` for what holds" % (
+                name, stamp(s), br, head, stamp("HEAD"), why, s, s), ""]
 
 
 def continues_lines(p, session=None, pid=None):
@@ -7335,6 +9042,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
             out += ["", "## The record is git, and it is behind"] + ["- " + x for x in gl]
         out += split_lines(posts) + train_lines(posts)
         out += start_lines(posts, comments, session or whoami())
+        out += inherit_lines(posts) + unreached_lines(posts)
         out += owner_lines() + autonomy_lines()
         out += [""] + _launch_workflow()
         out += ["", "## Parts: their context and the save points",
@@ -7343,8 +9051,15 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "- At each check (your timer, a hand-over, a wake): a running part whose post has not changed for 30 min: "
                 "message it \"Save point: commit and push your work now, write in your post where you stopped.\" A part "
                 "not running and not complete: post status stalled, continue it from its branch.",
-                "- Before you answer the owner: this resume, under 15 minutes old (the brief guard refuses otherwise)."]
+                "- Before you answer the owner: this resume, under 15 minutes old (the brief guard refuses otherwise); run again "
+                "in this session, it prints only what changed since your last one, and that counts as fresh (`--full`: all of it)."]
+        al = audit_lines()
+        if al:
+            out += ["", "## Kit commands skipped (last 24 h; all of it: `kit.py usage audit --since <time>`)"] + al
         out += ["", "## Lessons for the orchestrator"] + _lesson_lines(lessons_for("orchestrator"))
+        ml = memory_line()
+        if ml:
+            out += ["", ml]
         out += _principle_lines("orchestrator")
         pref = os.path.join(_resolve_memory_dir(), "preferences.md")
         if os.path.isfile(pref):
@@ -7353,6 +9068,12 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         bad = _refused_lines()
         if bad:
             out += ["", "## Lessons refused (fix: they reach no role)"] + bad
+        try:
+            odd = [l for l in memory_check_text() if not l.startswith("REFUSED: ")]
+        except Exception as e:                       # a broken check never stops the orchestrator's resume
+            odd = ["- memory check failed: %s" % e]
+        if odd:
+            out += ["", "## Memory that disagrees or waits for a review (M8)"] + ["- " + l for l in odd[:8]]
     elif role == "part":
         g = _git_run("rev-parse", "--verify", "HEAD")
         if g.returncode != 0:
@@ -7370,6 +9091,8 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         p = posts[pid]
         rel = "docs/prompts/%s.md" % pid
         took = take_step_branch(p)
+        if db_path is None:                               # a test's board never marks this clone
+            mark_part_branch(pid, p)
         files = sorted(set(_changed_files()) | {str(a).split(" §")[0].strip("` ") for a in _as_list(p.get("artifacts"))})
         out += took + ["# Resume: part %s (post `%s`)" % (p.get("part") or pid, pid),
                 "%s · train `%s` · status %s%s" % (p.get("title") or pid, p.get("train") or "?", p.get("status") or "?",
@@ -7380,7 +9103,13 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 out.append("- %s: %s" % (k, "; ".join(map(str, _as_list(p[k])))[:400]))
         if len(out) and out[-1] == "## Your post now":
             out.append("- (nothing yet)")
-        out.append("- your Done goes to the orchestrator, `%s`" % ((posts.get("_orchestrator") or {}).get("session_id") or "named by no post yet"))
+        o = step_owner(p, posts)
+        out.append("- your Done goes to the orchestrator that owns your step, `%s`%s (see Where you report)" % (
+            o["address"] or "named by no post yet", (" on `%s`" % o["device"]) if o["device"] else ""))
+        if isinstance(p.get("orchestrator_unreached"), dict):
+            out.append("- orchestrator_unreached: %s (%s): wait for a claim; a message from the new owner names it" % (
+                p["orchestrator_unreached"].get("at"), p["orchestrator_unreached"].get("why")))
+        out += report_lines(pid, p, posts)
         out += held_lines(pid, p, session or whoami())
         out += continues_lines(p, session or whoami(), pid=pid)
         out += subtask_lines(dict(p, id=post))
@@ -7412,10 +9141,15 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         if lands_after_review():
             out += ["", "## When you are done", "- your branch reaches the trunk after its review: `end_session.py` pushes it, never onto the trunk"]
     elif role == "clerk":
-        orch = (posts.get("_orchestrator") or {}).get("session_id") or "(none on _orchestrator)"
+        od = posts.get("_orchestrator") or {}
+        orch = od.get("session_id") or "(none on _orchestrator)"
+        here = orchestrator_here()   # CL49: the clerk reports to the orchestrator that started it, on its own device
         out += ["# Resume: the clerk (comment routing only)", "",
                 "A comment on a post goes to the session that post names; none or not reachable: to the orchestrator.",
-                "", "## Session ids", "- orchestrator: %s" % orch]
+                "", "## Session ids", "- orchestrator: %s%s" % (orch, (" (device `%s`)" % od["device"]) if od.get("device") else ""),
+                "- reach it on this device (`%s`) only: a row with the same name on another machine, or a stale one, is not it; "
+                "the send fails: reply in the comment's thread \"Not passed: no orchestrator reached\" (`board_cli.py comments reply`) and go on" % (
+                    here.get("orchestrator_device") or my_device())]
         for pid, p in sorted(posts.items()):
             if pid.startswith("_") or not isinstance(p, dict) or not p.get("session_id"):
                 continue
@@ -7446,6 +9180,7 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
                 "- Its post says: %s" % (json.dumps(rp, ensure_ascii=False)[:500] if rp else "NO real-project result")]
         ft = field_text("review", "review", p.get("train"))
         out += ["", ft] if ft else []
+        out += report_lines(pid, p, posts, review=True)
         out += owner_lines()
         out += ["", "## Lessons for a review"] + _lesson_lines(lessons_for("review"))
         out += _principle_lines("review", p.get("train"))
@@ -7733,6 +9468,24 @@ def _usage_self():
         pass
 
 
+def audit_lines(n=3, hours=24):
+    """M11: resume --role orchestrator: the top n manual actions where a kit command exists, from the usage ledger
+    (`kit.py usage audit`), the last `hours`. [] when the ledger has none or cannot be read."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    script = next((p for p in (os.path.join(here, "usage.py"), os.path.join(here, "..", "scripts", "usage.py"))
+                   if os.path.isfile(p)), None)
+    if not script:
+        return []
+    try:
+        spec = importlib.util.spec_from_file_location("kit_usage_audit", script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M")
+        return mod.audit_top(mod.all_rows(ROOT), n=n, since=since, conf=mod.kit_conf(ROOT))
+    except Exception:
+        return []
+
+
 def main(argv=None):
     _usage_self()
     _argv = sys.argv[1:] if argv is None else list(argv)
@@ -7808,18 +9561,30 @@ def main(argv=None):
     s.add_argument("--on-step-branch", action="store_true")
     sp.add_parser("keep", help="the board here into git: committed and pushed")
     s = sp.add_parser("guide", help="a case of the orchestrator's guide (no case: their list)"); s.add_argument("case", nargs="?", default=None)
+    s = sp.add_parser("fresh", help="CL53: fetch origin; say when this checkout is behind its trunk or on a stale branch, "
+                      "and move the trunk forward when that loses nothing (once a session; --again: now)")
+    s.add_argument("--session", default=None); s.add_argument("--again", action="store_true")
     s = sp.add_parser("resume"); s.add_argument("--db", default=None); s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--session", default=None, help="your session id: resume flags an _orchestrator post naming another")
     s.add_argument("--role", choices=list(ROLES), default=None, help="what that role needs, nothing else (CL32)")
     s.add_argument("--post", default=None, help="--role part|review: the step's post (default: this branch's)")
+    s.add_argument("--full", action="store_true", help="the whole resume, not only what changed since this session's last one (M5)")
     s = sp.add_parser("lessons", help="the lessons a role needs (--role), or `check`: refuse untagged lessons and "
                       "lessons only a project doc holds")
-    s.add_argument("action", nargs="?", choices=["list", "check"], default="list"); s.add_argument("--role", choices=list(ROLES))
-    s.add_argument("--files", nargs="*", default=None)
+    s.add_argument("action", nargs="?", choices=["list", "check", "replace", "keep", "review"], default="list")
+    s.add_argument("ids", nargs="*", default=[], help="replace: the one that wins, then the one that goes; keep: the one still true")
+    s.add_argument("--role", choices=list(ROLES)); s.add_argument("--files", nargs="*", default=None)
+    s.add_argument("--days", type=int, default=None, help="check/review: unconfirmed for more than this (kit.memory.review_days)")
+    s.add_argument("--post", action="store_true", help="review: the list as one question post on the board")
+    s.add_argument("--ask", action="store_true", help="check: one question post: which one of each pair wins")
+    s.add_argument("--db", default=None)
     s = sp.add_parser("lesson", help="add a lesson to the memory, tagged with its roles")
     s.add_argument("action", choices=["add"]); s.add_argument("id"); s.add_argument("--roles", required=True)
     s.add_argument("--title", required=True); s.add_argument("--text", required=True)
     s.add_argument("--files", default=""); s.add_argument("--from", dest="frm", default="")
+    s.add_argument("--replaces", default="", help="the lesson or ledger entry this one replaces: it goes to the archive")
+    s.add_argument("--check", default="", help="what enforces it: test:<file>[::Class.test] | hook:<name> | code:<file>[#text] | "
+                   "refusal:<file>#<text> (`;` between several); without it the lesson is unchecked and a check is proposed")
     s = sp.add_parser("map", help="a map of the project from its code: overview, area cards, joins, map.json (--check: still true?)")
     s.add_argument("--root", default=None); s.add_argument("--out", default=None); s.add_argument("--config", dest="map_config", default=None)
     s.add_argument("--check", action="store_true"); s.add_argument("--no-generators", action="store_true")
@@ -7827,9 +9592,12 @@ def main(argv=None):
     s.add_argument("word", nargs="?", default=None)
     s = sp.add_parser("adopt", help="once: give every post made before the kit's trains its train (from its part)")
     s.add_argument("--dry-run", action="store_true"); s.add_argument("--db", default=None)
-    s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>...")
-    s.add_argument("action", choices=["pull", "load", "push", "sent", "pin", "status"]); s.add_argument("args", nargs="*")
+    s = sp.add_parser("artifact", help="an Artifact board: pull | load | push | sent <batch> | pin <coll/id=version>... | reconcile")
+    s.add_argument("action", choices=["pull", "load", "push", "sent", "pin", "status", "reconcile"]); s.add_argument("args", nargs="*")
+    s.add_argument("--no-push", action="store_true", help="reconcile: the git copy is not committed nor pushed")
+    s.add_argument("--branch", default=None, help="reconcile: the git copy's branch (default: the mirror's)")
     s.add_argument("--full", action="store_true", help="pull: every document, not only what changed")
+    s.add_argument("--post", default=None, help="pull: a first pull reads only this post's documents (M11)")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s = sp.add_parser("reconcile", help="the board here vs its git copy: the newer copy of each post and comment wins")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--branch", default=None)
@@ -7848,8 +9616,15 @@ def main(argv=None):
     s.add_argument("--web", action="store_true", default=None); s.add_argument("--cli-run", dest="web", action="store_false")
     s.add_argument("--model", default=None); s.add_argument("--reset", action="store_true")
     s.add_argument("--take", action="store_true", help="the step's other session ended (checked) or its person agreed: take it over")
+    s.add_argument("--anyway", default=None, help="R6: launch out of the queue's order; the reason is recorded on the post")
     s.add_argument("--board-url", default=None); s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     s.add_argument("--post-file", default=None, help=argparse.SUPPRESS)
+    s = sp.add_parser("claim", help="this orchestrator takes a step: its address on the post, the part and its review report to it (CL49)")
+    s.add_argument("post"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
+    s.add_argument("--json", action="store_true")
+    s = sp.add_parser("unreached", help="a part's report did not reach its orchestrator: its post says so, every resume lists it (CL49)")
+    s.add_argument("post"); s.add_argument("--why", default=""); s.add_argument("--board-url", default=None)
+    s.add_argument("--token", default=None); s.add_argument("--json", action="store_true")
     sp.add_parser("permission-mode", help="the permission mode the kit starts Claude Code sessions in")
     s = sp.add_parser("sub", help="a step's pieces, lines on its post: by number or title"); s.add_argument("post"); s.add_argument("title", nargs="+")
     s.add_argument("--why", default="", help="why a piece the task names is dropped"); s.add_argument("--known", action="store_true", help=argparse.SUPPRESS)
@@ -7867,6 +9642,10 @@ def main(argv=None):
     s.add_argument("--no-review", action="store_true"); s.add_argument("--db", default=None)
     s.add_argument("--keep-whole", default=None, help="why a step the split check flags must stay one part (recorded)")
     s.add_argument("--keep-train", default=None, help="why a step goes on a train the train check refuses (recorded)")
+    s.add_argument("--damage", default=None, help="R6: what was lost or put at risk, and who found it (a review, a done, "
+                   "the owner): the step goes to the top of the queue")
+    s.add_argument("--after", action="append", default=[], help="R6: a part this step waits on (it builds on its work)")
+    s.add_argument("--kind", choices=["bug", "feature"], default=None, help="R6: when the task's words do not say it")
     s.add_argument("--cli", choices=["agy", "claude"], default=None)
     s.add_argument("--board", default=None, help="an attached board's id (repos/<id>/ in the Artifact): the step goes "
                    "on its train (default: this board, or the one attached board that holds the train)")
@@ -7889,9 +9668,33 @@ def main(argv=None):
         configure(a.config)
     elif os.path.exists(os.path.join(ROOT, ".kit", "config.json")):  # an installed kit: <project>/.kit/kit.py
         configure(os.path.join(ROOT, ".kit", "config.json"))
+    if a.cmd == "fresh":
+        sess = a.session
+        if not sess and not sys.stdin.isatty():      # a SessionStart line of its own: Claude Code's payload on stdin
+            try:
+                sess = str((json.loads(sys.stdin.read() or "{}") or {}).get("session_id") or "") or None
+            except (ValueError, OSError, AttributeError):
+                sess = None
+        lines, _ = checkout_fresh() if a.again and not _is_web() else checkout_fresh_once(session=sess)
+        if lines:
+            print("\n".join(lines))
+        return 0
+    if a.cmd == "resume" and not getattr(a, "db", None):
+        # CL53: before anything else, this checkout is on the newest code (or the first line says why not)
+        try:
+            lines, _ = checkout_fresh_once(session=getattr(a, "session", None))
+        except Exception:
+            lines = []
+        if lines:
+            print("\n".join(lines) + "\n")
     m = mirror_dir(a)
     if a.cmd in STALE_GATED and not getattr(a, "db", None):   # --db: a named database, not the Artifact's copy
         why = stale_copy()
+        if why and a.cmd == "resume" and getattr(a, "role", "") == "part" and getattr(a, "post", None) and attached_board():
+            st = _art_state()                          # M11: the first pull here reads only this post's documents
+            if st.get("scope_post") != a.post:
+                st["scope_post"] = a.post
+                _art_save(st)
         if why:
             if a.cmd == "resume" and getattr(a, "role", "") == "part" and getattr(a, "post", None):
                 # a part starts before its board is loaded here: its task is in git, and how to load the board is in how it works
@@ -8007,6 +9810,13 @@ def main(argv=None):
         print(portfolio_summary(config_path=a.portfolio_config, roots=a.roots), end="")
         return 0
     if a.cmd == "queue":
+        if not a.runner and not a.for_owner:          # R6: the steps, ranked, each place with its why
+            posts = _all_posts(a.db)
+            print(queue_text(posts), end="")
+            cards = queue_cards(m, db_path=a.db, unblocked_only=a.unblocked)
+            if not cards.endswith(": 0 open cards"):
+                print("\n# Cards for a runner or a person\n" + cards)
+            return 0
         print(queue_cards(m, runner=a.runner, for_owner=a.for_owner, db_path=a.db, unblocked_only=a.unblocked))
         return 0
     if a.cmd == "search":
@@ -8022,7 +9832,8 @@ def main(argv=None):
                 with open(a.task_file, encoding="utf-8") as fh:
                     task = fh.read()
             res = step_new(a.train, a.part, a.title or a.part, task=task, parent=a.parent, sources=a.source,
-                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board, keep_whole=a.keep_whole, keep_train=a.keep_train)
+                           model=a.model, review=not a.no_review, db_path=a.db, cli=a.cli, board=a.board, keep_whole=a.keep_whole, keep_train=a.keep_train,
+                           damage=a.damage, after=a.after, kind=a.kind)
         elif a.action == "open":
             res = {"steps": step_open(a.db)}
         elif a.action == "find":
@@ -8084,9 +9895,15 @@ def main(argv=None):
         print(msg)
         return rc
     if a.cmd == "artifact":
+        if a.action in ("pull", "load", "push", "sent", "pin") and not _is_web() and not os.environ.get("KIT_ARTIFACT_ON_COMPUTER"):
+            # CL51 (the owner's rule): CL44's local part ran `artifact load` because done asked it to, and wrote the
+            # Artifact's older copies over 11 newer posts of the local board
+            print("not on a computer: the Artifact is the Claude Code web session's. Here the local board is the board "
+                  "(the git copy, board-mirror, carries it); the web session reconciles its Artifact with GitHub.")
+            return 2
         try:
             if a.action == "pull":
-                print(artifact_pull(full=a.full), end="")
+                print(_pull_record(artifact_pull(full=a.full, post=a.post)), end="")
             elif a.action == "load":
                 r = artifact_load(url=a.board_url, token=a.token)
                 print("Loaded from the Artifact: %d taken, %d kept from here (unsent), %d merged field by field. "
@@ -8100,11 +9917,27 @@ def main(argv=None):
                 for u in r.get("unmerged") or []:
                     print("NOT MERGED (rows without a key changed on both sides; this copy kept, its pin will refuse): " + u)
                 print(artifact_blobs_text(r), end="")
+            elif a.action == "reconcile":
+                if not _is_web() and not os.environ.get("KIT_ARTIFACT_RECONCILE_LOCAL"):
+                    print("artifact reconcile: not in a local session (a computer reconciles its own board with git: "
+                          "`kit.py reconcile`); it runs at a web session's start.")
+                    return 0
+                with _sync_lock(m) if os.path.isdir(m) else contextlib.nullcontext():
+                    # a review, a check or KIT_NO_BOARD_PUSH never writes the git copy (web_takeover.owns_board's rule)
+                    quiet = str(os.environ.get("KIT_ROLE") or "").strip().lower() in ("review", "check", "consultant") or \
+                        str(os.environ.get("KIT_NO_BOARD_PUSH") or "").lower() in ("1", "true", "yes")
+                    r = artifact_reconcile(m, url=a.board_url, token=a.token, branch=a.branch, push=not (a.no_push or quiet))
+                print(artifact_reconcile_line(r))
+                for u in r["loaded"].get("unmerged") or []:
+                    print("NOT MERGED (rows without a key changed on both sides; this copy kept, its pin will refuse): " + u)
+                print(artifact_push_text(r["push"]), end="")
             elif a.action == "push":
-                print(artifact_push_text(artifact_push(url=a.board_url, token=a.token)), end="")
+                print(artifact_push_text(_pending_record(artifact_push(url=a.board_url, token=a.token))), end="")
             elif a.action == "sent":
                 print("recorded: %d writes" % sum(artifact_sent(p) for p in a.args))
                 if not glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")):      # the last batch: git, the record
+                    with contextlib.suppress(OSError):
+                        os.remove(os.path.join(_art_dir(), "pending.json"))       # M11: nothing out, reads open again
                     print(keep(m)[0])
             elif a.action == "pin":
                 rep = []
@@ -8167,6 +10000,11 @@ def main(argv=None):
         # the _orchestrator check is the orchestrator's (a part's own session is never named there)
         sess = a.session or (os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
                              if os.environ.get("KIT_ROLE") == "orchestrator" else None)
+        dsess = sess or a.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("KIT_SESSION_ID")
+        delta = resume_delta(m, role=a.role, session=dsess, db_path=a.db, cli=a.cli, full=a.full)
+        if delta is not None:
+            print(delta, end="")
+            return 0
         if a.role:
             try:
                 print(resume_role(m, a.role, post=a.post, db_path=a.db, cli=a.cli, session=sess), end="")
@@ -8180,13 +10018,54 @@ def main(argv=None):
     if a.cmd == "lessons":
         if a.action == "check":
             err = lessons_check()
-            print("\n".join(["REFUSED: " + e for e in err]) if err else "OK: every lesson is in the memory, tagged with its roles")
-            return 1 if err else 0
+            res = memory_checks(run=True)
+            bad = [r for r in res if r["status"] == "fail"]
+            err += ["%s: its check fails or what it names is gone: %s" % (r["id"], r["why"]) for r in bad]
+            odd = [l for l in memory_check_text(a.days) if not l.startswith("REFUSED: ")]
+            print("\n".join(["REFUSED: " + e for e in err] + odd) if err or odd else
+                  "OK: every lesson is in the memory, tagged with its roles, every check passes, nothing in it disagrees")
+            for r in res:
+                if r["status"] == "unchecked":
+                    print("UNCHECKED: %s since %s: nothing runs it (add `check:` naming its test, hook, refusal or code)" % (r["id"], r["since"]))
+            if res:
+                print(memory_line())
+            if a.ask:
+                pairs = [c for c in memory_conflicts() if c["kind"] in ("contradiction", "authority")]
+                if pairs:
+                    deadline = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+                    body = "Two live rules that disagree: a session would meet both. Until you choose, both stay, flagged.\n\n" + \
+                        "\n".join("- %s. %s" % (c["why"], c["ask"]) for c in pairs)
+                    print(json.dumps(ask("Memory: %d pair(s) disagree, which one wins?" % len(pairs), body,
+                                         ["Leave both flagged", "I answer under the post"], "Leave both flagged", deadline,
+                                         needs="direction", train="memory", priority=2), ensure_ascii=False))
+            return 1 if err or [l for l in odd if not l.startswith("REVIEW:")] else 0
+        if a.action == "replace":
+            if len(a.ids) != 2:
+                print(json.dumps({"error": "lessons replace <the one that wins> <the one that goes>"}))
+                return 2
+            res = memory_replace(a.ids[0], a.ids[1])
+            print(json.dumps(res, ensure_ascii=False))
+            return 1 if res.get("error") else 0
+        if a.action == "keep":
+            res = [memory_keep(i) for i in a.ids] or [{"error": "lessons keep <id>...: the entries still true"}]
+            print(json.dumps(res if len(res) > 1 else res[0], ensure_ascii=False))
+            return 1 if any(r.get("error") for r in res) else 0
+        if a.action == "review":
+            if a.post:
+                res = memory_review_post(a.days, db_path=a.db)
+                print(json.dumps(res, ensure_ascii=False))
+                return 1 if res.get("error") else 0
+            days, old = memory_stale(a.days)
+            print("\n".join("- %s (%s, %s): %s" % (i["id"], i["source"] or i["kind"], ("%d days" % i["age"]) if i["age"] is not None
+                                                   else "never dated", _short(i["text"], 100)) for i in old)
+                  or "(nothing unconfirmed for more than %d days)" % days)
+            return 0
         les = lessons_for(a.role, a.files) if a.role else all_lessons()
         print("\n".join(_lesson_lines(les)))
         return 0
     if a.cmd == "lesson":
-        res = lesson_add(a.id, a.roles.split(","), a.title, a.text, [f for f in a.files.split(",") if f.strip()], a.frm)
+        res = lesson_add(a.id, a.roles.split(","), a.title, a.text, [f for f in a.files.split(",") if f.strip()], a.frm, a.check,
+                         replaces=a.replaces)
         print(json.dumps(res, ensure_ascii=False))
         return 1 if res.get("error") else 0
     if a.cmd == "commands":
@@ -8200,9 +10079,16 @@ def main(argv=None):
             return 2
         print(adopt_text(r), end="")
         return 0
+    if a.cmd in ("claim", "unreached"):
+        r = (claim(a.post, url=a.board_url, token=a.token) if a.cmd == "claim"
+             else unreached(a.post, why=a.why, url=a.board_url, token=a.token))
+        print(json.dumps({k: v for k, v in r.items() if k != "data"}, ensure_ascii=False, indent=1) if a.json else owner_text(a.cmd, r), end="")
+        if a.json:
+            print()
+        return 0 if r.get("ok") else 1
     if a.cmd == "launch":
         r = launch(a.post, url=a.board_url, token=a.token, web=a.web, session_id=a.session_id, model=a.model, reset=a.reset,
-                   post_file=a.post_file, take=a.take)
+                   post_file=a.post_file, take=a.take, anyway=a.anyway)
         print(field_text("launch", "orchestrator"), file=sys.stderr)
         print(json.dumps(r, ensure_ascii=False, indent=1) if a.json else launch_text(r), end="" if not a.json else "\n")
         return 0 if r.get("ok") else 1

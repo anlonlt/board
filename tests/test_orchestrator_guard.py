@@ -32,6 +32,14 @@ class Project(unittest.TestCase):
         json.dump({"prompt": "Your prompt is docs/prompts/%s.md: read it and do it." % pid, "at": time.time()},
                   open(os.path.join(d, pid + ".json"), "w"))
 
+    def pulled(self, *calls, root=None, at=None):
+        """M11: what `kit.py artifact pull` printed (its record), so the guard lets those whole-collection reads pass."""
+        d = os.path.join(root or self.proj, ".kit", "run", "artifact")
+        os.makedirs(d, exist_ok=True)
+        json.dump({"v": 2, "at": time.time() if at is None else at,
+                   "calls": [{"action": a, "collection": c, "where": None, "limit": None} for a, c in calls]},
+                  open(os.path.join(d, "pull.json"), "w"))
+
     def run_hook(self, tool, ti, role="orchestrator", prompt=None):
         env = {k: v for k, v in os.environ.items() if k not in ("KIT_ROLE", "HARMONIZE_ROLE")}
         env["CLAUDE_PROJECT_DIR"] = self.proj
@@ -55,7 +63,16 @@ class OrchestratorGuard(Project):
         rc, _ = self.run_hook("ArtifactData", {"action": "query", "collection": "repos/board/comments", "query": {"limit": 1000}})
         self.assertEqual(rc, 2)
         kit_pull = os.path.join(self.proj, ".kit", "run", "artifact", "in")
+        # M11: the pull's folder alone no longer passes (a hand-made list copied it); a call the pull printed does
+        rc, err = self.run_hook("ArtifactData", {"action": "list", "collection": "posts", "out_dir": kit_pull})
+        self.assertEqual(rc, 2)
+        self.assertIn("a whole collection is read only through the kit", err)
+        self.pulled(("list", "posts"))
         self.assertEqual(self.run_hook("ArtifactData", {"action": "list", "collection": "posts", "out_dir": kit_pull})[0], 0)
+        self.assertEqual(self.run_hook("ArtifactData", {"action": "list", "collection": "comments", "out_dir": kit_pull})[0], 2)
+        self.assertEqual(self.run_hook("ArtifactData", {"action": "list", "collection": "posts", "out_dir": "/tmp/x"})[0], 2)
+        self.pulled(("list", "posts"), at=time.time() - 31 * 60)          # printed more than 30 minutes ago
+        self.assertEqual(self.run_hook("ArtifactData", {"action": "list", "collection": "posts", "out_dir": kit_pull})[0], 2)
         self.assertEqual(self.run_hook("ArtifactData", {"action": "query", "collection": "comments",
                                                         "query": {"where": [["thread_id", "==", "t"]], "limit": 1}})[0], 0)
         self.assertEqual(self.run_hook("ArtifactData", {"action": "get", "collection": "posts", "doc_id": "X"})[0], 0)
@@ -123,6 +140,7 @@ class OrchestratorGuard(Project):
                                                 "query": {"where": [["post_id", "==", "x"]], "limit": 5}})[0], 0, coll)
             self.assertEqual(self.run_hook(ad, {"action": "get", "collection": coll, "doc_id": "x"})[0], 0, coll)
             pull = os.path.join(self.proj, ".kit", "run", "artifact", "in")
+            self.pulled(("list", coll))
             self.assertEqual(self.run_hook(ad, {"action": "list", "collection": coll, "out_dir": pull})[0], 0, coll)
         # a malformed limit is a broad read, not a crash that lets it through
         self.assertEqual(self.run_hook(ad, {"action": "query", "collection": "posts",
@@ -210,6 +228,7 @@ class LaunchRepo(Project):
         try:
             ad = "ArtifactData"
             pull = os.path.join(clone, ".kit", "run", "artifact", "in")
+            self.pulled(("list", "repos/board/comments"), root=clone)
             self.assertEqual(self.run_hook(ad, {"action": "list", "collection": "repos/board/comments", "out_dir": pull})[0], 0)
             out = os.path.join(clone, ".kit", "run", "artifact", "out", "docs", "0000.json")
             self.assertEqual(self.run_hook(ad, {"action": "batch", "writes": [

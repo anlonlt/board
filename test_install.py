@@ -148,7 +148,8 @@ with tempfile.TemporaryDirectory() as d:
     check("`local` maps the agy hooks onto Claude Code tools (Bash, SendMessage), no Artifact or other cloud-session matchers",
           ("PreToolUse", "Bash") in loc_matchers and ("PreToolUse", say_pre) in loc_matchers
           and ("PostToolUse", "SendMessage|Bash") in loc_matchers and ("PreCompact", None) in loc_matchers
-          and not any(m and ("Artifact" in m or ("claude-code-remote" in m and m != say_pre)) for _, m in loc_matchers))
+          and not any(m and ((("Artifact" in m) and (ev, m) != ("PreToolUse", "ArtifactData"))   # M11: the board guard
+                              or ("claude-code-remote" in m and m != say_pre)) for ev, m in loc_matchers))
     st_loc_all = json.load(open(os.path.join(t_loc, ".claude", "settings.json")))
     check("the Claude Code CLI install: context reset (.kit/handover.py, Stop hook) and the task list as the train (hook + task tools on)",
           os.path.isfile(os.path.join(t_loc, ".kit", "handover.py"))
@@ -164,7 +165,8 @@ with tempfile.TemporaryDirectory() as d:
           and "## The post format" in board_md and "## Which feature for what" in board_md and "board_cli.py reply" in board_md
           and {k: v for k, v in cfg_loc.get("review", {}).items() if k != "since"} == {"auto": "all", "train_every": 4} and cfg_loc["review"].get("since") and cfg_loc.get("post_body_max") == 1500)
     orch_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "orchestrator.md"), encoding="utf-8").read()
-    cards_cli = not os.path.exists(os.path.join(t_loc, ".claude", "agents", "kit-cards.md"))   # no cards agent on the CLI
+    # 38b1803: the web's cards agent is installed in every repo (any repo can be opened on the web); the CLI guide never calls it
+    cards_cli = os.path.exists(os.path.join(t_loc, ".claude", "agents", "kit-cards.md"))
     clerk_cli = open(os.path.join(t_loc, ".kit", "claude-cli", "clerk.md"), encoding="utf-8").read()
     check("the Claude Code CLI orchestrator starts a haiku clerk session and parts as named background sessions",
           "claude --bg -n harmonize-clerk --model haiku --autocompact 120000 --permission-mode \"$(python3 -I .kit/kit.py permission-mode)\"" in orch_cli

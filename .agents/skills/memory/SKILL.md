@@ -30,7 +30,7 @@ before-compaction.md      written by kit_pre_compact.py on Stop; gitignored
 An older project's `state/<workstream>.md`, `awaits.md` and `issues/` are read by nobody: `python3 -I .kit/kit.py compact` archives them once into `archive/` (post any open issue on the board first).
 
 ## Lesson
-A mistake that cost time: `lessons/<date>-<slug>.md`: the symptom (words someone would grep), the cause, the remedy. A lesson whose remedy is "be careful" is not done: change the tool, the hook or the prompt so the mistake cannot recur, and name that change. `grep -ril '<symptom>' <memory dir>/lessons/` before diagnosing anything twice.
+A mistake that cost time: `lessons/<date>-<slug>.md`: the symptom (words someone would grep), the cause, the remedy. A lesson whose remedy is "be careful" is not done: change the tool, the hook or the prompt so the mistake cannot recur, and name that change. Name it under the lesson's heading: `check: test:<file>[::Class.test] | hook:<name> | code:<file>[#text] | refusal:<file>#<text>`; `kit.py lessons check` runs every check and flags one whose test is gone or fails or whose code no longer exists; a lesson with none reaches sessions as "unchecked since <date>", never as certain (`kit.py lesson add` refuses a "be careful" remedy and proposes a check). `grep -ril '<symptom>' <memory dir>/lessons/` before diagnosing anything twice.
 
 ## Save and hand-over
 Your post carries where your step stands (`.kit/BOARD.md`). Memory changes only for a lesson, the workflow, a preference or an open timer; commit it, then `python3 -I .kit/end_session.py`.

@@ -11,6 +11,14 @@ comparison and optimization pre/post kit updates and changes."
     python3 -I .kit/usage.py push                     the local rows onto the ledger branch (origin/kit-usage)
     python3 -I .kit/usage.py compare --before A --after B [--role part] [--json]
     python3 -I .kit/usage.py show [--session S]       the rows, one line each
+    python3 -I .kit/usage.py show --commands [--role R] [--transcripts '~/.claude/projects/*/*.jsonl']
+                                                      M6: top commands by cost per role, runs repeated in 3+ sessions
+    python3 -I .kit/usage.py compare --before A --after B --commands   M6: each command's carry $ per session
+
+M6, cost per command: every tool result's size (characters, tokens estimated at 4 characters each) is counted under
+its command (`kit.py resume`, `kit.py post`, `tests`, `git status`, `Read`, `ArtifactData list`, ...), with its carry:
+its tokens x the API calls that followed it (until a compaction dropped it), at the cache read price. A row keeps
+`commands` (totals per command) and `cmd_seq` (the first 600 results, in order) for the repeated runs.
 
 Sources, measured, never estimated:
   * the Claude Code transcript (`~/.claude/projects/<dir>/<session>.jsonl`, the hook payload's transcript_path) and
@@ -239,6 +247,8 @@ def parse_transcript(path, conf=None, depth=0):
     agy_sub_meta = []
     agy_children = []
     seen_agy_children = set()
+    seen_mids, results, last_model = set(), [], None   # M6: each tool result, the calls that followed it
+    roles_run = Counter()                              # M11: the roles the session's own commands say it played
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line_no, line in enumerate(fh):
             try:
@@ -279,6 +289,7 @@ def parse_transcript(path, conf=None, depth=0):
                             sent_chars += len(str(inp.get("Message") or inp.get("message") or ""))
                         elif name == "run_command":
                             cmd_str = str(inp.get("CommandLine") or inp.get("command") or "")
+                            roles_run.update(roles_in(cmd_str))
                             if TEST_CMD.search(cmd_str):
                                 board["tests_run"] += 1
                             for script, sub in KIT_CMD.findall(cmd_str):
@@ -331,11 +342,16 @@ def parse_transcript(path, conf=None, depth=0):
                 branches[e["gitBranch"]] += 1
             if e.get("type") == "system" and e.get("subtype") == "compact_boundary" or e.get("isCompactSummary"):
                 compactions += 1
+                for res in results:                  # a compaction drops what was in the context
+                    if res["end"] is None:
+                        res["end"] = len(seen_mids)
             m = e.get("message") if isinstance(e.get("message"), dict) else {}
             if e.get("type") == "assistant":
                 mid = m.get("id") or e.get("uuid")
                 if m.get("usage") and m.get("model") != "<synthetic>":
                     calls[mid] = (m.get("model"), m["usage"])
+                    seen_mids.add(mid)
+                    last_model = m.get("model")
                 for b in m.get("content") or []:
                     if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id") not in tool_name:
                         name = b.get("name") or "?"
@@ -344,6 +360,7 @@ def parse_transcript(path, conf=None, depth=0):
                         inp = b.get("input") or {}
                         if name == "ArtifactData":
                             act = inp.get("action") or "?"
+                            roles_run.update(roles_in_write(inp))
                             board["artifact_" + act] += 1
                             if act in ("set", "update", "batch", "str_replace", "delete"):
                                 board["write_bytes"] += len(json.dumps(inp, ensure_ascii=False))
@@ -354,6 +371,7 @@ def parse_transcript(path, conf=None, depth=0):
                             sent += 1
                             sent_chars += len(str(inp.get("message") or ""))
                         elif name == "Bash":
+                            roles_run.update(roles_in(inp.get("command")))
                             if TEST_CMD.search(str(inp.get("command") or "")):
                                 board["tests_run"] += 1
                             for script, sub in KIT_CMD.findall(str(inp.get("command") or "")):
@@ -366,6 +384,9 @@ def parse_transcript(path, conf=None, depth=0):
                     for b in c:
                         if isinstance(b, dict) and b.get("type") == "tool_result":
                             name, inp = tool_name.get(b.get("tool_use_id"), ("?", {}))
+                            chars = len(_text([b]))
+                            results.append({"key": cmd_key(name, inp), "chars": chars, "at": len(seen_mids),
+                                            "end": None, "model": last_model, "note": cmd_note(name, inp)})
                             if name == "ArtifactData" and (inp.get("action") in ("get", "list", "query")):
                                 board["read_bytes"] += len(_text([b]))
                             elif name == "Bash" and "board_cli.py" in str(inp.get("command") or ""):
@@ -431,6 +452,10 @@ def parse_transcript(path, conf=None, depth=0):
         "board": {k: v for k, v in board.items() if k != "tests_run"}, "tests_run": board.get("tests_run", 0),
         "compactions": compactions, "first_prompt": prompts[0] if prompts else (msg_prompts[0] if msg_prompts else ""),
     }
+    if roles_run:
+        row["roles_run"] = dict(roles_run)
+    commands, seq = command_costs(results, len(seen_mids), conf)
+    row["commands"], row["cmd_seq"] = commands, seq[:SEQ_KEEP]
     subs = []
     if depth == 0:
         sdir = os.path.join(os.path.dirname(path), os.path.basename(path)[:-6], "subagents")
@@ -445,6 +470,7 @@ def parse_transcript(path, conf=None, depth=0):
                          "description": meta.get("description"), "model": sub["model"],
                          "api_calls": sub["api_calls"], "tokens": sub["tokens"], "cost_usd": sub["cost_usd"],
                          "tool_calls": sub["tool_calls"], "tools": sub["tools"], "context_peak": sub["context_peak"]})
+            add_commands(commands, sub.get("commands"))
         abs_self = os.path.abspath(path)
         for cid, cpath, meta in agy_children:
             if not cpath or not os.path.isfile(cpath) or os.path.abspath(cpath) == abs_self:
@@ -465,6 +491,389 @@ def parse_transcript(path, conf=None, depth=0):
     return row
 
 
+# ---------------------------------------------------------------- M6: what each command costs
+
+SEQ_KEEP = 600            # the command sequence kept on a row (the first N results)
+CHARS_PER_TOKEN = 4.0     # the estimate: a token is about 4 characters of English or code
+_LEAD = re.compile(r"^\s*(?:(?:cd|export|source|\.)\s+[^&;|]*?(?:&&|;)\s*|[A-Z_][A-Z0-9_]*=\S*\s+)+")
+
+
+def bash_key(cmd):
+    """A shell command -> its command: `kit.py resume`, `tests`, `git status`, `py:usage.py`, `sh:grep`."""
+    cmd = str(cmd or "")
+    m = KIT_CMD.search(cmd)
+    if m:
+        return m.group(1) + (" " + m.group(2) if m.group(2) else "")
+    if TEST_CMD.search(cmd):
+        return "tests"
+    words = _LEAD.sub("", cmd).split()
+    if not words:
+        return "sh"
+    w0 = os.path.basename(words[0])
+    if w0 == "git":
+        sub = next((w for w in words[1:] if not w.startswith("-") and not re.fullmatch(r"\S+=\S*|/\S+", w)), "")
+        return ("git " + sub).strip()
+    if re.fullmatch(r"python[0-9.]*|node", w0):
+        script = next((w for w in words[1:] if not w.startswith("-")), "")
+        script = "stdin" if not script or script.startswith("<") else os.path.basename(script)
+        return ("py:" if w0.startswith("python") else "node:") + script
+    return "sh:" + w0
+
+
+def cmd_key(name, inp):
+    """One tool call -> the command it is counted under."""
+    inp = inp if isinstance(inp, dict) else {}
+    if name == "Bash":
+        return bash_key(inp.get("command"))
+    if name == "run_command":
+        return bash_key(inp.get("CommandLine") or inp.get("command"))
+    if name == "ArtifactData":
+        return "ArtifactData " + str(inp.get("action") or "?")
+    if name == "Read":
+        return "Read"
+    if name.startswith("mcp__"):
+        return "mcp:" + name.split("__")[-1]
+    return name
+
+
+# M11: what a call touched (the audit needs the board's files and collections, not only the command's name)
+BOARD_PATH = re.compile(r"(\.kit/run/artifact/\S+|\.kit/board_data/\S+|\.kit/BOARD\.md|(?:^|[\s'\"/])board/(?:posts|comments)/\S+"
+                        r"|board-mirror/\S+)")
+ORCH_CMD = re.compile(r"\.kit/kit\.py\s+(?:launch|land)\b|\.kit/kit\.py\s+resume\b[^\n|;&]*--role[ =]orchestrator\b")
+ROLE_CMD = re.compile(r"\.kit/kit\.py\s+resume\b[^\n|;&]*--role[ =](part|clerk|review)\b")
+ORCH_WRITE = re.compile(r"\.kit/board_cli\.py\s+(?:set|update)\s+posts\s+_orchestrator\b")
+
+
+def roles_in(cmd):
+    """The roles a shell command says its session plays: `kit.py resume --role orchestrator`, `kit.py launch|land`
+    (only the orchestrator launches and lands steps), a write of the `_orchestrator` post; `resume --role part` ..."""
+    cmd = str(cmd or "")
+    out = Counter()
+    if ORCH_CMD.search(cmd) or ORCH_WRITE.search(cmd):
+        out["orchestrator"] += 1
+    for m in ROLE_CMD.finditer(cmd):
+        out[m.group(1)] += 1
+    return out
+
+
+def roles_in_write(inp):
+    """An ArtifactData write of the `_orchestrator` post (the session that names itself the orchestrator)."""
+    act = inp.get("action")
+    writes = inp.get("writes") if act == "batch" and isinstance(inp.get("writes"), list) else [inp]
+    for w in writes:
+        if isinstance(w, dict) and str(w.get("collection") or "").endswith("posts") and w.get("doc_id") == "_orchestrator" \
+                and (w.get("op") or act) in ("set", "update", "str_replace"):
+            return Counter(orchestrator=1)
+    return Counter()
+
+
+def cmd_note(name, inp):
+    """A short note of what a call read or wrote, kept only where the audit needs it ('' elsewhere): an ArtifactData
+    call's collection (and doc_id), `board_cli.py get`'s collection and id, the board file a shell read named."""
+    inp = inp if isinstance(inp, dict) else {}
+    if name == "ArtifactData":
+        act = inp.get("action")
+        if act == "batch":
+            ids = [str(w.get("doc_id")) for w in inp.get("writes") or [] if isinstance(w, dict)]
+            return ("batch " + ",".join(ids))[:80]
+        return ("%s %s" % (inp.get("collection") or "?", inp.get("doc_id") or "")).strip()[:80]
+    if name in ("Bash", "run_command"):
+        cmd = str(inp.get("command") or inp.get("CommandLine") or "")
+        m = re.search(r"\.kit/board_cli\.py\s+get\s+(\S+)\s+(\S+)", cmd)
+        if m:
+            return ("%s %s" % (m.group(1), m.group(2)))[:80]
+        m = re.search(r"\.kit/kit\.py\s+artifact\s+(pull|push|load|pin|sent)\b", cmd)
+        if m:
+            return "artifact " + m.group(1)
+        m = BOARD_PATH.search(cmd)
+        if m:
+            return m.group(1).strip(" '\"")[:80]
+    if name == "Read":
+        f = str(inp.get("file_path") or "")
+        if BOARD_PATH.search(" " + f):
+            return f[-80:]
+    return ""
+
+
+def command_costs(results, n_calls, conf=None):
+    """Each result's size (chars, estimated tokens) and its carry: tokens x the API calls that followed it until
+    the session ended or a compaction dropped it, at the cache read price of the model then serving.
+    -> ({command: totals}, [[command, carry $], ...] in order)."""
+    out, seq = {}, []
+    for res in results:
+        tok = int(round(res["chars"] / CHARS_PER_TOKEN))
+        after = max(0, (n_calls if res["end"] is None else res["end"]) - res["at"])
+        p = price(res["model"], conf)
+        usd = tok * after * p[2] / 1e6 if p else 0.0
+        d = out.setdefault(res["key"], {"n": 0, "chars": 0, "tokens": 0, "carry_tokens": 0, "carry_usd": 0.0})
+        d["n"] += 1
+        d["chars"] += res["chars"]
+        d["tokens"] += tok
+        d["carry_tokens"] += tok * after
+        d["carry_usd"] += usd
+        ent = [res["key"], round(usd, 6), tok]
+        if res.get("note"):
+            ent.append(res["note"])
+        seq.append(ent)
+    for d in out.values():
+        d["carry_usd"] = round(d["carry_usd"], 6)
+    return out, seq
+
+
+def add_commands(into, more):
+    for k, v in (more or {}).items():
+        d = into.setdefault(k, {"n": 0, "chars": 0, "tokens": 0, "carry_tokens": 0, "carry_usd": 0.0})
+        for f in d:
+            d[f] = d[f] + (v.get(f) or 0)
+        d["carry_usd"] = round(d["carry_usd"], 6)
+    return into
+
+
+def by_role_commands(rows):
+    """{role: {"sessions": n, "tokens": all tokens, "commands": {command: totals + sessions}}} (rows with commands)."""
+    out = {}
+    for r in rows:
+        if not r.get("commands"):
+            continue
+        g = out.setdefault(r.get("role") or "other", {"sessions": 0, "tokens": 0, "commands": {}})
+        g["sessions"] += 1
+        g["tokens"] += _tot(r.get("tokens_all") or r.get("tokens"))
+        for k, v in r["commands"].items():
+            d = g["commands"].setdefault(k, {"n": 0, "chars": 0, "tokens": 0, "carry_tokens": 0, "carry_usd": 0.0,
+                                             "sessions": 0})
+            for f in ("n", "chars", "tokens", "carry_tokens", "carry_usd"):
+                d[f] += v.get(f) or 0
+            d["sessions"] += 1
+    return out
+
+
+def repeated_sequences(rows, min_sessions=3, lengths=(2, 3, 4, 5), top=5):
+    """The same run of commands (2 to 5 in a row, at least 2 different) in min_sessions sessions or more: a script
+    to write. -> [{"seq", "sessions", "times", "carry_usd"}], by sessions x times, a run inside a longer listed one
+    with as many sessions left out."""
+    found = {}
+    for r in rows:
+        seq = r.get("cmd_seq") or []
+        keys = [x[0] for x in seq]
+        for n in lengths:
+            for i in range(len(keys) - n + 1):
+                t = tuple(keys[i:i + n])
+                if len(set(t)) < 2:
+                    continue
+                d = found.setdefault(t, {"sessions": set(), "times": 0, "carry_usd": 0.0})
+                d["sessions"].add(r.get("session_id"))
+                d["times"] += 1
+                d["carry_usd"] += sum(float(x[1] or 0) for x in seq[i:i + n])
+    cand = [(t, d) for t, d in found.items() if len(d["sessions"]) >= min_sessions]
+    cand.sort(key=lambda x: (-len(x[1]["sessions"]) * x[1]["times"], -len(x[0]), -x[1]["carry_usd"]))
+    out = []
+    for t, d in cand:
+        if any(len(o["seq"]) > len(t) and o["sessions"] >= len(d["sessions"]) and
+               any(tuple(o["seq"][j:j + len(t)]) == t for j in range(len(o["seq"]) - len(t) + 1)) for o in out):
+            continue
+        out = [o for o in out if not (len(t) > len(o["seq"]) and len(d["sessions"]) >= o["sessions"] and
+                                      any(t[j:j + len(o["seq"])] == tuple(o["seq"]) for j in range(len(t) - len(o["seq"]) + 1)))]
+        out.append({"seq": list(t), "sessions": len(d["sessions"]), "times": d["times"],
+                    "carry_usd": round(d["carry_usd"], 4)})
+        if len(out) >= top * 3:
+            break
+    return out[:top]
+
+
+def render_commands(rows, top=10, min_sessions=3):
+    """`show --commands`: per role, the top commands by what they cost staying in the context, and the runs of
+    commands repeated across sessions."""
+    g = by_role_commands(rows)
+    L = ["# Cost per command (a result's estimated tokens x the API calls after it, at the cache read price)", ""]
+    for role in sorted(g):
+        gr = g[role]
+        tot = gr["tokens"] or 1
+        L += ["## %s (%d sessions, %s tokens)" % (role, gr["sessions"], _fmt(gr["tokens"], "")), "",
+              "| command | calls | sessions | chars | est. tokens | carried tokens | share of tokens | carry $ |",
+              "|---|---|---|---|---|---|---|---|"]
+        items = sorted(gr["commands"].items(), key=lambda kv: (-kv[1]["carry_usd"], -kv[1]["carry_tokens"]))[:top]
+        for k, d in items:
+            L.append("| %s | %d | %d | %s | %s | %s | %.1f%% | %.3f |" % (
+                k, d["n"], d["sessions"], _fmt(d["chars"], ""), _fmt(d["tokens"], ""), _fmt(d["carry_tokens"], ""),
+                100.0 * d["carry_tokens"] / tot, d["carry_usd"]))
+        rs = gr["commands"].get("kit.py resume")
+        L += ["", "resumes: %.1f%% of this role's tokens (%s carried of %s)" % (
+            100.0 * (rs or {}).get("carry_tokens", 0) / tot, _fmt((rs or {}).get("carry_tokens", 0), ""),
+            _fmt(gr["tokens"], "")), ""]
+    if not g:
+        L.append("no rows with commands (a row recorded before M6 has none: record it again)")
+        return "\n".join(L)
+    seqs = repeated_sequences(rows, min_sessions=min_sessions)
+    L += ["## Repeated across sessions (%d or more): candidates for a script" % min_sessions, ""]
+    if seqs:
+        L += ["| commands in a row | sessions | times | carry $ |", "|---|---|---|---|"]
+        L += ["| %s | %d | %d | %.3f |" % (" > ".join(x["seq"]), x["sessions"], x["times"], x["carry_usd"]) for x in seqs]
+    else:
+        L.append("none: no run of commands is in %d sessions yet" % min_sessions)
+    return "\n".join(L)
+
+
+def render_compare_commands(rows, t_before, t_after, label_b, label_a, role=None, top=10):
+    """`compare --commands`: per role, each top command's carry $ per session, before and after the cut."""
+    sides = {"before": [], "after": []}
+    for r in rows:
+        if role and r.get("role") != role:
+            continue
+        w = _when(r)
+        if w is None:
+            continue
+        if w <= t_before:
+            sides["before"].append(r)
+        if w >= t_after:
+            sides["after"].append(r)
+    gb, ga = by_role_commands(sides["before"]), by_role_commands(sides["after"])
+    L = ["# Cost per command: before (%s) vs after (%s), carry $ per session" % (label_b, label_a), ""]
+    for rl in sorted(set(gb) | set(ga)):
+        b, a = gb.get(rl) or {"sessions": 0, "commands": {}}, ga.get(rl) or {"sessions": 0, "commands": {}}
+        L += ["## %s (sessions with commands: before %d, after %d)" % (rl, b["sessions"], a["sessions"]), "",
+              "| command | before $/session | after $/session | change | before calls/session | after calls/session |",
+              "|---|---|---|---|---|---|"]
+        keys = set(b["commands"]) | set(a["commands"])
+
+        def per(g, k, f):
+            return (g["commands"].get(k) or {}).get(f, 0) / g["sessions"] if g["sessions"] else None
+        keys = sorted(keys, key=lambda k: -max(per(b, k, "carry_usd") or 0, per(a, k, "carry_usd") or 0))[:top]
+        for k in keys:
+            vb, va = per(b, k, "carry_usd"), per(a, k, "carry_usd")
+            ch = "%+.0f%%" % (100.0 * (va - vb) / vb) if vb and va is not None else "-"
+            L.append("| %s | %s | %s | %s | %s | %s |" % (
+                k, _fmt(vb, "$"), _fmt(va, "$"), ch, _fmt(per(b, k, "n"), ""), _fmt(per(a, k, "n"), "")))
+        L.append("")
+    if not (gb or ga):
+        L.append("no rows with commands on either side of the cut (rows recorded before M6 have none)")
+    return "\n".join(L)
+
+
+# ---------------------------------------------------------------- M11: the kit's commands, used or not
+
+# each manual action where a kit command exists: (rule, what it did, the command to use)
+AUDIT_RULES = {
+    "list-first-pull": ("a full-board `ArtifactData list` a first pull printed",
+                        "`kit.py artifact pull --post <id>` (a part: only its own documents), or a pull in a copy "
+                        "already loaded (changes only)"),
+    "list-by-hand": ("a full-board `ArtifactData list` made by hand", "`kit.py artifact pull` (changes only)"),
+    "get-by-hand": ("a post or comment read raw with `ArtifactData get|query`",
+                    "`kit.py train <train> --sections|--full <part>`, `kit.py resume` (they read the loaded copy)"),
+    "cli-get-post": ("a post read raw with `board_cli.py get posts`", "`kit.py train <train> --sections|--full <part>`"),
+    "cli-get-unknown": ("`board_cli.py get` (a row before M11: what it read was not recorded)",
+                        "`kit.py train <train> --full <part>` for a post; a comment's own line is fine"),
+    "file-read": ("a board file read with sed/cat/Read", "`kit.py train --full <part>`, `board_cli.py get`"),
+    "write-by-hand": ("a board write not built by `kit.py artifact push` (a hand-built pin or batch)",
+                      "`kit.py artifact push`, its batch, `kit.py artifact sent`; on a refusal `kit.py artifact pin`"),
+}
+_PASS = ("Read", "Artifact", "ToolSearch", "ReadNotifications", "TaskCreate", "TaskUpdate")
+_READERS = ("sh:sed", "sh:cat", "sh:head", "sh:tail", "sh:jq", "sh:less", "sh:awk", "Read", "py:-c")
+
+
+_KIT_KEYS = ("kit.py", "board_cli.py", "web_takeover.py", "end_session.py")
+
+
+def audit_row(r, conf=None):
+    """One row's manual actions where a kit command exists, from its `cmd_seq` (in order). An ArtifactData call is the
+    kit's when the last command before it (tool searches and notifications aside) was a kit script that printed it
+    (`artifact pull|push`, `done`, `web_takeover.py`); after anything else (a python one-liner, a sed, a message) it
+    was made by hand. -> [{"rule", "at", "command", "note", "tokens", "carry_usd", "carry_tokens"}]."""
+    out, last = [], ""
+    p = price(r.get("model"), conf)
+    for i, ent in enumerate(r.get("cmd_seq") or []):
+        key, usd = ent[0], float(ent[1] or 0)
+        tok = ent[2] if len(ent) > 2 else None
+        note = ent[3] if len(ent) > 3 else ""
+        rule = None
+        kit_printed = last.startswith(_KIT_KEYS)
+        coll = note.split()[0] if note and not note.startswith("batch") else ""
+        board_coll = not coll or coll.endswith(("posts", "comments"))
+        if key == "ArtifactData list" and board_coll:
+            rule = "list-first-pull" if kit_printed else "list-by-hand"
+        elif key in ("ArtifactData get", "ArtifactData query") and board_coll and not kit_printed:
+            rule = "get-by-hand"
+        elif key in ("ArtifactData batch", "ArtifactData set", "ArtifactData update", "ArtifactData str_replace",
+                     "ArtifactData delete") and not kit_printed and (board_coll or note.startswith("batch")):
+            rule = "write-by-hand"
+        elif key == "board_cli.py get":
+            rule = "cli-get-post" if note.startswith("posts") else (None if note else "cli-get-unknown")
+        elif key in _READERS and note and BOARD_PATH.search(" " + note) and not note.startswith("artifact "):
+            rule = "file-read"
+        if not key.startswith("ArtifactData") and key not in _PASS:
+            last = key
+        if rule:
+            out.append({"rule": rule, "at": i, "command": key, "note": note, "tokens": tok, "carry_usd": usd,
+                        "carry_tokens": int(round(usd / p[2] * 1e6)) if p and p[2] else None})
+    return out
+
+
+def audit(rows, since=None, role=None, conf=None):
+    """`usage audit`: per session, its manual actions where a kit command exists. -> [{"row", "found"}] (rows with
+    a command sequence only), most carried first."""
+    res = []
+    for r in merge_rows(rows):
+        if role and r.get("role") != role:
+            continue
+        if since and str(r.get("started") or "") < since:
+            continue
+        if not r.get("cmd_seq"):
+            continue
+        res.append({"row": r, "found": audit_row(r, conf)})
+    res.sort(key=lambda x: -sum(f["carry_usd"] for f in x["found"]))
+    return res
+
+
+def audit_totals(res):
+    """{rule: {"n", "sessions", "tokens", "carry_usd", "carry_tokens"}}."""
+    t = {}
+    for x in res:
+        for f in x["found"]:
+            d = t.setdefault(f["rule"], {"n": 0, "sessions": set(), "tokens": 0, "carry_usd": 0.0, "carry_tokens": 0})
+            d["n"] += 1
+            d["sessions"].add(x["row"].get("session_id"))
+            d["tokens"] += f["tokens"] or 0
+            d["carry_usd"] += f["carry_usd"]
+            d["carry_tokens"] += f["carry_tokens"] or 0
+    for d in t.values():
+        d["sessions"] = len(d["sessions"])
+    return t
+
+
+def render_audit(res, top=None):
+    if not res:
+        return "usage audit: no row with a command sequence in this range (rows recorded since M6 carry one).\n"
+    L = ["# Kit commands skipped: %d sessions, %d with a manual action where a kit command exists" % (
+        len(res), sum(1 for x in res if x["found"])), "",
+        "| session | role | part | manual | most often | carried |", "|---|---|---|---|---|---|"]
+    for x in res[:top] if top else res:
+        r, f = x["row"], x["found"]
+        rules = Counter(y["rule"] for y in f)
+        L.append("| %s | %s | %s | %d of %d | %s | %s tok, $%.2f |" % (
+            str(r.get("session_id"))[:8], r.get("role"), r.get("part") or "-", len(f), len(r.get("cmd_seq") or []),
+            ", ".join("%s %d" % (k, v) for k, v in rules.most_common(2)) or "-",
+            _fmt(sum(y["carry_tokens"] or 0 for y in f), ""), sum(y["carry_usd"] for y in f)))
+    t = audit_totals(res)
+    L += ["", "| rule | what it did | use instead | times | sessions | result tokens | carried |", "|---|---|---|---|---|---|---|"]
+    for k, d in sorted(t.items(), key=lambda kv: -kv[1]["carry_usd"]):
+        what, use = AUDIT_RULES[k]
+        L.append("| %s | %s | %s | %d | %d | %s | %s tok, $%.2f |" % (
+            k, what, use, d["n"], d["sessions"], _fmt(d["tokens"], "") if d["tokens"] else "?",
+            _fmt(d["carry_tokens"], ""), d["carry_usd"]))
+    L += ["", "(carried: the result's tokens times the calls that followed it, at the cache read price; result tokens "
+          "`?`: a row recorded before M11 kept only the carry.)"]
+    return "\n".join(L) + "\n"
+
+
+def audit_top(rows, n=3, since=None, conf=None):
+    """resume --role orchestrator: the n rules that carried most, one line each (or [])."""
+    t = audit_totals(audit(rows, since=since, conf=conf))
+    out = []
+    for k, d in sorted(t.items(), key=lambda kv: -kv[1]["carry_usd"])[:n]:
+        out.append("- %s: %d times in %d sessions, $%.2f carried; use %s" % (
+            AUDIT_RULES[k][0], d["n"], d["sessions"], d["carry_usd"], AUDIT_RULES[k][1]))
+    return out
+
+
 # ---------------------------------------------------------------- role and part
 
 PART_PROMPT = re.compile(r"docs/prompts/([A-Za-z0-9._-]+)\.md")
@@ -483,6 +892,7 @@ def classify(row, title=None):
     first = str(row.get("first_prompt") or "")
     if row.get("is_orchestrator"):
         return "orchestrator", None
+    rr = row.get("roles_run") or {}
     tl = re.sub(r"^(harmonize|board)\s+", "", str(title or row.get("title") or "").strip(), flags=re.I)
     words = (tl + " " + first[:300]).lower()
     m = PART_PROMPT.search(first)
@@ -521,6 +931,9 @@ def classify(row, title=None):
                        ("reviewer", "review")):
         if re.search(r"\b%s\b" % word, words[:160]):
             return role, part
+    if rr:  # M11: nothing above names it: what it ran does (a session that took over mid-way, a question first)
+        role = max(rr, key=lambda k: (rr[k], k == "orchestrator"))
+        return role, part
     return "other", part
 
 
@@ -573,13 +986,24 @@ def ledger_rows(root, ref=None):
 
 
 def merge_rows(*groups):
-    """One row per (session_id, source): the one recorded last."""
+    """One row per (session_id, source): the one recorded last. M11: what an older row of the session knew and the
+    newer one lacks is kept: its command sequence (a row relabelled by a kit without M6 had none) and the
+    orchestrator's label (9919b5f1 on 11-26: recorded `other` by itself, `orchestrator` by another kit)."""
     best = {}
     for g in groups:
         for row in g:
             k = (row.get("session_id"), row.get("source"))
-            if k not in best or str(row.get("recorded_at") or "") >= str(best[k].get("recorded_at") or ""):
-                best[k] = row
+            old = best.get(k)
+            if old is None or str(row.get("recorded_at") or "") >= str(old.get("recorded_at") or ""):
+                new, other = row, old
+            else:
+                new, other = old, row
+            if other is not None:
+                if not new.get("cmd_seq") and other.get("cmd_seq"):
+                    new = dict(new, cmd_seq=other["cmd_seq"], commands=other.get("commands") or new.get("commands"))
+                if other.get("is_orchestrator") and not new.get("is_orchestrator") and new.get("role") in ("other", None):
+                    new = dict(new, is_orchestrator=True, role="orchestrator", part=None)
+            best[k] = new
     return list(best.values())
 
 
@@ -1150,11 +1574,38 @@ def main(argv=None):
     s.add_argument("--only", action="store_true", help="only the --rows files (a fixed set, for a reproducible check)")
     s.add_argument("--kit-repo")
     s.add_argument("--json", action="store_true")
+    s.add_argument("--commands", action="store_true", help="the top commands by cost, per role (M6)")
+    s.add_argument("--top", type=int, default=10)
     s = sp.add_parser("show")
     s.add_argument("--session")
     s.add_argument("--rows", action="append", default=[])
+    s.add_argument("--only", action="store_true", help="only the --rows files")
+    s.add_argument("--role")
+    s.add_argument("--commands", action="store_true",
+                   help="the top commands by cost per role, and runs of commands repeated in 3 sessions or more (M6)")
+    s.add_argument("--top", type=int, default=10)
+    s.add_argument("--min-sessions", type=int, default=3)
+    s.add_argument("--transcripts", action="append", default=[],
+                   help="also read these transcripts (a glob, e.g. ~/.claude/projects/*/*.jsonl) without recording them")
+    s = sp.add_parser("audit", help="each session's manual actions where a kit command exists, with the command to "
+                                     "use and what they carried (M11)")
+    s.add_argument("--since", help="rows started at or after this time (ISO, or a date)")
+    s.add_argument("--role")
+    s.add_argument("--rows", action="append", default=[])
+    s.add_argument("--only", action="store_true", help="only the --rows files")
+    s.add_argument("--top", type=int, default=0)
+    s.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     root = project_root(a.root)
+    if a.cmd == "audit":
+        rows = _read_rows(a.rows) if a.only else all_rows(root, a.rows)
+        res = audit(rows, since=a.since, role=a.role, conf=kit_conf(root))
+        if a.json:
+            print(json.dumps([{"session_id": x["row"].get("session_id"), "role": x["row"].get("role"),
+                               "part": x["row"].get("part"), "found": x["found"]} for x in res], indent=1))
+        else:
+            print(render_audit(res, a.top or None), end="")
+        return 0
     if a.cmd == "hook":
         try:
             hook(sys.stdin.read(), root if a.root else None)
@@ -1206,15 +1657,41 @@ def main(argv=None):
         rows = merge_rows(all_rows(root, a.rows) if not a.only else [], _read_rows(a.rows))
         tb, lb = cut_time(root, a.before, a.kit_repo, rows)
         ta, la = cut_time(root, a.after or a.before, a.kit_repo, rows)
+        if a.commands:
+            print(render_compare_commands(rows, tb, ta, lb, la, a.role, a.top))
+            return 0
         res = compare(rows, tb, ta, a.role, a.project, a.part_prefix)
         print(json.dumps(res, indent=1) if a.json else render(res, lb, la))
         return 0
     if a.cmd == "show":
-        for r in sorted(all_rows(root, a.rows), key=lambda r: str(r.get("started"))):
-            if not a.session or str(r.get("session_id", "")).startswith(a.session):
-                print(one_line(r))
+        rows = merge_rows(all_rows(root, a.rows) if not a.only else [], _read_rows(a.rows),
+                          transcript_rows(a.transcripts))
+        rows = [r for r in rows if (not a.session or str(r.get("session_id", "")).startswith(a.session))
+                and (not a.role or r.get("role") == a.role)]
+        if a.commands:
+            print(render_commands(rows, a.top, a.min_sessions))
+            return 0
+        for r in sorted(rows, key=lambda r: str(r.get("started"))):
+            print(one_line(r))
         return 0
     return 1
+
+
+def transcript_rows(patterns):
+    """Rows read from transcripts on this computer (not saved): a role from the transcript itself."""
+    out = []
+    for pat in patterns:
+        for p in sorted(glob.glob(os.path.expanduser(pat))):
+            if "/subagents/" in p:
+                continue
+            try:
+                row = parse_transcript(p)
+            except (OSError, ValueError):
+                continue
+            row["role"], row["part"] = classify(row)
+            row["recorded_at"] = "~transcript"
+            out.append(row)
+    return out
 
 
 def one_line(r):
