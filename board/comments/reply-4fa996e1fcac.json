@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T02:41:58Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_7234524d0068",
+ "text": "No, R5 was not making progress—and live check-offs **do** apply to both Claude Code and **agy**.\n\n- **Why R5 had 0/4 checked off and no live line:** `kit.py launch` started R5 via `claude --bg` (because `.kit/config.json` has `\"cli\": \"claude\"`), and Claude Code immediately hit your 5-hour usage limit at `21:16` (`resets 9:20pm`) on turn 1 before editing anything.\n- **Does live tracking work on agy too? Yes:** CL41 added the live activity line and piece check-offs on Claude Code, **CL43** ported the live activity line and loop breaker to **agy** (`PostInvocation`), and **CL44 item 8** wired agy's `update_steps` to check off board pieces live.\n- **Fixed now:** Stopped the stalled Claude daemon, removed the unused `.claude/worktrees/r5` worktree, and relaunched **R5 as an agy subagent** (`ef7b5d5c-8702-4f7a-88b2-e3d7a2e9bf03`, `Workspace=\"share\"`, branched from `origin/main` at `1dba0dd`). You should start seeing live activity and piece check-offs on R5's card shortly."
+}
