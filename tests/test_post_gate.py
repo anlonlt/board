@@ -751,7 +751,8 @@ class Told(unittest.TestCase):
     def test_the_level_is_in_resume(self):
         posts = {"p1": {"part": "P1", "title": "t", "train": "T", "status": "planned"}, "_orchestrator": {"session_id": "o"}}
         with mock.patch.object(kit, "_load_board_docs", return_value=(posts, {})), mock.patch.object(kit, "resume", return_value="R\n"), \
-                mock.patch.object(kit, "git_copy_lines", return_value=[]), mock.patch.object(kit, "_kit_config", return_value=FULL):
+                mock.patch.object(kit, "git_copy_lines", return_value=[]), mock.patch.object(kit, "_kit_config", return_value=FULL), \
+                mock.patch.object(kit, "mark_part_branch"):     # CL50: never mark this checkout's .kit/run as part p1's
             for role in ("orchestrator", "part"):
                 self.assertIn("`full_auto`: do it, don't ask", kit.resume_role("m", role, post="p1"))
             self.assertNotIn("full_auto", kit.resume_role("m", "clerk"))
