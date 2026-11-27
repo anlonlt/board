@@ -2002,10 +2002,13 @@ def artifact_unsent(url=None, token=None):
     url = url or local_board_url()
     token = _resolve_board_token(token)
     n = 0
+    own = _own_docs(_scope_post())                 # CL72: a part answers for its own documents only (what it sends)
     for coll in ART_COLLS:
         for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
             base = _read_json(_base_path(coll, row["id"]))
             data = row.get("data") or {}
+            if own is not None and not own(coll, row["id"], data):
+                continue
             if base != data and not (_is_card(row["id"]) and base is not None and _card_older(data, base)):
                 n += 1                         # CL31: an older card here is dropped at push, not unsent
     return {"changed": n, "batches": sorted(glob.glob(os.path.join(_art_dir(), "out", "batch-*.json")))}
@@ -11208,8 +11211,8 @@ def main(argv=None):
                     print("sent: the Artifact has every change made here")
                     return 0
                 print("NOT SENT: %d document(s) changed here since the Artifact last had them; %d batch file(s) built, "
-                      "never recorded sent (%s). Run `python3 -I .kit/kit.py artifact push`, make each ArtifactData "
-                      "batch, then `kit.py artifact sent <batch>`." % (r["changed"], len(r["batches"]),
+                      "never recorded sent (%s). Run `python3 -I .kit/kit.py artifact sync` and make the calls it prints, "
+                      "exactly, until it says \"in sync\" (CL72)." % (r["changed"], len(r["batches"]),
                                                                        ", ".join(r["batches"]) or "none"))
                 return 1
         except (Conflict, urllib.error.URLError, OSError) as e:
