@@ -1,10 +1,33 @@
 {
- "body": "Inspecting launch, takeover, and R5 platform rules",
+ "artifacts": [
+  "scripts/kit.py",
+  "tests/test_launch_runtime.py",
+  "tests/test_platform_matrix.py"
+ ],
+ "asked": [
+  {
+   "id": "a8fe6866519d4719b283",
+   "quote": "And why didn't you use the takeover command for r5 ? Why is it still assigned to Claude code web ?"
+  }
+ ],
+ "bars": [
+  "3 of 3 launch runners (`claude-web`, `agy`, `claude-cli`) written to both the step post and its Trains row on every launch and `--take` takeover, replacing stale `claude-web` assignments (asked a8fe6866519d4719b283)",
+  "16 of 16 `PLATFORM_RULES` rows × 5 of 5 platforms pinned by literal `EXPECTED_PLATFORM_RULES` equality check in `tests/test_platform_matrix.py`, with 0 un-rowed platform checks in `scripts/kit.py` (AST-audited)",
+  "5 of 5 platforms (`web`, `cli`, `agy` with `agy` on PATH, `arena`, `generic`) verified in `tests/test_platform_matrix.py` (15 of 15 tests passing), plus 14 of 14 tests passing in `tests/test_launch_runtime.py` confirming `agy` launch/takeover checks device capacity, prepares or adopts local/remote branches, prints `invoke_subagent`, and never invokes `claude --bg`",
+  "81 of 83 repository test suites passing via `scripts/run_all_tests.py --all --keep-going` (2 unrelated pre-existing failures on trunk also present on R5: `tests/test_install_present_runtimes.py` and `tests/test_run_all_tests.py`; 4 browser JS suites skipped with no Playwright/Chromium installed)"
+ ],
+ "body": "Taking over or launching a step from your computer now updates the step's runner on the board to whichever runner actually took it, so a step planned for Claude Code web no longer stays stuck under Claude Code web after another runner takes over. Antigravity launches and takeovers now work natively through the same launch command without trying to start Claude Code in the background.\n\n### Why R5 stayed assigned to Claude Code web\nPreviously, `launch()` in `scripts/kit.py` never updated the `runner` field on the post or its `_trains` row, and its non-web path hard-coded `claude --bg` (refusing or falling back instead of supporting `agy`). As a result, taking over a step planned for `claude-web` on an `agy` machine either bypassed `kit.py launch --take` or left `runner: \"claude-web\"` stale on the board.\n\n### What changed in `scripts/kit.py` (and `.kit/kit.py`)\n- **Runner attribution on every launch and takeover:** `launch()` resolves the target launch mode from `PLATFORM_RULES[\"launcher\"]` (plus explicit `--web`, `--cli-run`, or `--cli agy|claude`) and writes `runner` (`claude-web`, `agy`, or `claude-cli`) into the post fields, the `_trains` row (`_trains_mark`), the returned JSON payload, attached-board updates (`_launch_in_clone`), and `launch_text()`.\n- **Native `agy` launch and takeover (`--cli agy` or running inside `agy`):**\n  - Added `--cli {agy,claude}` to the `launch` CLI parser and forwarded it through `_launch_in_clone`.\n  - When the resolved mode is `invoke_subagent`, `launch()` requires `agy` on `PATH` (loud `NOT STARTED` refusal otherwise, never silently invoking `claude --bg`), checks device capacity via `_device().gate(...)` when `PLATFORM_RULES[\"device_cap_gate\"]` is true, prepares or adopts the step branch via `_prepare_agy_branch()` (preserving existing commits on local or `origin/<branch>` without switching the orchestrator's working tree or locking `.claude/worktrees/<branch>`), records `runner: \"agy\"` and `session_id: \"pending: invoke_subagent (<name>)\"`, and prints the exact `invoke_subagent(...)` call.\n  - On `--take` (or `--session-id`), `launch()` preserves an existing `post[\"branch\"]` instead of overwriting it with `_slug(part, 24)`.\n  - `launch()` now gates `_alive_sessions()` on `_rule(\"alive_check\", pl) == \"claude_agents\"`, so `agy` launches never invoke `claude agents --json`.\n\n### Tests and `PLATFORM_RULES` pin\n- **`tests/test_launch_runtime.py`:** added tests covering `claude-web` -> `agy` takeover (preserving branch commits, updating post + `_trains` runner, printing `invoke_subagent`, never invoking `claude --bg`), `--cli agy` device-cap gating and fresh branch creation, `claude-web` -> `claude-cli` takeover, `--web` keeping/updating `runner: \"claude-web\"`, and CLI `--cli agy --take` remote branch adoption (`origin/cl99`).\n- **`tests/test_platform_matrix.py`:** pinned the complete literal `EXPECTED_PLATFORM_RULES` dict with `assertEqual(self.kit.PLATFORM_RULES, EXPECTED_PLATFORM_RULES)` (per `CR-r5-every-rule-that-differs-by-platform-says-2`), updated `test_launch_matches_table_on_every_platform` to run `agy` with `agy` (and a trap `claude`) on `PATH`, and added `test_agy_launch_without_agy_on_path_refuses_loudly`.",
  "branch": "r7",
+ "breaks": "python3 -c 'p=\"scripts/kit.py\"; s=open(p).read(); assert \"fields[\\\"runner\\\"] = runner\" in s; open(p,\"w\").write(s.replace(\"fields[\\\"runner\\\"] = runner\", \"pass\", 1))'",
+ "check": "python3 -m unittest tests.test_platform_matrix tests.test_launch_runtime tests.test_launch tests.test_kit_copies_current -v",
  "column": "info",
  "created_at": "2026-11-27T03:25:51Z",
  "from": "orchestrator",
+ "handoff": "Any orchestrator (agy, Claude CLI, or Claude web) can now use `python3 -I .kit/kit.py launch <post> [--take] [--cli agy|claude]` uniformly: `runner` is always rewritten to the actual launcher (`agy`, `claude-cli`, or `claude-web`) on the post and Trains row, and agy launches check device capacity, prepare or adopt the step branch (including `origin/<branch>`), and print the exact `invoke_subagent(...)` call. Any future edit to `PLATFORM_RULES` must also update the pinned `EXPECTED_PLATFORM_RULES` dict in `tests/test_platform_matrix.py`.",
  "launched_at": "2026-11-27T04:03:38Z",
+ "not_checked": [
+  "Live cross-machine remote `git fetch` against GitHub during an agy takeover (covered locally via a bare git remote in `test_launch_cli_parses_cli_agy_flag_and_adopts_remote_branch`)"
+ ],
  "parent": "R5",
  "part": "R7",
  "planned_by": "orchestrator",
@@ -22,7 +45,7 @@
    ],
    "from": "task",
    "n": 1,
-   "status": "done",
+   "status": "doing",
    "title": "In scripts/kit.py (launch), update runner in the post fields on every launch and --take..."
   },
   {
@@ -47,5 +70,6 @@
  "task": "When a step is launched or taken over on a computer (CLI or agy), kit.py launch must update the post runner field to the actual runner taking it (agy, claude-cli, or claude-web) and support agy launches/takeovers without hard-coding claude --bg.\n\n1. In scripts/kit.py (`launch`), update `runner` in the post fields on every launch and `--take` (`claude-web`, `agy`, or `claude-cli`) so a step planned for one runner never stays stale after another runner takes it over.\n2. When running on agy (or with `--cli agy`), `launch` in scripts/kit.py checks device capacity, prepares or adopts the step branch, records the takeover cleanly (`runner: \"agy\"`), and prints the exact `invoke_subagent` call instead of spawning `claude --bg`.\n3. Tests in `tests/test_launch_runtime.py`: takeover updates `runner` from `claude-web` to `agy` and `claude-cli`; agy launch/takeover never invokes `claude --bg`; `--web` launch keeps `runner: \"claude-web\"`.",
  "title": "kit.py launch updates runner on takeover and supports agy launches",
  "train": "runners",
- "updated_at": "2026-11-27T04:17:07Z"
+ "updated_at": "2026-11-27T04:35:38Z",
+ "verdict": "Launching or taking over any step now updates its runner to the actual launcher taking it, and Antigravity launches prepare or adopt the branch and print the subagent launch call instead of running Claude in the background."
 }
