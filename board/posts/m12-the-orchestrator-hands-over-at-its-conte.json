@@ -24,6 +24,8 @@
  "differs": "M12: builds on M11, which fixed the role label in the usage row only; M12 makes the hand-over hook use that same role function, so an orchestrator that took over mid-session hands over at 380k.",
  "from": "orchestrator",
  "handoff": "- `usage.role_of(row, root, title)` is THE role of a session (the `_orchestrator` post, then `classify` with M11's `roles_run`, then KIT_ROLE); `usage.session_role(transcript, root, session_id)` reads a transcript for it (no subagents). `record()` uses `role_of`.\n- Hooks call `kit_pre_compact.session_role(data, root, fallback)`, which loads `.kit/usage.py` (else the kit repo's `scripts/usage.py`) and falls back to KIT_ROLE, then the first-message reading, if that file is missing.\n- Two changes to the rules: a session that ran the orchestrator's commands is the orchestrator even if KIT_ROLE says part, and even if its first question contains \"review\" or \"clerk\".\n- The task-list hook reads a non-orchestrator role again once the transcript has grown by 200 KB, so a takeover there is noticed too.\n- Orchestrator: run the Harmonize dry run (hooks changed) and write it in `real_project`.\n- This session reconciled the Artifact after a partial pull, so 7 batches (332 writes) were generated; they were NOT sent, because a part reads only its own post and they would overwrite. They are kept in the scratchpad, not in the repo. The next full `kit.py artifact pull` + `reconcile` by the orchestrator regenerates what is really needed.",
+ "landed": "1c13005ce5b3987c371dc0737a753610b7610596",
+ "landed_at": "2026-11-27T09:27:41Z",
  "launched_at": "2026-11-27T02:35:18Z",
  "launched_out_of_order": {
   "at": "2026-11-27T02:35:18Z",
@@ -99,7 +101,7 @@
  "task": "The orchestrator hands over at its context limit however its session began.\n\nMeasured on 2026-11-27: orchestrator session 9919b5f1 reached 521k tokens (limit 380k) with no hand-over. kit/hooks/kit_pre_compact.py takes the role from the session's first user message only; this session began with the owner's question, took over as orchestrator later (on _orchestrator), so the hook said \"other\" and never blocked the stop. M11 fixed the same mistake for the usage row's label (role from what the session ran).\n\n1. kit_pre_compact.py (and every hook that decides a role) uses one role function, the one M11 gave the usage row: the `_orchestrator` post's session_id, a hand-over, or a takeover mid-session all count.\n2. A test with a transcript that starts with an owner question, then takes over, then passes 380k: the Stop is blocked once with the hand-over steps.\n3. Run it on 9919b5f1's transcript and put the result in the post.\n",
  "title": "The orchestrator hands over at its context limit however its session began",
  "train": "memory",
- "updated_at": "2026-11-27T03:04:41Z",
+ "updated_at": "2026-11-27T09:27:41Z",
  "verdict": "Yes: the hand-over hook now reads the role the way the usage row does, so yesterday's orchestrator (a question first, a takeover later, 528k) is blocked once with the hand-over steps, where the old hook let it run on.",
  "working_by": ""
 }

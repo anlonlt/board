@@ -32,6 +32,8 @@
  "handoff": "Item 4 for the orchestrator: on a Harmonize clone, `python3 -I <kit>/install.py <clone> --update`. Expected: `fork folded: .claude/hooks/context_handover.py (hand-over) -> the kit's kit_pre_compact.py` with its settings, or `REFUSED (CL61)` naming what differs. Harmonize's `say_it_once.py`, `session-start.sh`, `stop.sh` and `pre-compact.sh` will also be listed as refused (the kit takes no settings from those yet): fold them by hand, or keep each on purpose with `kit.forks.keep {\"<path>\": \"<why>\"}` in Harmonize's `.kit/config.json`. Until then every update prints them under REFUSED and doctor lists them as issues; the rest of the update lands.",
  "kept_on_train": "the hand-over hook fork found by M12's real-project run",
  "kind": "bug",
+ "landed": "27a79ea4d9dafe3fac2ef11b9812bddf4973d80c",
+ "landed_at": "2026-11-27T09:27:37Z",
  "launched_at": "2026-11-27T03:00:06Z",
  "not_checked": [
   "Harmonize's real `context_handover.py` after the fix: the orchestrator's first run refused it for two reasons, both now folded in the test's copy. Only a rerun on the Harmonize copy shows it folds there.",
@@ -106,7 +108,7 @@
  "task": "A kit fix reaches every project at its next `install.py --update`: no project keeps its own copy of a kit hook.\n\nOwner, 2026-11-27: \"Shouldn't anything that's happening in the kit automatically get fixed on kit update in harmonize anyway?\" Found: Harmonize runs its own `.claude/hooks/context_handover.py` (last changed 0d020ef, 11-24) as its Stop hand-over hook, wired in `.claude/settings.json`; the kit's `kit_pre_compact.py` is installed but M12's fix does not reach Harmonize because its fork decides.\n\n1. `install.py --update` lists every project hook that does a kit hook's job (same event and purpose: hand-over, role, board post, say-it-once...), and moves what the fork adds into the kit's hook as a project setting, then wires the kit's hook only; a fork it cannot fold is refused with what differs, never kept silently.\n2. Harmonize's context_handover.py folded: its rules (no fallback timers, the clerk at 80k) become kit settings; its test passes against the kit's hook.\n3. doctor flags a project hook that shadows a kit hook.\n4. Dry run on a Harmonize clone (by the orchestrator): after update, M12's takeover case blocks there.\n",
  "title": "A kit fix reaches every project on update: no project keeps a fork of a kit hook",
  "train": "takeover",
- "updated_at": "2026-11-27T08:01:12Z",
+ "updated_at": "2026-11-27T09:27:38Z",
  "verdict": "A kit update now folds a project's own hand-over hook into the kit's (its limits and rules become settings), refuses with the differences one it cannot fold, and doctor names any that shadow a kit hook.",
  "working_by": ""
 }
