@@ -94,6 +94,10 @@
    "sha": "e1696f88994eadd40c568e88f7a289ef9198f6e8d77bd58f1ee3da6fe60af118",
    "version": 5
   },
+  "docs+2F~prompts+2F~r2-gemini-tasks-how-far-it-runs-the-board-k.md": {
+   "sha": "660c582030d0578a327966f12847a49924fc009df2222bfbf11bf9ea82f12991",
+   "version": 1
+  },
   "kit+2F~AGENTS.template.md": {
    "sha": "5cb9e84c45f6368cca0aa3c2a125ca8e71722513719b5f865a139941d6a534fa",
    "version": 1
