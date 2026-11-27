@@ -1,0 +1,7 @@
+{
+ "created_at": "2026-11-27T02:21:31Z",
+ "from": "orchestrator",
+ "post_id": "_orchestrator",
+ "reply_to": "thr_403c677577e9",
+ "text": "It was left behind in your older checkout—**fixed and live now**.\n\n- **Why:** Your ntfy topic URL was saved in `/home/anon/board/.kit/board_data/notify_url` (from Nov 24). Because `notify_url` is stored per-checkout instead of machine-wide like `board_token` (`~/.config/board-kit/`), running the board server from `/home/anon/board-streamline` did not see it.\n- **Done:** Copied it into `/home/anon/board-streamline/.kit/board_data/notify_url` (permissions `0600`, git-ignored) and loaded it live into the running server via `POST /_api/notify` (`url_set: true`, `notify_detail: false`, no restart needed).\n- **Note:** Under `full_auto`, `notify.py` only pushes when a post enters **To do** or **Waiting on you** (not on routine thread replies). You can hit **Test** in the Share panel if you want to verify delivery on your phone."
+}
