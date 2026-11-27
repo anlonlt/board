@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_post_gate import BOOT, STEP, TOKEN, api_req, g as gate, load  # noqa: E402
+from test_post_gate import BOOT, DEMO_TEST, STEP, TOKEN, api_req, g as gate, load  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ("kit/board/board_cli.py", "kit/board/post_gate.py", "kit/board/board_token.py", "scripts/kit.py", "kit/landing.py", "kit/end_session.py")
@@ -82,6 +82,7 @@ class Board(Repo):
         self.env.update(KIT_BOARD_URL=self.url, KIT_BOARD_TOKEN=TOKEN)
         self.g("checkout", "-q", "-b", "s1")
         self.put("new.txt", "work\n")
+        self.put("test_s1.py", DEMO_TEST)                     # CL76: the step's test of his intent cases
         self.g("push", "-q", "-u", "origin", "s1")
         self.post("s1", dict(STEP, status="in progress", branch="s1"))
 

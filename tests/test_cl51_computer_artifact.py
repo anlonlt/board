@@ -47,6 +47,7 @@ def kit_for_done(post, d):
     kit.check_asked = lambda p, db_path=None: ([], [])
     kit.check_his_words = lambda pid, p, db_path=None: ([], [])
     kit.check_done = lambda p, root=None, body_max=1500: ([], [])
+    kit.check_intent = lambda p, root=None: []        # CL76: its own tests (test_intent_first)
     kit.plain_notes = lambda p: []
     kit.check_real_project = lambda p, root=None: []
     kit.check_trunk_merged = lambda root=None: []
