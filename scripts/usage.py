@@ -927,6 +927,8 @@ def classify(row, title=None):
         if re.match(r"[\s\W]*(the\s+)?(board\s+)?clerk\b", tl[p.end():], re.I):  # "BC29 board clerk": a clerk
             return "clerk", p.group(1).upper()
         return "part", p.group(1).upper()
+    if rr.get("orchestrator"):  # M12: it ran the orchestrator's commands: a loose word in its first question does not outweigh that
+        return "orchestrator", part
     for word, role in (("orchestrator", "orchestrator"), ("clerk", "clerk"), ("review", "review"),
                        ("reviewer", "review")):
         if re.search(r"\b%s\b" % word, words[:160]):
@@ -1164,6 +1166,35 @@ def work_by_trailer(repos, refs=("--all",)):
     return out
 
 
+def role_of(row, root=None, title=None):
+    """M12: THE role of a session, for the usage row and for every hook that decides one (kit_pre_compact's hand-over,
+    the session start's compaction notice, the task-list hook): (role, part). The `_orchestrator` post naming the
+    session, then `classify` (its first prompt, a hand-over line, and M11's `roles_run`: a takeover mid-session, a
+    `kit.py resume --role orchestrator`, `launch|land`, a write of `_orchestrator`), then KIT_ROLE when nothing says."""
+    osid = orchestrator_session(root) if root else None
+    if osid and osid in (row.get("session_id"), row.get("ccr_session_id"), os.environ.get("KIT_SESSION_NAME")):
+        row["is_orchestrator"] = True
+    r, p = classify(row, title)
+    env_role = os.environ.get("KIT_ROLE") if os.environ.get("KIT_ROLE") in ("orchestrator", "clerk", "review", "part") else None
+    if env_role == "orchestrator" and r == "part" and p and not row.get("is_orchestrator"):
+        env_role = None                                # agy part subagents inherit KIT_ROLE=orchestrator from kit/up
+    if r == "orchestrator" and (row.get("is_orchestrator") or (row.get("roles_run") or {}).get("orchestrator")):
+        env_role = None                                # M12: a session that took over is the orchestrator, whatever it was launched as
+    return env_role or r, p
+
+
+def session_role(transcript, root=None, session_id=None):
+    """M12: role_of() for a transcript on disk (a hook's `transcript_path`): its own events only (no subagents), so a
+    Stop hook pays one read of the file. None when the file cannot be read."""
+    try:
+        row = parse_transcript(transcript, {"push": False}, depth=1)
+    except (OSError, ValueError):
+        return None
+    if session_id and row.get("session_id") in (None, "", "transcript", "transcript_full"):
+        row["session_id"] = str(session_id)
+    return role_of(row, root)[0]
+
+
 def record(root, transcript, role=None, part=None, title=None, conf=None, session_id=None):
     conf = kit_conf(root) if conf is None else conf
     row = parse_transcript(transcript, conf)
@@ -1180,14 +1211,8 @@ def record(root, transcript, role=None, part=None, title=None, conf=None, sessio
     # only when the transcript is this very session's (a test or a backfill run inside a cloud session is not)
     if rid.startswith("cse_") and os.environ.get("CLAUDE_CODE_SESSION_ID") == row.get("session_id"):
         row["ccr_session_id"] = "session_" + rid[4:]       # the cloud session's own id, as its commit trailers carry it
-    osid = orchestrator_session(root)
-    if osid and osid in (row.get("session_id"), row.get("ccr_session_id"), os.environ.get("KIT_SESSION_NAME")):
-        row["is_orchestrator"] = True
-    r, p = classify(row, title)
-    env_role = os.environ.get("KIT_ROLE") if os.environ.get("KIT_ROLE") in ("orchestrator", "clerk", "review", "part") else None
-    if env_role == "orchestrator" and r == "part" and p and not row.get("is_orchestrator"):
-        env_role = None                                # agy part subagents inherit KIT_ROLE=orchestrator from kit/up
-    row["role"], row["part"] = role or env_role or r, part or p
+    r, p = role_of(row, root, title)
+    row["role"], row["part"] = role or r, part or p
     # the work is counted in the project the row is recorded for: a transcript's cwd moves (/home/user after a second
     # repo was attached) and need not be a repository at all
     row["work"] = git_work(root,
