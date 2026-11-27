@@ -352,3 +352,28 @@ class DesignGate(unittest.TestCase):
         self.assertTrue(r.get("ok"), r)
         self.assertEqual(kit.design_gate("launch"), "")
         self.assertEqual(kit.design_gate("land"), "")
+
+
+class UnseenReply(OneWay):
+    """A refused batch comes back as a tool error, which the PostToolUse hook may never see (the live run, 2026-11-27):
+    sync never takes an unseen reply as committed; it re-reads the batch's documents, merges and sends again."""
+
+    def test_a_batch_whose_reply_was_not_seen_is_re_read_not_taken_as_sent(self):
+        self.seed()
+        self.sync()
+        self.change("_dashboard")
+        batch = self.until_batch()
+        self.assertIsNone(guard.board_verdict(batch, str(self.proj), True))      # made; the reply never reaches the hook
+        self.someone_else_changes("_dashboard")()
+        self.live.call(batch)                                                   # refused there (a newer live card)
+        txt, done = kit.artifact_sync(url=self.url, token=TOKEN)
+        self.assertFalse(done)
+        calls = [json.loads(m) for m in CALL.findall(txt)]
+        self.assertEqual([(c["action"], c["doc_id"]) for c in calls], [("get", "_dashboard")])
+        self.assertIn("version_mismatch", "db batch write failed (version_mismatch): nothing was written")
+        self.assertTrue(kc._REFUSED.search("db batch write failed (version_mismatch): the batch is atomic, so nothing was written"))
+        for c in calls:
+            self.make(c)
+        self.sync()
+        self.assertEqual(self.live.docs[PRE + "posts/_dashboard"][1].get("owner_note"), "written live meanwhile")
+        self.assertEqual(self.live.docs[PRE + "posts/_dashboard"][1]["rows"][0]["note"], "here %d" % 1)

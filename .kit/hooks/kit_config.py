@@ -281,7 +281,7 @@ def kit_printed(last_key, last_note=""):
 SEEN = "seen.json"
 _SAVED = _re.compile(r'"([^"]+)"\s+\d+\s+bytes\s+version\s+(\d+)\s+"([^"]+)"')
 _VERSION_OF = _re.compile(r"\bversion\s+(\d+)")
-_REFUSED = _re.compile(r"writes? nothing|nothing (?:was )?written|not written|refused|conflict|has changed|"
+_REFUSED = _re.compile(r"version_mismatch|batch write failed|writes? nothing|nothing (?:was )?written|not written|refused|conflict|has changed|"
                        r"changed since|version mismatch|current version|no pin|carries no", _re.I)
 
 

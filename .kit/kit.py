@@ -1559,7 +1559,9 @@ def artifact_sync(post=None, full=False, url=None, token=None):
         artifact_pin(pairs, url=url, token=token, report=rep)
         log += rep
         phase = "push"
-    elif phase == "batch":
+    elif phase == "batch" and (kc._ledger_read(base) or {}).get("by") != "artifact sync":
+        phase = "push"                     # another kit command rebuilt the batches since: build them again
+    if phase == "batch":
         b = sy.get("batch") or ""
         first = (_read_json(b) or [{}])[0] if os.path.isfile(b) else {}
         out = (kc.seen_read(base).get("batches") or {}).get(os.path.realpath(str(first.get("file_path") or "")))
@@ -1567,7 +1569,8 @@ def artifact_sync(post=None, full=False, url=None, token=None):
             w = waiting()
             if w:
                 return w, False
-            out = {"ok": True}                       # made, and the reply was not seen by the hook: taken as committed
+            out = {"ok": False}                      # made, its reply unseen (a refusal comes back as an error, which
+            #                                          the hook may not get): re-read its documents; what went in matches
         if out.get("ok"):
             n = artifact_sent(b)
             log.append("Sent: %d writes (%s)." % (n, os.path.basename(b)))
@@ -1583,8 +1586,7 @@ def artifact_sync(post=None, full=False, url=None, token=None):
             kc.ledger_record(base, [], "artifact sync", url=artifact_url(), step="idle")
             return "\n".join(log + ["In sync: the Artifact has every change of yours."]) + "\n", True
         # refused: re-read the documents it names, pin them (merging this copy into the live one), push again
-        keys = [_art_key("%s/%s" % (e.get("collection"), e.get("doc_id"))) for e in (_read_json(b) or [])
-                if not str(e.get("collection") or "").endswith("kit_docs")]
+        keys = [_art_key("%s/%s" % (e.get("collection"), e.get("doc_id"))) for e in (_read_json(b) or [])]
         return _pin_step(keys, save, log + ["The batch was refused (a document changed there): re-reading it."]), False
     if phase == "idle":
         calls = _pull_calls(full=full, post=post if not _art_state().get("loaded_at") else None)
@@ -2032,6 +2034,8 @@ def artifact_push(url=None, token=None, out_dir=None, own=None):
     url = url or local_board_url()
     token = _resolve_board_token(token)
     out_dir = out_dir or os.path.join(_art_dir(), "out")
+    if own is None:
+        own = _own_docs(_scope_post())               # CL72: a part's push (any command's) sends only its own documents
     os.makedirs(os.path.join(out_dir, "docs"), exist_ok=True)
     for f in glob.glob(os.path.join(out_dir, "batch-*.json")) + glob.glob(os.path.join(out_dir, "docs", "*.json")):
         os.remove(f)
