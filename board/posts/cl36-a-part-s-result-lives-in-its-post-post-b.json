@@ -40,6 +40,8 @@
  "created_at": "2026-11-24T01:36:28Z",
  "from": "orchestrator",
  "handoff": "Commands checked before building: kit.py commands board/artifact/install/done; reused install.py --update, kit.py done/check_done, shim.js renderMermaidBlock/resolveAssetUrl. New: window._kitRenderMermaid/_kitRenderSvg/_kitAssetUrl (shim), kit.py check_body_in_post/part_docs, KIT_INSTALL=<project> for test_page_body.js. Old parts' docs files are not moved (out of scope).",
+ "landed": "201a5c069f46556bcbc5ddac8dceed290a2bb9da",
+ "landed_at": "2026-11-27T08:59:58Z",
  "launched_at": "2026-11-24T01:36:56Z",
  "not_checked": [
   "a real phone (Chromium at 390 px with touch only)",
@@ -60,6 +62,6 @@
  "status": "complete",
  "title": "A part's result lives in its post: post bodies render diagrams and pictures, no docs file for text",
  "train": "cli",
- "updated_at": "2026-11-27T02:41:26Z",
+ "updated_at": "2026-11-27T08:59:59Z",
  "verdict": "Post bodies now draw Mermaid, SVG and inline pictures with the document viewer's renderer, the guides say a part's text lives in its post, and kit.py done refuses a body made of docs-file section embeds."
 }

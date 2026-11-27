@@ -24,6 +24,8 @@
  "created_at": "2026-11-23T05:40:00Z",
  "from": "part",
  "handoff": "Harmonize: the orchestrator runs `python3 install.py <harmonize> --update` so its installed guard and kit.py take this.",
+ "landed": "4641170827948e96c32675c73a3b6b8f9d8327fd",
+ "landed_at": "2026-11-27T08:59:57Z",
  "not_checked": [
   "Harmonize's install --update was not run by me (left to the orchestrator, as the prompt says); this session reaches only anlonlt/board.",
   "Not exercised in a live orchestrator session: the hook is tested by its stdin contract only."
@@ -33,6 +35,6 @@
  "status": "complete",
  "title": "The orchestrator guard closes its gaps",
  "train": "cli",
- "updated_at": "2026-11-23T06:10:00Z",
+ "updated_at": "2026-11-27T08:59:58Z",
  "verdict": "The guard's gaps are closed and on main (4641170, a fast-forward): an inline prompt that only names a path is refused, a title no longer lets a launch through (only tags do), and `kit.py artifact pull` now reads the attached boards too."
 }

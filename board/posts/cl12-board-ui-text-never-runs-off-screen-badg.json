@@ -34,6 +34,8 @@
  "issues": [
   "the base rule lets a short no-wrap label shrink too; such a label needs flex:none (the layout check reports it)"
  ],
+ "landed": "ccd7d52ca01d5132fda7bd9bc1bc460bb66fad1a",
+ "landed_at": "2026-11-27T08:59:57Z",
  "launched_at": "2026-11-23T01:57:23Z",
  "not_checked": [
   "needs his device: his real phone and browser on his real board (checked in headless Chromium at 390 and 1300 px, on a stub page with long text)",
@@ -49,6 +51,6 @@
  "status": "complete",
  "title": "Board UI: text never runs off screen, badge clears when seen, Done steps stay in the train view",
  "train": "cli",
- "updated_at": "2026-11-23T02:52:56Z",
+ "updated_at": "2026-11-27T08:59:57Z",
  "verdict": "Fixed all three: text overflow at the base layer with a browser check that fails on any cut text, the badge (hidden replies to a Like), and Done steps in the train view."
 }

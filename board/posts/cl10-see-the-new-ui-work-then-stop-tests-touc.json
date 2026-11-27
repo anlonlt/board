@@ -102,6 +102,8 @@
  "issues": [
   "none open"
  ],
+ "landed": "c3367d07e49c73e9d4a70ee63b3102782e9f5378",
+ "landed_at": "2026-11-27T08:59:56Z",
  "launched_at": "2026-11-23T01:57:20Z",
  "layout_computer": "rows",
  "layout_phone": "rows",
@@ -117,6 +119,6 @@
  "status": "complete",
  "title": "See the new UI work, then stop tests touching ~/.local/bin",
  "train": "cli",
- "updated_at": "2026-11-23T03:17:00Z",
+ "updated_at": "2026-11-27T08:59:57Z",
  "verdict": "The new UI (folding sections, review chips, waiting clock) works at computer and phone sizes, with 3 fixes; run_all_tests.py writes 0 files to ~/.local/bin, and 7/7 suites pass."
 }
