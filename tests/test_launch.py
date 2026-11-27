@@ -176,6 +176,8 @@ class AttachedBoardFromConfig(Base):
 
 class Launch(Base):
     def seed(self, config):
+        if "board_url" in config:      # the test's own board, never the real one on 8765 (it may be running)
+            config = dict(config, board_url=self.url)
         repo = make_repo(self.tmp / "repo", config)
         self.local("posts/cl99-launch-me", POST)
         self.local("posts/_trains", TRAINS)
