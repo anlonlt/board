@@ -12,9 +12,10 @@ Why (the owner's French repo, 2026-11-25): 7,100 lines of hand-written docs abou
 partly stale, while the three serious bugs sat at the joins between layers, where no doc looked: a field the UI sends
 that the schema drops, a projection that sends what no screen reads, a write route with no CSRF check.
 
-Readers are plug-ins (READERS): code is the first (Python by ast, TypeScript/JavaScript by a light lexer); others
-(documents, dashboards) add things and links of their own later. Nothing is installed in the project, nothing is
-written in it except the out folder.
+Readers are plug-ins (READERS): code is the first (Python by ast, TypeScript/JavaScript by a light lexer). Since M4,
+run_other_readers adds Power BI (a .pbip project: TMDL or model.bim, PBIR or report.json), documents (Markdown, LaTeX,
+Word, .bib, the scripts that make figures) and any folder (headings, links, sizes) to the same map. Nothing is
+installed in the project, nothing is written in it except the out folder.
 """
 import ast
 import fnmatch
@@ -92,8 +93,8 @@ UNREAD_LANGS = {".kt": "Kotlin", ".kts": "Kotlin script", ".java": "Java", ".swi
                 ".cpp": "C++", ".h": "C/C++ header", ".hpp": "C++ header", ".scala": "Scala", ".dart": "Dart",
                 ".vue": "Vue", ".svelte": "Svelte", ".sql": "SQL", ".ipynb": "notebook", ".r": "R", ".jl": "Julia",
                 ".lua": "Lua", ".ex": "Elixir", ".exs": "Elixir", ".erl": "Erlang", ".hs": "Haskell", ".clj": "Clojure",
-                ".groovy": "Groovy", ".gradle": "Gradle", ".sh": "shell", ".ps1": "PowerShell", ".pbix": "Power BI",
-                ".pbip": "Power BI", ".dax": "DAX", ".m4": "M4", ".tex": "LaTeX", ".xaml": "XAML"}
+                ".groovy": "Groovy", ".gradle": "Gradle", ".sh": "shell", ".ps1": "PowerShell", ".dax": "DAX", ".m4": "M4",
+                ".xaml": "XAML"}   # .pbip/.pbix (Power BI) and .tex (LaTeX) have readers since M4
 
 
 def list_unread(root, out_rel=None):
@@ -483,6 +484,749 @@ def _code_reader(root, files):
 READERS = {"code": _code_reader}
 
 
+# ── readers beyond code (M4): Power BI, documents, any folder ──────────────────────────────────────────────────
+# Each takes (root, all_files, cfg) and returns {"things", "links", "flags", "files": {path: sha}, "summary"}:
+# things, links and flags join the same map.json; "files" is what `--check` fingerprints for that reader.
+
+DOC_EXT = (".md", ".markdown", ".tex", ".docx", ".bib")
+TEXT_EXT = (".txt", ".rst", ".org", ".html", ".htm", ".csv", ".tsv", ".json", ".yaml", ".yml", ".toml", ".xml",
+            ".ini", ".cfg", ".adoc", ".dax", ".m", ".sql", ".r", ".jl", ".ipynb")
+SCRIPT_EXT = (".py", ".r", ".jl", ".m", ".sh", ".ipynb", ".do", ".sas")
+DATA_EXT = (".csv", ".tsv", ".xlsx", ".xls", ".parquet", ".json", ".rds", ".rdata", ".dta", ".sav", ".feather", ".h5")
+IMG_EXT = (".png", ".jpg", ".jpeg", ".svg", ".pdf", ".eps", ".gif", ".tif", ".tiff", ".webp")
+BIG_BYTES = 20 * 1024 * 1024   # a binary or data file this size is too big to open whole
+PERSONAL_PATH_RE = re.compile(r"(?i)([a-z]:\\\\?users\\\\?[^\\\"]+|/users/[^/\"]+|/home/[^/\"]+|\\\\?desktop\\\\?|"
+                              r"\\\\?downloads\\\\?|onedrive\s*-\s*personal|my documents|\\\\?documents\\\\)")
+
+
+def list_all(root, out_rel=None):
+    """Every file of the project (not only code), relative to root, with the same skips as list_files."""
+    listed = _git(root, "ls-files", "-co", "--exclude-standard")
+    if listed is not None:
+        files = [f for f in listed.splitlines() if f]
+    else:
+        files = []
+        for d, dirs, names in os.walk(root):
+            dirs[:] = [x for x in dirs if x not in SKIP_DIRS and not x.startswith(".")]
+            files.extend(os.path.relpath(os.path.join(d, n), root) for n in names)
+    out = []
+    for f in files:
+        f = f.replace("\\", "/")
+        parts = f.split("/")
+        if any(p.startswith(".") or p in SKIP_DIRS for p in parts[:-1]):
+            continue
+        if out_rel and (f == out_rel or f.startswith(out_rel.rstrip("/") + "/")):
+            continue
+        if os.path.isfile(os.path.join(root, f)):
+            out.append(f)
+    return sorted(set(out))
+
+
+def _read_bytes(path):
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return b""
+
+
+def docx_text(path):
+    """(paragraphs as [(style, text)], whole text): Word's document.xml read with the standard library only."""
+    import zipfile
+    try:
+        with zipfile.ZipFile(path) as z:
+            xml = z.read("word/document.xml").decode("utf-8", "replace")
+    except (OSError, KeyError, zipfile.BadZipFile):
+        return [], ""
+    paras = []
+    for p in re.findall(r"<w:p[ >][\s\S]*?</w:p>", xml):
+        st = re.search(r'<w:pStyle w:val="([^"]+)"', p)
+        txt = "".join(re.findall(r"<w:t(?: [^>]*)?>([^<]*)</w:t>", p))
+        txt = txt.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
+        paras.append((st.group(1) if st else "", txt))
+    return paras, "\n".join(t for _, t in paras)
+
+
+def _text_of(root, p):
+    """The text a reader reads in p (Word unzipped, others as they are): also what a link's `contains` checks."""
+    if p.endswith(".docx"):
+        return docx_text(os.path.join(root, p))[1]
+    return _read(os.path.join(root, p))
+
+
+def _file_sha(root, p):
+    return hashlib.sha1(_read_bytes(os.path.join(root, p))).hexdigest()[:16]
+
+
+def _rlink(reader, frm, to, kind, file, evidence, **kw):
+    return dict({"from": frm, "to": to, "kind": kind, "check": {"reader": reader, "file": file, "contains": evidence}}, **kw)
+
+
+# Power BI ──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+def _tmdl_name(s):
+    s = s.strip()
+    if s.startswith("'"):
+        return s[1:s.index("'", 1)] if "'" in s[1:] else s[1:]
+    return re.split(r"\s|=", s, 1)[0]
+
+
+def read_tmdl_tables(text):
+    """{table: {"columns": set, "measures": {name: dax}, "sources": [M text]}} from one or more TMDL table files."""
+    tables, cur, block, kind = {}, None, None, None
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        stripped = ln.strip()
+        indent = len(ln) - len(ln.lstrip("\t "))
+        m = re.match(r"^table\s+(.+)$", ln)
+        if m:
+            cur = _tmdl_name(m.group(1))
+            tables.setdefault(cur, {"columns": set(), "measures": {}, "sources": []})
+            i += 1; continue
+        if cur and indent >= 1:
+            mm = re.match(r"^measure\s+('[^']+'|[^\s=]+)\s*=\s*(.*)$", stripped)
+            mc = re.match(r"^(?:calculated)?column\s+('[^']+'|[^\s=]+)", stripped)
+            mp = re.match(r"^partition\s+.+?=\s*(\w+)", stripped)
+            if mm or mp:
+                name = _tmdl_name(mm.group(1)) if mm else None
+                body = [mm.group(2)] if mm else []
+                j = i + 1
+                while j < len(lines) and (not lines[j].strip() or len(lines[j]) - len(lines[j].lstrip("\t ")) > indent):
+                    t = lines[j].strip()
+                    if not re.match(r"^(formatString|lineageTag|displayFolder|annotation|description|isHidden|mode|"
+                                    r"queryGroup|changedProperty|dataCategory|summarizeBy|dataType|sourceColumn)\b", t):
+                        body.append(t)
+                    j += 1
+                if mm:
+                    tables[cur]["measures"][name] = " ".join(b for b in body if b).strip()
+                else:
+                    tables[cur]["sources"].append("\n".join(body))
+                i = j; continue
+            if mc:
+                tables[cur]["columns"].add(_tmdl_name(mc.group(1)))
+        elif indent == 0 and stripped and not stripped.startswith(("///", "//")):
+            cur = None
+        i += 1
+    return tables
+
+
+def read_tmdl_relationships(text):
+    rels = []
+    for blk in re.split(r"(?m)^relationship\s+", text)[1:]:
+        r = {"id": blk.split("\n", 1)[0].strip(), "active": True, "both": False}
+        for k, v in re.findall(r"(?m)^\s+(\w+)\s*:\s*(.+?)\s*$", blk):
+            if k in ("fromColumn", "toColumn"):
+                v = v.strip()
+                if v.startswith("'"):
+                    t = v[1:v.index("'", 1)]; c = v[v.index("'", 1) + 2:]
+                else:
+                    t, _, c = v.partition(".")
+                r[k] = (t, c.strip("'"))
+            elif k == "isActive":
+                r["active"] = v.strip().lower() != "false"
+            elif k == "crossFilteringBehavior":
+                r["both"] = v.strip() == "bothDirections"
+        if "fromColumn" in r and "toColumn" in r:
+            rels.append(r)
+    return rels
+
+
+def read_bim(text):
+    """The same shapes from a model.bim (TMSL JSON)."""
+    try:
+        m = json.loads(text).get("model", {})
+    except ValueError:
+        return {}, []
+    tables = {}
+    for t in m.get("tables", []):
+        e = tables.setdefault(t["name"], {"columns": set(), "measures": {}, "sources": []})
+        for c in t.get("columns", []):
+            e["columns"].add(c.get("name", ""))
+        for ms in t.get("measures", []):
+            ex = ms.get("expression", "")
+            e["measures"][ms["name"]] = " ".join(ex) if isinstance(ex, list) else ex
+        for p in t.get("partitions", []):
+            ex = (p.get("source") or {}).get("expression", "")
+            e["sources"].append("\n".join(ex) if isinstance(ex, list) else ex)
+    rels = []
+    for r in m.get("relationships", []):
+        rels.append({"id": r.get("name", ""), "fromColumn": (r.get("fromTable"), r.get("fromColumn")),
+                     "toColumn": (r.get("toTable"), r.get("toColumn")), "active": r.get("isActive", True) is not False,
+                     "both": r.get("crossFilteringBehavior") == "bothDirections"})
+    return tables, rels
+
+
+def _fields_in(obj, out):
+    """Every {"Measure"|"Column": {"Expression": {"SourceRef": {"Entity"}}, "Property"}} in a report's JSON."""
+    if isinstance(obj, dict):
+        for kind in ("Measure", "Column", "Aggregation"):
+            v = obj.get(kind)
+            if isinstance(v, dict):
+                ent = (((v.get("Expression") or {}).get("SourceRef") or {}).get("Entity"))
+                if kind == "Aggregation":
+                    inner = (v.get("Expression") or {}).get("Column") or {}
+                    ent = ((inner.get("Expression") or {}).get("SourceRef") or {}).get("Entity")
+                    if ent and inner.get("Property"):
+                        out.append(("Column", ent, inner["Property"]))
+                elif ent and v.get("Property"):
+                    out.append((kind, ent, v["Property"]))
+        for v in obj.values():
+            _fields_in(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _fields_in(v, out)
+    elif isinstance(obj, str) and obj[:1] in "{[" and len(obj) > 2:
+        try:
+            _fields_in(json.loads(obj), out)
+        except ValueError:
+            pass
+    return out
+
+
+def _dedupe(seq):
+    return list(dict.fromkeys(seq))
+
+
+def read_report(root, rep_dir, files):
+    """[(page, [(visual id, type, [fields]), ...], file)] from a PBIR folder or a legacy report.json."""
+    pages = []
+    legacy = rep_dir + "/report.json"
+    if legacy in files:
+        try:
+            rj = json.loads(_read(os.path.join(root, legacy)))
+        except ValueError:
+            rj = {}
+        for s in rj.get("sections", []):
+            vis = []
+            for n, vc in enumerate(s.get("visualContainers", [])):
+                try:
+                    cfg = json.loads(vc.get("config", "{}"))
+                except ValueError:
+                    cfg = {}
+                vid = cfg.get("name") or "visual%d" % n
+                vt = ((cfg.get("singleVisual") or {}).get("visualType")) or "?"
+                vis.append((vid, vt, _dedupe(_fields_in(vc, []))))
+            pages.append((s.get("displayName") or s.get("name", "?"), vis, legacy))
+    page_files = sorted(f for f in files if f.startswith(rep_dir + "/definition/pages/") and f.endswith("/page.json"))
+    for pf in page_files:
+        pdir = pf[:-len("/page.json")]
+        try:
+            pj = json.loads(_read(os.path.join(root, pf)))
+        except ValueError:
+            pj = {}
+        vis = []
+        for vf in sorted(f for f in files if f.startswith(pdir + "/visuals/") and f.endswith("/visual.json")):
+            try:
+                vj = json.loads(_read(os.path.join(root, vf)))
+            except ValueError:
+                continue
+            vis.append((vj.get("name") or vf.split("/")[-2], (vj.get("visual") or {}).get("visualType", "?"),
+                        _dedupe(_fields_in(vj, [])), vf))
+        pages.append((pj.get("displayName") or pdir.split("/")[-1], vis, pf))
+    return pages
+
+
+def powerbi_reader(root, all_files, cfg):
+    R = "powerbi"
+    things, links, flags, seen = [], [], [], {}
+    models = sorted({f.split(".SemanticModel/")[0] + ".SemanticModel" for f in all_files if ".SemanticModel/" in f})
+    reports = sorted({f.split(".Report/")[0] + ".Report" for f in all_files if ".Report/" in f})
+    pbix = [f for f in all_files if f.lower().endswith(".pbix")]
+    pbi_cfg = cfg.get("powerbi") or {}
+    service_links = []
+    if not models:
+        for f in all_files:
+            if f.endswith((".md", ".txt", ".url", ".json")) and os.path.getsize(os.path.join(root, f)) < 200_000:
+                for m in re.finditer(r"https://app\.powerbi\.com/(?:groups|reports|apps|links)/[^\s)\"'>]+", _read(os.path.join(root, f))):
+                    service_links.append((f, m.group(0)))
+    if not models and (pbix or service_links or pbi_cfg.get("service")):
+        where = ", ".join(pbix[:3] + ["%s (%s)" % (u[:60], f) for f, u in service_links[:2]] +
+                          (["`map.powerbi.service` in the config"] if pbi_cfg.get("service") else []))
+        flags.append({"kind": "powerbi-needs-export", "thing": "powerbi",
+                      "text": "Power BI lives only in the service or a .pbix (%s): nothing mapped. Needed: save it as a "
+                              "Power BI project (File > Save as > .pbip, model and report as folders), or the service's "
+                              "REST API (a workspace id and a token: GET /groups/{id}/datasets, /reports, /apps)" % where})
+        for f in pbix:
+            seen[f] = _file_sha(root, f)
+        return {"things": things, "links": links, "flags": flags, "files": seen,
+                "summary": "Power BI: not mapped, needs a .pbip export or the service's API"}
+    if not models and not reports:
+        return None
+
+    tables, rels, model_file_of = {}, [], {}
+    for md in models:
+        mfiles = [f for f in all_files if f.startswith(md + "/")]
+        for f in mfiles:
+            seen[f] = _file_sha(root, f)
+        tm = [f for f in mfiles if f.endswith(".tmdl")]
+        for f in tm:
+            txt = _read(os.path.join(root, f))
+            for t, e in read_tmdl_tables(txt).items():
+                tables[t] = e; model_file_of[t] = f
+            rels.extend(dict(r, file=f) for r in read_tmdl_relationships(txt))
+        if md + "/model.bim" in mfiles:
+            bt, br = read_bim(_read(os.path.join(root, md + "/model.bim")))
+            for t in bt:
+                model_file_of[t] = md + "/model.bim"
+            tables.update(bt)
+            rels.extend(dict(r, file=md + "/model.bim") for r in br)
+
+    measures = {}   # name -> table
+    for t, e in tables.items():
+        things.append({"id": "pbi-table:" + t, "kind": "pbi-table", "name": t, "file": model_file_of[t],
+                       "columns": sorted(e["columns"]), "measures": sorted(e["measures"])})
+        for ms in e["measures"]:
+            measures[ms] = t
+    # sources: what each table loads (an M expression: a file, a database, a web address)
+    for t, e in tables.items():
+        for src in e["sources"]:
+            for m in re.finditer(r'(File\.Contents|Folder\.Files|Folder\.Contents|Excel\.Workbook|Csv\.Document|'
+                                 r'Sql\.Databases?|Web\.Contents|SharePoint\.(?:Files|Contents|Tables)|OData\.Feed|'
+                                 r'PostgreSQL\.Database|Odbc\.DataSource)\s*\(\s*"([^"]+)"', src):
+                fn, arg = m.group(1), m.group(2).replace("\\\\", "\\")
+                sid = "pbi-source:" + arg
+                if sid not in {x["id"] for x in things}:
+                    things.append({"id": sid, "kind": "pbi-source", "connector": fn, "path": arg})
+                links.append(_rlink(R, "pbi-table:" + t, sid, "loads", model_file_of[t], m.group(2)))
+                if fn in ("File.Contents", "Folder.Files", "Folder.Contents") and PERSONAL_PATH_RE.search(arg):
+                    flags.append({"kind": "pbi-personal-source", "thing": sid,
+                                  "text": "table %s loads %s, a file on someone's own computer: the service cannot "
+                                          "refresh it (move it to SharePoint, a share or a database)" % (t, arg),
+                                  "check": {"reader": R, "file": model_file_of[t], "contains": m.group(2)}})
+    # measures: what each reads (tables, other measures)
+    used_measures = set()
+    for t, e in tables.items():
+        for ms, dax in e["measures"].items():
+            things.append({"id": "pbi-measure:%s" % ms, "kind": "pbi-measure", "table": t, "dax": dax[:200]})
+            for tt in _dedupe(m.group(1) or m.group(2) for m in re.finditer(r"'([^']+)'\s*\[|\b([A-Za-z_]\w*)\s*\[", dax)):
+                if tt in tables:
+                    links.append(_rlink(R, "pbi-measure:" + ms, "pbi-table:" + tt, "reads", model_file_of[t], tt))
+            for ref in _dedupe(re.findall(r"(?<![\w'\]])\[([^\]]+)\]", dax)):
+                if ref in measures and ref != ms:
+                    used_measures.add(ref)
+                    links.append(_rlink(R, "pbi-measure:" + ms, "pbi-measure:" + ref, "uses", model_file_of[t], "[%s]" % ref))
+    # relationships: missing ends, ambiguous paths
+    pairs, adj = {}, {}
+    for r in rels:
+        (ft, fc), (tt, tc) = r["fromColumn"], r["toColumn"]
+        rid = "pbi-relationship:%s.%s->%s.%s" % (ft, fc, tt, tc)
+        things.append({"id": rid, "kind": "pbi-relationship", "active": r["active"], "both": r["both"], "file": r["file"]})
+        links.append(_rlink(R, "pbi-table:" + ft, "pbi-table:" + tt, "relates", r["file"], fc))
+        bad = [x for x in ((ft, fc), (tt, tc)) if x[0] not in tables or (tables[x[0]]["columns"] and x[1] not in tables[x[0]]["columns"])]
+        if bad:
+            flags.append({"kind": "pbi-missing-relationship", "thing": rid,
+                          "text": "relationship %s.%s -> %s.%s names %s, not in the model" % (
+                              ft, fc, tt, tc, ", ".join("%s.%s" % b for b in bad))})
+            continue
+        if r["active"]:
+            key = tuple(sorted((ft, tt)))
+            pairs.setdefault(key, []).append(rid)
+            adj.setdefault(ft, []).append((tt, rid)); adj.setdefault(tt, []).append((ft, rid))
+    amb = set()
+    for key, rids in pairs.items():
+        if len(rids) > 1:
+            amb.add(key)
+            flags.append({"kind": "pbi-ambiguous-relationship", "thing": rids[0],
+                          "text": "%d active relationships between %s and %s: the filter path is ambiguous (keep one "
+                                  "active, use USERELATIONSHIP for the other)" % (len(rids), key[0], key[1])})
+    # a cycle of active relationships (two paths between the same tables), when no pair already explains it
+    parent, cyc = {}, []
+
+    def find(x):
+        while parent.setdefault(x, x) != x:
+            x = parent[x]
+        return x
+    for key, rids in pairs.items():
+        if key in amb:
+            continue
+        a, b = find(key[0]), find(key[1])
+        if a == b:
+            cyc.append(key)
+        else:
+            parent[a] = b
+    for key in cyc:
+        flags.append({"kind": "pbi-ambiguous-relationship", "thing": pairs[key][0],
+                      "text": "active relationships form a loop through %s and %s: two filter paths between the same "
+                              "tables" % key})
+
+    def connected(a, b):
+        if a == b:
+            return True
+        todo, done = [a], {a}
+        while todo:
+            x = todo.pop()
+            for y, _ in adj.get(x, []):
+                if y == b:
+                    return True
+                if y not in done:
+                    done.add(y); todo.append(y)
+        return False
+    # report: pages, visuals, the fields each uses
+    for rd_ in reports:
+        rfiles = [f for f in all_files if f.startswith(rd_ + "/")]
+        for f in rfiles:
+            seen[f] = _file_sha(root, f)
+        rname = os.path.basename(rd_)[:-len(".Report")]
+        things.append({"id": "pbi-report:" + rname, "kind": "pbi-report", "path": rd_})
+        for page, vis, pf in read_report(root, rd_, rfiles):
+            pid = "pbi-page:%s/%s" % (rname, page)
+            things.append({"id": pid, "kind": "pbi-page", "report": rname, "file": pf})
+            links.append(_rlink(R, "pbi-report:" + rname, pid, "contains", pf, page))
+            for v in vis:
+                vid_, vt, fields = v[0], v[1], v[2]
+                vfile = v[3] if len(v) > 3 else pf
+                vid = "pbi-visual:%s/%s/%s" % (rname, page, vid_)
+                things.append({"id": vid, "kind": "pbi-visual", "type": vt, "file": vfile})
+                links.append(_rlink(R, pid, vid, "contains", vfile, vid_))
+                ents = set()
+                for kind, ent, prop in fields:
+                    ents.add(ent)
+                    if kind == "Measure":
+                        if prop in measures:
+                            used_measures.add(prop)
+                            links.append(_rlink(R, vid, "pbi-measure:" + prop, "uses", vfile, prop))
+                        else:
+                            flags.append({"kind": "pbi-missing-measure", "thing": vid,
+                                          "text": "visual %s (%s, page %s) uses measure %s[%s], which is not in the model" % (
+                                              vid_, vt, page, ent, prop),
+                                          "check": {"reader": R, "file": vfile, "contains": prop}})
+                    elif ent in tables:
+                        links.append(_rlink(R, vid, "pbi-table:" + ent, "reads", vfile, prop))
+                real = sorted(e for e in ents if e in tables)
+                for i_, a in enumerate(real):
+                    for b in real[i_ + 1:]:
+                        if not connected(a, b):
+                            flags.append({"kind": "pbi-missing-relationship", "thing": vid,
+                                          "text": "visual %s (page %s) puts %s and %s together, but no active "
+                                                  "relationship joins them: its numbers repeat or go blank" % (vid_, page, a, b)})
+    for ms, t in sorted(measures.items()):
+        if ms not in used_measures:
+            flags.append({"kind": "pbi-unused-measure", "thing": "pbi-measure:" + ms,
+                          "text": "measure %s[%s] is used by no visual and no other measure" % (t, ms),
+                          "check": {"reader": R, "file": model_file_of[t], "contains": ms}})
+    # apps: they exist only in the service; read from the API's answer saved as *.apps.json, when there is one
+    for f in [f for f in all_files if f.endswith(".apps.json")]:
+        seen[f] = _file_sha(root, f)
+        try:
+            apps = json.loads(_read(os.path.join(root, f))).get("value", [])
+        except (ValueError, AttributeError):
+            apps = []
+        for a in apps:
+            aid = "pbi-app:" + a.get("name", "?")
+            things.append({"id": aid, "kind": "pbi-app", "file": f})
+            for rep in a.get("reports", []):
+                rn = rep.get("name") if isinstance(rep, dict) else rep
+                links.append(_rlink(R, aid, "pbi-report:" + rn, "contains", f, rn))
+                if "pbi-report:" + rn not in {x["id"] for x in things}:
+                    flags.append({"kind": "pbi-missing-report", "thing": aid,
+                                  "text": "app %s shows report %s, which is not in this project" % (a.get("name"), rn)})
+    n = {k: sum(1 for x in things if x["kind"] == k) for k in ("pbi-source", "pbi-table", "pbi-relationship", "pbi-measure",
+                                                              "pbi-page", "pbi-visual", "pbi-app")}
+    return {"things": things, "links": links, "flags": flags, "files": seen,
+            "summary": "Power BI: %d sources, %d tables, %d relationships, %d measures, %d pages, %d visuals, %d apps" % tuple(n.values())}
+
+
+# Documents: Markdown, LaTeX, Word ─────────────────────────────────────────────────────────────────────────────
+
+def _bib_keys(text):
+    return set(re.findall(r"@\w+\s*\{\s*([^,\s]+)\s*,", text))
+
+
+def _md_links(text):
+    out = [m.group(1) for m in re.finditer(r"(?<!!)\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)", text)]
+    out += re.findall(r"\[\[([^\]|#]+)", text)
+    out += re.findall(r"""href=["']([^"']+)["']""", text)
+    return out
+
+
+def _local_target(src, href, all_set):
+    """A relative link's file, when it names one in the project; None for a web link or an anchor."""
+    if re.match(r"^[a-z][\w+.-]*:", href, re.I) or href.startswith("#"):
+        return None, False
+    h = href.split("#")[0].split("?")[0]
+    if not h:
+        return None, False
+    base = os.path.dirname(src)
+    cand = os.path.normpath(os.path.join(base, h)).replace("\\", "/") if not h.startswith("/") else h.lstrip("/")
+    for c in (cand, cand + ".md"):
+        if c in all_set:
+            return c, True
+    return cand, False
+
+
+RQ_DEF = re.compile(r"(?:\\textbf\{|\*\*|^|\n|[-*]\s+)\s*(RQ\s?\d+)\s*\}?\**\s*[:.)\u2014-]\s*(\S[^\n]{3,})", re.I)
+RQ_ANY = re.compile(r"\bRQ\s?(\d+)\b", re.I)
+
+
+def documents_reader(root, all_files, cfg):
+    R = "documents"
+    all_set = set(all_files)
+    docs = [f for f in all_files if f.lower().endswith((".md", ".markdown", ".tex", ".docx"))]
+    bibs = [f for f in all_files if f.lower().endswith(".bib")]
+    if not docs:
+        return None
+    things, links, flags, seen = [], [], [], {}
+    for f in docs + bibs:
+        seen[f] = _file_sha(root, f)
+    bib = {}
+    for b in bibs:
+        for k in _bib_keys(_read(os.path.join(root, b))):
+            bib.setdefault(k, b)
+            things.append({"id": "reference:" + k, "kind": "reference", "file": b})
+    has_bib = bool(bibs)
+    sections, figures, fig_refs, citations, rq_defs, rq_mentions = [], {}, {}, [], {}, []
+    for f in docs:
+        if f.endswith(".docx"):
+            paras, text = docx_text(os.path.join(root, f))
+            lines = []
+            for st, t in paras:
+                m = re.match(r"(?i)^heading\s?(\d)$|^title$", st)
+                lines.append(("#" * int(m.group(1) or 1) + " " + t) if m else t)
+            text = "\n".join(lines)
+            kind = "md"
+        else:
+            text = _read(os.path.join(root, f))
+            kind = "tex" if f.endswith(".tex") else "md"
+            if kind == "md" and len(text) > MAX_PARSE:
+                continue
+        if kind == "tex":
+            text_nc = re.sub(r"(?m)(?<!\\)%(?!\s*script:).*$", "", text)
+            heads = [(m.start(), {"part": 0, "chapter": 1, "section": 2, "subsection": 3}[m.group(1)], m.group(2))
+                     for m in re.finditer(r"\\(part|chapter|section|subsection)\*?\{([^}]*)\}", text_nc)]
+        else:
+            text_nc = re.sub(r"(?s)```.*?```", lambda m: "\n" * m.group(0).count("\n"), text)
+            heads = [(m.start(), len(m.group(1)), m.group(2).strip()) for m in re.finditer(r"(?m)^(#{1,6})\s+(.+?)\s*#*$", text_nc)]
+        starts = [h[0] for h in heads]
+
+        def sec_at(pos, f=f, heads=heads, starts=starts):
+            import bisect
+            i = bisect.bisect_right(starts, pos) - 1
+            return "section:%s#%s" % (f, heads[i][2]) if i >= 0 else "doc:" + f
+        things.append({"id": "doc:" + f, "kind": "document", "path": f, "lines": text.count("\n") + 1})
+        for _, lvl, title in heads:
+            things.append({"id": "section:%s#%s" % (f, title), "kind": "section", "file": f, "level": lvl, "title": title})
+            links.append(_rlink(R, "doc:" + f, "section:%s#%s" % (f, title), "contains", f, title))
+        # citations: \cite{a,b}, [@a; @b]
+        if kind == "tex":
+            cites = [(m.start(), [k.strip() for k in m.group(1).split(",") if k.strip()])
+                     for m in re.finditer(r"\\(?:no)?(?:cite|citep|citet|parencite|textcite|autocite|footcite)\w*\*?(?:\[[^\]]*\])*\{([^}]+)\}", text_nc)]
+            for m in re.finditer(r"\\(?:bibliography|addbibresource)\{([^}]+)\}", text_nc):
+                for b in m.group(1).split(","):
+                    b = b.strip(); b = b if b.endswith(".bib") else b + ".bib"
+                    bp = os.path.normpath(os.path.join(os.path.dirname(f), b)).replace("\\", "/")
+                    if bp not in all_set and b not in all_set:
+                        flags.append({"kind": "doc-missing-bibliography", "thing": "doc:" + f,
+                                      "text": "%s uses the bibliography %s, which is not in the project" % (f, b)})
+        else:
+            cites = [(m.start(), [k.rstrip(".:") for k in re.findall(r"@([\w:.-]+)", m.group(0))])
+                     for m in re.finditer(r"\[[^\]\[]*@[\w:.-]+[^\]\[]*\]", text_nc)]
+            cites = [(p, [k for k in ks if not k.startswith(("fig:", "tbl:", "sec:", "eq:"))]) for p, ks in cites]
+        for pos, keys in cites:
+            if not keys:
+                continue
+            s0 = max(text_nc.rfind(". ", 0, pos), text_nc.rfind("\n", 0, pos)) + 1
+            claim = re.sub(r"\s+", " ", text_nc[s0:pos]).strip()[:140]
+            cid = "claim:%s:%d" % (f, text_nc.count("\n", 0, pos) + 1)
+            things.append({"id": cid, "kind": "claim", "file": f, "text": claim, "section": sec_at(pos)})
+            for k in keys:
+                citations.append((f, k))
+                links.append(_rlink(R, cid, "reference:" + k, "cites", f, k))
+                if has_bib and k not in bib:
+                    flags.append({"kind": "doc-missing-citation", "thing": cid,
+                                  "text": "%s cites `%s` (line %d), which no bibliography holds (%s)" % (
+                                      f, k, text_nc.count("\n", 0, pos) + 1, ", ".join(bibs[:2])),
+                                  "check": {"reader": R, "file": f, "contains": k}})
+        if cites and not has_bib:
+            flags.append({"kind": "doc-missing-bibliography", "thing": "doc:" + f,
+                          "text": "%s cites %d source(s) but the project has no .bib file" % (f, len(cites))})
+        # figures: a label (or a Markdown id) and the image it shows; references to them
+        if kind == "tex":
+            for m in re.finditer(r"\\begin\{figure\*?\}([\s\S]*?)\\end\{figure\*?\}", text):
+                body = m.group(1)
+                lab = re.search(r"\\label\{([^}]+)\}", body)
+                img = re.search(r"\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}", body)
+                scr = re.search(r"%\s*script:\s*(\S+)", body)
+                fid = lab.group(1) if lab else (img.group(1) if img else "figure@%d" % m.start())
+                figures[fid] = {"file": f, "image": img.group(1) if img else None,
+                                "script": scr.group(1) if scr else None, "labelled": bool(lab), "section": sec_at(m.start())}
+            for m in re.finditer(r"\\(?:ref|autoref|cref|Cref|pageref|eqref|vref)\{([^}]+)\}", text_nc):
+                for k in m.group(1).split(","):
+                    fig_refs.setdefault(k.strip(), []).append(f)
+        else:
+            for m in re.finditer(r"!\[([^\]]*)\]\(\s*([^)\s]+)\s*\)(\{[^}]*\})?", text_nc):
+                attrs = m.group(3) or ""
+                idm = re.search(r"#((?:fig:)?[\w:.-]+)", attrs)
+                scr = re.search(r"script\s*=\s*\"?([^\"\s}]+)", attrs)
+                fid = idm.group(1) if idm else m.group(2)
+                figures[fid] = {"file": f, "image": m.group(2), "script": scr.group(1) if scr else None,
+                                "labelled": bool(idm), "section": sec_at(m.start())}
+            for m in re.finditer(r"(?:@|\\ref\{)((?:fig|tbl):[\w:.-]+)", text_nc):
+                fig_refs.setdefault(m.group(1).rstrip(".:"), []).append(f)
+            for m in re.finditer(r"(?im)^(?:figure|fig\.?)\s+(\d+)\s*[:.]", text_nc):   # a Word caption "Figure 3: ..."
+                figures["Figure %s" % m.group(1)] = {"file": f, "image": None, "script": None, "labelled": True,
+                                                     "section": sec_at(m.start()), "caption": True}
+            for m in re.finditer(r"(?i)\b(?:figure|fig\.)\s+(\d+)\b", text_nc):
+                at_start = m.start() == text_nc.rfind("\n", 0, m.start()) + 1
+                if not (at_start and re.match(r"\s*[:.]", text_nc[m.end():])):   # not the caption itself
+                    fig_refs.setdefault("Figure %s" % m.group(1), []).append(f)
+        for m in RQ_DEF.finditer(text_nc):
+            q = m.group(1).upper().replace(" ", "")
+            rq_defs.setdefault(q, {"file": f, "text": m.group(2)[:120], "section": sec_at(m.start(1))})
+        for m in RQ_ANY.finditer(text_nc):
+            rq_mentions.append(("RQ" + m.group(1), sec_at(m.start()), f))
+        # links to other files (a generic reference)
+        for href in _md_links(text) if kind == "md" else re.findall(r"\\(?:input|include)\{([^}]+)\}", text_nc):
+            tgt, ok = _local_target(f, href if kind == "md" or href.endswith(".tex") else href + ".tex", all_set)
+            if tgt and ok:
+                links.append(_rlink(R, "doc:" + f, "file:" + tgt, "references", f, href))
+            elif tgt and kind == "md" and not f.endswith(".docx") and re.search(r"\]\(\s*<?%s" % re.escape(href), text):
+                flags.append({"kind": "broken-link", "thing": "doc:" + f,
+                              "text": "%s links to %s, which is not in the project" % (f, href),
+                              "check": {"reader": R, "file": f, "contains": href}})
+
+    # scripts that make figures, and the data each reads
+    scripts = [p for p in all_files if p.lower().endswith(SCRIPT_EXT)]
+    script_txt = {p: _read(os.path.join(root, p)) for p in scripts if os.path.getsize(os.path.join(root, p)) < MAX_PARSE}
+    makes = {}
+    for p, s in script_txt.items():
+        lits = set(re.findall(r"""["']([^"'\n]{3,200})["']""", s))
+        for lit in lits:
+            b = os.path.basename(lit)
+            if b.lower().endswith(IMG_EXT):
+                makes.setdefault(os.path.splitext(b)[0], p)
+        datas = sorted(l for l in lits if l.lower().endswith(DATA_EXT))
+        if any(l.lower().endswith(IMG_EXT) for l in lits):
+            things.append({"id": "script:" + p, "kind": "script", "file": p})
+            for dpath in datas:
+                did = "data:" + dpath
+                if did not in {x["id"] for x in things}:
+                    things.append({"id": did, "kind": "data", "path": dpath,
+                                   "exists": any(dpath == a or a.endswith("/" + dpath.lstrip("./")) for a in all_files)})
+                links.append(_rlink(R, "script:" + p, did, "reads", p, dpath))
+    mk = _read(os.path.join(root, "Makefile")) if "Makefile" in all_set else ""
+    for m in re.finditer(r"(?m)^([^\s:#][^:=\n]*?)\s*:\s*([^=\n]*)$", mk):
+        for tgt in m.group(1).split():
+            if tgt.lower().endswith(IMG_EXT):
+                for dep in m.group(2).split():
+                    if dep.lower().endswith(SCRIPT_EXT):
+                        makes.setdefault("decl:" + os.path.splitext(os.path.basename(tgt))[0], dep)
+    for fid, fg in figures.items():
+        gid = "figure:" + fid
+        things.append({"id": gid, "kind": "figure", "file": fg["file"], "image": fg["image"], "section": fg["section"]})
+        links.append(_rlink(R, fg["section"], gid, "contains", fg["file"], fid if fg["labelled"] else (fg["image"] or fid)))
+        stem = os.path.splitext(os.path.basename(fg["image"]))[0] if fg["image"] else None
+        declared = fg["script"] or (makes.get("decl:" + stem) if stem else None)
+        maker = makes.get(stem) if stem else None
+        if declared:
+            dp = os.path.normpath(os.path.join(os.path.dirname(fg["file"]), declared)).replace("\\", "/")
+            if declared in all_set or dp in all_set:
+                links.append(_rlink(R, "script:" + (declared if declared in all_set else dp), gid, "makes",
+                                    fg["file"] if fg["script"] else "Makefile", declared))
+            else:
+                flags.append({"kind": "doc-figure-script-gone", "thing": gid,
+                              "text": "figure %s (%s) says it is made by %s, which is no longer in the project" % (
+                                  fid, fg["file"], declared),
+                              "check": {"reader": R, "file": fg["file"] if fg["script"] else "Makefile", "contains": declared}})
+        elif maker:
+            links.append(_rlink(R, "script:" + maker, gid, "makes", maker, stem))
+        if fg["labelled"] and not fig_refs.get(fid):
+            flags.append({"kind": "doc-figure-unreferenced", "thing": gid,
+                          "text": "figure %s (%s) is never referenced in the text" % (fid, fg["file"]),
+                          "check": {"reader": R, "file": fg["file"], "contains": fid}})
+        elif not fg["labelled"]:
+            things[-1]["unlabelled"] = True
+    for q, d in sorted(rq_defs.items()):
+        qid = "question:" + q
+        things.append({"id": qid, "kind": "question", "file": d["file"], "text": d["text"], "section": d["section"]})
+        where = sorted({s for (qq, s, _) in rq_mentions if qq == q and s != d["section"]})
+        for s in where:
+            links.append(_rlink(R, s, qid, "answers", s.split(":", 1)[1].split("#")[0], q.replace("RQ", "RQ")))
+        if not where:
+            flags.append({"kind": "doc-question-unanswered", "thing": qid,
+                          "text": "%s (\"%s\", %s) is asked but no other chapter or section comes back to it" % (
+                              q, d["text"][:60], d["file"])})
+    n = {k: sum(1 for x in things if x["kind"] == k) for k in ("document", "section", "claim", "reference", "figure", "script", "data", "question")}
+    return {"things": things, "links": links, "flags": flags, "files": seen,
+            "summary": "documents: %d files, %d sections, %d claims citing, %d references, %d figures, %d scripts, %d data, %d questions" % tuple(n.values())}
+
+
+# Any folder: headings, links, references, sizes ────────────────────────────────────────────────────────────────
+
+def folder_reader(root, all_files, cfg, taken=()):
+    R = "folder"
+    taken = set(taken)
+    rest = [f for f in all_files if f not in taken and not f.endswith(CODE_EXT)]
+    if not rest:
+        return None
+    all_set = set(all_files)
+    things, links, flags, seen = [], [], [], {}
+    total = 0
+    for f in rest:
+        full = os.path.join(root, f)
+        size = os.path.getsize(full)
+        total += size
+        ext = os.path.splitext(f)[1].lower()
+        is_text = ext in TEXT_EXT or ext in (".md", ".markdown") or (not ext and size < 200_000)
+        seen[f] = "%d:%d" % (size, int(os.stat(full).st_mtime_ns // 1_000_000_000)) if size > BIG_BYTES else _file_sha(root, f)
+        t = {"id": "file:" + f, "kind": "file", "path": f, "bytes": size}
+        if size > BIG_BYTES:
+            things.append(t)
+            flags.append({"kind": "big-file", "thing": t["id"],
+                          "text": "%s is %d MB: too big to read whole (over %d MB)" % (f, size // (1024 * 1024), BIG_BYTES // (1024 * 1024))})
+            continue
+        if not is_text:
+            things.append(t); continue
+        txt = _read(full)
+        t["lines"] = txt.count("\n") + (1 if txt and not txt.endswith("\n") else 0)
+        if t["lines"] > BIG_FILE or len(txt) > MAX_PARSE:
+            flags.append({"kind": "big-file", "thing": t["id"],
+                          "text": "%s is %d lines: too big to read whole (over %d)" % (f, t["lines"], BIG_FILE)})
+        if len(txt) > MAX_PARSE:
+            things.append(t); continue
+        heads = re.findall(r"(?m)^#{1,6}\s+(.+?)\s*#*$", txt) if ext in (".md", ".markdown", ".txt", "") else []
+        heads += re.findall(r"(?m)^(\S[^\n]{1,80})\n[=\-~^]{3,}\s*$", txt) if ext in (".rst", ".txt") else []
+        heads += re.findall(r"(?m)^\*+\s+(.+)$", txt) if ext == ".org" else []
+        heads += re.findall(r"(?is)<h[1-6][^>]*>(.*?)</h[1-6]>", txt) if ext in (".html", ".htm") else []
+        t["headings"] = [re.sub(r"<[^>]+>", "", h).strip()[:80] for h in heads][:30]
+        things.append(t)
+        for href in _md_links(txt) + re.findall(r"`([\w./-]+\.\w{1,5})`", txt):
+            tgt, ok = _local_target(f, href, all_set)
+            if not tgt:
+                if href.startswith("http"):
+                    links.append(_rlink(R, "file:" + f, "url:" + href, "links", f, href))
+            elif ok:
+                links.append(_rlink(R, "file:" + f, "file:" + tgt, "references", f, href))
+            elif not href.startswith("`") and href in txt and re.search(r"\]\(\s*<?%s" % re.escape(href), txt):
+                flags.append({"kind": "broken-link", "thing": "file:" + f,
+                              "text": "%s links to %s, which is not in the folder" % (f, href),
+                              "check": {"reader": R, "file": f, "contains": href}})
+    return {"things": things, "links": links, "flags": flags, "files": seen,
+            "summary": "folder: %d other files, %d KB, %d with headings" % (
+                len(rest), total // 1024, sum(1 for x in things if x.get("headings")))}
+
+
+def run_other_readers(root, out_rel, cfg):
+    """{reader: result} for the readers beyond code, each only when the project has something for it."""
+    all_files = list_all(root, out_rel)
+    res, taken = {}, set()
+    pb = powerbi_reader(root, all_files, cfg)
+    if pb:
+        res["powerbi"] = pb; taken |= set(pb["files"])
+    dc = documents_reader(root, [f for f in all_files if f not in taken], cfg)
+    if dc:
+        res["documents"] = dc; taken |= set(dc["files"])
+    if cfg.get("folder", True):
+        fo = folder_reader(root, all_files, cfg, taken)
+        if fo:
+            res["folder"] = fo
+    return res
+
+
+OTHER_READERS = ("powerbi", "documents", "folder")
+
+
 # ── resolution: an import to a file ────────────────────────────────────────────────────────────────────────────
 
 def _tsconfig_paths(root):
@@ -745,6 +1489,10 @@ def build(root, out=None, config_path=None, run_gens=True):
                       "text": "%d %s file(s) not read (no %s reader yet): %s" % (
                           len(fs), lang, lang, ", ".join("%s/ %d" % (t, n) for t, n in sorted(tops.items(), key=lambda kv: -kv[1])[:4]))})
 
+    others = run_other_readers(root, out_rel, cfg)
+    for name, r in others.items():
+        things.extend(r["things"]); links.extend(r["links"]); flags.extend(r["flags"])
+
     def link(frm, to, kind, file, evidence, line=None):
         links.append({"from": frm, "to": to, "kind": kind,
                       "check": {"reader": "code", "file": file, "contains": evidence}, **({"line": line} if line else {})})
@@ -1004,6 +1752,7 @@ def build(root, out=None, config_path=None, run_gens=True):
             "files": {p: facts[p]["sha"] for p in sorted(facts)},
             "stat": {p: facts[p].get("stat") for p in sorted(facts)},
             "unread": {lang: sorted(fs) for lang, fs in unread.items()},
+            "readers": {n: {"summary": r["summary"], "files": r["files"]} for n, r in others.items()},
             "areas": area_rows, "features": feature_rows, "joins": joins, "generators": gens,
             "things": things, "links": links, "flags": flags}
     os.makedirs(os.path.join(out, "areas"), exist_ok=True)
@@ -1015,6 +1764,8 @@ def build(root, out=None, config_path=None, run_gens=True):
                                             "tests": [], "lines": row["lines"]}, features[row["feature"]], facts,
                                            imports_of, imported_by, tests_of, areas_index, joins, gens, flags,
                                            feature=True))
+    for n, r in others.items():
+        _write(out, "areas/%s.md" % n, reader_card(n, r))
     _write(out, "joins.md", joins_md(data))
     data["seconds"] = round(time.time() - t0, 2)
     ov = overview_md(data)
@@ -1022,6 +1773,31 @@ def build(root, out=None, config_path=None, run_gens=True):
     data["overview_lines"] = ov.count("\n")
     _write(out, "map.json", json.dumps(data, indent=1, ensure_ascii=False, default=list) + "\n")
     return data, out
+
+
+def reader_card(name, r):
+    """One card per reader beyond code: what it found, by kind, then its flags."""
+    L = ["# %s" % r["summary"], "", "Generated by `kit.py map`; each link below carries a check `--check` reruns.", ""]
+    flags = r["flags"]
+    if flags:
+        L.append("## Flags (%d)" % len(flags))
+        L.extend("- **%s** %s" % (f["kind"], f["text"]) for f in flags)
+        L.append("")
+    kinds = {}
+    for t in r["things"]:
+        kinds.setdefault(t["kind"], []).append(t)
+    out_of = {}
+    for ln in r["links"]:
+        out_of.setdefault(ln["from"], []).append(ln)
+    for k, ts in kinds.items():
+        L.append("## %s (%d)" % (k, len(ts)))
+        for t in ts[:200]:
+            extra = "; ".join("%s %s" % (ln["kind"], ln["to"].split(":", 1)[-1]) for ln in out_of.get(t["id"], [])[:8])
+            L.append("- %s%s" % (t["id"].split(":", 1)[-1], (" (%s)" % extra) if extra else ""))
+        if len(ts) > 200:
+            L.append("- +%d more in map.json" % (len(ts) - 200))
+        L.append("")
+    return "\n".join(L) + "\n"
 
 
 def _card_name(a):
@@ -1090,8 +1866,16 @@ def overview_md(d):
     if d["generators"]:
         L.append("")
         L.append("Generators: " + "; ".join("`%s` -> %s (exit %d)" % (g["run"], g["out"], g["rc"]) for g in d["generators"]))
+    if d.get("readers"):
+        L.append("")
+        L.append("## Beyond code (card: areas/<reader>.md)")
+        for n, r in d["readers"].items():
+            L.append("- %s" % r["summary"])
     L.append("")
-    order = ["unread", "dropped-field", "no-csrf-auth", "no-csrf", "no-auth", "never-read", "generator-failed", "uncalled", "big-file"]
+    order = ["unread", "powerbi-needs-export", "pbi-missing-measure", "pbi-missing-relationship",
+             "pbi-ambiguous-relationship", "pbi-personal-source", "pbi-unused-measure", "pbi-missing-report",
+             "doc-missing-citation", "doc-missing-bibliography", "doc-figure-script-gone", "doc-figure-unreferenced",
+             "doc-question-unanswered", "broken-link", "dropped-field", "no-csrf-auth", "no-csrf", "no-auth", "never-read", "generator-failed", "uncalled", "big-file"]
     counts = {}
     for f in d["flags"]:
         counts[f["kind"]] = counts.get(f["kind"], 0) + 1
@@ -1213,9 +1997,14 @@ def check(root, out=None, config_path=None, run_gens=True):
             continue
         now[p] = old[p] if p in old and stat.get(p) == [st.st_size, st.st_mtime_ns] else _sha(_read(os.path.join(root, p)))
     changed = sorted(p for p in set(now) | set(old) if now.get(p) != old.get(p))
+    if d.get("readers") is not None:   # the readers beyond code: their files, read again the same way
+        prev = {p: sha for r in d["readers"].values() for p, sha in r["files"].items()}
+        cur = {p: sha for r in run_other_readers(root, out_rel, load_config(root, config_path)).values()
+               for p, sha in r["files"].items()}
+        changed += sorted(p for p in set(prev) | set(cur) if prev.get(p) != cur.get(p))
     problems = []
     if changed:
-        problems.append("%d code file(s) changed since the map was built from %s: %s" % (
+        problems.append("%d file(s) changed since the map was built from %s: %s" % (
             len(changed), d.get("commit") or "this folder", ", ".join(changed[:8]) + (" ..." if len(changed) > 8 else "")))
     cache, failed, ran = {}, [], 0
     for ln in d.get("links") or []:
@@ -1237,7 +2026,7 @@ def check(root, out=None, config_path=None, run_gens=True):
             continue
         ran += 1
         if fp not in cache:
-            cache[fp] = strip_ts(_read(os.path.join(root, fp))) if fp.endswith(TS_EXT) else _read(os.path.join(root, fp))
+            cache[fp] = strip_ts(_read(os.path.join(root, fp))) if fp.endswith(TS_EXT) else _text_of(root, fp)
         txt = cache[fp]
         if "contains" in c and c["contains"] not in txt:
             failed.append("%s -%s-> %s: `%s` is no longer in %s" % (ln["from"], ln["kind"], ln["to"], c["contains"], fp))
