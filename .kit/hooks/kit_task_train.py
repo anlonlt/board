@@ -94,7 +94,7 @@ def on_create(root, st, ti, tr):
             cfg = json.load(open(os.path.join(root, ".kit", "config.json"), encoding="utf-8"))
         except (OSError, ValueError):
             pass
-        if artifact_board(cfg):
+        if artifact_board(cfg) and on_web():
             hint = (" The board is an Artifact: start its local copy first (`python3 -I .kit/kit.py artifact pull`, the "
                     "calls it prints, `python3 -I .kit/kit.py artifact load`), then TaskUpdate this task or create it again.")
         return "Task %s (train %s step %s): %s; it is only in your task list.%s" % (tid, train, part, res["error"], hint)
