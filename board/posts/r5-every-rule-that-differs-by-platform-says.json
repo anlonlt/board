@@ -25,7 +25,7 @@
   {
    "from": "task",
    "n": 2,
-   "status": "open",
+   "status": "doing",
    "title": "A table of what differs by platform, like the hook table"
   },
   {
@@ -34,7 +34,7 @@
    ],
    "from": "task",
    "n": 3,
-   "status": "open",
+   "status": "done",
    "title": "A test that runs resume, done, launch and step new under each platform (faked as this morning's agy..."
   },
   {
@@ -47,6 +47,6 @@
  "task": "Every rule that differs by platform says where it applies, and a test catches a rule that leaks to another platform. At least eight times since 11-23 a rule made on one platform was applied to the others: the launchers' runtime (CL26), hooks copied into every runtime (CL28, CL37), the web's Artifact STALE gate on a computer (CL30, fixed in part by CL44 item 1), done's Artifact push on a computer (CL51), the web's \"orchestrator runs the real-project check\" on a computer (R4), Claude Code's hook reply sent to agy (CL44 item 9), a computer decision removing the web's cards agent (106bba6), the web's cards reminder in the CLI. Only the hooks were caught, because only they declare their platforms (the hook table's rows, and a test counting hooks per platform).\n\n1. One answer to \"where does this session run\" (web, CLI, agy, LMArena-like, generic), the kit's `_platform()`, used by every rule; never inferred from the config (a config naming an Artifact says what exists, not where the session runs). In scripts/kit.py.\n2. A table of what differs by platform, like the hook table: the Artifact steps, the real-project run, the cards (server or agent), the launcher, the reply format, the gates; each rule reads it instead of its own check.\n3. A test that runs resume, done, launch and step new under each platform (faked as this morning's agy run: environment and parent process) and compares what each does with the table, in tests/test_platform_matrix.py; a new rule with no row is refused.\n4. The part and orchestrator guides say: a change made for one platform names its row in the table.\n5. Launch follows the step's runner; taking a step over is a claim, never a launch: `launch` refuses a step assigned to another runner (a `claude-web` step from the computer, a `cli` or `agy` step from the web), naming it. A takeover goes through a claim (`launch --take` / CL49's `kit.py claim`): allowed only when the holder's session is checked ended or stalled, or the owner said so; it records on the post who took it, from whom and why, tells the old holder, and continues from where it stopped. Today only runners the kit cannot launch (antigravity-web, gemini-tasks) are refused (step_holder in scripts/kit.py).",
  "title": "Every rule that differs by platform says where it applies, checked by a test",
  "train": "runners",
- "updated_at": "2026-11-27T02:53:22Z",
+ "updated_at": "2026-11-27T02:53:50Z",
  "working_by": "owner"
 }
