@@ -357,7 +357,24 @@ enforced_by: review
 theme: repeat-counter-manual
 source: CL78
 created_at: 2026-11-27T09:15:18Z
+
 ## F20 (fix, active): the post is not on the board yet (https://claude.ai/artifact/Ek79P6H3WTPJjJVYPe9rsf): its local copy differs from what the Artifact last had. Run `python3 -I .kit/kit.py artifact push`, make the Artif
+scope: project
+enforced_by: review
 theme: stale board copy
 source: cl78-a-part-s-branch-holds-only-its-own-work
 created_at: 2026-11-27T09:10:18Z
+
+## F41 (fix, active): CL73 on main: a fresh session still lists _dashboard and _trains as unsent though it never touched them (cards rebuilt at start)
+scope: project
+enforced_by: review
+theme: stale-board-copie
+source: CL73 fresh-session check 09:20
+created_at: 2026-11-27T09:23:30Z
+
+## F42 (fix, active): CL73 on main: the sync batch sets 15 kit_docs with no if_version, blind writes over the live copies
+scope: project
+enforced_by: review
+theme: stale-board-copie
+source: CL73 fresh-session check kit_docs
+created_at: 2026-11-27T09:23:30Z
