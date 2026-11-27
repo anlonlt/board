@@ -72,7 +72,7 @@
  ".kit/hooks/kit_notify.py": "142269e891ffc58881e3670bd213d14139f8e5f345186f8249a7739604989feb",
  ".kit/hooks/kit_orchestrator_guard.py": "707d9c5eccfc59e84055a20f1d8a20d720504103463af5dfdb2e304a95f2e25a",
  ".kit/hooks/kit_pre_compact.py": "c551faed424640d90abbaf91d89bbcb0f3b56be696c0882cef8161d69c8ae213",
- ".kit/hooks/kit_say_it_once.py": "5bd99e556cc2dcbde8fb1b72f4d19cc6294b1a426f701f3dce11ae9e6d45941b",
+ ".kit/hooks/kit_say_it_once.py": "df4c383d4ca65cc9f6f51563db4a541ef3abb0bdf754ba8ad0b3d977d5d746e4",
  ".kit/hooks/kit_session_start.py": "9c5708982bf6d447a457791e86a627ea36b1b00d465ab4ba3e1ec655d1ba6c2d",
  ".kit/hooks/kit_stop.py": "30d8613fa8e400f3bba20e455a24af2fdedd2398552f7317753a3e128d955d89",
  ".kit/hooks/kit_task_train.py": "29bfbb41c6911358fcbdf25965c51f9baaa5c9e8a90da408224fedd41296b7ab",
@@ -105,5 +105,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "6b98364bd05586e3d6a5d328d0e59658638bb115d81c03b3c7cd2b266d8541f0",
- "_kit_commit": "7cd6994 2026-11-27T03:00:02+00:00"
+ "_kit_commit": "58414f0 2026-11-27T03:09:11+00:00"
 }

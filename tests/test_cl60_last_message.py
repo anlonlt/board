@@ -91,6 +91,11 @@ class LastSteps(unittest.TestCase):
         self.assertIn("did not type this turn", out)
         self.assertNotIn("the owner typed", out)
 
+    def test_notice_after_reminder_blocks_is_not_the_owner(self):
+        p = ("<tools-used-before-summary>x</tools-used-before-summary>\n[SYSTEM NOTIFICATION - NOT USER INPUT]\n"
+             + "y" * 500 + "\n<task-notification>\n<task-id>a</task-id>")
+        self.assertIn("did not type this turn", run({"hook_event_name": "UserPromptSubmit", "session_id": "s", "prompt": p}))
+
 
 class Resume(unittest.TestCase):
     def test_report_section_says_it_once(self):

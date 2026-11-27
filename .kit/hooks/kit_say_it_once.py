@@ -158,8 +158,11 @@ def not_typed(prompt):
     session's, the clerk's forward, another session's message, a timer or task notice, or the kit's launch line (a web
     part, started by create_session, has no KIT_ROLE to tell it is in the background)."""
     head = prompt.lstrip()[:400]
+    # CL60: a notice can open with reminder blocks (<system-reminder>, <tools-used-before-summary>) before its own
+    # marker, so the harness's own markers count anywhere in the prompt
     return (background() or prompt.startswith(FORWARD) or "<cross-session" in head or "SYSTEM NOTIFICATION" in head
-            or head.startswith("<task-notification>") or bool(LAUNCH_RE.match(prompt)))
+            or head.startswith("<task-notification>") or bool(LAUNCH_RE.match(prompt))
+            or "[SYSTEM NOTIFICATION - NOT USER INPUT]" in prompt or "\n<task-notification>" in prompt)
 
 
 def owner_typed(path):
