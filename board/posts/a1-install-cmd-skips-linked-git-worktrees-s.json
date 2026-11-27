@@ -1,9 +1,31 @@
 {
- "body": "Inspecting install.py, comment a1b2d992af8d48c8af39, and project rules",
+ "artifacts": [
+  "install.py",
+  "tests/test_install_worktree_cmd.py"
+ ],
+ "asked": [
+  {
+   "id": "a1b2d992af8d48c8af39",
+   "quote": "fix bin board (why did it change to a worktree ?) and launch R4, then a common review of R7 and R4 together"
+  }
+ ],
+ "bars": [
+  "6 of 6 new worktree launcher tests pass across linked worktrees, subdirectories, agent worktree paths, main checkouts, explicit override, and full update subprocess (asked a1b2d992af8d48c8af39)",
+  "83 of 87 full-suite test files pass on branch a1 (all install suites pass; 4 pre-existing unrelated failures on origin/main left untouched)",
+  "1 of 1 real-project dry-run passed cleanly on anlonlt/harmonize (exit 0, read-only)",
+  "1 of 1 live worktree dry-run in board-a1 skipped the default board launcher with an explicit git worktree notice"
+ ],
+ "body": "Running the installer or updater from a linked git worktree now leaves your global board launcher untouched instead of pointing it at a temporary worktree. Previously, the installer only skipped system temp folders, so any background worker updating the kit from its worktree silently overwrote the launcher and broke it once the worktree was cleaned up.\n\n### Why `~/.local/bin/board` changed to a worktree\nWhen a part subagent runs `python3 -I install.py . --update` inside a linked git worktree (such as `~/.gemini/antigravity-cli/worktrees/...`, `.claude/worktrees/...`, or a sibling worktree like `/home/anon/board-a1`), `install_cmd()` in `install.py` previously checked only `under_tempdir(t)`. Because linked worktrees live outside `/tmp`, `install_cmd()` saw the existing `# kit-board launcher` marker in `~/.local/bin/board` and rewrote it to `exec \"<worktree>/.kit/up\" \"$@\"`. Once that ephemeral worktree was removed, the one-word `board` command pointed at a deleted path.\n\n### What changed\n- `install.py`:\n  - Added `is_git_worktree(t)` detecting linked git worktrees via:\n    1. Paths under `/.gemini/antigravity-cli/worktrees/` or `/.claude/worktrees/` (checked on both `abspath` and `realpath`).\n    2. A `.git` file at `os.path.join(t, \".git\")` (`os.path.isfile(...)`).\n    3. `git -C <t> rev-parse --git-dir --git-common-dir` resolving to two different realpaths (catches subdirectories inside linked worktrees where `.git` is in an ancestor).\n  - Updated `install_cmd()` to check `is_git_worktree(t)` before `under_tempdir(t)` when `KIT_BIN_DIR` is not explicitly set, logging `SKIPPED command \\`<cmd>\\`: <t> is a git worktree (set KIT_BIN_DIR to install its launcher)` and returning without modifying `~/.local/bin/<cmd>`.\n  - Fixed a `ResourceWarning` in `install_cmd()` by closing the existing launcher file with a `with open(...)` block.\n- `tests/test_install_worktree_cmd.py`:\n  - Unit tests verifying `is_git_worktree()` on main checkouts (root + subdir), real `git worktree add` linked worktrees (root + subdir), `.git` file fixtures, and `.gemini/antigravity-cli/worktrees/` + `.claude/worktrees/` paths.\n  - Unit tests verifying `install_cmd()` skips `~/.local/bin/<cmd>` and preserves an existing launcher on a linked worktree, still installs and updates `~/.local/bin/<cmd>` on a main checkout, and still writes to `KIT_BIN_DIR` when explicitly set.\n  - End-to-end `install.py <worktree> --update` subprocess test verifying both `<cmd>` and `board` are skipped with the `is a git worktree` notice while leaving pre-existing `~/.local/bin/` launchers untouched, and that explicit `KIT_BIN_DIR` overrides the skip.\n\n### Verification\n- Targeted tests:\n  - `python3 -m unittest tests.test_install_worktree_cmd -v`: 6/6 OK (0 warnings).\n  - `python3 -I test_install.py`: 0 failed.\n  - `python3 -m unittest tests.test_install_update -v`: 2/2 OK.\n- Live worktree dry-run:\n  - `python3 -I install.py . --update --dry-run` in `/home/anon/board-a1` printed:\n    `SKIPPED command \\`board\\`: /home/anon/board-a1 is a git worktree (set KIT_BIN_DIR to install its launcher)`\n- Real-project dry-run (K2):\n  - `python3 -I /home/anon/board-a1/install.py /home/anon/harmonize --update --dry-run` exited 0, read-only, leaving `/home/anon/harmonize` and `~/.local/bin` untouched.\n- Full test suite (`python3 -I .kit/device.py run --kind tests -- python3 scripts/run_all_tests.py --all --keep-going -j 2`):\n  - 83 of 87 suites passed (every install suite passed, including `test_install_worktree_cmd`, `test_install_permissions`, `test_install_update`, `test_new_install`, `test_unified_hooks`, `test_install.py`, `test_install_bd11.py`, `test_platform_matrix`, and `test_cl44_agy_runtime`).\n  - 4 pre-existing unrelated suites on `origin/main` failed (`test_cl54_prompt_from_post`, `test_install_present_runtimes`, `test_m10_fix_kinds`, `test_run_all_tests`); left untouched to avoid overlap with R4.",
  "branch": "a1",
+ "breaks": "revert",
+ "check": "python3 -m unittest tests.test_install_worktree_cmd -v",
  "column": "info",
  "created_at": "2026-11-27T07:26:53Z",
  "from": "orchestrator",
+ "handoff": "Branch `a1` only modifies `install.py` (`is_git_worktree`, `install_cmd`) and adds `tests/test_install_worktree_cmd.py`, with zero overlap with R4 (`scripts/kit.py` and templates untouched). Ready for review and landing.",
+ "not_checked": [
+  "4 pre-existing failures on origin/main outside install_cmd (test_cl54_prompt_from_post, test_install_present_runtimes, test_m10_fix_kinds, test_run_all_tests) were not modified to keep this step strictly scoped to install.py and avoid overlap with R4"
+ ],
  "orchestrator": "702b0528-ed8c-482b-a8d8-9ffbbcdd8029",
  "orchestrator_device": "penguin",
  "orchestrator_name": "Antigravity orchestrator",
@@ -44,5 +66,6 @@
  "task": "When a part subagent runs `install.py . --update` inside a linked git worktree (e.g. `~/.gemini/antigravity-cli/worktrees/...` or `.claude/worktrees/...`), `install_cmd()` in `install.py` only checks `under_tempdir(t)` and overwrites `~/.local/bin/<cmd>` to point at the ephemeral worktree, breaking the one-word launcher once the worktree is removed.\n\n1. In `install.py` (`install_cmd`), detect linked git worktrees (`.git` is a file, or `git rev-parse --git-dir` differs from `--git-common-dir`, or path under `/.gemini/antigravity-cli/worktrees/` or `/.claude/worktrees/`) and skip writing `~/.local/bin/<cmd>` when `KIT_BIN_DIR` is not explicitly set, logging a clear `SKIPPED command ... is a git worktree` line (matching `under_tempdir`).\n2. Add unit tests in `tests/test_install_worktree_cmd.py` covering: a linked git worktree skips `~/.local/bin/<cmd>` and leaves an existing launcher untouched; a main checkout still installs/updates it; explicit `KIT_BIN_DIR` still overrides the skip.",
  "title": "install_cmd skips linked git worktrees so ~/.local/bin/<cmd> is never overwritten by a part",
  "train": "agy",
- "updated_at": "2026-11-27T08:19:11Z"
+ "updated_at": "2026-11-27T08:48:29Z",
+ "verdict": "Installing or updating from a linked git worktree now skips writing the default user launcher unless an explicit launcher folder is set, keeping the main checkout launcher intact."
 }
