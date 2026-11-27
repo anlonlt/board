@@ -2329,8 +2329,8 @@ html.kit-kbd .composer textarea, html.kit-kbd .focus-cmt-bar textarea { max-heig
         var r = await fetch("/_api/shares", { method: "POST", headers: hdrs, body: JSON.stringify({ post_id: p.id, repo: activeRepo, ttl_hours: 24, allow_write: true }) });
         if (!r.ok) throw new Error("HTTP " + r.status);
         var j = await r.json();
-        var url = location.origin + j.path;
-        var clip = "Complete this task and POST your findings back using Option A in the brief: " + url;
+        var url = location.origin + (j.invite || j.path);
+        var clip = "Open this link and do the task: attach your files to the card and write its result as it says first: " + url;
         if (navigator.clipboard && navigator.clipboard.writeText) { try { await navigator.clipboard.writeText(clip); } catch (e) {} }
         window.prompt("Scoped 24h link for external AI (copied if allowed):", clip);
       } catch (e) {

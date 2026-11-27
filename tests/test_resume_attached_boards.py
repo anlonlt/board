@@ -167,6 +167,10 @@ class ResumeReadsAttachedBoards(unittest.TestCase):
                     b = self.kit.resume(self.tmp, db_path=db, alive={"s1"}, cli=cli)
                 # the import line names the review-due steps since the task list is rebuilt with them too
                 b = b.replace(" ([r] too: its task completed starts its review)", "")
+                # CL17: a crashed step is relaunched with its relaunch line, not asked about
+                b = b.replace("relaunch it with its relaunch line (`kit.py launch <post> --continue`), within the device cap, "
+                              "without asking; only a step that waits on the owner waits for his answer (CL17).",
+                              "relaunch it or ask the owner.")
                 self.assertEqual(a, b, cli)
 
 
