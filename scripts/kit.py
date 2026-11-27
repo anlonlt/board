@@ -2283,6 +2283,7 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
             base = {}
     st = _art_state()
     not_there = set(st.get("not_there") or [])
+    sent_from_git = set()
     here, art, side = {}, {}, {}
     for coll in ART_COLLS:
         for row in _board_request(url, "db/%s" % coll, token=token).get("docs") or []:
@@ -2373,6 +2374,7 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
         if key in not_there and (coll, did) not in art:
             # O53 kept a document the Artifact never had from being sent; one git holds goes now, as a create
             not_there.discard(key)
+            sent_from_git.add(key)               # CL73: git holds it, the Artifact does not: it is to be sent
             try:
                 os.remove(_base_path(coll, did))
             except OSError:
@@ -2382,11 +2384,13 @@ def artifact_reconcile(m, url=None, token=None, branch=None, push=True):
         key = "%s/%s" % k
         if key in not_there and k not in art and k not in writes and here.get(k, (None,))[0] == g:
             not_there.discard(key)
+            sent_from_git.add(key)               # CL73: git holds it, the Artifact does not: it is to be sent
             try:
                 os.remove(_base_path(*k))
             except OSError:
                 pass
     st = _art_state()
+    st["written_here"] = sorted(set(st.get("written_here") or []) | sent_from_git)
     st["not_there"] = sorted(not_there)
     _art_save(st)
     # git: the documents it lacks or holds older, and the base (each document both sides will hold), in one commit
