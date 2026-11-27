@@ -80,13 +80,9 @@
  ".kit/hooks/kit_web_save.py": "74229a81f846eb4ccb4bd8834d320e3adb605458ed49534cce1916eb0237bbf6",
  ".kit/hooks/kit_wip.py": "d135c3b669a1d6e4727ada175cffc05bfd0dbe68a43f3dbe6df29eea09bacf0a",
  ".kit/hooks/test_hooks.py": "778123d6f729d1363c6ddad76c18cdb44cbe4fc4b6e9b2275211b1c62f53e654",
-<<<<<<< HEAD
- ".kit/kit.py": "2c10dcd869e548f5f7f2d3d150e49a9f5920f827e043f7836d2f00fde02d8ec4",
-=======
- ".kit/kit.py": "a1f05fc84a7bf65e749d5e0acc36170adb2299166483a7d1c3ded93ef3f0170a",
->>>>>>> origin/main
+ ".kit/kit.py": "e98773f66cc442bb074300898052e1c9e76d18eaec9d2850ed44b7ccbc47cb21",
  ".kit/kit_artifact_sync.py": "64760e0f0ff2e3e3aca193ddcbbf501ec30474179b5ea838a4e34dc5b8b2ca67",
- ".kit/kit_cards.py": "f7352a5317a42f958167146364539996603f8f8926a12da71f36ef6d4fa07ca8",
+ ".kit/kit_cards.py": "e53153952c0ef1443e69d9bf99053791521c13f937a89ab0a461e631476a1ff0",
  ".kit/kit_import.py": "7ee7050f20af4343885704ca613b86945472e9ceec08ec8e0fb47645578ba809",
  ".kit/kit_map.py": "77ae6e67cbb5eb4dcf9823d735baa70601b078793865e1999bc8c136d7f29b15",
  ".kit/landing.py": "abfe7e07eebd967e8292c890005fe2bbbc343e199147c0b0f2707d457b099186",
@@ -109,9 +105,5 @@
  ".kit/vendor/pdf.min.js": "5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946",
  ".kit/vendor/pdf.worker.min.js": "feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b",
  ".kit/web_takeover.py": "6b98364bd05586e3d6a5d328d0e59658638bb115d81c03b3c7cd2b266d8541f0",
-<<<<<<< HEAD
- "_kit_commit": "ad9265fb 2026-11-27T04:11:47+00:00"
-=======
- "_kit_commit": "700d65b3 2026-11-27T04:09:29+00:00"
->>>>>>> origin/main
+ "_kit_commit": "99e710f1 2026-11-27T08:05:50+00:00"
 }
