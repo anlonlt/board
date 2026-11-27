@@ -11,12 +11,28 @@
   "docs/cl36/post-body.png": {
    "sha": "c758cb189307daff22507277456b89aee9e0bf119b163c37868d38a8d089b6bf",
    "url": "/_blob/b2d63ce870cacc72888e9cb5353e8472"
+  },
+  "docs/cl57/after-desktop.png": {
+   "url": "/_blob/f93c3bbb08d9e82a3e6a5d01db65abde",
+   "sha": "e6404dd449f961b62dd85c0636a004c50bc770a8811449ec2ba6da7fbec77f8c"
+  },
+  "docs/cl57/after-phone.png": {
+   "url": "/_blob/d04d805932c403a2df00d1764ef317bf",
+   "sha": "2097af2c4851a67cfc353a7d5b2ceca06d96f2dfda0b813f949a4b7a4dee1b0c"
+  },
+  "docs/cl57/before-desktop.png": {
+   "url": "/_blob/214c47e1f3e701dc8fd435da206291b5",
+   "sha": "172516c85261e19dca9663ca64f61d009b484052b8fe35ad42c281653b59af66"
+  },
+  "docs/cl57/before-phone.png": {
+   "url": "/_blob/1073d5e84c73c5024233c7ee08ff9aba",
+   "sha": "62528afcb08b37ad11db81c56782dfc39027a76594a68caded6d11a5017bff77"
   }
  },
  "docs": {
   ".board+2F~memory+2F~ledger.md": {
-   "sha": "443481a59ae59a4ae10a1adc50e9d06b0931ba89c4a2b7624350421a593d14ae",
-   "version": 1
+   "sha": "8afab636260623b9f2020ae0ce2a304e0a938fdfc636a1a5fb4c267b53e60b4a",
+   "version": 2
   },
   ".kit+2F~BOARD.md": {
    "sha": "f0b746a07a268e6be02157445370cff94d233137a87e47c2acf7b99318b37e09",
@@ -151,8 +167,8 @@
    "version": 6
   },
   "kit+2F~claude-cli+2F~ORCHESTRATOR.template.md": {
-   "sha": "9e486179a0e1c71e4b8e67789c37d28c14bc6e4c31bc323243e6d228a7b05a0e",
-   "version": 4
+   "sha": "4ece8a733e17e0d82fa73fb27da55336904659e41ad870c9186b5f2f8839db57",
+   "version": 5
   },
   "kit+2F~claude-cli+2F~clerk.template.md": {
    "sha": "59b4e1bbd694497cb67688491769fa00159bd697c0a03b0ca1e29c2076810a72",
@@ -179,8 +195,8 @@
    "version": 4
   },
   "kit+2F~generic+2F~orchestrator.template.md": {
-   "sha": "2ec799ffb78c4ea4ee65b95886b68875455fae06c927e3a2e1be55d86acc9f3f",
-   "version": 2
+   "sha": "f88652a33d0cc3b5899a443931eded11d9d3850769f9b0a678e900d1a3e8605b",
+   "version": 3
   },
   "kit+2F~lessons.md": {
    "sha": "bf8caff727a820056bfc7203eaa38098cea636afd575bd3843fbc11b73c67f7c",
@@ -221,6 +237,22 @@
   "tests+2F~fixtures+2F~cl36_post_body.md": {
    "sha": "1f7b1090b7a1e23e1e80609eab4ee42714a327b177b1dab19e6c73fc645efc44",
    "version": 1
+  },
+  "docs+2F~cl57+2F~after-desktop.png": {
+   "version": 1,
+   "sha": "e6404dd449f961b62dd85c0636a004c50bc770a8811449ec2ba6da7fbec77f8c"
+  },
+  "docs+2F~cl57+2F~after-phone.png": {
+   "version": 1,
+   "sha": "2097af2c4851a67cfc353a7d5b2ceca06d96f2dfda0b813f949a4b7a4dee1b0c"
+  },
+  "docs+2F~cl57+2F~before-desktop.png": {
+   "version": 1,
+   "sha": "172516c85261e19dca9663ca64f61d009b484052b8fe35ad42c281653b59af66"
+  },
+  "docs+2F~cl57+2F~before-phone.png": {
+   "version": 1,
+   "sha": "62528afcb08b37ad11db81c56782dfc39027a76594a68caded6d11a5017bff77"
   }
  }
 }

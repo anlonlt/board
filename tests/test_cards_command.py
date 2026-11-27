@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import temp_cleanup  # noqa: E402,F401  CL52: the folders this file makes go at exit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_handoff import kit  # noqa: E402
