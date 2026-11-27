@@ -135,10 +135,10 @@ READ_WAY = ("a whole collection is read only through the kit: `python3 -I .kit/k
             "`kit.py post <id>`, `kit.py open`, `kit.py since <time>`; one document: ArtifactData `get`; a targeted "
             "lookup: `query` with a `where` and limit <= 5")
 STEP_WAY = ("plan the step with TaskCreate, metadata {\"train\": ..., \"part\": ...}: the task-train hook writes its post "
-            "and its prompt docs/prompts/<id>.md and answers with the launch line; local changes go to the Artifact "
+            "(the task, written once) and answers with the launch line; `kit.py launch` generates docs/prompts/<id>.md from it; local changes go to the Artifact "
             "with `python3 -I .kit/kit.py artifact push`")
 LAUNCH_WAY = ("launch a part from its prompt file: TaskCreate {train, part} first (the hook writes "
-              "docs/prompts/<id>.md), `python3 -I .kit/kit.py launch <id>` (it prints the call), then create_session with the prompt \"Your prompt is docs/prompts/<id>.md: read "
+              "its post), `python3 -I .kit/kit.py launch <id>` (it generates and commits docs/prompts/<id>.md from the post, and prints the call), then create_session with the prompt \"Your prompt is docs/prompts/<id>.md: read "
               "it and do it.\" (at most %d characters, starting so; a successor orchestrator: tag `orchestrator`; a clerk: "
               "tag `board-clerk`; a review: tag `review`; the title is not read)" % PROMPT_MAX)
 

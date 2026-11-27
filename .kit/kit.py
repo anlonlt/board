@@ -3062,6 +3062,7 @@ def doctor(m, db_path=None, fix=False, root=None):
     _doctor_conflicts(root, issues, lines)
     _doctor_portfolio_and_sync(root, issues, lines, fix=fix)
     lines += git_copy_lines(m, db_path, root)
+    _doctor_prompts(root, issues, lines, db_path)
     g = _post_gate()
     if g and root == os.path.abspath(ROOT):
         k = _kit_config().get("kit") or {}
@@ -3081,6 +3082,30 @@ def _is_card_done(doc):
     if str(doc.get("column") or "").strip().lower() == "done":
         return True
     return str(doc.get("status") or "").strip().lower() in _CLOSED_CARD_STATUSES
+
+
+def _doctor_prompts(root, issues, lines, db_path=None):
+    """CL54: a prompt file that says a task its post does not: an issue for an open step (its next launch would tell the
+    part something else), a line for a finished one (history: what it was told then)."""
+    try:
+        posts = _all_posts(db_path)
+    except Exception:
+        return
+    open_, old = [], 0
+    for pid, p in sorted(posts.items()):
+        if pid.startswith("_") or not isinstance(p, dict) or p.get("removed") or not str(p.get("task") or "").strip():
+            continue
+        why = prompt_drift(pid, p, root=root)
+        if not why:
+            continue
+        if step_state(p) in ("idle", "running"):
+            open_.append(why)
+        else:
+            old += 1
+    for why in open_:
+        issues.append("prompt differs from its post: " + why)
+    lines.append("prompts: %s%s" % ("%d differ from their open step's post" % len(open_) if open_ else "ok (each open step's prompt says its post's task)",
+                                   "; %d finished step(s) were told a task their post no longer says (history, kept)" % old if old else ""))
 
 
 def _is_card_blocked(doc, posts):
@@ -3155,13 +3180,14 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
         st = str(d.get("status") or "").strip()
         train = str(d.get("train") or "").strip()
         part = str(d.get("part") or "").strip()
-        rows.append((prio, pid, pr, pf, col, st, train, part, str(d.get("title") or "(untitled)"), str(d.get("body") or "")))
+        rows.append((prio, pid, pr, pf, col, st, train, part, str(d.get("title") or "(untitled)"), str(d.get("body") or ""),
+                     step_where(d) if pr else ""))
     rows.sort(key=lambda x: (x[0], x[1]))
     if not rows:
         who = ("runner=%s" % runner if runner else "") + (" for=%s" % for_owner if for_owner else "")
         return "queue%s: 0 open cards" % ((" (" + who.strip() + ")") if who.strip() else "")
     out = []
-    for prio, pid, pr, pf, col, st, train, part, title, body in rows:
+    for prio, pid, pr, pf, col, st, train, part, title, body, where in rows:
         tags = []
         if pr:
             tags.append("@" + pr)
@@ -3174,6 +3200,8 @@ def queue_cards(m, runner=None, for_owner=None, db_path=None, unblocked_only=Fal
         col_label = "%s/%s" % (col, st) if (train and st) else col
         first = body.strip().splitlines()[0][:100] if body.strip() else ""
         out.append("P%d [%s] %s (%s) — %s%s" % (prio, col_label, pid, " ".join(tags) or "unassigned", title, (" | " + first) if first else ""))
+        if where:                                  # CL54: a card a platform started by hand works from says where first
+            out.append("    where: " + where)
     return "\n".join(out) + "\n(%d card%s)" % (len(rows), "" if len(rows) == 1 else "s")
 
 
@@ -5183,7 +5211,12 @@ def part_prompt(pid, p, cli=None):
     rel = "docs/prompts/%s.md" % pid
     path, tpl = os.path.join(ROOT, rel), _part_template(cli)
     task = ""
-    if os.path.isfile(path):
+    if str(p.get("task") or "").strip():       # CL54: the post is where the task is written; the file is its copy
+        task = (_render_step_prompt(pid, p, cli=cli, path=path if os.path.isfile(path) else None) or "").strip()
+        task = re.sub(r"(?m)^Run `python3 -I \.kit/kit\.py resume --role part[^\n]*\n+", "", task)
+    if task:
+        pass
+    elif os.path.isfile(path):
         with open(path, encoding="utf-8") as fh:
             task = fh.read().strip()
         # the task in git, without the line that sends a reader of the file here
@@ -5204,8 +5237,10 @@ def _launch_line(part, rel, model=None, cli=None, post=None):
     name = "%s-%s" % (_slug(c.get("project") or "project"), _slug(part, 24))
     if active == "agy":
         agy_model = str(model or ((k.get("roles") or {}).get("part") or {}).get("model") or "inherit")
-        return ('invoke_subagent(TypeName="self", Role="Part: %s", Model="%s", Workspace="share", '
-                'Prompt="%s")') % (part, agy_model, _launch_text(rel))
+        pid = os.path.basename(rel)[:-3] if rel and rel.endswith(".md") else ""
+        # CL54: the prompt is generated from the post first (and committed), then the part starts from it
+        return ('%sinvoke_subagent(TypeName="self", Role="Part: %s", Model="%s", Workspace="share", '
+                'Prompt="%s")') % (("python3 -I .kit/kit.py step prompt %s, then " % pid) if pid else "", part, agy_model, _launch_text(rel))
     model = str(model or ((k.get("claude_cli_roles") or {}).get("part") or {}).get("model") or "inherit")
     post = post or (os.path.basename(rel)[:-3] if rel and rel.endswith(".md") else None)
     if post:   # CL13: one launch command writes the post and the Trains row, then starts the part (CLI or web)
@@ -5215,26 +5250,117 @@ def _launch_line(part, rel, model=None, cli=None, post=None):
         gate, name, _slug(part, 24), mode, (" --model %s" % model) if model != "inherit" else "", _launch_text(rel).replace("`", "\\`"))
 
 
-def _write_step_prompt(pid, doc, sources, cli=None):
-    """docs/prompts/<pid>.md: the step's task and his words, in git; how a part works is the kit's (part_prompt prints it). Never
-    overwrites one that exists."""
-    rel = "docs/prompts/%s.md" % pid
-    path = os.path.join(ROOT, rel)
-    if os.path.exists(path):
-        return rel, False
+def _render_step_prompt(pid, doc, cli=None, path=None):
+    """CL54: the prompt a step's post makes, as text (None: no part template here). The task is written once, on the
+    post; this file is generated from it at launch, never edited by hand. Its "What this does differently" is the
+    post's `differs`, else the one an older file holds (`path`)."""
     tpl = _part_template(cli)
     if tpl is None:
-        return None, False
+        return None
     head, sep, _ = tpl.partition(HOW_HEAD)
     if sep:
         first, _, rest = head.partition("\n")
         head = ("%s\n\nRun `python3 -I .kit/kit.py resume --role part --post <POST_ID>`: it prints this and how a part works here. "
                 "If it fails or prints STOP, do not start: do what it says.\n%s" % (first, rest))
-    tpl = _fill_part(head.rstrip() + "\n", pid, dict(doc, sources=list(sources)))
+    text = _fill_part(head.rstrip() + "\n", pid, dict(doc, sources=_as_list(doc.get("sources"))))
+    where = step_where(doc)
+    if where and "\n## The task" in text:
+        text = text.replace("\n## The task", "\n## Where to work\n%s\n\n## The task" % where, 1)
+    differs = str(doc.get("differs") or "").strip() or (_differs_of({}, path) if path else "")
+    if differs:
+        text = text.rstrip() + "\n\n" + CIRCLE_HEAD + "\n" + differs + "\n"
+    return text
+
+
+def step_where(post):
+    """CL54: where a step works, said first: its repo and branch, with the clone command ('' : the post names no branch).
+    R1 and R2 said "clone the repo" with no branch; a session started by hand found the right one only by luck."""
+    br = str(post.get("work_branch") or "").strip()
+    if not br:
+        return ""
+    repo = str(post.get("repo") or "").strip()
+    url = repo if repo.startswith("http") else ("https://github.com/%s" % repo if repo else "")
+    if not url:
+        return "Branch `%s` of this repo: `git fetch origin %s && git checkout %s`." % (br, br, br)
+    name = url.rstrip("/").split("/")[-1].replace(".git", "")
+    return ("Repo %s, branch `%s`: `git clone -b %s %s && cd %s` (already cloned: `git fetch origin %s && git checkout %s`)."
+            % (url.replace("https://github.com/", ""), br, br, url, name, br, br))
+
+
+def _write_step_prompt(pid, doc, sources, cli=None):
+    """docs/prompts/<pid>.md written from the post (the step's task and his words); how a part works is the kit's
+    (part_prompt prints it). Never overwrites one that exists: a launch regenerates it (sync_step_prompt)."""
+    rel = "docs/prompts/%s.md" % pid
+    path = os.path.join(ROOT, rel)
+    if os.path.exists(path):
+        return rel, False
+    text = _render_step_prompt(pid, dict(doc, sources=list(sources)), cli=cli)
+    if text is None:
+        return None, False
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
-        fh.write(tpl)
+        fh.write(text)
     return rel, True
+
+
+def _prompt_task(text):
+    """The `## The task` section of a prompt, its spaces folded (None: the text has none)."""
+    m = re.search(r"(?ms)^## The task[ \t]*\n(.*?)(?=^## |\Z)", text or "")
+    return re.sub(r"\s+", " ", m.group(1)).strip() if m else None
+
+
+def post_task(post, pid=None):
+    """CL54: a step's task as its post holds it (the one place it is written)."""
+    return str(post.get("task") or post.get("body") or "").strip() or str(post.get("title") or pid or "")
+
+
+def prompt_drift(pid, post, root=None):
+    """CL54: None, or how docs/prompts/<pid>.md differs from its post's task: edited by hand, or the post changed and
+    no launch has regenerated it yet."""
+    rel = "docs/prompts/%s.md" % pid
+    try:
+        with open(os.path.join(root or ROOT, rel), encoding="utf-8") as fh:
+            have = _prompt_task(fh.read())
+    except OSError:
+        return None
+    want = re.sub(r"\s+", " ", post_task(post, pid)).strip()
+    if have is None or not want or have == want:
+        return None
+    return "%s says a task its post %s does not (%s); a prompt is generated from its post at launch, never edited by hand: " \
+           "put the task on the post (or launch again to regenerate the file)" % (rel, pid, _short(have, 80))
+
+
+def sync_step_prompt(pid, post, cli=None, commit=True):
+    """CL54: docs/prompts/<pid>.md generated from the post as it is now, and committed (that path only) when it is new
+    or differs: the record of what each part was told stays in git, each version its own commit. Returns {rel, written,
+    commit, regenerated} or {rel, error}."""
+    rel = "docs/prompts/%s.md" % pid
+    path = os.path.join(ROOT, rel)
+    res = {"rel": rel, "written": False, "commit": None, "regenerated": False}
+    if os.path.isfile(path) and not str(post.get("task") or "").strip():
+        return res        # a post from before CL54 that holds no task: its file is the task, kept as it is
+    text = _render_step_prompt(pid, post, cli=cli, path=path if os.path.isfile(path) else None)
+    if text is None:
+        return res if os.path.isfile(path) else dict(res, error="no part template here to generate %s from (reinstall the kit)" % rel)
+    cur = _read_text(path) if os.path.isfile(path) else None
+    if cur != text:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        res.update(written=True, regenerated=cur is not None)
+    if not commit:
+        return res
+    tracked = _git_run("ls-files", "--error-unmatch", rel).returncode == 0
+    if tracked and _git_run("diff", "--quiet", "HEAD", "--", rel).returncode == 0:
+        return res
+    _git_run("add", "--", rel)
+    msg = "prompt(%s): %s from post %s" % (str(post.get("part") or pid), "regenerated, the post changed" if tracked else "generated", pid)
+    r = _git_run("commit", "-q", "--no-verify", "-m", msg, "--", rel)
+    if r.returncode != 0:
+        return dict(res, error="could not commit %s: %s" % (rel, (r.stderr or r.stdout).strip()[:300]))
+    res["commit"] = _git_run("rev-parse", "--short", "HEAD").stdout.strip()
+    res["regenerated"] = tracked
+    return res
 
 
 def _step_board(train, posts, board=None):
@@ -5716,10 +5842,9 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
             if found is None or str(p.get("created_at") or "") > str(posts[found].get("created_at") or ""):
                 found = pid
     if found:
-        rel = "docs/prompts/%s.md" % found
-        has = os.path.exists(os.path.join(ROOT, rel))
-        res = {"post": found, "adopted": True, "prompt": rel if has else None, "prompt_written": False,
-               "launch": _launch_line(part, rel, model, cli=cli) if has else None}
+        rel = "docs/prompts/%s.md" % found      # CL54: written from the post at launch
+        res = {"post": found, "adopted": True, "prompt": rel, "prompt_written": False,
+               "launch": _launch_line(part, rel, model, cli=cli)}
         if att:
             res["board"] = att
         return res
@@ -5757,6 +5882,13 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
         doc["after"] = [str(x) for x in after]
     if kind in ("bug", "feature"):
         doc["kind"] = kind
+    if not att:                                    # CL54: where to work, in the post and so in its prompt
+        here = _git_run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        if here and here != "HEAD":
+            doc["work_branch"] = here
+            gh = _github_url()
+            if gh:
+                doc["repo"] = gh.replace("https://github.com/", "")
     write = None
     if att:
         fp = os.path.join(os.path.abspath(_art_dir()), "out", "repos", att, "posts", pid + ".json")
@@ -5766,7 +5898,8 @@ def step_new(train, part, title, task="", parent=None, sources=(), model=None, r
                  "collection": "repos/%s/posts" % att, "doc_id": pid, "file_path": fp}
     elif not _board_write("set", "posts", pid, doc):
         return {"error": "the board did not take step %s (is the board server running?)" % part}
-    rel, made = _write_step_prompt(pid, doc, list(sources), cli=cli)
+    # CL54: the task is written once, on the post; `kit.py launch` generates docs/prompts/<pid>.md from it and commits it
+    rel, made = "docs/prompts/%s.md" % pid, False
     rec = train_record(posts, train)
     res = {"post": pid, "adopted": False, "pieces": len(doc.get("subtasks") or []), "prompt": rel, "prompt_written": made,
            "train_goal": (rec or {}).get("goal") or "(none written: `kit.py trains new`)",
@@ -6076,6 +6209,12 @@ def _launch_attached(pid, b, post, session_id=None, model=None, web=None, reset=
         return subprocess.run(["git", "-C", clone] + list(a), capture_output=True, text=True, timeout=kw.get("timeout", 120))
     branch = _prompt_branch(clone, pid, g)
     if not session_id:
+        has_task = bool(str(post.get("task") or "").strip()) or not os.path.isfile(mine)
+        text = _render_step_prompt(pid, post, cli=cli, path=mine if os.path.isfile(mine) else None) if has_task else None
+        if text is not None and (not os.path.isfile(mine) or _read_text(mine) != text):   # CL54: from the post as it is now
+            os.makedirs(os.path.dirname(mine), exist_ok=True)
+            with open(mine, "w", encoding="utf-8") as fh:
+                fh.write(text)
         why = circle_gate(b.get("posts") or {}, pid, post, mine if os.path.isfile(mine) else os.path.join(clone, rel))
         if why:
             return dict(out, error=why)
@@ -6109,7 +6248,11 @@ def _inline_prompt(text, rel, body):
 
 def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, session_id, model, web, reset, take=False):
     inline = None
-    if not session_id and not os.path.isfile(os.path.join(clone, rel)):
+
+    def stale():   # CL54: the clone's prompt is missing or differs from the one this post makes now
+        there = os.path.join(clone, rel)
+        return os.path.isfile(mine) and (not os.path.isfile(there) or _read_text(there) != _read_text(mine))
+    if not session_id and (not os.path.isfile(os.path.join(clone, rel)) or stale()):
         if not os.path.isfile(mine):
             return dict(out, error="no prompt %s here or in %s: plan the step first (`kit.py step new --board %s`)" % (rel, clone, b["id"]))
         dirty = g("status", "--porcelain", "--untracked-files=no").stdout.strip()
@@ -6124,12 +6267,12 @@ def _launch_in_clone(pid, b, post, clone, rel, mine, branch, g, out, restore, se
         restore.append(orig)
         if r.returncode != 0:
             return dict(out, error="could not check out %s in %s: %s" % (branch, clone, (r.stderr or r.stdout).strip()[:300]))
-        made = not os.path.isfile(os.path.join(clone, rel))
+        made = stale()
         if made:
             os.makedirs(os.path.dirname(os.path.join(clone, rel)), exist_ok=True)
             shutil.copyfile(mine, os.path.join(clone, rel))
             g("add", rel)
-            r = g("commit", "-q", "-m", "Prompt for %s" % out["part"])
+            r = g("commit", "-q", "-m", "prompt(%s): generated from post %s" % (out["part"], pid))
             if r.returncode != 0:
                 return dict(out, error="could not commit the prompt in %s: %s" % (clone, (r.stderr or r.stdout).strip()[:300]))
         r = g("push", "-q", "-u", "origin", branch, timeout=180)
@@ -6358,6 +6501,12 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         launch_mark(pid, None)
     else:
         lp = _launch_posts(post)
+        if not isinstance(given, dict) and not os.environ.get("KIT_ATTACHED_CLONE"):
+            # CL54: the prompt is generated from the post as it is now and committed (a new commit when the post changed)
+            sync = sync_step_prompt(pid, post, cli=cli)
+            if sync.get("error"):
+                return dict(out, ok=False, error=sync["error"])
+            out["prompt_sync"] = sync
         why = _prompt_problem(rel) or circle_gate(lp, pid, post, os.path.join(ROOT, rel))
         if why:
             return dict(out, ok=False, error=why)
@@ -6371,11 +6520,24 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         if web:
             if _git_run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/" + base).returncode != 0 and base != "HEAD":
                 out["warning"] = "branch %s is not pushed: push it first, the new session clones it from GitHub" % base
+            prompt_text, inline = text, None
+            if (out.get("prompt_sync") or {}).get("commit") and base != "HEAD":
+                # CL54: the new session clones `base` from GitHub: the prompt commit goes there first
+                pr = _git_run("push", "-q", "origin", "HEAD:refs/heads/%s" % base, timeout=180)
+                if pr.returncode != 0:      # CL40: the prompt rides in the start message, committed by the session
+                    inline = (pr.stderr or pr.stdout).strip()[:300] or "push refused"
+                    prompt_text = _inline_prompt(text, rel, _read_text(os.path.join(ROOT, rel)))
+                    out["prompt_inline"] = {"reason": inline}
+                else:
+                    out.pop("warning", None)
             out["create_session"] = {"title": ("%s %s" % (part, str(post.get("title") or "")[:60])).strip(),
                                      "source_url": _github_url(), "source_revision": base, "outcome_branch": branch,
-                                     "prompt": text}
+                                     "prompt": prompt_text}
             sess = "pending: create_session (%s)" % name
-            launch_mark(pid, text)                     # CL30: the orchestrator guard lets this create_session out
+            if inline:
+                launch_mark(pid, prompt_text, inline=rel)
+            else:
+                launch_mark(pid, text)                 # CL30: the orchestrator guard lets this create_session out
         else:
             if not shutil.which("claude"):     # CL26: never an OSError on an absent binary
                 return dict(out, ok=False, error=(NO_RUNTIME.replace("neither `claude` nor `agy`", "no `claude`") +
@@ -6965,7 +7127,7 @@ def circle_gate(posts, pid, post, path):
     if not why:
         return None
     return ("train %s has already found:\n%s\nBefore this step starts, say which of these it builds on and what it does differently "
-            "(missing: %s): `python3 -I .kit/kit.py step differs %s --task \"<PART>: ...\"`, commit the prompt, launch again. If it "
+            "(missing: %s): `python3 -I .kit/kit.py step differs %s --task \"<PART>: ...\"` (it goes on the post), launch again. If it "
             "repeats one of them, do not launch it." % (
                 _norm_train(post.get("train")), "\n".join("- %s: %s" % (d.get("part") or q, _short(
                     d.get("verdict") or _first_summary_line(d.get("body")), 130)) for q, d in rows), why, pid))
@@ -6978,14 +7140,16 @@ def step_differs(pid, text, db_path=None):
     rel = "docs/prompts/%s.md" % pid
     path = os.path.join(ROOT, rel)
     res = {"post": pid, "prompt": None}
+    on_post = pid in _all_posts(db_path) and _board_write("update", "posts", pid, {"differs": text})
+    if on_post:          # CL54: written once, on the post; the launch regenerates the prompt with it
+        return dict(res, ok=True, next="launch it: the prompt is generated from the post")
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as fh:
             cur = fh.read().split("\n" + CIRCLE_HEAD, 1)[0].rstrip()
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(cur + "\n\n" + CIRCLE_HEAD + "\n" + text + "\n")
         res.update(prompt=rel, next="commit %s" % rel)
-    on_post = pid in _all_posts(db_path) and _board_write("update", "posts", pid, {"differs": text})
-    res["ok"] = bool(on_post or res["prompt"])
+    res["ok"] = bool(res["prompt"])
     if not res["ok"]:
         res["error"] = "no post %s the board here takes, and no prompt %s" % (pid, rel)
     return res
@@ -7179,7 +7343,7 @@ COMMANDS = [
     ("launch and finish", "kit.py attach <owner/repo>", "attach another repo (web: the add_repo call, clone next to this project, register, record in the portfolio)"),
     ("read the board", "board_cli.py get|list|query <coll> ...", "raw documents of the local board (prefer the lookups above)"),
     ("read the board", "board_cli.py inbox", "unread owner comments, Likes and option taps, compact"),
-    ("write the board", "TaskCreate {train, part} (Claude Code) / kit.py step new", "plan a step: its post and its prompt docs/prompts/<id>.md, never by hand"),
+    ("write the board", "TaskCreate {train, part} (Claude Code) / kit.py step new", "plan a step: its post (the task, written once); launch generates docs/prompts/<id>.md from it, never by hand"),
     ("write the board", "kit.py step start|complete|drop", "move a step on its train"),
     ("write the board", "kit.py adopt", "once: give posts made before the trains their train (from their part), then artifact push"),
     ("write the board", "board_cli.py set|update|batch <coll> <id> --data JSON", "write a post or a comment on the local board"),
@@ -8323,13 +8487,15 @@ def _my_post(posts, post=None):
     return hits[0] if len(hits) == 1 else None
 
 
-def _acceptance(rel):
-    """The acceptance lines of a step's prompt (`Acceptance:` or `bars`), for its review."""
-    try:
-        with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
-            text = fh.read()
-    except OSError:
-        return []
+def _acceptance(rel, post=None):
+    """The acceptance lines of a step's task (`Acceptance:` or `bars`), for its review: from its post (CL54), else its prompt."""
+    text = str((post or {}).get("task") or "").strip()
+    if not text:
+        try:
+            with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            return []
     task = text.split("## How you work")[0]
     out = [l.strip() for l in task.splitlines() if re.match(r"^\s*(acceptance|bars?|must)\b", l.strip(), re.I)]
     return out
@@ -8351,15 +8517,17 @@ def _launch_workflow():
     pl = _platform()
     alone = run is None or pl in ("arena", "generic")
     lines = ["## How you launch (%s)" % ("web: Claude Code on the web" if run == "web" else "%s: no session can be started here" % pl if alone else run)]
-    lines.append("1. Plan: %s`python3 -I .kit/kit.py step new --train T --part P --title ... --task-file F`; commit and push the prompt."
-                 % ("" if alone or run == "agy" else "TaskCreate {train, part} (the hook writes the post and its prompt) or "))
+    lines.append("1. Plan: %s`python3 -I .kit/kit.py step new --train T --part P --title ... --task-file F`: the task is written once, "
+                 "on the post; its prompt is generated from the post at launch and committed (CL54): to change a task, edit the post only."
+                 % ("" if alone or run == "agy" else "TaskCreate {train, part} (the hook writes the post) or "))
     if run == "web":
         lines.append("2. `python3 -I .kit/kit.py launch <post>`: it marks the post and prints the `create_session` call "
                      "(claude-code-remote); make it, then `python3 -I .kit/kit.py launch <post> --session-id <its id>`.")
     elif alone:
         lines.append("2. You do the step yourself, from its prompt, on a branch of its own.")
     elif run == "agy":
-        lines.append("2. `step new` prints the `invoke_subagent` call: make it once the prompt is committed (the device cap: "
+        lines.append("2. `step new` prints `step prompt <post>` (it generates the prompt from the post and commits it) and the "
+                     "`invoke_subagent` call: run the first, make the second (the device cap: "
                      "`python3 -I .kit/kit.py capacity`, past it the step waits planned).")
     else:
         lines.append("2. `python3 -I .kit/kit.py launch <post>`: it marks the post and starts `claude --bg` in a worktree "
@@ -9329,8 +9497,9 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         for k in ("verdict", "bars", "check", "breaks", "not_checked"):
             if p.get(k):
                 out.append("- %s: %s" % (k, "; ".join(map(str, _as_list(p[k])))[:600]))
-        acc = _acceptance(rel)
-        out += ["", "## Its acceptance conditions (from `%s`)" % rel] + (["- " + a for a in acc] or ["- (none written: judge against the task)"])
+        acc = _acceptance(rel, p)
+        out += ["", "## Its acceptance conditions (from its post's task)" if str(p.get("task") or "").strip() else
+                "## Its acceptance conditions (from `%s`)" % rel] + (["- " + a for a in acc] or ["- (none written: judge against the task)"])
         rp = p.get("real_project")
         cons = consumers(p.get("consumers"))
         out += ["", "## The real-project check",
@@ -9798,7 +9967,7 @@ def main(argv=None):
     s = sp.add_parser("pair"); s.add_argument("post"); s.add_argument("--answer", default=None); s.add_argument("--db", default=None)
     s = sp.add_parser("sections"); s.add_argument("--db", default=None)
     s = sp.add_parser("step", help="the train is the task list: new | start | complete | drop")
-    s.add_argument("action", choices=["new", "start", "complete", "gate", "drop", "open", "differs", "find"]); s.add_argument("post", nargs="?")
+    s.add_argument("action", choices=["new", "start", "complete", "gate", "drop", "open", "differs", "find", "prompt"]); s.add_argument("post", nargs="?")
     s.add_argument("--train"); s.add_argument("--part"); s.add_argument("--title", default="")
     s.add_argument("--task", default=""); s.add_argument("--task-file"); s.add_argument("--parent")
     s.add_argument("--source", action="append", default=[]); s.add_argument("--model")
@@ -10018,6 +10187,10 @@ def main(argv=None):
             res = step_start(a.post)
         elif a.action == "drop":
             res = step_drop(a.post, db_path=a.db)
+        elif a.action == "prompt":     # CL54: the prompt generated from the post, committed (agy, a step done by hand)
+            p = _get_post(a.post, db_path=a.db)
+            res = sync_step_prompt(a.post, p, cli=a.cli) if isinstance(p, dict) else {"error": "no post %s" % a.post}
+            res["post"] = a.post
         elif a.action == "gate":
             why = step_gate(a.post, db_path=a.db)
             res = {"post": a.post, "ok": not why, "why": why}
