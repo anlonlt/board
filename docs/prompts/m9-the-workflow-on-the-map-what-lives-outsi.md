@@ -15,3 +15,6 @@ Bars: on the French repo and on Harmonize, the external things found, and how ma
 
 ## What this step answers (the owner's words, or a review's)
 (none named: the task is the orchestrator's; ask under your post if it is unclear)
+
+## What this does differently
+Builds on M1 (map format: things, links, flags, runnable checks) and M4 (non-code map readers). Unlike M1/M4 (which map files inside a repo) and M3 (which enforces map updates at done), M9 maps what lives outside the repo (CLIs/runners, git remotes, deploy configs, external services, data sources, accounts/URLs) into .board/map and generates the concise workflow memory file via scripts/step0_scan.py and scripts/kit_map.py, measured on ~/french and ~/harmonize.

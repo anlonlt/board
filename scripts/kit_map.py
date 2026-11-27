@@ -18,11 +18,13 @@ Word, .bib, the scripts that make figures) and any folder (headings, links, size
 installed in the project, nothing is written in it except the out folder.
 """
 import ast
+import datetime
 import fnmatch
 import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -1207,7 +1209,1271 @@ def folder_reader(root, all_files, cfg, taken=()):
                 len(rest), total // 1024, sum(1 for x in things if x.get("headings")))}
 
 
-def run_other_readers(root, out_rel, cfg):
+# ── Workflow outside the repo (M9): runners, CLIs, browsers, remotes, deploy configs, services, data sources ──
+# What lives outside the repo becomes things and links on the map, each with direct references (URLs, project/repo/app
+# ids, accounts/profiles, where secrets live — NEVER secret values) and a check (reachable, logged in, still exists, or
+# a browser probe with its last confirmed date).
+
+ADDED_REL = ".board/map-added.json"
+CONFIRM_DAYS = 14
+CHECK_KINDS = ("contains", "exists", "run", "probe")
+EXTERNAL_KINDS = ("runner", "external-cli", "browser-profile", "git-remote", "external-service", "external-datasource",
+                  "secret-store")
+AGENT_CLIS = ("agy", "claude")
+BASE_CLIS = ("git", "gh", "tailscale")
+PROJECT_CLIS = (
+    ("node", ("package.json",)),
+    ("pnpm", ("pnpm-lock.yaml", "package.json")),
+    ("npm", ("package.json",)),
+    ("python3", ("pyproject.toml", "requirements.txt", ".py")),
+    ("uv", ("pyproject.toml", "uv.lock")),
+    ("sqlite3", (".kit/config.json",)),
+    ("vercel", ("vercel.json",)),
+    ("modal", ("modal.App",)),
+    ("docker", ("Dockerfile", "docker-compose.yml", "docker-compose.yaml")),
+    ("psql", ("drizzle.config.ts", "drizzle.config.js", "prisma/schema.prisma")),
+    ("gradle", ("settings.gradle.kts", "settings.gradle", "build.gradle.kts")),
+    ("adb", ("settings.gradle.kts", "app/build.gradle.kts")),
+)
+_SECRET_FIELD_NAMES = {"secret", "token", "password", "passwd", "api_key", "apikey", "access_token",
+                       "refresh_token", "private_key", "client_secret", "auth_secret", "database_url"}
+_SECRET_VAL_PATTERNS = (
+    re.compile(r"\b(?:sk|pk)_(?:live|test)_[A-Za-z0-9]{12,}\b"),
+    re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bhf_[A-Za-z0-9]{16,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bsk-ant-[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\bsk-[A-Za-z0-9]{24,}\b"),
+    re.compile(r"[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@"),   # credentialed URI user:pass@host
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+)
+_ENV_KEY_RE = re.compile(r"^\s*(?:export\s+)?([A-Z][A-Z0-9_]{2,})\s*=")
+_SECRET_KEY_HINT = re.compile(
+    r"(?:SECRET|TOKEN|KEY|PASSWORD|PASSWD|DSN|CREDENTIAL|AUTH|DATABASE_URL|DB_URL|API_URL|COMPARAISONS_URL|"
+    r"HF_|MODAL_|VERCEL_|NEON_|STRIPE_|OPENAI_|ANTHROPIC_|SPOTIFY_|GITHUB_|SENTRY_|SUPABASE_|AWS_|POSTGRES_)",
+    re.I,
+)
+_IGNORE_ENV_KEYS = {"NODE_ENV", "CI", "PORT", "HOST", "HOME", "PATH", "PWD", "TERM", "TZ", "DEBUG", "LANG",
+                    "APLOMB_E2E", "NEXT_PUBLIC_APP_URL", "PYTHONUNBUFFERED"}
+
+
+def _contains_secret_value(obj, path=""):
+    """Return a reason string if `obj` holds a forbidden literal secret field or secret-shaped token, else None."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            kl = str(k).lower()
+            sub = ("%s.%s" % (path, k)) if path else str(k)
+            if kl in _SECRET_FIELD_NAMES and isinstance(v, str) and v.strip():
+                return "forbidden secret field `%s` (store only where the secret is kept, never its value)" % sub
+            err = _contains_secret_value(v, sub)
+            if err:
+                return err
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            err = _contains_secret_value(v, "%s[%d]" % (path, i))
+            if err:
+                return err
+    elif isinstance(obj, str):
+        for pat in _SECRET_VAL_PATTERNS:
+            if pat.search(obj):
+                return "secret-shaped value detected at `%s` (never store secrets on the map)" % (path or "value")
+    return None
+
+
+def _expand_home(path, home_dir=None):
+    if path.startswith("~/") or path == "~":
+        base = os.path.abspath(home_dir or os.path.expanduser("~"))
+        return base if path == "~" else os.path.join(base, path[2:])
+    return path
+
+
+def _resolve_git_config(root):
+    """Path to this repo's git config file (handles both normal .git dir and git worktree .git file)."""
+    dotgit = os.path.join(root, ".git")
+    if os.path.isdir(dotgit):
+        cfg = os.path.join(dotgit, "config")
+        return cfg if os.path.isfile(cfg) else None
+    if os.path.isfile(dotgit):
+        txt = _read(dotgit).strip()
+        m = re.match(r"gitdir:\s*(.+)", txt)
+        if m:
+            gdir = m.group(1).strip()
+            if not os.path.isabs(gdir):
+                gdir = os.path.normpath(os.path.join(root, gdir))
+            cdir = os.path.join(gdir, "commondir")
+            if os.path.isfile(cdir):
+                rel = _read(cdir).strip()
+                base = rel if os.path.isabs(rel) else os.path.normpath(os.path.join(gdir, rel))
+                cfg = os.path.join(base, "config")
+                if os.path.isfile(cfg):
+                    return cfg
+            cfg = os.path.join(gdir, "config")
+            return cfg if os.path.isfile(cfg) else None
+    return None
+
+
+def _parse_git_remotes(root, home_dir=None):
+    """(remotes: [{name, url, host, repo}], user_account: str|None) read directly from git config."""
+    remotes, user_name, user_email = [], None, None
+    cfg_path = _resolve_git_config(root)
+    if cfg_path:
+        sec, cur = None, None
+        for raw in _read(cfg_path).splitlines():
+            ln = raw.strip()
+            if not ln or ln.startswith(("#", ";")):
+                continue
+            m = re.match(r'^\[(\w+)(?:\s+"([^"]+)")?\]$', ln)
+            if m:
+                sec, cur = m.group(1).lower(), m.group(2)
+                continue
+            if "=" in ln:
+                k, v = [x.strip() for x in ln.split("=", 1)]
+                kl = k.lower()
+                if sec == "remote" and cur and kl == "url":
+                    remotes.append({"name": cur, "url": v})
+                elif sec == "user" and kl == "name":
+                    user_name = v
+                elif sec == "user" and kl == "email":
+                    user_email = v
+    if not user_email:
+        gcfg = os.path.join(os.path.abspath(home_dir or os.path.expanduser("~")), ".gitconfig")
+        if os.path.isfile(gcfg):
+            sec = None
+            for raw in _read(gcfg).splitlines():
+                ln = raw.strip()
+                m = re.match(r'^\[(\w+)', ln)
+                if m:
+                    sec = m.group(1).lower(); continue
+                if sec == "user" and "=" in ln:
+                    k, v = [x.strip() for x in ln.split("=", 1)]
+                    if k.lower() == "email":
+                        user_email = v
+                    elif k.lower() == "name" and not user_name:
+                        user_name = v
+    account = user_email or user_name or None
+    out = []
+    for r in remotes:
+        u = r["url"]
+        host, repo, web_url = None, None, None
+        # Strip embedded userinfo if any so credentials never leak into the map
+        u_clean = re.sub(r"^([a-z][a-z0-9+.-]*://)[^/\s@]+@", r"\1", u)
+        m_https = re.match(r"^https?://([^/]+)/(.+?)(?:\.git)?/?$", u_clean)
+        m_ssh = re.match(r"^(?:ssh://)?(?:[^@]+@)?([^:/]+)[:/](.+?)(?:\.git)?/?$", u_clean)
+        if m_https:
+            host, repo = m_https.group(1), m_https.group(2)
+            web_url = "https://%s/%s" % (host, repo)
+        elif m_ssh and not u_clean.startswith(("/", ".", "file:")):
+            host, repo = m_ssh.group(1), m_ssh.group(2)
+            web_url = "https://%s/%s" % (host, repo)
+        out.append({"name": r["name"], "url": u_clean, "host": host, "repo": repo, "web_url": web_url, "account": account})
+    return out, account
+
+
+def _discover_browser_profiles(home_dir=None):
+    """Discover real browser profiles (metadata only; never reads cookies, logins, or passwords)."""
+    home = os.path.abspath(home_dir or os.path.expanduser("~"))
+    found = []
+    chromium_roots = [
+        ("Chrome", ".config/google-chrome"),
+        ("Chromium", ".config/chromium"),
+        ("Brave", ".config/BraveSoftware/Brave-Browser"),
+        ("Edge", ".config/microsoft-edge"),
+        ("Chrome", "Library/Application Support/Google/Chrome"),
+        ("Brave", "Library/Application Support/BraveSoftware/Brave-Browser"),
+    ]
+    for bname, rel in chromium_roots:
+        base = os.path.join(home, rel)
+        if not os.path.isdir(base):
+            continue
+        ls_path = os.path.join(base, "Local State")
+        profs = {}
+        if os.path.isfile(ls_path):
+            try:
+                ic = (json.loads(_read(ls_path)).get("profile") or {}).get("info_cache") or {}
+                for pdir, meta in sorted(ic.items()):
+                    if isinstance(meta, dict) and os.path.isdir(os.path.join(base, pdir)):
+                        profs[pdir] = {"display": meta.get("name") or pdir, "account": meta.get("user_name") or None}
+            except (ValueError, AttributeError):
+                pass
+        if not profs:
+            try:
+                for ent in sorted(os.listdir(base)):
+                    if (ent == "Default" or ent.startswith("Profile ")) and os.path.isfile(os.path.join(base, ent, "Preferences")):
+                        profs[ent] = {"display": ent, "account": None}
+            except OSError:
+                pass
+        for pdir, meta in profs.items():
+            slug = re.sub(r"[^\w.-]+", "-", ("%s/%s" % (bname.lower(), pdir)).lower()).strip("-")
+            found.append({
+                "id": "browser:" + slug,
+                "kind": "browser-profile",
+                "name": "%s (%s)" % (bname, meta["display"]),
+                "browser": bname,
+                "profile": pdir,
+                "profile_name": meta["display"],
+                "account": meta["account"],
+                "refs": {"profile": "%s / %s" % (bname, meta["display"]), "path": "~/%s/%s" % (rel, pdir),
+                         **({"account": meta["account"]} if meta["account"] else {})},
+                "check": {"probe": "Open %s (%s) and verify signed-in sessions for project services" % (bname, meta["display"]),
+                          "confirmed": None},
+            })
+    ff_ini = os.path.join(home, ".mozilla", "firefox", "profiles.ini")
+    if os.path.isfile(ff_ini):
+        cur = {}
+        for raw in _read(ff_ini).splitlines() + ["[EOF]"]:
+            ln = raw.strip()
+            if ln.startswith("["):
+                if cur.get("Name") and cur.get("Path"):
+                    pdir = cur["Path"]
+                    slug = re.sub(r"[^\w.-]+", "-", ("firefox/" + cur["Name"]).lower()).strip("-")
+                    found.append({
+                        "id": "browser:" + slug,
+                        "kind": "browser-profile",
+                        "name": "Firefox (%s)" % cur["Name"],
+                        "browser": "Firefox",
+                        "profile": cur["Name"],
+                        "profile_name": cur["Name"],
+                        "account": None,
+                        "refs": {"profile": "Firefox / %s" % cur["Name"], "path": "~/.mozilla/firefox/%s" % pdir},
+                        "check": {"probe": "Open Firefox (%s) and verify signed-in sessions for project services" % cur["Name"],
+                                  "confirmed": None},
+                    })
+                cur = {}
+            elif "=" in ln:
+                k, v = ln.split("=", 1)
+                cur[k.strip()] = v.strip()
+    return found
+
+
+def _read_env_keys_only(path):
+    """Parse ONLY variable names from an env file (never reads or retains values after `=`)."""
+    keys = []
+    if not os.path.isfile(path):
+        return keys
+    for line in _read(path).splitlines():
+        m = _ENV_KEY_RE.match(line)
+        if m:
+            k = m.group(1)
+            if k not in keys:
+                keys.append(k)
+    return keys
+
+
+def _hf_check_cmd(repo_id, repo_type="dataset"):
+    """Self-contained stdlib check for Hugging Face dataset/model reachability + auth (never prints the token)."""
+    safe_id = re.sub(r"[^A-Za-z0-9._/-]", "", repo_id)
+    ep = "datasets" if repo_type == "dataset" else "models"
+    code = (
+        "import os,sys,urllib.request;"
+        "p=os.path.join(os.environ.get('HF_HOME') or os.path.expanduser('~/.cache/huggingface'),'token');"
+        "t=(os.environ.get('HF_TOKEN') or (open(p).read().strip() if os.path.isfile(p) else ''));"
+        "req=urllib.request.Request('https://huggingface.co/api/%s/%s',"
+        "headers=({'Authorization':'Bearer '+t} if t else {}));"
+        "\ntry:\n urllib.request.urlopen(req,timeout=6).read(1)\n"
+        "except Exception as e:\n sys.stderr.write(str(e)+'\\n'); sys.exit(1)"
+    ) % (ep, safe_id)
+    return 'python3 -I -c "%s"' % code
+
+
+def _http_check_cmd(url):
+    safe_url = url.replace('"', "").replace("'", "")
+    return (
+        'python3 -I -c "import sys,urllib.request\n'
+        'try:\n urllib.request.urlopen(\'%s\',timeout=2).read(1)\n'
+        'except Exception as e:\n sys.stderr.write(str(e)+\'\\n\'); sys.exit(1)"'
+    ) % safe_url
+
+
+def scan_external(root, all_files=None, cfg=None, home_dir=None):
+    """Discover everything outside the repo that belongs to this project's workflow (M9).
+
+    Returns {"things": [...], "links": [...], "flags": [...], "files": {rel: sha}, "summary": str}.
+    Every external thing carries direct references (URLs, project/repo/app ids, accounts/profiles, where secrets live —
+    never the secret) and a check (reachable, logged in, still exists, or a browser probe with its last confirmed date).
+    """
+    root = os.path.abspath(root)
+    home = os.path.abspath(home_dir or os.path.expanduser("~"))
+    cfg = cfg or {}
+    if all_files is None:
+        all_files = list_all(root)
+    all_set = set(all_files)
+    proj_name = os.path.basename(root.rstrip(os.sep)) or "project"
+    things, links, flags, seen = [], [], [], {}
+    thing_ids = set()
+
+    def add_thing(t):
+        if t["id"] not in thing_ids:
+            thing_ids.add(t["id"])
+            things.append(t)
+
+    def add_link(frm, to, kind, file=None, evidence=None, check_obj=None):
+        c = check_obj
+        if c is None and file and evidence:
+            c = {"reader": "workflow", "file": file, "contains": evidence}
+        elif c is None and file:
+            c = {"exists": [file]}
+        key = (frm, to, kind)
+        if not any((l["from"], l["to"], l["kind"]) == key for l in links):
+            links.append({"from": frm, "to": to, "kind": kind, "check": c or {"exists": ["."]}})
+
+    def track(rel):
+        fp = os.path.join(root, rel)
+        if os.path.isfile(fp) and rel not in seen:
+            seen[rel] = _file_sha(root, rel)
+
+    # 1. Read key manifests and dotfiles (explicitly including dot-dirs skipped by list_all)
+    pkg = {}
+    pkg_deps = set()
+    if "package.json" in all_set:
+        track("package.json")
+        try:
+            pkg = json.loads(_read(os.path.join(root, "package.json")))
+            pkg_deps = set((pkg.get("dependencies") or {}).keys()) | set((pkg.get("devDependencies") or {}).keys())
+        except (ValueError, AttributeError):
+            pkg = {}
+
+    kit_cfg = {}
+    kit_cfg_rel = ".kit/config.json"
+    if os.path.isfile(os.path.join(root, kit_cfg_rel)):
+        track(kit_cfg_rel)
+        try:
+            kit_cfg = json.loads(_read(os.path.join(root, kit_cfg_rel)))
+        except ValueError:
+            kit_cfg = {}
+
+    # 2. Git remotes
+    remotes, git_account = _parse_git_remotes(root, home_dir=home)
+    github_repo = None
+    for r in remotes:
+        rid = "remote:" + r["name"]
+        if r["host"] == "github.com" and r["repo"] and not github_repo:
+            github_repo = r["repo"]
+        refs = {"url": r["web_url"] or r["url"], "remote_url": r["url"]}
+        if r["repo"]:
+            refs["repo_id"] = r["repo"]
+        if r["account"]:
+            refs["account"] = r["account"]
+        # Check: git ls-remote verifies remote exists, is reachable, and credentials work
+        add_thing({
+            "id": rid,
+            "kind": "git-remote",
+            "name": "Git remote %s (%s)" % (r["name"], r["repo"] or r["url"]),
+            "host": r["host"],
+            "refs": refs,
+            "check": {"run": "GIT_TERMINAL_PROMPT=0 git -c core.askPass=true ls-remote --exit-code %s HEAD >/dev/null 2>&1" % r["name"]},
+        })
+        add_link("repo:" + proj_name, rid, "pushes-to",
+                 check_obj={"run": "git remote get-url %s >/dev/null 2>&1" % r["name"]})
+
+    # 3. CLIs and runners on this computer
+    installed_agents = [c for c in AGENT_CLIS if shutil.which(c)]
+    for c in installed_agents:
+        add_thing({
+            "id": "cli:" + c,
+            "kind": "external-cli",
+            "name": "%s CLI" % c,
+            "refs": {"path": shutil.which(c)},
+            "check": {"run": "command -v %s >/dev/null 2>&1" % c},
+        })
+    if installed_agents:
+        add_thing({
+            "id": "runner:computer",
+            "kind": "runner",
+            "name": "Computer runner (%s)" % ", ".join(installed_agents),
+            "clis": installed_agents,
+            "refs": {"clis": installed_agents},
+            "check": {"run": " || ".join("command -v %s >/dev/null 2>&1" % c for c in installed_agents)},
+        })
+        for c in installed_agents:
+            add_link("runner:computer", "cli:" + c, "uses-cli", check_obj={"run": "command -v %s >/dev/null 2>&1" % c})
+
+    # Base CLIs (git if git repo, gh if github remote or installed, tailscale if installed)
+    if remotes or os.path.exists(os.path.join(root, ".git")):
+        if shutil.which("git"):
+            add_thing({
+                "id": "cli:git",
+                "kind": "external-cli",
+                "name": "git CLI",
+                "refs": {"path": shutil.which("git"), **({"account": git_account} if git_account else {})},
+                "check": {"run": "command -v git >/dev/null 2>&1"},
+            })
+    if shutil.which("gh"):
+        add_thing({
+            "id": "cli:gh",
+            "kind": "external-cli",
+            "name": "GitHub CLI (gh)",
+            "refs": {"path": shutil.which("gh"), "url": "https://github.com"},
+            "check": {"run": "gh auth status >/dev/null 2>&1"},
+        })
+    if shutil.which("tailscale") and (kit_cfg or os.path.isfile(os.path.join(root, ".kit", "config.json"))):
+        add_thing({
+            "id": "cli:tailscale",
+            "kind": "external-cli",
+            "name": "Tailscale",
+            "refs": {"path": shutil.which("tailscale")},
+            "check": {"run": "tailscale status >/dev/null 2>&1"},
+        })
+
+    # Project-relevant CLIs (only when the project actually uses that ecosystem)
+    has_py = any(f.endswith(".py") for f in all_files)
+    for cli_name, triggers in PROJECT_CLIS:
+        if not shutil.which(cli_name):
+            continue
+        relevant = any((t == ".py" and has_py) or t in all_set or os.path.isfile(os.path.join(root, t)) for t in triggers)
+        if not relevant:
+            continue
+        chk = {"run": "command -v %s >/dev/null 2>&1" % cli_name}
+        if cli_name == "vercel":
+            chk = {"run": "vercel whoami >/dev/null 2>&1"}
+        add_thing({
+            "id": "cli:" + cli_name,
+            "kind": "external-cli",
+            "name": "%s CLI" % cli_name,
+            "refs": {"path": shutil.which(cli_name)},
+            "check": chk,
+        })
+
+    # 4. Browser profiles on this computer (metadata only; browser probes)
+    for bp in _discover_browser_profiles(home_dir=home):
+        add_thing(bp)
+
+    # 5. Deploy configs
+    if "vercel.json" in all_set:
+        track("vercel.json")
+        vtxt = _read(os.path.join(root, "vercel.json"))
+        try:
+            vj = json.loads(vtxt)
+        except ValueError:
+            vj = {}
+        vp = {}
+        vp_rel = ".vercel/project.json"
+        if os.path.isfile(os.path.join(root, vp_rel)):
+            try:
+                vp = json.loads(_read(os.path.join(root, vp_rel)))
+            except ValueError:
+                vp = {}
+        refs = {"url": "https://vercel.com", "secret_locations": ["Vercel project environment variables"]}
+        if vp.get("projectId"):
+            refs["project_id"] = vp["projectId"]
+        if vp.get("orgId"):
+            refs["org_id"] = vp["orgId"]
+        if vj.get("framework"):
+            refs["framework"] = vj["framework"]
+        crons = [c.get("path") for c in (vj.get("crons") or []) if isinstance(c, dict) and c.get("path")]
+        if crons:
+            refs["crons"] = crons
+        v_check = ({"run": "vercel whoami >/dev/null 2>&1"} if shutil.which("vercel") else
+                   {"probe": "Open Vercel dashboard and confirm deployment & environment variables are active", "confirmed": None})
+        add_thing({"id": "service:vercel", "kind": "external-service", "name": "Vercel (%s)" % proj_name,
+                   "service": "vercel", "refs": refs, "check": v_check})
+        ev = "framework" if "framework" in vtxt else "{"
+        add_link("file:vercel.json", "service:vercel", "deploys-to", file="vercel.json", evidence=ev)
+        if crons:
+            add_thing({
+                "id": "runner:scheduled",
+                "kind": "runner",
+                "name": "Scheduled runner (Vercel crons: %s)" % ", ".join(crons[:3]),
+                "refs": {"crons": crons, "service": "service:vercel"},
+                "check": {"reader": "workflow", "file": "vercel.json", "contains": crons[0]},
+            })
+            add_link("runner:scheduled", "service:vercel", "runs-on", file="vercel.json", evidence=crons[0])
+            for cpath in crons:
+                cfile = "app" + cpath + "/route.ts"
+                for cand in (cfile, "src/" + cfile, "app" + cpath + "/route.js"):
+                    if cand in all_set:
+                        add_link("file:" + cand, "service:vercel", "scheduled-by", file="vercel.json", evidence=cpath)
+
+    for dep_file, svc_id, svc_name, svc_url, id_re in (
+        ("netlify.toml", "service:netlify", "Netlify", "https://app.netlify.com", None),
+        ("fly.toml", "service:fly", "Fly.io", "https://fly.io/dashboard", r'^\s*app\s*=\s*["\']([^"\']+)["\']'),
+        ("wrangler.toml", "service:cloudflare", "Cloudflare Workers", "https://dash.cloudflare.com", r'^\s*(?:name|account_id)\s*=\s*["\']([^"\']+)["\']'),
+        ("render.yaml", "service:render", "Render", "https://dashboard.render.com", None),
+        ("railway.json", "service:railway", "Railway", "https://railway.app/dashboard", None),
+        ("railway.toml", "service:railway", "Railway", "https://railway.app/dashboard", None),
+        (".firebaserc", "service:firebase", "Firebase", "https://console.firebase.google.com", r'"default"\s*:\s*"([^"]+)"'),
+        ("firebase.json", "service:firebase", "Firebase", "https://console.firebase.google.com", None),
+    ):
+        if dep_file in all_set or os.path.isfile(os.path.join(root, dep_file)):
+            track(dep_file)
+            txt = _read(os.path.join(root, dep_file))
+            refs = {"url": svc_url}
+            if id_re:
+                m = re.search(id_re, txt, re.M)
+                if m:
+                    refs["project_id"] = m.group(1)
+            add_thing({"id": svc_id, "kind": "external-service", "name": svc_name, "service": svc_id.split(":", 1)[1],
+                       "refs": refs, "check": {"probe": "Open %s and confirm project deployment is live" % svc_url, "confirmed": None}})
+            add_link("file:" + dep_file, svc_id, "deploys-to", file=dep_file, evidence=txt.splitlines()[0].strip()[:40] if txt.strip() else None)
+
+    # 6. GitHub Actions workflows
+    gh_wf_dir = os.path.join(root, ".github", "workflows")
+    if os.path.isdir(gh_wf_dir):
+        wfs = sorted(f for f in os.listdir(gh_wf_dir) if f.endswith((".yml", ".yaml")))
+        if wfs:
+            gh_secrets, wf_rels = [], []
+            for wf in wfs:
+                rel = ".github/workflows/" + wf
+                track(rel)
+                wf_rels.append(rel)
+                wtxt = _read(os.path.join(root, rel))
+                for sm in re.findall(r"\$\{\{\s*secrets\.([A-Z0-9_]+)\s*\}\}", wtxt):
+                    if sm not in gh_secrets:
+                        gh_secrets.append(sm)
+            gh_url = ("https://github.com/%s/actions" % github_repo) if github_repo else "https://github.com"
+            refs = {"url": gh_url, "workflows": wf_rels}
+            if github_repo:
+                refs["repo_id"] = github_repo
+            if gh_secrets:
+                refs["secret_locations"] = [{"name": s, "where": "GitHub Actions repository secrets"} for s in gh_secrets]
+            if shutil.which("gh"):
+                gh_chk = {"run": "gh auth status >/dev/null 2>&1"}
+            elif remotes:
+                gh_chk = {"run": "GIT_TERMINAL_PROMPT=0 git -c core.askPass=true ls-remote --exit-code %s HEAD >/dev/null 2>&1" % remotes[0]["name"]}
+            else:
+                gh_chk = {"probe": "Open %s and confirm CI workflows run cleanly" % gh_url, "confirmed": None}
+            add_thing({"id": "service:github-actions", "kind": "external-service", "name": "GitHub Actions",
+                       "service": "github-actions", "refs": refs, "check": gh_chk})
+            for rel in wf_rels:
+                add_link("file:" + rel, "service:github-actions", "runs-on", file=rel, evidence="jobs:")
+
+    # 7. Kit / Board / Artifact / MCP configs
+    if kit_cfg:
+        b_url = kit_cfg.get("board_url")
+        if isinstance(b_url, str) and b_url.startswith(("http://", "https://")):
+            add_thing({
+                "id": "service:board-server",
+                "kind": "external-service",
+                "name": "Local Board Server (%s)" % b_url,
+                "service": "board-server",
+                "refs": {"url": b_url},
+                "check": {"run": _http_check_cmd(b_url)},
+            })
+            add_link("file:" + kit_cfg_rel, "service:board-server", "connects-to", file=kit_cfg_rel, evidence=b_url)
+        kit_sub = kit_cfg.get("kit") or {}
+        art = kit_sub.get("artifact") or {}
+        aurl = (art.get("url") if isinstance(art, dict) else None) or kit_sub.get("artifact_url") or kit_cfg.get("artifact_url")
+        if isinstance(aurl, str) and aurl.startswith(("http://", "https://")):
+            aid = aurl.rstrip("/").split("/")[-1]
+            refs = {"url": aurl, "artifact_id": aid}
+            if isinstance(art, dict) and art.get("prefix"):
+                refs["prefix"] = art["prefix"]
+            add_thing({
+                "id": "service:claude-artifact",
+                "kind": "external-service",
+                "name": "Claude Artifact board (%s)" % aid,
+                "service": "claude-artifact",
+                "refs": refs,
+                "check": {"probe": "Open %s in browser and confirm board artifact loads" % aurl, "confirmed": None},
+            })
+            add_link("file:" + kit_cfg_rel, "service:claude-artifact", "connects-to", file=kit_cfg_rel, evidence=aid)
+            add_thing({
+                "id": "runner:cloud",
+                "kind": "runner",
+                "name": "Cloud runner (Claude Artifact / web)",
+                "refs": {"url": aurl, "artifact_id": aid},
+                "check": {"probe": "Open Claude web / Artifact (%s) and verify cloud session access" % aurl, "confirmed": None},
+            })
+            add_link("runner:cloud", "service:claude-artifact", "uses-service", file=kit_cfg_rel, evidence=aid)
+        for mr in ((kit_cfg.get("kit") or {}).get("mcp_readers") or []):
+            if isinstance(mr, str) and mr:
+                add_thing({
+                    "id": "service:mcp-reader/" + mr,
+                    "kind": "external-service",
+                    "name": "MCP Link Reader (%s)" % mr,
+                    "service": mr,
+                    "refs": {"connector": mr},
+                    "check": {"probe": "Confirm %s MCP connector is signed in and can read links" % mr, "confirmed": None},
+                })
+                add_link("file:" + kit_cfg_rel, "service:mcp-reader/" + mr, "uses-service", file=kit_cfg_rel, evidence=mr)
+
+    for mcp_rel in (".agents/mcp_config.json", ".mcp.json"):
+        mcp_fp = os.path.join(root, mcp_rel)
+        if os.path.isfile(mcp_fp):
+            track(mcp_rel)
+            try:
+                ms = (json.loads(_read(mcp_fp)).get("mcpServers") or {})
+            except (ValueError, AttributeError):
+                ms = {}
+            for sname, scfg in sorted(ms.items()):
+                if not isinstance(scfg, dict):
+                    continue
+                sid = "service:mcp/" + re.sub(r"[^\w.-]+", "-", sname.lower()).strip("-")
+                refs = {"server": sname}
+                cmd = scfg.get("command")
+                surl = scfg.get("url")
+                if cmd:
+                    refs["command"] = cmd
+                if surl:
+                    refs["url"] = surl
+                env_keys = sorted((scfg.get("env") or {}).keys()) if isinstance(scfg.get("env"), dict) else []
+                if env_keys:
+                    refs["secret_locations"] = [{"name": k, "where": "%s env config" % mcp_rel} for k in env_keys]
+                chk = ({"run": "command -v %s >/dev/null 2>&1" % cmd} if cmd else
+                       {"probe": "Confirm MCP server %s (%s) is reachable" % (sname, surl or "configured"), "confirmed": None})
+                add_thing({"id": sid, "kind": "external-service", "name": "MCP server (%s)" % sname,
+                           "service": "mcp", "refs": refs, "check": chk})
+                add_link("file:" + mcp_rel, sid, "configures", file=mcp_rel, evidence=sname)
+
+    # 8. Databases, cloud services, and data sources referenced in code & config
+    # Collect code/script/config files to scan (skip tests, fixtures, patches, big files)
+    scan_files = [
+        f for f in all_files
+        if not _is_test(f)
+        and "/fixtures/" not in ("/" + f)
+        and not f.endswith((".patch", ".lock", ".min.js", ".svg", ".png", ".jpg"))
+        and (f.endswith(CODE_EXT + (".mts", ".mjs", ".cts", ".cjs", ".toml", ".yaml", ".yml", ".kts", ".gradle", ".prisma"))
+             or f in ("docs/DATA.md", "DATA.md", "CLAUDE.md"))
+        and os.path.getsize(os.path.join(root, f)) < 150_000
+    ]
+
+    # Env secret names (KEYS ONLY — never values!)
+    env_example_keys = _read_env_keys_only(os.path.join(root, ".env.example"))
+    if env_example_keys:
+        track(".env.example")
+    env_local_keys = _read_env_keys_only(os.path.join(root, ".env.local"))
+    env_dot_keys = _read_env_keys_only(os.path.join(root, ".env"))
+    code_env_refs = {}   # var_name -> [files]
+
+    drizzle_cfg = next((f for f in ("drizzle.config.ts", "drizzle.config.js", "drizzle.config.mjs") if f in all_set), None)
+    prisma_cfg = "prisma/schema.prisma" if "prisma/schema.prisma" in all_set else None
+    neon_files, pg_files, hf_repos, modal_apps, spotify_files = [], [], {}, {}, []
+    sdk_hits = {}   # svc_id -> [(file, evidence)]
+
+    SDK_PATTERNS = (
+        ("service:supabase", "Supabase", "https://supabase.com/dashboard", "@supabase/supabase-js", r"@supabase/supabase-js|SUPABASE_URL"),
+        ("service:stripe", "Stripe", "https://dashboard.stripe.com", "stripe", r"from\s+['\"]stripe['\"]|STRIPE_SECRET_KEY"),
+        ("service:openai", "OpenAI API", "https://platform.openai.com", "openai", r"OPENAI_API_KEY|from\s+['\"]openai['\"]"),
+        ("service:anthropic", "Anthropic API", "https://console.anthropic.com", "@anthropic-ai/sdk", r"ANTHROPIC_API_KEY|@anthropic-ai/sdk"),
+        ("service:sentry", "Sentry", "https://sentry.io", "@sentry/", r"SENTRY_DSN|@sentry/"),
+        ("service:upstash", "Upstash Redis", "https://console.upstash.com", "@upstash/redis", r"UPSTASH_REDIS|@upstash/redis"),
+        ("service:resend", "Resend Email", "https://resend.com", "resend", r"RESEND_API_KEY|from\s+['\"]resend['\"]"),
+    )
+
+    for f in scan_files:
+        txt = _read(os.path.join(root, f))
+        # Env vars referenced in code
+        for m in re.finditer(r"(?:process\.env\.|os\.environ\.get\(\s*['\"]|os\.environ\[\s*['\"])([A-Z][A-Z0-9_]{2,})", txt):
+            vn = m.group(1)
+            if vn not in _IGNORE_ENV_KEYS and _SECRET_KEY_HINT.search(vn):
+                code_env_refs.setdefault(vn, [])
+                if f not in code_env_refs[vn]:
+                    code_env_refs[vn].append(f)
+        # Neon / Postgres
+        if "@neondatabase/serverless" in txt or "drizzle-orm/neon" in txt:
+            neon_files.append((f, "@neondatabase/serverless" if "@neondatabase/serverless" in txt else "drizzle-orm/neon"))
+        if ("drizzle-orm/node-postgres" in txt or "pgTable(" in txt or "DATABASE_URL" in txt) and not f.endswith(".md"):
+            pg_files.append((f, "DATABASE_URL" if "DATABASE_URL" in txt else "pgTable" if "pgTable(" in txt else "drizzle-orm"))
+        # Hugging Face dataset/model repos: hf_repos[repo_id] = {"type": "dataset"|"model", "refs": [(file, ev)]}
+        if "huggingface" in txt.lower() or "hfdata" in f.lower():
+            _NON_HF_EXT = (".py", ".sh", ".md", ".json", ".jsonl", ".tsv", ".csv", ".txt", ".kt", ".kts", ".ts", ".js",
+                           ".wav", ".mp3", ".flac", ".pt", ".onnx", ".zip", ".tar", ".gz", ".png", ".svg", ".toml", ".yml", ".yaml")
+            for m in re.finditer(r'(?:REPO|STORE)\s*=\s*["\']([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)["\']', txt):
+                cand = m.group(1)
+                if not cand.lower().endswith(_NON_HF_EXT):
+                    entry = hf_repos.setdefault(cand, {"type": "dataset", "refs": []})
+                    entry["refs"].append((f, cand))
+            for m in re.finditer(r'huggingface\.co/(datasets/)?([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)', txt):
+                rtype = "dataset" if m.group(1) else "model"
+                cand = m.group(2).rstrip(".,;:")
+                if not cand.lower().endswith(_NON_HF_EXT) and not cand.startswith(("api/", "docs/", "spaces/")):
+                    entry = hf_repos.setdefault(cand, {"type": rtype, "refs": []})
+                    entry["refs"].append((f, cand))
+            if f in ("docs/DATA.md", "DATA.md"):
+                for ln in txt.splitlines():
+                    low_ln = ln.lower()
+                    if "hugging face" not in low_ln and "huggingface" not in low_ln:
+                        continue
+                    for m in re.finditer(r'`([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)`', ln):
+                        cand = m.group(1)
+                        if cand.lower().endswith(_NON_HF_EXT) or cand.startswith(("data-cache/", "datasets/", "stems/", "features/", "checkpoints/", "models/", "scripts/", "docs/", "pipeline/", "core/", "app/")):
+                            continue
+                        rtype = "dataset" if "dataset" in low_ln else "model"
+                        entry = hf_repos.setdefault(cand, {"type": rtype, "refs": []})
+                        entry["refs"].append((f, cand))
+        # Modal cloud apps
+        if "import modal" in txt or "modal.App(" in txt:
+            for m in re.finditer(r'modal\.App\(\s*["\']([^"\']+)["\']', txt):
+                modal_apps.setdefault(m.group(1), []).append((f, m.group(1)))
+        # Spotify API
+        if "api.spotify.com" in txt or "spotify.json" in txt:
+            ev = "api.spotify.com" if "api.spotify.com" in txt else "spotify.json"
+            spotify_files.append((f, ev))
+        # General SDK services
+        if not f.endswith(".md"):
+            for sid, _sn, _su, _dep, pat in SDK_PATTERNS:
+                m = re.search(pat, txt)
+                if m:
+                    sdk_hits.setdefault(sid, []).append((f, m.group(0)))
+
+    # Database / Neon datasource
+    uses_neon = "@neondatabase/serverless" in pkg_deps or bool(neon_files)
+    uses_pg = uses_neon or bool(drizzle_cfg) or bool(prisma_cfg) or ("pg" in pkg_deps)
+    if uses_pg:
+        db_id = "datasource:neon-postgres" if uses_neon else "datasource:postgres"
+        db_name = "Neon Postgres" if uses_neon else "Postgres database"
+        where_db = []
+        if "vercel.json" in all_set:
+            where_db.append("Vercel env")
+        if "DATABASE_URL" in env_local_keys:
+            where_db.append(".env.local (gitignored)")
+        elif "DATABASE_URL" in env_dot_keys:
+            where_db.append(".env (gitignored)")
+        elif "DATABASE_URL" in env_example_keys:
+            where_db.append(".env.local (gitignored; template .env.example)")
+        db_refs = {
+            "url": "https://console.neon.tech" if uses_neon else "postgresql://(configured via DATABASE_URL)",
+            "dialect": "postgresql",
+            "secret_locations": [{"name": "DATABASE_URL", "where": " / ".join(where_db) or "environment variable DATABASE_URL"}],
+        }
+        if drizzle_cfg:
+            track(drizzle_cfg)
+            db_refs["config"] = drizzle_cfg
+        if "DATABASE_URL" in env_local_keys or "DATABASE_URL" in env_dot_keys or os.environ.get("DATABASE_URL"):
+            db_chk = {"run": 'python3 -I -c "import os,re; '
+                             'ok=bool(os.environ.get(\'DATABASE_URL\')) or any('
+                             're.search(r\'^DATABASE_URL=.+\', open(f).read(), re.M) '
+                             'for f in (\'.env.local\',\'.env\') if os.path.isfile(f)); '
+                             'raise SystemExit(0 if ok else 1)"'}
+        elif uses_neon and shutil.which("neonctl"):
+            db_chk = {"run": "neonctl me >/dev/null 2>&1"}
+        else:
+            db_chk = {"probe": "Open %s and confirm DATABASE_URL database is reachable" % (
+                "Neon console / Vercel env" if uses_neon else "database provider dashboard"), "confirmed": None}
+        add_thing({"id": db_id, "kind": "external-datasource", "name": db_name,
+                   "service": "neon" if uses_neon else "postgres", "refs": db_refs, "check": db_chk})
+        if drizzle_cfg:
+            add_link("file:" + drizzle_cfg, db_id, "configures", file=drizzle_cfg, evidence="DATABASE_URL")
+        if prisma_cfg:
+            track(prisma_cfg)
+            add_link("file:" + prisma_cfg, db_id, "configures", file=prisma_cfg, evidence="datasource")
+        if uses_neon and "package.json" in all_set and "@neondatabase/serverless" in pkg_deps:
+            add_link("file:package.json", db_id, "depends-on", file="package.json", evidence="@neondatabase/serverless")
+        for f, ev in neon_files[:6]:
+            add_link("file:" + f, db_id, "uses-datasource", file=f, evidence=ev)
+        for f, ev in pg_files[:6]:
+            if f != drizzle_cfg:
+                add_link("file:" + f, db_id, "uses-datasource", file=f, evidence=ev)
+
+    # Hugging Face datasets and models
+    hf_token_file = os.path.join(home, ".cache", "huggingface", "token")
+    for repo_id, meta in sorted(hf_repos.items()):
+        rtype = meta["type"]
+        refs_list = meta["refs"]
+        ds_id = "datasource:huggingface/" + repo_id
+        owner_acct = repo_id.split("/", 1)[0]
+        ds_refs = {
+            "url": ("https://huggingface.co/datasets/" if rtype == "dataset" else "https://huggingface.co/") + repo_id,
+            "repo_id": repo_id,
+            "repo_type": rtype,
+            "account": owner_acct,
+            "secret_locations": [{"name": "HF_TOKEN", "where": "HF_TOKEN env or ~/.cache/huggingface/token (cloud proxy injects in cloud)"}],
+        }
+        has_hf_auth = bool(os.environ.get("HF_TOKEN")) or os.path.isfile(hf_token_file)
+        ds_chk = ({"run": _hf_check_cmd(repo_id, repo_type=rtype)} if (has_hf_auth or rtype == "model") else
+                  {"probe": "Log in to Hugging Face (HF_TOKEN or ~/.cache/huggingface/token) and verify %s %s" % (rtype, repo_id), "confirmed": None})
+        add_thing({"id": ds_id, "kind": "external-datasource", "name": "Hugging Face %s (%s)" % (rtype, repo_id),
+                   "service": "huggingface", "refs": ds_refs, "check": ds_chk})
+        for f, ev in refs_list[:8]:
+            track(f)
+            add_link("file:" + f, ds_id, "uses-datasource", file=f, evidence=ev)
+
+    # Modal cloud apps
+    modal_cfg = os.path.join(home, ".modal.toml")
+    for app_name, refs_list in sorted(modal_apps.items()):
+        mid = "service:modal/" + app_name
+        m_refs = {
+            "url": "https://modal.com/apps",
+            "app_id": app_name,
+            "secret_locations": [{"name": "Modal token", "where": "~/.modal.toml or MODAL_TOKEN_ID / MODAL_TOKEN_SECRET"}],
+        }
+        if shutil.which("modal"):
+            m_chk = {"run": "modal profile current >/dev/null 2>&1"}
+        elif os.path.isfile(modal_cfg):
+            m_chk = {"exists": ["~/.modal.toml"]}
+        else:
+            m_chk = {"probe": "Open https://modal.com/apps and confirm app %s is deployed" % app_name, "confirmed": None}
+        add_thing({"id": mid, "kind": "external-service", "name": "Modal cloud app (%s)" % app_name,
+                   "service": "modal", "refs": m_refs, "check": m_chk})
+        for f, ev in refs_list[:6]:
+            track(f)
+            add_link("file:" + f, mid, "deploys-to", file=f, evidence=ev)
+
+    # Spotify API
+    if spotify_files:
+        sp_tok_rel = None
+        for f, _ in spotify_files:
+            m = re.search(r"(~/\.config/[^\s\"')]+spotify[^\s\"')]*\.json)", _read(os.path.join(root, f)))
+            if m:
+                sp_tok_rel = m.group(1); break
+        sp_tok_rel = sp_tok_rel or "~/.config/harmonize/spotify.json"
+        sp_refs = {
+            "url": "https://developer.spotify.com/dashboard",
+            "secret_locations": [{"name": "Spotify OAuth token", "where": sp_tok_rel}],
+        }
+        sp_chk = ({"exists": [sp_tok_rel]} if os.path.isfile(_expand_home(sp_tok_rel, home)) else
+                  {"probe": "Log in to Spotify developer app and verify token at %s" % sp_tok_rel, "confirmed": None})
+        add_thing({"id": "service:spotify", "kind": "external-service", "name": "Spotify Web API",
+                   "service": "spotify", "refs": sp_refs, "check": sp_chk})
+        for f, ev in spotify_files[:6]:
+            track(f)
+            add_link("file:" + f, "service:spotify", "uses-service", file=f, evidence=ev)
+
+    # General SDK services
+    for sid, sname, surl, dep, _pat in SDK_PATTERNS:
+        hits = sdk_hits.get(sid) or []
+        if not hits and dep not in pkg_deps:
+            continue
+        add_thing({
+            "id": sid,
+            "kind": "external-service",
+            "name": sname,
+            "service": sid.split(":", 1)[1],
+            "refs": {"url": surl},
+            "check": {"probe": "Open %s and confirm %s credentials and project are active" % (surl, sname), "confirmed": None},
+        })
+        if dep in pkg_deps and "package.json" in all_set:
+            add_link("file:package.json", sid, "depends-on", file="package.json", evidence=dep)
+        for f, ev in hits[:6]:
+            add_link("file:" + f, sid, "uses-service", file=f, evidence=ev)
+
+    # Secret store summary (ONLY names and locations, NEVER values!)
+    all_secret_names = sorted(set(env_example_keys) | set(env_local_keys) | set(code_env_refs.keys()))
+    if all_secret_names:
+        locs = []
+        for k in all_secret_names:
+            places = []
+            if k in env_local_keys:
+                places.append(".env.local (gitignored)")
+            if k in env_dot_keys:
+                places.append(".env (gitignored)")
+            if "vercel.json" in all_set:
+                places.append("Vercel env")
+            if k in env_example_keys and not places:
+                places.append("env (template: .env.example)")
+            if not places:
+                places.append("environment variable")
+            locs.append({"name": k, "where": " / ".join(places)})
+        chk_sec = ({"exists": [".env.example"]} if ".env.example" in all_set else
+                   {"exists": [".env.local"]} if env_local_keys else
+                   {"probe": "Confirm required environment secrets (%s) are set in deploy environment" % ", ".join(all_secret_names[:4]), "confirmed": None})
+        add_thing({
+            "id": "secrets:env",
+            "kind": "secret-store",
+            "name": "Environment secrets (%d keys, locations only)" % len(all_secret_names),
+            "refs": {"secret_locations": locs},
+            "check": chk_sec,
+        })
+        if ".env.example" in all_set and env_example_keys:
+            add_link("file:.env.example", "secrets:env", "declares-secrets", file=".env.example", evidence=env_example_keys[0])
+        for k, fs in sorted(code_env_refs.items()):
+            for f in fs[:2]:
+                add_link("file:" + f, "secrets:env", "reads-secret", file=f, evidence=k)
+
+    # Apply any confirmed probe dates / added external entries from .board/map-added.json
+    added = load_added(root)
+    added_by_id = {t["id"]: t for t in added.get("things", []) if t.get("id")}
+    for t in things:
+        ov = added_by_id.get(t["id"])
+        if ov and isinstance(ov.get("check"), dict) and ov["check"].get("confirmed"):
+            if isinstance(t.get("check"), dict) and t["check"].get("probe"):
+                t["check"]["confirmed"] = ov["check"]["confirmed"]
+
+    counts = {k: sum(1 for t in things if t["kind"] == k) for k in EXTERNAL_KINDS}
+    parts = [("%d %s" % (v, k.replace("external-", ""))) for k, v in counts.items() if v]
+    summary = "workflow: %d external things (%s), %d links" % (len(things), ", ".join(parts) or "none", len(links))
+    return {"things": things, "links": links, "flags": flags, "files": seen, "summary": summary}
+
+
+def workflow_reader(root, all_files, cfg, home_dir=None):
+    """Map reader for everything outside the repo (M9): CLIs, runners, browsers, remotes, services, data sources."""
+    if cfg.get("workflow") is False:
+        return None
+    r = scan_external(root, all_files=all_files, cfg=cfg, home_dir=home_dir)
+    return r if r["things"] else None
+
+
+# ── Added entries & live checks (M3-compatible .board/map-added.json + M9 external checks) ─────────────────────
+
+def load_added(root):
+    """{"things": [...], "links": [...]} from <root>/.board/map-added.json ({} lists when there is none)."""
+    try:
+        with open(os.path.join(root, ADDED_REL), encoding="utf-8") as fh:
+            d = json.load(fh)
+    except FileNotFoundError:
+        d = {}
+    except (OSError, ValueError) as e:
+        return {"things": [], "links": [], "error": "%s does not read as JSON (%s)" % (ADDED_REL, e)}
+    return {"things": [t for t in (d.get("things") or []) if isinstance(t, dict)],
+            "links": [ln for ln in (d.get("links") or []) if isinstance(ln, dict)]}
+
+
+def _entry_name(e):
+    return e.get("id") or "%s -%s-> %s" % (e.get("from"), e.get("kind") or "link", e.get("to"))
+
+
+def unchecked(added):
+    """Added things and links that carry no check a script can rerun or a browser part can perform."""
+    out = []
+    for e in added.get("things", []) + added.get("links", []):
+        c = e.get("check") if isinstance(e.get("check"), dict) else {}
+        if not any(c.get(k) for k in CHECK_KINDS) or ("contains" in c and not c.get("file")):
+            out.append(_entry_name(e))
+    return out
+
+
+def validate_added(added):
+    """Validate .board/map-added.json entries: every thing/link needs a check (M3/M9 rule) and zero literal secrets."""
+    errs = []
+    if added.get("error"):
+        errs.append(added["error"])
+    for name in unchecked(added):
+        errs.append("%s is on the map with no check: give it one in %s (contains, exists, run, or probe for a browser)" % (name, ADDED_REL))
+    for e in added.get("things", []) + added.get("links", []):
+        sec = _contains_secret_value(e, _entry_name(e))
+        if sec:
+            errs.append(sec)
+    return errs
+
+
+def add_external_thing(root, thing, links=None):
+    """Add or update an external service/datasource in .board/map-added.json (enforcing M3's check rule & no secrets)."""
+    root = os.path.abspath(root)
+    if not isinstance(thing, dict) or not thing.get("id"):
+        raise ValueError("external thing must be a dict with an `id`")
+    c = thing.get("check") if isinstance(thing.get("check"), dict) else {}
+    if not any(c.get(k) for k in CHECK_KINDS) or ("contains" in c and not c.get("file")):
+        raise ValueError("%s has no valid check (needs contains+file, exists, run, or probe)" % thing["id"])
+    sec = _contains_secret_value(thing, thing["id"])
+    if sec:
+        raise ValueError(sec)
+    new_links = list(links or [])
+    for ln in new_links:
+        lc = ln.get("check") if isinstance(ln.get("check"), dict) else {}
+        if not any(lc.get(k) for k in CHECK_KINDS) or ("contains" in lc and not lc.get("file")):
+            raise ValueError("%s has no valid check" % _entry_name(ln))
+        sec_l = _contains_secret_value(ln, _entry_name(ln))
+        if sec_l:
+            raise ValueError(sec_l)
+    added = load_added(root)
+    if added.get("error"):
+        raise ValueError(added["error"])
+    things_list = [t for t in added["things"] if t.get("id") != thing["id"]]
+    things_list.append(thing)
+    links_list = list(added["links"])
+    for ln in new_links:
+        key = (ln.get("from"), ln.get("to"), ln.get("kind"))
+        links_list = [x for x in links_list if (x.get("from"), x.get("to"), x.get("kind")) != key]
+        links_list.append(ln)
+    out = {"things": things_list, "links": links_list}
+    p = os.path.join(root, ADDED_REL)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as fh:
+        json.dump(out, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    return out
+
+
+def confirm_probe(root, thing_id, confirmed_date=None, probe_text=None):
+    """Record the last confirmed date (YYYY-MM-DD) for a browser probe in .board/map-added.json."""
+    root = os.path.abspath(root)
+    when = confirmed_date or datetime.date.today().isoformat()
+    datetime.date.fromisoformat(when[:10])
+    added = load_added(root)
+    if added.get("error"):
+        raise ValueError(added["error"])
+    existing = next((t for t in added["things"] if t.get("id") == thing_id), None)
+    if existing is None:
+        ext = scan_external(root)
+        disc = next((t for t in ext["things"] if t.get("id") == thing_id), None)
+        if disc is not None:
+            existing = json.loads(json.dumps(disc))
+        else:
+            existing = {"id": thing_id, "kind": "external-service", "name": thing_id,
+                        "check": {"probe": probe_text or "Confirm %s in browser" % thing_id, "confirmed": None}}
+    chk = existing.get("check") if isinstance(existing.get("check"), dict) else {}
+    if not chk.get("probe"):
+        chk = {"probe": probe_text or "Confirm %s in browser" % thing_id}
+    chk["confirmed"] = when[:10]
+    existing["check"] = chk
+    return add_external_thing(root, existing)
+
+
+def _probe_age(c, today=None):
+    try:
+        d = datetime.date.fromisoformat(str(c.get("confirmed") or "")[:10])
+    except ValueError:
+        return None
+    return ((today or datetime.date.today()) - d).days
+
+
+def _run_single_check(root, c, cache=None, home_dir=None, timeout=10):
+    """Run one check dict: returns (status, detail) where status is pass|fail|probe_confirmed|probe_unconfirmed."""
+    cache = {} if cache is None else cache
+    if not isinstance(c, dict):
+        return "fail", "missing check"
+    if c.get("probe"):
+        age = _probe_age(c)
+        if age is not None and age <= CONFIRM_DAYS:
+            return "probe_confirmed", "confirmed %s (%dd ago)" % (c.get("confirmed"), age)
+        when = ("last confirmed %s (%dd ago)" % (c.get("confirmed"), age)) if age is not None else "never confirmed"
+        return "probe_unconfirmed", "%s — %s" % (when, c["probe"])
+    if c.get("run"):
+        env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+        if home_dir:
+            env["HOME"] = os.path.abspath(home_dir)
+        try:
+            r = subprocess.run(c["run"], shell=True, cwd=root, capture_output=True, text=True, timeout=timeout, env=env)
+            if r.returncode == 0:
+                return "pass", "ok"
+            err = (r.stderr or r.stdout or "").strip().splitlines()
+            return "fail", ("exit %d: %s" % (r.returncode, err[0][:100])) if err else ("exit %d" % r.returncode)
+        except subprocess.TimeoutExpired:
+            return "fail", "timed out after %ds" % timeout
+        except (OSError, subprocess.SubprocessError) as e:
+            return "fail", str(e)
+    fp = c.get("file")
+    if fp and "contains" in c:
+        if fp not in cache:
+            cache[fp] = strip_ts(_read(os.path.join(root, fp))) if fp.endswith(TS_EXT) else _text_of(root, fp)
+        if c["contains"] in (cache[fp] or ""):
+            return "pass", "ok"
+        return "fail", "`%s` is no longer in %s" % (c["contains"], fp)
+    if c.get("exists"):
+        gone = []
+        for x in c["exists"]:
+            full = _expand_home(x, home_dir) if x.startswith("~") else os.path.join(root, x)
+            if not os.path.exists(full):
+                gone.append(x)
+        return ("pass", "ok") if not gone else ("fail", "gone: %s" % ", ".join(gone))
+    return "fail", "no runnable check"
+
+
+def check_external(root, out=None, config_path=None, home_dir=None, network=True, timeout=10):
+    """Run every external workflow check (discovered + .board/map-added.json) and return a structured report."""
+    root = os.path.abspath(root)
+    home = os.path.abspath(home_dir or os.path.expanduser("~"))
+    cfg = load_config(root, config_path)
+    out_rel = None
+    if out:
+        out_abs = os.path.abspath(out)
+        if out_abs.startswith(root + os.sep):
+            out_rel = os.path.relpath(out_abs, root).replace("\\", "/")
+    ext = scan_external(root, all_files=list_all(root, out_rel), cfg=cfg, home_dir=home)
+    added = load_added(root)
+    errors = validate_added(added)
+    by_id = {t["id"]: t for t in ext["things"]}
+    for t in added.get("things", []):
+        tid = t.get("id")
+        if tid:
+            if tid in by_id and isinstance(t.get("check"), dict) and t["check"].get("confirmed") and isinstance(by_id[tid].get("check"), dict) and by_id[tid]["check"].get("probe"):
+                by_id[tid]["check"]["confirmed"] = t["check"]["confirmed"]
+            elif tid not in by_id:
+                by_id[tid] = t
+    all_things = list(by_id.values())
+    all_links = list(ext["links"]) + [l for l in added.get("links", []) if l not in ext["links"]]
+
+    results, notes, cache = [], [], {}
+    passed = failed = probes_confirmed = probes_unconfirmed = skipped = 0
+    for t in all_things:
+        c = t.get("check") or {}
+        if not network and isinstance(c.get("run"), str) and any(k in c["run"] for k in ("ls-remote", "https://", "http://", "gh auth")):
+            results.append({"id": t["id"], "kind": t.get("kind"), "name": t.get("name", t["id"]),
+                            "status": "skipped", "detail": "network disabled", "check": c})
+            skipped += 1
+            continue
+        status, detail = _run_single_check(root, c, cache=cache, home_dir=home, timeout=timeout)
+        results.append({"id": t["id"], "kind": t.get("kind"), "name": t.get("name", t["id"]),
+                        "status": status, "detail": detail, "check": c})
+        if status == "pass":
+            passed += 1
+        elif status == "fail":
+            failed += 1
+            errors.append("%s: %s" % (t["id"], detail))
+        elif status == "probe_confirmed":
+            probes_confirmed += 1
+        elif status == "probe_unconfirmed":
+            probes_unconfirmed += 1
+            notes.append("probe: %s (%s)" % (t["id"], detail))
+
+    link_passed = link_failed = 0
+    for ln in all_links:
+        lc = ln.get("check") or {}
+        if not network and isinstance(lc.get("run"), str) and any(k in lc["run"] for k in ("ls-remote", "https://", "http://")):
+            continue
+        st, det = _run_single_check(root, lc, cache=cache, home_dir=home, timeout=timeout)
+        if st in ("pass", "probe_confirmed"):
+            link_passed += 1
+        elif st == "fail":
+            link_failed += 1
+            errors.append("link %s -%s-> %s: %s" % (ln.get("from"), ln.get("kind"), ln.get("to"), det))
+
+    runnable = passed + failed
+    probes_total = probes_confirmed + probes_unconfirmed
+    return {
+        "total": len(all_things),
+        "runnable": runnable,
+        "passed": passed,
+        "failed": failed,
+        "skipped": skipped,
+        "probes_total": probes_total,
+        "probes_confirmed": probes_confirmed,
+        "probes_unconfirmed": probes_unconfirmed,
+        "links_total": len(all_links),
+        "links_passed": link_passed,
+        "links_failed": link_failed,
+        "results": results,
+        "errors": errors,
+        "notes": notes,
+        "things": all_things,
+        "links": all_links,
+    }
+
+
+def workflow_card(r):
+    """Rich Markdown card for areas/workflow.md: direct references, linked code, secret locations (never values), checks."""
+    L = ["# %s" % r["summary"], "",
+         "Generated by `kit.py map` (M9). Direct references, linked code, and live checks (`kit.py map --check-external`).",
+         "Secrets are listed ONLY by where they are kept — never their values.", ""]
+    if r.get("flags"):
+        L.append("## Flags (%d)" % len(r["flags"]))
+        L.extend("- **%s** %s" % (f["kind"], f["text"]) for f in r["flags"])
+        L.append("")
+    in_links = {}
+    for ln in r.get("links") or []:
+        in_links.setdefault(ln["to"], []).append("%s (%s)" % (ln["from"].split(":", 1)[-1], ln["kind"]))
+    sections = [
+        ("Runners & CLIs", ("runner", "external-cli")),
+        ("Browser profiles", ("browser-profile",)),
+        ("Git remotes", ("git-remote",)),
+        ("External services & deploy targets", ("external-service",)),
+        ("External data sources", ("external-datasource",)),
+        ("Secret locations (never values)", ("secret-store",)),
+    ]
+    for heading, kinds in sections:
+        items = [t for t in r.get("things") or [] if t.get("kind") in kinds]
+        if not items:
+            continue
+        L.append("## %s (%d)" % (heading, len(items)))
+        for t in items:
+            refs = t.get("refs") or {}
+            bits = []
+            for k in ("url", "repo_id", "project_id", "org_id", "app_id", "artifact_id", "account", "profile", "path", "command"):
+                if refs.get(k):
+                    bits.append("%s: `%s`" % (k, refs[k]))
+            if refs.get("secret_locations"):
+                slist = []
+                for s in refs["secret_locations"]:
+                    slist.append("%s @ %s" % (s["name"], s["where"]) if isinstance(s, dict) else str(s))
+                bits.append("secrets: %s" % "; ".join(slist[:6]))
+            used_by = in_links.get(t["id"]) or []
+            if used_by:
+                bits.append("linked: %s" % ", ".join(used_by[:6]))
+            c = t.get("check") or {}
+            if c.get("probe"):
+                cstr = "probe (confirmed: %s)" % (c.get("confirmed") or "never")
+            elif c.get("run"):
+                cstr = "check: runnable"
+            elif c.get("exists"):
+                cstr = "check: exists %s" % ", ".join(c["exists"])
+            elif c.get("file"):
+                cstr = "check: in %s" % c["file"]
+            else:
+                cstr = "check: none"
+            bits.append(cstr)
+            L.append("- **%s** (`%s`) — %s" % (t.get("name") or t["id"], t["id"], " · ".join(bits)))
+        L.append("")
+    return "\n".join(L) + "\n"
+
+
+def render_workflow_md(project_name, external_data, map_rel=".board/map/areas/workflow.md", existing_text=None):
+    """Generate the concise workflow memory file (M9 §4): ONLY what cannot be checked, pointing at the map for the rest.
+
+    Preserves owner-edited bullets under `## The cycle of a change`, `## Limits`, and `## The owner's habits` if
+    `existing_text` is provided.
+    """
+    things = (external_data or {}).get("things") or []
+    runners = [t for t in things if t.get("kind") == "runner"]
+    clis = [t["id"].split(":", 1)[-1] for t in things if t.get("kind") == "external-cli"]
+
+    # Preserve custom bullets from an existing workflow.md under the three uncheckable headings
+    preserved = {}
+    if existing_text:
+        cur_h = None
+        for ln in existing_text.splitlines():
+            m = re.match(r"^##\s+(.+?)\s*$", ln)
+            if m:
+                cur_h = m.group(1).strip()
+                preserved.setdefault(cur_h, [])
+            elif cur_h and ln.strip().startswith("- "):
+                preserved[cur_h].append(ln)
+
+    def _keep_or(heading, defaults):
+        prev = preserved.get(heading)
+        if prev and not all("(edit" in x or "generated by step 0" in x.lower() for x in prev):
+            return prev
+        return defaults
+
+    runner_lines = ["- Full inventory, URLs, project IDs, accounts, secret locations and live checks live on the map: `%s` (`kit.py map --check-external`)." % map_rel]
+    for r in runners:
+        rid = r["id"].split(":", 1)[-1]
+        runner_lines.append("- **%s**: %s" % (rid, r.get("name") or rid))
+    if not any(r["id"] == "runner:computer" for r in runners):
+        runner_lines.append("- **computer**: local sessions (%s)" % (", ".join(clis[:4]) or "local CLI"))
+    runner_lines.append("- **owner**: approvals, logins, and browser-only probes.")
+
+    L = [
+        "# Workflow — %s" % project_name,
+        "",
+        "*Checked facts (CLIs, remotes, deploy configs, services, data sources, URLs, IDs, browser profiles, secret locations) live on the map: `%s`. This file keeps only what cannot be checked.*" % map_rel,
+        "",
+        "## Runners",
+    ] + runner_lines + [
+        "",
+        "## The cycle of a change",
+    ] + _keep_or("The cycle of a change", [
+        "- Branch -> tests -> commit -> push -> review -> merge to trunk (edit to match this project's cycle).",
+    ]) + [
+        "",
+        "## Limits",
+    ] + _keep_or("Limits", [
+        "- Never store secrets in git or on the map; browser-only consoles and paid/destructive actions wait on the owner (edit to add project limits).",
+    ]) + [
+        "",
+        "## The owner's habits",
+    ] + _keep_or("The owner's habits", [
+        "- Confirm or adjust language, autonomy, and review cadence in the Step 0 question (edit as preferences settle).",
+    ]) + [""]
+    return "\n".join(L)
+
+
+def write_workflow_md(root, memory_dir=None, external_data=None, home_dir=None, force=False):
+    """Write `<memory_dir>/workflow.md` keeping only what cannot be checked, pointing at `.board/map/areas/workflow.md`."""
+    root = os.path.abspath(root)
+    if memory_dir is None:
+        cfg_file = os.path.join(root, ".kit", "config.json")
+        mdir_rel = ".board/memory"
+        if os.path.isfile(cfg_file):
+            try:
+                mdir_rel = ((json.loads(_read(cfg_file)).get("kit") or {}).get("memory_dir")) or mdir_rel
+            except ValueError:
+                pass
+        elif os.path.isdir(os.path.join(root, ".story")) and not os.path.isdir(os.path.join(root, ".board", "memory")):
+            mdir_rel = ".story"
+        memory_dir = os.path.join(root, mdir_rel)
+    else:
+        memory_dir = os.path.abspath(memory_dir)
+    if external_data is None:
+        external_data = scan_external(root, home_dir=home_dir)
+    path = os.path.join(memory_dir, "workflow.md")
+    existing = None if force else (_read(path) if os.path.isfile(path) else None)
+    text = render_workflow_md(os.path.basename(root.rstrip(os.sep)) or "project", external_data, existing_text=existing)
+    os.makedirs(memory_dir, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    return path, text
+
+
+def run_other_readers(root, out_rel, cfg, home_dir=None):
     """{reader: result} for the readers beyond code, each only when the project has something for it."""
     all_files = list_all(root, out_rel)
     res, taken = {}, set()
@@ -1221,10 +2487,13 @@ def run_other_readers(root, out_rel, cfg):
         fo = folder_reader(root, all_files, cfg, taken)
         if fo:
             res["folder"] = fo
+    wf = workflow_reader(root, all_files, cfg, home_dir=home_dir)
+    if wf:
+        res["workflow"] = wf
     return res
 
 
-OTHER_READERS = ("powerbi", "documents", "folder")
+OTHER_READERS = ("powerbi", "documents", "folder", "workflow")
 
 
 # ── resolution: an import to a file ────────────────────────────────────────────────────────────────────────────
@@ -1456,7 +2725,7 @@ def fingerprint(facts):
     return h.hexdigest()[:16]
 
 
-def build(root, out=None, config_path=None, run_gens=True):
+def build(root, out=None, config_path=None, run_gens=True, home_dir=None):
     t0 = time.time()
     root = os.path.abspath(root)
     out = os.path.abspath(out or os.path.join(root, ".board", "map"))
@@ -1489,9 +2758,18 @@ def build(root, out=None, config_path=None, run_gens=True):
                       "text": "%d %s file(s) not read (no %s reader yet): %s" % (
                           len(fs), lang, lang, ", ".join("%s/ %d" % (t, n) for t, n in sorted(tops.items(), key=lambda kv: -kv[1])[:4]))})
 
-    others = run_other_readers(root, out_rel, cfg)
+    others = run_other_readers(root, out_rel, cfg, home_dir=home_dir)
     for name, r in others.items():
         things.extend(r["things"]); links.extend(r["links"]); flags.extend(r["flags"])
+    added = load_added(root)
+    existing_ids = {t.get("id") for t in things}
+    for t in added.get("things", []):
+        if t.get("id") and t["id"] not in existing_ids:
+            things.append(t); existing_ids.add(t["id"])
+    for ln in added.get("links", []):
+        links.append(ln)
+    for err in validate_added(added):
+        flags.append({"kind": "added-invalid", "thing": ADDED_REL, "text": err})
 
     def link(frm, to, kind, file, evidence, line=None):
         links.append({"from": frm, "to": to, "kind": kind,
@@ -1765,7 +3043,7 @@ def build(root, out=None, config_path=None, run_gens=True):
                                            imports_of, imported_by, tests_of, areas_index, joins, gens, flags,
                                            feature=True))
     for n, r in others.items():
-        _write(out, "areas/%s.md" % n, reader_card(n, r))
+        _write(out, "areas/%s.md" % n, workflow_card(r) if n == "workflow" else reader_card(n, r))
     _write(out, "joins.md", joins_md(data))
     data["seconds"] = round(time.time() - t0, 2)
     ov = overview_md(data)
@@ -1976,9 +3254,10 @@ def joins_md(d):
 
 # ── fresh or refused ───────────────────────────────────────────────────────────────────────────────────────────
 
-def check(root, out=None, config_path=None, run_gens=True):
+def check(root, out=None, config_path=None, run_gens=True, home_dir=None):
     """0 when the map still tells the truth: the code's fingerprint matches, and every link's check passes
-    (each import, call, schema, table still written where the map says; each generator still exits 0)."""
+    (each import, call, schema, table still written where the map says; each generator still exits 0; each added
+    external thing or link carries a valid check that passes)."""
     root = os.path.abspath(root)
     out = os.path.abspath(out or os.path.join(root, ".board", "map"))
     try:
@@ -1999,14 +3278,25 @@ def check(root, out=None, config_path=None, run_gens=True):
     changed = sorted(p for p in set(now) | set(old) if now.get(p) != old.get(p))
     if d.get("readers") is not None:   # the readers beyond code: their files, read again the same way
         prev = {p: sha for r in d["readers"].values() for p, sha in r["files"].items()}
-        cur = {p: sha for r in run_other_readers(root, out_rel, load_config(root, config_path)).values()
+        cur = {p: sha for r in run_other_readers(root, out_rel, load_config(root, config_path), home_dir=home_dir).values()
                for p, sha in r["files"].items()}
         changed += sorted(p for p in set(prev) | set(cur) if prev.get(p) != cur.get(p))
     problems = []
     if changed:
         problems.append("%d file(s) changed since the map was built from %s: %s" % (
             len(changed), d.get("commit") or "this folder", ", ".join(changed[:8]) + (" ..." if len(changed) > 8 else "")))
+    added = load_added(root)
+    problems.extend(validate_added(added))
     cache, failed, ran = {}, [], 0
+    for t in added.get("things", []):
+        c = t.get("check") or {}
+        if c.get("probe") or ("run" in c and not run_gens):
+            continue
+        if any(c.get(k) for k in ("run", "exists", "contains")):
+            ran += 1
+            st, det = _run_single_check(root, c, cache=cache, home_dir=home_dir)
+            if st == "fail":
+                failed.append("%s: %s" % (_entry_name(t), det))
     for ln in d.get("links") or []:
         c = ln.get("check") or {}
         if "run" in c:
@@ -2023,6 +3313,10 @@ def check(root, out=None, config_path=None, run_gens=True):
             continue
         fp = c.get("file")
         if not fp:
+            if c.get("exists"):
+                ran += 1
+                if not all(os.path.exists(_expand_home(x, home_dir) if x.startswith("~") else os.path.join(root, x)) for x in c["exists"]):
+                    failed.append("%s -%s-> %s: a file is gone" % (ln["from"], ln["kind"], ln["to"]))
             continue
         ran += 1
         if fp not in cache:
@@ -2047,14 +3341,52 @@ def main(argv=None):
     ap.add_argument("--root", default=".")
     ap.add_argument("--out", default=None, help="default <root>/.board/map")
     ap.add_argument("--config", default=None, help="a kit config holding `map` (default <root>/.kit/config.json)")
+    ap.add_argument("--home", default=None, help="override home directory for browser/CLI/credential discovery")
     ap.add_argument("--check", action="store_true", help="fail when the code changed since the map, or a link check fails")
+    ap.add_argument("--check-external", action="store_true", help="run live checks on external services, remotes, CLIs and data sources")
+    ap.add_argument("--no-network", action="store_true", help="skip network checks during --check-external")
+    ap.add_argument("--write-workflow", action="store_true", help="write concise workflow.md (uncheckable headings only, pointing to the map)")
+    ap.add_argument("--memory-dir", default=None, help="memory directory for --write-workflow")
+    ap.add_argument("--add-external", default=None, help="JSON object {id, kind, name, refs, check, links?} to add to .board/map-added.json")
+    ap.add_argument("--confirm", default=None, help="mark a browser probe thing id as confirmed today (or --date)")
+    ap.add_argument("--date", default=None, help="YYYY-MM-DD date for --confirm")
     ap.add_argument("--no-generators", action="store_true")
     a = ap.parse_args(argv)
+    if a.add_external:
+        try:
+            payload = json.loads(a.add_external)
+            links = payload.pop("links", None) if isinstance(payload, dict) else None
+            add_external_thing(a.root, payload, links=links)
+        except (ValueError, OSError) as e:
+            print("REFUSED: %s" % e)
+            return 1
+        print("added %s to %s" % (payload["id"], ADDED_REL))
+        return 0
+    if a.confirm:
+        try:
+            confirm_probe(a.root, a.confirm, confirmed_date=a.date)
+        except (ValueError, OSError) as e:
+            print("REFUSED: %s" % e)
+            return 1
+        print("confirmed %s (%s)" % (a.confirm, a.date or datetime.date.today().isoformat()))
+        return 0
+    if a.check_external:
+        rep = check_external(a.root, a.out, a.config, home_dir=a.home, network=not a.no_network)
+        print("external: %d things (%d/%d runnable pass, %d failed, %d browser probes [%d confirmed]); %d/%d links pass" % (
+            rep["total"], rep["passed"], rep["runnable"], rep["failed"],
+            rep["probes_total"], rep["probes_confirmed"], rep["links_passed"], rep["links_total"]))
+        for r in rep["results"]:
+            print("  [%s] %s — %s" % (r["status"], r["id"], r["detail"]))
+        return 0 if not rep["errors"] else 1
+    if a.write_workflow:
+        p, _ = write_workflow_md(a.root, memory_dir=a.memory_dir, home_dir=a.home)
+        print("workflow: %s" % p)
+        return 0
     if a.check:
-        rc, msg = check(a.root, a.out, a.config, run_gens=not a.no_generators)
+        rc, msg = check(a.root, a.out, a.config, run_gens=not a.no_generators, home_dir=a.home)
         print(msg)
         return rc
-    d, out = build(a.root, a.out, a.config, run_gens=not a.no_generators)
+    d, out = build(a.root, a.out, a.config, run_gens=not a.no_generators, home_dir=a.home)
     counts = {}
     for f in d["flags"]:
         counts[f["kind"]] = counts.get(f["kind"], 0) + 1
