@@ -2643,7 +2643,7 @@ def report_lines(pid, p, posts=None, review=False):
     who = "your review" if review else "your step"
     if not o["address"]:
         return ["", "## Where you report", "- No orchestrator owns %s and the board names none: `python3 -I .kit/kit.py unreached %s "
-                "--why \"no owner named\"`, then say so in your post; do not wait." % (who, pid)]
+                "--why \"no owner named\"`, then say so in your post; do not wait." % (who, pid), LAST_MESSAGE_LINE]
     dev, here = o["device"], my_device()
     if dev == "web" or o["address"].startswith(("session_", "cse_")):
         how = "`send_message` (claude-code-remote) with `session_id` `%s`" % o["address"]
@@ -2659,7 +2659,13 @@ def report_lines(pid, p, posts=None, review=False):
             "- Reach it with %s: `Done. Check post %s.`" % (how, pid),
             "- The send fails, or no live session matches (ListAgents shows none on that device, or only stale ones): "
             "`python3 -I .kit/kit.py unreached %s --why \"<what failed>\"`; your post then says so and every orchestrator's resume "
-            "lists it to claim. Do not wait, do not send to a look-alike." % pid]
+            "lists it to claim. Do not wait, do not send to a look-alike." % pid, LAST_MESSAGE_LINE]
+
+
+# CL60: said once, in the report section of a part's and a review's resume, before the closing message (a Stop hook only
+# refuses it after it is on screen); the PostToolUse hook repeats it after each last step.
+LAST_MESSAGE_LINE = ("- After that send (or `unreached`), your next and last chat message is a single \"\u00b7\": nothing "
+                     "before it, no summary; the post holds the result.")
 
 
 def _owner_write(pid, fields, url=None, token=None, drop=()):
