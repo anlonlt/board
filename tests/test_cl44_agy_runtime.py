@@ -266,6 +266,30 @@ class Bug4AgyUsageParsingAndHookWiring(unittest.TestCase):
 
             # Child subagent classifies as part CL44 via [Message] content
             child_row = usage.parse_transcript(str(child_tp))
+
+    def test_agy_clerk_role_and_gemini_35_flash_lite_pricing(self):
+        from unittest import mock
+        usage = _load("usage_cl44_b4_clerk", ROOT / "scripts" / "usage.py")
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td)
+            (p / ".kit").mkdir()
+            (p / ".kit" / "config.json").write_text(json.dumps({"project": "P"}))
+            tp_dir = p / "clerk-uuid-9999" / ".system_generated" / "logs"
+            tp_dir.mkdir(parents=True)
+            tp = tp_dir / "transcript.jsonl"
+            events = [
+                {"step_index": 0, "type": "USER_INPUT", "created_at": "2026-11-27T02:00:00Z",
+                 "content": "<USER_REQUEST>Your prompt is .kit/clerk.md: read it and follow it.</USER_REQUEST>"},
+                {"step_index": 1, "type": "PLANNER_RESPONSE", "created_at": "2026-11-27T02:00:05Z",
+                 "model": "gemini-3.5-flash-lite", "input_tokens": 100000, "cache_read_tokens": 200000, "output_tokens": 5000,
+                 "tool_calls": []},
+            ]
+            tp.write_text("".join(json.dumps(x) + "\n" for x in events))
+            with mock.patch.dict(os.environ, {"KIT_ROLE": "orchestrator"}, clear=False):
+                row = usage.record(str(p), str(tp))
+            self.assertEqual(row["role"], "clerk")
+            self.assertIsNotNone(row["cost_usd"])
+            self.assertGreater(row["cost_usd"], 0)
             self.assertEqual(child_row["received"], 1)
             self.assertEqual(child_row["sent"], 1)
             self.assertEqual(child_row["tests_run"], 1)
