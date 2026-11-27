@@ -20,6 +20,7 @@
  "breaks": "git checkout 0942fc3 -- .kit/kit.py .kit/board_server.py .kit/board_cli.py",
  "check": "python3 -m unittest tests.test_cl16_board_in_git",
  "column": "info",
+ "completed_at": "2026-11-27T03:01:12Z",
  "created_at": "2026-11-22T23:17:04Z",
  "from": "orchestrator",
  "handoff": "On each computer: install.py --update, then restart the board server (up). The server log (/tmp/kit-board-<port>.log) now says [auto-sync] FAILED/recovered. Writes with no server land in board-mirror and are imported at the server's next start. Sync off: KIT_MIRROR_SYNC=0 or mirror.auto false in .kit/config.json.",
@@ -40,6 +41,14 @@
   "sha": "76cd5fbda7626b59a07fc385583470168f0ed0c0"
  },
  "restored_from": "board-mirror 5d7db0d: an artifact load at 2026-11-26T20:23Z (CL44's part, on this computer) overwrote it with an older Artifact copy; fields only that copy had are kept",
+ "review": "redirect",
+ "review_commit": "76cd5fbda7626b59a07fc385583470168f0ed0c0",
+ "review_id": "CR-cl16-the-board-travels-in-git-always-current",
+ "review_orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "review_orchestrator_device": "web",
+ "review_orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "review_session": "session_01AE1HGjsLV85zWgd1W9jtLu",
+ "review_started": "2026-11-27T03:01:38Z",
  "session_id": "board-cl16",
  "status": "complete",
  "subtasks": [
@@ -66,7 +75,7 @@
  ],
  "title": "The board travels in git, always current (mirror synced on every step)",
  "train": "board-data",
- "updated_at": "2026-11-27T03:00:22Z",
+ "updated_at": "2026-11-27T03:08:02Z",
  "verdict": "Fixed: step changes reach origin/board-mirror again (the cause was a per-machine sync cursor kept in git), and a clone with no local board resumes the same board.",
  "working_by": ""
 }

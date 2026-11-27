@@ -1,13 +1,25 @@
 {
  "body": "A part launched with `claude --bg` knows its own step. CL44's part was started while M1's part had just been launched, and its environment named M1's post (KIT_POST): its automatic save commits were labelled with M1's name. A likely cause: `claude --bg` hands the work to a warm spare process made earlier, whose environment is not the one the launch passed (the launch sets KIT_POST, KIT_ROLE and the task list id in its subprocess environment).\n\n1. Confirm the cause: launch two parts one after the other and read each session's KIT_POST.\n2. A part's step never rests on the environment alone: the launch records the worktree's step (`.kit/run/step` in the worktree, or the branch's post), and the hooks read that first; KIT_POST only when it agrees.\n3. When the two disagree, the hooks say so once, never label commits with the other step.\n",
+ "branch": "cl50",
  "column": "info",
  "created_at": "2026-11-26T21:33:05Z",
+ "differs": "CL50: builds on CL49 (a part reports to the orchestrator that launched it); CL49 names the launcher, CL50 makes a part started with claude --bg know its own step instead of guessing it.",
  "from": "orchestrator",
+ "launched_at": "2026-11-27T03:11:22Z",
+ "launched_out_of_order": {
+  "at": "2026-11-27T03:11:22Z",
+  "was": "R2 goes first (place 13, CL50 is 16): feature, by date (no fact sets it apart); launch `r2-gemini-tasks-how-far-it-runs-the-board-k`",
+  "why": "R2/R3 are the agy orchestrator's (owner's split 02:31); this web step shares no file with them"
+ },
+ "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "orchestrator_device": "web",
+ "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
  "part": "CL50",
  "planned_by": "orchestrator",
  "priority": 2,
  "runner": "claude-web",
- "status": "planned",
+ "session_id": "session_01AE1HGj6WUrysNPM7yLUF7w",
+ "status": "in progress",
  "subtasks": [
   {
    "from": "task",
@@ -31,5 +43,6 @@
  "task": "A part launched with `claude --bg` knows its own step. CL44's part was started while M1's part had just been launched, and its environment named M1's post (KIT_POST): its automatic save commits were labelled with M1's name. A likely cause: `claude --bg` hands the work to a warm spare process made earlier, whose environment is not the one the launch passed (the launch sets KIT_POST, KIT_ROLE and the task list id in its subprocess environment).\n\n1. Confirm the cause: launch two parts one after the other and read each session's KIT_POST.\n2. A part's step never rests on the environment alone: the launch records the worktree's step (`.kit/run/step` in the worktree, or the branch's post), and the hooks read that first; KIT_POST only when it agrees.\n3. When the two disagree, the hooks say so once, never label commits with the other step.\n",
  "title": "A part launched in the background knows its own step",
  "train": "takeover",
- "updated_at": "2026-11-26T22:44:49Z"
+ "updated_at": "2026-11-27T03:12:01Z",
+ "working_by": "owner"
 }

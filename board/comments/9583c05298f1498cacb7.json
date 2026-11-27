@@ -6,8 +6,7 @@
  "discussion": "3aec2f488e424ae59968",
  "from": "owner",
  "post_id": "_orchestrator",
- "read": true,
- "read_at": "2026-11-27T03:03:26Z",
+ "read": false,
  "text": "Also, is there a reason why ntfy notification doesn't open discussions automatically? Weren't tags put on the site for just that ? Also, why do I feel like every ntfy notification I open has a token different from the one my device already has ?",
  "thread_id": "thr_c1738303b046"
 }

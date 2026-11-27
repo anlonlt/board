@@ -1,0 +1,39 @@
+{
+ "body": "Every hook that decides \"is this the orchestrator?\" reads the role one way: 6 of 6 say orchestrator on M12's takeover fixture.\n\nCR-m12 (redirect, 2026-11-27): M12 routed 3 hooks through `kit_pre_compact.session_role`; `kit_orchestrator_guard.is_orchestrator`, `kit_brief_guard.is_orchestrator` and `kit_cards_reminder.is_orchestrator` still read KIT_ROLE / branch / the first prompt, and the orchestrator guard caches \"other\" in /tmp at its first call, so a later takeover is never seen. Measured on M12's fixture (owner question first, then `resume --role orchestrator`, 528k): those three say False. Script: scripts/review/CR-m12-the-orchestrator-hands-over-at-its-conte-other-hooks.py.\n\n1. The three hooks call `session_role`; the per-session cache refreshes when the transcript grows (as kit_task_train does) or is dropped.\n2. Test: the takeover fixture through all 6 role-deciding hooks: 6 of 6 orchestrator; a non-orchestrator fixture: 0 of 6. It fails on today's main.\n3. This branch carries M12 (merge origin/m12 first); M12 lands with it.\n(Harmonize's fork context_handover.py is CL61's.)\n",
+ "column": "info",
+ "created_at": "2026-11-27T03:06:47Z",
+ "differs": "M13: builds on M12 (3 hooks read the role through session_role) and M11; M13 routes the other 3 role-deciding hooks the same way and drops the stale cache.",
+ "from": "orchestrator",
+ "kept_on_train": "M12's review redirect; M12 lands with it",
+ "kind": "bug",
+ "part": "M13",
+ "planned_by": "orchestrator",
+ "sources": [
+  "CR-m12-the-orchestrator-hands-over-at-its-conte"
+ ],
+ "status": "planned",
+ "subtasks": [
+  {
+   "from": "task",
+   "n": 1,
+   "status": "open",
+   "title": "The three hooks call session_role"
+  },
+  {
+   "from": "task",
+   "n": 2,
+   "status": "open",
+   "title": "Test"
+  },
+  {
+   "from": "task",
+   "n": 3,
+   "status": "open",
+   "title": "This branch carries M12 (merge origin/m12 first)"
+  }
+ ],
+ "task": "Every hook that decides \"is this the orchestrator?\" reads the role one way: 6 of 6 say orchestrator on M12's takeover fixture.\n\nCR-m12 (redirect, 2026-11-27): M12 routed 3 hooks through `kit_pre_compact.session_role`; `kit_orchestrator_guard.is_orchestrator`, `kit_brief_guard.is_orchestrator` and `kit_cards_reminder.is_orchestrator` still read KIT_ROLE / branch / the first prompt, and the orchestrator guard caches \"other\" in /tmp at its first call, so a later takeover is never seen. Measured on M12's fixture (owner question first, then `resume --role orchestrator`, 528k): those three say False. Script: scripts/review/CR-m12-the-orchestrator-hands-over-at-its-conte-other-hooks.py.\n\n1. The three hooks call `session_role`; the per-session cache refreshes when the transcript grows (as kit_task_train does) or is dropped.\n2. Test: the takeover fixture through all 6 role-deciding hooks: 6 of 6 orchestrator; a non-orchestrator fixture: 0 of 6. It fails on today's main.\n3. This branch carries M12 (merge origin/m12 first); M12 lands with it.\n(Harmonize's fork context_handover.py is CL61's.)\n",
+ "title": "Every hook reads the orchestrator role one way: 6 of 6 on the takeover fixture",
+ "train": "memory",
+ "updated_at": "2026-11-27T03:06:48Z"
+}

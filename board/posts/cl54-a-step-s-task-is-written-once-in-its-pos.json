@@ -1,13 +1,25 @@
 {
  "body": "A step's task is written once, in its post; the prompt file is generated from the post at launch, never edited by hand. Today `step new` writes the post and docs/prompts/<step>.md at once, and the kit never overwrites the prompt: changing a task means editing both by hand (on 2026-11-26 CL49, M10, R6 and CL51 were each edited twice), and the two can drift apart.\n\n1. `step new` writes the post only; `kit.py launch` (every platform, the web's create_session included) generates the prompt from the post as it is then, commits it, and launches: the record of what each part was told stays in git next to what it did, made by the script, never by hand. In scripts/kit.py.\n2. A relaunch or takeover regenerates it from the post when the post changed since, as a new commit (the history shows each version).\n3. `done` and the reviews read the task from the post; a prompt file that differs from its post's task is named by doctor.\n4. Tests: a task edited on the post reaches the next launch's prompt with no other edit; a prompt edited by hand is named by doctor.\n",
+ "branch": "cl54",
  "column": "info",
  "created_at": "2026-11-26T22:50:24Z",
+ "differs": "CL54: builds on CL49/CL53 (launch and fresh start); the task is written in two places today (post and prompt file), CL54 keeps it once in the post and generates the prompt at launch.",
  "from": "orchestrator",
+ "launched_at": "2026-11-27T03:11:25Z",
+ "launched_out_of_order": {
+  "at": "2026-11-27T03:11:25Z",
+  "was": "R2 goes first (place 13, CL54 is 19): feature, by date (no fact sets it apart); launch `r2-gemini-tasks-how-far-it-runs-the-board-k`",
+  "why": "R2/R3 are the agy orchestrator's (owner's split 02:31); this web step shares no file with them"
+ },
+ "orchestrator": "session_01AE1HGm6otiBYEiW1xuHmHx",
+ "orchestrator_device": "web",
+ "orchestrator_name": "session_01AE1HGm6otiBYEiW1xuHmHx",
  "part": "CL54",
  "planned_by": "orchestrator",
  "priority": 1,
  "runner": "claude-web",
- "status": "planned",
+ "session_id": "session_01AE1HGjRnr9HjFKPVLAiSso",
+ "status": "in progress",
  "subtasks": [
   {
    "files": [
@@ -41,5 +53,6 @@
  "task": "A step's task is written once, in its post; the prompt file is generated from the post at launch, never edited by hand. Today `step new` writes the post and docs/prompts/<step>.md at once, and the kit never overwrites the prompt: changing a task means editing both by hand (on 2026-11-26 CL49, M10, R6 and CL51 were each edited twice), and the two can drift apart.\n\n1. `step new` writes the post only; `kit.py launch` (every platform, the web's create_session included) generates the prompt from the post as it is then, commits it, and launches: the record of what each part was told stays in git next to what it did, made by the script, never by hand. In scripts/kit.py.\n2. A relaunch or takeover regenerates it from the post when the post changed since, as a new commit (the history shows each version).\n3. `done` and the reviews read the task from the post; a prompt file that differs from its post's task is named by doctor.\n4. Tests: a task edited on the post reaches the next launch's prompt with no other edit; a prompt edited by hand is named by doctor.\n5. Every step names where to work, in its post and so in its prompt: the repo and the branch (`step new` records the current branch; a runner card for a platform started by hand says them first, with the clone command). R1 and R2 said \"clone the repo\" with no branch; the Antigravity desktop app ran in another account's workspace and found the right branch by itself (it says it built on anlonlt/board feat/streamline-doctor-memory c053208), but nothing in the step made sure of it.",
  "title": "A step's task is written once, in its post; the prompt is generated at launch",
  "train": "takeover",
- "updated_at": "2026-11-26T23:59:57Z"
+ "updated_at": "2026-11-27T03:11:57Z",
+ "working_by": "owner"
 }
