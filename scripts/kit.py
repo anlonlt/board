@@ -10376,10 +10376,15 @@ def _map_cmd(a):
         print("STOP: kit_map.py is not next to kit.py (%s): `python3 -I install.py . --update`" % here)
         return 2
     argv = ["--root", a.root or ROOT]
-    for flag, val in (("--out", a.out), ("--config", a.map_config)):
+    for flag, val in (("--out", a.out), ("--config", a.map_config), ("--home", getattr(a, "home", None)),
+                      ("--memory-dir", getattr(a, "memory_dir", None)), ("--add-external", getattr(a, "add_external", None)),
+                      ("--confirm", getattr(a, "confirm", None)), ("--date", getattr(a, "date", None))):
         if val:
             argv += [flag, val]
-    argv += (["--check"] if a.check else []) + (["--no-generators"] if a.no_generators else [])
+    for flag, attr in (("--check", "check"), ("--check-external", "check_external"), ("--no-network", "no_network"),
+                       ("--write-workflow", "write_workflow"), ("--no-generators", "no_generators")):
+        if getattr(a, attr, False):
+            argv.append(flag)
     argv += ["--steps", str(a.steps)] if getattr(a, "steps", 0) else []
     return kit_map.main(argv)
 
@@ -11785,9 +11790,13 @@ def main(argv=None):
     s.add_argument("--replaces", default="", help="the lesson or ledger entry this one replaces: it goes to the archive")
     s.add_argument("--check", default="", help="what enforces it: test:<file>[::Class.test] | hook:<name> | code:<file>[#text] | "
                    "refusal:<file>#<text> (`;` between several); without it the lesson is unchecked and a check is proposed")
-    s = sp.add_parser("map", help="a map of the project from its code: overview, area cards, joins, map.json (--check: still true?)")
+    s = sp.add_parser("map", help="a map of the project from its code: overview, area cards, joins, map.json (--check / --check-external)")
     s.add_argument("--root", default=None); s.add_argument("--out", default=None); s.add_argument("--config", dest="map_config", default=None)
-    s.add_argument("--check", action="store_true"); s.add_argument("--no-generators", action="store_true")
+    s.add_argument("--home", default=None); s.add_argument("--memory-dir", default=None)
+    s.add_argument("--check", action="store_true"); s.add_argument("--check-external", action="store_true")
+    s.add_argument("--no-network", action="store_true"); s.add_argument("--write-workflow", action="store_true")
+    s.add_argument("--add-external", default=None); s.add_argument("--confirm", default=None); s.add_argument("--date", default=None)
+    s.add_argument("--no-generators", action="store_true")
     s.add_argument("--steps", type=int, default=0, help="M3: how many of the last N steps' changed files the map covers")
     s = sp.add_parser("commands", help="the kit's commands: the topics, or those a word finds (`all`)")
     s.add_argument("word", nargs="?", default=None)
@@ -12051,9 +12060,9 @@ def main(argv=None):
         if not a.runner and not a.for_owner:          # R6: the steps, ranked, each place with its why
             posts = _all_posts(a.db)
             print(queue_text(posts), end="")
-            cards = queue_cards(m, db_path=a.db, unblocked_only=a.unblocked)
-            if not cards.endswith(": 0 open cards"):
-                print("\n# Cards for a runner or a person\n" + cards)
+            qcards = queue_cards(m, db_path=a.db, unblocked_only=a.unblocked)
+            if not qcards.endswith(": 0 open cards"):
+                print("\n# Cards for a runner or a person\n" + qcards)
             return 0
         print(queue_cards(m, runner=a.runner, for_owner=a.for_owner, db_path=a.db, unblocked_only=a.unblocked))
         return 0

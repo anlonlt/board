@@ -1257,6 +1257,25 @@ _IGNORE_ENV_KEYS = {"NODE_ENV", "CI", "PORT", "HOST", "HOME", "PATH", "PWD", "TE
                     "APLOMB_E2E", "NEXT_PUBLIC_APP_URL", "PYTHONUNBUFFERED"}
 
 
+def _sanitize_url(url):
+    """Strip embedded userinfo (user:pass@) and query/fragment tokens from URLs before recording on the map."""
+    if not isinstance(url, str) or not url.strip():
+        return url
+    s = url.strip()
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+        parts = urlsplit(s)
+        if not parts.scheme or not parts.netloc:
+            return s
+        host = parts.hostname or ""
+        if ":" in host and not host.startswith("["):
+            host = "[%s]" % host
+        netloc = ("%s:%d" % (host, parts.port)) if parts.port else host
+        return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+    except ValueError:
+        return re.sub(r"([a-z][a-z0-9+.-]*://)[^/\s@]+@", r"\1", s.split("?", 1)[0].split("#", 1)[0])
+
+
 def _contains_secret_value(obj, path=""):
     """Return a reason string if `obj` holds a forbidden literal secret field or secret-shaped token, else None."""
     if isinstance(obj, dict):
@@ -1740,21 +1759,23 @@ def scan_external(root, all_files=None, cfg=None, home_dir=None):
     if kit_cfg:
         b_url = kit_cfg.get("board_url")
         if isinstance(b_url, str) and b_url.startswith(("http://", "https://")):
+            b_clean = _sanitize_url(b_url)
             add_thing({
                 "id": "service:board-server",
                 "kind": "external-service",
-                "name": "Local Board Server (%s)" % b_url,
+                "name": "Local Board Server (%s)" % b_clean,
                 "service": "board-server",
-                "refs": {"url": b_url},
-                "check": {"run": _http_check_cmd(b_url)},
+                "refs": {"url": b_clean},
+                "check": {"run": _http_check_cmd(b_clean)},
             })
-            add_link("file:" + kit_cfg_rel, "service:board-server", "connects-to", file=kit_cfg_rel, evidence=b_url)
+            add_link("file:" + kit_cfg_rel, "service:board-server", "connects-to", file=kit_cfg_rel, evidence=b_clean)
         kit_sub = kit_cfg.get("kit") or {}
         art = kit_sub.get("artifact") or {}
         aurl = (art.get("url") if isinstance(art, dict) else None) or kit_sub.get("artifact_url") or kit_cfg.get("artifact_url")
         if isinstance(aurl, str) and aurl.startswith(("http://", "https://")):
-            aid = aurl.rstrip("/").split("/")[-1]
-            refs = {"url": aurl, "artifact_id": aid}
+            a_clean = _sanitize_url(aurl)
+            aid = a_clean.rstrip("/").split("/")[-1]
+            refs = {"url": a_clean, "artifact_id": aid}
             if isinstance(art, dict) and art.get("prefix"):
                 refs["prefix"] = art["prefix"]
             add_thing({
@@ -1763,15 +1784,15 @@ def scan_external(root, all_files=None, cfg=None, home_dir=None):
                 "name": "Claude Artifact board (%s)" % aid,
                 "service": "claude-artifact",
                 "refs": refs,
-                "check": {"probe": "Open %s in browser and confirm board artifact loads" % aurl, "confirmed": None},
+                "check": {"probe": "Open %s in browser and confirm board artifact loads" % a_clean, "confirmed": None},
             })
             add_link("file:" + kit_cfg_rel, "service:claude-artifact", "connects-to", file=kit_cfg_rel, evidence=aid)
             add_thing({
                 "id": "runner:cloud",
                 "kind": "runner",
                 "name": "Cloud runner (Claude Artifact / web)",
-                "refs": {"url": aurl, "artifact_id": aid},
-                "check": {"probe": "Open Claude web / Artifact (%s) and verify cloud session access" % aurl, "confirmed": None},
+                "refs": {"url": a_clean, "artifact_id": aid},
+                "check": {"probe": "Open Claude web / Artifact (%s) and verify cloud session access" % a_clean, "confirmed": None},
             })
             add_link("runner:cloud", "service:claude-artifact", "uses-service", file=kit_cfg_rel, evidence=aid)
         for mr in ((kit_cfg.get("kit") or {}).get("mcp_readers") or []):
@@ -1800,7 +1821,7 @@ def scan_external(root, all_files=None, cfg=None, home_dir=None):
                 sid = "service:mcp/" + re.sub(r"[^\w.-]+", "-", sname.lower()).strip("-")
                 refs = {"server": sname}
                 cmd = scfg.get("command")
-                surl = scfg.get("url")
+                surl = _sanitize_url(scfg.get("url")) if isinstance(scfg.get("url"), str) else None
                 if cmd:
                     refs["command"] = cmd
                 if surl:
@@ -2037,7 +2058,7 @@ def scan_external(root, all_files=None, cfg=None, home_dir=None):
             add_link("file:" + f, sid, "uses-service", file=f, evidence=ev)
 
     # Secret store summary (ONLY names and locations, NEVER values!)
-    all_secret_names = sorted(set(env_example_keys) | set(env_local_keys) | set(code_env_refs.keys()))
+    all_secret_names = sorted(set(env_example_keys) | set(env_local_keys) | set(env_dot_keys) | set(code_env_refs.keys()))
     if all_secret_names:
         locs = []
         for k in all_secret_names:
@@ -2055,6 +2076,7 @@ def scan_external(root, all_files=None, cfg=None, home_dir=None):
             locs.append({"name": k, "where": " / ".join(places)})
         chk_sec = ({"exists": [".env.example"]} if ".env.example" in all_set else
                    {"exists": [".env.local"]} if env_local_keys else
+                   {"exists": [".env"]} if env_dot_keys else
                    {"probe": "Confirm required environment secrets (%s) are set in deploy environment" % ", ".join(all_secret_names[:4]), "confirmed": None})
         add_thing({
             "id": "secrets:env",
@@ -2395,21 +2417,35 @@ def render_workflow_md(project_name, external_data, map_rel=".board/map/areas/wo
     runners = [t for t in things if t.get("kind") == "runner"]
     clis = [t["id"].split(":", 1)[-1] for t in things if t.get("kind") == "external-cli"]
 
-    # Preserve custom bullets from an existing workflow.md under the three uncheckable headings
+    # Preserve ALL owner-edited content (prose, any list style, custom sections) from existing workflow.md
+    standard_headings = ("Runners", "The cycle of a change", "Limits", "The owner's habits")
     preserved = {}
+    extra_sections = []   # [(heading, lines)] for any custom ## sections the owner added
     if existing_text:
         cur_h = None
+        order = []
         for ln in existing_text.splitlines():
             m = re.match(r"^##\s+(.+?)\s*$", ln)
             if m:
                 cur_h = m.group(1).strip()
-                preserved.setdefault(cur_h, [])
-            elif cur_h and ln.strip().startswith("- "):
+                if cur_h not in preserved:
+                    preserved[cur_h] = []
+                    order.append(cur_h)
+            elif cur_h is not None:
                 preserved[cur_h].append(ln)
+        for h in order:
+            body = preserved[h]
+            while body and not body[0].strip():
+                body.pop(0)
+            while body and not body[-1].strip():
+                body.pop()
+            if h not in standard_headings and body:
+                extra_sections.append((h, body))
 
     def _keep_or(heading, defaults):
         prev = preserved.get(heading)
-        if prev and not all("(edit" in x or "generated by step 0" in x.lower() for x in prev):
+        non_empty = [x for x in (prev or []) if x.strip()]
+        if non_empty and not all("(edit" in x or "generated by step 0" in x.lower() for x in non_empty):
             return prev
         return defaults
 
@@ -2442,7 +2478,10 @@ def render_workflow_md(project_name, external_data, map_rel=".board/map/areas/wo
         "## The owner's habits",
     ] + _keep_or("The owner's habits", [
         "- Confirm or adjust language, autonomy, and review cadence in the Step 0 question (edit as preferences settle).",
-    ]) + [""]
+    ])
+    for h, body in extra_sections:
+        L += ["", "## %s" % h] + body
+    L.append("")
     return "\n".join(L)
 
 

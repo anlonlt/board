@@ -63,6 +63,13 @@ class Cards(unittest.TestCase):
     def test_one_line_no_post_list(self):
         self.assertEqual(len(self.run_cards(POSTS)[1].splitlines()), 1)
 
+    def test_cli_main_cards_does_not_shadow_function(self):
+        """Regression: kit.main(['cards']) must not raise UnboundLocalError from local `cards` in queue branch."""
+        with mock.patch.object(kit, "cards", return_value=(0, "cards: 1 rows, trains 1 (already current); to archive: none")) as m:
+            rc = kit.main(["cards"])
+        self.assertEqual(rc, 0)
+        m.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

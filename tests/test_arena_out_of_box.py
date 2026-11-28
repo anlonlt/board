@@ -178,7 +178,7 @@ class TestArenaOutOfBox(unittest.TestCase):
             os.makedirs(t_arena)
             r = subprocess.run(
                 [sys.executable, "-I", INSTALL_PY, t_arena, "--project", "ArenaApp", "--no-survey", "test", "--runtime", "arena", "--demo"],
-                capture_output=True, text=True,
+                stdin=subprocess.DEVNULL, capture_output=True, text=True,
             )
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             agents_md = os.path.join(t_arena, "AGENTS.md")
@@ -204,7 +204,7 @@ class TestArenaOutOfBox(unittest.TestCase):
                 env = dict(os.environ, KIT_BIN_DIR=os.path.join(d, "bin"))
                 r2 = subprocess.run(
                     [sys.executable, "-I", INSTALL_PY, t_other, "--project", "Other", "--no-survey", "test", "--runtime", rt],
-                    capture_output=True, text=True, env=env,
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, env=env,
                 )
                 self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
                 self.assertFalse(os.path.exists(os.path.join(t_other, "AGENTS.md")))

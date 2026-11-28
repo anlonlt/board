@@ -325,6 +325,66 @@ class WorkflowMapAndStep0(unittest.TestCase):
         res_by_id = {r["id"]: r for r in rep["results"]}
         self.assertEqual(res_by_id["service:admin-panel"]["status"], "probe_confirmed")
 
+    def test_mcp_url_credentials_stripped_and_dotenv_only_keys_included(self):
+        """CR-m9 redirect (I1): .mcp.json URL userinfo/query tokens never leak into map.json or workflow.md,
+        and .env-only secret keys appear in secrets:env (keys/locations only, never values)."""
+        with open(os.path.join(self.proj, ".mcp.json"), "w", encoding="utf-8") as fh:
+            json.dump({"mcpServers": {
+                "secured": {
+                    "url": "https://user:MCPPASS@mcp.example.com/sse?token=TOK999#frag",
+                    "env": {"MCP_API_KEY": "sk_live_MCPSECRET1234567890"},
+                }
+            }}, fh)
+        with open(os.path.join(self.proj, ".env"), "w", encoding="utf-8") as fh:
+            fh.write("ONLY_IN_DOTENV_SECRET=SUPERSECRET2\n")
+        d, out = kit_map.build(self.proj, home_dir=self.home)
+        wf_card = open(os.path.join(out, "areas", "workflow.md"), encoding="utf-8").read()
+        blob = json.dumps(d) + "\n" + wf_card
+        for leaked in ("MCPPASS", "TOK999", "sk_live_MCPSECRET1234567890", "SUPERSECRET2"):
+            self.assertNotIn(leaked, blob)
+        self.assertIn("https://mcp.example.com/sse", blob)
+        self.assertIn("ONLY_IN_DOTENV_SECRET", blob)
+
+    def test_workflow_md_preserves_prose_lists_and_custom_sections(self):
+        """CR-m9 redirect: render_workflow_md preserves plain prose, * bullets, numbered lists, and custom ## sections."""
+        ext = kit_map.scan_external(self.proj, home_dir=self.home)
+        _, first = kit_map.write_workflow_md(self.proj, external_data=ext, home_dir=self.home)
+        custom = (
+            first.replace(
+                "- Branch -> tests -> commit -> push -> review -> merge to trunk (edit to match this project's cycle).",
+                "Push directly to main after pnpm check.\n* Also tag releases.",
+            ).replace(
+                "- Confirm or adjust language, autonomy, and review cadence in the Step 0 question (edit as preferences settle).",
+                "1. Prefers French.\n- Short updates.",
+            )
+            + "\n## Custom Deploy Notes\nAlways verify Neon migrations before tagging.\n"
+        )
+        wf_path = os.path.join(self.proj, ".board", "memory", "workflow.md")
+        with open(wf_path, "w", encoding="utf-8") as fh:
+            fh.write(custom)
+        _, second = kit_map.write_workflow_md(self.proj, external_data=ext, home_dir=self.home)
+        for keep in ("Push directly to main after pnpm check.", "* Also tag releases.",
+                     "1. Prefers French.", "- Short updates.",
+                     "## Custom Deploy Notes", "Always verify Neon migrations before tagging."):
+            self.assertIn(keep, second)
+
+    def test_kit_py_map_forwards_m9_flags(self):
+        """CR-m9 redirect: kit.py map forwards --check-external, --no-network, --write-workflow, --add-external, --confirm."""
+        kit_py = os.path.join(ROOT, "scripts", "kit.py")
+        r = subprocess.run(
+            [sys.executable, "-I", kit_py, "map", "--root", self.proj, "--home", self.home,
+             "--check-external", "--no-network"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("external:", r.stdout)
+        r_wf = subprocess.run(
+            [sys.executable, "-I", kit_py, "map", "--root", self.proj, "--home", self.home, "--write-workflow"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(r_wf.returncode, 0, r_wf.stdout + r_wf.stderr)
+        self.assertIn("workflow:", r_wf.stdout)
+
 
 FRENCH = os.path.expanduser("~/french")
 HARMONIZE = os.path.expanduser("~/harmonize")
