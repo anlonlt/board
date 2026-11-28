@@ -82,6 +82,13 @@ EXPECTED_PLATFORM_RULES = {
         "arena": False,
         "generic": False,
     },
+    "leader_role": {
+        "web": "subordinate",
+        "cli": "local",
+        "agy": "local",
+        "arena": "none",
+        "generic": "none",
+    },
     "stale_gate": {
         "web": True,
         "cli": False,

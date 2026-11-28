@@ -70,7 +70,7 @@ with tempfile.TemporaryDirectory() as d:
     check("the orchestrator's prompt: url, language, the welcome", "http://127.0.0.1:9999" in orch and "French" in orch and "welcome" in orch)
     check("kit_cards.py, board_server.py and board_cli.py installed",
           all(os.path.exists(os.path.join(t, ".kit", f)) for f in ("kit_cards.py", "board_server.py", "board_cli.py")))
-    check("parts launched via invoke_subagent with Workspace share", "invoke_subagent" in orch and 'Workspace: "share"' in orch)
+    check("parts launched via kit.py launch and invoke_subagent", "invoke_subagent" in orch and "kit.py launch" in orch)
     cfgr = json.load(open(os.path.join(t, ".kit", "config.json")))["kit"]["roles"]
     check("roles in config: clerk flash_lite low", cfgr["clerk"] == {"model": "flash_lite", "effort": "low"})
     check("the consultant's prompt installed, the orchestrator launches it at its level",

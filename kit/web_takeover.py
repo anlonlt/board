@@ -104,6 +104,40 @@ def git_identity():
         sh(["git", "config", "user.email", e])
 
 
+def _local_leader_active():
+    """True when a local orchestrator holds a fresh board/leader.json lease on board-mirror."""
+    env = os.environ.get("KIT_LOCAL_LEADER")
+    if env is not None and str(env).strip() != "":
+        return str(env).strip().lower() in ("1", "true", "yes")
+    data = None
+    fp = os.path.join(mirror_path(), "board", "leader.json")
+    if os.path.isfile(fp):
+        try:
+            with open(fp, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            data = None
+    if not isinstance(data, dict):
+        for ref in ("origin/" + mirror_branch(), mirror_branch()):
+            rc, out_s = sh(["git", "show", "%s:board/leader.json" % ref])
+            if rc == 0 and out_s:
+                try:
+                    data = json.loads(out_s)
+                    break
+                except ValueError:
+                    pass
+    if not isinstance(data, dict) or str(data.get("leader") or "").lower() != "local":
+        return False
+    hb = str(data.get("heartbeat") or data.get("started_at") or "")
+    ttl = int(data.get("ttl_minutes") or 60)
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(hb.replace("Z", "+00:00")).astimezone(timezone.utc)
+        return (datetime.now(timezone.utc) - dt).total_seconds() <= ttl * 60
+    except (ValueError, TypeError):
+        return False
+
+
 def owns_board():
     """(True, "") when this session may push this clone's board to its board-mirror, else (False, why) (CL32: an
     orchestrator's clone of anlonlt/board and a check's clone pushed seeded posts to its board-mirror on 11-23 22:04).
@@ -118,9 +152,10 @@ def owns_board():
         return False, "this clone serves a launch from another project (%s)" % (os.environ.get("KIT_HOST_ROOT") or "?")
     art = (cfg().get("kit") or {}).get("artifact")
     if isinstance(art, dict) and str(art.get("prefix") or "").strip("/"):
-        # O53: this board lives in another project's Artifact board (kit.artifact.prefix, e.g. the kit's repos/board/):
-        # the Artifact is its record; a part's web session must not seed it from git nor push its board-mirror
-        return False, "this board is attached to the Artifact board %s (%s)" % (art.get("url") or "?", art["prefix"])
+        # Local-leader precedence: while a local orchestrator leads, git board-mirror IS the single live store
+        # (Artifact pushes paused), so web sessions push their posts/comments to origin/board-mirror (without cards).
+        if not (is_web() and _local_leader_active()):
+            return False, "this board is attached to the Artifact board %s (%s)" % (art.get("url") or "?", art["prefix"])
     proj = os.environ.get("CLAUDE_PROJECT_DIR")
     if proj and os.path.realpath(proj) != os.path.realpath(ROOT):
         return False, "this clone (%s) is not this session's project (%s)" % (ROOT, proj)
@@ -228,7 +263,7 @@ def cmd_start():
     ensure_mirror_worktree()
     # the board here against git: what the computer saved before it stopped (or crashed) comes in, newer copy wins
     own, why = owns_board()
-    if artifact_board():
+    if artifact_board() and not _local_leader_active():
         # CL45: an Artifact board is reconciled with git by `kit.py artifact reconcile` once its pull is made (the
         # ArtifactData calls are this session's): a git reconcile here first would put git's copies in before the
         # Artifact's, and the documents only git had would never reach the Artifact
@@ -237,6 +272,8 @@ def cmd_start():
         rc, pull = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "artifact", "pull"], timeout=60)
         print(pull)
     else:
+        if artifact_board() and _local_leader_active():
+            print("Local orchestrator leads: using git (origin/%s) only; Artifact sync paused until local signs out or 0 parts run." % mirror_branch())
         rc, rec = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "reconcile"] + ([] if own else ["--no-push"]),
                      timeout=240)
         print(rec.splitlines()[-1] if rec else "reconcile: no output")
@@ -260,7 +297,10 @@ def cmd_save(quiet=False):
             print("save: not pushed: %s. This session's board is its own project's." % why)
         return 0
     ensure_mirror_worktree()
-    rc, out = sh([sys.executable, "-I", os.path.join(KIT, "kit.py"), "sync-db", "--commit"], timeout=180)
+    sync_args = [sys.executable, "-I", os.path.join(KIT, "kit.py"), "sync-db", "--commit"]
+    if is_web() and _local_leader_active():
+        sync_args.append("--no-cards")
+    rc, out = sh(sync_args, timeout=180)
     if rc != 0:
         print("save: sync-db FAILED: %s" % out[-400:])
         return 1

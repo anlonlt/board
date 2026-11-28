@@ -245,8 +245,10 @@ def _export_blobs_to_mirror(db_path, m, max_bytes=5 * 1024 * 1024):
     return copied
 
 
-def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
-    """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full)."""
+def sync_db(m, db_path=None, at=None, full=False, with_blobs=False, no_cards=False):
+    """Sync directly from the local SQLite board.db (O(delta) when changes log cursor exists, else full).
+    no_cards=True skips generated cards (_dashboard, _trains) so subordinate web sessions never overwrite the
+    local leader's cards."""
     if _TEST_GUARD:     # CL48: a test run writes a board's git copy under a temp folder only
         _TEST_GUARD.check_path(m, "to a board's git copy")
     import sqlite3
@@ -279,6 +281,8 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
                     os.makedirs(os.path.join(tmp, coll), exist_ok=True)
                     db_docs = {}
                     for doc_id, raw in conn.execute("SELECT doc_id, data FROM docs WHERE collection=?", (coll,)):
+                        if no_cards and coll == "posts" and doc_id in ("_dashboard", "_trains"):
+                            continue
                         doc = json.loads(raw)
                         db_docs[doc_id] = doc
                         write_doc(os.path.join(tmp, coll, doc_id + ".json"), doc)
@@ -315,6 +319,8 @@ def sync_db(m, db_path=None, at=None, full=False, with_blobs=False):
         old_s = load_dir(m + "/board", "seen") if os.path.isdir(sdir) else {}
         pw = pr = new = changed = removed = 0
         for coll, doc_id in rows:
+            if no_cards and coll == "posts" and doc_id in ("_dashboard", "_trains"):
+                continue
             r = conn.execute("SELECT data FROM docs WHERE collection=? AND doc_id=?", (coll, doc_id)).fetchone()
             if coll == "posts":
                 target = os.path.join(pdir, doc_id + ".json")
@@ -938,6 +944,14 @@ PLATFORM_RULES = {
         "arena": False,
         "generic": False,
     },
+    # Local-leader precedence: local CLI/Antigravity orchestrators lead; web runs subordinate git-only while local leads.
+    "leader_role": {
+        "web": "subordinate",
+        "cli": "local",
+        "agy": "local",
+        "arena": "none",
+        "generic": "none",
+    },
     # Gates (CL15, CL30, CL44, CL51):
     # - stale_gate: refuses reads until the Artifact copy is loaded/reconciled.
     "stale_gate": {
@@ -1177,11 +1191,164 @@ def _art_save(st):
     write_doc(os.path.join(_art_dir(), "state.json"), st)
 
 
+LEADER_FILE = "board/leader.json"
+LEADER_TTL_MIN = 60
+LOCAL_RUNNERS = ("agy", "claude-cli", "local", "computer")
+_OVERLAP_FILE_RE = re.compile(r"\b(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.(?:py|js|ts|tsx|jsx|md|json|html|css|sh|yml|yaml|toml)\b")
+
+
+def _step_file_set(p):
+    """Best-effort set of repo files a step post declares or names in its task/subtasks/artifacts."""
+    out = set()
+    if not isinstance(p, dict):
+        return out
+    for f in _as_list(p.get("files")) + _as_list(p.get("artifacts")):
+        s = str(f).split(" §")[0].strip("` ").lstrip("./")
+        if s:
+            out.add(s)
+    for st in _as_list(p.get("subtasks")):
+        if isinstance(st, dict):
+            for f in _as_list(st.get("files")):
+                s = str(f).strip("` ").lstrip("./")
+                if s:
+                    out.add(s)
+    for fld in ("task", "body", "differs"):
+        txt = str(p.get(fld) or "")
+        for m in _OVERLAP_FILE_RE.findall(txt):
+            out.add(m.lstrip("./"))
+    # normalize .kit/<f> <-> scripts/<f> / kit/<f> so kit-copy mirrors count as overlapping
+    norm = set()
+    for f in out:
+        norm.add(f)
+        if f.startswith(".kit/"):
+            norm.add("scripts/" + f[5:])
+            norm.add("kit/" + f[5:])
+        elif f.startswith("scripts/"):
+            norm.add(".kit/" + f[8:])
+    return norm
+
+
+def _step_file_overlap(a, b):
+    return sorted(_step_file_set(a) & _step_file_set(b))
+
+
+def _leader_ttl():
+    try:
+        return max(5, int((_kit_config().get("kit") or {}).get("leader_ttl_min") or LEADER_TTL_MIN))
+    except (TypeError, ValueError):
+        return LEADER_TTL_MIN
+
+
+def read_leader(m=None, fetch=False, now=None):
+    """Read board/leader.json from the local mirror worktree or origin/board-mirror.
+    Returns {leader, active, stale, age_min, ttl_minutes, ...}."""
+    env = os.environ.get("KIT_LOCAL_LEADER")
+    ttl = _leader_ttl()
+    if env is not None and str(env).strip() != "":
+        on = str(env).strip().lower() in ("1", "true", "yes")
+        return {"leader": "local" if on else "none", "active": on, "stale": False, "age_min": 0.0 if on else None,
+                "ttl_minutes": ttl, "platform": "local", "device": "env"}
+    m = m or _mirror_path()
+    data = None
+    if fetch and os.path.isdir(os.path.join(m, ".git")):
+        git(m, "fetch", "-q", "origin", BRANCH, timeout=60)
+    fp = os.path.join(m, LEADER_FILE)
+    if os.path.isfile(fp):
+        data = _read_json(fp)
+    if not isinstance(data, dict):
+        if fetch:
+            _git_run("fetch", "-q", "origin", "+refs/heads/%s:refs/remotes/origin/%s" % (BRANCH, BRANCH), timeout=60)
+        for ref in ("origin/" + BRANCH, BRANCH):
+            r = _git_run("show", "%s:%s" % (ref, LEADER_FILE))
+            if r.returncode == 0 and r.stdout.strip():
+                try:
+                    data = json.loads(r.stdout)
+                    break
+                except ValueError:
+                    pass
+    if not isinstance(data, dict):
+        return {"leader": "none", "active": False, "stale": False, "age_min": None, "ttl_minutes": ttl}
+    out = dict(data)
+    eff_ttl = int(out.get("ttl_minutes") or ttl)
+    out["ttl_minutes"] = eff_ttl
+    hb = _iso_utc(out.get("heartbeat") or out.get("started_at"))
+    cur = now or datetime.now(timezone.utc)
+    age = ((cur - hb).total_seconds() / 60.0) if hb else None
+    out["age_min"] = round(age, 1) if age is not None else None
+    is_local = str(out.get("leader") or "").lower() == "local"
+    out["active"] = bool(is_local and age is not None and age <= eff_ttl)
+    out["stale"] = bool(is_local and not out["active"])
+    return out
+
+
+def local_leader_active(m=None, fetch=False, now=None):
+    """True when a local (computer/CLI/agy) orchestrator currently holds a fresh leader lease."""
+    return bool(read_leader(m=m, fetch=fetch, now=now).get("active"))
+
+
+def _write_leader_doc(m, doc, message, push=True):
+    m = m or _mirror_path()
+    if _TEST_GUARD:
+        _TEST_GUARD.check_path(m, "to a board's git copy")
+    os.makedirs(os.path.join(m, "board"), exist_ok=True)
+    write_doc(os.path.join(m, LEADER_FILE), doc)
+    pushed = False
+    if os.path.exists(os.path.join(m, ".git")):
+        git(m, "add", LEADER_FILE)
+        git(m, "-c", "user.name=board kit", "-c", "user.email=kit@localhost", "commit", "-q", "-m", message)
+        if push:
+            r = git(m, "push", "-q", "origin", "HEAD:%s" % BRANCH, timeout=120)
+            if r.returncode != 0:
+                git(m, "pull", "--no-rebase", "--no-edit", "-X", "ours", "origin", BRANCH, timeout=120)
+                r = git(m, "push", "-q", "origin", "HEAD:%s" % BRANCH, timeout=120)
+            pushed = r.returncode == 0
+    return pushed
+
+
+def leader_claim(m=None, session_id=None, active_parts=None, push=True):
+    """Local orchestrator claims precedence (board/leader.json on board-mirror): pauses web Artifact pushes while active."""
+    import socket
+    prev = read_leader(m=m)
+    now_s = _now_z()
+    doc = {
+        "leader": "local",
+        "platform": _platform(),
+        "device": socket.gethostname(),
+        "session_id": str(session_id or whoami() or prev.get("session_id") or ""),
+        "started_at": prev.get("started_at") if prev.get("active") else now_s,
+        "heartbeat": now_s,
+        "ttl_minutes": _leader_ttl(),
+        "artifact_sync_due": False,
+    }
+    if active_parts is not None:
+        doc["active_parts"] = int(active_parts)
+    pushed = _write_leader_doc(m, doc, "leader: local %s (%s) active" % (doc["platform"], doc["device"]), push=push)
+    return dict(doc, active=True, pushed=pushed)
+
+
+def leader_release(m=None, push=True):
+    """Local orchestrator signs out / goes idle: releases leader lease and marks Artifact sync due."""
+    prev = read_leader(m=m)
+    now_s = _now_z()
+    doc = {
+        "leader": "none",
+        "released_at": now_s,
+        "artifact_sync_due": True,
+        "last_leader": {k: prev.get(k) for k in ("platform", "device", "session_id", "started_at") if prev.get(k)},
+    }
+    pushed = _write_leader_doc(m, doc, "leader: local released (artifact sync due)", push=push)
+    return dict(doc, active=False, pushed=pushed)
+
+
 def artifact_here():
-    """CL51 / R5: the Artifact is Claude Code web's alone (PLATFORM_RULES['artifact_steps']). On a computer, a session
-    works with the local board, which reaches GitHub (board-mirror), and never writes to or waits on the Artifact: no
-    STALE gate, no push at launch or adopt, no "not on the board yet" at done. The attached board on the web, else None."""
-    return attached_board() if _rule("artifact_steps") else None
+    """CL51 / R5 / Local-leader precedence: the Artifact is Claude Code web's alone (PLATFORM_RULES['artifact_steps']),
+    AND is paused while a local orchestrator holds a fresh leader lease (git board-mirror is the single live store
+    until the local orchestrator signs out or goes idle). $KIT_FORCE_ARTIFACT=1 overrides for explicit handoff sync."""
+    if not _rule("artifact_steps"):
+        return None
+    if os.environ.get("KIT_FORCE_ARTIFACT") != "1" and local_leader_active():
+        return None
+    return attached_board()
 
 
 def attached_board():
@@ -8006,6 +8173,24 @@ def launch(pid, url=None, token=None, web=None, session_id=None, model=None, res
         text += continue_text(post, branch)
         out["continued"] = True
     if not session_id and not take and not cont:
+        if mode == "create_session" and local_leader_active():
+            # Local-leader precedence: web orchestrator only launches unclaimed non-local, non-overlapping steps
+            prun = str(post.get("runner") or "").strip().lower()
+            if prun in LOCAL_RUNNERS:
+                ldr = read_leader()
+                return dict(out, ok=False, error="%s is assigned to local runner '%s' while the local orchestrator leads "
+                            "(%s on %s): pick an unclaimed non-local step or pass --take" % (
+                                pid, prun, ldr.get("platform") or "local", ldr.get("device") or "computer"))
+            lp_chk = _launch_posts(post)
+            for opid, op in lp_chk.items():
+                if opid == pid or not isinstance(op, dict) or op.get("removed"):
+                    continue
+                if step_state(op) == "running" and str(op.get("runner") or "").strip().lower() in LOCAL_RUNNERS:
+                    sh_files = shares_files(post, op) if "shares_files" in globals() else _step_file_overlap(post, op)
+                    if sh_files:
+                        return dict(out, ok=False, error="%s shares files (%s) with running local step %s (`%s`): "
+                                    "wait for the local orchestrator's part to finish (local takes precedence)" % (
+                                        pid, ", ".join(sh_files[:4]), op.get("part") or opid, opid))
         held = step_holder(pid, post, me=me, people=people, alive=alive, saved=_saved_mins(branch))
         if held:
             post_runner = str(post.get("runner") or "").strip().lower()
@@ -11202,6 +11387,23 @@ def resume_role(m, role, post=None, db_path=None, alive=None, cli=None, session=
         pass
     out = []
     if role == "orchestrator":
+        ldr = read_leader(m)
+        lrole = _rule("leader_role", cli)
+        if lrole == "subordinate" and ldr.get("active"):
+            out += [
+                "## Subordinate mode: local orchestrator leads (%s on `%s`, heartbeat %sm ago)" % (
+                    ldr.get("platform") or "local", ldr.get("device") or "computer", ldr.get("age_min")),
+                "- The local orchestrator takes precedence: it owns `_orchestrator`, `_dashboard`, `_trains`, and owner Q&A.",
+                "- Do NOT overwrite `_orchestrator.session_id`, do NOT rebuild/push `_dashboard`/`_trains`, and do NOT write to the Artifact (paused until local signs out or 0 parts run).",
+                "- Launch ONLY unclaimed non-local steps that share no files with running local parts, and push updates to git (`origin/%s`) via `web_takeover.py save`." % BRANCH,
+                "",
+            ]
+        elif lrole == "local" and ldr.get("active"):
+            out += ["Leader: local (`%s`, heartbeat %sm ago; web runs subordinate git-only, Artifact sync paused until `kit.py leader release`)." % (
+                ldr.get("device") or "computer", ldr.get("age_min")), ""]
+        elif ldr.get("artifact_sync_due") and _rule("artifact_steps", cli):
+            out += ["Artifact sync due: local orchestrator released at %s — run `kit.py artifact reconcile` so the Artifact matches `origin/%s`." % (
+                ldr.get("released_at") or "?", BRANCH), ""]
         stale = stale_handover_lines(posts, comments)
         if stale:                                     # CL62: before anything else, a hand-over never overrides the queue
             out += stale + [""]
@@ -11702,6 +11904,11 @@ def main(argv=None):
     s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true")
     s = sp.add_parser("sync-db"); s.add_argument("--db", default=None); s.add_argument("--at", default=None)
     s.add_argument("--full", action="store_true"); s.add_argument("--commit", action="store_true"); s.add_argument("--with-blobs", action="store_true")
+    s.add_argument("--no-cards", action="store_true", help="skip _dashboard and _trains (subordinate web mode while local leads)")
+    s = sp.add_parser("leader", help="local-leader precedence lease (board/leader.json on board-mirror): status | claim | heartbeat | release")
+    s.add_argument("action", nargs="?", choices=["status", "claim", "heartbeat", "release"], default="status")
+    s.add_argument("--session", default=None); s.add_argument("--active-parts", type=int, default=None)
+    s.add_argument("--no-push", action="store_true"); s.add_argument("--fetch", action="store_true"); s.add_argument("--json", action="store_true")
     s = sp.add_parser("receive"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
     s.add_argument("--branch", default=None)
     s = sp.add_parser("publish"); s.add_argument("--board-url", default=None); s.add_argument("--token", default=None)
@@ -11934,10 +12141,30 @@ def main(argv=None):
     if a.cmd == "sync-db":
         at_val = a.at or zstamp(datetime.now(timezone.utc))
         with _sync_lock(m):
-            r = sync_db(m, db_path=a.db, at=at_val, full=a.full, with_blobs=a.with_blobs)
+            r = sync_db(m, db_path=a.db, at=at_val, full=a.full, with_blobs=a.with_blobs, no_cards=a.no_cards)
             print("sync-db %s: posts %d written, %d removed; comments %d new, %d changed, %d removed" % ((at_val,) + r))
             if a.commit:
                 print(commit(m, "kit sync-db %s%s" % (at_val, " (full)" if a.full else "")))
+        return 0
+    if a.cmd == "leader":
+        if a.action in ("claim", "heartbeat"):
+            res = leader_claim(m, session_id=a.session, active_parts=a.active_parts, push=not a.no_push)
+        elif a.action == "release":
+            res = leader_release(m, push=not a.no_push)
+        else:
+            res = read_leader(m, fetch=a.fetch)
+        if a.json:
+            print(json.dumps(res, ensure_ascii=False, indent=1))
+        elif res.get("active"):
+            print("leader: local (%s on %s, heartbeat %sm ago, ttl %dm; web runs subordinate git-only, Artifact sync paused)" % (
+                res.get("platform") or "local", res.get("device") or "?", res.get("age_min"), res.get("ttl_minutes") or LEADER_TTL_MIN))
+        elif res.get("artifact_sync_due"):
+            print("leader: none (local released %s; Artifact sync due)" % (res.get("released_at") or "?"))
+        elif res.get("stale"):
+            print("leader: stale (local heartbeat %sm ago > %dm ttl; web may resume Artifact sync)" % (
+                res.get("age_min"), res.get("ttl_minutes") or LEADER_TTL_MIN))
+        else:
+            print("leader: none (single/web mode)")
         return 0
     if a.cmd == "map":
         return _map_cmd(a)
