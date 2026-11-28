@@ -1,9 +1,9 @@
 {
  "column": "info",
- "created_at": "2026-11-28T00:32:51Z",
+ "created_at": "2026-11-28T01:11:03Z",
  "rows": [
   {
-   "at": 8,
+   "at": 10,
    "key": "A",
    "name": "Board data",
    "note": "Next: The board travels in git, always current (mirror synced on every step)",
@@ -18,12 +18,12 @@
     "An outside AI gets one link, the owner's invite with the post's drop box",
     "A part pushes only its own post; a pull never deadlocks on waiting batches",
     "No merge friction: generated files out of git, a reviewed step lands without another re...",
+    "One way to touch the board: the kit prints every call, the guard refuses anything else,...",
+    "The stop check counts only what this session changed: never 361 old copies of other posts",
     "The board travels in git, always current (mirror synced on every step)",
     "end_session says why a push failed",
     "The orchestrator's push never sends the cards: no refused batch when another session re...",
-    "A real-project run is done where Harmonize already is: the computer orchestrator, never...",
-    "One way to touch the board: the kit prints every call, the guard refuses anything else,...",
-    "The stop check counts only what this session changed: never 361 old copies of other posts"
+    "A real-project run is done where Harmonize already is: the computer orchestrator, never..."
    ],
    "train": "P-board-data"
   },
@@ -86,12 +86,12 @@
    "train": "P-cli"
   },
   {
-   "at": 10,
+   "at": 12,
    "key": "C",
    "name": "Memory",
    "note": "Next: Install draws the first map",
    "post": "m2-install-draws-the-first-map",
-   "state": "running",
+   "state": "ready",
    "steps": [
     "A map of any project, generated from its code",
     "Map readers beyond code: Power BI, documents, any folder",
@@ -100,13 +100,13 @@
     "Done keeps the map: each part checks its stretch and adds what it built",
     "Every memory entry is checked against reality",
     "Replacing and forgetting in memory",
+    "The workflow on the map: what lives outside the repo, with checks",
     "A bug fixed three times, a rule repeated, or a decision of the owner becomes a check",
     "Sessions use the kit's commands, the ledger shows when they don't, and the orchestrator...",
     "The orchestrator hands over at its context limit however its session began",
+    "The usage ledger says what each review found: verdict and found-new per review row, cos...",
     "Install draws the first map",
-    "The workflow on the map: what lives outside the repo, with checks",
-    "Every hook reads the orchestrator role one way: 6 of 6 on the takeover fixture",
-    "The usage ledger says what each review found: verdict and found-new per review row, cos..."
+    "Every hook reads the orchestrator role one way: 6 of 6 on the takeover fixture"
    ],
    "train": "P-memory"
   },
@@ -201,12 +201,12 @@
    "train": "P-demo"
   },
   {
-   "at": 0,
+   "at": 1,
    "key": "I",
    "name": "Reviews",
-   "note": "Next: Every part gets the idea first: the owner's goal and cases beyond the literal task, tested by stress cases from that intent, refused at done otherwise",
-   "post": "cl76-every-part-gets-the-idea-first-the-owner",
-   "state": "running",
+   "note": "Next: A part's branch holds only its own work and main: a push or done that carries another u...",
+   "post": "cl78-a-part-s-branch-holds-only-its-own-work",
+   "state": "done",
    "steps": [
     "Every part gets the idea first: the owner's goal and cases beyond the literal task, tes...",
     "A part's branch holds only its own work and main: a push or done that carries another u..."
@@ -215,5 +215,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-28T00:32:51Z"
+ "updated_at": "2026-11-28T01:11:03Z"
 }
