@@ -1,117 +1,118 @@
 {
- "artifacts": [
-  "scripts/kit_map.py",
-  "scripts/step0_scan.py",
-  "tests/test_workflow_map.py"
- ],
- "bars": [
-  "external things found on the French repo (`~/french`, read-only): 14 things (2 runners, 7 CLIs, 1 git remote, 2 services, 1 data source, 1 secret store), 23 of 23 code-to-external links pass",
-  "external checks on the French repo (`~/french`, live): 12 of 12 runnable checks pass, 0 failed; 2 browser probes (`service:vercel`, `datasource:neon-postgres`, awaiting browser confirmation)",
-  "external things found on Harmonize (`~/harmonize`, read-only): 22 things (2 runners, 6 CLIs, 1 git remote, 5 services, 7 Hugging Face data sources/models, 1 secret store), 32 of 32 code-to-external links pass",
-  "external checks on Harmonize (`~/harmonize`, live): 18 of 19 runnable checks pass, 1 honest failure (`service:board-server` at `http://127.0.0.1:8765`, connection refused while stopped); 3 browser probes (`service:claude-artifact`, `runner:cloud`, `secrets:env`)",
-  "generated workflow memory file length: 18 of <= 40 lines allowed on both `~/french` and `~/harmonize` (uncheckable headings only, pointing to `.board/map/areas/workflow.md`)",
-  "files written into `~/french` and `~/harmonize`: 0 of all tracked/untracked files (`git status --porcelain` unchanged before and after)",
-  "secret leakage across map JSON, workflow card, workflow memory file, and confirmation question: 0 of 2 planted secrets leaked in `tests/test_workflow_map.py`",
-  "targeted test suites on merged branch `m9`: 75 of 75 tests pass across 6 suites (`test_workflow_map.py` 10/10, `test_map_done.py` 11/11, `test_map_readers.py` 15/15, `test_map.py` 17/17, `test_platform_matrix.py` 16/16, `test_arena_out_of_box.py` 6/6)"
- ],
- "body": "Everything outside a project repository — local runners and tools, browser profiles, git remotes, deploy targets, external services, data sources, and where secrets live — now goes onto the project map with links to the code that uses it and live checks, while Step 0 writes a short workflow memory file and one confirmation question for you. On your French repo and on Harmonize, every external service and data source was found without touching either repository, and every runnable check gave an honest pass or fail.\n\n### What changed\n1. **External workflow reader in `scripts/kit_map.py` (synced to `.kit/kit_map.py`):**\n   - `scan_external()` and `workflow_reader()` discover runners, installed CLIs (`agy`, `claude`, `git`, `gh`, `tailscale`, plus project-relevant CLIs), real browser profiles (metadata only — never cookies or passwords), git remotes (handling both standard `.git/config` and linked git worktrees), deploy configs (`vercel.json` + `.vercel/project.json`, Netlify, Fly, Cloudflare, Render, Railway, Firebase), GitHub Actions workflows, kit/board/Claude Artifact/MCP configs, external databases & data sources (Neon/Postgres/Drizzle/Prisma, Hugging Face datasets & models, Modal apps, Spotify API, and common cloud SDKs), and secret locations (keys only from `.env.example`/`.env.local`/code — never values).\n   - `workflow_card()` renders `.board/map/areas/workflow.md` with direct references (URLs, project/org/repo/app/artifact IDs, accounts/profiles, secret locations), linked code files, and check types.\n   - `check_external()` runs each check honestly (`command -v`, `git ls-remote`, `tailscale status`, Hugging Face dataset/model API via stdlib `urllib.request`, local HTTP checks, credential file `exists`, and 14-day browser probes).\n   - `add_external_thing()`, `confirm_probe()`, and `validate_added()` integrate directly with M3's `.board/map-added.json` and `stretch()` so any part adding a new service or data source must provide a check and can never store a literal secret.\n2. **Concise workflow memory file & Step 0 confirmation question (`scripts/step0_scan.py`, synced to `.kit/step0_scan.py`):**\n   - `render_workflow_md()` / `write_workflow_md()` writes a concise 18-line `workflow.md` keeping only uncheckable headings (`## Runners` pointer, `## The cycle of a change`, `## Limits`, `## The owner's habits`) and preserving owner edits on regeneration.\n   - `scan_workflow()`, `build_workflow_question()`, and `write_workflow_files()` populate Step 0's profile JSON, Markdown report (`## 6. External Workflow & Services`), workflow files (`--write-workflow`), and one confirmation board question (`--out-question`).\n\n### Real-repo bars (measured read-only)\n- **French repo (`~/french`):** 14 external things found (`remote:origin`, `runner:computer`, `runner:scheduled`, 7 CLIs, `service:vercel`, `service:github-actions`, `datasource:neon-postgres`, `secrets:env`), 23/23 code links pass, 12/12 runnable checks pass, 2 browser probes (`service:vercel`, `datasource:neon-postgres`), 0 files written in `~/french`.\n- **Harmonize (`~/harmonize`):** 22 external things found (`remote:origin`, `runner:computer`, `runner:cloud`, 6 CLIs, `service:board-server`, `service:claude-artifact`, `service:mcp/board-kit`, `service:modal/harmonize-k2`, `service:spotify`, 7 Hugging Face datasets/models including private `altoanon/harmonize-data`, `secrets:env`), 32/32 code links pass, 18/19 runnable checks pass (1 honest failure: local `board-server` at `127.0.0.1:8765` not running), 3 browser probes, 0 files written in `~/harmonize`.",
- "branch": "m9",
- "breaks": "sed -i 's/return r if r\\[\"things\"\\] else None/return None/' scripts/kit_map.py",
- "check": "python3 -I tests/test_workflow_map.py && python3 -I tests/test_map_done.py && python3 -I tests/test_map_readers.py",
- "column": "info",
- "commit": "c4ace435f12119e90a2bedeefba4bbd4522326a5",
- "created_at": "2026-11-26T20:01:26Z",
- "differs": "Builds on M1 (map format: things, links, flags, runnable checks) and M4 (non-code map readers). Unlike M1/M4 (which map files inside a repo) and M3 (which enforces map updates at done), M9 maps what lives outside the repo (CLIs/runners, git remotes, deploy configs, external services, data sources, accounts/URLs) into .board/map and generates the concise workflow memory file via scripts/step0_scan.py and scripts/kit_map.py, measured on ~/french and ~/harmonize.",
- "from": "orchestrator",
- "handoff": "- `kit_map.workflow_reader` runs inside `kit_map.run_other_readers` (registered in `OTHER_READERS`), emitting `.board/map/areas/workflow.md` and adding external things (`runner`, `external-cli`, `browser-profile`, `git-remote`, `external-service`, `external-datasource`, `secret-store`) + code links to `map.json`.\n- Live external checks: `python3 -I scripts/kit_map.py --root <dir> --check-external` (`--no-network` skips network checks). Browser probes record their last confirmed date in `.board/map-added.json` via `kit_map.confirm_probe(root, id)` / `--confirm <id>`.\n- Adding a new service or data source at done (M3's rule): `kit_map.add_external_thing(root, thing, links)` / `--add-external '<json>'` writes to `.board/map-added.json` and refuses entries without a valid check or containing literal secrets; `kit_map.stretch()` and `kit_map.check()` both enforce `validate_added()`.\n- Step 0 integration: `step0_scan.build_step0_profile()` now includes `profile[\"workflow\"]` (things, links, concise `workflow_md`, and one `confirm_question` payload); `step0_scan.write_workflow_files()` / `scripts/step0_scan.py <target> --write-workflow [--out-question ...]` writes `<memory_dir>/workflow.md` (preserving owner edits under `## The cycle of a change`, `## Limits`, `## The owner's habits`) and builds `.board/map/`.\n- `install.py` and `scripts/kit.py` were intentionally left untouched so M9 has zero overlap with A1 and R4; a follow-up install hook can call `step0_scan.write_workflow_files()` during fresh installs if desired.",
- "intent": {
-  "at": "2026-11-27T09:24:40Z",
-  "cases": [
-   {
-    "id": "I1",
-    "not_covered": null,
-    "outside": false,
-    "text": "Secret locations (never values) are mapped even when local env files or remote URLs contain live credentials, with zero leakage into map JSON, workflow cards, workflow.md, or Step 0 questions."
-   },
-   {
-    "id": "I2",
-    "not_covered": null,
-    "outside": false,
-    "text": "External checks and code-to-external links fail honestly when a remote disappears, code stops referencing a service, or a browser probe ages past 14 days, including inside linked git worktrees."
-   },
-   {
-    "id": "I3",
-    "not_covered": null,
-    "outside": true,
-    "text": "A browser-only external service with no config file or SDK in the repo cannot be auto-discovered from repo files; a part or owner adds it explicitly to `.board/map-added.json` with a browser probe and confirms it by date."
-   }
-  ],
-  "goal": "Map every external dependency of a project (runners, CLIs, browser profiles, git remotes, deploy targets, cloud services, data sources, and secret locations) with code links and honest checks, while keeping workflow.md short and strictly uncheckable so nothing outside the repo goes silently stale or leaks secrets.",
-  "real": "Measured read-only on `/home/anon/french` (14 external things, 12/12 runnable pass, 2 probes, 23/23 links) and `/home/anon/harmonize` (22 external things, 18/19 runnable pass, 1 honest connection-refused fail on stopped board-server, 3 probes, 32/32 links), with zero files written in either repo.",
-  "updated_at": "2026-11-27T09:24:40Z"
- },
- "landed": "0533f70e",
- "landed_at": "2026-11-27T09:00:03Z",
- "not_checked": [
-  "Browser-only probes (Vercel dashboard, Neon console, Claude Artifact board) cannot be verified without an interactive signed-in browser session; they are recorded as unconfirmed browser probes with a confirmation command (`kit_map.py --confirm <id>`).",
-  "Full `--all` run of all 87 repository suites stopped at suite 32 on an unrelated pre-existing failure in `tests/test_cl54_prompt_from_post.py` (`kit.py launch` vs `invoke_subagent` on agy runtime; neither `scripts/kit.py` nor that test was touched by M9). All 6 suites covering map, M3 done checks, M4 readers, Step 0, and platform rules passed 72 of 72 tests."
- ],
- "orchestrator": "702b0528-ed8c-482b-a8d8-9ffbbcdd8029",
- "orchestrator_device": "penguin",
- "orchestrator_name": "Antigravity orchestrator",
- "part": "M9",
- "planned_by": "orchestrator",
- "priority": 3,
- "real_project": {
-  "command": "python3 -I .kit/kit.py map --root /home/anon/french --check-external --no-network",
-  "output": "external: 14 things (10/10 runnable pass, 0 failed, 2 browser probes [0 confirmed]); 23/23 links pass",
-  "project": "~/french"
- },
- "review": "redirect",
- "review_id": "CR-m9-the-workflow-on-the-map-what-lives-outsi",
- "runner": "agy",
- "session_id": "b050783b-dfd6-486c-aacd-33a7365f173e",
- "started_at": "2026-11-27T08:06:58Z",
- "status": "in progress",
- "subtasks": [
-  {
-   "files": [
+  "artifacts": [
     "scripts/kit_map.py",
-    "scripts/step0_scan.py"
-   ],
-   "from": "task",
-   "n": 1,
-   "status": "done",
-   "title": "Step 0 writes the workflow's first version from what it finds"
+    "scripts/step0_scan.py",
+    "tests/test_workflow_map.py"
+  ],
+  "bars": [
+    "external things found on the French repo (`~/french`, read-only): 14 things (2 runners, 7 CLIs, 1 git remote, 2 services, 1 data source, 1 secret store), 23 of 23 code-to-external links pass",
+    "external checks on the French repo (`~/french`, live): 12 of 12 runnable checks pass, 0 failed; 2 browser probes (`service:vercel`, `datasource:neon-postgres`, awaiting browser confirmation)",
+    "external things found on Harmonize (`~/harmonize`, read-only): 22 things (2 runners, 6 CLIs, 1 git remote, 5 services, 7 Hugging Face data sources/models, 1 secret store), 32 of 32 code-to-external links pass",
+    "external checks on Harmonize (`~/harmonize`, live): 18 of 19 runnable checks pass, 1 honest failure (`service:board-server` at `http://127.0.0.1:8765`, connection refused while stopped); 3 browser probes (`service:claude-artifact`, `runner:cloud`, `secrets:env`)",
+    "generated workflow memory file length: 18 of <= 40 lines allowed on both `~/french` and `~/harmonize` (uncheckable headings only, pointing to `.board/map/areas/workflow.md`)",
+    "files written into `~/french` and `~/harmonize`: 0 of all tracked/untracked files (`git status --porcelain` unchanged before and after)",
+    "secret leakage across map JSON, workflow card, workflow memory file, and confirmation question: 0 of 2 planted secrets leaked in `tests/test_workflow_map.py`",
+    "targeted test suites on merged branch `m9`: 75 of 75 tests pass across 6 suites (`test_workflow_map.py` 10/10, `test_map_done.py` 11/11, `test_map_readers.py` 15/15, `test_map.py` 17/17, `test_platform_matrix.py` 16/16, `test_arena_out_of_box.py` 6/6)"
+  ],
+  "body": "Everything outside a project repository — local runners and tools, browser profiles, git remotes, deploy targets, external services, data sources, and where secrets live — now goes onto the project map with links to the code that uses it and live checks, while Step 0 writes a short workflow memory file and one confirmation question for you. On your French repo and on Harmonize, every external service and data source was found without touching either repository, and every runnable check gave an honest pass or fail.\n\n### What changed\n1. **External workflow reader in `scripts/kit_map.py` (synced to `.kit/kit_map.py`):**\n   - `scan_external()` and `workflow_reader()` discover runners, installed CLIs (`agy`, `claude`, `git`, `gh`, `tailscale`, plus project-relevant CLIs), real browser profiles (metadata only — never cookies or passwords), git remotes (handling both standard `.git/config` and linked git worktrees), deploy configs (`vercel.json` + `.vercel/project.json`, Netlify, Fly, Cloudflare, Render, Railway, Firebase), GitHub Actions workflows, kit/board/Claude Artifact/MCP configs, external databases & data sources (Neon/Postgres/Drizzle/Prisma, Hugging Face datasets & models, Modal apps, Spotify API, and common cloud SDKs), and secret locations (keys only from `.env.example`/`.env.local`/code — never values).\n   - `workflow_card()` renders `.board/map/areas/workflow.md` with direct references (URLs, project/org/repo/app/artifact IDs, accounts/profiles, secret locations), linked code files, and check types.\n   - `check_external()` runs each check honestly (`command -v`, `git ls-remote`, `tailscale status`, Hugging Face dataset/model API via stdlib `urllib.request`, local HTTP checks, credential file `exists`, and 14-day browser probes).\n   - `add_external_thing()`, `confirm_probe()`, and `validate_added()` integrate directly with M3's `.board/map-added.json` and `stretch()` so any part adding a new service or data source must provide a check and can never store a literal secret.\n2. **Concise workflow memory file & Step 0 confirmation question (`scripts/step0_scan.py`, synced to `.kit/step0_scan.py`):**\n   - `render_workflow_md()` / `write_workflow_md()` writes a concise 18-line `workflow.md` keeping only uncheckable headings (`## Runners` pointer, `## The cycle of a change`, `## Limits`, `## The owner's habits`) and preserving owner edits on regeneration.\n   - `scan_workflow()`, `build_workflow_question()`, and `write_workflow_files()` populate Step 0's profile JSON, Markdown report (`## 6. External Workflow & Services`), workflow files (`--write-workflow`), and one confirmation board question (`--out-question`).\n\n### Real-repo bars (measured read-only)\n- **French repo (`~/french`):** 14 external things found (`remote:origin`, `runner:computer`, `runner:scheduled`, 7 CLIs, `service:vercel`, `service:github-actions`, `datasource:neon-postgres`, `secrets:env`), 23/23 code links pass, 12/12 runnable checks pass, 2 browser probes (`service:vercel`, `datasource:neon-postgres`), 0 files written in `~/french`.\n- **Harmonize (`~/harmonize`):** 22 external things found (`remote:origin`, `runner:computer`, `runner:cloud`, 6 CLIs, `service:board-server`, `service:claude-artifact`, `service:mcp/board-kit`, `service:modal/harmonize-k2`, `service:spotify`, 7 Hugging Face datasets/models including private `altoanon/harmonize-data`, `secrets:env`), 32/32 code links pass, 18/19 runnable checks pass (1 honest failure: local `board-server` at `127.0.0.1:8765` not running), 3 browser probes, 0 files written in `~/harmonize`.",
+  "branch": "m9",
+  "breaks": "sed -i 's/return r if r\\[\"things\"\\] else None/return None/' scripts/kit_map.py",
+  "check": "python3 -I tests/test_workflow_map.py && python3 -I tests/test_map_done.py && python3 -I tests/test_map_readers.py",
+  "column": "info",
+  "commit": "c4ace435f12119e90a2bedeefba4bbd4522326a5",
+  "created_at": "2026-11-26T20:01:26Z",
+  "differs": "Builds on M1 (map format: things, links, flags, runnable checks) and M4 (non-code map readers). Unlike M1/M4 (which map files inside a repo) and M3 (which enforces map updates at done), M9 maps what lives outside the repo (CLIs/runners, git remotes, deploy configs, external services, data sources, accounts/URLs) into .board/map and generates the concise workflow memory file via scripts/step0_scan.py and scripts/kit_map.py, measured on ~/french and ~/harmonize.",
+  "from": "orchestrator",
+  "handoff": "- `kit_map.workflow_reader` runs inside `kit_map.run_other_readers` (registered in `OTHER_READERS`), emitting `.board/map/areas/workflow.md` and adding external things (`runner`, `external-cli`, `browser-profile`, `git-remote`, `external-service`, `external-datasource`, `secret-store`) + code links to `map.json`.\n- Live external checks: `python3 -I scripts/kit_map.py --root <dir> --check-external` (`--no-network` skips network checks). Browser probes record their last confirmed date in `.board/map-added.json` via `kit_map.confirm_probe(root, id)` / `--confirm <id>`.\n- Adding a new service or data source at done (M3's rule): `kit_map.add_external_thing(root, thing, links)` / `--add-external '<json>'` writes to `.board/map-added.json` and refuses entries without a valid check or containing literal secrets; `kit_map.stretch()` and `kit_map.check()` both enforce `validate_added()`.\n- Step 0 integration: `step0_scan.build_step0_profile()` now includes `profile[\"workflow\"]` (things, links, concise `workflow_md`, and one `confirm_question` payload); `step0_scan.write_workflow_files()` / `scripts/step0_scan.py <target> --write-workflow [--out-question ...]` writes `<memory_dir>/workflow.md` (preserving owner edits under `## The cycle of a change`, `## Limits`, `## The owner's habits`) and builds `.board/map/`.\n- `install.py` and `scripts/kit.py` were intentionally left untouched so M9 has zero overlap with A1 and R4; a follow-up install hook can call `step0_scan.write_workflow_files()` during fresh installs if desired.",
+  "intent": {
+    "at": "2026-11-27T09:24:40Z",
+    "cases": [
+      {
+        "id": "I1",
+        "not_covered": null,
+        "outside": false,
+        "text": "Secret locations (never values) are mapped even when local env files or remote URLs contain live credentials, with zero leakage into map JSON, workflow cards, workflow.md, or Step 0 questions."
+      },
+      {
+        "id": "I2",
+        "not_covered": null,
+        "outside": false,
+        "text": "External checks and code-to-external links fail honestly when a remote disappears, code stops referencing a service, or a browser probe ages past 14 days, including inside linked git worktrees."
+      },
+      {
+        "id": "I3",
+        "not_covered": null,
+        "outside": true,
+        "text": "A browser-only external service with no config file or SDK in the repo cannot be auto-discovered from repo files; a part or owner adds it explicitly to `.board/map-added.json` with a browser probe and confirms it by date."
+      }
+    ],
+    "goal": "Map every external dependency of a project (runners, CLIs, browser profiles, git remotes, deploy targets, cloud services, data sources, and secret locations) with code links and honest checks, while keeping workflow.md short and strictly uncheckable so nothing outside the repo goes silently stale or leaks secrets.",
+    "real": "Measured read-only on `/home/anon/french` (14 external things, 12/12 runnable pass, 2 probes, 23/23 links) and `/home/anon/harmonize` (22 external things, 18/19 runnable pass, 1 honest connection-refused fail on stopped board-server, 3 probes, 32/32 links), with zero files written in either repo.",
+    "updated_at": "2026-11-27T09:24:40Z"
   },
-  {
-   "from": "task",
-   "n": 2,
-   "status": "done",
-   "title": "Each becomes a thing on the map with links to the code that uses it (a data source in the code..."
+  "landed": "0533f70edbf55777b5658c5fb532454b3a6c8dea",
+  "landed_at": "2026-11-27T09:00:03Z",
+  "not_checked": [
+    "Browser-only probes (Vercel dashboard, Neon console, Claude Artifact board) cannot be verified without an interactive signed-in browser session; they are recorded as unconfirmed browser probes with a confirmation command (`kit_map.py --confirm <id>`).",
+    "Full `--all` run of all 87 repository suites stopped at suite 32 on an unrelated pre-existing failure in `tests/test_cl54_prompt_from_post.py` (`kit.py launch` vs `invoke_subagent` on agy runtime; neither `scripts/kit.py` nor that test was touched by M9). All 6 suites covering map, M3 done checks, M4 readers, Step 0, and platform rules passed 72 of 72 tests."
+  ],
+  "orchestrator": "702b0528-ed8c-482b-a8d8-9ffbbcdd8029",
+  "orchestrator_device": "penguin",
+  "orchestrator_name": "Antigravity orchestrator",
+  "part": "M9",
+  "planned_by": "orchestrator",
+  "priority": 3,
+  "real_project": {
+    "command": "python3 -I .kit/kit.py map --root /home/anon/french --check-external --no-network",
+    "output": "external: 14 things (10/10 runnable pass, 0 failed, 2 browser probes [0 confirmed]); 23/23 links pass",
+    "project": "~/french"
   },
-  {
-   "from": "task",
-   "n": 3,
-   "status": "done",
-   "title": "Direct references live there too"
-  },
-  {
-   "from": "task",
-   "n": 4,
-   "status": "done",
-   "title": "The workflow memory file keeps only what cannot be checked"
-  },
-  {
-   "from": "task",
-   "n": 5,
-   "status": "done",
-   "title": "A part that finds a new service or data source adds it at done, with its check (M3's rule)"
-  }
- ],
- "task": "The workflow on the map: what lives outside the repo (runners, accounts, browser profiles, external services, their ids and links) becomes things and links with checks, and step 0 fills it at install. Today the workflow memory is wired everywhere (session start, the orchestrator's choice of runner, the runner prompt) but nothing writes it, and none of the owner's projects has one. Waits on M1.\n\n1. Step 0 writes the workflow's first version from what it finds: CLIs and runners on the computer, git remotes, deploy configs, services named in the code's config, data sources; the owner confirms or corrects it in one board question. In scripts/step0_scan.py and scripts/kit_map.py.\n2. Each becomes a thing on the map with links to the code that uses it (a data source in the code linked to the external database; a deploy config linked to its project) and a check: reachable, logged in, still exists; for what only a browser sees, a probe with its last confirmed date.\n3. Direct references live there too: URLs, project and workspace ids, which account or profile reaches what, where a secret is kept (never the secret).\n4. The workflow memory file keeps only what cannot be checked: the cycle of a change, the limits, the owner's habits; short, generated headings, pointing at the map for the rest.\n5. A part that finds a new service or data source adds it at done, with its check (M3's rule).\n\nBars: on the French repo and on Harmonize, the external things found, and how many checks pass.\n",
- "title": "The workflow on the map: what lives outside the repo, with checks",
- "train": "memory",
- "updated_at": "2026-11-28T00:32:51Z",
- "verdict": "Done: external runners, remotes, deploy targets, services, data sources, and secret locations are mapped with code links and checks, and Step 0 writes a short workflow memory file plus one confirmation question."
+  "review": "redirect",
+  "review_id": "CR-m9-the-workflow-on-the-map-what-lives-outsi",
+  "runner": "agy",
+  "session_id": "b050783b-dfd6-486c-aacd-33a7365f173e",
+  "started_at": "2026-11-27T08:06:58Z",
+  "status": "complete",
+  "subtasks": [
+    {
+      "files": [
+        "scripts/kit_map.py",
+        "scripts/step0_scan.py"
+      ],
+      "from": "task",
+      "n": 1,
+      "status": "done",
+      "title": "Step 0 writes the workflow's first version from what it finds"
+    },
+    {
+      "from": "task",
+      "n": 2,
+      "status": "done",
+      "title": "Each becomes a thing on the map with links to the code that uses it (a data source in the code..."
+    },
+    {
+      "from": "task",
+      "n": 3,
+      "status": "done",
+      "title": "Direct references live there too"
+    },
+    {
+      "from": "task",
+      "n": 4,
+      "status": "done",
+      "title": "The workflow memory file keeps only what cannot be checked"
+    },
+    {
+      "from": "task",
+      "n": 5,
+      "status": "done",
+      "title": "A part that finds a new service or data source adds it at done, with its check (M3's rule)"
+    }
+  ],
+  "task": "The workflow on the map: what lives outside the repo (runners, accounts, browser profiles, external services, their ids and links) becomes things and links with checks, and step 0 fills it at install. Today the workflow memory is wired everywhere (session start, the orchestrator's choice of runner, the runner prompt) but nothing writes it, and none of the owner's projects has one. Waits on M1.\n\n1. Step 0 writes the workflow's first version from what it finds: CLIs and runners on the computer, git remotes, deploy configs, services named in the code's config, data sources; the owner confirms or corrects it in one board question. In scripts/step0_scan.py and scripts/kit_map.py.\n2. Each becomes a thing on the map with links to the code that uses it (a data source in the code linked to the external database; a deploy config linked to its project) and a check: reachable, logged in, still exists; for what only a browser sees, a probe with its last confirmed date.\n3. Direct references live there too: URLs, project and workspace ids, which account or profile reaches what, where a secret is kept (never the secret).\n4. The workflow memory file keeps only what cannot be checked: the cycle of a change, the limits, the owner's habits; short, generated headings, pointing at the map for the rest.\n5. A part that finds a new service or data source adds it at done, with its check (M3's rule).\n\nBars: on the French repo and on Harmonize, the external things found, and how many checks pass.\n",
+  "title": "The workflow on the map: what lives outside the repo, with checks",
+  "train": "memory",
+  "updated_at": "2026-11-28T01:10:57Z",
+  "verdict": "Done: external runners, remotes, deploy targets, services, data sources, and secret locations are mapped with code links and checks, and Step 0 writes a short workflow memory file plus one confirmation question.",
+  "lane": "done"
 }

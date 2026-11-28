@@ -1,61 +1,62 @@
 {
- "body": "Owner, 2026-11-27: \"Every part needs to extrapolate, needs to stress test the shit out of things, needs to get the idea of what I'm saying.\" R6 was asked that every new step be \"measured against every open one\"; it built links by names, `after` and shared files only, wrote 7 fixture cases that all used those links, passed its own tests and its review, and missed the plain case (two steps about the same thing that name nothing in common: M14 then CL75 on 2026-11-27). Its tests tested what it built, not what was asked.\n\nChange, for every part (part templates for claude, claude-cli and agy; `kit.py done`; the review prompt):\n1. Intent first: before any code the part writes, on its post, the owner's goal in his own words (from the task, the train goal and his comments) and at least 3 cases beyond the literal task that he would expect to work, including one that its likely mechanism would NOT cover. The plan must cover them or say why not.\n2. Stress tests: the check includes cases derived from the intent list, not from the implementation: at least one adversarial or out-of-pattern case per intent case, and the real data case where there is one (the live board, Harmonize). A fixture written only from the code's own mechanism does not count.\n3. `kit.py done` refuses a post with no intent section or whose check names none of the intent cases, and prints which intent case has no test.\n4. The review (and CL75's reduced review) asks first: does it do what he meant, with the intent cases, before any rerun of the tests.\n\nCheck: replay R6: its post and tests as they were are refused by done (no intent case for two steps on the same subject that name nothing in common); the same task with the intent section and a topic-only test passes. Fails on main.\n",
- "branch": "cl76",
- "column": "info",
- "created_at": "2026-11-27T08:46:48Z",
- "damage": "R6 passed its tests and review while missing the owner's meaning; found by the owner 2026-11-27",
- "from": "orchestrator",
- "kind": "bug",
- "landed": "b83bdbdd7d858b77cdcb8d796c6171c7227d33ec",
- "landed_at": "2026-11-28T01:08:51Z",
- "launched_at": "2026-11-27T08:48:12Z",
- "launched_out_of_order": {
-  "at": "2026-11-27T08:48:12Z",
-  "was": "CL73 goes first (place 1, CL76 is 2): repairs damage (overwrite); launch `cl73-the-stop-check-counts-only-what-this-ses`",
-  "why": "owner, 2026-11-27 in chat: P1, launch it before CL73"
- },
- "orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
- "orchestrator_device": "web",
- "orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
- "part": "CL76",
- "planned_by": "orchestrator",
- "priority": "P1",
- "repo": "anlonlt/board",
- "session_id": "session_01AE1HGibELwzhQ31mndRps5",
- "status": "in progress",
- "subtasks": [
-  {
-   "from": "task",
-   "n": 1,
-   "status": "open",
-   "title": "Intent first"
+  "body": "Owner, 2026-11-27: \"Every part needs to extrapolate, needs to stress test the shit out of things, needs to get the idea of what I'm saying.\" R6 was asked that every new step be \"measured against every open one\"; it built links by names, `after` and shared files only, wrote 7 fixture cases that all used those links, passed its own tests and its review, and missed the plain case (two steps about the same thing that name nothing in common: M14 then CL75 on 2026-11-27). Its tests tested what it built, not what was asked.\n\nChange, for every part (part templates for claude, claude-cli and agy; `kit.py done`; the review prompt):\n1. Intent first: before any code the part writes, on its post, the owner's goal in his own words (from the task, the train goal and his comments) and at least 3 cases beyond the literal task that he would expect to work, including one that its likely mechanism would NOT cover. The plan must cover them or say why not.\n2. Stress tests: the check includes cases derived from the intent list, not from the implementation: at least one adversarial or out-of-pattern case per intent case, and the real data case where there is one (the live board, Harmonize). A fixture written only from the code's own mechanism does not count.\n3. `kit.py done` refuses a post with no intent section or whose check names none of the intent cases, and prints which intent case has no test.\n4. The review (and CL75's reduced review) asks first: does it do what he meant, with the intent cases, before any rerun of the tests.\n\nCheck: replay R6: its post and tests as they were are refused by done (no intent case for two steps on the same subject that name nothing in common); the same task with the intent section and a topic-only test passes. Fails on main.\n",
+  "branch": "cl76",
+  "column": "info",
+  "created_at": "2026-11-27T08:46:48Z",
+  "damage": "R6 passed its tests and review while missing the owner's meaning; found by the owner 2026-11-27",
+  "from": "orchestrator",
+  "kind": "bug",
+  "landed": "3fb7362207dc6e335616f4edc2566f2df14e094d",
+  "landed_at": "2026-11-28T01:08:51Z",
+  "launched_at": "2026-11-27T08:48:12Z",
+  "launched_out_of_order": {
+    "at": "2026-11-27T08:48:12Z",
+    "was": "CL73 goes first (place 1, CL76 is 2): repairs damage (overwrite); launch `cl73-the-stop-check-counts-only-what-this-ses`",
+    "why": "owner, 2026-11-27 in chat: P1, launch it before CL73"
   },
-  {
-   "from": "task",
-   "n": 2,
-   "status": "open",
-   "title": "Stress tests"
-  },
-  {
-   "files": [
-    "kit.py"
-   ],
-   "from": "task",
-   "n": 3,
-   "status": "open",
-   "title": "kit.py done refuses a post with no intent section or whose check names none of the intent cases,..."
-  },
-  {
-   "from": "task",
-   "n": 4,
-   "status": "open",
-   "title": "The review (and CL75's reduced review) asks first"
-  }
- ],
- "task": "Owner, 2026-11-27: \"Every part needs to extrapolate, needs to stress test the shit out of things, needs to get the idea of what I'm saying.\" R6 was asked that every new step be \"measured against every open one\"; it built links by names, `after` and shared files only, wrote 7 fixture cases that all used those links, passed its own tests and its review, and missed the plain case (two steps about the same thing that name nothing in common: M14 then CL75 on 2026-11-27). Its tests tested what it built, not what was asked.\n\nChange, for every part (part templates for claude, claude-cli and agy; `kit.py done`; the review prompt):\n1. Intent first: before any code the part writes, on its post, the owner's goal in his own words (from the task, the train goal and his comments) and at least 3 cases beyond the literal task that he would expect to work, including one that its likely mechanism would NOT cover. The plan must cover them or say why not.\n2. Stress tests: the check includes cases derived from the intent list, not from the implementation: at least one adversarial or out-of-pattern case per intent case, and the real data case where there is one (the live board, Harmonize). A fixture written only from the code's own mechanism does not count.\n3. `kit.py done` refuses a post with no intent section or whose check names none of the intent cases, and prints which intent case has no test.\n4. The review (and CL75's reduced review) asks first: does it do what he meant, with the intent cases, before any rerun of the tests.\n\nCheck: replay R6: its post and tests as they were are refused by done (no intent case for two steps on the same subject that name nothing in common); the same task with the intent section and a topic-only test passes. Fails on main.\n",
- "title": "Every part gets the idea first: the owner's goal and cases beyond the literal task, tested by stress cases from that intent, refused at done otherwise",
- "train": "reviews",
- "updated_at": "2026-11-28T01:08:52Z",
- "work_branch": "main",
- "working_by": "owner"
+  "orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
+  "orchestrator_device": "web",
+  "orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
+  "part": "CL76",
+  "planned_by": "orchestrator",
+  "priority": "P1",
+  "repo": "anlonlt/board",
+  "session_id": "session_01AE1HGibELwzhQ31mndRps5",
+  "status": "complete",
+  "subtasks": [
+    {
+      "from": "task",
+      "n": 1,
+      "status": "open",
+      "title": "Intent first"
+    },
+    {
+      "from": "task",
+      "n": 2,
+      "status": "open",
+      "title": "Stress tests"
+    },
+    {
+      "files": [
+        "kit.py"
+      ],
+      "from": "task",
+      "n": 3,
+      "status": "open",
+      "title": "kit.py done refuses a post with no intent section or whose check names none of the intent cases,..."
+    },
+    {
+      "from": "task",
+      "n": 4,
+      "status": "open",
+      "title": "The review (and CL75's reduced review) asks first"
+    }
+  ],
+  "task": "Owner, 2026-11-27: \"Every part needs to extrapolate, needs to stress test the shit out of things, needs to get the idea of what I'm saying.\" R6 was asked that every new step be \"measured against every open one\"; it built links by names, `after` and shared files only, wrote 7 fixture cases that all used those links, passed its own tests and its review, and missed the plain case (two steps about the same thing that name nothing in common: M14 then CL75 on 2026-11-27). Its tests tested what it built, not what was asked.\n\nChange, for every part (part templates for claude, claude-cli and agy; `kit.py done`; the review prompt):\n1. Intent first: before any code the part writes, on its post, the owner's goal in his own words (from the task, the train goal and his comments) and at least 3 cases beyond the literal task that he would expect to work, including one that its likely mechanism would NOT cover. The plan must cover them or say why not.\n2. Stress tests: the check includes cases derived from the intent list, not from the implementation: at least one adversarial or out-of-pattern case per intent case, and the real data case where there is one (the live board, Harmonize). A fixture written only from the code's own mechanism does not count.\n3. `kit.py done` refuses a post with no intent section or whose check names none of the intent cases, and prints which intent case has no test.\n4. The review (and CL75's reduced review) asks first: does it do what he meant, with the intent cases, before any rerun of the tests.\n\nCheck: replay R6: its post and tests as they were are refused by done (no intent case for two steps on the same subject that name nothing in common); the same task with the intent section and a topic-only test passes. Fails on main.\n",
+  "title": "Every part gets the idea first: the owner's goal and cases beyond the literal task, tested by stress cases from that intent, refused at done otherwise",
+  "train": "reviews",
+  "updated_at": "2026-11-28T01:10:57Z",
+  "work_branch": "main",
+  "working_by": "owner",
+  "lane": "done"
 }

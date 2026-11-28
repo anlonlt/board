@@ -1,125 +1,126 @@
 {
- "artifacts": [
-  "kit/claude/BOARD.template.md",
-  "kit/claude/SKILL.board.md",
-  "kit/claude/part.template.md",
-  "kit/hook.py",
-  "kit/hooks/kit_board_guard.py",
-  "kit/hooks/kit_config.py",
-  "kit/hooks/kit_orchestrator_guard.py",
-  "kit/ledger.py",
-  "scripts/kit.py",
-  "scripts/usage.py",
-  "test_install.py",
-  "tests/fixtures/cl72-orch3-board-work.json",
-  "tests/test_artifact_mode.py",
-  "tests/test_cl30_kit_scripts.py",
-  "tests/test_cl31_card_push.py",
-  "tests/test_cl72_one_way.py",
-  "tests/test_m10_fix_kinds.py",
-  "tests/test_m11_kit_commands.py",
-  "tests/test_new_install.py",
-  "tests/test_orchestrator_guard.py",
-  "tests/test_step_attached_board.py"
- ],
- "bars": [
-  "manual actions in the replay of orchestrator 3's board work through sync: 0 (before: 33 in the audit of the same real row)",
-  "guard refusals of a call the kit printed in that replay: 0 of all calls made (3 pulls, 26 pushes, 4 refused batches re-read and resent)",
-  "live, on this board: 11 of 11 printed calls let through by the guard, 1 refused batch merged and resent, committed at version 6",
-  "a hand-edited batch (a version typed by hand, or its file changed): refused, 2 of 2",
-  "raw board calls refused for the orchestrator and for a part: 5 of 5 each",
-  "launch and land with an open recurring item and no design step: refused 2 of 2; allowed once the design step is recorded"
- ],
- "body": "A session now does its board work with one kit command and nothing in between: it makes exactly the calls the kit prints, and the guard refuses every other board call for every role, the orchestrator included. The audit counts by the same list as the guard, so a session that follows the kit is no longer flagged. Launching or landing a step is now refused while an item that keeps coming back has no design step recorded.\n\n### What was wrong\nThree parts of the kit disagreed. `artifact push` and `pin` told a session to make `ArtifactData get` calls by hand to learn a version, then to send the batch by hand. The guard only refused a raw list and a raw post write. The audit then counted the kit's own calls as manual. On today's row for orchestrator 3, the audit found 33 manual actions.\n\n### What changed\n- **`kit.py artifact sync`** (scripts/kit.py): each run does what it can on its own (pull, load, push, pin, record sent), then prints at most one set of calls, each as the exact JSON input. A part sends only its own post, its comments and its activity line. When a batch is refused, sync prints the reads of the documents it names. It then merges this copy into the live copy and sends again.\n- **No version copied by hand:** a PostToolUse hook on ArtifactData (kit_board_guard.py) reads each reply. It saves every document's version, and whether a batch went in, to `.kit/run/artifact/seen.json`. Load uses those versions, so a document that was just pulled no longer needs a pin round trip.\n- **The guard** (kit_orchestrator_guard.py), for every role: a board call passes only if it is one the kit printed (same action, collection, document, query, out_dir, version, and file contents by hash) and has not been made yet. A call with no kit form also passes: typing dots, the clerk's marks, a new orchestrator's session. On an Artifact board, a raw `board_cli.py get|list|query posts` is refused too.\n- **One list** (kit/hooks/kit_config.py): the record of printed calls, the free calls, the commands that print calls, and the raw-read rule. Both the guard and the audit (usage.py) read it. A list the kit printed is never counted as manual.\n- **The design gate** (kit/ledger.py `open_items`, `kit.py launch|land`): refused while an item of \"First: what keeps coming back\" has no `kit.py ledger design` entry. The refusal names each item and the command that records it.\n- **A bug found on the way:** `artifact load` treated every local-only document as an old seed. A post made between two loads was never sent. Now only a document older than the last load counts as a seed.\n\n### Also fixed on the way (found in the live run)\n- Any kit command's push (`form`, `sub`, `done`) now sends only a part's own documents, not the whole copy.\n- When another command rebuilt the batches after sync printed one, sync builds them again instead of sending a stale one.\n\n### Tests\ntests/test_cl72_one_way.py replays orchestrator 3's real board work against a fake Artifact (tests/fixtures/cl72-orch3-board-work.json, taken from the usage ledger). Every call goes through the guard and the hook. The test also covers the hand-edited batch, the refusal of raw calls for every role, the free calls, a part sending only its own documents, the raw board_cli read, and the design gate. Older tests (CL30, CL31, M11, artifact mode, M10's seed) were updated to the new rule.",
- "branch": "cl72",
- "breaks": "revert",
- "check": "python3 -m unittest tests.test_cl72_one_way tests.test_m11_kit_commands tests.test_cl30_kit_scripts",
- "checkpoint": {
-  "at": "2026-11-27T08:10:34Z",
+  "artifacts": [
+    "kit/claude/BOARD.template.md",
+    "kit/claude/SKILL.board.md",
+    "kit/claude/part.template.md",
+    "kit/hook.py",
+    "kit/hooks/kit_board_guard.py",
+    "kit/hooks/kit_config.py",
+    "kit/hooks/kit_orchestrator_guard.py",
+    "kit/ledger.py",
+    "scripts/kit.py",
+    "scripts/usage.py",
+    "test_install.py",
+    "tests/fixtures/cl72-orch3-board-work.json",
+    "tests/test_artifact_mode.py",
+    "tests/test_cl30_kit_scripts.py",
+    "tests/test_cl31_card_push.py",
+    "tests/test_cl72_one_way.py",
+    "tests/test_m10_fix_kinds.py",
+    "tests/test_m11_kit_commands.py",
+    "tests/test_new_install.py",
+    "tests/test_orchestrator_guard.py",
+    "tests/test_step_attached_board.py"
+  ],
+  "bars": [
+    "manual actions in the replay of orchestrator 3's board work through sync: 0 (before: 33 in the audit of the same real row)",
+    "guard refusals of a call the kit printed in that replay: 0 of all calls made (3 pulls, 26 pushes, 4 refused batches re-read and resent)",
+    "live, on this board: 11 of 11 printed calls let through by the guard, 1 refused batch merged and resent, committed at version 6",
+    "a hand-edited batch (a version typed by hand, or its file changed): refused, 2 of 2",
+    "raw board calls refused for the orchestrator and for a part: 5 of 5 each",
+    "launch and land with an open recurring item and no design step: refused 2 of 2; allowed once the design step is recorded"
+  ],
+  "body": "A session now does its board work with one kit command and nothing in between: it makes exactly the calls the kit prints, and the guard refuses every other board call for every role, the orchestrator included. The audit counts by the same list as the guard, so a session that follows the kit is no longer flagged. Launching or landing a step is now refused while an item that keeps coming back has no design step recorded.\n\n### What was wrong\nThree parts of the kit disagreed. `artifact push` and `pin` told a session to make `ArtifactData get` calls by hand to learn a version, then to send the batch by hand. The guard only refused a raw list and a raw post write. The audit then counted the kit's own calls as manual. On today's row for orchestrator 3, the audit found 33 manual actions.\n\n### What changed\n- **`kit.py artifact sync`** (scripts/kit.py): each run does what it can on its own (pull, load, push, pin, record sent), then prints at most one set of calls, each as the exact JSON input. A part sends only its own post, its comments and its activity line. When a batch is refused, sync prints the reads of the documents it names. It then merges this copy into the live copy and sends again.\n- **No version copied by hand:** a PostToolUse hook on ArtifactData (kit_board_guard.py) reads each reply. It saves every document's version, and whether a batch went in, to `.kit/run/artifact/seen.json`. Load uses those versions, so a document that was just pulled no longer needs a pin round trip.\n- **The guard** (kit_orchestrator_guard.py), for every role: a board call passes only if it is one the kit printed (same action, collection, document, query, out_dir, version, and file contents by hash) and has not been made yet. A call with no kit form also passes: typing dots, the clerk's marks, a new orchestrator's session. On an Artifact board, a raw `board_cli.py get|list|query posts` is refused too.\n- **One list** (kit/hooks/kit_config.py): the record of printed calls, the free calls, the commands that print calls, and the raw-read rule. Both the guard and the audit (usage.py) read it. A list the kit printed is never counted as manual.\n- **The design gate** (kit/ledger.py `open_items`, `kit.py launch|land`): refused while an item of \"First: what keeps coming back\" has no `kit.py ledger design` entry. The refusal names each item and the command that records it.\n- **A bug found on the way:** `artifact load` treated every local-only document as an old seed. A post made between two loads was never sent. Now only a document older than the last load counts as a seed.\n\n### Also fixed on the way (found in the live run)\n- Any kit command's push (`form`, `sub`, `done`) now sends only a part's own documents, not the whole copy.\n- When another command rebuilt the batches after sync printed one, sync builds them again instead of sending a stale one.\n\n### Tests\ntests/test_cl72_one_way.py replays orchestrator 3's real board work against a fake Artifact (tests/fixtures/cl72-orch3-board-work.json, taken from the usage ledger). Every call goes through the guard and the hook. The test also covers the hand-edited batch, the refusal of raw calls for every role, the free calls, a part sending only its own documents, the raw board_cli read, and the design gate. Older tests (CL30, CL31, M11, artifact mode, M10's seed) were updated to the new rule.",
   "branch": "cl72",
-  "pushed": true,
-  "sha": "31b05dcf"
- },
- "claimed_at": "2026-11-27T07:52:38Z",
- "column": "info",
- "created_at": "2026-11-27T07:38:05Z",
- "differs": "CL72: builds on CL30 (guard), CL31 (pin), M11 (audit) and CL59 (part push), which each patched one path; it replaces the hand steps with one kit command, makes the guard refuse anything the kit did not print, gives guard and audit one list, and gates launch/land on recorded design steps.",
- "from": "orchestrator",
- "handoff": "Sessions now use `kit.py artifact sync` (the part guide, BOARD and the skill say so). `artifact pull` and `push` still work: they record what they print, so their calls pass too. Next: the orchestrator guide and the clerk text still name `artifact push` in places, which works but goes the long way. The board_cli guard covers raw post reads only: writes to the local copy stay free, because only sync reaches the live board.",
- "kept_on_train": "the board's data path; same train as CL59/CL71",
- "kind": "bug",
- "landed": "9f8124241e4570d61ec5d6876ce5b0befba8cb84",
- "landed_at": "2026-11-27T09:27:39Z",
- "launched_at": "2026-11-27T07:44:17Z",
- "launched_out_of_order": {
-  "at": "2026-11-27T07:44:17Z",
-  "was": "CL72 waits: CL16 runs (shares run_all_tests.py); CL52 runs (shares run_all_tests.py); CL71 runs (shares run_all_tests.py)",
-  "why": "owner's go 2026-11-27 in chat ('launch it')"
- },
- "not_checked": [
-  "Live run in this session (my own post): pull, 3 reads, a refused batch (a file map entry moved there), 5 reads of what it named, then a batch committed, version 6. The guard refused none of the printed calls. But this session started before the new hook was wired (settings are read when a session starts), so I passed the replies to the hook by hand. A new session runs it by itself.",
-  "A refused batch comes back as a tool error, which the hook may never see. So sync never takes an unseen reply as committed: it re-reads the documents, merges and resends (tested).",
-  "The real-project run on anlonlt/harmonize belongs to the orchestrator.",
-  "Full run (`run_all_tests.py --all`): 85 of 88 suites pass; the 3 that fail (test_launch_runtime, test_platform_matrix, test_cl56_one_link) fail the same way on an untouched main in this container, not caused by this step."
- ],
- "orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
- "orchestrator_device": "web",
- "orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
- "orchestrator_unreached": null,
- "part": "CL72",
- "planned_by": "orchestrator",
- "proof": {
-  "at": "2026-11-27T08:15:58Z",
-  "branch": "cl72",
-  "commit": "22453971",
-  "key": "88864925d6c56034",
-  "needs_real": true,
-  "sha": "22453971fcd25621a5eeddf5044248804ae64ce4"
- },
- "repo": "anlonlt/board",
- "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
- "review_orchestrator_device": "web",
- "review_orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
- "session_id": "session_01AE1HGkF2ieYqR2ZtyxfSbR",
- "started_at": "2026-11-27T07:45:10Z",
- "status": "in progress",
- "subtasks": [
-  {
-   "files": [
-    "kit.py"
-   ],
-   "from": "task",
-   "n": 1,
-   "status": "done",
-   "title": "Every board read and write a session needs goes through one kit command with no hand step between"
+  "breaks": "revert",
+  "check": "python3 -m unittest tests.test_cl72_one_way tests.test_m11_kit_commands tests.test_cl30_kit_scripts",
+  "checkpoint": {
+    "at": "2026-11-27T08:10:34Z",
+    "branch": "cl72",
+    "pushed": true,
+    "sha": "31b05dcf"
   },
-  {
-   "from": "task",
-   "n": 2,
-   "status": "done",
-   "title": "The guard refuses every ArtifactData call and board_cli read/write that is not exactly the one the..."
+  "claimed_at": "2026-11-27T07:52:38Z",
+  "column": "info",
+  "created_at": "2026-11-27T07:38:05Z",
+  "differs": "CL72: builds on CL30 (guard), CL31 (pin), M11 (audit) and CL59 (part push), which each patched one path; it replaces the hand steps with one kit command, makes the guard refuse anything the kit did not print, gives guard and audit one list, and gates launch/land on recorded design steps.",
+  "from": "orchestrator",
+  "handoff": "Sessions now use `kit.py artifact sync` (the part guide, BOARD and the skill say so). `artifact pull` and `push` still work: they record what they print, so their calls pass too. Next: the orchestrator guide and the clerk text still name `artifact push` in places, which works but goes the long way. The board_cli guard covers raw post reads only: writes to the local copy stay free, because only sync reaches the live board.",
+  "kept_on_train": "the board's data path; same train as CL59/CL71",
+  "kind": "bug",
+  "landed": "61894a99c6584ef912a868ac1cf54ce1e97b03f4",
+  "landed_at": "2026-11-27T09:27:39Z",
+  "launched_at": "2026-11-27T07:44:17Z",
+  "launched_out_of_order": {
+    "at": "2026-11-27T07:44:17Z",
+    "was": "CL72 waits: CL16 runs (shares run_all_tests.py); CL52 runs (shares run_all_tests.py); CL71 runs (shares run_all_tests.py)",
+    "why": "owner's go 2026-11-27 in chat ('launch it')"
   },
-  {
-   "from": "task",
-   "n": 3,
-   "status": "done",
-   "title": "The audit and the guard use one shared list of allowed calls, so nothing the kit tells a session to..."
+  "not_checked": [
+    "Live run in this session (my own post): pull, 3 reads, a refused batch (a file map entry moved there), 5 reads of what it named, then a batch committed, version 6. The guard refused none of the printed calls. But this session started before the new hook was wired (settings are read when a session starts), so I passed the replies to the hook by hand. A new session runs it by itself.",
+    "A refused batch comes back as a tool error, which the hook may never see. So sync never takes an unseen reply as committed: it re-reads the documents, merges and resends (tested).",
+    "The real-project run on anlonlt/harmonize belongs to the orchestrator.",
+    "Full run (`run_all_tests.py --all`): 85 of 88 suites pass; the 3 that fail (test_launch_runtime, test_platform_matrix, test_cl56_one_link) fail the same way on an untouched main in this container, not caused by this step."
+  ],
+  "orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
+  "orchestrator_device": "web",
+  "orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
+  "orchestrator_unreached": null,
+  "part": "CL72",
+  "planned_by": "orchestrator",
+  "proof": {
+    "at": "2026-11-27T08:15:58Z",
+    "branch": "cl72",
+    "commit": "22453971",
+    "key": "88864925d6c56034",
+    "needs_real": true,
+    "sha": "22453971fcd25621a5eeddf5044248804ae64ce4"
   },
-  {
-   "files": [
-    "scripts/run_all_tests.py"
-   ],
-   "from": "task",
-   "n": 4,
-   "status": "done",
-   "title": "Test"
-  }
- ],
- "task": "Owner, 2026-11-27: \"Why are there contradicting rules? The commands are there for a reason. No session may do anything by hand.\"\n\nFound (orchestrator 3, usage audit 03:00-07:30): 22 of 22 sessions did board work by hand, because three kit pieces disagree. The guard (CL30, M11) refuses only a raw whole-board list and a raw post write. `kit.py artifact push` and `pin` (CL31) TELL the session to make `ArtifactData get` calls by hand (to learn a live version) and to send the batch by hand. The first `artifact pull` prints a whole-board list. The audit (M11) then counts all of those as manual. So a session following the kit word for word is flagged, and a session working around it is not stopped.\n\nDone when:\n1. Every board read and write a session needs goes through one kit command with no hand step between: `kit.py artifact sync` (pull the changes, load, push the session's own documents, pin a refused one by re-reading it, retry, record sent), printing at most one ArtifactData call set the model must make, with exact args, and nothing to edit.\n2. The guard refuses every ArtifactData call and board_cli read/write that is not exactly the one the kit just printed (same collection, doc_id, version, file), for every role, the orchestrator included; the refusal names the command.\n3. The audit and the guard use one shared list of allowed calls, so nothing the kit tells a session to do is ever counted as manual.\n4. Test: replay today's orchestrator transcript's board work: 0 manual actions, 0 refusals of kit-printed calls, a hand-edited batch refused. `python3 scripts/run_all_tests.py --all` green.\n\n5. Owner, 2026-11-27: \"Why do you skip stuff? It's not the first time.\" Orchestrator 3 skipped resume's \"First: what keeps coming back\" (plan a design step for \"two copies out of sync\", fixed 6 times) because it was text, not a gate. `kit.py launch` and `kit.py land` refuse while an item of that section has no `kit.py ledger design` entry, naming the item and the command. Test: an open recurring item blocks launch; recording its design unblocks it.\n",
- "title": "One way to touch the board: the kit prints every call, the guard refuses anything else, the audit and guard agree",
- "train": "board-data",
- "updated_at": "2026-11-27T09:27:40Z",
- "verdict": "Done: one sync command prints every board call, the guard refuses the rest for every role, the guard and the audit share one list, and launch/land wait for recorded design steps.",
- "work_branch": "main",
- "working_by": "owner"
+  "repo": "anlonlt/board",
+  "review_orchestrator": "session_01AE1HGioER4HUVmfFkDhQDA",
+  "review_orchestrator_device": "web",
+  "review_orchestrator_name": "session_01AE1HGioER4HUVmfFkDhQDA",
+  "session_id": "session_01AE1HGkF2ieYqR2ZtyxfSbR",
+  "started_at": "2026-11-27T07:45:10Z",
+  "status": "complete",
+  "subtasks": [
+    {
+      "files": [
+        "kit.py"
+      ],
+      "from": "task",
+      "n": 1,
+      "status": "done",
+      "title": "Every board read and write a session needs goes through one kit command with no hand step between"
+    },
+    {
+      "from": "task",
+      "n": 2,
+      "status": "done",
+      "title": "The guard refuses every ArtifactData call and board_cli read/write that is not exactly the one the..."
+    },
+    {
+      "from": "task",
+      "n": 3,
+      "status": "done",
+      "title": "The audit and the guard use one shared list of allowed calls, so nothing the kit tells a session to..."
+    },
+    {
+      "files": [
+        "scripts/run_all_tests.py"
+      ],
+      "from": "task",
+      "n": 4,
+      "status": "done",
+      "title": "Test"
+    }
+  ],
+  "task": "Owner, 2026-11-27: \"Why are there contradicting rules? The commands are there for a reason. No session may do anything by hand.\"\n\nFound (orchestrator 3, usage audit 03:00-07:30): 22 of 22 sessions did board work by hand, because three kit pieces disagree. The guard (CL30, M11) refuses only a raw whole-board list and a raw post write. `kit.py artifact push` and `pin` (CL31) TELL the session to make `ArtifactData get` calls by hand (to learn a live version) and to send the batch by hand. The first `artifact pull` prints a whole-board list. The audit (M11) then counts all of those as manual. So a session following the kit word for word is flagged, and a session working around it is not stopped.\n\nDone when:\n1. Every board read and write a session needs goes through one kit command with no hand step between: `kit.py artifact sync` (pull the changes, load, push the session's own documents, pin a refused one by re-reading it, retry, record sent), printing at most one ArtifactData call set the model must make, with exact args, and nothing to edit.\n2. The guard refuses every ArtifactData call and board_cli read/write that is not exactly the one the kit just printed (same collection, doc_id, version, file), for every role, the orchestrator included; the refusal names the command.\n3. The audit and the guard use one shared list of allowed calls, so nothing the kit tells a session to do is ever counted as manual.\n4. Test: replay today's orchestrator transcript's board work: 0 manual actions, 0 refusals of kit-printed calls, a hand-edited batch refused. `python3 scripts/run_all_tests.py --all` green.\n\n5. Owner, 2026-11-27: \"Why do you skip stuff? It's not the first time.\" Orchestrator 3 skipped resume's \"First: what keeps coming back\" (plan a design step for \"two copies out of sync\", fixed 6 times) because it was text, not a gate. `kit.py launch` and `kit.py land` refuse while an item of that section has no `kit.py ledger design` entry, naming the item and the command. Test: an open recurring item blocks launch; recording its design unblocks it.\n",
+  "title": "One way to touch the board: the kit prints every call, the guard refuses anything else, the audit and guard agree",
+  "train": "board-data",
+  "updated_at": "2026-11-28T01:10:57Z",
+  "verdict": "Done: one sync command prints every board call, the guard refuses the rest for every role, the guard and the audit share one list, and launch/land wait for recorded design steps.",
+  "work_branch": "main",
+  "working_by": "owner",
+  "lane": "done"
 }
