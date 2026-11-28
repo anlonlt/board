@@ -926,25 +926,29 @@ class BoardStore:
         cur_t_rows = (cur_trains.get("rows") or []) if isinstance(cur_trains, dict) else []
         new_t_rows = trains_doc.get("rows") or []
         if cur_t_rows and len(cur_t_rows) > len(new_t_rows):
-            by_existing_part = {str(r.get("part")): dict(r) for r in cur_t_rows if r.get("part")}
+            by_new_part = {str(tr.get("part")): tr for tr in new_t_rows if tr.get("part")}
+            merged_t_rows = []
+            seen_parts = set()
+            for cr in cur_t_rows:
+                pt = str(cr.get("part") or "")
+                if pt and pt in by_new_part:
+                    nr = dict(by_new_part[pt])
+                    if cr.get("children") and nr.get("children"):
+                        extra_kids = [k for k in cr["children"] if k not in nr["children"] and k not in by_new_part]
+                        if extra_kids:
+                            nr["children"] = list(nr["children"]) + extra_kids
+                    merged_t_rows.append(nr)
+                    seen_parts.add(pt)
+                else:
+                    merged_t_rows.append(cr)
+                    if pt:
+                        seen_parts.add(pt)
             for tr in new_t_rows:
                 pt = str(tr.get("part") or "")
-                if not pt:
-                    continue
-                if pt not in by_existing_part:
-                    if not pt.startswith("P-") or tr.get("children"):
-                        cur_t_rows.append(tr)
-                        by_existing_part[pt] = tr
-                elif tr.get("children"):
-                    ex = by_existing_part[pt]
-                    ex_kids = list(ex.get("children") or [])
-                    for k in tr["children"]:
-                        if k not in ex_kids:
-                            ex_kids.append(k)
-                    ex["children"] = ex_kids
-                    if tr.get("state") in ("you", "running"):
-                        ex["state"] = tr["state"]
-            trains_doc["rows"] = cur_t_rows
+                if pt and pt not in seen_parts and (not pt.startswith("P-") or tr.get("children")):
+                    merged_t_rows.append(tr)
+                    seen_parts.add(pt)
+            trains_doc["rows"] = merged_t_rows
 
         touched = []
         for special_id, special_doc in (("_dashboard", dash_doc), ("_trains", trains_doc)):
