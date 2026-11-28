@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-27T23:41:03Z",
+ "created_at": "2026-11-28T00:32:16Z",
  "rows": [
   {
    "at": 8,
@@ -170,8 +170,20 @@
    "train": "P-takeover"
   },
   {
-   "at": 1,
+   "at": 0,
    "key": "G",
+   "name": "Orchestrator: open timers only (2026-11-27 09:15)",
+   "note": "",
+   "post": "P-orchestrator",
+   "state": "idle",
+   "steps": [
+    "next step"
+   ],
+   "train": "P-orchestrator"
+  },
+  {
+   "at": 1,
+   "key": "H",
    "name": "Agy",
    "note": "Next: Point _launch_line() and kit/orchestrator.template.md at kit.py launch for agy",
    "post": "a2-point-launch-line-and-kit-orchestrator-t",
@@ -184,7 +196,7 @@
   },
   {
    "at": 6,
-   "key": "H",
+   "key": "I",
    "name": "Demo",
    "note": "Next: Try replying or tapping 👍",
    "post": "demo-todo",
@@ -202,7 +214,7 @@
   },
   {
    "at": 0,
-   "key": "I",
+   "key": "J",
    "name": "Reviews",
    "note": "Next: Every part gets the idea first: the owner's goal and cases beyond the literal task, tested by stress cases from that intent, refused at done otherwise",
    "post": "cl76-every-part-gets-the-idea-first-the-owner",
@@ -215,5 +227,5 @@
   }
  ],
  "title": "Where we are",
- "updated_at": "2026-11-27T23:41:03Z"
+ "updated_at": "2026-11-28T00:32:16Z"
 }
