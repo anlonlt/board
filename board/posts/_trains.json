@@ -1,6 +1,6 @@
 {
  "column": "info",
- "created_at": "2026-11-28T00:32:16Z",
+ "created_at": "2026-11-28T01:35:24Z",
  "rows": [
   {
    "also": [],
@@ -101,7 +101,7 @@
    "post": "m2-install-draws-the-first-map",
    "prompt": "",
    "session": "",
-   "state": "running",
+   "state": "idle",
    "store": []
   },
   {
@@ -163,19 +163,9 @@
   },
   {
    "also": [],
-   "children": [],
-   "parent": "",
-   "part": "P-orchestrator",
-   "post": "",
-   "prompt": "",
-   "session": "",
-   "state": "idle",
-   "store": []
-  },
-  {
-   "also": [],
    "children": [
-    "A1"
+    "A1",
+    "A2"
    ],
    "parent": "",
    "part": "P-agy",
@@ -209,10 +199,10 @@
    ],
    "parent": "",
    "part": "P-reviews",
-   "post": "cl76-every-part-gets-the-idea-first-the-owner",
+   "post": "cl78-a-part-s-branch-holds-only-its-own-work",
    "prompt": "",
    "session": "",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -978,7 +968,7 @@
    "post": "m9-the-workflow-on-the-map-what-lives-outsi",
    "prompt": "",
    "session": "b050783b-dfd6-486c-aacd-33a7365f173e",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1319,9 +1309,7 @@
   },
   {
    "also": [],
-   "children": [
-    "A2"
-   ],
+   "children": [],
    "parent": "R5",
    "part": "R7",
    "post": "r7-kit-py-launch-updates-runner-on-takeover",
@@ -1404,7 +1392,7 @@
    "post": "cl72-one-way-to-touch-the-board-the-kit-print",
    "prompt": "",
    "session": "session_01AE1HGkF2ieYqR2ZtyxfSbR",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1426,7 +1414,7 @@
    "post": "cl73-the-stop-check-counts-only-what-this-ses",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "done",
    "store": []
   },
   {
@@ -1437,13 +1425,13 @@
    "post": "m14-the-usage-ledger-says-what-each-review-f",
    "prompt": "",
    "session": "session_01AE1HGgqiRtQ1f39ZXndGMM",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
    "also": [],
    "children": [],
-   "parent": "R7",
+   "parent": "P-agy",
    "part": "A2",
    "post": "a2-point-launch-line-and-kit-orchestrator-t",
    "prompt": "",
@@ -1459,7 +1447,7 @@
    "post": "cl76-every-part-gets-the-idea-first-the-owner",
    "prompt": "",
    "session": "session_01AE1HGibELwzhQ31mndRps5",
-   "state": "running",
+   "state": "done",
    "store": []
   },
   {
@@ -1470,10 +1458,10 @@
    "post": "cl78-a-part-s-branch-holds-only-its-own-work",
    "prompt": "",
    "session": "",
-   "state": "idle",
+   "state": "done",
    "store": []
   }
  ],
  "title": "Trains",
- "updated_at": "2026-11-28T00:32:16Z"
+ "updated_at": "2026-11-28T01:35:24Z"
 }

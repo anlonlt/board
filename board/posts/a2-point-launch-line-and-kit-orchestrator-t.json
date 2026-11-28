@@ -1,4 +1,7 @@
 {
+ "also": [
+  "R7"
+ ],
  "artifacts": [
   "kit/ORCHESTRATOR.template.md",
   "kit/orchestrator.template.md",
@@ -58,7 +61,7 @@
  "orchestrator": "702b0528-ed8c-482b-a8d8-9ffbbcdd8029",
  "orchestrator_device": "penguin",
  "orchestrator_name": "Antigravity orchestrator",
- "parent": "R7",
+ "parent": "P-agy",
  "part": "A2",
  "planned_by": "orchestrator",
  "proof": {
@@ -110,6 +113,6 @@
  "task": "Follow-up from combined review CR-r7-r4-combined (`continue`):\n\n1. Update `_launch_line()` in `scripts/kit.py` (and `.kit/kit.py`) and `kit/orchestrator.template.md` (plus its `.kit/orchestrator.md` copy via `install.py . --update --no-cmd`) so `agy` orchestrator guides and `step new` output point directly at `python3 -I .kit/kit.py launch <post>` instead of raw `invoke_subagent` instructions.\n2. Update or add unit tests in `tests/test_launch_runtime.py` verifying `_launch_line()` returns `kit.py launch` for `agy`.",
  "title": "Point _launch_line() and kit/orchestrator.template.md at kit.py launch for agy",
  "train": "agy",
- "updated_at": "2026-11-27T23:41:17Z",
+ "updated_at": "2026-11-28T01:35:21Z",
  "verdict": "Antigravity step creation, resume guidance, and both orchestrator guides now route part launches uniformly through the kit launcher instead of raw subagent calls."
 }
